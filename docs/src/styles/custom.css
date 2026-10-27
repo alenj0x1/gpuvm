@@ -41,6 +41,29 @@
   --sl-color-bg-sidebar: #f6f5f2;
 }
 
+/* Mobile menu button: Starlight paints it as an inverted block (white on the dark theme) with padding that,
+   plus a border, pushes the icon off-center. Theme colors, a thin border and the icon centered exactly. */
+button.sl-menu-button {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background-color: var(--sl-color-gray-6);
+  color: var(--sl-color-white);
+  border: 1px solid var(--sl-color-gray-5);
+  box-shadow: none;
+}
+button.sl-menu-button svg {
+  display: block;
+  grid-area: 1 / 1;
+}
+button.sl-menu-button:has(~ :popover-open) {
+  background-color: var(--sl-color-gray-5);
+}
+:root[data-theme='light'] button.sl-menu-button {
+  background-color: var(--sl-color-black);
+  color: var(--sl-color-white);
+}
+
 .sl-markdown-content img {
   border: 1px solid var(--sl-color-gray-5);
   border-radius: 12px;
