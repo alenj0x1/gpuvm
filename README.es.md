@@ -14,6 +14,7 @@
   <a href="https://github.com/alenj0x1/gpuvm/releases"><img src="https://img.shields.io/github/v/release/alenj0x1/gpuvm?include_prereleases&label=versi%C3%B3n" alt="Versión"></a>
   <a href="https://alenj0x1.github.io/gpuvm/es/"><img src="https://img.shields.io/badge/docs-alenj0x1.github.io%2Fgpuvm-2f5bd3" alt="Documentación"></a>
   <a href="CHANGELOG.es.md"><img src="https://img.shields.io/badge/cambios-0.1.0-6b6e75" alt="Registro de cambios"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/licencia-MIT-2f9e6a" alt="Licencia MIT"></a>
 </p>
 
 <p align="center">
@@ -99,3 +100,7 @@ En el equipo usa [Moonlight](https://moonlight-stream.org) (GPL-3.0), instalado 
 ## Registro de cambios
 
 Ver [CHANGELOG.es.md](CHANGELOG.es.md).
+
+## Licencia
+
+[MIT](LICENSE). Los componentes de terceros mantienen sus propias licencias.

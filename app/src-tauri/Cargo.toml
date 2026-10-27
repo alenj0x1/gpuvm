@@ -3,6 +3,7 @@ name = "gpuvm"
 version = "0.1.0"
 description = "GpuVM: Windows virtual machines with the host GPU"
 edition = "2021"
+license = "MIT"
 
 [lib]
 name = "gpuvm_lib"

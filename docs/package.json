@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "version": "0.1.0",
+  "license": "MIT",
   "scripts": {
     "sync-changelog": "node scripts/sync-changelog.mjs",
     "predev": "npm run sync-changelog",
