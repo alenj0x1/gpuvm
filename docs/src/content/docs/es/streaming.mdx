@@ -58,7 +58,7 @@ Las VMs de generación 2 de Hyper-V no tienen tarjeta de sonido, así que GpuVM 
 
 - La instalación es silenciosa, como permite su [licencia de distribución](https://vb-audio.com/Services/licensing.htm), siempre que se acredite el origen y el usuario pueda donar.
 - El paquete original queda en `C:\GpuVM\VB-CABLE` dentro de la VM, con un archivo `LEEME.txt`.
-- `virtual_sink` se configura después del reinicio automático de la VM. Hasta entonces, al abrir la VM aparece un aviso de que el audio todavía no está configurado.
+- `virtual_sink` lo configura la VM después de su reinicio automático, y se vuelve a revisar en cada **Encender y abrir** si la contraseña de Windows de la VM está guardada. La salida del cable se busca por tipo de dispositivo y no por nombre, porque Windows lo traduce (`CABLE Input` en inglés, `Altavoces` en español).
 
 <Aside type="tip" title="Crédito">
 **VB-CABLE** es donationware de **VB-Audio Software** ([vb-cable.com](https://vb-cable.com)). Si lo usas, considera [apoyar a VB-Audio](https://vb-audio.com/Cable/).

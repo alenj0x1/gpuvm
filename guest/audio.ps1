@@ -3,8 +3,11 @@
 $root = 'C:\GpuVM'
 . (Join-Path $root 'streaming.ps1')
 
+# Windows localizes the playback endpoint name ("CABLE Input" in English, "Altavoces" in Spanish),
+# so it is found by being a render endpoint ({0.0.0.…}) of the VB-Audio cable.
 $endpoint = Get-PnpDevice -Class AudioEndpoint -PresentOnly -ErrorAction SilentlyContinue |
-    Where-Object { $_.FriendlyName -like 'CABLE Input*' -and $_.Status -eq 'OK' } |
+    Where-Object { $_.InstanceId -like 'SWD\MMDEVAPI\{0.0.0.*' -and $_.FriendlyName -like '*VB-Audio Virtual Cable*' -and $_.Status -eq 'OK' } |
+    Sort-Object { $_.FriendlyName -like '*16 Ch*' } |
     Select-Object -First 1
 if (-not $endpoint) { exit 0 }
 

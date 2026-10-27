@@ -287,6 +287,21 @@ InModuleScope GpuVM {
             $script:sent['name'] | Should Be 'HOST'
         }
 
+        It 'updates sunshine.conf through the API only when a value changes, keeping the other keys' {
+            $cred = [pscredential]::new('gpuvm', (ConvertTo-SecureString 'x' -AsPlainText -Force))
+            Mock Invoke-SunshineApi { [pscustomobject]@{ encoder = 'nvenc'; virtual_sink = 'Altavoces (VB-Audio Virtual Cable)'; version = '1' } } -ParameterFilter { $Method -ne 'POST' }
+            Mock Invoke-SunshineApi { if ($Path -eq '/api/config') { $script:posted = $Body } } -ParameterFilter { $Method -eq 'POST' }
+            Mock Wait-SunshineReady { }
+            Mock Start-Sleep { }
+            $script:posted = $null
+            Update-SunshineConfig -Address '172.20.1.5' -Credential $cred -Settings ([ordered]@{ virtual_sink = 'Altavoces (VB-Audio Virtual Cable)' }) | Should Be $false
+            $script:posted | Should Be $null
+            Update-SunshineConfig -Address '172.20.1.5' -Credential $cred -Settings ([ordered]@{ output_name = '{d54a}' }) | Should Be $true
+            $script:posted['output_name'] | Should Be '{d54a}'
+            $script:posted['encoder'] | Should Be 'nvenc'
+            $script:posted.Contains('version') | Should Be $false
+        }
+
         It 'finds the virtual display in the Sunshine log' {
             $log = @(
                 '[2026-10-26 23:12:31.210]: Info: Currently available display devices:'

@@ -89,9 +89,15 @@ function Connect-GpuVM {
     }
 
     if ($state['config']['streaming']['audio'] -eq 'vbcable') {
-        $sunshineConfig = try { Invoke-SunshineApi -Address $address -Credential $credential -Path '/api/config' } catch { $null }
-        if ($sunshineConfig -and -not $sunshineConfig.PSObject.Properties['virtual_sink']) {
-            Write-Warning 'Sunshine todavía no tiene configurado el audio; se configura solo tras el primer reinicio de la VM.'
+        if ($guest) {
+            try { Set-SunshineAudioSink -Name $Name -GuestCredential $guest -Address $address -Credential $credential }
+            catch { Write-Warning "No se pudo revisar el audio dentro de la VM: $($_.Exception.Message)" }
+        }
+        else {
+            $sunshineConfig = try { Invoke-SunshineApi -Address $address -Credential $credential -Path '/api/config' } catch { $null }
+            if ($sunshineConfig -and -not $sunshineConfig.PSObject.Properties['virtual_sink']) {
+                Write-Warning 'Sunshine todavía no tiene configurado el audio. Guarda la contraseña de Windows de la VM para que GpuVM lo configure.'
+            }
         }
     }
 

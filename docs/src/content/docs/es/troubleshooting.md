@@ -29,7 +29,7 @@ El primer inicio instala Windows y el streaming, y después reinicia una vez. **
 
 ## No hay audio
 
-El audio (`virtual_sink` en Sunshine) se configura después del primer reinicio automático de la VM. Hasta entonces, al abrir la VM aparece un aviso. Si el perfil tiene `"audio": "none"`, no se instala ningún dispositivo de audio.
+El audio (`virtual_sink` en Sunshine) se configura después del primer reinicio automático de la VM, y **Encender y abrir** lo vuelve a configurar si falta, siempre que la contraseña de Windows de la VM esté guardada en GpuVM. Sin la contraseña, al abrir la VM aparece un aviso. Si el perfil tiene `"audio": "none"`, no se instala ningún dispositivo de audio.
 
 ## Falla el emparejamiento
 

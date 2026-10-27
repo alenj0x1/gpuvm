@@ -152,25 +152,67 @@ function Set-SunshineVirtualDisplay {
     $vdd = ConvertFrom-SunshineDisplayLog -Lines $lines | Where-Object { $_.edid -and $_.edid.manufacturer_id -eq 'MTT' } | Select-Object -First 1
     if (-not $vdd) { Write-Warning 'Sunshine no ve la pantalla virtual; la imagen puede salir en negro. Revisa C:\GpuVM\setup.log en la VM.'; return }
 
+    $settings = [ordered]@{ output_name = $vdd.device_id; dd_configuration_option = 'ensure_only_display' }
+    if (Update-SunshineConfig -Address $Address -Credential $Credential -Settings $settings) {
+        Write-Step "Sunshine capturará la pantalla virtual ($($vdd.display_name))"
+    }
+}
+
+# Writes keys to sunshine.conf through the API and restarts Sunshine, only if something changes.
+# Returns $true when it changed the configuration.
+function Update-SunshineConfig {
+    param(
+        [Parameter(Mandatory)][string]$Address,
+        [Parameter(Mandatory)][pscredential]$Credential,
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Settings
+    )
     $current = Invoke-SunshineApi -Address $Address -Credential $Credential -Path '/api/config'
     # /api/config only returns keys written in sunshine.conf; under StrictMode a missing one cannot be read.
-    $currentOutput = $current.PSObject.Properties['output_name']?.Value
-    $currentMode = $current.PSObject.Properties['dd_configuration_option']?.Value
-    if ($currentOutput -eq $vdd.device_id -and $currentMode -eq 'ensure_only_display') { return }
+    $changed = @($Settings.Keys | Where-Object { $current.PSObject.Properties[$_]?.Value -ne $Settings[$_] })
+    if (-not $changed) { return $false }
 
     # /api/config replaces the whole file: resend the current keys plus the new ones.
-    $settings = [ordered]@{}
+    $body = [ordered]@{}
     foreach ($prop in $current.PSObject.Properties) {
-        if ($prop.Name -notin 'platform', 'status', 'version') { $settings[$prop.Name] = $prop.Value }
+        if ($prop.Name -notin 'platform', 'status', 'version') { $body[$prop.Name] = $prop.Value }
     }
-    $settings['output_name'] = $vdd.device_id
-    $settings['dd_configuration_option'] = 'ensure_only_display'
-    Write-Step "Sunshine capturará la pantalla virtual ($($vdd.display_name))"
-    Invoke-SunshineApi -Address $Address -Credential $Credential -Method POST -Path '/api/config' -Body $settings | Out-Null
+    foreach ($key in $Settings.Keys) { $body[$key] = $Settings[$key] }
+    Invoke-SunshineApi -Address $Address -Credential $Credential -Method POST -Path '/api/config' -Body $body | Out-Null
     # Sunshine drops the connection when restarting; the error from that call is expected.
     try { Invoke-SunshineApi -Address $Address -Credential $Credential -Method POST -Path '/api/restart' -Body @{} | Out-Null } catch { }
     Start-Sleep -Seconds 5
     Wait-SunshineReady -Address $Address -Credential $Credential -TimeoutSec 120
+    $true
+}
+
+# Name of the VB-CABLE playback endpoint inside the guest. Windows localizes it ("CABLE Input" in English,
+# "Altavoces" in Spanish), so it is found by being a render endpoint ({0.0.0.…}) of the VB-Audio cable.
+function Get-GuestAudioSink {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][pscredential]$Credential
+    )
+    Invoke-Command -VMName $Name -Credential $Credential -ErrorAction Stop -ScriptBlock {
+        Get-PnpDevice -Class AudioEndpoint -PresentOnly -ErrorAction SilentlyContinue |
+            Where-Object { $_.InstanceId -like 'SWD\MMDEVAPI\{0.0.0.*' -and $_.FriendlyName -like '*VB-Audio Virtual Cable*' -and $_.Status -eq 'OK' } |
+            Sort-Object { $_.FriendlyName -like '*16 Ch*' } |
+            Select-Object -First 1 -ExpandProperty FriendlyName
+    }
+}
+
+# Makes Sunshine capture the VB-CABLE output (virtual_sink). Also repairs VMs whose first-boot task never found it.
+function Set-SunshineAudioSink {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][pscredential]$GuestCredential,
+        [Parameter(Mandatory)][string]$Address,
+        [Parameter(Mandatory)][pscredential]$Credential
+    )
+    $sink = Get-GuestAudioSink -Name $Name -Credential $GuestCredential
+    if (-not $sink) { Write-Warning 'No se encontró la salida de audio VB-CABLE en la VM; la imagen se verá sin sonido.'; return }
+    if (Update-SunshineConfig -Address $Address -Credential $Credential -Settings ([ordered]@{ virtual_sink = $sink })) {
+        Write-Step "Sunshine captura el audio de $sink"
+    }
 }
 
 # The first boot installs streaming and restarts the VM once. Pairing before that restart cuts it off halfway,

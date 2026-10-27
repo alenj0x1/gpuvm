@@ -13,8 +13,8 @@ First public version.
 - **Preferences**: theme (system, light or dark, also switchable from the title bar) and what closing the window does (quit completely or stay in the system tray). Opening GpuVM again shows the running window.
 - **Windows VMs with the host GPU** through Hyper-V GPU partitioning (GPU-P): the Windows image is applied straight to a VHDX, the host driver is copied into the guest, and setup is unattended (local account, autologon, no OOBE).
 - **Streaming**: Sunshine inside the VM captures a virtual display drawn by the GPU and encodes with NVENC; Moonlight on the host opens it. Pairing is automatic (the PIN is handed to Sunshine through its API).
-- **Silent audio** with VB-CABLE (WHQL-signed), credited to VB-Audio as its license requires.
-- **Self-repair on "Start and open"**: syncs the GPU driver when the host driver changed, waits for Windows and Sunshine, returns the Windows session to the GPU display, picks the virtual display in Sunshine and sets its resolution to match Moonlight.
+- **Silent audio** with VB-CABLE (WHQL-signed), credited to VB-Audio as its license requires. The cable is found by device type, so it works on Windows in any language.
+- **Self-repair on "Start and open"**: syncs the GPU driver when the host driver changed, waits for Windows and Sunshine, returns the Windows session to the GPU display, picks the virtual display in Sunshine, sets its resolution to match Moonlight and makes Sunshine capture the VM's audio.
 - **Profiles** in JSON with inheritance (`balanced`, `max-performance`) and per-VM overrides.
 - **Labs** to measure each improvement (baseline vs candidate) before adopting it, with seven labs opened.
 - **CLI** `gpuvm.ps1` and PowerShell module `GpuVM` with the same features.

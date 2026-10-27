@@ -29,7 +29,7 @@ The first boot installs Windows and the streaming components, then restarts once
 
 ## No audio
 
-Audio (`virtual_sink` in Sunshine) is configured after the VM's first automatic restart. Until then, opening the VM shows a warning. If the profile has `"audio": "none"`, no audio device is installed.
+Audio (`virtual_sink` in Sunshine) is configured after the VM's first automatic restart, and **Encender y abrir** (Start and open) sets it again if it's missing, as long as the VM's Windows password is saved in GpuVM. Without the password, opening the VM shows a warning. If the profile has `"audio": "none"`, no audio device is installed.
 
 ## Pairing fails
 
