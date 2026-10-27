@@ -3,6 +3,9 @@ title: Perfiles
 description: Perfiles JSON con herencia que definen la VM, la partición de GPU, el streaming y las optimizaciones del invitado.
 ---
 
+import Diagram from '../../../components/Diagram.astro';
+import { profiles } from '../../../diagrams';
+
 Un perfil describe cómo se arma una VM: CPU, memoria, disco, parte de la GPU, streaming y las optimizaciones que se aplican dentro de Windows. Los perfiles son archivos JSON en `profiles/`.
 
 ## Perfiles incluidos
@@ -18,9 +21,7 @@ Un perfil describe cómo se arma una VM: CPU, memoria, disco, parte de la GPU, s
 
 Un perfil puede extender otro. **Los objetos se mezclan** (ganan los valores del hijo) y **las listas se reemplazan completas**. La herencia circular es un error.
 
-```text
-base  ←  balanced  ←  max-performance
-```
+<Diagram {...profiles('es')} />
 
 `max-performance` solo indica lo que cambia respecto de `balanced`:
 

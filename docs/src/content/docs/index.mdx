@@ -3,6 +3,9 @@ title: Overview
 description: Windows 10/11 virtual machines that use your PC's GPU through Hyper-V GPU partitioning, streamed to your desktop with Sunshine and Moonlight.
 ---
 
+import Diagram from '../../components/Diagram.astro';
+import { overview } from '../../diagrams';
+
 import { Image } from 'astro:assets';
 import { Card, CardGrid, LinkCard, Steps } from '@astrojs/starlight/components';
 import appLight from '../../assets/screenshots/app-light.png';
@@ -31,15 +34,7 @@ A regular Hyper-V VM only gets a basic display adapter, so games and GPU apps do
 
 </Steps>
 
-```text
- Host (Windows 10/11)                            VM (Hyper-V Gen 2)
-┌────────────────────────────┐     GPU-P      ┌────────────────────────────┐
-│ GPU + driver               │ ─────────────▶ │ GPU partition, same driver │
-│                            │                │ Virtual Display Driver     │
-│ GpuVM app / gpuvm.ps1      │                │ Sunshine (NVENC)           │
-│ Moonlight  ◀───────────────┼──── stream ────│ VB-CABLE (audio)           │
-└────────────────────────────┘                └────────────────────────────┘
-```
+<Diagram {...overview('en')} />
 
 ## What's inside
 

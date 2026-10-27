@@ -3,6 +3,9 @@ title: Profiles
 description: JSON profiles with inheritance that define the VM, the GPU partition, streaming and guest optimizations.
 ---
 
+import Diagram from '../../components/Diagram.astro';
+import { profiles } from '../../diagrams';
+
 A profile describes how a VM is built: CPU, memory, disk, GPU share, streaming and the optimizations applied inside Windows. Profiles are JSON files in `profiles/`.
 
 ## Bundled profiles
@@ -18,9 +21,7 @@ A profile describes how a VM is built: CPU, memory, disk, GPU share, streaming a
 
 A profile can extend another one. **Objects are merged** (the child's values win) and **lists are replaced entirely**. Circular inheritance is an error.
 
-```text
-base  ←  balanced  ←  max-performance
-```
+<Diagram {...profiles('en')} />
 
 `max-performance` only lists what it changes from `balanced`:
 

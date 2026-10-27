@@ -3,22 +3,12 @@ title: Architecture and extending
 description: How the module, the backends, the app bridge and the security model fit together, and how to extend GpuVM.
 ---
 
+import Diagram from '../../components/Diagram.astro';
+import { architecture } from '../../diagrams';
+
 ## Overview
 
-```text
- Desktop app (Tauri 2 + React)
-        │  invoke("ps" | "job")
-        ▼
- Rust side (app/src-tauri) ── starts pwsh.exe from Program Files
-        │  one JSON request per line on stdin
-        ▼
- src/bridge.ps1 ── imports the module, runs the cmdlet, streams events on stdout
-        │
-        ▼
- GpuVM module (src/GpuVM) ── Public cmdlets → backend → Hyper-V
-        ▲
- gpuvm.ps1 (CLI) ── same module, from a terminal
-```
+<Diagram {...architecture('en')} />
 
 ## Repository layout
 
