@@ -7,7 +7,7 @@ $script:RepoRoot    = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $script:DataRoot = if ($env:GPUVM_DATA) { $env:GPUVM_DATA }
     elseif ($env:ProgramFiles -and $script:RepoRoot.StartsWith($env:ProgramFiles, [StringComparison]::OrdinalIgnoreCase)) { Join-Path $env:ProgramData 'GpuVM' }
     else { $script:RepoRoot }
-$script:ToolVersion = '0.1.0'
+$script:ToolVersion = '0.1.1'
 $script:Backends    = @{}
 # Previous GPU counter sample (Get-GpuUsageByProcess computes usage between two samples).
 $script:GpuEngineCategory = $null
