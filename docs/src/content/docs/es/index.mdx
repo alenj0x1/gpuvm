@@ -7,6 +7,7 @@ import { Image } from 'astro:assets';
 import { Card, CardGrid, LinkCard, Steps } from '@astrojs/starlight/components';
 import appLight from '../../../assets/screenshots/app-light.png';
 import appDark from '../../../assets/screenshots/app-dark.png';
+import SystemDiagram from '../../../components/SystemDiagram.astro';
 
 GpuVM crea máquinas virtuales Windows 10 y 11 que usan la GPU de tu PC, con el mayor rendimiento que permite cada backend, y un sistema de **laboratorios** para medir cada mejora antes de adoptarla.
 
@@ -31,16 +32,21 @@ Una VM normal de Hyper-V solo tiene un adaptador de pantalla básico, así que l
 
 </Steps>
 
-```text
- Host (Windows 10/11)                            VM (Hyper-V gen. 2)
-┌────────────────────────────┐     GPU-P      ┌────────────────────────────┐
-│ GPU + driver               │ ─────────────▶ │ Partición de GPU, mismo    │
-│                            │                │ driver                     │
-│ App GpuVM / gpuvm.ps1      │                │ Virtual Display Driver     │
-│                            │                │ Sunshine (NVENC)           │
-│ Moonlight  ◀───────────────┼── streaming ───│ VB-CABLE (audio)           │
-└────────────────────────────┘                └────────────────────────────┘
-```
+<SystemDiagram
+  label="El equipo comparte su GPU con la VM mediante GPU-P; la VM envía la imagen y el sonido de vuelta a Moonlight en el equipo."
+  top={{ title: 'Equipo (Windows 10/11)', items: [
+    { shape: 'circle', color: 'red', label: 'GPU + driver' },
+    { shape: 'square', color: 'yellow', label: 'App GpuVM / gpuvm.ps1' },
+    { shape: 'triangle', color: 'blue', label: 'Moonlight' },
+  ] }}
+  bottom={{ title: 'VM (Hyper-V gen. 2)', items: [
+    { shape: 'quarter', color: 'red', label: 'Partición de GPU, mismo driver' },
+    { shape: 'square', color: 'green', label: 'Virtual Display Driver' },
+    { shape: 'triangle', color: 'blue', label: 'Sunshine (NVENC) + audio VB‑CABLE' },
+  ] }}
+  down={{ label: 'GPU-P', color: 'red' }}
+  up={{ label: 'Imagen y sonido', color: 'blue' }}
+/>
 
 ## Qué incluye
 

@@ -3,6 +3,8 @@ title: Perfiles
 description: Perfiles JSON con herencia que definen la VM, la partición de GPU, el streaming y las optimizaciones del invitado.
 ---
 
+import FlowDiagram from '../../../components/FlowDiagram.astro';
+
 Un perfil describe cómo se arma una VM: CPU, memoria, disco, parte de la GPU, streaming y las optimizaciones que se aplican dentro de Windows. Los perfiles son archivos JSON en `profiles/`.
 
 ## Perfiles incluidos
@@ -18,9 +20,15 @@ Un perfil describe cómo se arma una VM: CPU, memoria, disco, parte de la GPU, s
 
 Un perfil puede extender otro. **Los objetos se mezclan** (ganan los valores del hijo) y **las listas se reemplazan completas**. La herencia circular es un error.
 
-```text
-base  ←  balanced  ←  max-performance
-```
+<FlowDiagram
+  label="max-performance extiende balanced, que extiende base."
+  steps={[
+    { shape: 'circle', color: 'green', title: 'base', detail: 'Valores comunes a todos los perfiles' },
+    { shape: 'square', color: 'blue', title: 'balanced', detail: 'Equilibrado en la app' },
+    { shape: 'triangle', color: 'red', title: 'max-performance', detail: 'Máximo rendimiento en la app' },
+  ]}
+  links={[{ label: 'extends', up: true }, { label: 'extends', up: true }]}
+/>
 
 `max-performance` solo indica lo que cambia respecto de `balanced`:
 

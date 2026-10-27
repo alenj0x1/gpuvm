@@ -1,0 +1,16 @@
+---
+// Bauhaus shape used as the marker of a diagram item, inside a soft tile (the "fichas" style).
+interface Props {
+  kind: 'circle' | 'square' | 'triangle' | 'quarter';
+  color: 'red' | 'yellow' | 'green' | 'blue';
+}
+const { kind, color } = Astro.props;
+---
+<span class="gv-tile" aria-hidden="true">
+  <svg viewBox="0 0 16 16" width="16" height="16" class={`gv-${color}`}>
+    {kind === 'circle' && <circle cx="8" cy="8" r="8" />}
+    {kind === 'square' && <rect width="16" height="16" rx="2.5" />}
+    {kind === 'triangle' && <path d="M0 16 L8 0 L16 16 Z" />}
+    {kind === 'quarter' && <path d="M0 16 A16 16 0 0 1 16 0 L16 16 Z" />}
+  </svg>
+</span>

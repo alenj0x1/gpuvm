@@ -1,0 +1,34 @@
+---
+// A vertical chain of steps joined by connectors; each connector can carry a label and point up or down.
+import Shape from './Shape.astro';
+
+type Step = { shape: 'circle' | 'square' | 'triangle' | 'quarter'; color: 'red' | 'yellow' | 'green' | 'blue'; title: string; detail?: string };
+type Link = { label?: string; up?: boolean };
+interface Props {
+  steps: Step[];
+  links?: Link[];
+  label: string;
+}
+const { steps, links = [], label } = Astro.props;
+---
+<figure class="gv-diagram not-content" aria-label={label}>
+  {steps.map((step, i) => (
+    <>
+      {i > 0 && (
+        <div class="gv-links gv-single">
+          <div class={`gv-link ${links[i - 1]?.up ? 'gv-up' : 'gv-down'}`}>
+            <span class="gv-wire gv-neutral"></span>
+            {links[i - 1]?.label && <span class="gv-pill">{links[i - 1]!.label}</span>}
+          </div>
+        </div>
+      )}
+      <div class="gv-card gv-step">
+        <Shape kind={step.shape} color={step.color} />
+        <div>
+          <p class="gv-step-title">{step.title}</p>
+          {step.detail && <p class="gv-step-detail">{step.detail}</p>}
+        </div>
+      </div>
+    </>
+  ))}
+</figure>

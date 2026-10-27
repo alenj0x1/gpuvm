@@ -1,0 +1,23 @@
+---
+// Two cards (e.g. the host and the VM) joined by two labelled connectors: one going down, one coming back up.
+import DiagramCard, { type DiagramItem } from './DiagramCard.astro';
+
+type Card = { title: string; items: DiagramItem[] };
+type Link = { label: string; color: 'red' | 'yellow' | 'green' | 'blue' };
+interface Props {
+  top: Card;
+  bottom: Card;
+  down: Link;
+  up: Link;
+  label: string;
+}
+const { top, bottom, down, up, label } = Astro.props;
+---
+<figure class="gv-diagram not-content" aria-label={label}>
+  <DiagramCard {...top} />
+  <div class="gv-links">
+    <div class="gv-link gv-down"><span class={`gv-wire gv-${down.color}`}></span><span class="gv-pill">{down.label}</span></div>
+    <div class="gv-link gv-up"><span class={`gv-wire gv-${up.color}`}></span><span class="gv-pill">{up.label}</span></div>
+  </div>
+  <DiagramCard {...bottom} />
+</figure>
