@@ -1,0 +1,111 @@
+---
+title: Profiles
+description: JSON profiles with inheritance that define the VM, the GPU partition, streaming and guest optimizations.
+---
+
+A profile describes how a VM is built: CPU, memory, disk, GPU share, streaming and the optimizations applied inside Windows. Profiles are JSON files in `profiles/`.
+
+## Bundled profiles
+
+| Profile | CPU | Memory | Disk | Guest |
+|---|---|---|---|---|
+| `balanced` | 8 threads | 8 GB fixed | dynamic, 128 GB | High performance power plan, no sleep |
+| `max-performance` | 8 threads, 100 % reserve, maximum weight (10000), host SMT topology | 8 GB fixed | fixed, 96 GB | Ultimate Performance power plan, Game Mode, no SysMain or search indexer, minimal visual effects |
+
+`base` holds the values shared by all profiles and isn't used directly. In the app, `balanced` appears as **Equilibrado** and `max-performance` as **Máximo rendimiento**.
+
+## Inheritance with `extends`
+
+A profile can extend another one. **Objects are merged** (the child's values win) and **lists are replaced entirely**. Circular inheritance is an error.
+
+```text
+base  ←  balanced  ←  max-performance
+```
+
+`max-performance` only lists what it changes from `balanced`:
+
+```json
+{
+  "extends": "balanced",
+  "description": "…",
+  "vm": {
+    "cpu": { "count": 8, "reservePercent": 100, "relativeWeight": 10000, "hwThreadsPerCore": 0 },
+    "memoryGB": 8,
+    "disk": { "sizeGB": 96, "type": "Fixed" }
+  },
+  "guest": {
+    "optimizations": ["power-plan-ultimate", "disable-sleep", "game-mode", "disable-sysmain", "disable-search-indexing", "visual-effects-performance"]
+  }
+}
+```
+
+Because `guest.optimizations` is a list, it replaces the parent's list instead of adding to it.
+
+## Fields
+
+| Field | Default (`base`) | Meaning |
+|---|---|---|
+| `backend` | `hyperv-gpup` | How the GPU is given to the VM. See [Architecture](/gpuvm/architecture/#backends). |
+| `vm.root` | `C:\GpuVM` | Folder for the VMs. |
+| `vm.cpu.count` | 6 | Threads. At least 2, and at least one left for the host. |
+| `vm.cpu.reservePercent` | 0 | CPU reserve, 0–100. |
+| `vm.cpu.relativeWeight` | 100 | Relative weight, 1–10000. |
+| `vm.cpu.hwThreadsPerCore` | `null` | SMT topology; `0` follows the host. Needs VM configuration version 9.0 or later. |
+| `vm.memoryGB` | 8 | Fixed memory. At least 4, leaving at least 4 GB to the host. |
+| `vm.disk.sizeGB` / `vm.disk.type` | 128 / `Dynamic` | At least 64 GB; `Dynamic` or `Fixed`. |
+| `vm.network.switch` | `Default Switch` | Hyper-V switch. |
+| `vm.secureBoot`, `vm.tpm` | `true` | Secure Boot and TPM. |
+| `vm.mmio.lowGB` / `vm.mmio.highGB` | 1 / 32 | Memory-mapped I/O space for the GPU. |
+| `gpu.match` | `NVIDIA` | Text that the host GPU name must contain. |
+| `gpu.allocationPercent` | 100 | GPU share for the VM, 1–100. |
+| `streaming` | Sunshine, virtual display, VB-CABLE | See [Streaming](/gpuvm/streaming/#profile-settings). |
+| `guest.edition` | `Pro` | Windows edition applied from the ISO. |
+| `guest.userName` | `gpuvm` | Local account. |
+| `guest.autoLogon` | `true` | Automatic sign-in. |
+| `guest.optimizations` | `power-plan-high`, `disable-sleep` | Optimizations applied on first boot. |
+
+GpuVM validates the profile against your hardware before creating or changing a VM.
+
+## Guest optimizations
+
+Each optimization is an entry in `guest/optimizations.ps1` with a description and an idempotent block.
+
+| Name | Effect |
+|---|---|
+| `power-plan-high` | High performance power plan. |
+| `power-plan-ultimate` | Ultimate Performance power plan; High performance if unavailable. |
+| `disable-sleep` | No sleep, hibernation or display off (they cut the stream). |
+| `game-mode` | Windows Game Mode on. |
+| `disable-sysmain` | Disables SysMain (Superfetch); on a virtual disk it only adds I/O. |
+| `disable-search-indexing` | Disables the Windows Search indexer. |
+| `visual-effects-performance` | Visual effects adjusted for performance. |
+
+## Overrides
+
+`New-GpuVM`, `Set-GpuVM`, `Test-GpuVMHost` and `Get-GpuVMProfile` accept `-Override` for one-off changes without creating a profile:
+
+```powershell
+Set-GpuVM -Name win11 -Override @{ vm = @{ cpu = @{ count = 10 }; memoryGB = 11 } }
+Get-GpuVMProfile -Name max-performance -Override @{ gpu = @{ allocationPercent = 50 } }   # see the resolved result
+```
+
+Changing profile or settings needs the VM off (`Set-GpuVM`). Without `-Profile` it starts from the VM's current settings and only changes what the override sets; with `-Profile` it switches profile but keeps the disk, the folder and the Moonlight preferences. The app's **Options** use the same mechanism.
+
+## Creating a profile
+
+Add a JSON file to `profiles/` that extends an existing one, and choose it by name:
+
+```json
+{
+  "extends": "max-performance",
+  "description": "10 threads and 12 GB.",
+  "vm": { "cpu": { "count": 10 }, "memoryGB": 12 }
+}
+```
+
+```powershell
+./gpuvm.ps1 profiles                    # list profiles
+./gpuvm.ps1 check -Profile my-profile   # validate it against this PC
+```
+
+Test a change in a [lab](/gpuvm/labs/) before making it part of a profile.

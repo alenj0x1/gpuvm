@@ -1,0 +1,35 @@
+@{
+    RootModule        = 'GpuVM.psm1'
+    ModuleVersion     = '0.1.0'
+    GUID              = '6f3c2a71-4b8e-4d2a-9c61-2f7e0b5d9a14'
+    Author            = 'alenj0x1'
+    Description       = 'Creates and tunes Windows 10/11 virtual machines that use the host GPU.'
+    PowerShellVersion = '7.2'
+    FunctionsToExport = @(
+        'Test-GpuVMHost'
+        'New-GpuVM'
+        'Set-GpuVM'
+        'Get-GpuVM'
+        'Remove-GpuVM'
+        'Repair-GpuVMState'
+        'Get-GpuVMOverview'
+        'Invoke-GpuVMPower'
+        'Set-GpuVMGuestCredential'
+        'Get-GpuVMIsoList'
+        'Set-GpuVMStreamingClient'
+        'Update-GpuVMSettings'
+        'Get-GpuVMHostInfo'
+        'Sync-GpuVMDriver'
+        'Connect-GpuVM'
+        'Install-GpuVMClient'
+        'Update-GpuVMComponent'
+        'Get-GpuVMProfile'
+        'New-GpuVMLab'
+        'Add-GpuVMLabResult'
+        'Get-GpuVMLab'
+        'Close-GpuVMLab'
+    )
+    CmdletsToExport   = @()
+    AliasesToExport   = @()
+    VariablesToExport = @()
+}

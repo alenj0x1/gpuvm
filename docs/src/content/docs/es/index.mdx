@@ -1,0 +1,67 @@
+---
+title: Introducción
+description: Máquinas virtuales Windows 10/11 que usan la GPU de tu PC con GPU partitioning de Hyper-V, transmitidas a tu escritorio con Sunshine y Moonlight.
+---
+
+import { Image } from 'astro:assets';
+import { Card, CardGrid, LinkCard, Steps } from '@astrojs/starlight/components';
+import appLight from '../../../assets/screenshots/app-light.png';
+import appDark from '../../../assets/screenshots/app-dark.png';
+
+GpuVM crea máquinas virtuales Windows 10 y 11 que usan la GPU de tu PC, con el mayor rendimiento que permite cada backend, y un sistema de **laboratorios** para medir cada mejora antes de adoptarla.
+
+<Image src={appLight} alt="App de escritorio de GpuVM con una VM, sus estadísticas en vivo y sus opciones, tema claro" class="dark:sl-hidden" />
+<Image src={appDark} alt="App de escritorio de GpuVM con una VM, sus estadísticas en vivo y sus opciones, tema oscuro" class="light:sl-hidden" />
+
+## Por qué
+
+Una VM normal de Hyper-V solo tiene un adaptador de pantalla básico, así que los juegos y las apps que usan la GPU no funcionan bien dentro de ella. El **GPU partitioning (GPU-P)** de Hyper-V comparte la GPU del host con la VM, pero configurarlo a mano implica copiar archivos del driver, ajustar la VM y encontrar la forma de *ver* lo que dibuja la GPU, porque la consola de Hyper-V solo muestra la pantalla básica de Hyper-V. GpuVM hace todo eso por ti y lo mantiene funcionando.
+
+## Cómo funciona
+
+<Steps>
+
+1. **Crear la VM.** GpuVM revisa el host, aplica la edición de Windows de tu ISO directamente a un VHDX (sin pasar por el instalador), copia el driver de la GPU del host al invitado y deja una instalación desatendida: cuenta local, sin pantallas de OOBE, Escritorio remoto habilitado e inicio de sesión automático. La VM es de generación 2 con Secure Boot y TPM, así que Windows 11 instala sin trucos, y recibe la CPU del perfil, memoria fija, espacio MMIO, sin puntos de control y la partición de GPU.
+
+2. **Primer inicio.** Dentro de la VM, el script de configuración del invitado aplica las optimizaciones del perfil, instala el streaming (Sunshine, una pantalla virtual y audio con VB-CABLE) y borra `unattend.xml`, que contiene la contraseña. Después la VM se reinicia una vez sola.
+
+3. **Encender y abrir.** Un clic enciende la VM, sincroniza el driver de la GPU si el del host cambió, espera a Windows y a Sunshine, corrige la sesión y la pantalla, empareja Moonlight solo y abre la transmisión.
+
+4. **Usar y medir.** Usas la VM en Moonlight en el host, con la imagen que dibuja la GPU. La app muestra el uso de CPU, memoria y GPU en vivo, y los [laboratorios](/gpuvm/es/labs/) te permiten probar cambios con mediciones reales.
+
+</Steps>
+
+```text
+ Host (Windows 10/11)                            VM (Hyper-V gen. 2)
+┌────────────────────────────┐     GPU-P      ┌────────────────────────────┐
+│ GPU + driver               │ ─────────────▶ │ Partición de GPU, mismo    │
+│                            │                │ driver                     │
+│ App GpuVM / gpuvm.ps1      │                │ Virtual Display Driver     │
+│                            │                │ Sunshine (NVENC)           │
+│ Moonlight  ◀───────────────┼── streaming ───│ VB-CABLE (audio)           │
+└────────────────────────────┘                └────────────────────────────┘
+```
+
+## Qué incluye
+
+<CardGrid>
+  <Card title="App de escritorio" icon="laptop">
+    Tauri 2 + React. Todas las VMs de Hyper-V en una lista, encender y abrir en un clic, estadísticas en vivo, opciones, asistente para crear máquinas y acciones de energía.
+  </Card>
+  <Card title="Módulo de PowerShell y CLI" icon="seti:powershell">
+    El módulo `GpuVM` (PowerShell 7) hace el trabajo; `gpuvm.ps1` lo expone como comandos cortos.
+  </Card>
+  <Card title="Streaming" icon="rocket">
+    Sunshine dentro de la VM, una pantalla virtual que dibuja la GPU, audio con VB-CABLE y Moonlight en el host.
+  </Card>
+  <Card title="Perfiles y laboratorios" icon="setting">
+    Perfiles JSON con herencia, y laboratorios que comparan una configuración base con una candidata antes de adoptar un cambio.
+  </Card>
+</CardGrid>
+
+El backend actual es **Hyper-V GPU-P**: la GPU se comparte entre el host y la VM, y el invitado usa el mismo driver que el host. Se pueden agregar backends nuevos; consulta [Arquitectura](/gpuvm/es/architecture/).
+
+<CardGrid>
+  <LinkCard title="Requisitos" href="/gpuvm/es/requirements/" />
+  <LinkCard title="Instalación" href="/gpuvm/es/install/" />
+</CardGrid>

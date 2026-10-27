@@ -1,0 +1,27 @@
+{
+  "id": "004-moonlight-latency",
+  "title": "Moonlight latency",
+  "hypothesis": "Turning off V-Sync in Moonlight lowers total latency by about one frame (~16 ms at 60 FPS) without visible stutter. The performance overlay is used to measure.",
+  "vm": "",
+  "status": "open",
+  "createdAt": "2026-10-27T00:13:28.9011832-05:00",
+  "variants": {
+    "baseline": {
+      "profile": "max-performance",
+      "override": null
+    },
+    "candidate": {
+      "profile": "max-performance",
+      "override": {
+        "streaming": {
+          "client": {
+            "vsync": false,
+            "performanceOverlay": true
+          }
+        }
+      }
+    }
+  },
+  "results": [],
+  "conclusion": null
+}

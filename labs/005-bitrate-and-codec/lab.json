@@ -1,0 +1,27 @@
+{
+  "id": "005-bitrate-and-codec",
+  "title": "Bitrate and codec",
+  "hypothesis": "Host-VM traffic never reaches the physical network: raising to 60 Mbps and using HEVC improves sharpness without adding encode/decode latency.",
+  "vm": "",
+  "status": "open",
+  "createdAt": "2026-10-27T00:13:28.9629211-05:00",
+  "variants": {
+    "baseline": {
+      "profile": "max-performance",
+      "override": null
+    },
+    "candidate": {
+      "profile": "max-performance",
+      "override": {
+        "streaming": {
+          "client": {
+            "codec": "HEVC",
+            "bitrateKbps": 60000
+          }
+        }
+      }
+    }
+  },
+  "results": [],
+  "conclusion": null
+}

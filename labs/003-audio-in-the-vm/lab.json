@@ -1,0 +1,20 @@
+{
+  "id": "003-audio-in-the-vm",
+  "title": "Audio in the VM",
+  "hypothesis": "Hyper-V Gen 2 has no sound card; without a virtual audio device, Sunshine streams video with no sound. A virtual audio driver solves it.",
+  "vm": "",
+  "status": "open",
+  "createdAt": "2026-10-26T22:36:32.5305660-05:00",
+  "variants": {
+    "baseline": {
+      "profile": "balanced",
+      "override": null
+    },
+    "candidate": {
+      "profile": "balanced",
+      "override": null
+    }
+  },
+  "results": [],
+  "conclusion": null
+}

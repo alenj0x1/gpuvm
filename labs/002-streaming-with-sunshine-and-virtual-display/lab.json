@@ -1,0 +1,20 @@
+{
+  "id": "002-streaming-with-sunshine-and-virtual-display",
+  "title": "Streaming with Sunshine and a virtual display",
+  "hypothesis": "With VDD as the only display (Hyper-V Video disabled), Sunshine captures what the RTX 4060 renders and encodes with NVENC; Moonlight on the host shows the VM at 1080p60 with low latency.",
+  "vm": "",
+  "status": "open",
+  "createdAt": "2026-10-26T22:36:32.4857193-05:00",
+  "variants": {
+    "baseline": {
+      "profile": "balanced",
+      "override": null
+    },
+    "candidate": {
+      "profile": "balanced",
+      "override": null
+    }
+  },
+  "results": [],
+  "conclusion": null
+}

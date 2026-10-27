@@ -1,0 +1,26 @@
+{
+  "id": "006-cpu-reservation",
+  "title": "CPU reservation",
+  "hypothesis": "Reserving 100 % of 8 threads leaves the host (Moonlight, vmwp, GPU scheduling) with little headroom; a 30 % reservation with a high weight gives the same FPS and less stutter.",
+  "vm": "",
+  "status": "open",
+  "createdAt": "2026-10-27T00:13:28.9774083-05:00",
+  "variants": {
+    "baseline": {
+      "profile": "max-performance",
+      "override": null
+    },
+    "candidate": {
+      "profile": "max-performance",
+      "override": {
+        "vm": {
+          "cpu": {
+            "reservePercent": 30
+          }
+        }
+      }
+    }
+  },
+  "results": [],
+  "conclusion": null
+}

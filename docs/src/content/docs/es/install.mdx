@@ -1,0 +1,68 @@
+---
+title: Instalación
+description: Instala GpuVM desde GitHub Releases y prepara Hyper-V, PowerShell 7 y Moonlight.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+<Steps>
+
+1. **Instala PowerShell 7** desde [aka.ms/powershell](https://aka.ms/powershell) si no lo tienes.
+
+2. **Activa Hyper-V** ([más abajo](#activar-hyper-v)) y reinicia.
+
+3. **Descarga el instalador** (`.exe` de NSIS) desde [GitHub Releases](https://github.com/alenj0x1/gpuvm/releases) y ejecútalo.
+
+4. **Instala Moonlight** ([más abajo](#instalar-moonlight)).
+
+5. **Abre GpuVM.** Pide permisos de administrador cada vez que se abre.
+
+</Steps>
+
+## Qué hace el instalador
+
+- Instala GpuVM **para todo el equipo** en **Program Files**, con el módulo de PowerShell, los perfiles, los scripts del invitado, la plantilla de `unattend.xml` y la lista de componentes de streaming.
+- Los datos que cambian (laboratorios e instaladores descargados) van a **`%ProgramData%\GpuVM`**, que también queda solo para administradores.
+- El instalador y la interfaz de la app están en español.
+
+<Aside type="note" title="Por qué Program Files">
+La app corre como administrador, así que solo ejecuta scripts de Program Files, que solo un administrador puede modificar. Consulta [Arquitectura](/gpuvm/es/architecture/#seguridad).
+</Aside>
+
+## Activar Hyper-V
+
+Una vez, en PowerShell **como administrador**, y después reinicia:
+
+```powershell
+Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All
+```
+
+Si la virtualización está desactivada en el BIOS/UEFI, activa primero Intel VT-x o AMD-V ahí.
+
+## Instalar Moonlight
+
+Moonlight muestra la VM en tu escritorio. Descárgalo desde [moonlight-stream.org](https://moonlight-stream.org), o desde el repositorio ejecuta:
+
+```powershell
+./gpuvm.ps1 client-install
+```
+
+Lo instala con winget (`MoonlightGameStreamingProject.Moonlight`). winget puede pedirte aceptar sus condiciones la primera vez.
+
+## Desde el repositorio
+
+Sin el instalador, todo usa la carpeta del repositorio (CLI o modo desarrollo).
+
+```powershell
+# CLI, desde PowerShell 7 como administrador
+./gpuvm.ps1 check -Profile max-performance
+
+# Compilar el instalador (queda en app/src-tauri/target/release/bundle/nsis/)
+npm --prefix app run tauri build
+
+# Diseñar la interfaz sin Hyper-V (datos de ejemplo; ?mock=empty, ?mock=noadmin)
+npm --prefix app run dev
+
+# Pruebas (no necesitan administrador)
+Invoke-Pester ./tests
+```

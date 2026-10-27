@@ -1,0 +1,10 @@
+{
+  "extends": "base",
+  "description": "Good performance while leaving headroom for the host: 8 threads, 8 GB, dynamic disk.",
+  "vm": {
+    "cpu": {
+      "count": 8
+    },
+    "memoryGB": 8
+  }
+}

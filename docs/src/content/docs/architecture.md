@@ -1,0 +1,90 @@
+---
+title: Architecture and extending
+description: How the module, the backends, the app bridge and the security model fit together, and how to extend GpuVM.
+---
+
+## Overview
+
+```text
+ Desktop app (Tauri 2 + React)
+        │  invoke("ps" | "job")
+        ▼
+ Rust side (app/src-tauri) ── starts pwsh.exe from Program Files
+        │  one JSON request per line on stdin
+        ▼
+ src/bridge.ps1 ── imports the module, runs the cmdlet, streams events on stdout
+        │
+        ▼
+ GpuVM module (src/GpuVM) ── Public cmdlets → backend → Hyper-V
+        ▲
+ gpuvm.ps1 (CLI) ── same module, from a terminal
+```
+
+## Repository layout
+
+| Path | Contents |
+|---|---|
+| `app/` | Desktop app: React UI in `app/src`, Tauri/Rust in `app/src-tauri`. |
+| `src/GpuVM/` | The PowerShell 7 module: `Private/` (helpers), `Backends/` (one file per backend), `Public/` (one file per exported cmdlet). |
+| `src/bridge.ps1` | Bridge between the app and the module. |
+| `gpuvm.ps1` | CLI. See [CLI reference](/gpuvm/cli/). |
+| `profiles/` | JSON [profiles](/gpuvm/profiles/). |
+| `guest/` | Scripts that run inside the VM: first-boot setup, optimizations, streaming, audio, display resolution and `collect-info.ps1` for labs. |
+| `templates/` | `unattend.xml` template. |
+| `streaming/components.json` | Versions, URLs and SHA-256 of the streaming components. |
+| `labs/` | [Labs](/gpuvm/labs/). |
+| `tests/` | Pester tests. |
+
+## The module
+
+`GpuVM.psm1` loads `Private`, then `Backends` (which register themselves), then `Public`, and exports one function per file in `Public/`. Each VM created with GpuVM has a `gpuvm.json` state file in its folder with the resolved profile, the GPU and driver version, and the encrypted streaming and guest credentials. VMs without that file still show in the app, but only with power actions and the console.
+
+Long cmdlets report progress with `Write-Step`: in a terminal it prints a line; in the app it goes to the button that started the job.
+
+## Backends
+
+A backend is how the GPU is given to the VM. Each one calls `Register-GpuVMBackend` with a name, a description and these operations:
+
+| Operation | Receives | Does |
+|---|---|---|
+| `Test` | config | Returns host checks (`Name`, `Status` Ok/Warn/Fail, `Detail`). |
+| `New` | context | Creates the VM from scratch. |
+| `Apply` | name, config | Applies CPU, memory, GPU, etc. to a VM that is off. |
+| `SyncDriver` | name, state | Copies the host driver again; returns the copied version. |
+| `Remove` | name, state, delete disk | Removes the VM. |
+
+Public cmdlets only talk to this interface. The current backend is `hyperv-gpup` (`Backends/HyperVGpuP.ps1`): it sets the processor, fixed memory, disables checkpoints, sets MMIO space, Secure Boot and TPM, connects the switch and adds the GPU partition adapter. GPU-P doesn't support checkpoints or saved state, so if the host shuts down the guest shuts down in order.
+
+## Bridge between the app and PowerShell
+
+- **Quick queries** (overview, host info, power actions, saving options) go through one **persistent** `pwsh` process, one at a time. If the process died before the request was sent, it is restarted once; once a request is sent it is never retried, because the command may already have run (shut down, delete…). A query times out after 180 s.
+- **Long jobs** (create a VM, start and open, sync the driver, apply settings) run in their **own** `pwsh` process (`bridge.ps1 -Once`), so they don't block the stats. Their progress arrives as `job` events.
+- `bridge.ps1` reads one JSON request per line, `{"id", "cmd", "args"}`, and writes one JSON event per line: `progress`, `warning` (sent as soon as it appears) and `result` (`ok` with `data`, or `error`). Arguments shaped `{"user", "password"}` become a `PSCredential`.
+- The app can only call functions exported by the module, and `Update-GpuVMComponent` is blocked.
+
+## Security
+
+- **Elevation:** the release build asks for administrator when it opens (the manifest requires it). In development it starts normally and offers to reopen as administrator.
+- **Only scripts from Program Files:** the installed app runs the module and scripts bundled next to it in Program Files, which only an administrator can modify, so a program running as the user can't change what the elevated app runs.
+- **PowerShell 7 by absolute path:** `pwsh.exe` from `Program Files\PowerShell\7` (MSI) or from the Microsoft Store package folder under `Program Files\WindowsApps`, never a `pwsh.exe` that appears earlier in the user's `PATH`.
+- **Data restricted to administrators:** `%ProgramData%\GpuVM` (labs, downloads) and the VMs folder (`C:\GpuVM`, which would inherit "Authenticated Users: modify" from `C:\`) are limited to Administrators, SYSTEM and Hyper-V's virtual machines.
+- **DPAPI:** the Sunshine credentials and the guest password are stored encrypted with DPAPI on the host.
+- **Pinned components:** Sunshine, the Virtual Display Driver, nefcon and VB-CABLE are pinned by SHA-256 in `streaming/components.json`. A file whose hash doesn't match isn't used. The guest downloads nothing. Only the certificate that signed the virtual display driver is trusted.
+- **Password cleanup:** `unattend.xml` holds the password in plain text and is deleted inside the VM as soon as it's no longer needed.
+- **No argument injection:** the Moonlight app name is validated before building Moonlight's command line.
+
+Two environment variables move data elsewhere: `GPUVM_DATA` (all data) and `GPUVM_LABS_ROOT` (labs).
+
+## Extending
+
+- **New backend** (for example `kvm-vfio`): a file in `src/GpuVM/Backends/` that calls `Register-GpuVMBackend` with `Test`, `New`, `Apply`, `SyncDriver` and `Remove`. Profiles choose it with `"backend"`.
+- **New guest optimization:** an entry in `guest/optimizations.ps1`, tested in a lab and added to a profile.
+- **New profile:** a JSON file in `profiles/` that extends an existing one.
+
+## Tests
+
+```powershell
+Invoke-Pester ./tests
+```
+
+They cover profiles, `unattend.xml`, the driver copy, the GPU partition, labs, component verification, streaming credentials, pairing (with simulated Sunshine and Moonlight) and `sunshine.conf`, and don't need administrator.

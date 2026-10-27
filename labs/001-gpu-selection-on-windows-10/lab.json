@@ -1,0 +1,20 @@
+{
+  "id": "001-gpu-selection-on-windows-10",
+  "title": "GPU selection on Windows 10",
+  "hypothesis": "With both the RTX 4060 and the UHD 730 partitionable, Windows 10 (no -InstancePath) might assign the integrated GPU to the VM. Disabling the UHD 730 before powering on the VM guarantees it gets the 4060.",
+  "vm": "",
+  "status": "open",
+  "createdAt": "2026-10-26T22:27:24.7314956-05:00",
+  "variants": {
+    "baseline": {
+      "profile": "balanced",
+      "override": null
+    },
+    "candidate": {
+      "profile": "balanced",
+      "override": null
+    }
+  },
+  "results": [],
+  "conclusion": null
+}

@@ -1,0 +1,73 @@
+---
+title: Laboratorios
+description: Mide cada mejora contra una configuración base antes de adoptarla.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+Cada mejora se prueba antes de adoptarla: una hipótesis, una configuración base, una candidata y mediciones repetidas.
+
+## Flujo de trabajo
+
+<Steps>
+
+1. **Abre un laboratorio** con un título y una hipótesis. Si quieres, indica el perfil y el override de la base y de la candidata.
+
+   ```powershell
+   ./gpuvm.ps1 lab-new -Title 'Más hilos' -Hypothesis '10 hilos suben los FPS sin afectar al host' `
+     -BaselineProfile max-performance -CandidateProfile max-performance `
+     -CandidateOverride @{ vm = @{ cpu = @{ count = 10 } } }
+   ```
+
+2. **Mide la base** varias veces. Antes de cada medición puedes ejecutar `guest/collect-info.ps1` dentro de la VM: guarda el estado de la GPU, del CPU y del plan de energía, y un `dxdiag`.
+
+   ```powershell
+   ./gpuvm.ps1 lab-add -Lab 002 -Variant baseline -Metric 'Time Spy GPU' -Value 10210 -Unit pts
+   ```
+
+3. **Aplica la candidata y vuelve a medir** con `-Variant candidate`. Usa `-LowerIsBetter` para métricas como la latencia, y `-Notes` para observaciones.
+
+   ```powershell
+   ./gpuvm.ps1 lab-add -Lab 002 -Variant candidate -Metric 'Time Spy GPU' -Value 10480 -Unit pts
+   ```
+
+4. **Compara**: promedios por métrica y la diferencia en %.
+
+   ```powershell
+   ./gpuvm.ps1 lab -Lab 002
+   ```
+
+5. **Ciérralo** como `adopted`, `rejected` o `inconclusive` con una conclusión. Si se adopta, lleva la configuración candidata al perfil que corresponda en `profiles/`.
+
+   ```powershell
+   ./gpuvm.ps1 lab-close -Lab 002 -Status adopted -Conclusion '+2,6 % en GPU; se pasa a max-performance'
+   ```
+
+</Steps>
+
+`-Lab` acepta el número del laboratorio (el inicio del nombre de su carpeta). `./gpuvm.ps1 lab` sin `-Lab` lista todos los laboratorios con su estado y su cantidad de resultados.
+
+## Dónde se guardan
+
+Cada laboratorio es una carpeta `labs/NNN-nombre/` con `lab.json` (hipótesis, variantes, resultados y conclusión) y `notes.md` (procedimiento y observaciones). Desde el repositorio están en `labs/`; con la app instalada van a `%ProgramData%\GpuVM\labs`. La variable de entorno `GPUVM_LABS_ROOT` los lleva a otra carpeta.
+
+## Laboratorios actuales
+
+Todos están abiertos (todavía sin resultados).
+
+| # | Laboratorio | Hipótesis | Candidata |
+|---|---|---|---|
+| 001 | Selección de GPU en Windows 10 | Con dos GPU particionables (una RTX 4060 y una UHD 730 integrada), Windows 10 podría darle a la VM la integrada; desactivar la UHD 730 antes de encender la VM garantiza que reciba la RTX 4060. | Mismo perfil (`balanced`); paso manual. |
+| 002 | Streaming con Sunshine y pantalla virtual | Con la pantalla virtual como única pantalla (video de Hyper-V desactivado), Sunshine captura lo que dibuja la GPU y codifica con NVENC; Moonlight muestra la VM a 1080p60 con latencia baja. | Mismo perfil (`balanced`). |
+| 003 | Audio en la VM | La generación 2 no tiene tarjeta de sonido; sin un dispositivo de audio virtual, Sunshine transmite video sin sonido. Un driver de audio virtual lo resuelve. | Mismo perfil (`balanced`). |
+| 004 | Latencia en Moonlight | Sin V-Sync en Moonlight la latencia total baja alrededor de un cuadro (~16 ms a 60 FPS) sin tirones visibles. | `streaming.client`: `vsync: false`, `performanceOverlay: true` |
+| 005 | Bitrate y codec | El tráfico entre host y VM no sale a la red física: 60 Mbps y HEVC mejoran la nitidez sin sumar latencia de codificación y decodificación. | `streaming.client`: `codec: HEVC`, `bitrateKbps: 60000` |
+| 006 | Reserva de CPU | Reservar el 100 % de 8 hilos deja al host con poco margen; una reserva del 30 % con peso alto da los mismos FPS y menos tirones. | `vm.cpu.reservePercent: 30` |
+| 007 | NVENC en Sunshine | `nvenc_preset=1`, two-pass a cuarto de resolución y `latency_over_power` reducen la latencia de codificación frente a los valores por defecto. | `streaming.sunshine`: `nvenc_preset: 1`, `nvenc_twopass: quarter_res`, `nvenc_latency_over_power: enabled` |
+
+Los laboratorios 004 a 007 usan `max-performance` en las dos variantes.
+
+### Lo que encontraron los laboratorios hasta ahora
+
+- **002:** en la primera prueba real (VM con Windows 10 22H2) Sunshine se instaló, se emparejó solo y detectó NVENC, pero Moonlight quedó en negro: Sunshine capturaba la pantalla de Hyper-V en lugar de la virtual. La solución (poner `output_name` en la pantalla virtual y `dd_configuration_option = ensure_only_display`) ahora se aplica sola en cada **Encender y abrir**. Pendiente: Sunshine dice "Display device configuration API is temporarily unavailable" y no cambia la resolución.
+- **003:** se eligió VB-CABLE Pack45 frente al Virtual Audio Driver del proyecto VDD (beta, exige test signing), Scream (exige Secure Boot apagado) y Steam Streaming Speakers (obliga a instalar Steam y no tiene versión fija). Consulta [Streaming](/gpuvm/es/streaming/#audio-con-vb-cable).

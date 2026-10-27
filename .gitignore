@@ -1,0 +1,15 @@
+# Downloaded installers (verified by SHA-256 against streaming/components.json)
+cache/
+
+# Build outputs and dependencies
+node_modules/
+app/dist/
+app/src-tauri/target/
+app/src-tauri/gen/
+docs/dist/
+docs/.astro/
+
+# Local editor and agent settings
+.claude/
+.vscode/
+*.log

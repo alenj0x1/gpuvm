@@ -1,0 +1,73 @@
+---
+title: Labs
+description: Measure every improvement against a baseline before adopting it.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+Every improvement is tested before it's adopted: a hypothesis, a baseline configuration, a candidate configuration and repeated measurements.
+
+## Workflow
+
+<Steps>
+
+1. **Open a lab** with a title and a hypothesis. Optionally give the baseline and candidate a profile and an override.
+
+   ```powershell
+   ./gpuvm.ps1 lab-new -Title 'More threads' -Hypothesis '10 threads raise FPS without hurting the host' `
+     -BaselineProfile max-performance -CandidateProfile max-performance `
+     -CandidateOverride @{ vm = @{ cpu = @{ count = 10 } } }
+   ```
+
+2. **Measure the baseline** several times. Before each measurement you can run `guest/collect-info.ps1` inside the VM: it saves the state of the GPU, the CPU and the power plan, plus a `dxdiag`.
+
+   ```powershell
+   ./gpuvm.ps1 lab-add -Lab 002 -Variant baseline -Metric 'Time Spy GPU' -Value 10210 -Unit pts
+   ```
+
+3. **Apply the candidate and measure again** with `-Variant candidate`. Use `-LowerIsBetter` for metrics such as latency, and `-Notes` for observations.
+
+   ```powershell
+   ./gpuvm.ps1 lab-add -Lab 002 -Variant candidate -Metric 'Time Spy GPU' -Value 10480 -Unit pts
+   ```
+
+4. **Compare**: averages per metric and the difference in %.
+
+   ```powershell
+   ./gpuvm.ps1 lab -Lab 002
+   ```
+
+5. **Close it** as `adopted`, `rejected` or `inconclusive` with a conclusion. When a lab is adopted, carry the candidate configuration to the matching profile in `profiles/`.
+
+   ```powershell
+   ./gpuvm.ps1 lab-close -Lab 002 -Status adopted -Conclusion '+2.6 % GPU; moved to max-performance'
+   ```
+
+</Steps>
+
+`-Lab` accepts the lab's number (the start of its folder name). `./gpuvm.ps1 lab` without `-Lab` lists all labs with their status and number of results.
+
+## Where labs live
+
+Each lab is a folder `labs/NNN-name/` with `lab.json` (hypothesis, variants, results and conclusion) and `notes.md` (procedure and observations). From the repository they are in `labs/`; with the installed app they go to `%ProgramData%\GpuVM\labs`. The `GPUVM_LABS_ROOT` environment variable points them somewhere else.
+
+## Current labs
+
+All of them are open (no results yet).
+
+| # | Lab | Hypothesis | Candidate |
+|---|---|---|---|
+| 001 | GPU selection on Windows 10 | With two partitionable GPUs (an RTX 4060 and an integrated UHD 730), Windows 10 could give the VM the integrated one; disabling the UHD 730 before starting the VM makes sure it gets the RTX 4060. | Same profile (`balanced`); manual step. |
+| 002 | Streaming with Sunshine and a virtual display | With the virtual display as the only display (Hyper-V video off), Sunshine captures what the GPU draws and encodes with NVENC; Moonlight shows the VM at 1080p60 with low latency. | Same profile (`balanced`). |
+| 003 | Audio in the VM | Generation 2 has no sound card; without a virtual audio device Sunshine streams video without sound. A virtual audio driver fixes it. | Same profile (`balanced`). |
+| 004 | Moonlight latency | Turning V-Sync off in Moonlight lowers total latency by about one frame (~16 ms at 60 FPS) without visible stutter. | `streaming.client`: `vsync: false`, `performanceOverlay: true` |
+| 005 | Bitrate and codec | Host–VM traffic doesn't leave for the physical network: 60 Mbps and HEVC improve sharpness without adding encode/decode latency. | `streaming.client`: `codec: HEVC`, `bitrateKbps: 60000` |
+| 006 | CPU reservation | Reserving 100 % of 8 threads leaves the host little room; a 30 % reserve with high weight gives the same FPS and less stutter. | `vm.cpu.reservePercent: 30` |
+| 007 | NVENC in Sunshine | `nvenc_preset=1`, quarter-resolution two-pass and `latency_over_power` lower encode latency compared with the defaults. | `streaming.sunshine`: `nvenc_preset: 1`, `nvenc_twopass: quarter_res`, `nvenc_latency_over_power: enabled` |
+
+Labs 004–007 use `max-performance` for both variants.
+
+### What the labs found so far
+
+- **002:** in the first real test (Windows 10 22H2 VM) Sunshine installed, paired on its own and detected NVENC, but Moonlight showed black: Sunshine was capturing the Hyper-V display instead of the virtual one. The fix (set `output_name` to the virtual display and `dd_configuration_option = ensure_only_display`) is now done automatically on every **start and open**. Still pending: Sunshine reports "Display device configuration API is temporarily unavailable" and doesn't change the resolution.
+- **003:** VB-CABLE Pack45 was chosen over the VDD project's Virtual Audio Driver (beta, needs test signing), Scream (needs Secure Boot off) and Steam Streaming Speakers (requires installing Steam, no pinned version). See [Streaming](/gpuvm/streaming/#audio-with-vb-cable).

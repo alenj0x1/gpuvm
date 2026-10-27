@@ -1,0 +1,129 @@
+---
+title: Using the app
+description: Create a VM, start and open it in Moonlight, read its live stats, change its options and use the power actions.
+---
+
+import { Image } from 'astro:assets';
+import { Aside, Steps } from '@astrojs/starlight/components';
+import appLight from '../../assets/screenshots/app-light.png';
+import appDark from '../../assets/screenshots/app-dark.png';
+import createLight from '../../assets/screenshots/create-light.png';
+import emptyLight from '../../assets/screenshots/empty-light.png';
+import preferencesDark from '../../assets/screenshots/preferences-dark.png';
+
+The app's interface is in Spanish. This page names each control by its label in the app, with its meaning in English.
+
+<Image src={appLight} alt="GpuVM main window with the VM list on the left and the selected VM on the right, light theme" class="dark:sl-hidden" />
+<Image src={appDark} alt="GpuVM main window with the VM list on the left and the selected VM on the right, dark theme" class="light:sl-hidden" />
+
+## The window
+
+- **Sidebar:** every Hyper-V VM on the PC, created with GpuVM or not, with its state (or the current step of a running job). It can be collapsed. **Crear máquina** (Create machine) is at the end of the list.
+- **Main area:** the selected VM: header with its state, edition, GPU and profile; notices; live stats; usage chart; and options.
+- **Preferencias** (Preferences) is the gear icon in the title bar, next to the light/dark toggle. See [Preferences](#preferences).
+
+If the app isn't running as administrator, it shows **GpuVM necesita permisos de administrador** with an **Abrir como administrador** (Open as administrator) button that reopens it elevated. If Hyper-V can't be read, a notice shows the error with **Reintentar** (Retry).
+
+## Create a VM
+
+With no VMs yet, the app invites you to create the first one.
+
+<Image src={emptyLight} alt="Empty state inviting you to create the first machine" />
+
+<Steps>
+
+1. Click **Crear máquina**.
+
+2. Fill in the form:
+   - **Nombre** (Name): letters, numbers, `_` or hyphens, up to 40 characters, no spaces. It suggests `win-gpu`.
+   - **Imagen de Windows** (Windows image): the ISOs found in your Downloads and Desktop folders, or **Buscar otro ISO** to browse for one.
+   - **Perfil** (Profile): **Equilibrado** (`balanced`) or **Máximo rendimiento** (`max-performance`, the default). See [Profiles](/gpuvm/profiles/).
+   - **Contraseña de Windows** (Windows password) for the local user `gpuvm`, at least 6 characters, typed twice.
+
+3. Click **Crear máquina**. The dialog shows each step as it happens. You can close it: the progress stays in the sidebar, and if creation fails the dialog opens again with the error.
+
+4. When it's done the VM is selected and starts. Windows finishes setting itself up on its own in a few minutes.
+
+</Steps>
+
+<Image src={createLight} alt="Create machine dialog with name, Windows image, profile and password" />
+
+## Start and open
+
+The main button changes with the VM's state:
+
+| State | Button | What it does |
+|---|---|---|
+| Off | **Encender y abrir** (Start and open) | Starts the VM and opens it in Moonlight. |
+| Running | **Abrir** (Open) | Opens it in Moonlight. |
+| Paused | **Reanudar** (Resume) | Resumes the VM. |
+| Not created with GpuVM | **Encender** / **Ver consola** | Starts it / opens the Hyper-V console. |
+
+**Encender y abrir** leaves everything ready on its own, and the button shows each step while it works:
+
+1. If the VM is off and the host's GPU driver changed, it copies the new driver into the VM first (avoids a black screen or error code 43).
+2. Starts the VM and waits for Windows (the first time, Windows finishes its setup) and for Sunshine.
+3. Returns the Windows session to the GPU display if it was taken somewhere else.
+4. Makes Sunshine capture the virtual display.
+5. Sets the VM's display to the Moonlight resolution and FPS.
+6. Pairs Moonlight with Sunshine if this PC isn't paired yet.
+7. Opens Moonlight at the chosen resolution and FPS.
+
+Warnings along the way (for example, audio not configured yet) appear as notifications.
+
+## Live stats
+
+Four cards, refreshed every 2 seconds while a VM is on (every 6 seconds otherwise):
+
+- **Procesador** (Processor): threads and % in use.
+- **Memoria** (Memory): fixed memory and how much is in use.
+- **GPU**: % in use while running, or the share assigned to the VM while off; below, the GPU name.
+- **Tiempo encendida** (Uptime): time since start and the VM's IP address.
+
+The **Uso** (Usage) chart plots CPU and GPU over the last 5 minutes.
+
+## Options
+
+For VMs created with GpuVM:
+
+- **Procesador:** threads, from 2 up to the host's threads minus one.
+- **Memoria:** GB, from 4 up to the host's memory minus 4 GB.
+- **GPU para la VM** (GPU for the VM): 10–100 %, in steps of 10.
+- **Moonlight:** resolution (720p, 1080p, 1440p, 2160p) and FPS (30, 60, 120, 144).
+
+Moonlight settings are saved without stopping the VM and apply the next time you open it. Processor, memory and GPU need the VM off: if it's running the button reads **Apagar y aplicar** (Shut down and apply), which validates, shuts the VM down, applies and starts it again. If it can't start again (for example, not enough free memory), the previous settings are restored.
+
+## Guest password banner
+
+If GpuVM doesn't have the VM's Windows password (for example, after rebuilding the VM's state with `repair`), the VM shows a banner asking for it, for user `gpuvm`. It is saved encrypted with DPAPI and lets GpuVM fix things inside the VM through PowerShell Direct (without network and without asking you): waiting for setup to finish, moving the session back to the GPU display and setting the display resolution. VMs created from the app already have it.
+
+## Driver notice
+
+If the VM's NVIDIA driver differs from the host's, a notice says so. It updates on its own the next time you start the VM from the app, or right away with **Actualizar ahora** (Update now) or **Apagar y actualizar** (Shut down and update).
+
+## Power actions and more
+
+The **⋯** menu has:
+
+- **Encender sin abrir** (Start without opening).
+- **Apagar** (Shut down, orderly), **Forzar apagado** (Turn off; click twice to confirm, unsaved work is lost), **Reiniciar** (Restart), **Pausar** / **Reanudar** (Pause / Resume).
+- **Ver consola de Hyper-V** (Hyper-V console). It only shows the basic Hyper-V display, not what the GPU draws.
+- **Volver a emparejar Moonlight** (Pair Moonlight again).
+- **Actualizar driver de la GPU** (Update GPU driver), or **Apagar y actualizar driver** if it's running.
+- **Otro patrón** (Another pattern): changes the VM's Bauhaus icon and color.
+- **Eliminar máquina** (Delete machine): removes the VM from Hyper-V, keeping the `.vhdx` disk or deleting it too. It can't be undone.
+
+<Aside type="caution">
+Don't use Remote Desktop while streaming: it takes the console session away from the GPU display.
+</Aside>
+
+## Preferences
+
+<Image src={preferencesDark} alt="Preferences screen with the theme and close-window options, dark theme" />
+
+- **Tema** (Theme): **Sistema** (System, the default: follows Windows), **Claro** (Light) or **Oscuro** (Dark). The sun/moon button in the title bar switches between light and dark directly.
+- **Al cerrar la ventana** (When closing the window):
+  - **Salir por completo** (Quit completely, the default): closing the window exits GpuVM.
+  - **Quedarse en la bandeja** (Stay in the tray): closing the window hides it and GpuVM keeps running next to the clock, so jobs in progress continue. The tray icon's menu has **Abrir GpuVM** (Open GpuVM) and **Salir** (Quit); a left click on it opens the window again.
+
+GpuVM runs as a single instance: opening it again (for example from the Start menu while it's in the tray) shows the window that is already open.

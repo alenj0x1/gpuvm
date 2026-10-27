@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.astro/
+# Generated from the repo's CHANGELOG files by scripts/sync-changelog.mjs
+src/content/docs/changelog.md
+src/content/docs/es/changelog.md

@@ -1,0 +1,57 @@
+/* GpuVM docs theme: the app's font and warm neutrals, with a calm blue accent. */
+:root {
+  --sl-font: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --sl-text-h1: 2.25rem;
+}
+
+/* Dark (Starlight default) */
+:root {
+  --sl-color-accent-low: #1f2a4a;
+  --sl-color-accent: #7d9cf0;
+  --sl-color-accent-high: #d6e0fb;
+  --sl-color-white: #ebe8e1;
+  --sl-color-gray-1: #e0ddd6;
+  --sl-color-gray-2: #c4c2bc;
+  --sl-color-gray-3: #a3a5ab;
+  --sl-color-gray-4: #75787f;
+  --sl-color-gray-5: #34373d;
+  --sl-color-gray-6: #26282c;
+  --sl-color-black: #1b1c1f;
+}
+
+/* Light */
+:root[data-theme='light'] {
+  --sl-color-accent-low: #dfe6f9;
+  --sl-color-accent: #2f5bd3;
+  --sl-color-accent-high: #1c3a8f;
+  --sl-color-white: #23252a;
+  --sl-color-gray-1: #2c2e33;
+  --sl-color-gray-2: #45484e;
+  --sl-color-gray-3: #6b6e75;
+  --sl-color-gray-4: #9a9ca2;
+  --sl-color-gray-5: #e4e2db;
+  --sl-color-gray-6: #efeee9;
+  --sl-color-gray-7: #f6f5f2;
+  --sl-color-black: #fbfaf7;
+}
+
+:root[data-theme='light'] {
+  --sl-color-bg: #f6f5f2;
+  --sl-color-bg-nav: #f6f5f2;
+  --sl-color-bg-sidebar: #f6f5f2;
+}
+
+.sl-markdown-content img {
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 12px;
+}
+
+h1, h2, h3, .site-title {
+  letter-spacing: -0.01em;
+}
+
+/* Changelog version headings link to GitHub releases; keep them looking like headings. */
+.sl-markdown-content :is(h2, h3) a:not(.sl-anchor-link) {
+  color: inherit;
+  text-decoration: none;
+}

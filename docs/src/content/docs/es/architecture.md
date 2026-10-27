@@ -1,0 +1,90 @@
+---
+title: Arquitectura y extensión
+description: Cómo encajan el módulo, los backends, el puente de la app y el modelo de seguridad, y cómo extender GpuVM.
+---
+
+## Visión general
+
+```text
+ App de escritorio (Tauri 2 + React)
+        │  invoke("ps" | "job")
+        ▼
+ Parte en Rust (app/src-tauri) ── inicia pwsh.exe desde Program Files
+        │  una petición JSON por línea en stdin
+        ▼
+ src/bridge.ps1 ── importa el módulo, ejecuta el cmdlet y envía eventos por stdout
+        │
+        ▼
+ Módulo GpuVM (src/GpuVM) ── cmdlets públicos → backend → Hyper-V
+        ▲
+ gpuvm.ps1 (CLI) ── el mismo módulo, desde una terminal
+```
+
+## Estructura del repositorio
+
+| Ruta | Contenido |
+|---|---|
+| `app/` | App de escritorio: interfaz React en `app/src`, Tauri/Rust en `app/src-tauri`. |
+| `src/GpuVM/` | El módulo de PowerShell 7: `Private/` (utilidades), `Backends/` (un archivo por backend), `Public/` (un archivo por cmdlet exportado). |
+| `src/bridge.ps1` | Puente entre la app y el módulo. |
+| `gpuvm.ps1` | CLI. Consulta la [referencia de la CLI](/gpuvm/es/cli/). |
+| `profiles/` | [Perfiles](/gpuvm/es/profiles/) en JSON. |
+| `guest/` | Scripts que corren dentro de la VM: configuración del primer inicio, optimizaciones, streaming, audio, resolución de pantalla y `collect-info.ps1` para los laboratorios. |
+| `templates/` | Plantilla de `unattend.xml`. |
+| `streaming/components.json` | Versiones, URLs y SHA-256 de los componentes de streaming. |
+| `labs/` | [Laboratorios](/gpuvm/es/labs/). |
+| `tests/` | Pruebas con Pester. |
+
+## El módulo
+
+`GpuVM.psm1` carga `Private`, después `Backends` (que se registran solos) y después `Public`, y exporta una función por cada archivo de `Public/`. Cada VM creada con GpuVM tiene un archivo de estado `gpuvm.json` en su carpeta con el perfil resuelto, la GPU y la versión del driver, y las credenciales cifradas del streaming y del invitado. Las VMs sin ese archivo también aparecen en la app, pero solo con las acciones de energía y la consola.
+
+Los cmdlets largos informan su avance con `Write-Step`: en una terminal imprime una línea; en la app llega al botón que lanzó el trabajo.
+
+## Backends
+
+Un backend es la forma de darle la GPU a la VM. Cada uno llama a `Register-GpuVMBackend` con un nombre, una descripción y estas operaciones:
+
+| Operación | Recibe | Hace |
+|---|---|---|
+| `Test` | configuración | Devuelve revisiones del host (`Name`, `Status` Ok/Warn/Fail, `Detail`). |
+| `New` | contexto | Crea la VM desde cero. |
+| `Apply` | nombre, configuración | Aplica CPU, memoria, GPU, etc. a una VM apagada. |
+| `SyncDriver` | nombre, estado | Vuelve a copiar el driver del host; devuelve la versión copiada. |
+| `Remove` | nombre, estado, borrar disco | Elimina la VM. |
+
+Los cmdlets públicos solo hablan con esta interfaz. El backend actual es `hyperv-gpup` (`Backends/HyperVGpuP.ps1`): ajusta el procesador y la memoria fija, desactiva los puntos de control, define el espacio MMIO, Secure Boot y TPM, conecta el switch y agrega el adaptador de partición de GPU. GPU-P no admite puntos de control ni guardar estado, así que si el host se apaga, el invitado se apaga en orden.
+
+## Puente entre la app y PowerShell
+
+- **Las consultas rápidas** (resumen, datos del host, acciones de energía, guardar opciones) pasan por un proceso `pwsh` **persistente**, una a la vez. Si el proceso murió antes de enviar la petición, se reinicia una vez; una vez enviada, la petición nunca se reintenta, porque el comando pudo haberse aplicado (apagar, borrar…). Una consulta vence a los 180 s.
+- **Los trabajos largos** (crear una VM, encender y abrir, sincronizar el driver, aplicar ajustes) corren en su **propio** proceso `pwsh` (`bridge.ps1 -Once`), para no bloquear las estadísticas. Su avance llega como eventos `job`.
+- `bridge.ps1` lee una petición JSON por línea, `{"id", "cmd", "args"}`, y escribe un evento JSON por línea: `progress`, `warning` (se envía en cuanto aparece) y `result` (`ok` con `data`, o `error`). Los argumentos con forma `{"user", "password"}` se convierten en un `PSCredential`.
+- La app solo puede llamar funciones exportadas por el módulo, y `Update-GpuVMComponent` está bloqueada.
+
+## Seguridad
+
+- **Permisos:** la versión de release pide administrador al abrirse (lo exige su manifiesto). En desarrollo arranca normal y ofrece reabrirse como administrador.
+- **Solo scripts de Program Files:** la app instalada ejecuta el módulo y los scripts empaquetados junto a ella en Program Files, que solo un administrador puede modificar, así que un programa que corra como el usuario no puede cambiar lo que ejecuta la app elevada.
+- **PowerShell 7 por ruta absoluta:** `pwsh.exe` de `Program Files\PowerShell\7` (MSI) o de la carpeta del paquete de Microsoft Store en `Program Files\WindowsApps`, nunca un `pwsh.exe` que aparezca antes en el `PATH` del usuario.
+- **Datos solo para administradores:** `%ProgramData%\GpuVM` (laboratorios, descargas) y la carpeta de las VMs (`C:\GpuVM`, que heredaría de `C:\` el permiso "Usuarios autenticados: modificar") quedan limitados a Administradores, SYSTEM y las máquinas virtuales de Hyper-V.
+- **DPAPI:** las credenciales de Sunshine y la contraseña del invitado se guardan cifradas con DPAPI en el host.
+- **Componentes fijados:** Sunshine, Virtual Display Driver, nefcon y VB-CABLE están fijados por SHA-256 en `streaming/components.json`. Un archivo cuyo hash no coincide no se usa. El invitado no descarga nada. Solo se confía en el certificado que firmó el driver de la pantalla virtual.
+- **Limpieza de la contraseña:** `unattend.xml` guarda la contraseña en texto plano y se borra dentro de la VM en cuanto ya no hace falta.
+- **Sin inyección de argumentos:** el nombre de la app de Moonlight se valida antes de armar la línea de comandos de Moonlight.
+
+Dos variables de entorno llevan los datos a otro lugar: `GPUVM_DATA` (todos los datos) y `GPUVM_LABS_ROOT` (laboratorios).
+
+## Cómo extender
+
+- **Nuevo backend** (p. ej. `kvm-vfio`): un archivo en `src/GpuVM/Backends/` que llama a `Register-GpuVMBackend` con `Test`, `New`, `Apply`, `SyncDriver` y `Remove`. Los perfiles lo eligen con `"backend"`.
+- **Nueva optimización del invitado:** una entrada en `guest/optimizations.ps1`, probada en un laboratorio y agregada a un perfil.
+- **Nuevo perfil:** un JSON en `profiles/` que extienda uno existente.
+
+## Pruebas
+
+```powershell
+Invoke-Pester ./tests
+```
+
+Cubren perfiles, `unattend.xml`, la copia del driver, la partición de GPU, los laboratorios, la verificación de componentes, las credenciales de streaming, el emparejamiento (con Sunshine y Moonlight simulados) y `sunshine.conf`, y no necesitan administrador.

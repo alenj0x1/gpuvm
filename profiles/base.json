@@ -1,0 +1,54 @@
+{
+  "description": "Values shared by all profiles. Not used directly.",
+  "backend": "hyperv-gpup",
+  "vm": {
+    "root": "C:\\GpuVM",
+    "cpu": {
+      "count": 6,
+      "reservePercent": 0,
+      "relativeWeight": 100,
+      "hwThreadsPerCore": null
+    },
+    "memoryGB": 8,
+    "disk": {
+      "sizeGB": 128,
+      "type": "Dynamic"
+    },
+    "network": {
+      "switch": "Default Switch"
+    },
+    "secureBoot": true,
+    "tpm": true,
+    "mmio": {
+      "lowGB": 1,
+      "highGB": 32
+    }
+  },
+  "gpu": {
+    "match": "NVIDIA",
+    "allocationPercent": 100
+  },
+  "streaming": {
+    "provider": "sunshine",
+    "virtualDisplay": true,
+    "disableHyperVVideo": true,
+    "audio": "vbcable",
+    "sunshine": {},
+    "client": {
+      "app": "Desktop",
+      "resolution": "1920x1080",
+      "fps": 60,
+      "bitrateKbps": 0,
+      "codec": "auto"
+    }
+  },
+  "guest": {
+    "edition": "Pro",
+    "userName": "gpuvm",
+    "autoLogon": true,
+    "optimizations": [
+      "power-plan-high",
+      "disable-sleep"
+    ]
+  }
+}

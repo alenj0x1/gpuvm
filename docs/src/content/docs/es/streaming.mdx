@@ -1,0 +1,90 @@
+---
+title: Streaming
+description: Cómo GpuVM muestra la VM con la GPU — Sunshine, Virtual Display Driver, emparejamiento de Moonlight y audio con VB-CABLE.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+La consola de Hyper-V solo muestra la pantalla básica de Hyper-V, no lo que dibuja la GPU. Para ver la VM con la GPU, GpuVM instala un servidor de streaming dentro de la VM y la abre con un cliente en el host.
+
+## Componentes
+
+| Componente | Dónde | Función | Versión fijada |
+|---|---|---|---|
+| [Sunshine](https://github.com/LizardByte/Sunshine) | VM | Captura la pantalla virtual y codifica con NVENC. | `v2026.914.233613` |
+| [Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver) | VM | Un monitor que dibuja la GPU. | `25.7.23` |
+| [nefcon](https://github.com/nefarius/nefcon) | VM | Instalador de drivers por línea de comandos; crea el dispositivo de la pantalla virtual. | `v1.14.0` |
+| [VB-CABLE](https://vb-cable.com) | VM | Cable de audio virtual que captura Sunshine. | Pack45 (3.3.1.7) |
+| [Moonlight](https://moonlight-stream.org) | Host | Muestra la VM. | Se instala aparte |
+
+Los instaladores se descargan en el **host** al crear la VM, se verifican con el SHA-256 fijado en `streaming/components.json` y se copian al disco de la VM. El invitado no descarga nada. Se guardan en una carpeta `cache` (dentro de `%ProgramData%\GpuVM` con la app instalada).
+
+nefcon está fijado en v1.14.0, la versión que usa el script oficial de instalación del VDD, aunque ya existe la v1.21.0.
+
+## Sunshine
+
+Sunshine corre dentro de la VM. Su usuario y contraseña se generan al crear la VM; en el host quedan cifrados con DPAPI. La contraseña viaja en texto plano al invitado solo para la instalación y después se borra.
+
+Cada vez que haces **Encender y abrir**, GpuVM lee la lista de pantallas de Sunshine por su API, pone `output_name` en la pantalla virtual y `dd_configuration_option` en `ensure_only_display`, y reinicia Sunshine si eso cambió. Así evita que capture por error la pantalla de Hyper-V.
+
+## Pantalla virtual
+
+El [Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver) agrega un monitor que dibuja la GPU. Se instala con nefcon y solo se confía en el certificado que firmó el driver.
+
+- Después del primer inicio la VM se reinicia una vez sola para terminar de registrar la pantalla virtual y el audio.
+- Si la pantalla virtual funciona, se desactiva la pantalla de Hyper-V para que Windows y Sunshine usen la virtual (`disableHyperVVideo` en el perfil).
+- Si algo falla, la VM sigue accesible por Escritorio remoto.
+
+<Aside type="caution">
+No uses Escritorio remoto mientras transmites: se lleva la sesión de la consola. Si GpuVM tiene la contraseña del invitado, devuelve la sesión a la pantalla de la GPU en el siguiente **Encender y abrir**.
+</Aside>
+
+## Moonlight
+
+Moonlight en el host muestra la VM. El emparejamiento es automático: Moonlight genera el PIN y GpuVM se lo entrega a Sunshine por su API. El cliente emparejado lleva el nombre de este equipo.
+
+- Para volver a emparejar: **Volver a emparejar Moonlight** en el menú de la app, o `./gpuvm.ps1 connect -Name <vm> -Pair`.
+- La resolución y los FPS se eligen en las **Opciones** de la app, o en cada conexión:
+
+```powershell
+./gpuvm.ps1 connect -Name win11 -Resolution 2560x1440 -Fps 120 -BitrateKbps 40000 -Codec HEVC
+```
+
+Codecs: `auto`, `H.264`, `HEVC`, `AV1`. Por defecto Moonlight abre la app `Desktop` de Sunshine.
+
+## Audio con VB-CABLE
+
+Las VMs de generación 2 de Hyper-V no tienen tarjeta de sonido, así que GpuVM instala **VB-CABLE**, un cable de audio virtual cuyo driver tiene firma WHQL de Microsoft (sin aviso de Windows), y Sunshine captura su salida (`virtual_sink`).
+
+- La instalación es silenciosa, como permite su [licencia de distribución](https://vb-audio.com/Services/licensing.htm), siempre que se acredite el origen y el usuario pueda donar.
+- El paquete original queda en `C:\GpuVM\VB-CABLE` dentro de la VM, con un archivo `LEEME.txt`.
+- `virtual_sink` se configura después del reinicio automático de la VM. Hasta entonces, al abrir la VM aparece un aviso de que el audio todavía no está configurado.
+
+<Aside type="tip" title="Crédito">
+**VB-CABLE** es donationware de **VB-Audio Software** ([vb-cable.com](https://vb-cable.com)). Si lo usas, considera [apoyar a VB-Audio](https://vb-audio.com/Cable/).
+</Aside>
+
+## Ajustes del perfil
+
+La sección `streaming` del [perfil](/gpuvm/es/profiles/) define los valores por defecto:
+
+```jsonc
+"streaming": {
+  "provider": "sunshine",            // o "none" para crear la VM sin streaming
+  "virtualDisplay": true,
+  "disableHyperVVideo": true,
+  "audio": "vbcable",                // o "none" para no instalar audio
+  "sunshine": { },                   // claves extra para sunshine.conf
+  "client": { "app": "Desktop", "resolution": "1920x1080", "fps": 60, "bitrateKbps": 0, "codec": "auto" }
+}
+```
+
+`client` también acepta `vsync`, `framePacing`, `performanceOverlay` (true/false) y `displayMode` (`fullscreen`, `windowed`, `borderless`). Solo se le pasan a Moonlight si el perfil los define.
+
+## Actualizar componentes
+
+```powershell
+./gpuvm.ps1 components-update -WhatIf   # ver si hay versiones nuevas
+```
+
+Busca la última versión publicada en GitHub de cada componente y actualiza versión, URL y SHA-256 en `streaming/components.json`. VB-CABLE no se publica en GitHub y se actualiza a mano. Una versión nueva no está probada: valídala en un [laboratorio](/gpuvm/es/labs/) antes de crear VMs con ella. La app no puede ejecutar este comando.

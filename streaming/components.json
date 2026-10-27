@@ -1,0 +1,38 @@
+{
+  "sunshine": {
+    "description": "Streaming server inside the VM (encodes with NVENC).",
+    "repo": "LizardByte/Sunshine",
+    "assetPattern": "^Sunshine-Windows-AMD64-installer\\.msi$",
+    "version": "v2026.914.233613",
+    "file": "Sunshine-Windows-AMD64-installer.msi",
+    "url": "https://github.com/LizardByte/Sunshine/releases/download/v2026.914.233613/Sunshine-Windows-AMD64-installer.msi",
+    "sha256": "1d7fed8beecd5889dc7ff14cf9f42d6d38f37c3066c13c6c2a5f4e91847e0ccf"
+  },
+  "vdd": {
+    "description": "Virtual display rendered by the GPU; without it the VM only has the basic Hyper-V display.",
+    "repo": "VirtualDrivers/Virtual-Display-Driver",
+    "assetPattern": "^VirtualDisplayDriver-x86\\.Driver\\.Only\\.zip$",
+    "version": "25.7.23",
+    "file": "VirtualDisplayDriver-x86.Driver.Only.zip",
+    "url": "https://github.com/VirtualDrivers/Virtual-Display-Driver/releases/download/25.7.23/VirtualDisplayDriver-x86.Driver.Only.zip",
+    "sha256": "e24210692b442b39af763536330ce78b423f19342b7a7792c26de3944e418b3a"
+  },
+  "nefcon": {
+    "description": "Command-line driver installer; creates the virtual display device.",
+    "repo": "nefarius/nefcon",
+    "assetPattern": "^nefcon_v[\\d.]+\\.zip$",
+    "version": "v1.14.0",
+    "file": "nefcon_v1.14.0.zip",
+    "url": "https://github.com/nefarius/nefcon/releases/download/v1.14.0/nefcon_v1.14.0.zip",
+    "sha256": "a15557da24a9efca203158de3b43b0eaf982db231f0194031f1ed428bc13e669"
+  },
+  "vbcable": {
+    "description": "Virtual audio cable by VB-Audio (https://vb-cable.com), donationware. Its license allows silent installation if the source is credited and the user can donate: https://vb-audio.com/Services/licensing.htm",
+    "repo": null,
+    "homepage": "https://vb-audio.com/Cable/",
+    "version": "Pack45 (3.3.1.7)",
+    "file": "VBCABLE_Driver_Pack45.zip",
+    "url": "https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack45.zip",
+    "sha256": "b950e39f01af1d04ea623c8f6d8eb9b6ea5c477c637295fabf20631c85116bfb"
+  }
+}

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <title>GpuVM</title>
+  <defs><clipPath id="gpuvm-logo-r"><rect width="100" height="100" rx="22"/></clipPath></defs>
+  <g clip-path="url(#gpuvm-logo-r)">
+    <rect width="100" height="100" fill="#2f5bd3"/>
+    <circle cx="25" cy="25" r="19" fill="#e5483f"/>
+    <path d="M50 0H100V50A50 50 0 0 1 50 0Z" fill="#f2b632"/>
+    <path d="M0 100L25 50L50 100Z" fill="#2f9e6a"/>
+    <rect x="59" y="59" width="32" height="32" fill="#ffffff"/>
+  </g>
+</svg>

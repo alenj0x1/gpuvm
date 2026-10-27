@@ -1,0 +1,27 @@
+{
+  "extends": "balanced",
+  "description": "Maximum performance: 100 % CPU reservation, host SMT topology, 8 GB fixed, fixed disk and guest optimizations.",
+  "vm": {
+    "cpu": {
+      "count": 8,
+      "reservePercent": 100,
+      "relativeWeight": 10000,
+      "hwThreadsPerCore": 0
+    },
+    "memoryGB": 8,
+    "disk": {
+      "sizeGB": 96,
+      "type": "Fixed"
+    }
+  },
+  "guest": {
+    "optimizations": [
+      "power-plan-ultimate",
+      "disable-sleep",
+      "game-mode",
+      "disable-sysmain",
+      "disable-search-indexing",
+      "visual-effects-performance"
+    ]
+  }
+}
