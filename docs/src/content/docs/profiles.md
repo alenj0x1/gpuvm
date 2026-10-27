@@ -3,8 +3,6 @@ title: Profiles
 description: JSON profiles with inheritance that define the VM, the GPU partition, streaming and guest optimizations.
 ---
 
-import FlowDiagram from '../../components/FlowDiagram.astro';
-
 A profile describes how a VM is built: CPU, memory, disk, GPU share, streaming and the optimizations applied inside Windows. Profiles are JSON files in `profiles/`.
 
 ## Bundled profiles
@@ -20,15 +18,9 @@ A profile describes how a VM is built: CPU, memory, disk, GPU share, streaming a
 
 A profile can extend another one. **Objects are merged** (the child's values win) and **lists are replaced entirely**. Circular inheritance is an error.
 
-<FlowDiagram
-  label="max-performance extends balanced, which extends base."
-  steps={[
-    { shape: 'circle', color: 'green', title: 'base', detail: 'Values shared by every profile' },
-    { shape: 'square', color: 'blue', title: 'balanced', detail: 'Equilibrado in the app' },
-    { shape: 'triangle', color: 'red', title: 'max-performance', detail: 'Máximo rendimiento in the app' },
-  ]}
-  links={[{ label: 'extends', up: true }, { label: 'extends', up: true }]}
-/>
+```text
+base  ←  balanced  ←  max-performance
+```
 
 `max-performance` only lists what it changes from `balanced`:
 

@@ -3,26 +3,22 @@ title: Architecture and extending
 description: How the module, the backends, the app bridge and the security model fit together, and how to extend GpuVM.
 ---
 
-import FlowDiagram from '../../components/FlowDiagram.astro';
-
 ## Overview
 
-<FlowDiagram
-  label="The desktop app calls the Rust side, which runs bridge.ps1 in PowerShell 7; the bridge runs the GpuVM module, which the CLI also uses."
-  steps={[
-    { shape: 'square', color: 'yellow', title: 'Desktop app', detail: 'Tauri 2 + React' },
-    { shape: 'circle', color: 'yellow', title: 'Rust side', detail: 'app/src-tauri · starts pwsh.exe from Program Files' },
-    { shape: 'triangle', color: 'blue', title: 'src/bridge.ps1', detail: 'Imports the module, runs the cmdlet, streams events' },
-    { shape: 'quarter', color: 'red', title: 'GpuVM module', detail: 'Public cmdlets → backend → Hyper-V' },
-    { shape: 'square', color: 'green', title: 'gpuvm.ps1 (CLI)', detail: 'Same module, from a terminal' },
-  ]}
-  links={[
-    { label: 'invoke("ps" | "job")' },
-    { label: 'one JSON request per line' },
-    { label: 'cmdlet call' },
-    { label: 'imports', up: true },
-  ]}
-/>
+```text
+ Desktop app (Tauri 2 + React)
+        │  invoke("ps" | "job")
+        ▼
+ Rust side (app/src-tauri) ── starts pwsh.exe from Program Files
+        │  one JSON request per line on stdin
+        ▼
+ src/bridge.ps1 ── imports the module, runs the cmdlet, streams events on stdout
+        │
+        ▼
+ GpuVM module (src/GpuVM) ── Public cmdlets → backend → Hyper-V
+        ▲
+ gpuvm.ps1 (CLI) ── same module, from a terminal
+```
 
 ## Repository layout
 
