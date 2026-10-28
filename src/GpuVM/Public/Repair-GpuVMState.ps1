@@ -27,6 +27,8 @@ function Repair-GpuVMState {
     $guest = @(Invoke-WithMountedWindows -Path $vhdPath -ScriptBlock {
             param($root)
             $path = Join-Path $root 'GpuVM\streaming\streaming-config.json'
+            # The guest's own disk could hold a link pointing at host files.
+            Assert-NoReparsePoint -Root $root -Path $path
             if (Test-Path $path) { Read-JsonFile $path }
         }) | Where-Object { $_ -is [System.Collections.IDictionary] } | Select-Object -First 1
 

@@ -39,7 +39,8 @@
       "resolution": "1920x1080",
       "fps": 60,
       "bitrateKbps": 0,
-      "codec": "auto"
+      "codec": "auto",
+      "captureSystemKeys": "fullscreen"
     }
   },
   "guest": {
@@ -48,7 +49,8 @@
     "autoLogon": true,
     "optimizations": [
       "power-plan-high",
-      "disable-sleep"
+      "disable-sleep",
+      "block-gpu-driver-updates"
     ]
   }
 }

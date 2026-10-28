@@ -3,6 +3,7 @@ import {
   IconAlertTriangle, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconLoader2, IconPlus, IconRefresh, IconShieldLock,
 } from "@tabler/icons-react";
 import { Preferences } from "./Preferences";
+import { Library, type LibraryTab } from "./Library";
 import type { HostInfo, JobEvent, Sample, VmOverview } from "./types";
 import { api, onJob, relaunchAsAdmin, startJob as runJob } from "./api";
 import { Bauhaus, tintVars } from "./bauhaus";
@@ -15,6 +16,12 @@ import { Toasts, humanError, stateLabel, useToasts } from "./ui";
 const NEW_VM = "__new__";
 // Route of the preferences screen in the URL hash, shaped so it doesn't look like a VM name.
 const PREFS = ":preferencias";
+const LIBRARY = ":biblioteca";
+const libraryTab = (route: string): LibraryTab | null => {
+  if (!route.startsWith(LIBRARY)) return null;
+  const tab = route.slice(LIBRARY.length + 1);
+  return tab === "discos" || tab === "isos" ? tab : "perfiles";
+};
 
 interface RunningJob extends JobInfo {
   vm: string;
@@ -84,9 +91,14 @@ export function App() {
 
   useEffect(() => { api.hostInfo().then((h) => setHost(h[0] ?? null)).catch(() => {}); }, []);
   useEffect(() => { window.history.replaceState(null, "", selected ? `#${encodeURIComponent(selected)}` : " "); }, [selected]);
+  useEffect(() => {
+    const onHash = () => setSelected(decodeURIComponent(location.hash.slice(1)));
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
   useEffect(() => { try { localStorage.setItem("gpuvm.collapsed", collapsed ? "1" : "0"); } catch { /* no storage */ } }, [collapsed]);
   useEffect(() => {
-    if (selected !== PREFS && vms && vms.length && !vms.some((v) => v.name === selected)) setSelected(vms[0].name);
+    if (selected !== PREFS && !libraryTab(selected) && vms && vms.length && !vms.some((v) => v.name === selected)) setSelected(vms[0].name);
   }, [vms, selected]);
 
   // "Otro patrón" (another pattern) is reflected instantly in the sidebar too.
@@ -166,7 +178,8 @@ export function App() {
 
   return (
     <div className={`app ${collapsed ? "collapsed" : ""}`}>
-      <TitleBar prefsOpen={selected === PREFS} onPrefs={() => setSelected(selected === PREFS ? (vms?.[0]?.name ?? "") : PREFS)} />
+      <TitleBar prefsOpen={selected === PREFS} onPrefs={() => setSelected(selected === PREFS ? (vms?.[0]?.name ?? "") : PREFS)}
+        libraryOpen={!!libraryTab(selected)} onLibrary={() => setSelected(libraryTab(selected) ? (vms?.[0]?.name ?? "") : LIBRARY)} />
       <aside className="side">
         <div className="side-head">
           <span className="side-logo"><Bauhaus name="gpuvm" size={28} radius={8} /></span>
@@ -176,7 +189,12 @@ export function App() {
           </button>
         </div>
         <nav className="side-list">
-          {vms === null && [0, 1, 2].map((i) => <div key={i} className="skeleton" style={{ height: 44 }} />)}
+          {vms === null && [0, 1, 2].map((i) => (
+            <div key={i} className="side-item side-skeleton" aria-hidden="true">
+              <span className="skeleton icon" />
+              <span className="name"><span className="skeleton line" /><span className="skeleton line short" /></span>
+            </div>
+          ))}
           {vms?.map((vm) => {
             const busy = busyFor(vm.name);
             return (
@@ -213,6 +231,9 @@ export function App() {
           </div>
         ) : selected === PREFS ? (
           <Preferences />
+        ) : libraryTab(selected) ? (
+          <Library tab={libraryTab(selected)!} onTab={(t) => setSelected(`${LIBRARY}:${t}`)} host={host} startJob={startJob}
+            busy={(name) => !!busyFor(name)} notify={push} onOpenVm={setSelected} />
         ) : current ? (
           <VmView key={current.id} vm={current} host={host} samples={history.current[current.name] ?? []} busy={busyFor(current.name)}
             startJob={startJob} run={run} onRemoved={() => setSelected("")} />
@@ -231,9 +252,9 @@ export function App() {
       {creating && (
         <CreateDialog existing={vms ?? []} job={createJob} error={createError}
           onClose={() => setCreating(false)}
-          onCreate={({ name, iso, profile, password }) => {
+          onCreate={({ name, iso, profile, password, apps }) => {
             setCreateError(null);
-            startJob(NEW_VM, "New-GpuVM", { Name: name, IsoPath: iso, Profile: profile, Credential: { user: "gpuvm", password }, Start: true }, () => {
+            startJob(NEW_VM, "New-GpuVM", { Name: name, IsoPath: iso, Profile: profile, Override: { guest: { apps } }, Credential: { user: "gpuvm", password }, Start: true }, () => {
               setCreating(false);
               setSelected(name);
               push("ok", `${name} está lista. Windows termina de configurarse solo en unos minutos.`);

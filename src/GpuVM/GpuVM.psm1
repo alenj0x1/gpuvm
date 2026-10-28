@@ -4,10 +4,13 @@ $script:ModuleRoot  = $PSScriptRoot
 $script:RepoRoot    = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 # Mutable data (labs, downloads) lives apart from the code. When installed under Program Files (where the
 # code is read-only for the user), it goes to %ProgramData%\GpuVM, which is restricted to administrators.
-$script:DataRoot = if ($env:GPUVM_DATA) { $env:GPUVM_DATA }
-    elseif ($env:ProgramFiles -and $script:RepoRoot.StartsWith($env:ProgramFiles, [StringComparison]::OrdinalIgnoreCase)) { Join-Path $env:ProgramData 'GpuVM' }
+# GPUVM_* overrides (for tests) are ignored when elevated: the user's environment must not redirect an admin process.
+$script:IsElevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+    [Security.Principal.WindowsBuiltInRole]::Administrator)
+$script:DataRoot = if ($env:GPUVM_DATA -and -not $script:IsElevated) { $env:GPUVM_DATA }
+    elseif ($script:RepoRoot.StartsWith([Environment]::GetFolderPath('ProgramFiles'), [StringComparison]::OrdinalIgnoreCase)) { Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'GpuVM' }
     else { $script:RepoRoot }
-$script:ToolVersion = '0.1.1'
+$script:ToolVersion = '0.2.0'
 $script:Backends    = @{}
 # Previous GPU counter sample (Get-GpuUsageByProcess computes usage between two samples).
 $script:GpuEngineCategory = $null

@@ -43,10 +43,21 @@ function Connect-GpuVM {
 
     $guest = Get-GpuVMGuestCredential -State $state
     if ($guest) { Wait-GuestReady -Name $Name -Credential $guest }
+    if ($guest) { Invoke-GuestPendingWork -Name $Name -Credential $guest }
+    if ($guest) {
+        try { $null = Set-GuestCaptureMode -Name $Name -Credential $guest -Mode (Get-GpuVMCaptureMode -State $state) }
+        catch { Write-Warning "No se pudo ajustar la captura de Sunshine: $($_.Exception.Message)" }
+    }
 
-    $address = Get-GpuVMAddress -Name $Name
+    # The VM's IP is only trusted if it is on the host's network with the VM (see Get-GpuVMEndpoint).
+    $endpoint = Get-GpuVMEndpoint -Name $Name
+    $address = $endpoint.Address
     $credential = Get-SunshineCredential -State $state
-    Wait-SunshineReady -Address $address -Credential $credential
+    # Without the guest password GpuVM can't tell whether Windows is still setting itself up; a VM that has been on
+    # for a while is past that, so the first-boot message only shows when it can still be the case.
+    $firstBoot = -not $guest -and (Get-VM -Name $Name).Uptime.TotalMinutes -lt 15
+    $waiting = if ($firstBoot) { 'Esperando a Sunshine (el primer arranque instala Windows y el streaming; puede tardar varios minutos)' } else { 'Esperando a que Sunshine responda' }
+    Wait-SunshineReady -Address $address -Credential $credential -Message $waiting
     if ($guest) {
         try {
             if ((Repair-GuestConsoleSession -Name $Name -Credential $guest) -eq 'moved') {
@@ -56,7 +67,7 @@ function Connect-GpuVM {
         catch { Write-Warning "No se pudo revisar la sesión dentro de la VM: $($_.Exception.Message)" }
     }
     if ($state['config']['streaming']['virtualDisplay']) {
-        Set-SunshineVirtualDisplay -Address $address -Credential $credential
+        Set-SunshineVirtualDisplay -Address $address -Credential $credential -OnlyDisplay:([bool]$state['config']['streaming']['disableHyperVVideo'])
     }
 
     $override = @{}
@@ -81,7 +92,7 @@ function Connect-GpuVM {
 
     $clientName = $env:COMPUTERNAME
     if ($Pair -or -not (Test-SunshineClientPaired -Address $address -Credential $credential -ClientName $clientName)) {
-        Register-MoonlightPairing -Address $address -Credential $credential -MoonlightPath $moonlight -ClientName $clientName
+        Register-MoonlightPairing -Address $address -Credential $credential -MoonlightPath $moonlight -ClientName $clientName -HostAddress $endpoint.HostAddress
         $state = Get-GpuVMState -Name $Name
         $state['streaming']['pairedClient'] = $clientName
         $state['streaming']['pairedAt'] = (Get-Date).ToString('o')
@@ -102,5 +113,6 @@ function Connect-GpuVM {
     }
 
     Write-Step "Abriendo a $($client['resolution']) y $($client['fps']) FPS"
-    Start-Process -FilePath $moonlight -ArgumentList (Get-MoonlightStreamArguments -Address $address -Client $client)
+    # Moonlight runs as the signed-in user, not as administrator: it talks to a server the guest controls.
+    Start-UnelevatedProcess -FilePath $moonlight -ArgumentList (Get-MoonlightStreamArguments -Address $address -Client $client) | Out-Null
 }

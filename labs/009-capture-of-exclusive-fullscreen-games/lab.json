@@ -1,0 +1,46 @@
+{
+  "id": "009-capture-of-exclusive-fullscreen-games",
+  "title": "Capture of exclusive fullscreen games",
+  "hypothesis": "Desktop duplication (ddx) gets no new frames from the virtual display while a game is in exclusive fullscreen, so the stream stays black. Windows.Graphics.Capture (wgc), with Sunshine running in the user's session, captures it.",
+  "vm": "win10",
+  "status": "adopted",
+  "createdAt": "2026-10-27T23:09:13.006717-05:00",
+  "variants": {
+    "baseline": {
+      "profile": "max-performance",
+      "override": null
+    },
+    "candidate": {
+      "profile": "max-performance",
+      "override": {
+        "streaming": {
+          "sunshine": {
+            "capture": "wgc"
+          }
+        }
+      }
+    }
+  },
+  "results": [
+    {
+      "variant": "baseline",
+      "metric": "game in exclusive fullscreen 800x600 visible",
+      "value": 0.0,
+      "unit": "yes=1",
+      "lowerIsBetter": false,
+      "notes": "ddx: black; Sunshine verbose log shows no new frames (re-sends the last one at the 30 fps minimum) and capture re-inits every ~1 s; visible only when the game loses focus",
+      "at": "2026-10-27T23:09:13.0952237-05:00"
+    },
+    {
+      "variant": "candidate",
+      "metric": "game in exclusive fullscreen 800x600 visible",
+      "value": 1.0,
+      "unit": "yes=1",
+      "lowerIsBetter": false,
+      "notes": "wgc with Sunshine in session 1 (task at logon, conhost --headless, service manual): game visible",
+      "at": "2026-10-27T23:09:13.2005392-05:00"
+    }
+  ],
+  "conclusion": "Adopted as a per-VM option, off by default (Options > Captura). wgc shows programs in exclusive fullscreen but not Windows' administrator prompts (secure desktop); ddx shows the prompts but exclusive fullscreen is black on a virtual display. No security change: in wgc Sunshine runs as the signed-in user (elevated) instead of SYSTEM; started by a logon task through conhost --headless so no console window appears.",
+  "closedAt": "2026-10-27T23:15:58.8057171-05:00"
+}

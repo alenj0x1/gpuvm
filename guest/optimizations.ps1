@@ -51,6 +51,15 @@ $GpuVMOptimizations = [ordered]@{
             Set-Service WSearch -StartupType Disabled
         }
     }
+    'block-gpu-driver-updates'   = @{
+        Description = 'Windows Update no instala drivers: uno de NVIDIA encima del copiado del host deja la VM sin GPU.'
+        Apply       = {
+            $key = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate'
+            if (-not (Test-Path $key)) { New-Item $key -Force | Out-Null }
+            Set-ItemProperty $key -Name ExcludeWUDriversInQualityUpdate -Value 1 -Type DWord
+            Set-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\DriverSearching' -Name SearchOrderConfig -Value 0 -Type DWord
+        }
+    }
     'visual-effects-performance' = @{
         Description = 'Efectos visuales ajustados para rendimiento.'
         Apply       = {

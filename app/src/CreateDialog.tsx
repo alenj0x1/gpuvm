@@ -1,19 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import { IconCheck, IconDisc, IconFolderOpen, IconLoader2, IconPlus, IconX } from "@tabler/icons-react";
-import type { IsoFile, ProfileInfo, VmOverview } from "./types";
+import { IconCheck, IconLoader2, IconPlus, IconX } from "@tabler/icons-react";
+import type { AppInfo, IsoFile, ProfileInfo, VmOverview } from "./types";
 import { api, pickIso } from "./api";
-import { Bauhaus, machineColor, tintVars } from "./bauhaus";
+import { PatternButton, machineColor, tintVars } from "./bauhaus";
 import { CheckMark } from "./ui";
+import { AppPicker, IsoPicker, profileLabel, profileSummary } from "./pickers";
 
 interface Props {
   existing: VmOverview[];
   job: { message: string; log: string[] } | null;
   error: string | null;
-  onCreate: (args: { name: string; iso: string; profile: string; password: string }) => void;
+  onCreate: (args: { name: string; iso: string; profile: string; password: string; apps: string[] }) => void;
   onClose: () => void;
 }
 
-const PROFILE_NAMES: Record<string, string> = { balanced: "Equilibrado", "max-performance": "Máximo rendimiento" };
 const MIN_PASSWORD = 6;
 
 export function CreateDialog({ existing, job, error, onCreate, onClose }: Props) {
@@ -24,17 +24,31 @@ export function CreateDialog({ existing, job, error, onCreate, onClose }: Props)
   const [iso, setIso] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<ProfileInfo[]>([]);
   const [profile, setProfile] = useState("max-performance");
+  const [catalog, setCatalog] = useState<AppInfo[]>([]);
+  const [apps, setApps] = useState<string[]>([]);
   const [password, setPassword] = useState("");
   const [repeat, setRepeat] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [dirty, setDirty] = useState(false);
+  const [, repaint] = useState(0);
   const nameRef = useRef<HTMLInputElement>(null);
   const busy = !!job;
 
   useEffect(() => {
     api.isos().then((list) => { setIsos(list); if (list[0]) setIso((cur) => cur ?? list[0].path); }).catch(() => setIsos([]));
     api.profiles().then((p) => setProfiles(p.filter((x) => x.Name !== "base"))).catch(() => {});
+    api.apps().then(setCatalog).catch(() => {});
   }, []);
+
+  // A profile brings its ISO and apps; what the user changes afterwards in the dialog wins.
+  const chooseProfile = (p: ProfileInfo) => {
+    setProfile(p.Name);
+    setDirty(true);
+    if (!p.Settings) return;
+    setApps(p.Settings.apps);
+    const iso = p.Settings.iso;
+    if (iso && !isos?.find((f) => f.path === iso)?.missing) setIso(iso);
+  };
   useEffect(() => { if (!busy) nameRef.current?.focus(); }, [busy]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -53,13 +67,14 @@ export function CreateDialog({ existing, job, error, onCreate, onClose }: Props)
     if (password.length < MIN_PASSWORD) found.password = `Usa al menos ${MIN_PASSWORD} caracteres`;
     else if (password !== repeat) found.repeat = "Las contraseñas no coinciden";
     setErrors(found);
-    if (Object.keys(found).length === 0) onCreate({ name, iso: iso!, profile, password });
+    if (Object.keys(found).length === 0) onCreate({ name, iso: iso!, profile, password, apps });
   };
 
   const browse = async () => {
     const file = await pickIso();
     if (!file) return;
-    setIsos((list) => (list?.some((x) => x.path === file) ? list : [...(list ?? []), { path: file, name: file.split("\\").pop()!, sizeGB: 0, modified: "" }]));
+    await api.addIso(file).catch(() => {});
+    setIsos(await api.isos().catch(() => [...(isos ?? []), { path: file, name: file.split("\\").pop()!, sizeGB: 0, modified: "" }]));
     setIso(file);
     touch("iso");
   };
@@ -71,7 +86,7 @@ export function CreateDialog({ existing, job, error, onCreate, onClose }: Props)
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && (busy || !dirty) && onClose()}>
       <div className="dialog" role="dialog" aria-modal="true" aria-label="Crear máquina" style={tintVars(machineColor(name || "nueva")) as React.CSSProperties}>
         <div className="dialog-head">
-          <Bauhaus name={name || "nueva"} size={44} radius={12} />
+          <PatternButton name={name || "nueva"} size={44} radius={12} onChange={() => repaint((n) => n + 1)} />
           <h2>{busy ? `Creando ${name}` : "Crear máquina"}</h2>
           <button className="icon-btn" aria-label="Cerrar" onClick={onClose}><IconX size={18} /></button>
         </div>
@@ -95,21 +110,7 @@ export function CreateDialog({ existing, job, error, onCreate, onClose }: Props)
 
             <div className="field">
               <div className="field-top"><span>Imagen de Windows</span></div>
-              <div className="choice-list" role="radiogroup">
-                {isos === null && <div className="skeleton" style={{ height: 52 }} />}
-                {isos?.map((f) => (
-                  <button type="button" role="radio" aria-checked={iso === f.path} key={f.path} className={`choice ${iso === f.path ? "on" : ""}`}
-                    onClick={() => { setIso(f.path); touch("iso"); }}>
-                    <span className="check">{iso === f.path && <CheckMark />}</span>
-                    <IconDisc size={18} className="choice-icon" />
-                    <span className="grow"><span className="title">{f.name}</span>{f.sizeGB > 0 && <span className="desc">{f.sizeGB} GB</span>}</span>
-                  </button>
-                ))}
-                <button type="button" className="choice" onClick={browse}>
-                  <span className="check plain"><IconFolderOpen size={16} /></span>
-                  <span className="grow"><span className="title">{isos?.length ? "Buscar otro ISO" : "Elegir ISO"}</span></span>
-                </button>
-              </div>
+              <IsoPicker isos={isos?.filter((f) => !f.missing) ?? null} value={iso} onChange={(v) => { setIso(v); touch("iso"); }} onBrowse={browse} />
               {errors.iso && <span className="error-text">{errors.iso}</span>}
             </div>
 
@@ -118,13 +119,23 @@ export function CreateDialog({ existing, job, error, onCreate, onClose }: Props)
               <div className="two" role="radiogroup">
                 {shownProfiles.map((p) => (
                   <button type="button" role="radio" aria-checked={profile === p.Name} key={p.Name} className={`choice top ${profile === p.Name ? "on" : ""}`}
-                    onClick={() => { setProfile(p.Name); setDirty(true); }}>
+                    onClick={() => chooseProfile(p)}>
                     <span className="check">{profile === p.Name && <CheckMark />}</span>
-                    <span className="grow"><span className="title">{PROFILE_NAMES[p.Name] ?? p.Name}</span><span className="desc">{p.Description}</span></span>
+                    <span className="grow">
+                      <span className="title">{profileLabel(p.Name)}</span>
+                      <span className="desc">{p.Description || (p.Settings ? profileSummary(p.Settings, catalog) : "")}</span>
+                    </span>
                   </button>
                 ))}
               </div>
             </div>
+
+            {catalog.length > 0 && (
+              <div className="field">
+                <div className="field-top"><span>Apps que se instalan</span><span className="hint">Al abrirla por primera vez</span></div>
+                <AppPicker apps={catalog} value={apps} onChange={(v) => { setApps(v); setDirty(true); }} />
+              </div>
+            )}
 
             <div className="two">
               <div className="field">

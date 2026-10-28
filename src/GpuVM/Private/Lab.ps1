@@ -1,5 +1,6 @@
 function Get-LabRoot {
-    if ($env:GPUVM_LABS_ROOT) { return $env:GPUVM_LABS_ROOT }
+    # An elevated process ignores user-controlled environment overrides.
+    if ($env:GPUVM_LABS_ROOT -and -not $script:IsElevated) { return $env:GPUVM_LABS_ROOT }
     Get-DataPath 'labs'
 }
 

@@ -28,15 +28,49 @@ function Assert-VMCanStart {
     if ($vm.State -eq 'Off') { Assert-FreeMemory -RequiredGB ($vm.MemoryStartup / 1GB) }
 }
 
-# C:\GpuVM inherits the "Authenticated Users: Modify" permission from C:\. Since the app runs as administrator
-# and reads/deletes what is in there, access is restricted to Administrators, SYSTEM and Hyper-V VMs.
+$script:AdminSids = @('S-1-5-32-544', 'S-1-5-18')
+# WriteData, AppendData, WriteEA, DeleteChild, WriteAttributes, Delete, WRITE_DAC, WRITE_OWNER, GENERIC_ALL, GENERIC_WRITE.
+$script:WriteRightsMask = 0x2 -bor 0x4 -bor 0x10 -bor 0x40 -bor 0x100 -bor 0x10000 -bor 0x40000 -bor 0x80000 -bor 0x10000000 -bor 0x40000000
+
+# True when the ACL is owned by Administrators/SYSTEM, does not inherit, and only they can write.
+function Test-GpuVMRootAcl {
+    param([Parameter(Mandatory)][System.Security.AccessControl.FileSystemSecurity]$Acl)
+    $owner = $Acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
+    if ($owner -notin $script:AdminSids -or -not $Acl.AreAccessRulesProtected) { return $false }
+    foreach ($rule in $Acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
+        if ($rule.AccessControlType -ne 'Allow' -or $rule.IdentityReference.Value -in $script:AdminSids) { continue }
+        if (([int64]$rule.FileSystemRights -band $script:WriteRightsMask) -ne 0) { return $false }
+    }
+    $true
+}
+
+# C:\GpuVM inherits the "Authenticated Users: Modify" permission from C:\ (and ProgramData lets users create folders).
+# Since the app runs as administrator and reads/deletes what is in there, only Administrators and SYSTEM can write;
+# Hyper-V VMs (S-1-5-83-0) only read: Hyper-V grants each VM's own SID access to its disk and configuration files.
+# A folder a user created beforehand (and therefore owns) is taken back, not trusted.
 function Initialize-GpuVMRoot {
     param([Parameter(Mandatory)][string]$Path)
     if (-not (Test-Path -LiteralPath $Path)) { New-Item -ItemType Directory -Path $Path -Force | Out-Null }
+    $item = Get-Item -LiteralPath $Path -Force
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        throw "$Path es un enlace a otra carpeta; GpuVM no la usará. Bórralo y vuelve a intentarlo."
+    }
+    if (Test-GpuVMRootAcl -Acl (Get-Acl -LiteralPath $Path)) { return }
+    if ((Get-Acl -LiteralPath $Path).GetOwner([Security.Principal.SecurityIdentifier]).Value -notin $script:AdminSids) {
+        & takeown.exe /F $Path /A | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "No se pudo recuperar la propiedad de $Path para Administradores." }
+    }
+    & icacls.exe $Path /inheritance:r /grant:r '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' '*S-1-5-83-0:(OI)(CI)RX' /Q | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "No se pudieron restringir los permisos de $Path." }
+    # Explicit grants other than the three above (e.g. a user's own) are removed.
     $acl = Get-Acl -LiteralPath $Path
-    if ($acl.AreAccessRulesProtected) { return }
-    & icacls.exe $Path /inheritance:r /grant:r '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' '*S-1-5-83-0:(OI)(CI)F' /Q | Out-Null
-    if ($LASTEXITCODE -ne 0) { Write-Warning "No se pudieron restringir los permisos de $Path." }
+    $extra = @($acl.GetAccessRules($true, $false, [Security.Principal.SecurityIdentifier]) |
+        Where-Object { $_.IdentityReference.Value -notin ($script:AdminSids + 'S-1-5-83-0') })
+    if ($extra.Count) {
+        foreach ($rule in $extra) { $acl.RemoveAccessRuleSpecific($rule) }
+        Set-Acl -LiteralPath $Path -AclObject $acl
+    }
+    if (-not (Test-GpuVMRootAcl -Acl (Get-Acl -LiteralPath $Path))) { throw "No se pudieron restringir los permisos de $Path." }
 }
 
 function Write-Step {

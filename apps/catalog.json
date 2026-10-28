@@ -1,0 +1,54 @@
+{
+  "description": "Apps GpuVM can install inside a VM. Each one is downloaded from its publisher inside the guest, and installed only if its Authenticode signature is valid and from the expected signer.",
+  "apps": {
+    "steam": {
+      "name": "Steam",
+      "url": "https://cdn.cloudflare.steamstatic.com/client/installer/SteamSetup.exe",
+      "file": "SteamSetup.exe",
+      "args": ["/S"],
+      "signer": "Valve Corp.",
+      "installed": "${ProgramFiles(x86)}\\Steam\\steam.exe"
+    },
+    "epic": {
+      "name": "Epic Games",
+      "url": "https://launcher-public-service-prod06.ol.epicgames.com/launcher/api/installer/download/EpicGamesLauncherInstaller.msi",
+      "file": "EpicGamesLauncherInstaller.msi",
+      "args": ["/qn", "/norestart"],
+      "signer": "Epic Games Inc.",
+      "installed": "${ProgramFiles(x86)}\\Epic Games\\Launcher\\Portal\\Binaries\\Win64\\EpicGamesLauncher.exe"
+    },
+    "discord": {
+      "name": "Discord",
+      "url": "https://discord.com/api/downloads/distributions/app/installers/latest?channel=stable&platform=win&arch=x64",
+      "file": "DiscordSetup.exe",
+      "args": ["-s"],
+      "signer": "Discord Inc.",
+      "installed": "${LOCALAPPDATA}\\Discord\\Update.exe"
+    },
+    "chrome": {
+      "name": "Chrome",
+      "url": "https://dl.google.com/chrome/install/latest/chrome_installer.exe",
+      "file": "ChromeSetup.exe",
+      "args": ["/silent", "/install"],
+      "signer": "Google LLC",
+      "installed": "${ProgramFiles}\\Google\\Chrome\\Application\\chrome.exe"
+    },
+    "protonvpn": {
+      "name": "Proton VPN",
+      "url": "https://vpn.protondownload.com/download/ProtonVPN_v5.1.9_x64.exe",
+      "sha256": "8454eba06a37c0a636ec8dcfe6a7a823a68a78ee8fe2eeda2d651cd5cd6c3d70",
+      "file": "ProtonVPN_x64.exe",
+      "args": ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
+      "signer": "Proton AG",
+      "installed": "${ProgramFiles}\\Proton\\VPN"
+    },
+    "firefox": {
+      "name": "Firefox",
+      "url": "https://download.mozilla.org/?product=firefox-latest-ssl&os=win64&lang=es-MX",
+      "file": "FirefoxSetup.exe",
+      "args": ["/S"],
+      "signer": "Mozilla Corporation",
+      "installed": "${ProgramFiles}\\Mozilla Firefox\\firefox.exe"
+    }
+  }
+}

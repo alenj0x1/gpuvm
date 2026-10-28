@@ -11,3 +11,5 @@
 
 ## Observations
 
+
+- 2026-10-27: the first candidate equalled Sunshine's defaults (preset 1, quarter_res, latency_over_power), so it could not show a difference. New candidate: single pass, no VBV increase, no split encode. Source: https://docs.lizardbyte.dev/projects/sunshine/latest/md_docs_2configuration.html

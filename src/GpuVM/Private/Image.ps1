@@ -121,13 +121,31 @@ function New-WindowsVhdx {
     }
 }
 
+# Admin-only folder where existing guest disks are mounted (%ProgramData%\GpuVM\mount).
+function Get-GpuVMMountRoot {
+    $base = Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'GpuVM'
+    Initialize-GpuVMRoot -Path $base
+    $mount = Join-Path $base 'mount'
+    if (-not (Test-Path -LiteralPath $mount)) { New-Item -ItemType Directory -Path $mount | Out-Null }
+    if ((Get-Item -LiteralPath $mount -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        throw "$mount es un enlace a otra carpeta; GpuVM no montará discos ahí."
+    }
+    $mount
+}
+
 # Mounts the VHDX of a stopped VM, finds the Windows partition and runs $ScriptBlock with its root.
+# The guest's content is untrusted (a damaged or infected VM wrote it): the disk gets no drive letter
+# (Explorer, the indexer and antivirus do not open it) and is mounted on an empty folder only administrators can reach.
 function Invoke-WithMountedWindows {
     param(
         [Parameter(Mandatory)][string]$Path,
         [Parameter(Mandatory)][scriptblock]$ScriptBlock
     )
-    Mount-VHD -Path $Path
+    $accessPath = Join-Path (Get-GpuVMMountRoot) ([guid]::NewGuid().ToString('n'))
+    New-Item -ItemType Directory -Path $accessPath | Out-Null
+    Mount-VHD -Path $Path -NoDriveLetter
+    $os = $null
+    $dismounted = $false
     try {
         $diskNumber = (Get-VHD -Path $Path).DiskNumber
         $os = Get-Partition -DiskNumber $diskNumber |
@@ -135,15 +153,26 @@ function Invoke-WithMountedWindows {
             Sort-Object Size -Descending |
             Select-Object -First 1
         if (-not $os) { throw "No se encontró la partición de Windows en $Path." }
-        if (-not $os.DriveLetter) {
-            $os | Add-PartitionAccessPath -AssignDriveLetter | Out-Null
-            $os = Get-Partition -DiskNumber $diskNumber -PartitionNumber $os.PartitionNumber
+        # A letter left by an earlier mount is removed so the volume is only reachable through the folder.
+        if ($os.DriveLetter) {
+            Remove-PartitionAccessPath -DiskNumber $diskNumber -PartitionNumber $os.PartitionNumber -AccessPath "$($os.DriveLetter):\"
         }
-        $root = "$($os.DriveLetter):\"
-        if (-not (Test-Path (Join-Path $root 'Windows\System32'))) { throw "La partición $root no contiene Windows." }
+        Add-PartitionAccessPath -DiskNumber $diskNumber -PartitionNumber $os.PartitionNumber -AccessPath "$accessPath\"
+        $root = "$accessPath\"
+        if (-not (Test-Path -LiteralPath (Join-Path $root 'Windows\System32'))) { throw "La partición de $Path no contiene Windows." }
         & $ScriptBlock $root
     }
     finally {
-        Dismount-VHD -Path $Path
+        if ($os) {
+            Remove-PartitionAccessPath -DiskNumber $os.DiskNumber -PartitionNumber $os.PartitionNumber -AccessPath "$accessPath\" -ErrorAction SilentlyContinue
+        }
+        try { Dismount-VHD -Path $Path; $dismounted = $true }
+        finally {
+            # Only an empty, plain folder is removed: if the disk is still mounted there it stays as is.
+            $item = Get-Item -LiteralPath $accessPath -Force -ErrorAction SilentlyContinue
+            if ($dismounted -and $item -and -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                [IO.Directory]::Delete($accessPath, $false)
+            }
+        }
     }
 }

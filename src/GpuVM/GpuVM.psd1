@@ -1,6 +1,6 @@
 @{
     RootModule        = 'GpuVM.psm1'
-    ModuleVersion     = '0.1.1'
+    ModuleVersion     = '0.2.0'
     GUID              = '6f3c2a71-4b8e-4d2a-9c61-2f7e0b5d9a14'
     Author            = 'alenj0x1'
     Description       = 'Creates and tunes Windows 10/11 virtual machines that use the host GPU.'
@@ -28,6 +28,18 @@
         'Add-GpuVMLabResult'
         'Get-GpuVMLab'
         'Close-GpuVMLab'
+        'Add-GpuVMIso'
+        'Remove-GpuVMIso'
+        'Get-GpuVMDisk'
+        'Restore-GpuVM'
+        'Remove-GpuVMDisk'
+        'Save-GpuVMProfile'
+        'Remove-GpuVMProfile'
+        'Get-GpuVMApp'
+        'Install-GpuVMApp'
+        'Send-GpuVMClipboard'
+        'Stop-GpuVMAll'
+        'Set-GpuVMCapture'
     )
     CmdletsToExport   = @()
     AliasesToExport   = @()

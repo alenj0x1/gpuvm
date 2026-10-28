@@ -1,5 +1,16 @@
 function Get-ProfileDirectory { Get-RepoPath 'profiles' }
 
+# Profiles the user creates in the app live with the data (the built-in folder is read-only when installed).
+function Get-UserProfileDirectory { Get-DataPath 'user-profiles' }
+
+function Find-ProfilePath {
+    param([string]$Name, [string]$ProfileDirectory)
+    if (Test-Path -LiteralPath $Name -PathType Leaf) { return (Resolve-Path -LiteralPath $Name).Path }
+    $builtIn = Join-Path $ProfileDirectory "$Name.json"
+    if ((Test-Path -LiteralPath $builtIn) -or $ProfileDirectory -ne (Get-ProfileDirectory)) { return $builtIn }
+    Join-Path (Get-UserProfileDirectory) "$Name.json"
+}
+
 # Loads a profile by name or path, resolves the "extends" chain and applies an optional override.
 # Objects are deep-merged; lists are replaced entirely.
 function Resolve-GpuVMProfile {
@@ -23,7 +34,7 @@ function Resolve-ProfileChain {
         [string]$ProfileDirectory,
         [System.Collections.Generic.List[string]]$Chain
     )
-    $path = if (Test-Path -LiteralPath $Name -PathType Leaf) { (Resolve-Path -LiteralPath $Name).Path } else { Join-Path $ProfileDirectory "$Name.json" }
+    $path = Find-ProfilePath -Name $Name -ProfileDirectory $ProfileDirectory
     if (-not (Test-Path -LiteralPath $path)) { throw "No existe el perfil '$Name' ($path)." }
     $key = [IO.Path]::GetFileNameWithoutExtension($path)
     if ($Chain.Contains($key)) { $cycle = @($Chain); [array]::Reverse($cycle); throw "Herencia circular de perfiles: $($cycle -join ' → ') → $key" }
@@ -81,9 +92,23 @@ function Test-GpuVMProfileData {
         }
         if ($client -and $client['fps'] -and ($client['fps'] -lt 10 -or $client['fps'] -gt 480)) { $problems.Add('streaming.client.fps va de 10 a 480.') }
         if ($client -and $client['codec'] -and $client['codec'] -notin 'auto', 'H.264', 'HEVC', 'AV1') { $problems.Add('streaming.client.codec debe ser auto, H.264, HEVC o AV1.') }
+        if ($client -and $client.Contains('displayMode') -and $client['displayMode'] -and $client['displayMode'] -notin 'fullscreen', 'windowed', 'borderless') {
+            $problems.Add('streaming.client.displayMode debe ser fullscreen, windowed o borderless.')
+        }
         if ($streaming['disableHyperVVideo'] -and -not $streaming['virtualDisplay']) {
             $problems.Add('streaming.disableHyperVVideo requiere virtualDisplay; sin pantalla virtual la VM se quedaría sin pantalla.')
         }
+    }
+
+    $guest = $Config['guest']
+    if ($guest -and $guest.Contains('apps') -and $guest['apps']) {
+        $known = @((Get-AppCatalog).Keys)
+        foreach ($app in @($guest['apps'])) {
+            if ($app -notin $known) { $problems.Add("guest.apps: no existe la app '$app' en el catálogo.") }
+        }
+    }
+    if ($Config.Contains('iso') -and $Config['iso'] -and [IO.Path]::GetExtension($Config['iso']) -ne '.iso') {
+        $problems.Add('iso debe ser la ruta de un archivo .iso.')
     }
 
     , $problems

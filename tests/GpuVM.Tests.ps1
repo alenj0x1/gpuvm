@@ -93,11 +93,31 @@ InModuleScope GpuVM {
 
         It 'passes Moonlight latency settings only if the profile defines them' {
             $a = Get-MoonlightStreamArguments -Address '1.2.3.4' -Client @{ app = 'Desktop'; vsync = $false; performanceOverlay = $true; framePacing = $null; displayMode = 'fullscreen' }
-            ($a -join ' ') | Should Be 'stream 1.2.3.4 "Desktop" --no-vsync --performance-overlay --display-mode fullscreen'
+            ($a -join ' ') | Should Be 'stream 1.2.3.4 "Desktop" --no-vsync --performance-overlay --display-mode fullscreen --capture-system-keys fullscreen'
         }
 
         It 'data lives outside the code when installed; in the repo, in the repo' {
             $script:DataRoot | Should Be $script:RepoRoot
+        }
+
+        It 'the GpuVM folder is only trusted if administrators own it and only they can write' {
+            $new = {
+                param($owner, $vmRights)
+                $acl = [System.Security.AccessControl.DirectorySecurity]::new()
+                $acl.SetAccessRuleProtection($true, $false)
+                $acl.SetOwner([Security.Principal.SecurityIdentifier]$owner)
+                foreach ($sid in 'S-1-5-32-544', 'S-1-5-18') {
+                    $acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]$sid, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow'))
+                }
+                $acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]'S-1-5-83-0', $vmRights, 'ContainerInherit,ObjectInherit', 'None', 'Allow'))
+                $acl
+            }
+            Test-GpuVMRootAcl -Acl (& $new 'S-1-5-32-544' 'ReadAndExecute') | Should Be $true
+            Test-GpuVMRootAcl -Acl (& $new 'S-1-5-32-545' 'ReadAndExecute') | Should Be $false
+            Test-GpuVMRootAcl -Acl (& $new 'S-1-5-18' 'FullControl') | Should Be $false
+            $userWrite = & $new 'S-1-5-32-544' 'ReadAndExecute'
+            $userWrite.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]'S-1-5-11', 'Modify', 'Allow'))
+            Test-GpuVMRootAcl -Acl $userWrite | Should Be $false
         }
 
         It 'rejects a Moonlight app name with quotes' {
@@ -161,6 +181,31 @@ InModuleScope GpuVM {
             Test-Path (Join-Path $guest 'Windows\System32\HostDriverStore\FileRepository\nv_dispi.inf_amd64_test\nvldumdx.dll') | Should Be $true
             Test-Path (Join-Path $guest 'Windows\System32\HostDriverStore\FileRepository\viejo') | Should Be $false
             Test-Path (Join-Path $guest $loose.Substring(3)) | Should Be $true
+        }
+
+        It 'does not write the driver through a link the guest planted' {
+            $loose = Join-Path $TestDrive 'src\nvapi64.dll'
+            $hostTarget = Join-Path $TestDrive 'host-system'
+            New-Item -ItemType Directory $hostTarget -Force | Out-Null
+            $guest = Join-Path $TestDrive 'evil-guest'
+            New-Item -ItemType Directory (Join-Path $guest 'Windows') -Force | Out-Null
+            # Windows\System32 in the guest is a junction to a "host" folder.
+            New-Item -ItemType Junction -Path (Join-Path $guest 'Windows\System32') -Target $hostTarget | Out-Null
+            $set = [pscustomobject]@{ DriverStoreFolders = @(); Files = @($loose) }
+            Test-Throws { Copy-GpuDriverToWindows -FileSet $set -WindowsRoot "$guest\" } | Should Be $true
+            @(Get-ChildItem $hostTarget -Recurse -Force).Count | Should Be 0
+        }
+
+        It 'removes guest folders without following the links inside them' {
+            $outside = Join-Path $TestDrive 'outside'
+            New-Item -ItemType Directory $outside -Force | Out-Null
+            'keep' | Set-Content (Join-Path $outside 'keep.txt')
+            $dir = Join-Path $TestDrive 'guest-dir'
+            New-Item -ItemType Directory $dir -Force | Out-Null
+            New-Item -ItemType Junction -Path (Join-Path $dir 'link') -Target $outside | Out-Null
+            Remove-GuestDirectory -Path $dir
+            Test-Path $dir | Should Be $false
+            Test-Path (Join-Path $outside 'keep.txt') | Should Be $true
         }
 
         It 'the hyperv-gpup backend implements every operation' {
@@ -266,25 +311,70 @@ InModuleScope GpuVM {
 
         It 'builds the Moonlight arguments' {
             $a = Get-MoonlightStreamArguments -Address '172.20.1.5' -Client @{ app = 'Desktop'; resolution = '2560x1440'; fps = 120; bitrateKbps = 0; codec = 'HEVC' }
-            ($a -join ' ') | Should Be 'stream 172.20.1.5 "Desktop" --resolution 2560x1440 --fps 120 --video-codec HEVC'
+            ($a -join ' ') | Should Be 'stream 172.20.1.5 "Desktop" --resolution 2560x1440 --fps 120 --video-codec HEVC --capture-system-keys fullscreen'
         }
 
-        It 'pairs by sending Sunshine the same PIN Moonlight receives' {
+        It 'pairs by sending Sunshine the same PIN Moonlight receives, with Moonlight unelevated' {
             $script:sent = $null
-            Mock Start-Process {
-                $script:moonlightArgs = $ArgumentList
-                $p = [pscustomobject]@{ HasExited = $false; ExitCode = 0 }
-                $p | Add-Member ScriptMethod WaitForExit { param($ms) $true }
-                $p
-            }
-            Mock Invoke-SunshineApi { [pscustomobject]@{ pairings = @([pscustomobject]@{ id = ('a' * 32); name = 'x'; address = '172.20.1.1' }) } } -ParameterFilter { $Method -ne 'POST' }
+            $script:checks = 0
+            Mock Start-UnelevatedProcess { $script:moonlightArgs = $ArgumentList; $script:keepTask = [bool]$KeepTask; 'task' }
+            # Moonlight keeps running until the PIN is sent, then exits with 0.
+            Mock Get-UnelevatedTaskState { [pscustomobject]@{ Running = -not $script:sent; Finished = [bool]$script:sent; ExitCode = 0 } }
+            Mock Remove-UnelevatedTask { $script:removed = $TaskName }
+            Mock Test-SunshineClientPaired { $true }
+            Mock Invoke-SunshineApi {
+                [pscustomobject]@{ pairings = @(
+                    [pscustomobject]@{ id = ('b' * 32); name = 'roth'; address = '172.20.1.9' }
+                    [pscustomobject]@{ id = ('a' * 32); name = 'roth'; address = '::ffff:172.20.1.1' }
+                ) }
+            } -ParameterFilter { $Method -ne 'POST' }
             Mock Invoke-SunshineApi { $script:sent = $Body; [pscustomobject]@{ status = $true } } -ParameterFilter { $Method -eq 'POST' }
 
             $cred = [pscredential]::new('gpuvm', (ConvertTo-SecureString 'x' -AsPlainText -Force))
-            Register-MoonlightPairing -Address '172.20.1.5' -Credential $cred -MoonlightPath 'moonlight.exe' -ClientName 'HOST'
+            Register-MoonlightPairing -Address '172.20.1.5' -Credential $cred -MoonlightPath 'moonlight.exe' -ClientName 'HOST' -HostAddress '172.20.1.1'
             $script:sent['pairing_id'] | Should Be ('a' * 32)
             $script:sent['pin'] | Should Be $script:moonlightArgs[3]
             $script:sent['name'] | Should Be 'HOST'
+            $script:keepTask | Should Be $true
+            $script:removed | Should Be 'task'
+        }
+
+        It 'does not hand the PIN to a pairing request from another device' {
+            $other = [pscustomobject]@{ id = '1'; name = 'HOST'; address = '172.20.1.9' }
+            Select-MoonlightPairingRequest -Pending @($other) -HostAddress '172.20.1.1' -ClientName 'HOST' | Should BeNullOrEmpty
+            $named = [pscustomobject]@{ id = '2'; name = 'HOST' }
+            (Select-MoonlightPairingRequest -Pending @($named) -HostAddress '172.20.1.1' -ClientName 'HOST').id | Should Be '2'
+            Select-MoonlightPairingRequest -Pending @([pscustomobject]@{ id = '3'; name = 'x' }) -HostAddress '172.20.1.1' -ClientName 'HOST' | Should BeNullOrEmpty
+        }
+
+        It 'only trusts a guest IP inside the subnet of the host adapter' {
+            Test-GuestAddressInHostSubnet -Address '172.20.1.5' -HostAddress '172.20.0.1' -PrefixLength 20 | Should Be $true
+            Test-GuestAddressInHostSubnet -Address '172.20.16.5' -HostAddress '172.20.0.1' -PrefixLength 20 | Should Be $false
+            Test-GuestAddressInHostSubnet -Address '172.20.0.1' -HostAddress '172.20.0.1' -PrefixLength 20 | Should Be $false
+            Test-GuestAddressInHostSubnet -Address '127.0.0.1' -HostAddress '172.20.0.1' -PrefixLength 20 | Should Be $false
+            Test-GuestAddressInHostSubnet -Address '8.8.8.8' -HostAddress '172.20.0.1' -PrefixLength 20 | Should Be $false
+            Test-GuestAddressInHostSubnet -Address '172.20.15.255' -HostAddress '172.20.0.1' -PrefixLength 20 | Should Be $false
+            Test-GuestAddressInHostSubnet -Address '172.20.0.0' -HostAddress '172.20.0.1' -PrefixLength 20 | Should Be $false
+            Test-GuestAddressInHostSubnet -Address '172.20.1.300' -HostAddress '172.20.0.1' -PrefixLength 20 | Should Be $false
+            Test-GuestAddressInHostSubnet -Address 'fe80::1' -HostAddress '172.20.0.1' -PrefixLength 20 | Should Be $false
+            Test-GuestAddressInHostSubnet -Address '192.168.1.20' -HostAddress '192.168.1.10' -PrefixLength 24 | Should Be $true
+        }
+
+        It 'refuses to connect when the guest reports an IP outside the host network' {
+            Mock Get-GpuVMHostNetwork { [pscustomobject]@{ Address = '172.20.0.1'; PrefixLength = 20 } }
+            Mock Get-VMNetworkAdapter { [pscustomobject]@{ IPAddresses = @('10.0.0.5', 'fe80::1') } }
+            Test-Throws { Get-GpuVMEndpoint -Name 'vm' -TimeoutSec 1 } | Should Be $true
+            Mock Get-VMNetworkAdapter { [pscustomobject]@{ IPAddresses = @('172.20.3.7') } }
+            $e = Get-GpuVMEndpoint -Name 'vm' -TimeoutSec 1
+            $e.Address | Should Be '172.20.3.7'
+            $e.HostAddress | Should Be '172.20.0.1'
+        }
+
+        It 'reduces values from the guest to short strings' {
+            ConvertTo-GuestString ('x' * 500) -MaxLength 10 | Should Be ('x' * 10)
+            ConvertTo-GuestString "a`nb`e[31m" | Should Be 'a b [31m'
+            ConvertTo-GuestString ([pscustomobject]@{ a = 1 }) | Should Be ''
+            ConvertTo-GuestString $null | Should Be ''
         }
 
         It 'updates sunshine.conf through the API only when a value changes, keeping the other keys' {
@@ -324,5 +414,61 @@ InModuleScope GpuVM {
             $lines = Get-Content $conf
             $lines | Should Be @('encoder = nvenc', 'port = 47989', 'adapter_name = NVIDIA GeForce RTX 4060')
         }
+    }
+
+    Describe 'User profiles, ISO library and apps' {
+        $originalData = $script:DataRoot
+        $script:DataRoot = Join-Path $TestDrive 'data'
+        New-Item -ItemType Directory $script:DataRoot | Out-Null
+
+        It 'saves a user profile on top of a built-in one and resolves it' {
+            Save-GpuVMProfile -Name 'juegos' -Settings @{ cpu = 6; memoryGB = 6; diskGB = 250; apps = @('steam'); displayMode = 'windowed'; iso = 'D:\ISOs\win10.iso' } | Out-Null
+            $p = Resolve-GpuVMProfile -Name 'juegos'
+            ($p['chain'] -join ',') | Should Be 'base,balanced,max-performance,juegos'
+            $p['vm']['disk']['sizeGB'] | Should Be 250
+            $p['vm']['disk']['type'] | Should Be 'Fixed'
+            $p['guest']['apps'] | Should Be @('steam')
+            $s = ConvertTo-ProfileSettings $p
+            $s['displayMode'] | Should Be 'windowed'
+            $s['iso'] | Should Be 'D:\ISOs\win10.iso'
+            (Get-GpuVMProfile | Where-Object Name -eq 'juegos').BuiltIn | Should Be $false
+        }
+
+        It 'rejects built-in names, unknown apps and invalid values' {
+            Test-Throws { Save-GpuVMProfile -Name 'balanced' -Settings @{ cpu = 4 } } | Should Be $true
+            Test-Throws { Save-GpuVMProfile -Name 'x' -Settings @{ apps = @('nope') } } | Should Be $true
+            Test-Throws { Save-GpuVMProfile -Name 'x' -Settings @{ memoryGB = 2 } } | Should Be $true
+        }
+
+        It 'renames and deletes user profiles, but not built-in ones' {
+            Save-GpuVMProfile -Name 'juegos-2' -Previous 'juegos' -Settings @{ cpu = 6 } | Out-Null
+            Test-Path (Join-Path (Get-UserProfileDirectory) 'juegos.json') | Should Be $false
+            Remove-GpuVMProfile -Name 'juegos-2'
+            Test-Throws { Remove-GpuVMProfile -Name 'balanced' } | Should Be $true
+        }
+
+        It 'remembers used ISOs first and forgets them without deleting the file' {
+            $iso = Join-Path $TestDrive 'Win10.iso'
+            'x' | Set-Content $iso
+            Register-GpuVMIsoUse -Path $iso -VMName 'win10'
+            $first = @(Get-GpuVMIsoList)[0]
+            $first['name'] | Should Be 'Win10.iso'
+            $first['remembered'] | Should Be $true
+            $first['usedBy'] | Should Be @('win10')
+            Remove-GpuVMIso -Path $iso
+            @(Read-IsoLibrary).Count | Should Be 0
+            Test-Path $iso | Should Be $true
+        }
+
+        It 'every catalog app has a download URL, a signer and an install check' {
+            foreach ($app in Get-GpuVMApp) {
+                $entry = (Get-AppCatalog)[$app['id']]
+                $entry['url'] | Should Match '^https://'
+                $entry['signer'] | Should Not BeNullOrEmpty
+                $entry['installed'] | Should Not BeNullOrEmpty
+            }
+        }
+
+        $script:DataRoot = $originalData
     }
 }

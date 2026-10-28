@@ -75,8 +75,9 @@ function Set-HyperVGpuPVM {
     $c = $Config['vm']
 
     Write-Step "CPU: $($c['cpu']['count']) hilos, reserva $($c['cpu']['reservePercent']) %, peso $($c['cpu']['relativeWeight'])"
+    # Migration compatibility would hide CPU features (AVX2 and later) that modern games require.
     Set-VMProcessor -VMName $Name -Count $c['cpu']['count'] -Reserve $c['cpu']['reservePercent'] `
-        -RelativeWeight $c['cpu']['relativeWeight'] -ExposeVirtualizationExtensions $false
+        -RelativeWeight $c['cpu']['relativeWeight'] -ExposeVirtualizationExtensions $false -CompatibilityForMigrationEnabled $false
     if ($null -ne $c['cpu']['hwThreadsPerCore']) {
         try { Set-VMProcessor -VMName $Name -HwThreadCountPerCore $c['cpu']['hwThreadsPerCore'] -ErrorAction Stop }
         catch { Write-Warning "No se pudo ajustar la topología SMT (requiere configuración de VM 9.0 o superior): $_" }
@@ -85,6 +86,9 @@ function Set-HyperVGpuPVM {
     Write-Step "Memoria fija: $($c['memoryGB']) GB"
     Set-VMMemory -VMName $Name -DynamicMemoryEnabled $false -StartupBytes ([int64]$c['memoryGB'] * 1GB)
 
+    $vhdPath = (Get-VMHardDiskDrive -VMName $Name | Select-Object -First 1).Path
+    if ($vhdPath -and $c['disk']['sizeGB']) { Expand-HyperVGpuPDisk -Path $vhdPath -SizeGB $c['disk']['sizeGB'] }
+
     # GPU-P supports neither checkpoints nor saved state; if the host shuts down, the guest shuts down cleanly.
     Set-VM -Name $Name -CheckpointType Disabled -AutomaticCheckpointsEnabled $false `
         -AutomaticStopAction ShutDown -AutomaticStartAction Nothing -GuestControlledCacheTypes $true `
@@ -92,8 +96,13 @@ function Set-HyperVGpuPVM {
         -Notes "Creada con GpuVM. Perfil: $($Config['name'])"
 
     $secureBoot = if ($c['secureBoot']) { 'On' } else { 'Off' }
-    Set-VMFirmware -VMName $Name -EnableSecureBoot $secureBoot -SecureBootTemplate MicrosoftWindows
-    if ($c['tpm'] -and -not (Get-VMSecurity -VMName $Name).TpmEnabled) {
+    # Only what changed: Hyper-V refuses to touch the Secure Boot template once the vTPM is initialized,
+    # which would make every later settings change fail.
+    $firmware = Get-VMFirmware -VMName $Name
+    $tpmOn = (Get-VMSecurity -VMName $Name).TpmEnabled
+    if ([string]$firmware.SecureBoot -ne $secureBoot) { Set-VMFirmware -VMName $Name -EnableSecureBoot $secureBoot }
+    if ($firmware.SecureBootTemplate -ne 'MicrosoftWindows' -and -not $tpmOn) { Set-VMFirmware -VMName $Name -SecureBootTemplate MicrosoftWindows }
+    if ($c['tpm'] -and -not $tpmOn) {
         Set-VMKeyProtector -VMName $Name -NewLocalKeyProtector
         Enable-VMTPM -VMName $Name
     }
@@ -102,12 +111,39 @@ function Set-HyperVGpuPVM {
     if ($switch -and (Get-VMSwitch -Name $switch -ErrorAction SilentlyContinue)) {
         Get-VMNetworkAdapter -VMName $Name | Connect-VMNetworkAdapter -SwitchName $switch
     }
+    # The guest cannot pose as a DHCP server or router to other machines, nor change its MAC.
+    Set-VMNetworkAdapter -VMName $Name -DhcpGuard On -RouterGuard On -MacAddressSpoofing Off
 
     $percent = $Config['gpu']['allocationPercent']
     Write-Step "GPU: partición al $percent %"
     Get-VMGpuPartitionAdapter -VMName $Name -ErrorAction SilentlyContinue | Remove-VMGpuPartitionAdapter
     $gpuParams = Get-GpuPartitionSettings -Percent $percent
     Add-VMGpuPartitionAdapter -VMName $Name @gpuParams
+}
+
+# Disks only grow: shrinking would cut the guest's partition. The guest extends C: itself on its next start
+# (Expand-GuestSystemDisk), so the host never mounts a disk the guest has written to just for this.
+function Expand-HyperVGpuPDisk {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][int]$SizeGB
+    )
+    $vhd = Get-VHD -Path $Path
+    $target = [uint64]$SizeGB * 1GB
+    if ($target -lt $vhd.Size) {
+        Write-Warning "El disco ya mide $([math]::Round($vhd.Size / 1GB)) GB; un disco no se puede reducir."
+        return
+    }
+    if ($target -eq $vhd.Size) { return }
+    if ($vhd.VhdType -eq 'Fixed') {
+        $free = (Get-Volume -DriveLetter (Split-Path $Path -Qualifier).TrimEnd(':')).SizeRemaining
+        $needed = $target - $vhd.Size
+        if ($needed + 10GB -gt $free) {
+            throw "No hay espacio para ampliar el disco: hacen falta $([math]::Ceiling($needed / 1GB)) GB y quedan $([math]::Floor($free / 1GB)) GB libres."
+        }
+    }
+    Write-Step "Ampliando el disco a $SizeGB GB"
+    Resize-VHD -Path $Path -SizeBytes $target
 }
 
 function Sync-HyperVGpuPDriver {
@@ -231,19 +267,21 @@ Register-GpuVMBackend -Name 'hyperv-gpup' -Description 'Hyper-V con GPU Partitio
 
     Remove     = {
         param($Name, $State, $DeleteDisk)
+        # Checked before removing anything: only the VM's own folder inside the installed GpuVM root is deleted,
+        # never any other path. A VM kept elsewhere is refused whole, instead of being removed with its disk left over.
+        $dir = $null
+        if ($DeleteDisk -and $State['vmDir'] -and (Test-Path -LiteralPath $State['vmDir'])) {
+            $root = Get-GpuVMDefaultRoot
+            $dir = [IO.Path]::GetFullPath($State['vmDir']).TrimEnd('\')
+            if ($dir -ne (Join-Path $root $Name)) {
+                throw "No se borra la VM con su disco: $dir no es la carpeta de la VM dentro de $root. Elimínala conservando el disco."
+            }
+        }
         $vm = Get-VM -Name $Name -ErrorAction SilentlyContinue
         if ($vm) {
             if ($vm.State -ne 'Off') { Stop-VM -Name $Name -TurnOff -Force }
             Remove-VM -Name $Name -Force
         }
-        if ($DeleteDisk -and $State['vmDir'] -and (Test-Path -LiteralPath $State['vmDir'])) {
-            # Only the VM's own folder inside the GpuVM root is deleted, never any other path.
-            $root = [IO.Path]::GetFullPath($State['config']['vm']['root']).TrimEnd('\')
-            $dir = [IO.Path]::GetFullPath($State['vmDir']).TrimEnd('\')
-            if ($dir -ne (Join-Path $root $Name)) {
-                throw "No se borró el disco: $dir no es la carpeta de la VM dentro de $root."
-            }
-            Remove-Item -LiteralPath $dir -Recurse -Force
-        }
+        if ($dir) { Remove-Item -LiteralPath $dir -Recurse -Force }
     }
 }

@@ -1,14 +1,15 @@
 function New-GpuVM {
     <#
     .SYNOPSIS
-    Creates a Windows 10/11 VM with the host GPU, installed unattended from an ISO.
+    Creates a Windows 10/11 VM with the host GPU, installed unattended from an ISO. Without -IsoPath it uses
+    the profile's ISO. The profile's apps (guest.apps) are installed the first time the VM is opened.
     .EXAMPLE
     New-GpuVM -Name win11 -IsoPath D:\ISOs\Win11.iso -Profile max-performance
     #>
     [CmdletBinding(SupportsShouldProcess)]
     param(
         [Parameter(Mandatory)][ValidatePattern('^[\w-]{1,40}$')][string]$Name,
-        [Parameter(Mandatory)][string]$IsoPath,
+        [string]$IsoPath,
         [string]$Profile = 'balanced',
         [hashtable]$Override,
         [string]$Edition,
@@ -24,6 +25,8 @@ function New-GpuVM {
     }
 
     $config = Resolve-GpuVMProfile -Name $Profile -Override $Override
+    if (-not $IsoPath) { $IsoPath = if ($config.Contains('iso')) { $config['iso'] } }
+    if (-not $IsoPath) { throw 'Elige la imagen de Windows (ISO).' }
     $editionName = if ($Edition) { $Edition } else { $config['guest']['edition'] }
     if (-not $Credential) {
         $Credential = Get-Credential -UserName $config['guest']['userName'] -Message 'Usuario y contraseña de la cuenta local del invitado'
@@ -59,7 +62,9 @@ function New-GpuVM {
         $state['streaming'] = if ($streaming) { $streaming.State } else { $null }
         # Lets GpuVM fix things inside the VM via PowerShell Direct (session, logs) without prompting.
         $state['guest'] = [ordered]@{ user = $Credential.UserName; password = $Credential.Password | ConvertFrom-SecureString }
+        $state['pendingApps'] = @(if ($config['guest'].Contains('apps')) { $config['guest']['apps'] })
         Save-GpuVMState $state
+        try { Register-GpuVMIsoUse -Path $IsoPath -VMName $Name } catch { Write-Warning "No se pudo recordar el ISO: $($_.Exception.Message)" }
     }
     finally {
         # Only dismount it if GpuVM mounted it; if the user already had it open, leave it as it was.

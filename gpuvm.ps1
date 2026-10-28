@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 Command-line shortcut for the GpuVM module.
 .EXAMPLE
@@ -13,13 +13,19 @@ param(
 )
 # If launched from Windows PowerShell 5.1, re-run under PowerShell 7 with the same arguments.
 if ($PSVersionTable.PSVersion.Major -lt 7) {
-    $pwsh = Get-Command pwsh.exe -ErrorAction SilentlyContinue
+    # The MSI's pwsh first: an elevated console must not run a pwsh.exe that comes earlier in the PATH.
+    $pwsh = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'PowerShell\7\pwsh.exe'
+    if (-not (Test-Path -LiteralPath $pwsh)) { $pwsh = (Get-Command pwsh.exe -ErrorAction SilentlyContinue).Source }
     if (-not $pwsh) { throw 'GpuVM necesita PowerShell 7: https://aka.ms/powershell' }
-    & $pwsh.Source -NoProfile -ExecutionPolicy Bypass -File $PSCommandPath $Command @Rest
+    & $pwsh -NoProfile -ExecutionPolicy Bypass -File $PSCommandPath $Command @Rest
     exit $LASTEXITCODE
 }
 
-Import-Module (Join-Path $PSScriptRoot 'src\GpuVM\GpuVM.psd1') -Force
+# Usually run as administrator: modules only come from system folders and this repository, not the user's environment.
+# The console gets its own PSModulePath back when the command ends.
+$userModulePath = $env:PSModulePath
+$env:PSModulePath = @("$PSHOME\Modules", "$([Environment]::GetFolderPath('System'))\WindowsPowerShell\v1.0\Modules", (Join-Path $PSScriptRoot 'src')) -join ';'
+try { Import-Module (Join-Path $PSScriptRoot 'src\GpuVM\GpuVM.psd1') -Force } catch { $env:PSModulePath = $userModulePath; throw }
 
 $commands = [ordered]@{
     'check'       = 'Test-GpuVMHost'
@@ -43,6 +49,7 @@ if (-not $commands.Contains($Command)) {
     Write-Host 'Uso: ./gpuvm.ps1 <comando> [-Parámetro valor ...]'
     foreach ($key in $commands.Keys) { Write-Host ('  {0,-18} {1}' -f $key, $commands[$key]) }
     Write-Host 'Ayuda de cada comando: Get-Help <Cmdlet> -Detailed'
+    $env:PSModulePath = $userModulePath
     return
 }
 
@@ -56,7 +63,7 @@ for ($i = 0; $i -lt $Rest.Count; $i++) {
         $params[$Matches[1]] = if ($value -in '$false', 'false') { $false } elseif ($value -in '$true', 'true') { $true } else { $value }
         continue
     }
-    if ($token -notmatch '^-(\w+)$') { throw "Argumento inesperado: $token" }
+    if ($token -notmatch '^-(\w+)$') { $env:PSModulePath = $userModulePath; throw "Argumento inesperado: $token" }
     $key = $Matches[1]
     $next = if ($i + 1 -lt $Rest.Count) { $Rest[$i + 1] } else { $null }
     # A negative number (-3) is a value, not another parameter.
@@ -65,7 +72,7 @@ for ($i = 0; $i -lt $Rest.Count; $i++) {
     else { $params[$key] = $next; $i++ }
 }
 
-$result = & $commands[$Command] @params
+$result = try { & $commands[$Command] @params } finally { $env:PSModulePath = $userModulePath }
 if ($Command -eq 'check') { $result | Format-Table Status, Name, Detail -AutoSize -Wrap }
 elseif ($Command -eq 'lab' -and $params['Lab']) { $result | Format-List Id, Title, Hypothesis, Status, Conclusion; $result.Metrics | Format-Table -AutoSize }
 else { $result }

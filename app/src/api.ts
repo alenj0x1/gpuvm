@@ -1,4 +1,4 @@
-import type { HostInfo, IsoFile, JobEvent, ProfileInfo, VmOverview } from "./types";
+import type { AppInfo, DiskInfo, DisplayMode, HostInfo, IsoFile, JobEvent, ProfileInfo, ProfileSettings, VmOverview } from "./types";
 import * as mock from "./mock";
 
 // Outside Tauri (browser) the UI runs on sample data so it can be designed.
@@ -19,9 +19,20 @@ export const api = {
   saveGuestPassword: (name: string, user: string, password: string) =>
     ps("Set-GpuVMGuestCredential", { Name: name, Credential: { user, password } }),
   applyOptions: (name: string, override: Record<string, unknown>) => ps("Set-GpuVM", { Name: name, Override: override }),
-  setClient: (name: string, resolution: string, fps: number) =>
-    ps("Set-GpuVMStreamingClient", { Name: name, Resolution: resolution, Fps: fps }),
+  // DisplayMode only goes when it changed, so a mode the app doesn't show (borderless) is kept.
+  setClient: (name: string, resolution: string, fps: number, displayMode?: DisplayMode) =>
+    ps("Set-GpuVMStreamingClient", { Name: name, Resolution: resolution, Fps: fps, ...(displayMode ? { DisplayMode: displayMode } : {}) }),
   remove: (name: string, deleteDisk: boolean) => ps("Remove-GpuVM", { Name: name, DeleteDisk: deleteDisk, Confirm: false }),
+  apps: () => ps<AppInfo>("Get-GpuVMApp"),
+  pasteToVm: (name: string) => ps("Send-GpuVMClipboard", { Name: name }),
+  setCapture: (name: string, mode: "ddx" | "wgc") => ps("Set-GpuVMCapture", { Name: name, Mode: mode }),
+  saveProfile: (name: string, description: string, extendsName: string, settings: Partial<ProfileSettings>, previous?: string) =>
+    ps<ProfileInfo>("Save-GpuVMProfile", { Name: name, Description: description, Extends: extendsName, Settings: settings, ...(previous ? { Previous: previous } : {}) }),
+  removeProfile: (name: string) => ps("Remove-GpuVMProfile", { Name: name }),
+  disks: () => ps<DiskInfo>("Get-GpuVMDisk"),
+  removeDisk: (name: string) => ps("Remove-GpuVMDisk", { Name: name, Confirm: false }),
+  addIso: (path: string) => ps("Add-GpuVMIso", { Path: path }),
+  removeIso: (path: string) => ps("Remove-GpuVMIso", { Path: path }),
 };
 
 export async function startJob(jobId: string, cmd: string, args: Record<string, unknown>) {

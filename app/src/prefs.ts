@@ -5,14 +5,16 @@ import { inTauri } from "./api";
 // which decides what the window's close button does.
 export type ThemePref = "system" | "light" | "dark";
 export type ClosePref = "quit" | "tray";
+export type VmsOnQuitPref = "keep" | "stop";
 
 export interface Prefs {
   theme: ThemePref;
   close: ClosePref;
+  vmsOnQuit: VmsOnQuitPref;
 }
 
 const KEY = "gpuvm.prefs";
-const DEFAULTS: Prefs = { theme: "system", close: "quit" };
+const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "keep" };
 const EVENT = "gpuvm-prefs";
 const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
 
@@ -34,11 +36,18 @@ async function applyClose(close: ClosePref) {
   await invoke("set_close_to_tray", { enabled: close === "tray" }).catch(() => {});
 }
 
+async function applyVmsOnQuit(pref: VmsOnQuitPref) {
+  if (!inTauri) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("set_stop_vms_on_quit", { enabled: pref === "stop" }).catch(() => {});
+}
+
 export function savePrefs(change: Partial<Prefs>) {
   const next = { ...readPrefs(), ...change };
   try { localStorage.setItem(KEY, JSON.stringify(next)); } catch { /* no storage */ }
   applyTheme(next.theme);
   if (change.close) applyClose(next.close);
+  if (change.vmsOnQuit) applyVmsOnQuit(next.vmsOnQuit);
   window.dispatchEvent(new Event(EVENT));
 }
 
@@ -47,6 +56,7 @@ export function initPrefs() {
   const prefs = readPrefs();
   applyTheme(prefs.theme);
   applyClose(prefs.close);
+  applyVmsOnQuit(prefs.vmsOnQuit);
   systemDark.addEventListener("change", () => {
     if (readPrefs().theme === "system") { applyTheme("system"); window.dispatchEvent(new Event(EVENT)); }
   });

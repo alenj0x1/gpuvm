@@ -11,3 +11,5 @@
 
 ## Observations
 
+
+- 2026-10-27: the host reports `Hypervisor scheduler type is 0x4` (root scheduler, event 2 of Microsoft-Windows-Hyper-V-Hypervisor). Microsoft documents that caps, weights and reserves only apply with the classic or core scheduler, so the 30 % vs 100 % comparison cannot show a difference. The lab now compares 8 vs 6 virtual processors. Source: https://learn.microsoft.com/en-us/windows-server/virtualization/hyper-v/manage/manage-hyper-v-scheduler-types

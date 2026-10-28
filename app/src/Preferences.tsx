@@ -1,5 +1,5 @@
-import { IconDeviceDesktop, IconLayoutBottombarCollapse, IconMoon, IconPower, IconSun } from "@tabler/icons-react";
-import { savePrefs, usePrefs, type ClosePref, type ThemePref } from "./prefs";
+import { IconDeviceDesktop, IconLayoutBottombarCollapse, IconMoon, IconPlayerPlay, IconPlayerStop, IconPower, IconSun } from "@tabler/icons-react";
+import { savePrefs, usePrefs, type ClosePref, type ThemePref, type VmsOnQuitPref } from "./prefs";
 import { Segmented } from "./ui";
 
 export function Preferences() {
@@ -22,6 +22,13 @@ export function Preferences() {
             <Segmented<ClosePref> value={prefs.close} onChange={(close) => savePrefs({ close })} options={[
               { value: "quit", label: <><IconPower size={15} />Salir por completo</> },
               { value: "tray", label: <><IconLayoutBottombarCollapse size={15} />Quedarse en la bandeja</> },
+            ]} />
+          </div>
+          <div className="pref-row">
+            <div className="pref-text"><strong>Al salir de GpuVM</strong><span>Apagarlas cierra Windows en cada máquina y libera su memoria.</span></div>
+            <Segmented<VmsOnQuitPref> value={prefs.vmsOnQuit} onChange={(vmsOnQuit) => savePrefs({ vmsOnQuit })} options={[
+              { value: "keep", label: <><IconPlayerPlay size={15} />Dejarlas encendidas</> },
+              { value: "stop", label: <><IconPlayerStop size={15} />Apagarlas</> },
             ]} />
           </div>
         </div>

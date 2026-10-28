@@ -12,7 +12,8 @@ function Get-ComponentManifestPath {
 function Get-ComponentManifest { Read-JsonFile (Get-ComponentManifestPath) }
 
 function Get-ComponentCacheRoot {
-    if ($env:GPUVM_CACHE_ROOT) { return $env:GPUVM_CACHE_ROOT }
+    # The override is for tests; an elevated process ignores it (see GpuVM.psm1).
+    if ($env:GPUVM_CACHE_ROOT -and -not $script:IsElevated) { return $env:GPUVM_CACHE_ROOT }
     Get-DataPath 'cache'
 }
 

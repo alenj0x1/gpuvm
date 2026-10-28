@@ -63,21 +63,86 @@ function Get-SunshineCredential {
     [pscredential]::new($s['user'], (ConvertTo-SecureString $s['password']))
 }
 
-function Get-GpuVMAddress {
+# Values that come from the guest (PowerShell Direct, KVP) are untrusted: only a string of bounded length
+# without control characters is kept; anything else (objects, arrays) becomes ''.
+function ConvertTo-GuestString {
+    param($Value, [int]$MaxLength = 200)
+    if ($Value -isnot [string] -and $Value -isnot [ValueType]) { return '' }
+    $text = ([string]$Value) -replace '\p{C}', ' '
+    if ($text.Length -gt $MaxLength) { $text = $text.Substring(0, $MaxLength) }
+    $text
+}
+
+# Dotted IPv4 ("172.20.1.5") to a number; $null if it is anything else.
+function ConvertTo-IPv4Number {
+    param([AllowEmptyString()][string]$Address)
+    if ($Address -notmatch '^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$') { return $null }
+    $number = [int64]0
+    foreach ($i in 1..4) {
+        $octet = [int]$Matches[$i]
+        if ($octet -gt 255) { return $null }
+        $number = $number * 256 + $octet
+    }
+    $number
+}
+
+# The guest reports its own IP (KVP), so it could point the host at any machine. It is only accepted if it is an
+# IPv4 host address of the subnet of the host's adapter on the VM's switch, and not the host itself.
+function Test-GuestAddressInHostSubnet {
+    param(
+        [AllowEmptyString()][string]$Address,
+        [Parameter(Mandatory)][string]$HostAddress,
+        [Parameter(Mandatory)][ValidateRange(1, 32)][int]$PrefixLength
+    )
+    $guest = ConvertTo-IPv4Number $Address
+    $hostIp = ConvertTo-IPv4Number $HostAddress
+    if ($null -eq $guest -or $null -eq $hostIp -or $guest -eq $hostIp) { return $false }
+    $hostBits = ([int64]1 -shl (32 - $PrefixLength)) - 1
+    if (($guest -bor $hostBits) -ne ($hostIp -bor $hostBits)) { return $false }
+    # Network and broadcast addresses are not hosts (/31 and /32 have neither).
+    if ($PrefixLength -le 30 -and (($guest -band $hostBits) -eq 0 -or ($guest -band $hostBits) -eq $hostBits)) { return $false }
+    $true
+}
+
+# The host's IPv4 addresses on the switch the VM is connected to (its "vEthernet (<switch>)" adapter).
+function Get-GpuVMHostNetwork {
+    param([Parameter(Mandatory)][string]$Name)
+    $switch = (Get-VMNetworkAdapter -VMName $Name | Select-Object -First 1).SwitchName
+    if (-not $switch) { throw "La VM '$Name' no está conectada a ningún conmutador virtual." }
+    $networks = @(Get-NetIPAddress -InterfaceAlias "vEthernet ($switch)" -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Where-Object { $_.IPAddress -notlike '169.254.*' } |
+        ForEach-Object { [pscustomobject]@{ Address = $_.IPAddress; PrefixLength = [int]$_.PrefixLength } })
+    if (-not $networks) { throw "El host no tiene una dirección IPv4 en el conmutador '$switch' de la VM '$Name'; no se puede comprobar la IP que informa la VM." }
+    $networks
+}
+
+# The VM's IP and the host's IP on the same subnet (the address Moonlight connects from).
+function Get-GpuVMEndpoint {
     param(
         [Parameter(Mandatory)][string]$Name,
         [int]$TimeoutSec = 1200
     )
+    $networks = Get-GpuVMHostNetwork -Name $Name
     # The first boot installs Windows and restarts once; the IP only shows up once Windows is running.
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     $started = Get-Date
     $lastReport = [datetime]::MinValue
     do {
-        $ip = Get-VMNetworkAdapter -VMName $Name |
+        $reported = @(Get-VMNetworkAdapter -VMName $Name |
             ForEach-Object IPAddresses |
-            Where-Object { $_ -match '^\d+\.\d+\.\d+\.\d+$' -and $_ -notlike '169.254.*' } |
-            Select-Object -First 1
-        if ($ip) { return $ip }
+            Where-Object { $null -ne (ConvertTo-IPv4Number ([string]$_)) -and $_ -notlike '169.254.*' })
+        foreach ($ip in $reported) {
+            foreach ($network in $networks) {
+                if (Test-GuestAddressInHostSubnet -Address $ip -HostAddress $network.Address -PrefixLength $network.PrefixLength) {
+                    return [pscustomobject]@{ Address = [string]$ip; HostAddress = $network.Address }
+                }
+            }
+        }
+        if ($reported) {
+            $subnets = ($networks | ForEach-Object { "$($_.Address)/$($_.PrefixLength)" }) -join ', '
+            throw ("La VM '{0}' informa la IP {1}, que no está en la red del host con la VM ({2}). Por seguridad no se conecta: revisa el adaptador de red de la VM." -f
+                $Name, (ConvertTo-GuestString ($reported -join ', ') -MaxLength 100), $subnets)
+        }
         if (((Get-Date) - $lastReport).TotalSeconds -ge 60) {
             $vm = Get-VM -Name $Name
             $heartbeat = (Get-VMIntegrationService -VMName $Name | Where-Object { $_.Id -like '*84EAAE65-2F2E-45F5-9BB5-0E857DC8EB47*' }).PrimaryStatusDescription
@@ -88,6 +153,14 @@ function Get-GpuVMAddress {
         Start-Sleep -Seconds 5
     } while ((Get-Date) -lt $deadline)
     throw "La VM '$Name' no obtuvo una dirección IP en $([int]($TimeoutSec / 60)) min. Mira su pantalla con: vmconnect.exe localhost $Name"
+}
+
+function Get-GpuVMAddress {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [int]$TimeoutSec = 1200
+    )
+    (Get-GpuVMEndpoint -Name $Name -TimeoutSec $TimeoutSec).Address
 }
 
 # Sunshine uses a self-signed certificate; it is accepted because the connection is to the local VM.
@@ -106,6 +179,8 @@ function Invoke-SunshineApi {
         Credential           = $Credential
         SkipCertificateCheck = $true
         TimeoutSec           = 15
+        # A redirect would send the credentials somewhere the guest chose.
+        MaximumRedirection   = 0
     }
     if ($null -ne $Body) {
         $params['Body'] = $Body | ConvertTo-Json -Depth 5
@@ -118,7 +193,9 @@ function Wait-SunshineReady {
     param(
         [Parameter(Mandatory)][string]$Address,
         [Parameter(Mandatory)][pscredential]$Credential,
-        [int]$TimeoutSec = 900
+        [int]$TimeoutSec = 900,
+        # What is shown while waiting: only the caller knows whether this is the first boot or just a restart.
+        [string]$Message = 'Esperando a que Sunshine responda'
     )
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     $announced = $false
@@ -126,7 +203,7 @@ function Wait-SunshineReady {
         try { Invoke-SunshineApi -Address $Address -Credential $Credential -Path '/api/clients/list' | Out-Null; return }
         catch {
             if ((Get-Date) -gt $deadline) { throw "Sunshine no responde en ${Address}:$($script:SunshineWebPort). Revisa C:\GpuVM\setup.log dentro de la VM. Último error: $_" }
-            if (-not $announced) { Write-Step 'Esperando a Sunshine (el primer arranque instala Windows y el streaming; puede tardar varios minutos)'; $announced = $true }
+            if (-not $announced) { Write-Step $Message; $announced = $true }
             Start-Sleep -Seconds 10
         }
     }
@@ -142,17 +219,22 @@ function ConvertFrom-SunshineDisplayLog {
 }
 
 # With the Hyper-V display active, Sunshine captures the primary one (Hyper-V, no GPU) and Moonlight shows black.
-# Pin the virtual display (EDID manufacturer "MTT") and ask for it to be the only active one while streaming.
+# Pin the virtual display (EDID manufacturer "MTT"). If the Hyper-V display is still there, Sunshine is asked to keep
+# the virtual one as the only active display while streaming. If GpuVM already disabled it (-OnlyDisplay), Sunshine is
+# told not to touch displays: any change it makes per session forces it to re-test every encoder, and the first frame
+# then takes 15 to 25 s instead of about 2 s (lab 008).
 function Set-SunshineVirtualDisplay {
     param(
         [Parameter(Mandatory)][string]$Address,
-        [Parameter(Mandatory)][pscredential]$Credential
+        [Parameter(Mandatory)][pscredential]$Credential,
+        [switch]$OnlyDisplay
     )
     $lines = (Invoke-SunshineApi -Address $Address -Credential $Credential -Path '/api/logs') -split "`n"
     $vdd = ConvertFrom-SunshineDisplayLog -Lines $lines | Where-Object { $_.edid -and $_.edid.manufacturer_id -eq 'MTT' } | Select-Object -First 1
     if (-not $vdd) { Write-Warning 'Sunshine no ve la pantalla virtual; la imagen puede salir en negro. Revisa C:\GpuVM\setup.log en la VM.'; return }
 
-    $settings = [ordered]@{ output_name = $vdd.device_id; dd_configuration_option = 'ensure_only_display' }
+    $mode = if ($OnlyDisplay) { 'disabled' } else { 'ensure_only_display' }
+    $settings = [ordered]@{ output_name = $vdd.device_id; dd_configuration_option = $mode }
     if (Update-SunshineConfig -Address $Address -Credential $Credential -Settings $settings) {
         Write-Step "Sunshine capturará la pantalla virtual ($($vdd.display_name))"
     }
@@ -181,7 +263,7 @@ function Update-SunshineConfig {
     # Sunshine drops the connection when restarting; the error from that call is expected.
     try { Invoke-SunshineApi -Address $Address -Credential $Credential -Method POST -Path '/api/restart' -Body @{} | Out-Null } catch { }
     Start-Sleep -Seconds 5
-    Wait-SunshineReady -Address $Address -Credential $Credential -TimeoutSec 120
+    Wait-SunshineReady -Address $Address -Credential $Credential -TimeoutSec 120 -Message 'Sunshine se reinicia con la configuración nueva'
     $true
 }
 
@@ -192,12 +274,13 @@ function Get-GuestAudioSink {
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][pscredential]$Credential
     )
-    Invoke-Command -VMName $Name -Credential $Credential -ErrorAction Stop -ScriptBlock {
+    $sink = Invoke-Command -VMName $Name -Credential $Credential -ErrorAction Stop -ScriptBlock {
         Get-PnpDevice -Class AudioEndpoint -PresentOnly -ErrorAction SilentlyContinue |
             Where-Object { $_.InstanceId -like 'SWD\MMDEVAPI\{0.0.0.*' -and $_.FriendlyName -like '*VB-Audio Virtual Cable*' -and $_.Status -eq 'OK' } |
             Sort-Object { $_.FriendlyName -like '*16 Ch*' } |
             Select-Object -First 1 -ExpandProperty FriendlyName
     }
+    ConvertTo-GuestString (@($sink)[0]) -MaxLength 128
 }
 
 # Makes Sunshine capture the VB-CABLE output (virtual_sink). Also repairs VMs whose first-boot task never found it.
@@ -226,7 +309,9 @@ function Wait-GuestReady {
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     $announced = $false
     while ((Get-Date) -lt $deadline) {
-        $ready = try {
+        # Only a single real $true counts (the guest could return any object that is "truthy").
+        # @() outside the try: assigning a try block unrolls the array (one item becomes a scalar, none becomes $null).
+        $answer = @(try {
             Invoke-Command -VMName $Name -Credential $Credential -ErrorAction Stop -ScriptBlock {
                 $path = 'C:\GpuVM\setup.done.json'
                 if (-not (Test-Path $path)) { return $false }
@@ -235,7 +320,8 @@ function Wait-GuestReady {
                 (Get-CimInstance Win32_OperatingSystem).LastBootUpTime -gt (Get-Item $path).LastWriteTime
             }
         }
-        catch { $false }
+        catch { })
+        $ready = $answer.Count -eq 1 -and $answer[0] -is [bool] -and $answer[0]
         if ($ready) { return }
         if (-not $announced) { Write-Step 'Windows termina de configurarse (solo la primera vez)'; $announced = $true }
         Start-Sleep -Seconds 10
@@ -255,7 +341,7 @@ function Set-GuestDisplayResolution {
     )
     $width, $height = $Resolution.Split('x') | ForEach-Object { [int]$_ }
     $code = Get-Content -Raw -LiteralPath (Get-RepoPath 'guest\set-resolution.ps1')
-    Invoke-Command -VMName $Name -Credential $Credential -ErrorAction Stop -ArgumentList $code, $width, $height, $Fps -ScriptBlock {
+    $raw = Invoke-Command -VMName $Name -Credential $Credential -ErrorAction Stop -ArgumentList $code, $width, $height, $Fps -ScriptBlock {
         param($code, $width, $height, $fps)
         $script = 'C:\GpuVM\set-resolution.ps1'
         $out = 'C:\GpuVM\resolution.json'
@@ -272,6 +358,19 @@ function Set-GuestDisplayResolution {
         Unregister-ScheduledTask -TaskName 'GpuVM-Resolution' -Confirm:$false
         if (Test-Path $out) { Get-Content -Raw $out | ConvertFrom-Json } else { [pscustomobject]@{ ok = $false; error = 'La tarea no respondió.' } }
     }
+    # The answer is rebuilt from primitives only: it comes from the guest and ends up in messages on the host.
+    $raw = @($raw)[0]
+    $field = { param($key) if ($null -ne $raw -and $raw.PSObject.Properties[$key]) { $raw.$key } }
+    $ok = & $field 'ok'
+    $result = [pscustomobject]@{
+        ok      = $ok -is [bool] -and $ok
+        applied = ConvertTo-GuestString (& $field 'applied') -MaxLength 40
+        error   = ConvertTo-GuestString (& $field 'error')
+    }
+    if ($null -ne $raw -and $raw.PSObject.Properties['available']) {
+        $result | Add-Member NoteProperty available (ConvertTo-GuestString $raw.available -MaxLength 400)
+    }
+    $result
 }
 
 # If the Hyper-V console (enhanced session) or Remote Desktop took the user's session, Sunshine
@@ -281,7 +380,7 @@ function Repair-GuestConsoleSession {
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][pscredential]$Credential
     )
-    Invoke-Command -VMName $Name -Credential $Credential -ErrorAction Stop -ScriptBlock {
+    $status = Invoke-Command -VMName $Name -Credential $Credential -ErrorAction Stop -ScriptBlock {
         if (-not ('GpuVM.Wts' -as [type])) {
             Add-Type -Namespace GpuVM -Name Wts -MemberDefinition '[DllImport("kernel32.dll")] public static extern uint WTSGetActiveConsoleSessionId();'
         }
@@ -297,6 +396,7 @@ function Repair-GuestConsoleSession {
         Unregister-ScheduledTask -TaskName $task -Confirm:$false
         'moved'
     }
+    ConvertTo-GuestString (@($status)[0]) -MaxLength 20
 }
 
 function Test-SunshineClientPaired {
@@ -309,13 +409,85 @@ function Test-SunshineClientPaired {
     ($clients | ConvertTo-Json -Depth 6) -match [regex]::Escape("`"$ClientName`"")
 }
 
-# Only Moonlight installed under Program Files is accepted: the app runs as administrator and Moonlight inherits that,
-# so a Moonlight.exe from folders any user program can write to is never run.
+# Only Moonlight installed under Program Files is accepted: the app runs as administrator and decides which
+# program to launch, so a Moonlight.exe from folders any user program can write to is never chosen.
 function Get-MoonlightPath {
     @(
-        (Join-Path $env:ProgramFiles 'Moonlight Game Streaming\Moonlight.exe')
+        (Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Moonlight Game Streaming\Moonlight.exe')
         (Join-Path ${env:ProgramFiles(x86)} 'Moonlight Game Streaming\Moonlight.exe')
     ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
+}
+
+# Moonlight talks to a server the guest controls, so it never runs elevated: it starts as the interactive
+# user through a one-shot scheduled task (Limited run level). Returns the task name.
+# With -KeepTask the task stays registered so the caller can follow it (Get-UnelevatedTaskState) and remove it.
+function Start-UnelevatedProcess {
+    param(
+        [Parameter(Mandatory)][string]$FilePath,
+        [string[]]$ArgumentList,
+        [switch]$KeepTask
+    )
+    $taskName = "Moonlight-$([guid]::NewGuid().ToString('n'))"
+    $actionParams = @{ Execute = $FilePath }
+    if ($ArgumentList) { $actionParams['Argument'] = $ArgumentList -join ' ' }
+    $action = New-ScheduledTaskAction @actionParams
+    # The user signed in at the console: if GpuVM was elevated with another administrator account, that account has
+    # no desktop session and the task would never show Moonlight.
+    $user = (Get-CimInstance Win32_ComputerSystem).UserName
+    if (-not $user) { $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name }
+    $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
+    # No time limit: a streaming session can last hours.
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
+    Register-ScheduledTask -TaskName $taskName -TaskPath '\GpuVM\' -Action $action -Principal $principal -Settings $settings -Force | Out-Null
+    try {
+        Start-ScheduledTask -TaskName $taskName -TaskPath '\GpuVM\'
+        # Wait until the process has started; removing the task afterwards does not stop it.
+        for ($i = 0; $i -lt 20; $i++) {
+            $state = Get-UnelevatedTaskState -TaskName $taskName
+            if ($state.Running -or $state.Finished) { break }
+            Start-Sleep -Milliseconds 250
+        }
+    }
+    catch {
+        Remove-UnelevatedTask -TaskName $taskName
+        throw
+    }
+    if (-not $KeepTask) { Remove-UnelevatedTask -TaskName $taskName }
+    $taskName
+}
+
+# Running: the process is still open. Finished: it ran and exited with ExitCode.
+function Get-UnelevatedTaskState {
+    param([Parameter(Mandatory)][string]$TaskName)
+    $task = Get-ScheduledTask -TaskName $TaskName -TaskPath '\GpuVM\' -ErrorAction SilentlyContinue
+    if (-not $task) { return [pscustomobject]@{ Running = $false; Finished = $true; ExitCode = -1 } }
+    $info = $task | Get-ScheduledTaskInfo
+    # 0x41301: running; 0x41303: has not run yet.
+    $finished = $task.State -ne 'Running' -and $info.LastTaskResult -notin 0x41301, 0x41303
+    [pscustomobject]@{ Running = $task.State -eq 'Running'; Finished = $finished; ExitCode = [int64]$info.LastTaskResult }
+}
+
+function Remove-UnelevatedTask {
+    param([Parameter(Mandatory)][string]$TaskName)
+    Unregister-ScheduledTask -TaskName $TaskName -TaskPath '\GpuVM\' -Confirm:$false -ErrorAction SilentlyContinue
+}
+
+# Picks the pairing request that Moonlight on this host started. Another device on the guest's network
+# could ask to pair at the same time; its request must not get the PIN. Sunshine reports where the request
+# came from (address), which must be the host's IP on the VM's network; without an address, the name must match.
+function Select-MoonlightPairingRequest {
+    param(
+        [object[]]$Pending,
+        [Parameter(Mandatory)][string]$HostAddress,
+        [Parameter(Mandatory)][string]$ClientName
+    )
+    $matched = @($Pending | Where-Object { $_ } | Where-Object {
+        $address = if ($_.PSObject.Properties['address']) { [string]$_.address } else { '' }
+        if ($address) { ($address -replace '^::ffff:', '' -replace ':\d+$', '') -eq $HostAddress }
+        else { $_.PSObject.Properties['name'] -and [string]$_.name -eq $ClientName }
+    })
+    if ($matched.Count -gt 1) { throw 'Hay varias solicitudes de emparejamiento desde este equipo; vuelve a intentarlo.' }
+    if ($matched.Count) { $matched[0] }
 }
 
 # Moonlight starts pairing with a PIN; the PIN is handed to Sunshine through its API, without opening the web UI.
@@ -325,28 +497,43 @@ function Register-MoonlightPairing {
         [Parameter(Mandatory)][pscredential]$Credential,
         [Parameter(Mandatory)][string]$MoonlightPath,
         [Parameter(Mandatory)][string]$ClientName,
+        # The host's IP on the VM's network: the pairing request must come from it.
+        [Parameter(Mandatory)][string]$HostAddress,
         [int]$TimeoutSec = 60
     )
     $pin = '{0:D4}' -f [Security.Cryptography.RandomNumberGenerator]::GetInt32(0, 10000)
     Write-Step "Emparejando Moonlight con Sunshine en $Address"
-    $moonlight = Start-Process -FilePath $MoonlightPath -ArgumentList 'pair', $Address, '--pin', $pin -PassThru
-
-    $deadline = (Get-Date).AddSeconds($TimeoutSec)
-    $submitted = $false
-    while (-not $submitted -and (Get-Date) -lt $deadline -and -not $moonlight.HasExited) {
-        $pending = @((Invoke-SunshineApi -Address $Address -Credential $Credential -Path '/api/pin').pairings)
-        if ($pending.Count) {
-            $request = $pending | Select-Object -Last 1
-            $result = Invoke-SunshineApi -Address $Address -Credential $Credential -Method POST -Path '/api/pin' `
-                -Body @{ pairing_id = $request.id; pin = $pin; name = $ClientName }
-            if ($result.status -eq $false) { throw 'Sunshine rechazó el PIN de emparejamiento.' }
-            $submitted = $true
+    $task = Start-UnelevatedProcess -FilePath $MoonlightPath -ArgumentList 'pair', $Address, '--pin', $pin -KeepTask
+    try {
+        $deadline = (Get-Date).AddSeconds($TimeoutSec)
+        $submitted = $false
+        while (-not $submitted -and (Get-Date) -lt $deadline -and -not (Get-UnelevatedTaskState -TaskName $task).Finished) {
+            $pending = @((Invoke-SunshineApi -Address $Address -Credential $Credential -Path '/api/pin').pairings)
+            $request = Select-MoonlightPairingRequest -Pending $pending -HostAddress $HostAddress -ClientName $ClientName
+            if ($request) {
+                $result = Invoke-SunshineApi -Address $Address -Credential $Credential -Method POST -Path '/api/pin' `
+                    -Body @{ pairing_id = [string]$request.id; pin = $pin; name = $ClientName }
+                if ($result.status -eq $false) { throw 'Sunshine rechazó el PIN de emparejamiento.' }
+                $submitted = $true
+            }
+            else { Start-Sleep -Seconds 1 }
         }
-        else { Start-Sleep -Seconds 1 }
+        if (-not $submitted) { throw 'Moonlight no pidió emparejarse a tiempo.' }
+
+        # Moonlight is not a child of this process: its exit code is the task's last result.
+        $deadline = (Get-Date).AddSeconds($TimeoutSec)
+        while (-not ($state = Get-UnelevatedTaskState -TaskName $task).Finished) {
+            if ((Get-Date) -gt $deadline) { throw 'Moonlight no terminó el emparejamiento.' }
+            Start-Sleep -Seconds 1
+        }
+        if ($state.ExitCode -ne 0) { throw "Moonlight terminó el emparejamiento con código $($state.ExitCode)." }
+        if (-not (Test-SunshineClientPaired -Address $Address -Credential $Credential -ClientName $ClientName)) {
+            throw 'Sunshine no registró el emparejamiento de Moonlight.'
+        }
     }
-    if (-not $submitted) { throw 'Moonlight no pidió emparejarse a tiempo.' }
-    if (-not $moonlight.WaitForExit($TimeoutSec * 1000)) { throw 'Moonlight no terminó el emparejamiento.' }
-    if ($moonlight.ExitCode -ne 0) { throw "Moonlight terminó el emparejamiento con código $($moonlight.ExitCode)." }
+    finally {
+        Remove-UnelevatedTask -TaskName $task
+    }
 }
 
 function Get-MoonlightStreamArguments {
@@ -371,5 +558,10 @@ function Get-MoonlightStreamArguments {
     if ($Client.Contains('displayMode') -and $Client['displayMode'] -in 'fullscreen', 'windowed', 'borderless') {
         $arguments += '--display-mode', $Client['displayMode']
     }
+    # Alt+F4, Alt+Tab and the Windows key go to the VM instead of closing or leaving Moonlight on this PC
+    # (Ctrl+Alt+Shift+Q still quits the stream).
+    # VMs created before this option existed get it too.
+    $keys = if ($Client.Contains('captureSystemKeys')) { $Client['captureSystemKeys'] } else { 'fullscreen' }
+    if ($keys -in 'never', 'fullscreen', 'always') { $arguments += '--capture-system-keys', $keys }
     $arguments
 }

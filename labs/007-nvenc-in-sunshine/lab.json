@@ -1,7 +1,7 @@
 {
   "id": "007-nvenc-in-sunshine",
   "title": "NVENC in Sunshine",
-  "hypothesis": "Setting nvenc_preset=1, quarter-resolution two-pass and latency_over_power reduces encoding latency compared to the defaults. Applies to new VMs (the profile's sunshine.conf).",
+  "hypothesis": "Sunshine's defaults are already preset 1, quarter-resolution two-pass and latency over power. Single pass, no VBV increase and no split encode should lower encoding time further at 1080p.",
   "vm": "",
   "status": "open",
   "createdAt": "2026-10-27T00:13:28.9894109-05:00",
@@ -15,9 +15,9 @@
       "override": {
         "streaming": {
           "sunshine": {
-            "nvenc_latency_over_power": "enabled",
-            "nvenc_preset": 1,
-            "nvenc_twopass": "quarter_res"
+            "nvenc_twopass": "disabled",
+            "nvenc_vbv_increase": 0,
+            "nvenc_split_encode": "disabled"
           }
         }
       }

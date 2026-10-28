@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 // Seeded Bauhaus patterns: each machine always gets the same one, and its main color
 // tints its primary button.
 
@@ -116,3 +118,26 @@ export function Bauhaus({ name, size, radius = 10, cols = 2, rows = 2, variant, 
 }
 
 import type { JSX } from "react";
+
+/** A pattern that changes to the next one when clicked; the choice is remembered and shown everywhere at once. */
+export function PatternButton({ name, onChange, ...props }: Omit<Props, "variant"> & { onChange?: (variant: number) => void }) {
+  const [variant, setVariant] = useState(() => patternVariant(name));
+  useEffect(() => {
+    setVariant(patternVariant(name));
+    const sync = () => setVariant(patternVariant(name));
+    window.addEventListener("gpuvm-pattern", sync);
+    return () => window.removeEventListener("gpuvm-pattern", sync);
+  }, [name]);
+  const next = () => {
+    const v = variant + 1;
+    setPatternVariant(name, v);
+    setVariant(v);
+    onChange?.(v);
+    window.dispatchEvent(new Event("gpuvm-pattern"));
+  };
+  return (
+    <button type="button" className="pattern-btn" title="Otro patrón" aria-label="Otro patrón" onClick={next}>
+      <Bauhaus name={name} variant={variant} {...props} />
+    </button>
+  );
+}

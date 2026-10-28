@@ -41,6 +41,7 @@ function Resolve-GpuVMSettings {
         $config['vm']['root'] = $State['config']['vm']['root']
         if ($State['config']['streaming'] -and $config['streaming']) {
             $config['streaming']['client'] = $State['config']['streaming']['client']
+            if ($State['config']['streaming'].Contains('captureMode')) { $config['streaming']['captureMode'] = $State['config']['streaming']['captureMode'] }
         }
     }
     else {
@@ -51,5 +52,8 @@ function Resolve-GpuVMSettings {
     $logical = [int](Get-CimInstance Win32_Processor | Select-Object -First 1).NumberOfLogicalProcessors
     $problems = Test-GpuVMProfileData -Config $config -HostLogicalProcessors $logical -HostMemoryGB ($cs.TotalPhysicalMemory / 1GB)
     if ($problems.Count) { throw ($problems -join ' ') }
+    # A disk only grows; refusing here keeps the saved size equal to the real one.
+    $current = [int]$State['config']['vm']['disk']['sizeGB']
+    if ([int]$config['vm']['disk']['sizeGB'] -lt $current) { throw "El disco mide $current GB y no se puede reducir." }
     $config
 }

@@ -6,6 +6,7 @@ export interface ClientSettings {
   fps: number;
   bitrateKbps: number;
   codec: string;
+  displayMode?: DisplayMode;
 }
 
 export interface VmOverview {
@@ -31,20 +32,61 @@ export interface VmOverview {
   guestCredential: boolean;
   address: string | null;
   client: ClientSettings | null;
-  options: { cpu: number; memoryGB: number; gpuPercent: number } | null;
+  options: { cpu: number; memoryGB: number; gpuPercent: number; diskGB: number; diskType: string; diskFreeGB: number; captureMode: "ddx" | "wgc" } | null;
 }
+
+export type DisplayMode = "fullscreen" | "windowed" | "borderless";
 
 export interface IsoFile {
   path: string;
   name: string;
   sizeGB: number;
   modified: string;
+  remembered?: boolean;
+  missing?: boolean;
+  lastUsed?: string | null;
+  usedBy?: string[];
+}
+
+export interface ProfileSettings {
+  cpu: number;
+  memoryGB: number;
+  gpuPercent: number;
+  diskGB: number;
+  diskType: "Dynamic" | "Fixed";
+  iso: string | null;
+  apps: string[];
+  resolution: string | null;
+  fps: number | null;
+  displayMode: DisplayMode;
 }
 
 export interface ProfileInfo {
   Name: string;
   Extends: string | null;
   Description: string;
+  BuiltIn?: boolean;
+  Settings?: ProfileSettings | null;
+}
+
+export interface AppInfo {
+  id: string;
+  name: string;
+  signer: string;
+}
+
+export interface DiskInfo {
+  name: string;
+  path: string;
+  sizeGB: number;
+  fileGB: number;
+  type: string | null;
+  vm: string | null;
+  restorable: boolean;
+  profile: string | null;
+  edition: string | null;
+  createdAt: string;
+  hostFreeGB: number;
 }
 
 export interface JobEvent {

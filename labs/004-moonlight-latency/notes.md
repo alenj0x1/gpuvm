@@ -11,3 +11,5 @@
 
 ## Observations
 
+
+- 2026-10-27: end-to-end meter works once Moonlight has keyboard focus. At 60 FPS, V-Sync off lowers the median from 38.9 to 33.8 ms (about 5 ms, less than one frame) and halves the p95. The p95 and missed samples come partly from the meter (single pixel read through GetPixel). 120/144 FPS: the stream stayed black because the refresh change happened while the previous Sunshine session was open; the tools now close it between variants (pending re-run).

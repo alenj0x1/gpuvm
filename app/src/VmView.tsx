@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import {
   IconCpu, IconDeviceDesktop, IconDots, IconExternalLink, IconKey, IconLoader2, IconPlayerPause, IconPlayerPlay,
   IconPower, IconRefresh, IconRefreshAlert, IconTrash, IconPlugOff, IconClock, IconTopologyStar3, IconPalette,
-  IconBolt, IconDeviceFloppy, IconLink, IconDownload, IconCheck, IconChartLine,
+  IconBolt, IconDeviceFloppy, IconLink, IconDownload, IconCheck, IconChartLine, IconArrowsMaximize, IconAppWindow, IconApps, IconClipboardText, IconScreenShare, IconMaximize,
 } from "@tabler/icons-react";
-import type { HostInfo, Sample, VmOverview } from "./types";
+import type { AppInfo, DisplayMode, HostInfo, Sample, VmOverview } from "./types";
+import { AppPicker, FPS, RESOLUTIONS } from "./pickers";
 import { Bauhaus, machineColor, patternVariant, setPatternVariant, tintVars } from "./bauhaus";
 import { MAX_SAMPLES, UsageChart } from "./Chart";
 import { CheckMark, Segmented, Slider, formatUptime, stateLabel } from "./ui";
@@ -27,8 +28,6 @@ interface Props {
   onRemoved: () => void;
 }
 
-const RESOLUTIONS = ["1280x720", "1920x1080", "2560x1440", "3840x2160"];
-const FPS = [30, 60, 120, 144];
 const TRANSITION: Record<string, string> = { Starting: "Encendiendo", Stopping: "Apagando", Saving: "Guardando", Pausing: "Pausando", Resuming: "Reanudando" };
 
 export function VmView({ vm, host, samples, busy, startJob, run, onRemoved }: Props) {
@@ -88,6 +87,29 @@ export function VmView({ vm, host, samples, busy, startJob, run, onRemoved }: Pr
       </div>
 
       {vm.managed && vm.options && <Options vm={vm} host={host} busy={busy} startJob={startJob} run={run} />}
+      {vm.managed && vm.guestCredential && <Apps vm={vm} busy={busy} startJob={startJob} />}
+    </div>
+  );
+}
+
+function Apps({ vm, busy, startJob }: Pick<Props, "vm" | "busy" | "startJob">) {
+  const [catalog, setCatalog] = useState<AppInfo[]>([]);
+  const [chosen, setChosen] = useState<string[]>([]);
+  useEffect(() => { api.apps().then(setCatalog).catch(() => {}); }, []);
+  if (!catalog.length) return null;
+  const installing = busy?.cmd === "Install-GpuVMApp";
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h2 className="section-title">Apps</h2>
+        {chosen.length > 0 && (
+          <button className="btn" disabled={!!busy} onClick={() => startJob(vm.name, "Install-GpuVMApp", { Name: vm.name, App: chosen }, () => setChosen([]))}>
+            {installing ? <IconLoader2 size={16} className="spin" /> : <IconApps size={16} />}
+            {installing ? busy!.message : vm.state === "Off" ? "Encender e instalar" : "Instalar"}
+          </button>
+        )}
+      </div>
+      <AppPicker apps={catalog} value={chosen} onChange={setChosen} />
     </div>
   );
 }
@@ -112,6 +134,7 @@ function Header({ vm, busy, variant, startJob, run, onRemoved, onPattern }: Head
   const [menu, setMenu] = useState(false);
   const [confirmOff, setConfirmOff] = useState(false);
   const [confirm, setConfirm] = useState(false);
+  const [pasting, setPasting] = useState<"busy" | "done" | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const running = vm.state === "Running";
   const paused = vm.state === "Paused";
@@ -150,7 +173,9 @@ function Header({ vm, busy, variant, startJob, run, onRemoved, onPattern }: Head
 
   return (
     <div className="card head">
-      <Bauhaus name={vm.name} variant={variant} size={56} radius={14} />
+      <button type="button" className="pattern-btn" title="Otro patrón" aria-label="Otro patrón" onClick={onPattern}>
+        <Bauhaus name={vm.name} variant={variant} size={56} radius={14} />
+      </button>
       <div style={{ minWidth: 0 }}>
         <h1>{vm.name}</h1>
         <div className="meta">
@@ -161,6 +186,17 @@ function Header({ vm, busy, variant, startJob, run, onRemoved, onPattern }: Head
         </div>
       </div>
       <div className="actions" ref={menuRef}>
+        {running && vm.managed && vm.guestCredential && (
+          <button className="icon-btn" aria-label="Pegar en la VM" title="Pegar en la VM lo copiado en este equipo" disabled={pasting === "busy"}
+            onClick={async () => {
+              setPasting("busy");
+              const ok = await run(vm.name, "Pegando", () => api.pasteToVm(vm.name));
+              setPasting(ok ? "done" : null);
+              if (ok) setTimeout(() => setPasting(null), 2000);
+            }}>
+            {pasting === "busy" ? <IconLoader2 size={18} className="spin" /> : pasting === "done" ? <IconCheck size={18} /> : <IconClipboardText size={18} />}
+          </button>
+        )}
         <button className="icon-btn" aria-label="Más opciones" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((m) => !m)}><IconDots size={18} /></button>
         {working ? (
           <span className="primary busy" role="status" title={working}><IconLoader2 size={17} className="spin" /><span className="ellipsis">{working}</span></span>
@@ -287,7 +323,12 @@ function GuestPassword({ vm, run }: { vm: VmOverview; run: Props["run"] }) {
 }
 
 function Options({ vm, host, busy, startJob, run }: Pick<Props, "vm" | "host" | "busy" | "startJob" | "run">) {
-  const initial = { cpu: vm.options!.cpu, memoryGB: vm.options!.memoryGB, gpuPercent: vm.options!.gpuPercent, resolution: vm.client?.resolution ?? "1920x1080", fps: vm.client?.fps ?? 60 };
+  const initial = {
+    cpu: vm.options!.cpu, memoryGB: vm.options!.memoryGB, gpuPercent: vm.options!.gpuPercent, diskGB: vm.options!.diskGB,
+    resolution: vm.client?.resolution ?? "1920x1080", fps: vm.client?.fps ?? 60,
+    displayMode: (vm.client?.displayMode === "windowed" ? "windowed" : "fullscreen") as DisplayMode,
+    captureMode: vm.options!.captureMode ?? "ddx",
+  };
   const [draft, setDraft] = useState(initial);
   const [saved, setSaved] = useState(false);
   const key = JSON.stringify(initial);
@@ -296,14 +337,21 @@ function Options({ vm, host, busy, startJob, run }: Pick<Props, "vm" | "host" | 
 
   const maxCpu = Math.max(2, (host?.logicalProcessors ?? 12) - 1);
   const maxMem = Math.max(4, (host?.memoryGB ?? 16) - 4);
-  const vmDirty = draft.cpu !== initial.cpu || draft.memoryGB !== initial.memoryGB || draft.gpuPercent !== initial.gpuPercent;
-  const clientDirty = draft.resolution !== initial.resolution || draft.fps !== initial.fps;
+  // A disk only grows; a fixed one needs that much free space on the host (keeping 10 GB for it).
+  const maxDisk = Math.max(initial.diskGB, Math.min(1024, initial.diskGB + (vm.options!.diskType === "Fixed" ? vm.options!.diskFreeGB - 10 : 1024)));
+  const vmDirty = draft.cpu !== initial.cpu || draft.memoryGB !== initial.memoryGB || draft.gpuPercent !== initial.gpuPercent || draft.diskGB !== initial.diskGB;
+  const clientDirty = draft.resolution !== initial.resolution || draft.fps !== initial.fps || draft.displayMode !== initial.displayMode;
+  const captureDirty = draft.captureMode !== initial.captureMode;
   const off = vm.state === "Off";
 
   const save = async () => {
-    if (clientDirty && !(await run(vm.name, "Guardando", () => api.setClient(vm.name, draft.resolution, draft.fps)))) return;
+    if (clientDirty && !(await run(vm.name, "Guardando", () => api.setClient(vm.name, draft.resolution, draft.fps, draft.displayMode !== initial.displayMode ? draft.displayMode : undefined)))) return;
+    if (captureDirty && !(await run(vm.name, "Cambiando la captura", () => api.setCapture(vm.name, draft.captureMode)))) return;
     if (!vmDirty) { setSaved(true); return; }
-    const override = { vm: { cpu: { count: draft.cpu }, memoryGB: draft.memoryGB }, gpu: { allocationPercent: draft.gpuPercent } };
+    const override = {
+      vm: { cpu: { count: draft.cpu }, memoryGB: draft.memoryGB, disk: { sizeGB: draft.diskGB } },
+      gpu: { allocationPercent: draft.gpuPercent },
+    };
     if (off) { if (await run(vm.name, "Aplicando", () => api.applyOptions(vm.name, override))) setSaved(true); }
     else startJob(vm.name, "Update-GpuVMSettings", { Name: vm.name, Override: override });
   };
@@ -324,6 +372,12 @@ function Options({ vm, host, busy, startJob, run }: Pick<Props, "vm" | "host" | 
           <div className="field-top"><span>GPU para la VM</span><strong>{draft.gpuPercent} %</strong></div>
           <Slider label="GPU" value={draft.gpuPercent} min={10} max={100} step={10} onChange={(gpuPercent) => setDraft({ ...draft, gpuPercent })} />
         </div>
+        <div className="field">
+          <div className="field-top"><span>Disco</span><strong>{draft.diskGB} GB</strong></div>
+          {maxDisk > initial.diskGB
+            ? <Slider label="Disco" value={draft.diskGB} min={initial.diskGB} max={maxDisk} step={8} onChange={(diskGB) => setDraft({ ...draft, diskGB })} />
+            : <span className="hint">Sin espacio libre en el equipo para ampliarlo</span>}
+        </div>
         {vm.streaming && (
           <div className="field">
             <div className="field-top"><span>Moonlight</span></div>
@@ -331,13 +385,31 @@ function Options({ vm, host, busy, startJob, run }: Pick<Props, "vm" | "host" | 
               <Segmented value={draft.resolution} onChange={(resolution) => setDraft({ ...draft, resolution })}
                 options={RESOLUTIONS.map((r) => ({ value: r, label: r.split("x")[1] + "p" }))} />
               <Segmented value={draft.fps} onChange={(fps) => setDraft({ ...draft, fps })} options={FPS.map((f) => ({ value: f, label: `${f} FPS` }))} />
+              <Segmented value={draft.displayMode} onChange={(displayMode) => setDraft({ ...draft, displayMode })} options={[
+                { value: "fullscreen", label: <><IconArrowsMaximize size={15} />Pantalla completa</> },
+                { value: "windowed", label: <><IconAppWindow size={15} />Ventana</> },
+              ]} />
             </div>
           </div>
         )}
+        {vm.streaming && (
+          <div className="field">
+            <div className="field-top"><span>Captura</span></div>
+            <div className="segment-row">
+              <Segmented value={draft.captureMode} onChange={(captureMode) => setDraft({ ...draft, captureMode })} options={[
+                { value: "ddx", label: <><IconScreenShare size={15} />Estándar</> },
+                { value: "wgc", label: <><IconMaximize size={15} />Pantalla completa exclusiva</> },
+              ]} />
+            </div>
+            <span className="hint">{draft.captureMode === "wgc"
+              ? "Muestra programas en pantalla completa exclusiva. Los avisos de administrador de Windows no se ven en el stream."
+              : "Muestra todo, incluidos los avisos de administrador. Los programas en pantalla completa exclusiva se ven en negro."}</span>
+          </div>
+        )}
       </div>
-      {(vmDirty || clientDirty || saved) && (
+      {(vmDirty || clientDirty || captureDirty || saved) && (
         <div className="options-foot">
-          {saved && !vmDirty && !clientDirty ? (
+          {saved && !vmDirty && !clientDirty && !captureDirty ? (
             <span className="saved"><IconCheck size={16} />Guardado</span>
           ) : (
             <>

@@ -1,0 +1,55 @@
+{
+  "id": "008-stream-start-time",
+  "title": "Stream start time",
+  "hypothesis": "With the Hyper-V display disabled, Sunshine's per-session display configuration (ensure_only_display) only adds work: every change makes it re-test all encoders before the first frame. Disabling it (dd_configuration_option = disabled) cuts the time to the first frame.",
+  "vm": "win10",
+  "status": "adopted",
+  "createdAt": "2026-10-27T21:30:59.9488887-05:00",
+  "variants": {
+    "baseline": {
+      "profile": "max-performance",
+      "override": null
+    },
+    "candidate": {
+      "profile": "max-performance",
+      "override": {
+        "streaming": {
+          "sunshine": {
+            "dd_configuration_option": "disabled"
+          }
+        }
+      }
+    }
+  },
+  "results": [
+    {
+      "variant": "baseline",
+      "metric": "first frame, same mode",
+      "value": 26.8,
+      "unit": "s",
+      "lowerIsBetter": true,
+      "notes": "Time from launching Moonlight to its log saying \"Video stream is\", win10 2026-10-27; ensure_only_display; 60 FPS V-Sync after a 144 FPS run (22.5 s for 60 FPS after 60 FPS)",
+      "at": "2026-10-27T21:31:00.0423637-05:00"
+    },
+    {
+      "variant": "candidate",
+      "metric": "first frame, same mode",
+      "value": 2.1,
+      "unit": "s",
+      "lowerIsBetter": true,
+      "notes": "Time from launching Moonlight to its log saying \"Video stream is\", win10 2026-10-27; disabled; 60 FPS after 60 FPS",
+      "at": "2026-10-27T21:31:00.1385556-05:00"
+    },
+    {
+      "variant": "candidate",
+      "metric": "first frame, mode changed",
+      "value": 13.3,
+      "unit": "s",
+      "lowerIsBetter": true,
+      "notes": "Time from launching Moonlight to its log saying \"Video stream is\", win10 2026-10-27; disabled; 120 FPS after 60 (9.8 s for 144 after 120, 15.9 s for 60 after the config change)",
+      "at": "2026-10-27T21:31:00.1595018-05:00"
+    }
+  ],
+  "conclusion": "Adopted: connect sets dd_configuration_option = disabled when GpuVM already disabled the Hyper-V display. Opening without changing resolution or FPS goes from 22-27 s to about 2 s; changing the mode still costs 10-15 s because Sunshine sees the display change and re-tests its encoders. Sunshine's log showed 'Encoder reenumeration is required' on every session with ensure_only_display.",
+  "closedAt": "2026-10-27T21:31:00.1741160-05:00"
+}

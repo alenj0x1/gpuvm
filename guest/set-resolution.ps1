@@ -93,9 +93,54 @@ public static class GpuVMDisplay {
             if (!found || mode.dmDisplayFrequency > best.dmDisplayFrequency) { best = mode; found = true; }
         }
         if (!found) return -100;
-        best.dmFields = 0x80000 | 0x100000 | 0x400000;   // width, height and frequency
         applied = best.dmPelsWidth + "x" + best.dmPelsHeight + "@" + best.dmDisplayFrequency;
+        // Already in that mode: no change, so Sunshine doesn't see a display change and re-test its encoders (~15 s).
+        var current = new DEVMODE();
+        current.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE));
+        if (EnumDisplaySettings(device, -1, ref current) && current.dmPelsWidth == best.dmPelsWidth &&
+            current.dmPelsHeight == best.dmPelsHeight && current.dmDisplayFrequency == best.dmDisplayFrequency) return 0;
+        best.dmFields = 0x80000 | 0x100000 | 0x400000;   // width, height and frequency
         return ChangeDisplaySettingsEx(device, ref best, IntPtr.Zero, 0x1, IntPtr.Zero);   // CDS_UPDATEREGISTRY
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "ChangeDisplaySettingsEx")]
+    static extern int ApplyDisplaySettings(string device, IntPtr mode, IntPtr hwnd, uint flags, IntPtr param);
+
+    /// Makes 'device' the primary display at (0,0) and turns every other display of the desktop off, saved in the
+    /// registry so it stays that way. GPU-P guests get an extra 1024x768 output that would otherwise be the primary
+    /// one, so new windows (Steam, installers) would open where the stream doesn't show them.
+    /// Returns the names of the displays turned off, or null if Windows refused the change.
+    public static string[] MakeOnlyDisplay(string device) {
+        const uint UPDATEREGISTRY = 0x1, SET_PRIMARY = 0x10, NORESET = 0x10000000;
+        const int POSITION = 0x20, WIDTH = 0x80000, HEIGHT = 0x100000;
+        var off = new List<string>();
+        var primary = new DEVMODE();
+        primary.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE));
+        if (!EnumDisplaySettings(device, -1, ref primary)) return null;   // ENUM_CURRENT_SETTINGS
+        // Nothing to do if it is already alone at 0,0: any change would make Sunshine re-test its encoders.
+        bool alone = primary.dmPositionX == 0 && primary.dmPositionY == 0;
+        for (uint i = 0; alone && i < 32; i++) {
+            var d = new DISPLAY_DEVICE();
+            d.cb = Marshal.SizeOf(typeof(DISPLAY_DEVICE));
+            if (!EnumDisplayDevices(null, i, ref d, 0)) break;
+            if (d.DeviceName != device && (d.StateFlags & 0x1) != 0) alone = false;
+        }
+        if (alone) return off.ToArray();
+        primary.dmPositionX = 0; primary.dmPositionY = 0;
+        primary.dmFields = POSITION;
+        if (ChangeDisplaySettingsEx(device, ref primary, IntPtr.Zero, UPDATEREGISTRY | SET_PRIMARY | NORESET, IntPtr.Zero) != 0) return null;
+        for (uint i = 0; i < 32; i++) {
+            var d = new DISPLAY_DEVICE();
+            d.cb = Marshal.SizeOf(typeof(DISPLAY_DEVICE));
+            if (!EnumDisplayDevices(null, i, ref d, 0)) break;
+            if (d.DeviceName == device || (d.StateFlags & 0x1) == 0) continue;   // not attached to the desktop
+            var detach = new DEVMODE();
+            detach.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE));
+            detach.dmDeviceName = d.DeviceName;
+            detach.dmFields = POSITION | WIDTH | HEIGHT;   // a 0x0 size at 0,0 removes it from the desktop
+            if (ChangeDisplaySettingsEx(d.DeviceName, ref detach, IntPtr.Zero, UPDATEREGISTRY | NORESET, IntPtr.Zero) == 0) off.Add(d.DeviceName);
+        }
+        return ApplyDisplaySettings(null, IntPtr.Zero, IntPtr.Zero, 0, IntPtr.Zero) == 0 ? off.ToArray() : null;
     }
 }
 "@
@@ -114,7 +159,11 @@ try {
         Write-Result @{ ok = $false; error = "La pantalla virtual no ofrece ${Width}x${Height}."; available = ([GpuVMDisplay]::Modes($device) -join ', ') }
         return
     }
-    Write-Result @{ ok = ($code -eq 0); code = $code; device = $device; applied = $applied }
+    # Sunshine no longer rearranges displays per session (that costs ~20 s), so GpuVM leaves the virtual one alone.
+    $off = [GpuVMDisplay]::MakeOnlyDisplay($device)
+    $result = @{ ok = ($code -eq 0 -and $null -ne $off); code = $code; device = $device; applied = $applied; turnedOff = (@($off) -join ', ') }
+    if ($null -eq $off) { $result.error = 'Windows no dejó apagar las otras pantallas de la VM.' }
+    Write-Result $result
 }
 catch {
     Write-Result @{ ok = $false; error = "$_" }

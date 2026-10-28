@@ -9,7 +9,9 @@ function Set-GpuVMStreamingClient {
         [ValidatePattern('^\d{3,5}x\d{3,5}$')][string]$Resolution,
         [ValidateRange(10, 480)][int]$Fps,
         [ValidateRange(0, 500000)][int]$BitrateKbps = -1,
-        [ValidateSet('auto', 'H.264', 'HEVC', 'AV1')][string]$Codec
+        [ValidateSet('auto', 'H.264', 'HEVC', 'AV1')][string]$Codec,
+        # windowed: a window the size of the resolution, which can be resized.
+        [ValidateSet('fullscreen', 'windowed', 'borderless')][string]$DisplayMode
     )
     $state = Get-GpuVMState -Name $Name
     if (-not $state['config']['streaming']) { throw "La VM '$Name' no tiene streaming." }
@@ -18,6 +20,7 @@ function Set-GpuVMStreamingClient {
     if ($Fps) { $client['fps'] = $Fps }
     if ($BitrateKbps -ge 0) { $client['bitrateKbps'] = $BitrateKbps }
     if ($Codec) { $client['codec'] = $Codec }
+    if ($DisplayMode) { $client['displayMode'] = $DisplayMode }
     Save-GpuVMState $state
     $client
 }

@@ -61,6 +61,10 @@ function Get-GpuVMOverview {
                     cpu        = $state['config']['vm']['cpu']['count']
                     memoryGB   = $state['config']['vm']['memoryGB']
                     gpuPercent = $state['config']['gpu']['allocationPercent']
+                    diskGB     = $state['config']['vm']['disk']['sizeGB']
+                    diskType   = $state['config']['vm']['disk']['type']
+                    diskFreeGB = Get-DriveFreeGB $state['config']['vm']['root']
+                    captureMode = Get-GpuVMCaptureMode -State $state
                 }
             } else { $null }
         }

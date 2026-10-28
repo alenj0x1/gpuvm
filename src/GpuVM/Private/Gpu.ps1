@@ -108,6 +108,49 @@ function Get-GpuDriverFileSetFromWmi {
     }
 }
 
+# The guest's disk is written to as administrator, so a junction or symlink planted by the guest
+# (e.g. System32 -> the host's C:\Windows) would redirect the write to the host. Each component of
+# $Path below $Root that exists must be a plain file or folder; the root itself (a mount point) is not checked.
+function Assert-NoReparsePoint {
+    param(
+        [Parameter(Mandatory)][string]$Root,
+        [Parameter(Mandatory)][string]$Path
+    )
+    $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd('\')
+    $full = [IO.Path]::GetFullPath($Path).TrimEnd('\')
+    if (-not $full.StartsWith("$rootFull\", [StringComparison]::OrdinalIgnoreCase)) {
+        throw "La ruta $full queda fuera del disco de la VM; no se escribe."
+    }
+    $current = $rootFull
+    foreach ($part in $full.Substring($rootFull.Length + 1).Split('\')) {
+        $current = Join-Path $current $part
+        # GetAttributes does not follow links: it describes the link itself, even a dangling one.
+        $attributes = try { [IO.File]::GetAttributes($current) }
+        catch [IO.FileNotFoundException], [IO.DirectoryNotFoundException] { $null }
+        # Nothing exists from here down: it will be created as plain folders.
+        if ($null -eq $attributes) { return }
+        if ($attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw "El disco de la VM tiene un enlace en $current; no se copia el driver para no escribir fuera de la VM."
+        }
+    }
+}
+
+# Deletes a folder of the guest's disk without following the links inside it: a link is removed, not its target.
+function Remove-GuestDirectory {
+    param([Parameter(Mandatory)][string]$Path)
+    foreach ($entry in [IO.DirectoryInfo]::new($Path).EnumerateFileSystemInfos()) {
+        if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            if ($entry -is [IO.DirectoryInfo]) { [IO.Directory]::Delete($entry.FullName, $false) } else { [IO.File]::Delete($entry.FullName) }
+        }
+        elseif ($entry -is [IO.DirectoryInfo]) { Remove-GuestDirectory -Path $entry.FullName }
+        else {
+            $entry.Attributes = [IO.FileAttributes]::Normal
+            $entry.Delete()
+        }
+    }
+    [IO.Directory]::Delete($Path, $false)
+}
+
 # Copies the host driver into a mounted Windows (e.g. 'X:\').
 # DriverStore folders go to HostDriverStore, which is where GPU-P looks for them inside the guest.
 function Copy-GpuDriverToWindows {
@@ -115,26 +158,35 @@ function Copy-GpuDriverToWindows {
         [Parameter(Mandatory)]$FileSet,
         [Parameter(Mandatory)][string]$WindowsRoot
     )
-    # Copy to a staging folder first and only replace the previous one at the end:
-    # if the copy fails halfway, the guest keeps the driver it had.
     $hostStore = Join-Path $WindowsRoot 'Windows\System32\HostDriverStore\FileRepository'
     $staging = "$hostStore.gpuvm-new"
-    if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
+    $looseFiles = @(foreach ($file in $FileSet.Files) {
+        if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
+        [pscustomobject]@{ Source = $file; Target = Join-Path $WindowsRoot ($file.Substring(3)) }
+    })
+    # Every destination is checked before writing anything, and again right before each write.
+    foreach ($path in @($hostStore, $staging) + $looseFiles.Target) { Assert-NoReparsePoint -Root $WindowsRoot -Path $path }
+
+    # Copy to a staging folder first and only replace the previous one at the end:
+    # if the copy fails halfway, the guest keeps the driver it had.
+    if (Test-Path -LiteralPath $staging) { Remove-GuestDirectory -Path $staging }
+    Assert-NoReparsePoint -Root $WindowsRoot -Path $staging
     New-Item -ItemType Directory -Path $staging -Force | Out-Null
     foreach ($folder in $FileSet.DriverStoreFolders) {
         if (Test-Path -LiteralPath $folder) {
+            # The source is the host's DriverStore and the destination a folder just created: nothing of the guest's is followed.
             Copy-Item -LiteralPath $folder -Destination $staging -Recurse -Force
         }
     }
-    if (Test-Path -LiteralPath $hostStore) { Remove-Item -LiteralPath $hostStore -Recurse -Force }
+    Assert-NoReparsePoint -Root $WindowsRoot -Path $hostStore
+    if (Test-Path -LiteralPath $hostStore) { Remove-GuestDirectory -Path $hostStore }
     Rename-Item -LiteralPath $staging -NewName (Split-Path $hostStore -Leaf)
     $copied = 0
-    foreach ($file in $FileSet.Files) {
-        if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
-        $target = Join-Path $WindowsRoot ($file.Substring(3))
-        $dir = Split-Path $target -Parent
-        if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-        Copy-Item -LiteralPath $file -Destination $target -Force
+    foreach ($file in $looseFiles) {
+        Assert-NoReparsePoint -Root $WindowsRoot -Path $file.Target
+        $dir = Split-Path $file.Target -Parent
+        if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        Copy-Item -LiteralPath $file.Source -Destination $file.Target -Force
         $copied++
     }
     [pscustomobject]@{ Folders = $FileSet.DriverStoreFolders.Count; Files = $copied }

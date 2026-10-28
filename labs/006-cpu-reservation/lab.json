@@ -1,7 +1,7 @@
 {
   "id": "006-cpu-reservation",
   "title": "CPU reservation",
-  "hypothesis": "Reserving 100 % of 8 threads leaves the host (Moonlight, vmwp, GPU scheduling) with little headroom; a 30 % reservation with a high weight gives the same FPS and less stutter.",
+  "hypothesis": "On a Windows 10/11 host the hypervisor uses the root scheduler, where per-VM reserve and weight do nothing; only the number of virtual processors matters. 6 threads leave the host more room than 8 for the same game FPS.",
   "vm": "",
   "status": "open",
   "createdAt": "2026-10-27T00:13:28.9774083-05:00",
@@ -15,7 +15,7 @@
       "override": {
         "vm": {
           "cpu": {
-            "reservePercent": 30
+            "count": 6
           }
         }
       }

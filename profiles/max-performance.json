@@ -18,6 +18,7 @@
     "optimizations": [
       "power-plan-ultimate",
       "disable-sleep",
+      "block-gpu-driver-updates",
       "game-mode",
       "disable-sysmain",
       "disable-search-indexing",
