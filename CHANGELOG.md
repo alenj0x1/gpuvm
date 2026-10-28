@@ -6,7 +6,7 @@ All notable changes to GpuVM are documented here. The format follows [Keep a Cha
 
 Changes waiting for the next version sit under **Unreleased** at the top (this section only exists while there are some, and the docs site doesn't show it); `scripts/release.py` turns it into the new version.
 
-## [Unreleased]
+## [0.3.0] - 2026-10-28
 
 ### Changed
 - **Real audio without Steam.** VB-CABLE's output reached Sunshine as silence inside the VM; the sound that seemed to work came from Steam Streaming Speakers (lab 011). The VM now has GpuVM's own USB speaker, **Speakers (GpuVM Audio)**: a server inside the VM presents a USB audio device, usbip-win2 (Microsoft-signed drivers) plugs it in and Windows drives it with its built-in driver. It reaches Moonlight louder than Steam's speakers, needs no restart, comes back on its own after every restart and never leaves the VM (`127.0.0.1`, `LOCAL SERVICE`). Existing VMs move to it the next time they are opened (lab 012).
@@ -85,6 +85,7 @@ First version.
 - Third-party installers are pinned by SHA-256 and verified again right before copying them into the VM.
 - Streaming and guest credentials are encrypted with DPAPI.
 
+[0.3.0]: https://github.com/alenj0x1/gpuvm/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/alenj0x1/gpuvm/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/alenj0x1/gpuvm/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/alenj0x1/gpuvm/tree/v0.1.0
