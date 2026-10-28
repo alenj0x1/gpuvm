@@ -2,7 +2,7 @@ function Update-GpuVMComponent {
     <#
     .SYNOPSIS
     Looks up the latest version of each component on GitHub and updates version, URL and SHA-256 in streaming/components.json.
-    A new version is untested: validate it in a lab before creating VMs with it.
+    A new version is untested: validate it in a lab before creating VMs with it. Components with a "hold" reason are skipped.
     .EXAMPLE
     Update-GpuVMComponent -WhatIf
     #>
@@ -14,6 +14,7 @@ function Update-GpuVMComponent {
     foreach ($key in $names) {
         $c = $manifest[$key]
         if (-not $c) { Write-Warning "Componente desconocido: $key"; continue }
+        if ($c.Contains('hold') -and $c['hold']) { Write-Warning "$key se mantiene en $($c['version']): $($c['hold'])"; continue }
         if (-not $c['repo']) { Write-Warning "$key no se publica en GitHub; revisa $($c['homepage']) y actualiza versión, URL y SHA-256 a mano."; continue }
         $release = Invoke-RestMethod "https://api.github.com/repos/$($c['repo'])/releases/latest" -Headers @{ 'User-Agent' = 'GpuVM' }
         $asset = $release.assets | Where-Object name -match $c['assetPattern'] | Select-Object -First 1

@@ -85,7 +85,7 @@ function Test-GpuVMProfileData {
     $streaming = $Config['streaming']
     if ($streaming) {
         if ($streaming['provider'] -notin 'sunshine', 'none') { $problems.Add('streaming.provider debe ser "sunshine" o "none".') }
-        if ($streaming['audio'] -and $streaming['audio'] -notin 'vbcable', 'none') { $problems.Add('streaming.audio debe ser "vbcable" o "none".') }
+        if ($streaming['audio'] -and $streaming['audio'] -notin 'usb', 'vbcable', 'none') { $problems.Add('streaming.audio debe ser "usb" o "none".') }
         $client = $streaming['client']
         if ($client -and $client['resolution'] -and $client['resolution'] -notmatch '^\d{3,5}x\d{3,5}$') {
             $problems.Add('streaming.client.resolution debe tener la forma 1920x1080.')

@@ -1,6 +1,6 @@
 ---
 title: Streaming
-description: How GpuVM shows the VM with the GPU — Sunshine, the Virtual Display Driver, Moonlight pairing and VB-CABLE audio.
+description: How GpuVM shows the VM with the GPU — Sunshine, the Virtual Display Driver, Moonlight pairing and audio.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -14,7 +14,7 @@ The Hyper-V console only shows the basic Hyper-V display, not what the GPU draws
 | [Sunshine](https://github.com/LizardByte/Sunshine) | VM | Captures the virtual display and encodes with NVENC. | `v2026.914.233613` |
 | [Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver) | VM | A monitor drawn by the GPU. | `25.7.23` |
 | [nefcon](https://github.com/nefarius/nefcon) | VM | Command-line driver installer; creates the virtual display device. | `v1.14.0` |
-| [VB-CABLE](https://vb-cable.com) | VM | Virtual audio cable that Sunshine captures. | Pack45 (3.3.1.7) |
+| [usbip-win2](https://github.com/vadimgrn/usbip-win2) | VM | Plugs in GpuVM's USB speaker, which Sunshine captures. | 0.9.8.0 |
 | [Moonlight](https://moonlight-stream.org) | Host | Shows the VM. | Installed separately |
 
 The installers are downloaded on the **host** when the VM is created, verified against the SHA-256 pinned in `streaming/components.json` and copied to the VM's disk. The guest downloads nothing. They are kept in a `cache` folder (in `%ProgramData%\GpuVM` when installed).
@@ -42,7 +42,7 @@ With `ddx`, desktop duplication gets no new frames from the virtual display whil
 
 The [Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver) adds a monitor drawn by the GPU. It is installed with nefcon, and only the certificate that signed the driver is trusted.
 
-- After the first boot the VM restarts once on its own to finish registering the virtual display and the audio.
+- After the first boot the VM restarts once on its own to leave the virtual display as its only display.
 - If the virtual display works, the Hyper-V display is turned off so Windows and Sunshine use the virtual one (`disableHyperVVideo` in the profile).
 - On every **Encender y abrir** (Start and open), with the guest password saved, the virtual display is kept as the only and primary display of the VM. GPU-P VMs get an extra hidden 1024×768 output of the shared GPU; if it became the primary one, new windows (Steam, installers) would open where the stream doesn't show them. When it's already set, nothing is changed, so Sunshine doesn't re-test its encoders.
 - If something fails, the VM is still reachable over Remote Desktop.
@@ -64,17 +64,14 @@ Moonlight on the host shows the VM. Pairing is automatic: Moonlight generates th
 
 Codecs: `auto`, `H.264`, `HEVC`, `AV1`. Moonlight opens the `Desktop` app of Sunshine by default.
 
-## Audio with VB-CABLE
+## Audio
 
-Hyper-V Generation 2 VMs have no sound card, so GpuVM installs **VB-CABLE**, a virtual audio cable whose driver has a Microsoft WHQL signature (no Windows warning), and Sunshine captures its output (`virtual_sink`).
+Hyper-V Generation 2 VMs have no sound card. GpuVM gives the VM **its own USB speaker**: a small server inside the VM (`GpuVMAudio.exe`) presents itself as a USB audio device (48 kHz, stereo), [usbip-win2](https://github.com/vadimgrn/usbip-win2) plugs it in, and Windows drives it with its built-in USB audio driver as if it were real hardware. It shows up as **Speakers (GpuVM Audio)** and Sunshine captures it (`virtual_sink`).
 
-- The install is silent, as its [distribution license](https://vb-audio.com/Services/licensing.htm) allows as long as the origin is credited and the user can donate.
-- The original package is left in `C:\GpuVM\VB-CABLE` inside the VM, with a `LEEME.txt` (read me) file.
-- `virtual_sink` is set by the VM after its automatic restart, and checked again on every **Encender y abrir** (Start and open) when the VM's Windows password is saved. The cable's output is found by device type, not by name, because Windows translates it (`CABLE Input` in English, `Altavoces` in Spanish).
-
-<Aside type="tip" title="Credit">
-**VB-CABLE** is donationware by **VB-Audio Software** ([vb-cable.com](https://vb-cable.com)). If you use it, consider [supporting VB-Audio](https://vb-audio.com/Cable/).
-</Aside>
+- Nothing leaves the VM: the server listens on `127.0.0.1` only, runs as `LOCAL SERVICE` and its program lives in `C:\Program Files\GpuVM\Audio`, where only administrators can write.
+- usbip-win2 installs only its client, silently. Its drivers are signed by Microsoft: no test mode, no certificate of its own. GpuVM checks both and uninstalls it if either fails.
+- The speaker is persistent: usbip-win2 plugs it in again every time Windows starts, so no restart or sign-in is needed. **Encender y abrir** (Start and open) checks it every time, plugs it in again if it was lost and updates the server when GpuVM brings a new one.
+- VMs created with VB-CABLE move to the speaker the next time they are opened. VB-CABLE's output is silent to Sunshine inside a VM, so the earlier sound came from Steam Streaming Speakers ([labs 011 and 012](/gpuvm/labs/)).
 
 ## Profile settings
 
@@ -85,7 +82,7 @@ The `streaming` section of the [profile](/gpuvm/profiles/) sets the defaults:
   "provider": "sunshine",            // or "none" to create the VM without streaming
   "virtualDisplay": true,
   "disableHyperVVideo": true,
-  "audio": "vbcable",                // or "none" to skip audio
+  "audio": "usb",                    // or "none" to skip audio
   "sunshine": { },                   // extra keys for sunshine.conf
   "client": { "app": "Desktop", "resolution": "1920x1080", "fps": 60, "bitrateKbps": 0, "codec": "auto" }
 }
@@ -101,4 +98,4 @@ Moonlight is started as the signed-in user, without administrator rights, even t
 ./gpuvm.ps1 components-update -WhatIf   # see whether newer versions exist
 ```
 
-It looks up the latest GitHub release of each component and updates version, URL and SHA-256 in `streaming/components.json`. VB-CABLE isn't published on GitHub and is updated by hand. A new version isn't tested: validate it in a [lab](/gpuvm/labs/) before creating VMs with it. The app can't run this command.
+It looks up the latest GitHub release of each component and updates version, URL and SHA-256 in `streaming/components.json`. usbip-win2 stays on 0.9.8.0 (`hold` in the file) until a lab proves a newer one. A new version isn't tested: validate it in a [lab](/gpuvm/labs/) before creating VMs with it. The app can't run this command.

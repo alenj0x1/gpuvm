@@ -26,13 +26,14 @@
     "url": "https://github.com/nefarius/nefcon/releases/download/v1.14.0/nefcon_v1.14.0.zip",
     "sha256": "a15557da24a9efca203158de3b43b0eaf982db231f0194031f1ed428bc13e669"
   },
-  "vbcable": {
-    "description": "Virtual audio cable by VB-Audio (https://vb-cable.com), donationware. Its license allows silent installation if the source is credited and the user can donate: https://vb-audio.com/Services/licensing.htm",
-    "repo": null,
-    "homepage": "https://vb-audio.com/Cable/",
-    "version": "Pack45 (3.3.1.7)",
-    "file": "VBCABLE_Driver_Pack45.zip",
-    "url": "https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack45.zip",
-    "sha256": "b950e39f01af1d04ea623c8f6d8eb9b6ea5c477c637295fabf20631c85116bfb"
+  "usbip": {
+    "description": "USB/IP client usbip-win2 (BSD-2-Clause), drivers signed by Microsoft. Attaches GpuVM's own USB speaker inside the VM, which Windows drives with its built-in audio driver.",
+    "repo": "vadimgrn/usbip-win2",
+    "assetPattern": "^USBip-[\\d.]+-x64\\.exe$",
+    "version": "v.0.9.8.0",
+    "file": "USBip-0.9.8.0-x64.exe",
+    "url": "https://github.com/vadimgrn/usbip-win2/releases/download/v.0.9.8.0/USBip-0.9.8.0-x64.exe",
+    "sha256": "81f426741f7ee2ed991febe24a22daca8400b6ae2f171054e3fb404897e15d39",
+    "hold": "0.9.8.1 is a large rewrite its author warns may have regressions and 0.9.7.8 has a known crash; update only after repeating lab 012."
   }
 }

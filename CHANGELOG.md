@@ -6,6 +6,11 @@ All notable changes to GpuVM are documented here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
+### Changed
+- **Real audio without Steam.** VB-CABLE's output reached Sunshine as silence inside the VM; the sound that seemed to work came from Steam Streaming Speakers (lab 011). The VM now has GpuVM's own USB speaker, **Speakers (GpuVM Audio)**: a server inside the VM presents a USB audio device, usbip-win2 (Microsoft-signed drivers) plugs it in and Windows drives it with its built-in driver. It reaches Moonlight louder than Steam's speakers, needs no restart, comes back on its own after every restart and never leaves the VM (`127.0.0.1`, `LOCAL SERVICE`). Existing VMs move to it the next time they are opened (lab 012).
+- The first boot no longer restarts the VM for audio.
+- `components-update` skips components on hold; usbip-win2 stays on 0.9.8.0 until a lab proves a newer one.
+
 ### Security
 - **The VM is isolated from your network by default.** It keeps internet, but reaches neither this PC nor your local network, except for the Default Switch's DHCP and DNS and the replies to the connections Moonlight opens. The rules live on the VM's virtual switch port, enforced by the host, so a damaged or infected VM can't remove them; they are refreshed before every start because the Default Switch changes the host's address. Turn it off per VM in **Options → Red** (for example, to reach a NAS). Not applied on an external switch, with a warning (lab 010).
 

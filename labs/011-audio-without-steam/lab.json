@@ -1,0 +1,74 @@
+{
+  "id": "011-audio-without-steam",
+  "title": "Audio without Steam",
+  "hypothesis": "The VB-CABLE Pack45 output that accepts WASAPI loopback (CABLE In 16 Ch) carries the VM's sound to Moonlight when it is Sunshine's virtual_sink; the stereo output GpuVM picks today rejects loopback, which is why there is no sound without Steam Streaming Speakers.",
+  "vm": "win10",
+  "status": "rejected",
+  "createdAt": "2026-10-28T09:00:00-05:00",
+  "variants": {
+    "baseline": {
+      "profile": "max-performance",
+      "override": null,
+      "sink": "Altavoces (VB-Audio Virtual Cable)"
+    },
+    "candidate": {
+      "profile": "max-performance",
+      "override": null,
+      "sink": "CABLE In 16 Ch (VB-Audio Virtual Cable)"
+    },
+    "control": {
+      "profile": "max-performance",
+      "override": null,
+      "sink": "Altavoces (Steam Streaming Speakers)"
+    }
+  },
+  "results": [
+    {
+      "variant": "baseline",
+      "metric": "loopback peak inside the VM with a sound playing",
+      "value": 0.0,
+      "unit": "peak",
+      "lowerIsBetter": false,
+      "notes": "Windows meter 0.35; 499 packets, none flagged silent: digital zeros. In the other run Initialize returned AUDCLNT_E_DEVICE_IN_USE (0x8889000A) for whichever VB-CABLE output was opened second",
+      "at": "2026-10-28T02:35:09-05:00"
+    },
+    {
+      "variant": "candidate",
+      "metric": "loopback peak inside the VM with a sound playing",
+      "value": 0.0,
+      "unit": "peak",
+      "lowerIsBetter": false,
+      "notes": "Windows meter 0.356; 499 packets, none flagged silent: digital zeros",
+      "at": "2026-10-28T02:35:09-05:00"
+    },
+    {
+      "variant": "baseline",
+      "metric": "Moonlight audio peak on the host, VM playing a sound",
+      "value": 0.0,
+      "unit": "peak",
+      "lowerIsBetter": false,
+      "notes": "Sunshine logs 'Capturing audio from sink' for this output; silence 0",
+      "at": "2026-10-28T02:35:09-05:00"
+    },
+    {
+      "variant": "candidate",
+      "metric": "Moonlight audio peak on the host, VM playing a sound",
+      "value": 0.0,
+      "unit": "peak",
+      "lowerIsBetter": false,
+      "notes": "Sunshine logs 'Capturing audio from sink' for this output; silence 0",
+      "at": "2026-10-28T02:35:09-05:00"
+    },
+    {
+      "variant": "control",
+      "metric": "Moonlight audio peak on the host, VM playing a sound",
+      "value": 0.265,
+      "unit": "peak",
+      "lowerIsBetter": false,
+      "notes": "VM silent: 0.009. Proves the measurement path works",
+      "at": "2026-10-28T02:35:09-05:00"
+    }
+  ],
+  "conclusion": "Rejected. Neither VB-CABLE Pack45 output carries sound by WASAPI loopback in the Hyper-V VM: the loopback stream runs but its samples are zeros while Windows' meter shows the sound, so Moonlight receives silence whichever output Sunshine captures. Steam Streaming Speakers, measured the same way, carries it. Next: option B (own USB Audio Class speaker over USB/IP, handled by Windows' inbox driver).",
+  "closedAt": "2026-10-28T02:35:09-05:00"
+}

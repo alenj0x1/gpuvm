@@ -41,7 +41,7 @@ El primer inicio instala Windows y el streaming, y después reinicia una vez. **
 
 ## No hay audio
 
-El audio (`virtual_sink` en Sunshine) se configura después del primer reinicio automático de la VM, y **Encender y abrir** lo vuelve a configurar si falta, siempre que la contraseña de Windows de la VM esté guardada en GpuVM. Sin la contraseña, al abrir la VM aparece un aviso. Si el perfil tiene `"audio": "none"`, no se instala ningún dispositivo de audio.
+El sonido de la VM sale del altavoz USB de GpuVM, **Altavoces (GpuVM Audio)** ([Streaming](/gpuvm/es/streaming/#audio)). **Encender y abrir** lo instala, lo reconecta y apunta Sunshine a él (`virtual_sink`) cuando falta, siempre que la contraseña de Windows de la VM esté guardada en GpuVM. Dentro de la VM, el estado del servidor está en `C:\ProgramData\GpuVM\Audio\status.json`. Sin la contraseña, al abrir la VM aparece un aviso. Si el perfil tiene `"audio": "none"`, no se instala ningún dispositivo de audio.
 
 ## Falla el emparejamiento
 
@@ -54,7 +54,7 @@ La memoria fija de Hyper-V tiene que estar libre al encender la VM. Cierra progr
 ## Límites conocidos de GPU-P
 
 - **Pantalla:** la consola de Hyper-V no muestra la GPU; se ve con el streaming. Falta validar el streaming en una VM real ([laboratorio 002](/gpuvm/es/labs/)).
-- **Audio:** resuelto con VB-CABLE; falta comprobarlo en una VM real ([laboratorio 003](/gpuvm/es/labs/)).
+- **Audio:** la VM no tiene tarjeta de sonido; el altavoz USB propio de GpuVM se la da, comprobado en una VM real a través de Moonlight ([laboratorio 012](/gpuvm/es/labs/)).
 - **Driver:** el invitado tiene que usar la misma versión que el host (ver arriba).
 - **Selección de GPU en Windows 10:** no se puede elegir cuál GPU recibe la VM. Si la integrada también es particionable, puede tocarle la equivocada. `check` lo advierte; desactiva la integrada en el Administrador de dispositivos antes de encender la VM ([laboratorio 001](/gpuvm/es/labs/)).
 - **Sin puntos de control ni estado guardado:** la VM se apaga directamente.

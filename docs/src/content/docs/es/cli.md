@@ -89,7 +89,7 @@ Sin parámetros. No hace nada si Moonlight ya está instalado.
 
 ### components-update
 
-`-Name` (uno o más componentes: `sunshine`, `vdd`, `nefcon`, `vbcable`; todos por defecto). Admite `-WhatIf`. Consulta [Streaming](/gpuvm/es/streaming/#actualizar-componentes).
+`-Name` (uno o más componentes: `sunshine`, `vdd`, `nefcon`, `usbip`; todos por defecto, salvo los retenidos). Admite `-WhatIf`. Consulta [Streaming](/gpuvm/es/streaming/#actualizar-componentes).
 
 ### remove
 

@@ -33,7 +33,7 @@
     "provider": "sunshine",
     "virtualDisplay": true,
     "disableHyperVVideo": true,
-    "audio": "vbcable",
+    "audio": "usb",
     "sunshine": {},
     "client": {
       "app": "Desktop",

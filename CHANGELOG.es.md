@@ -6,6 +6,11 @@ Aquí se documentan los cambios importantes de GpuVM. El formato sigue [Keep a C
 
 ## [Sin publicar]
 
+### Cambiado
+- **Audio real sin Steam.** La salida de VB-CABLE le llegaba muda a Sunshine dentro de la VM; el sonido que parecía funcionar venía de Steam Streaming Speakers (laboratorio 011). Ahora la VM tiene el altavoz USB propio de GpuVM, **Altavoces (GpuVM Audio)**: un servidor dentro de la VM presenta un dispositivo de audio USB, usbip-win2 (drivers firmados por Microsoft) lo conecta y Windows lo maneja con su propio driver. Llega a Moonlight con más volumen que los altavoces de Steam, no necesita reinicio, vuelve solo después de cada reinicio y nunca sale de la VM (`127.0.0.1`, `LOCAL SERVICE`). Las VMs existentes pasan a él la próxima vez que se abren (laboratorio 012).
+- El primer arranque ya no reinicia la VM por el audio.
+- `components-update` se salta los componentes retenidos; usbip-win2 se mantiene en 0.9.8.0 hasta que un laboratorio pruebe una versión nueva.
+
 ### Seguridad
 - **La VM queda aislada de tu red por defecto.** Conserva internet, pero no llega a este equipo ni a tu red local, salvo al DHCP y DNS del Default Switch y a las respuestas de las conexiones que abre Moonlight. Las reglas viven en el puerto del switch virtual de la VM y las aplica el equipo, así que una VM dañada o infectada no puede quitarlas; se renuevan antes de cada encendido porque el Default Switch cambia la dirección del equipo. Se desactiva por VM en **Opciones → Red** (por ejemplo, para llegar a un NAS). No se aplica en un switch externo, con un aviso (laboratorio 010).
 

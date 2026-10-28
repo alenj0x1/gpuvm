@@ -41,7 +41,7 @@ The first boot installs Windows and the streaming components, then restarts once
 
 ## No audio
 
-Audio (`virtual_sink` in Sunshine) is configured after the VM's first automatic restart, and **Encender y abrir** (Start and open) sets it again if it's missing, as long as the VM's Windows password is saved in GpuVM. Without the password, opening the VM shows a warning. If the profile has `"audio": "none"`, no audio device is installed.
+The VM's sound comes from GpuVM's USB speaker, **Speakers (GpuVM Audio)** ([Streaming](/gpuvm/streaming/#audio)). **Encender y abrir** (Start and open) installs it, plugs it in again and points Sunshine at it (`virtual_sink`) whenever it's missing, as long as the VM's Windows password is saved in GpuVM. Inside the VM, the server's status is in `C:\ProgramData\GpuVM\Audio\status.json`. Without the password, opening the VM shows a warning. If the profile has `"audio": "none"`, no audio device is installed.
 
 ## Pairing fails
 
@@ -54,7 +54,7 @@ Hyper-V's fixed memory must be free when the VM starts. Close programs, or lower
 ## Known limits of GPU-P
 
 - **Display:** the Hyper-V console doesn't show the GPU; streaming is the way to see it. The streaming path is still being validated on a real VM ([lab 002](/gpuvm/labs/)).
-- **Audio:** solved with VB-CABLE; still being checked on a real VM ([lab 003](/gpuvm/labs/)).
+- **Audio:** the VM has no sound card; GpuVM's own USB speaker gives it one, verified on a real VM through Moonlight ([lab 012](/gpuvm/labs/)).
 - **Driver:** the guest has to use the same version as the host (see above).
 - **GPU selection on Windows 10:** you can't choose which GPU the VM gets. If the integrated GPU is also partitionable, the VM may get the wrong one. `check` warns about it; disable the integrated GPU in Device Manager before starting the VM ([lab 001](/gpuvm/labs/)).
 - **No checkpoints or saved state:** the VM shuts down instead.

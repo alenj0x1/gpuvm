@@ -1,0 +1,23 @@
+{
+  "id": "012-usb-audio-over-usbip",
+  "title": "USB audio over USB/IP",
+  "hypothesis": "A USB Audio Class 1 speaker served by GpuVM's own USB/IP server inside the VM and attached with usbip-win2 (Microsoft-signed drivers) is driven by Windows' inbox usbaudio.sys like real hardware, so WASAPI loopback captures it and Sunshine carries the VM's sound to Moonlight without Steam, VB-CABLE or test signing.",
+  "vm": "win10",
+  "status": "adopted",
+  "createdAt": "2026-10-28T02:38:00-05:00",
+  "variants": {
+    "baseline": { "profile": "max-performance", "override": null, "sink": "Altavoces (VB-Audio Virtual Cable)" },
+    "candidate": { "profile": "max-performance", "override": null, "sink": "Altavoces (GpuVM Audio)" },
+    "control": { "profile": "max-performance", "override": null, "sink": "Altavoces (Steam Streaming Speakers)" }
+  },
+  "results": [
+    { "variant": "baseline", "metric": "loopback peak inside the VM with a sound playing", "value": 0.0, "unit": "peak", "lowerIsBetter": false, "notes": "from lab 011: zeros while the meter shows 0.35", "at": "2026-10-28T02:35:09-05:00" },
+    { "variant": "candidate", "metric": "loopback peak inside the VM with a sound playing", "value": 0.356, "unit": "peak", "lowerIsBetter": false, "notes": "equal to Windows' meter (0.356); 499 packets, none silent", "at": "2026-10-28T02:46:34-05:00" },
+    { "variant": "baseline", "metric": "Moonlight audio peak on the host, VM playing a sound", "value": 0.0, "unit": "peak", "lowerIsBetter": false, "notes": "from lab 011", "at": "2026-10-28T02:35:09-05:00" },
+    { "variant": "candidate", "metric": "Moonlight audio peak on the host, VM playing a sound", "value": 0.351, "unit": "peak", "lowerIsBetter": false, "notes": "VM silent: 0.049", "at": "2026-10-28T02:46:34-05:00" },
+    { "variant": "control", "metric": "Moonlight audio peak on the host, VM playing a sound", "value": 0.265, "unit": "peak", "lowerIsBetter": false, "notes": "VM silent: 0", "at": "2026-10-28T02:46:34-05:00" },
+    { "variant": "candidate", "metric": "server errors over the run (unlinks, transport errors)", "value": 0.0, "unit": "count", "lowerIsBetter": true, "notes": "2726 URBs, 5,166,720 bytes of isochronous audio received, 1 expected stall (MS OS string descriptor 0xEE)", "at": "2026-10-28T02:46:34-05:00" }
+  ],
+  "conclusion": "Adopted as the way to give the VM audio. usbip-win2 0.9.8.0 installs silently with only its client; both drivers are signed by Microsoft Windows Hardware Compatibility Publisher and no root certificate is added; attach works without restarting. Windows names the output 'Altavoces (GpuVM Audio)' and drives it with usbaudio.sys. Loopback reads the real signal and Moonlight receives it at a level equal to or above Steam Streaming Speakers. Still to do before shipping: run the server as a service that survives restarts and re-attaches, a pid.codes PID of our own, latency and glitch measurements over a long session.",
+  "closedAt": "2026-10-28T02:47:00-05:00"
+}

@@ -37,8 +37,10 @@ function Connect-GpuVM {
         Write-Step 'Encendiendo'
         Start-VM -Name $Name
     }
-    elseif ($vm.State -eq 'Paused') {
-        Resume-VM -Name $Name
+    else {
+        # Started from somewhere else (Hyper-V Manager) or before this version: it gets isolated now too.
+        Update-GpuVMNetworkIsolation -Name $Name -State $state
+        if ($vm.State -eq 'Paused') { Resume-VM -Name $Name }
     }
 
     $guest = Get-GpuVMGuestCredential -State $state
@@ -99,15 +101,26 @@ function Connect-GpuVM {
         Save-GpuVMState $state
     }
 
-    if ($state['config']['streaming']['audio'] -eq 'vbcable') {
+    if (Test-GpuVMAudio $state['config']['streaming']) {
         if ($guest) {
-            try { Set-SunshineAudioSink -Name $Name -GuestCredential $guest -Address $address -Credential $credential }
-            catch { Write-Warning "No se pudo revisar el audio dentro de la VM: $($_.Exception.Message)" }
+            try {
+                if (Install-GuestAudio -Name $Name -Credential $guest) {
+                    Wait-SunshineReady -Address $address -Credential $credential -TimeoutSec 120 -Message 'Sunshine se reinicia con el audio nuevo'
+                }
+                # VMs from before 0.3 had VB-CABLE; from now on they have the speaker.
+                if ($state['config']['streaming']['audio'] -ne 'usb') {
+                    $state = Get-GpuVMState -Name $Name
+                    $state['config']['streaming']['audio'] = 'usb'
+                    Save-GpuVMState $state
+                }
+                Set-SunshineAudioSink -Name $Name -GuestCredential $guest -Address $address -Credential $credential
+            }
+            catch { Write-Warning "No se pudo preparar el audio dentro de la VM: $($_.Exception.Message)" }
         }
         else {
             $sunshineConfig = try { Invoke-SunshineApi -Address $address -Credential $credential -Path '/api/config' } catch { $null }
-            if ($sunshineConfig -and -not $sunshineConfig.PSObject.Properties['virtual_sink']) {
-                Write-Warning 'Sunshine todavía no tiene configurado el audio. Guarda la contraseña de Windows de la VM para que GpuVM lo configure.'
+            if ($sunshineConfig -and "$($sunshineConfig.PSObject.Properties['virtual_sink']?.Value)" -notlike '*GpuVM Audio*') {
+                Write-Warning 'El audio de la VM todavía no está listo. Guarda la contraseña de Windows de la VM para que GpuVM lo prepare.'
             }
         }
     }

@@ -14,10 +14,15 @@ function Get-StreamingComponentNames {
     $names = @()
     if ($Streaming['provider'] -eq 'sunshine') { $names += 'sunshine' }
     if ($Streaming['virtualDisplay']) { $names += 'vdd' }
-    if ($Streaming['audio'] -eq 'vbcable') { $names += 'vbcable' }
-    # nefcon installs both the virtual display and the audio cable.
-    if ($Streaming['virtualDisplay'] -or $Streaming['audio'] -eq 'vbcable') { $names += 'nefcon' }
+    if (Test-GpuVMAudio $Streaming) { $names += 'usbip' }
+    if ($Streaming['virtualDisplay']) { $names += 'nefcon' }
     $names
+}
+
+# Whether the VM has GpuVM's USB speaker. "vbcable" is how VMs created before 0.3 named it; they move to the speaker on open.
+function Test-GpuVMAudio {
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Streaming)
+    $Streaming['audio'] -in 'usb', 'vbcable'
 }
 
 # Prepares what is copied to the guest and what is saved in the host state.
@@ -267,8 +272,48 @@ function Update-SunshineConfig {
     $true
 }
 
-# Name of the VB-CABLE playback endpoint inside the guest. Windows localizes it ("CABLE Input" in English,
-# "Altavoces" in Spanish), so it is found by being a render endpoint ({0.0.0.…}) of the VB-Audio cable.
+# GpuVM's USB speaker in the guest (guest\audio, lab 012). The guest code is sent every time, so this installs it on
+# VMs created before it existed (they had VB-CABLE, whose capture is silent in a VM), updates its server when the
+# source changes, and attaches it again if Windows lost it. Returns $true when it installed it (Sunshine was restarted).
+function Install-GuestAudio {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][pscredential]$Credential
+    )
+    $code = Get-Content -Raw -LiteralPath (Get-RepoPath 'guest\streaming.ps1')
+    $server = Get-RepoPath 'guest\audio\UsbAudioServer.cs'
+    $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $server).Hash
+    $answer = Invoke-Command -VMName $Name -Credential $Credential -ErrorAction Stop -ArgumentList $code, $hash -ScriptBlock {
+        param($code, $hash)
+        . ([scriptblock]::Create($code))
+        Repair-GpuVMAudio -SourceHash $hash
+    }
+    $answer = ConvertTo-GuestString (@($answer)[-1])
+    $installed = $answer -eq 'install'
+    if ($installed) {
+        Write-Step 'Instalando el audio de la VM'
+        $installer = Save-GpuVMComponent -Name 'usbip'
+        $session = New-PSSession -VMName $Name -Credential $Credential -ErrorAction Stop
+        try {
+            Invoke-Command -Session $session { New-Item -ItemType Directory -Force 'C:\GpuVM\audio', 'C:\GpuVM\streaming' | Out-Null }
+            Copy-Item -LiteralPath $installer -Destination 'C:\GpuVM\streaming' -ToSession $session -Force
+            Copy-Item -LiteralPath $server -Destination 'C:\GpuVM\audio' -ToSession $session -Force
+            $answer = Invoke-Command -Session $session -ErrorAction Stop -ArgumentList $code, (Split-Path $installer -Leaf) -ScriptBlock {
+                param($code, $file)
+                . ([scriptblock]::Create($code))
+                try { Install-GpuVMAudio -Dir 'C:\GpuVM\streaming' -Root 'C:\GpuVM' }
+                finally { Remove-Item (Join-Path 'C:\GpuVM\streaming' $file) -Force -ErrorAction SilentlyContinue }
+            }
+            $answer = ConvertTo-GuestString (@($answer)[-1])
+        }
+        finally { Remove-PSSession $session -ErrorAction SilentlyContinue }
+    }
+    if ($answer -ne 'ok') { throw "El audio de la VM no quedó listo: $answer" }
+    $installed
+}
+
+# Name of GpuVM's speaker inside the guest. Windows localizes it ("Speakers (GpuVM Audio)", "Altavoces (GpuVM Audio)"),
+# so it is found by being a render endpoint ({0.0.0.…}) of the device we name.
 function Get-GuestAudioSink {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -276,14 +321,13 @@ function Get-GuestAudioSink {
     )
     $sink = Invoke-Command -VMName $Name -Credential $Credential -ErrorAction Stop -ScriptBlock {
         Get-PnpDevice -Class AudioEndpoint -PresentOnly -ErrorAction SilentlyContinue |
-            Where-Object { $_.InstanceId -like 'SWD\MMDEVAPI\{0.0.0.*' -and $_.FriendlyName -like '*VB-Audio Virtual Cable*' -and $_.Status -eq 'OK' } |
-            Sort-Object { $_.FriendlyName -like '*16 Ch*' } |
+            Where-Object { $_.InstanceId -like 'SWD\MMDEVAPI\{0.0.0.*' -and $_.FriendlyName -like '*GpuVM Audio*' -and $_.Status -eq 'OK' } |
             Select-Object -First 1 -ExpandProperty FriendlyName
     }
     ConvertTo-GuestString (@($sink)[0]) -MaxLength 128
 }
 
-# Makes Sunshine capture the VB-CABLE output (virtual_sink). Also repairs VMs whose first-boot task never found it.
+# Makes Sunshine capture GpuVM's speaker (virtual_sink), in case its name changed or the install could not set it.
 function Set-SunshineAudioSink {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -292,7 +336,7 @@ function Set-SunshineAudioSink {
         [Parameter(Mandatory)][pscredential]$Credential
     )
     $sink = Get-GuestAudioSink -Name $Name -Credential $GuestCredential
-    if (-not $sink) { Write-Warning 'No se encontró la salida de audio VB-CABLE en la VM; la imagen se verá sin sonido.'; return }
+    if (-not $sink) { Write-Warning 'No se encontró la salida de audio GpuVM Audio en la VM; la imagen se verá sin sonido.'; return }
     if (Update-SunshineConfig -Address $Address -Credential $Credential -Settings ([ordered]@{ virtual_sink = $sink })) {
         Write-Step "Sunshine captura el audio de $sink"
     }
@@ -307,7 +351,7 @@ function Wait-GuestReady {
         [int]$TimeoutSec = 1800
     )
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
-    $announced = $false
+    $announced = $null
     while ((Get-Date) -lt $deadline) {
         # Only a single real $true counts (the guest could return any object that is "truthy").
         # @() outside the try: assigning a try block unrolls the array (one item becomes a scalar, none becomes $null).
@@ -323,7 +367,9 @@ function Wait-GuestReady {
         catch { })
         $ready = $answer.Count -eq 1 -and $answer[0] -is [bool] -and $answer[0]
         if ($ready) { return }
-        if (-not $announced) { Write-Step 'Windows termina de configurarse (solo la primera vez)'; $announced = $true }
+        # No answer is Windows still booting; an answer of "not done" is the first-time setup.
+        $message = if ($answer.Count) { 'Windows termina de configurarse (solo la primera vez)' } else { 'Esperando a que Windows arranque' }
+        if ($announced -ne $message) { Write-Step $message; $announced = $message }
         Start-Sleep -Seconds 10
     }
     Write-Warning 'La configuración inicial de la VM está tardando más de lo normal; se continúa igual.'

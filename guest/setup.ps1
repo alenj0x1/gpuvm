@@ -41,7 +41,7 @@ try {
         finishedAt    = (Get-Date).ToString('o')
         optimizations = $applied
         streaming     = $streaming
-        rebootPending = [bool]($streaming -and ($streaming.audio -eq 'installed' -or $streaming.hyperVVideo -eq 'disabled'))
+        rebootPending = [bool]($streaming -and $streaming.hyperVVideo -eq 'disabled')
         gpus          = $gpus
     } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $root 'setup.done.json') -Encoding UTF8
 }
@@ -51,8 +51,8 @@ finally {
     Stop-Transcript | Out-Null
 }
 
-# A restart finishes registering the virtual display and audio; automatic logon signs back in
-# and the GpuVM-Audio task configures Sunshine.
-if ($streaming -and ($streaming.audio -eq 'installed' -or $streaming.hyperVVideo -eq 'disabled')) {
+# A restart leaves the virtual display as the only one; automatic logon signs back in.
+# Audio needs no restart: usbip-win2 attaches GpuVM's speaker again every time Windows starts.
+if ($streaming -and $streaming.hyperVVideo -eq 'disabled') {
     shutdown.exe /r /t 15 /c "GpuVM: reinicio para terminar de instalar el streaming"
 }

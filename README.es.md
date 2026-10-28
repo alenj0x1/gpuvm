@@ -97,7 +97,7 @@ GpuVM descarga e instala dentro de la VM, verificados por SHA-256:
 - [Sunshine](https://github.com/LizardByte/Sunshine) (GPL-3.0): servidor de streaming.
 - [Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver): monitor virtual dibujado por la GPU.
 - [nefcon](https://github.com/nefarius/nefcon): instalador de drivers.
-- [VB-CABLE](https://vb-cable.com) de VB-Audio Software: cable de audio virtual. Es donationware y se instala en silencio como permite su [licencia](https://vb-audio.com/Services/licensing.htm), con crédito a VB-Audio; puedes [donar](https://vb-cable.com) para apoyarlo.
+- [usbip-win2](https://github.com/vadimgrn/usbip-win2) (BSD-2-Clause): cliente USB/IP con drivers firmados por Microsoft; conecta el altavoz USB propio de GpuVM dentro de la VM.
 
 En el equipo usa [Moonlight](https://moonlight-stream.org) (GPL-3.0), instalado con winget.
 

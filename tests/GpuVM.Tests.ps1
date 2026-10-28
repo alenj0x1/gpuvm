@@ -248,9 +248,7 @@ InModuleScope GpuVM {
 
         It 'the manifest pins version, GitHub URL and SHA-256 of each component' {
             $m = Get-ComponentManifest
-            $m['vbcable']['sha256'] | Should Match '^[0-9a-f]{64}$'
-            $m['vbcable']['url'] | Should Match '^https://download\.vb-audio\.com/'
-            foreach ($key in 'sunshine', 'vdd', 'nefcon') {
+            foreach ($key in 'sunshine', 'vdd', 'nefcon', 'usbip') {
                 $m[$key]['sha256'] | Should Match '^[0-9a-f]{64}$'
                 $m[$key]['url'] | Should Match "^https://github.com/$([regex]::Escape($m[$key]['repo']))/releases/download/"
                 $m[$key]['file'] | Should Match $m[$key]['assetPattern']
@@ -270,6 +268,14 @@ InModuleScope GpuVM {
             Test-Throws { Save-GpuVMComponent -Name demo -Manifest $manifest } | Should Be $true
         }
 
+        It 'does not update a component on hold' {
+            Mock Get-ComponentManifest { @{ usbip = @{ version = 'v.0.9.8.0'; repo = 'vadimgrn/usbip-win2'; hold = 'lab 012' } } }
+            Mock Invoke-RestMethod { throw 'no debe consultar GitHub' }
+            Mock Write-JsonFile { throw 'no debe escribir' }
+            Update-GpuVMComponent -Name usbip 3>$null | Should BeNullOrEmpty
+            Assert-MockCalled Invoke-RestMethod -Times 0 -Scope It
+        }
+
         $env:GPUVM_CACHE_ROOT = $null
     }
 
@@ -277,7 +283,7 @@ InModuleScope GpuVM {
         It 'the base profile includes Sunshine with a virtual display' {
             $p = Resolve-GpuVMProfile -Name 'balanced'
             $p['streaming']['provider'] | Should Be 'sunshine'
-            (Get-StreamingComponentNames $p['streaming']) -join ',' | Should Be 'sunshine,vdd,vbcable,nefcon'
+            (Get-StreamingComponentNames $p['streaming']) -join ',' | Should Be 'sunshine,vdd,usbip,nefcon'
         }
 
         It 'refuses to disable the Hyper-V display without a virtual display' {
@@ -295,9 +301,19 @@ InModuleScope GpuVM {
             (Get-SunshineCredential -State @{ streaming = $payload.State }).GetNetworkCredential().Password | Should Be $guest['password']
         }
 
-        It 'without a virtual display it still includes nefcon for audio' {
+        It 'audio needs only usbip-win2, not nefcon' {
             $p = Resolve-GpuVMProfile -Name 'balanced' -Override @{ streaming = @{ virtualDisplay = $false; disableHyperVVideo = $false } }
-            (Get-StreamingComponentNames $p['streaming']) -join ',' | Should Be 'sunshine,vbcable,nefcon'
+            (Get-StreamingComponentNames $p['streaming']) -join ',' | Should Be 'sunshine,usbip'
+            $p = Resolve-GpuVMProfile -Name 'balanced' -Override @{ streaming = @{ audio = 'none' } }
+            (Get-StreamingComponentNames $p['streaming']) -join ',' | Should Be 'sunshine,vdd,nefcon'
+        }
+
+        It 'VMs created with VB-CABLE get the USB speaker' {
+            Test-GpuVMAudio @{ audio = 'vbcable' } | Should Be $true
+            Test-GpuVMAudio @{ audio = 'usb' } | Should Be $true
+            Test-GpuVMAudio @{ audio = 'none' } | Should Be $false
+            $p = Resolve-GpuVMProfile -Name 'balanced' -Override @{ streaming = @{ audio = 'vbcable' } }
+            ((Test-GpuVMProfileData -Config $p) -join ' ') | Should Not Match 'streaming.audio'
         }
 
         It 'rejects an unknown audio option' {
@@ -404,6 +420,35 @@ InModuleScope GpuVM {
             $devices = ConvertFrom-SunshineDisplayLog -Lines $log
             $devices.Count | Should Be 2
             ($devices | Where-Object { $_.edid -and $_.edid.manufacturer_id -eq 'MTT' }).device_id | Should Be '{d54a}'
+        }
+
+        It 'installs the guest speaker only when it is missing or its server changed' {
+            $cred = [pscredential]::new('gpuvm', (ConvertTo-SecureString 'x' -AsPlainText -Force))
+            Mock Invoke-Command { 'ok' }
+            Mock Save-GpuVMComponent { throw 'no debe descargar' }
+            Install-GuestAudio -Name 'vm' -Credential $cred | Should Be $false
+            Assert-MockCalled Save-GpuVMComponent -Times 0 -Scope It
+
+            Mock Invoke-Command { 'error: la salida de audio GpuVM Audio no aparece' }
+            Test-Throws { Install-GuestAudio -Name 'vm' -Credential $cred } | Should Be $true
+
+            Mock Invoke-Command { 'install' } -ParameterFilter { $VMName }
+            Mock Invoke-Command { 'ok' } -ParameterFilter { $Session }
+            Mock Save-GpuVMComponent { 'C:\cache\usbip\USBip-0.9.8.0-x64.exe' }
+            Mock New-PSSession { [Runtime.Serialization.FormatterServices]::GetUninitializedObject([System.Management.Automation.Runspaces.PSSession]) }
+            Mock Copy-Item { $script:copied += @($LiteralPath) }
+            Mock Remove-PSSession { }
+            Mock Write-Step { }
+            $script:copied = @()
+            Install-GuestAudio -Name 'vm' -Credential $cred | Should Be $true
+            ($script:copied | Split-Path -Leaf) -join ',' | Should Be 'USBip-0.9.8.0-x64.exe,UsbAudioServer.cs'
+        }
+
+        It 'the guest server only listens on loopback and caps what a client can send' {
+            $source = Get-Content -Raw (Join-Path $script:RepoRoot 'guest\audio\UsbAudioServer.cs')
+            $source | Should Match 'new TcpListener\(IPAddress\.Loopback'
+            $source | Should Not Match 'IPAddress\.Any'
+            $source | Should Match 'oversized request'
         }
 
         It 'sunshine.conf: replaces existing keys and appends new ones' {
