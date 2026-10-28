@@ -1,0 +1,21 @@
+{
+  "id": "014-audible-underruns",
+  "title": "Do the speaker's short underruns reach Moonlight?",
+  "hypothesis": "The speaker's underruns of about 2 ms (lab 013) do not reach Moonlight: Sunshine captures Windows' mix before it goes to the speaker, so the sound on the host has no gaps or breaks that line up with them.",
+  "vm": "win10",
+  "status": "rejected",
+  "createdAt": "2026-10-28T07:40:00-05:00",
+  "variants": {
+    "candidate": { "profile": "max-performance", "override": null, "sink": "Altavoces (GpuVM Audio)" },
+    "control": { "profile": "max-performance", "override": null, "sink": "Altavoces (Steam Streaming Speakers)" }
+  },
+  "results": [
+    { "variant": "candidate", "metric": "gaps of 1 ms or more in the host's output (level under 30 % of the tone)", "value": 2, "unit": "per 10 min", "lowerIsBetter": true, "notes": "9 ms each; 9.97 min recorded", "at": "2026-10-28T07:56:00-05:00" },
+    { "variant": "control", "metric": "gaps of 1 ms or more in the host's output (level under 30 % of the tone)", "value": 0, "unit": "per 10 min", "lowerIsBetter": true, "notes": "4.97 min recorded", "at": "2026-10-28T08:01:00-05:00" },
+    { "variant": "candidate", "metric": "breaks in the wave (sine predictor error)", "value": 2, "unit": "per 10 min", "lowerIsBetter": true, "notes": "both at the two gaps, size 0.95 of the tone's peak; coding noise 4e-5", "at": "2026-10-28T07:56:00-05:00" },
+    { "variant": "control", "metric": "breaks in the wave (sine predictor error)", "value": 0, "unit": "per 10 min", "lowerIsBetter": true, "notes": "coding noise 3e-5", "at": "2026-10-28T08:01:00-05:00" },
+    { "variant": "candidate", "metric": "speaker underruns heard (an event on the host within 150 ms of its expected arrival)", "value": 2, "unit": "of 15", "lowerIsBetter": true, "notes": "underruns 0-6.2 ms; no event on the host without an underrun nearby", "at": "2026-10-28T07:56:00-05:00" }
+  ],
+  "conclusion": "Rejected: 2 of the speaker's 15 underruns in 10 minutes reached Moonlight as 9 ms gaps, and every event on the host lined up with an underrun; Steam Streaming Speakers had none in 5 minutes. They are short and rare (two clicks in ten minutes) but real. Next: complete each transfer a few milliseconds before its time so Windows sends the next one earlier; since Sunshine captures Windows' mix and not the speaker's output, this may not add latency, which a lab has to check.",
+  "closedAt": "2026-10-28T08:04:00-05:00"
+}

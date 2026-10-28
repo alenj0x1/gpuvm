@@ -253,7 +253,11 @@ public static class UsbAudioServer {
             lock (queueLock) {
                 double now = clock.Elapsed.TotalMilliseconds;
                 bool continuing = lastSubmit > 0 && now - lastSubmit < 200;
-                if (continuing && nextDue < now) lock (statsLock) { underruns++; underrunMs += now - nextDue; }
+                if (continuing && nextDue < now) {
+                    lock (statsLock) { underruns++; underrunMs += now - nextDue; }
+                    // UTC, so a lab can line it up with what reaches Moonlight.
+                    Log("underrun " + (now - nextDue).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " ms at " + DateTime.UtcNow.ToString("o"));
+                }
                 if (nextDue < now - 20) nextDue = now;
                 if (continuing) lock (statsLock) {
                     double ahead = Math.Max(0, nextDue - now);

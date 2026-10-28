@@ -10,6 +10,7 @@ Changes waiting for the next version sit under **Unreleased** at the top (this s
 
 ### Added
 - Lab 013 measures the VM's audio latency and dropouts over a long session, with Steam Streaming Speakers as the control.
+- Lab 014 records this PC's output 1 ms at a time to find which of the speaker's underruns are heard; the speaker logs each one with its time.
 
 ### Changed
 - GpuVM's speaker has its own USB ID, **1209:A7D0**, requested to pid.codes ([pidcodes#1335](https://github.com/pidcodes/pidcodes.github.com/pull/1335)), instead of the 1209:0001 test ID. Its status file also reports underruns and how much audio it queues.
