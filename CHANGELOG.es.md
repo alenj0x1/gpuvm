@@ -8,6 +8,9 @@ Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (es
 
 ## [Sin publicar]
 
+### Agregado
+- El laboratorio 013 mide la latencia y los cortes del audio de la VM en una sesión larga, con Steam Streaming Speakers como control.
+
 ### Cambiado
 - El altavoz de GpuVM tiene su propio identificador USB, **1209:A7D0**, solicitado a pid.codes ([pidcodes#1335](https://github.com/pidcodes/pidcodes.github.com/pull/1335)), en lugar del 1209:0001 de prueba. Su archivo de estado también informa los vaciados de cola y cuánto audio tiene en cola.
 - Al actualizar el altavoz se quitan las salidas que dejó el anterior, para que Windows lo siga llamando **Altavoces (GpuVM Audio)** en vez de numerarlo.

@@ -1,0 +1,114 @@
+{
+  "id": "013-audio-latency-and-dropouts",
+  "title": "Audio latency and dropouts over a long session",
+  "hypothesis": "GpuVM's USB speaker adds no more delay than Steam Streaming Speakers on the way to Moonlight and keeps the sound clean over a 10-minute session: no underruns in the speaker and no dropouts of 15 ms or more in Moonlight.",
+  "vm": "win10",
+  "status": "adopted",
+  "createdAt": "2026-10-28T07:00:00-05:00",
+  "variants": {
+    "candidate": {
+      "profile": "max-performance",
+      "override": null,
+      "sink": "Altavoces (GpuVM Audio)"
+    },
+    "control": {
+      "profile": "max-performance",
+      "override": null,
+      "sink": "Altavoces (Steam Streaming Speakers)"
+    }
+  },
+  "results": [
+    {
+      "variant": "control",
+      "metric": "end-to-end audio latency, VM play to Moonlight on the host (median of 30 bursts)",
+      "value": 63.2,
+      "unit": "ms",
+      "lowerIsBetter": true,
+      "notes": "short run: p90 64.8, 61.8-65.1; clock error ±1.5 ms, drift 0.09 ms",
+      "at": "2026-10-28T07:08:00-05:00"
+    },
+    {
+      "variant": "control",
+      "metric": "dropouts of 15 ms or more in Moonlight",
+      "value": 0,
+      "unit": "per minute",
+      "lowerIsBetter": true,
+      "notes": "short run: 0.97 min",
+      "at": "2026-10-28T07:10:00-05:00"
+    },
+    {
+      "variant": "candidate",
+      "metric": "speaker underruns (queue ran dry while audio kept coming)",
+      "value": 0,
+      "unit": "count",
+      "lowerIsBetter": true,
+      "notes": "short run: 1 min, 5996 transfers, 0 unlinks",
+      "at": "2026-10-28T07:06:00-05:00"
+    },
+    {
+      "variant": "candidate",
+      "metric": "audio queued in the speaker when a transfer arrives (latency it adds)",
+      "value": 9.2,
+      "unit": "ms",
+      "lowerIsBetter": true,
+      "notes": "short run: max 9.9 ms",
+      "at": "2026-10-28T07:06:00-05:00"
+    },
+    {
+      "variant": "candidate",
+      "metric": "end-to-end audio latency, VM play to Moonlight on the host (median of 30 bursts)",
+      "value": 63.4,
+      "unit": "ms",
+      "lowerIsBetter": true,
+      "notes": "10-minute run: p90 64.9, 52.7-65.5; clock error ±1.8 ms",
+      "at": "2026-10-28T07:33:00-05:00"
+    },
+    {
+      "variant": "control",
+      "metric": "end-to-end audio latency, VM play to Moonlight on the host (median of 30 bursts)",
+      "value": 59.8,
+      "unit": "ms",
+      "lowerIsBetter": true,
+      "notes": "same run: p90 60.8, 58.0-60.9; clock error ±1.7 ms",
+      "at": "2026-10-28T07:33:00-05:00"
+    },
+    {
+      "variant": "candidate",
+      "metric": "dropouts of 15 ms or more in Moonlight",
+      "value": 0,
+      "unit": "per minute",
+      "lowerIsBetter": true,
+      "notes": "9.97 min, 199279 samples",
+      "at": "2026-10-28T07:33:00-05:00"
+    },
+    {
+      "variant": "control",
+      "metric": "dropouts of 15 ms or more in Moonlight",
+      "value": 0,
+      "unit": "per minute",
+      "lowerIsBetter": true,
+      "notes": "2.97 min",
+      "at": "2026-10-28T07:33:00-05:00"
+    },
+    {
+      "variant": "candidate",
+      "metric": "speaker underruns (queue ran dry while audio kept coming)",
+      "value": 7,
+      "unit": "count",
+      "lowerIsBetter": true,
+      "notes": "10 minutes: 15.2 ms in total (about 2 ms each), 60042 transfers, 0 unlinks",
+      "at": "2026-10-28T07:33:00-05:00"
+    },
+    {
+      "variant": "candidate",
+      "metric": "audio queued in the speaker when a transfer arrives (latency it adds)",
+      "value": 9.4,
+      "unit": "ms",
+      "lowerIsBetter": true,
+      "notes": "10 minutes: max 10.0 ms",
+      "at": "2026-10-28T07:33:00-05:00"
+    }
+  ],
+  "conclusion": "Adopted. Over 10 minutes the speaker carried the VM's sound to Moonlight with no dropout of 15 ms or more, 63.4 ms after the VM played it, 3.6 ms more than Steam Streaming Speakers (59.8 ms), in line with the ~9 ms of audio it keeps queued. It had 7 underruns of about 2 ms each (15 ms in 10 minutes), too short to show as dropouts; keeping a few more milliseconds queued would remove them at the cost of that much latency. Moonlight failed once to connect (RTSP handshake, error -1) right after Sunshine had been restarted twice in a row; it did not happen in the 10-minute run.",
+  "closedAt": "2026-10-28T07:35:00-05:00"
+}

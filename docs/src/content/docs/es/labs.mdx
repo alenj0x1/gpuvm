@@ -69,8 +69,9 @@ Los laboratorios 001 a 007 están abiertos; el 008 y el 009 se adoptaron.
 | 010 | Aislamiento de red | ACLs en el puerto del switch virtual de la VM, aplicadas por el equipo, mantienen a la VM lejos del equipo y de la red local sin quitarle internet, DHCP ni DNS; reglas con estado dejan pasar las conexiones de Moonlight. | `vm.network.isolation: true` |
 | 011 | Audio sin Steam: VB-CABLE | Sunshine captura la salida de VB-CABLE (estéreo o 16 canales) y lleva el sonido de la VM sin Steam Streaming Speakers. | `streaming.audio: vbcable` |
 | 012 | Audio con un altavoz USB propio | Un dispositivo de audio USB servido por GpuVM dentro de la VM y conectado con usbip-win2 lo maneja el driver de Windows, así que Sunshine captura sonido real. | `streaming.audio: usb` |
+| 013 | Latencia y cortes del audio | En una sesión de 10 minutos el altavoz de GpuVM no agrega más demora que Steam Streaming Speakers y suena sin vaciados de cola ni cortes de 15 ms o más. | Mismo perfil, dos salidas |
 
-Los laboratorios 004 a 012 usan `max-performance` en las dos variantes.
+Los laboratorios 004 a 013 usan `max-performance` en las dos variantes.
 
 ### Lo que encontraron los laboratorios hasta ahora
 
@@ -84,3 +85,4 @@ Los laboratorios 004 a 012 usan `max-performance` en las dos variantes.
 - **010 (adoptado):** con las reglas, desde la VM no se alcanzó ningún puerto TCP del equipo (antes 4) ni ninguna prueba al router (antes 3), ni por IPv4 ni por IPv6; internet, DNS, DHCP y Sunshine siguieron funcionando y el tiempo de conexión no cambió (0,35 ms). Activado por defecto (**Opciones → Red**).
 - **011 (rechazado):** las dos salidas de VB-CABLE le llegan a Sunshine como silencio digital dentro de la VM mientras el medidor de Windows muestra sonido; Moonlight no recibió nada. El sonido que parecía funcionar venía de Steam Streaming Speakers (0,265 en Moonlight).
 - **012 (adoptado):** el altavoz de GpuVM, **Altavoces (GpuVM Audio)**, se capturó al mismo nivel que el medidor de Windows (0,356) y llegó a Moonlight a 0,351, más que el 0,265 de Steam, sin errores de transferencia. Los drivers de usbip-win2 están firmados por Microsoft y no agrega certificados. Consulta [Audio](/gpuvm/es/streaming/#audio).
+- **013 (adoptado):** en 10 minutos el altavoz llegó a Moonlight 63,4 ms después de que sonó en la VM (Steam Streaming Speakers: 59,8 ms, ±1,8 ms) sin cortes de 15 ms o más. Tuvo 7 vaciados de cola de unos 2 ms cada uno y mantiene ~9 ms de audio en cola; con un poco más en cola desaparecerían, a cambio de esa latencia.

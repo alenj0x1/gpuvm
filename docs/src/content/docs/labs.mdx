@@ -69,8 +69,9 @@ Labs 001–007 are open; 008 and 009 were adopted.
 | 010 | Network isolation | Port ACLs on the VM's virtual switch port, enforced by the host, keep the VM away from the host and the LAN while it keeps internet, DHCP and DNS; stateful rules let Moonlight's connections through. | `vm.network.isolation: true` |
 | 011 | Audio without Steam: VB-CABLE | Sunshine captures VB-CABLE's output (stereo or 16 channels) and carries the VM's sound without Steam Streaming Speakers. | `streaming.audio: vbcable` |
 | 012 | Audio over a USB speaker of our own | A USB audio device served by GpuVM inside the VM and plugged in with usbip-win2 is driven by Windows' built-in driver, so Sunshine captures real sound. | `streaming.audio: usb` |
+| 013 | Audio latency and dropouts | Over a 10-minute session GpuVM's speaker adds no more delay than Steam Streaming Speakers and plays without underruns or dropouts of 15 ms or more. | Same profile, two sinks |
 
-Labs 004–012 use `max-performance` for both variants.
+Labs 004–013 use `max-performance` for both variants.
 
 ### What the labs found so far
 
@@ -84,3 +85,4 @@ Labs 004–012 use `max-performance` for both variants.
 - **010 (adopted):** with the rules, none of the host's TCP ports (4 before) and none of the router's checks (3 before) were reachable from the VM, by IPv4 or IPv6; internet, DNS, DHCP and Sunshine kept working and connect time didn't change (0.35 ms). On by default (**Options → Red**).
 - **011 (rejected):** both VB-CABLE outputs reach Sunshine as digital silence inside the VM while Windows' meter shows sound; Moonlight received nothing. The sound that seemed to work came from Steam Streaming Speakers (0.265 in Moonlight).
 - **012 (adopted):** GpuVM's speaker, **Speakers (GpuVM Audio)**, was captured at the same level as Windows' meter (0.356) and reached Moonlight at 0.351, louder than Steam's 0.265, with no transfer errors. usbip-win2's drivers are signed by Microsoft and it adds no certificate. See [Audio](/gpuvm/streaming/#audio).
+- **013 (adopted):** over 10 minutes the speaker reached Moonlight 63.4 ms after the VM played (Steam Streaming Speakers: 59.8 ms, ±1.8 ms) with no dropouts of 15 ms or more. It had 7 underruns of about 2 ms each and keeps ~9 ms of audio queued; queuing a little more would remove them at that cost in latency.

@@ -8,6 +8,9 @@ Changes waiting for the next version sit under **Unreleased** at the top (this s
 
 ## [Unreleased]
 
+### Added
+- Lab 013 measures the VM's audio latency and dropouts over a long session, with Steam Streaming Speakers as the control.
+
 ### Changed
 - GpuVM's speaker has its own USB ID, **1209:A7D0**, requested to pid.codes ([pidcodes#1335](https://github.com/pidcodes/pidcodes.github.com/pull/1335)), instead of the 1209:0001 test ID. Its status file also reports underruns and how much audio it queues.
 - Updating the speaker removes the outputs left by the previous one, so Windows keeps calling it **Speakers (GpuVM Audio)** instead of numbering it.
