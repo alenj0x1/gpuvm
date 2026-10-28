@@ -53,7 +53,7 @@ Cada laboratorio es una carpeta `labs/NNN-nombre/` con `lab.json` (hipótesis, v
 
 ## Laboratorios actuales
 
-Todos están abiertos (todavía sin resultados).
+Los laboratorios 001 a 007 están abiertos; el 008 y el 009 se adoptaron.
 
 | # | Laboratorio | Hipótesis | Candidata |
 |---|---|---|---|
@@ -62,12 +62,19 @@ Todos están abiertos (todavía sin resultados).
 | 003 | Audio en la VM | La generación 2 no tiene tarjeta de sonido; sin un dispositivo de audio virtual, Sunshine transmite video sin sonido. Un driver de audio virtual lo resuelve. | Mismo perfil (`balanced`). |
 | 004 | Latencia en Moonlight | Sin V-Sync en Moonlight la latencia total baja alrededor de un cuadro (~16 ms a 60 FPS) sin tirones visibles. | `streaming.client`: `vsync: false`, `performanceOverlay: true` |
 | 005 | Bitrate y codec | El tráfico entre host y VM no sale a la red física: 60 Mbps y HEVC mejoran la nitidez sin sumar latencia de codificación y decodificación. | `streaming.client`: `codec: HEVC`, `bitrateKbps: 60000` |
-| 006 | Reserva de CPU | Reservar el 100 % de 8 hilos deja al host con poco margen; una reserva del 30 % con peso alto da los mismos FPS y menos tirones. | `vm.cpu.reservePercent: 30` |
-| 007 | NVENC en Sunshine | `nvenc_preset=1`, two-pass a cuarto de resolución y `latency_over_power` reducen la latencia de codificación frente a los valores por defecto. | `streaming.sunshine`: `nvenc_preset: 1`, `nvenc_twopass: quarter_res`, `nvenc_latency_over_power: enabled` |
+| 006 | Reserva de CPU | En un host con Windows 10/11 el hipervisor usa el planificador root, donde la reserva y el peso por VM no hacen nada; solo importa la cantidad de procesadores virtuales. 6 hilos le dejan al host más margen que 8 con los mismos FPS en juegos. | `vm.cpu.count: 6` |
+| 007 | NVENC en Sunshine | Los valores por defecto de Sunshine ya son preset 1, two-pass a cuarto de resolución y latencia antes que consumo. Una sola pasada, sin aumento de VBV y sin codificación dividida deberían bajar aún más el tiempo de codificación a 1080p. | `streaming.sunshine`: `nvenc_twopass: disabled`, `nvenc_vbv_increase: 0`, `nvenc_split_encode: disabled` |
+| 008 | Tiempo de arranque del stream | Con la pantalla de Hyper-V apagada, la configuración de pantalla por sesión de Sunshine (`ensure_only_display`) solo agrega trabajo: cada cambio lo obliga a volver a probar todos los codificadores antes del primer cuadro. Desactivarla reduce el tiempo hasta el primer cuadro. | `streaming.sunshine`: `dd_configuration_option: disabled` |
+| 009 | Captura de juegos en pantalla completa exclusiva | Desktop duplication (`ddx`) no recibe cuadros nuevos de la pantalla virtual mientras un juego está en pantalla completa exclusiva, así que el stream queda en negro. Windows.Graphics.Capture (`wgc`), con Sunshine en la sesión del usuario, sí lo captura. | `streaming.sunshine`: `capture: wgc` |
 
-Los laboratorios 004 a 007 usan `max-performance` en las dos variantes.
+Los laboratorios 004 a 009 usan `max-performance` en las dos variantes.
 
 ### Lo que encontraron los laboratorios hasta ahora
 
 - **002:** en la primera prueba real (VM con Windows 10 22H2) Sunshine se instaló, se emparejó solo y detectó NVENC, pero Moonlight quedó en negro: Sunshine capturaba la pantalla de Hyper-V en lugar de la virtual. La solución (poner `output_name` en la pantalla virtual y `dd_configuration_option = ensure_only_display`) ahora se aplica sola en cada **Encender y abrir**. Pendiente: Sunshine dice "Display device configuration API is temporarily unavailable" y no cambia la resolución.
 - **003:** se eligió VB-CABLE Pack45 frente al Virtual Audio Driver del proyecto VDD (beta, exige test signing), Scream (exige Secure Boot apagado) y Steam Streaming Speakers (obliga a instalar Steam y no tiene versión fija). Consulta [Streaming](/gpuvm/es/streaming/#audio-con-vb-cable).
+- **004:** medido con el medidor de punta a punta de `tools/latency` (1080p, 60 FPS, 40 pulsaciones en la VM `win10`). Mediana de **38,9 ms con V-Sync** frente a **33,8 ms sin V-Sync**: unos 5 ms menos, menos de un cuadro, y el p95 baja a la mitad (231,5 → 122 ms). Parte del p95 y de las muestras perdidas vienen del propio medidor. Con V-Sync, el overlay de Moonlight mostró 57,12 FPS recibidos, 1 ms de red y 0,32 ms de decodificación. 120 y 144 FPS todavía no se miden de forma confiable: el stream quedó en negro porque la frecuencia cambió con la sesión anterior de Sunshine todavía abierta; las herramientas ahora la cierran entre variantes. Sigue abierto.
+- **006:** se rehízo. El host informa el planificador root (`Hypervisor scheduler type is 0x4`), y Microsoft documenta que los límites, pesos y reservas solo aplican con el planificador clásico o el core, así que comparar 30 % con 100 % de reserva no podía mostrar diferencia. Ahora compara 8 con 6 procesadores virtuales. Todavía sin resultados.
+- **007:** se rehízo. La primera candidata (preset 1, `quarter_res`, latencia antes que consumo) era igual a los valores por defecto de Sunshine. La nueva apaga el two-pass, el aumento de VBV y la codificación dividida. Todavía sin resultados.
+- **008 (adoptado):** abrir sin cambiar resolución ni FPS pasó de 22–27 s hasta el primer cuadro (26,8 s medidos) a **2,1 s**. Cambiar de modo todavía cuesta 10–15 s (13,3 s para 120 FPS después de 60). Con `ensure_only_display`, el log de Sunshine mostraba "Encoder reenumeration is required" en cada sesión. `connect` ahora pone `dd_configuration_option = disabled` cuando GpuVM ya apagó la pantalla de Hyper-V. Consulta [Streaming](/gpuvm/es/streaming/#sunshine).
+- **009 (adoptado):** Un juego en pantalla completa exclusiva a 800×600 se veía en negro con `ddx` (Sunshine no recibía cuadros nuevos y reenviaba el último) y se veía con `wgc`. Se adoptó como opción por VM, apagada por defecto (**Opciones → Captura**): `wgc` no muestra los avisos de administrador de Windows (escritorio seguro). Sin cambio de seguridad: con `wgc` Sunshine corre como el usuario que inició sesión (elevado) en vez de SYSTEM. Consulta [Modos de captura](/gpuvm/es/streaming/#modos-de-captura).

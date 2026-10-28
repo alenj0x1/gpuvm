@@ -1,6 +1,6 @@
 ---
 title: Uso de la app
-description: Crea una VM, enciéndela y ábrela en Moonlight, revisa sus estadísticas en vivo, cambia sus opciones y usa las acciones de energía.
+description: Crea una VM, enciéndela y ábrela en Moonlight, revisa sus estadísticas en vivo, cambia sus opciones, instala apps, usa las acciones de energía y administra tus perfiles, discos e ISOs.
 ---
 
 import { Image } from 'astro:assets';
@@ -18,6 +18,7 @@ import preferencesDark from '../../../assets/screenshots/preferences-dark.png';
 
 - **Barra lateral:** todas las VMs de Hyper-V del equipo, creadas o no con GpuVM, con su estado (o el paso actual de un trabajo en curso). Se puede contraer. Al final de la lista está **Crear máquina**.
 - **Área principal:** la VM elegida: encabezado con su estado, edición, GPU y perfil; avisos; estadísticas en vivo; gráfica de uso y opciones.
+- **Biblioteca** es el ícono de capas en la barra de título: tus perfiles, discos e ISOs. Consulta [Biblioteca](#biblioteca).
 - **Preferencias** es el ícono de engrane en la barra de título, junto al botón de claro/oscuro. Consulta [Preferencias](#preferencias).
 
 Si la app no está corriendo como administrador, muestra **GpuVM necesita permisos de administrador** con el botón **Abrir como administrador**, que la vuelve a abrir con permisos. Si no puede leer Hyper-V, un aviso muestra el error con **Reintentar**.
@@ -34,8 +35,9 @@ Si todavía no hay VMs, la app te invita a crear la primera.
 
 2. Completa el formulario:
    - **Nombre:** letras, números, `_` o guiones, hasta 40 caracteres, sin espacios. Sugiere `win-gpu`.
-   - **Imagen de Windows:** los ISOs que encuentra en tus carpetas Descargas y Escritorio, o **Buscar otro ISO** para elegir uno.
-   - **Perfil:** **Equilibrado** (`balanced`) o **Máximo rendimiento** (`max-performance`, el predeterminado). Consulta [Perfiles](/gpuvm/es/profiles/).
+   - **Imagen de Windows:** primero los ISOs que ya usaste o agregaste, después los que encuentra en tus carpetas Descargas y Escritorio, o **Buscar otro ISO** para elegir uno.
+   - **Perfil:** **Equilibrado** (`balanced`), **Máximo rendimiento** (`max-performance`, el predeterminado) o uno tuyo de la [Biblioteca](#biblioteca). El perfil llena lo demás, incluidos su ISO y sus apps. Consulta [Perfiles](/gpuvm/es/profiles/).
+   - **Apps que se instalan:** se instalan la primera vez que se abre la VM. Consulta [Apps](#apps).
    - **Contraseña de Windows** del usuario local `gpuvm`, de al menos 6 caracteres, escrita dos veces.
 
 3. Haz clic en **Crear máquina**. El diálogo muestra cada paso a medida que avanza. Puedes cerrarlo: el avance sigue en la barra lateral, y si la creación falla el diálogo se vuelve a abrir con el error.
@@ -69,6 +71,14 @@ El botón principal cambia según el estado de la VM:
 
 Los avisos que surjan en el camino (por ejemplo, que el audio todavía no está configurado) aparecen como notificaciones.
 
+## Teclado en el stream
+
+Con Moonlight en pantalla completa, **Alt+F4**, **Alt+Tab** y la **tecla Windows** van a la VM en vez de cerrar Moonlight o regresarte a este equipo. Para salir del stream, presiona **Ctrl+Alt+Shift+Q**.
+
+## Pegar en la VM
+
+Con la VM encendida, el botón del portapapeles junto al menú **⋯**, **Pegar en la VM**, pasa el texto copiado en este equipo al portapapeles de la VM, listo para Ctrl+V. Solo va del PC a la VM: la VM nunca lee el portapapeles de este equipo. Necesita la [contraseña del invitado](#aviso-de-la-contraseña-del-invitado).
+
 ## Estadísticas en vivo
 
 Cuatro tarjetas que se actualizan cada 2 segundos mientras haya una VM encendida (cada 6 segundos si no):
@@ -80,6 +90,10 @@ Cuatro tarjetas que se actualizan cada 2 segundos mientras haya una VM encendida
 
 La gráfica **Uso** muestra CPU y GPU de los últimos 5 minutos.
 
+## Apps
+
+La tarjeta **Apps** instala Steam, Epic Games, Discord, Chrome, Proton VPN y Firefox en la VM: elígelas y haz clic en **Instalar**, o en **Encender e instalar** si la VM está apagada. También puedes elegirlas al crear la máquina; se instalan la primera vez que se abre. Cada instalador se descarga dentro de la VM y solo se ejecuta si Windows confirma que lo firma su empresa; las versiones fijas también se comprueban por SHA-256. La tarjeta necesita la [contraseña del invitado](#aviso-de-la-contraseña-del-invitado).
+
 ## Opciones
 
 Para las VMs creadas con GpuVM:
@@ -87,9 +101,13 @@ Para las VMs creadas con GpuVM:
 - **Procesador:** hilos, de 2 hasta los hilos del host menos uno.
 - **Memoria:** GB, de 4 hasta la memoria del host menos 4 GB.
 - **GPU para la VM:** de 10 a 100 %, de 10 en 10.
-- **Moonlight:** resolución (720p, 1080p, 1440p, 2160p) y FPS (30, 60, 120, 144).
+- **Disco:** amplía el disco (no se puede achicar). Un disco fijo necesita ese espacio libre en el equipo. El disco C: de la VM crece solo la próxima vez que se abre.
+- **Moonlight:** resolución (720p, 1080p, 1440p, 2160p), FPS (30, 60, 120, 144) y **Pantalla completa** o **Ventana** (del tamaño de la resolución elegida).
+- **Captura:** cómo captura Sunshine la pantalla.
+  - **Estándar** (la predeterminada): muestra todo, incluidos los avisos de administrador de Windows, pero los programas en pantalla completa exclusiva se ven en negro.
+  - **Pantalla completa exclusiva:** además muestra programas en pantalla completa exclusiva a cualquier resolución, pero los avisos de administrador de Windows **no** se ven en el stream. Consulta [Streaming](/gpuvm/es/streaming/#modos-de-captura).
 
-Los ajustes de Moonlight se guardan sin apagar la VM y se aplican la próxima vez que la abras. Procesador, memoria y GPU necesitan la VM apagada: si está encendida, el botón dice **Apagar y aplicar**, que valida, apaga la VM, aplica y la vuelve a encender. Si no puede volver a encenderla (por ejemplo, por falta de memoria libre), restaura la configuración anterior.
+Los ajustes de Moonlight y de captura se guardan sin apagar la VM: los de Moonlight se aplican la próxima vez que la abras, y la captura en el momento si la VM está encendida (reinicia Sunshine). Procesador, memoria, GPU y disco necesitan la VM apagada: si está encendida, el botón dice **Apagar y aplicar**, que valida, apaga la VM, aplica y la vuelve a encender. Si no puede volver a encenderla (por ejemplo, por falta de memoria libre), restaura la configuración anterior.
 
 ## Aviso de la contraseña del invitado
 
@@ -108,12 +126,20 @@ El menú **⋯** tiene:
 - **Ver consola de Hyper-V**. Solo muestra la pantalla básica de Hyper-V, no lo que dibuja la GPU.
 - **Volver a emparejar Moonlight**.
 - **Actualizar driver de la GPU**, o **Apagar y actualizar driver** si está encendida.
-- **Otro patrón**: cambia el ícono Bauhaus y el color de la VM.
+- **Otro patrón**: cambia el ícono Bauhaus y el color de la VM. Hacer clic en el patrón junto al nombre de la VM (o de un perfil) hace lo mismo; el nuevo se ve en todas partes al instante.
 - **Eliminar máquina**: quita la VM de Hyper-V, conservando el disco `.vhdx` o borrándolo también. No se puede deshacer.
 
 <Aside type="caution">
 No uses Escritorio remoto mientras transmites: se lleva la sesión de la consola y la quita de la pantalla de la GPU.
 </Aside>
+
+## Biblioteca
+
+La **Biblioteca**, el ícono de capas en la barra de título, tiene tres pestañas:
+
+- **Perfiles:** los perfiles incluidos (marcados **Incluido**) y los tuyos. **Nuevo perfil** o **Duplicar** crea uno a partir de otro; los tuyos también se pueden editar (**Editar**) y borrar (**Eliminar**, haz clic otra vez para confirmar). Cada uno guarda procesador, memoria, parte de la GPU, tamaño y tipo de disco (**Fijo** / **Dinámico**), imagen de Windows, apps por instalar y cómo abre Moonlight (resolución, FPS, pantalla completa o ventana), sobre el perfil incluido en el que está **Basado en**. **Crear máquina** llena todo con el perfil elegido.
+- **Discos:** los discos de la carpeta de GpuVM, qué VM usa cada uno (**En uso** o **Libre**) y el espacio libre del equipo. **Crear máquina con este disco** vuelve a crear una VM con un disco que se conservó al eliminarla, con Windows y sus apps como estaban; los discos libres se pueden borrar (haz clic otra vez para confirmar, no se puede deshacer).
+- **ISOs:** las imágenes de Windows que usaste, con las máquinas que las usaron, más las de Descargas y Escritorio. **Agregar ISO** o **Agregar a la lista** la recuerda, y **Quitar de la lista** la olvida sin borrar el archivo. Las ISOs recordadas se ofrecen primero en **Crear máquina**.
 
 ## Preferencias
 
@@ -123,5 +149,8 @@ No uses Escritorio remoto mientras transmites: se lleva la sesión de la consola
 - **Al cerrar la ventana:**
   - **Salir por completo** (el predeterminado): cerrar la ventana cierra GpuVM.
   - **Quedarse en la bandeja:** cerrar la ventana la oculta y GpuVM sigue abierta junto al reloj, así que los trabajos en curso continúan. El menú del ícono de la bandeja tiene **Abrir GpuVM** y **Salir**; un clic izquierdo sobre él vuelve a abrir la ventana.
+- **Al salir de GpuVM:**
+  - **Dejarlas encendidas** (el predeterminado): las máquinas siguen encendidas después de cerrar GpuVM.
+  - **Apagarlas:** al salir de GpuVM se apagan de forma ordenada todas las máquinas de GpuVM encendidas, como desde el menú Inicio de Windows, y se libera su memoria. GpuVM se cierra al instante; el apagado sigue en segundo plano.
 
 GpuVM se abre una sola vez: si la vuelves a abrir (por ejemplo, desde el menú Inicio mientras está en la bandeja), muestra la ventana que ya estaba abierta.

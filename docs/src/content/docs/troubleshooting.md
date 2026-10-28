@@ -15,6 +15,18 @@ To look at the VM's screen without the GPU, open the Hyper-V console (**Ver cons
 
 Known open issue ([lab 002](/gpuvm/labs/#what-the-labs-found-so-far)): Sunshine can report "Display device configuration API is temporarily unavailable" and not change the resolution.
 
+## A fullscreen program shows a black screen
+
+The desktop streams fine, but a game or program in **exclusive fullscreen** shows black (it may appear when it loses focus). The standard capture can't see exclusive fullscreen on a virtual display ([lab 009](/gpuvm/labs/#what-the-labs-found-so-far)). In **Options → Captura** (Capture) choose **Pantalla completa exclusiva** (Exclusive fullscreen) and save. In that mode Windows' administrator prompts aren't shown in the stream; switch back to **Estándar** (Standard) when you need them. See [Capture modes](/gpuvm/streaming/#capture-modes).
+
+## Windows open where I can't see them
+
+GPU-P VMs have an extra hidden 1024×768 output; if it was the primary display, new windows (Steam, installers) opened there instead of on the streamed display. **Encender y abrir** (Start and open) now fixes it automatically: it keeps the virtual display as the only and primary one. It needs the guest password; if a window is still missing, open the VM again from the app.
+
+## Alt+F4 closed the stream
+
+Not anymore: in fullscreen, Alt+F4, Alt+Tab and the Windows key go to the VM. To quit the stream, press **Ctrl+Alt+Shift+Q**. VMs created before this change get it too the next time they open.
+
 ## Driver sync
 
 The guest has to use **the same driver version as the host**. After updating the NVIDIA driver:

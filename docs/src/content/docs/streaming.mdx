@@ -25,7 +25,18 @@ nefcon is pinned to v1.14.0, the version the official VDD install script uses, e
 
 Sunshine runs inside the VM. Its username and password are generated when the VM is created; on the host they are stored encrypted with DPAPI. The password travels in plain text to the guest only for the install and is deleted afterwards.
 
-Each time you **start and open** a VM, GpuVM reads Sunshine's display list through its API, sets `output_name` to the virtual display and `dd_configuration_option` to `ensure_only_display`, and restarts Sunshine if that changed. This avoids capturing the Hyper-V display by mistake.
+Each time you **start and open** a VM, GpuVM reads Sunshine's display list through its API, sets `output_name` to the virtual display and restarts Sunshine if that changed, so it never captures the Hyper-V display by mistake. When GpuVM has already turned the Hyper-V display off, it also sets `dd_configuration_option` to `disabled`: if Sunshine changes the display on every session, it re-tests all its encoders and the first frame takes 22 to 27 s instead of about 2 s ([lab 008](/gpuvm/labs/#what-the-labs-found-so-far)). Changing the resolution or FPS still costs 10 to 15 s, because Sunshine sees the display change. Otherwise it uses `ensure_only_display`.
+
+## Capture modes
+
+Sunshine can capture the virtual display in two ways, chosen per VM in **Options → Captura** (Capture) or with `Set-GpuVMCapture -Name <vm> -Mode ddx|wgc`:
+
+| Mode | In the app | How Sunshine runs | Shows | Doesn't show |
+|---|---|---|---|---|
+| `ddx` (desktop duplication) | **Estándar** (Standard, the default) | As a Windows service (SYSTEM). | Everything, including Windows' administrator prompts. | Programs in exclusive fullscreen: black. |
+| `wgc` (Windows.Graphics.Capture) | **Pantalla completa exclusiva** (Exclusive fullscreen) | In the signed-in user's session, started by a logon task (`conhost --headless`, so no console window); the service is set to manual. | Programs in exclusive fullscreen, at any resolution. | Administrator prompts (they are drawn on the secure desktop). |
+
+With `ddx`, desktop duplication gets no new frames from the virtual display while a program is in exclusive fullscreen, so the stream stays black; it only shows the program when it loses focus ([lab 009](/gpuvm/labs/#what-the-labs-found-so-far)). The mode is applied right away if the VM is running and checked on every **Encender y abrir** (Start and open); when it's already set, Sunshine isn't restarted. Applying it needs the guest password.
 
 ## Virtual display
 
@@ -33,6 +44,7 @@ The [Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-D
 
 - After the first boot the VM restarts once on its own to finish registering the virtual display and the audio.
 - If the virtual display works, the Hyper-V display is turned off so Windows and Sunshine use the virtual one (`disableHyperVVideo` in the profile).
+- On every **Encender y abrir** (Start and open), with the guest password saved, the virtual display is kept as the only and primary display of the VM. GPU-P VMs get an extra hidden 1024×768 output of the shared GPU; if it became the primary one, new windows (Steam, installers) would open where the stream doesn't show them. When it's already set, nothing is changed, so Sunshine doesn't re-test its encoders.
 - If something fails, the VM is still reachable over Remote Desktop.
 
 <Aside type="caution">
@@ -79,7 +91,9 @@ The `streaming` section of the [profile](/gpuvm/profiles/) sets the defaults:
 }
 ```
 
-`client` also accepts `vsync`, `framePacing`, `performanceOverlay` (true/false) and `displayMode` (`fullscreen`, `windowed`, `borderless`). They are only passed to Moonlight when the profile defines them.
+`client` also accepts `vsync`, `framePacing`, `performanceOverlay` (true/false) and `displayMode` (`fullscreen`, `windowed`, `borderless`). They are only passed to Moonlight when the profile defines them. `captureSystemKeys` (`never`, `fullscreen`, `always`; `fullscreen` if not set) decides when Alt+F4, Alt+Tab and the Windows key go to the VM; Ctrl+Alt+Shift+Q always quits the stream.
+
+Moonlight is started as the signed-in user, without administrator rights, even though GpuVM runs elevated: it talks to a server the VM controls.
 
 ## Updating components
 

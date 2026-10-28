@@ -13,7 +13,7 @@
 <p align="center">
   <a href="https://github.com/alenj0x1/gpuvm/releases"><img src="https://img.shields.io/github/v/release/alenj0x1/gpuvm?include_prereleases&label=versi%C3%B3n" alt="Versión"></a>
   <a href="https://alenj0x1.github.io/gpuvm/es/"><img src="https://img.shields.io/badge/docs-alenj0x1.github.io%2Fgpuvm-2f5bd3" alt="Documentación"></a>
-  <a href="CHANGELOG.es.md"><img src="https://img.shields.io/badge/cambios-0.1.1-6b6e75" alt="Registro de cambios"></a>
+  <a href="CHANGELOG.es.md"><img src="https://img.shields.io/badge/cambios-0.2.0-6b6e75" alt="Registro de cambios"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/licencia-MIT-2f9e6a" alt="Licencia MIT"></a>
 </p>
 
@@ -29,6 +29,10 @@
 - **Se corrige sola.** Vuelve a copiar el driver de la GPU si cambió el del equipo, devuelve la sesión de Windows a la pantalla de la GPU y ajusta la resolución a la de Moonlight.
 - **Crea máquinas sin pasar por el instalador.** Eliges un ISO oficial de Windows y un perfil: la imagen se aplica directo al disco y se configura sola.
 - **Estadísticas y opciones.** Uso en vivo de CPU, memoria y GPU; procesadores, memoria, parte de la GPU y calidad de la imagen de cada VM.
+- **Biblioteca.** Tus propios perfiles (procesadores, memoria, GPU, disco, ISO, apps, cómo abre Moonlight), los discos que quedaron de VMs eliminadas para volver a crearlas, y las ISOs que usaste.
+- **Apps en un paso.** Steam, Epic Games, Discord, Chrome, Proton VPN y Firefox, instaladas dentro de la VM solo si las firma su empresa.
+- **Juegos en pantalla completa exclusiva.** Una opción de captura por VM los muestra en vez de una pantalla negra; pega texto del PC en la VM con un botón.
+- **Mantiene aparte al equipo.** Moonlight corre sin permisos de administrador, y el portapapeles solo va del PC a la VM, nunca al revés.
 - **Laboratorios.** Cada idea de rendimiento se mide (base contra candidata) antes de volverse un valor por defecto.
 
 <p align="center">

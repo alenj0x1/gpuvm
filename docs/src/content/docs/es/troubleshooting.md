@@ -15,6 +15,18 @@ Para ver la pantalla de la VM sin la GPU, abre la consola de Hyper-V (**Ver cons
 
 Problema abierto ([laboratorio 002](/gpuvm/es/labs/#lo-que-encontraron-los-laboratorios-hasta-ahora)): Sunshine puede decir "Display device configuration API is temporarily unavailable" y no cambiar la resolución.
 
+## Un programa en pantalla completa se ve en negro
+
+El escritorio se ve bien, pero un juego o programa en **pantalla completa exclusiva** se ve en negro (puede aparecer cuando pierde el foco). La captura estándar no ve la pantalla completa exclusiva en una pantalla virtual ([laboratorio 009](/gpuvm/es/labs/#lo-que-encontraron-los-laboratorios-hasta-ahora)). En **Opciones → Captura** elige **Pantalla completa exclusiva** y guarda. En ese modo los avisos de administrador de Windows no se ven en el stream; vuelve a **Estándar** cuando los necesites. Consulta [Modos de captura](/gpuvm/es/streaming/#modos-de-captura).
+
+## Las ventanas se abren donde no las veo
+
+Las VMs con GPU-P tienen una salida oculta extra de 1024×768; si quedaba como pantalla principal, las ventanas nuevas (Steam, instaladores) se abrían ahí en vez de en la pantalla transmitida. Ahora **Encender y abrir** lo corrige solo: deja la pantalla virtual como la única y principal. Necesita la contraseña del invitado; si todavía falta una ventana, vuelve a abrir la VM desde la app.
+
+## Alt+F4 cerró el stream
+
+Ya no: en pantalla completa, Alt+F4, Alt+Tab y la tecla Windows van a la VM. Para salir del stream, presiona **Ctrl+Alt+Shift+Q**. Las VMs creadas antes de este cambio también lo reciben la próxima vez que se abren.
+
 ## Sincronizar el driver
 
 El invitado tiene que usar **la misma versión de driver que el host**. Después de actualizar el driver de NVIDIA:
