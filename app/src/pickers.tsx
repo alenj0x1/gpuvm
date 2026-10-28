@@ -1,5 +1,5 @@
 import {
-  IconAlertTriangle, IconBrandChrome, IconBrandDiscord, IconBrandFirefox, IconBrandSteam, IconDeviceGamepad2, IconDisc, IconFolderOpen, IconShieldLock,
+  IconAlertTriangle, IconBrandChrome, IconBrandDiscord, IconBrandFirefox, IconBrandSteam, IconDeviceGamepad2, IconDisc, IconFolderOpen, IconShieldLock, IconWorldWww,
 } from "@tabler/icons-react";
 import type { AppInfo, IsoFile, ProfileSettings } from "./types";
 import { CheckMark } from "./ui";
@@ -17,6 +17,8 @@ const APP_ICONS: Record<string, React.ReactNode> = {
   chrome: <IconBrandChrome size={18} />,
   firefox: <IconBrandFirefox size={18} />,
   protonvpn: <IconShieldLock size={18} />,
+  // Tabler has no Brave logo; a browser icon stands in.
+  brave: <IconWorldWww size={18} />,
 };
 
 export function profileSummary(s: ProfileSettings, apps: AppInfo[] = []) {

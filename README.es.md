@@ -30,7 +30,7 @@
 - **Crea máquinas sin pasar por el instalador.** Eliges un ISO oficial de Windows y un perfil: la imagen se aplica directo al disco y se configura sola.
 - **Estadísticas y opciones.** Uso en vivo de CPU, memoria y GPU; procesadores, memoria, parte de la GPU y calidad de la imagen de cada VM.
 - **Biblioteca.** Tus propios perfiles (procesadores, memoria, GPU, disco, ISO, apps, cómo abre Moonlight), los discos que quedaron de VMs eliminadas para volver a crearlas, y las ISOs que usaste.
-- **Apps en un paso.** Steam, Epic Games, Discord, Chrome, Proton VPN y Firefox, instaladas dentro de la VM solo si las firma su empresa.
+- **Apps en un paso.** Steam, Epic Games, Discord, Chrome, Brave, Proton VPN y Firefox, instaladas dentro de la VM solo si las firma su empresa.
 - **Juegos en pantalla completa exclusiva.** Una opción de captura por VM los muestra en vez de una pantalla negra; pega texto del PC en la VM con un botón.
 - **Mantiene aparte al equipo.** Moonlight corre sin permisos de administrador, y el portapapeles solo va del PC a la VM, nunca al revés.
 - **Laboratorios.** Cada idea de rendimiento se mide (base contra candidata) antes de volverse un valor por defecto.

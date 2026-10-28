@@ -98,7 +98,7 @@ export async function ps(cmd: string, args: Record<string, unknown>): Promise<un
       return [
         { id: "steam", name: "Steam", signer: "Valve" }, { id: "epic", name: "Epic Games", signer: "Epic Games" },
         { id: "discord", name: "Discord", signer: "Discord" }, { id: "chrome", name: "Chrome", signer: "Google" },
-        { id: "protonvpn", name: "Proton VPN", signer: "Proton AG" }, { id: "firefox", name: "Firefox", signer: "Mozilla" },
+        { id: "protonvpn", name: "Proton VPN", signer: "Proton AG" }, { id: "brave", name: "Brave", signer: "Brave Software, Inc." }, { id: "firefox", name: "Firefox", signer: "Mozilla" },
       ];
     case "Get-GpuVMDisk":
       return disks;

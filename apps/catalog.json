@@ -42,6 +42,17 @@
       "signer": "Proton AG",
       "installed": "${ProgramFiles}\\Proton\\VPN"
     },
+    "brave": {
+      "name": "Brave",
+      "url": "https://laptop-updates.brave.com/latest/winx64",
+      "file": "BraveBrowserSetup.exe",
+      "args": ["/silent", "/install"],
+      "signer": "Brave Software, Inc.",
+      "installed": [
+        "${ProgramFiles}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe",
+        "${LOCALAPPDATA}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe"
+      ]
+    },
     "firefox": {
       "name": "Firefox",
       "url": "https://download.mozilla.org/?product=firefox-latest-ssl&os=win64&lang=es-MX",

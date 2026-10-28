@@ -19,8 +19,10 @@ function Install-GuestApp {
             param($entry)
             $ErrorActionPreference = 'Stop'
             $expand = { param($path) [regex]::Replace($path, '\$\{([^}]+)\}', { param($m) [Environment]::GetEnvironmentVariable($m.Groups[1].Value) }) }
-            $installed = & $expand $entry['installed']
-            if (Test-Path -LiteralPath $installed) { return @{ status = 'present' } }
+            # "installed" may list several places (some installers go per-machine or per-user depending on context).
+            $places = @($entry['installed'] | ForEach-Object { & $expand $_ })
+            $isInstalled = { [bool]($places | Where-Object { Test-Path -LiteralPath $_ }) }
+            if (& $isInstalled) { return @{ status = 'present' } }
             $dir = Join-Path $env:TEMP 'GpuVM-apps'
             New-Item -ItemType Directory -Force $dir | Out-Null
             $file = Join-Path $dir $entry['file']
@@ -48,8 +50,8 @@ function Install-GuestApp {
             Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
             if (-not $finished) { return @{ status = 'failed'; detail = 'el instalador no terminó en 10 minutos' } }
             # Some installers (Discord, Chrome) hand off to a background process; give them a moment.
-            for ($i = 0; $i -lt 60 -and -not (Test-Path -LiteralPath $installed); $i++) { Start-Sleep -Seconds 2 }
-            @{ status = if (Test-Path -LiteralPath $installed) { 'installed' } else { 'failed' }; detail = "código $($process.ExitCode)" }
+            for ($i = 0; $i -lt 60 -and -not (& $isInstalled); $i++) { Start-Sleep -Seconds 2 }
+            @{ status = if (& $isInstalled) { 'installed' } else { 'failed' }; detail = "código $($process.ExitCode)" }
         }
         # Only primitive values from the guest are used.
         $status = [string]$result['status']
