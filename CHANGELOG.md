@@ -6,6 +6,13 @@ All notable changes to GpuVM are documented here. The format follows [Keep a Cha
 
 Changes waiting for the next version sit under **Unreleased** at the top (this section only exists while there are some, and the docs site doesn't show it); `scripts/release.py` turns it into the new version.
 
+## [Unreleased]
+
+### Changed
+- GpuVM's speaker has its own USB ID, **1209:A7D0**, requested to pid.codes ([pidcodes#1335](https://github.com/pidcodes/pidcodes.github.com/pull/1335)), instead of the 1209:0001 test ID. Its status file also reports underruns and how much audio it queues.
+- Updating the speaker removes the outputs left by the previous one, so Windows keeps calling it **Speakers (GpuVM Audio)** instead of numbering it.
+- VMs created with VB-CABLE get it uninstalled once the speaker works (only the copy GpuVM installed).
+
 ## [0.3.0] - 2026-10-28
 
 ### Changed

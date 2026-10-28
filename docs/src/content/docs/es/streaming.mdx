@@ -66,12 +66,13 @@ Codecs: `auto`, `H.264`, `HEVC`, `AV1`. Por defecto Moonlight abre la app `Deskt
 
 ## Audio
 
-Las VMs de generación 2 de Hyper-V no tienen tarjeta de sonido. GpuVM le da a la VM **su propio altavoz USB**: un pequeño servidor dentro de la VM (`GpuVMAudio.exe`) se presenta como un dispositivo de audio USB (48 kHz, estéreo), [usbip-win2](https://github.com/vadimgrn/usbip-win2) lo conecta y Windows lo maneja con su propio driver de audio USB, como si fuera hardware real. Aparece como **Altavoces (GpuVM Audio)** y Sunshine lo captura (`virtual_sink`).
+Las VMs de generación 2 de Hyper-V no tienen tarjeta de sonido. GpuVM le da a la VM **su propio altavoz USB**: un pequeño servidor dentro de la VM (`GpuVMAudio.exe`) se presenta como un dispositivo de audio USB (48 kHz, estéreo), [usbip-win2](https://github.com/vadimgrn/usbip-win2) lo conecta y Windows lo maneja con su propio driver de audio USB, como si fuera hardware real. Aparece como **Altavoces (GpuVM Audio)**, con identificador USB `1209:A7D0` ([pid.codes](https://pid.codes)), y Sunshine lo captura (`virtual_sink`).
 
 - Nada sale de la VM: el servidor solo escucha en `127.0.0.1`, corre como `LOCAL SERVICE` y su programa vive en `C:\Program Files\GpuVM\Audio`, donde solo los administradores pueden escribir.
 - usbip-win2 instala solo su cliente, en silencio. Sus drivers están firmados por Microsoft: sin modo de prueba ni certificados propios. GpuVM comprueba ambas cosas y lo desinstala si alguna falla.
 - El altavoz es persistente: usbip-win2 lo vuelve a conectar cada vez que Windows arranca, sin reinicios ni inicio de sesión. **Encender y abrir** lo revisa cada vez, lo reconecta si se perdió y actualiza el servidor cuando GpuVM trae uno nuevo.
-- Las VMs creadas con VB-CABLE pasan al altavoz la próxima vez que se abren. Dentro de una VM, la salida de VB-CABLE le llega muda a Sunshine; el sonido de antes venía de Steam Streaming Speakers ([laboratorios 011 y 012](/gpuvm/es/labs/)).
+- `C:\ProgramData\GpuVM\Audio\status.json` dentro de la VM muestra lo que recibió el altavoz, sus vaciados de cola (la cola se quedó vacía mientras seguía llegando sonido) y cuánto audio tiene en cola, unos 10 ms ([laboratorio 013](/gpuvm/es/labs/)).
+- Las VMs creadas con VB-CABLE pasan al altavoz la próxima vez que se abren, y se desinstala el VB-CABLE que instaló GpuVM. Dentro de una VM, la salida de VB-CABLE le llega muda a Sunshine; el sonido de antes venía de Steam Streaming Speakers ([laboratorios 011 y 012](/gpuvm/es/labs/)).
 
 ## Ajustes del perfil
 

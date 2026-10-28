@@ -66,12 +66,13 @@ Codecs: `auto`, `H.264`, `HEVC`, `AV1`. Moonlight opens the `Desktop` app of Sun
 
 ## Audio
 
-Hyper-V Generation 2 VMs have no sound card. GpuVM gives the VM **its own USB speaker**: a small server inside the VM (`GpuVMAudio.exe`) presents itself as a USB audio device (48 kHz, stereo), [usbip-win2](https://github.com/vadimgrn/usbip-win2) plugs it in, and Windows drives it with its built-in USB audio driver as if it were real hardware. It shows up as **Speakers (GpuVM Audio)** and Sunshine captures it (`virtual_sink`).
+Hyper-V Generation 2 VMs have no sound card. GpuVM gives the VM **its own USB speaker**: a small server inside the VM (`GpuVMAudio.exe`) presents itself as a USB audio device (48 kHz, stereo), [usbip-win2](https://github.com/vadimgrn/usbip-win2) plugs it in, and Windows drives it with its built-in USB audio driver as if it were real hardware. It shows up as **Speakers (GpuVM Audio)**, USB ID `1209:A7D0` ([pid.codes](https://pid.codes)), and Sunshine captures it (`virtual_sink`).
 
 - Nothing leaves the VM: the server listens on `127.0.0.1` only, runs as `LOCAL SERVICE` and its program lives in `C:\Program Files\GpuVM\Audio`, where only administrators can write.
 - usbip-win2 installs only its client, silently. Its drivers are signed by Microsoft: no test mode, no certificate of its own. GpuVM checks both and uninstalls it if either fails.
 - The speaker is persistent: usbip-win2 plugs it in again every time Windows starts, so no restart or sign-in is needed. **Encender y abrir** (Start and open) checks it every time, plugs it in again if it was lost and updates the server when GpuVM brings a new one.
-- VMs created with VB-CABLE move to the speaker the next time they are opened. VB-CABLE's output is silent to Sunshine inside a VM, so the earlier sound came from Steam Streaming Speakers ([labs 011 and 012](/gpuvm/labs/)).
+- `C:\ProgramData\GpuVM\Audio\status.json` inside the VM shows what the speaker received, its underruns (the queue ran dry while sound kept coming) and how much audio it keeps queued, about 10 ms ([lab 013](/gpuvm/labs/)).
+- VMs created with VB-CABLE move to the speaker the next time they are opened, and the VB-CABLE GpuVM installed is uninstalled. VB-CABLE's output is silent to Sunshine inside a VM, so the earlier sound came from Steam Streaming Speakers ([labs 011 and 012](/gpuvm/labs/)).
 
 ## Profile settings
 

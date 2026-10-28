@@ -449,6 +449,7 @@ InModuleScope GpuVM {
             $source | Should Match 'new TcpListener\(IPAddress\.Loopback'
             $source | Should Not Match 'IPAddress\.Any'
             $source | Should Match 'oversized request'
+            $source | Should Match 'Pid = 0xA7D0'
         }
 
         It 'sunshine.conf: replaces existing keys and appends new ones' {

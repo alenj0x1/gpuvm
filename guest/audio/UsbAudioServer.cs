@@ -15,9 +15,10 @@ using System.Text;
 using System.Threading;
 
 public static class UsbAudioServer {
-    // pid.codes test VID/PID (1209:0001), private use only; a product needs its own PID.
+    // VID 0x1209 (pid.codes, for open source projects), PID 0xA7D0 requested for GpuVM Audio.
+    const int Vid = 0x1209, Pid = 0xA7D0;
     static readonly byte[] DeviceDescriptor = {
-        18, 1, 0x00, 0x02, 0, 0, 0, 64, 0x09, 0x12, 0x01, 0x00, 0x00, 0x01, 1, 2, 3, 1
+        18, 1, 0x00, 0x02, 0, 0, 0, 64, Vid & 0xFF, Vid >> 8, Pid & 0xFF, Pid >> 8, 0x00, 0x01, 1, 2, 3, 1
     };
     static readonly byte[] ConfigDescriptor = {
         9, 2, 100, 0, 2, 1, 0, 0x80, 50,
@@ -41,6 +42,11 @@ public static class UsbAudioServer {
     static long urbs, isoBytes, nonZeroBytes, controls, unlinks, stalls, sessions;
     static int peak;
     static string lastError = "";
+    // Playback quality: an underrun is the queue running dry while audio keeps coming (a real device would click);
+    // "ahead" is how much audio is queued when a transfer arrives, the latency this device adds.
+    static readonly object statsLock = new object();
+    static long underruns, aheadSamples;
+    static double underrunMs, aheadSumMs, aheadMaxMs;
     static StreamWriter log;
     static readonly object logLock = new object();
     static readonly Stopwatch clock = Stopwatch.StartNew();
@@ -72,7 +78,7 @@ public static class UsbAudioServer {
                     ",\"urbs\":" + Interlocked.Read(ref urbs) + ",\"isoBytes\":" + Interlocked.Read(ref isoBytes) +
                     ",\"nonZeroBytes\":" + Interlocked.Read(ref nonZeroBytes) + ",\"peak\":" + Thread.VolatileRead(ref peak) +
                     ",\"controls\":" + Interlocked.Read(ref controls) + ",\"stalls\":" + Interlocked.Read(ref stalls) +
-                    ",\"unlinks\":" + Interlocked.Read(ref unlinks) + ",\"lastError\":\"" + lastError.Replace("\\", "/").Replace("\"", "'") + "\"}";
+                    ",\"unlinks\":" + Interlocked.Read(ref unlinks) + Stats() + ",\"lastError\":\"" + lastError.Replace("\\", "/").Replace("\"", "'") + "\"}";
                 try { File.WriteAllText(statusPath, json); } catch { }
             }
         });
@@ -85,6 +91,15 @@ public static class UsbAudioServer {
             client.NoDelay = true;
             var t = new Thread(() => Serve(client));
             t.IsBackground = true; t.Start();
+        }
+    }
+
+    static string Stats() {
+        lock (statsLock) {
+            var c = System.Globalization.CultureInfo.InvariantCulture;
+            return ",\"underruns\":" + underruns + ",\"underrunMs\":" + underrunMs.ToString("0.0", c) +
+                ",\"aheadSamples\":" + aheadSamples + ",\"aheadSumMs\":" + aheadSumMs.ToString("0.0", c) +
+                ",\"aheadMaxMs\":" + aheadMaxMs.ToString("0.0", c);
         }
     }
 
@@ -126,7 +141,7 @@ public static class UsbAudioServer {
         Encoding.ASCII.GetBytes("/sys/devices/platform/gpuvm/usb1/1-1").CopyTo(b, 0);
         Encoding.ASCII.GetBytes("1-1").CopyTo(b, 256);
         PutBE32(b, 288, 1); PutBE32(b, 292, 2); PutBE32(b, 296, 2); // busnum, devnum, speed = full
-        PutBE16(b, 300, 0x1209); PutBE16(b, 302, 0x0001); PutBE16(b, 304, 0x0100);
+        PutBE16(b, 300, Vid); PutBE16(b, 302, Pid); PutBE16(b, 304, 0x0100);
         b[306] = 0; b[307] = 0; b[308] = 0; b[309] = 1; b[310] = 1; b[311] = 2;
         return b;
     }
@@ -138,7 +153,7 @@ public static class UsbAudioServer {
         readonly object writeLock = new object();
         readonly object queueLock = new object();
         readonly List<Pending> queue = new List<Pending>();
-        double nextDue;
+        double nextDue, lastSubmit;
         uint frame;
         bool closed;
 
@@ -195,6 +210,8 @@ public static class UsbAudioServer {
                 }
                 else if (request == 0 && (type & 0x80) != 0) answer = new byte[2];
                 else if (request == 8) answer = new byte[] { 1 };
+                // SET_INTERFACE: playback starts or stops, so the next transfer does not continue a stream.
+                else if (request == 11) lock (queueLock) { lastSubmit = 0; }
                 else if (request == 10) answer = new byte[] { 0 };
                 else if ((type & 0x80) != 0) stall = true;
             }
@@ -235,7 +252,15 @@ public static class UsbAudioServer {
             // A real device plays one packet per 1 ms frame; completing at that pace keeps the audio clock right.
             lock (queueLock) {
                 double now = clock.Elapsed.TotalMilliseconds;
+                bool continuing = lastSubmit > 0 && now - lastSubmit < 200;
+                if (continuing && nextDue < now) lock (statsLock) { underruns++; underrunMs += now - nextDue; }
                 if (nextDue < now - 20) nextDue = now;
+                if (continuing) lock (statsLock) {
+                    double ahead = Math.Max(0, nextDue - now);
+                    aheadSamples++; aheadSumMs += ahead;
+                    if (ahead > aheadMaxMs) aheadMaxMs = ahead;
+                }
+                lastSubmit = now;
                 nextDue += packets;
                 queue.Add(new Pending { Seq = seq, Due = nextDue, StartFrame = frame, Iso = isoDesc, Packets = packets, Length = length });
                 frame = (frame + (uint)packets) & 0x7FF;

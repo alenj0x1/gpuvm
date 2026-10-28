@@ -6,6 +6,13 @@ Aquí se documentan los cambios importantes de GpuVM. El formato sigue [Keep a C
 
 Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (esa sección solo existe mientras haya alguno y el sitio de documentación no la muestra); `scripts/release.py` la convierte en la versión nueva.
 
+## [Sin publicar]
+
+### Cambiado
+- El altavoz de GpuVM tiene su propio identificador USB, **1209:A7D0**, solicitado a pid.codes ([pidcodes#1335](https://github.com/pidcodes/pidcodes.github.com/pull/1335)), en lugar del 1209:0001 de prueba. Su archivo de estado también informa los vaciados de cola y cuánto audio tiene en cola.
+- Al actualizar el altavoz se quitan las salidas que dejó el anterior, para que Windows lo siga llamando **Altavoces (GpuVM Audio)** en vez de numerarlo.
+- A las VMs creadas con VB-CABLE se les desinstala cuando el altavoz funciona (solo la copia que instaló GpuVM).
+
 ## [0.3.0] - 2026-10-28
 
 ### Cambiado

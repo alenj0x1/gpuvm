@@ -146,6 +146,22 @@ function Connect-GpuVMAudioDevice {
     }
 }
 
+function Disconnect-GpuVMAudioDevice {
+    param([Parameter(Mandatory)][string]$Usbip)
+    $ports = ((& $Usbip port 2>&1 | Out-String) -split '(?m)^Port ') |
+        Where-Object { $_ -match "usbip://127\.0\.0\.1:$($script:AudioPort)/1-1" } | ForEach-Object { if ($_ -match '^(\d+):') { [int]$Matches[1] } }
+    foreach ($port in $ports) { & $Usbip detach -p $port 2>&1 | Out-Null }
+}
+
+# Instances left from an earlier server (another USB ID, or their outputs) make Windows number the new output
+# ("2- GpuVM Audio"); they are removed so it keeps its plain name.
+function Remove-GpuVMAudioDevices {
+    Get-PnpDevice -ErrorAction SilentlyContinue |
+        Where-Object { $_.InstanceId -like 'USB\VID_1209&PID_0001*' -or $_.InstanceId -like 'USB\VID_1209&PID_A7D0*' -or
+            ($_.InstanceId -like 'SWD\MMDEVAPI\*' -and $_.FriendlyName -like '*GpuVM Audio*') } |
+        ForEach-Object { pnputil.exe /remove-device $_.InstanceId 2>&1 | Out-Null }
+}
+
 # Installs usbip-win2 (client only), checks its drivers, builds the server and starts it, attaches the speaker and
 # points Sunshine at it. $Dir has the usbip-win2 installer; $Root has audio\UsbAudioServer.cs. Needs no restart.
 function Install-GpuVMAudio {
@@ -181,6 +197,8 @@ function Install-GpuVMAudio {
     # The server is compiled here from its source and kept where only administrators can change it.
     Stop-ScheduledTask -TaskName $script:AudioTask -ErrorAction SilentlyContinue
     Get-Process GpuVMAudio -ErrorAction SilentlyContinue | Stop-Process -Force
+    Disconnect-GpuVMAudioDevice -Usbip $usbip
+    Remove-GpuVMAudioDevices
     New-Item -ItemType Directory -Force $script:AudioProgramDir, $script:AudioDataDir | Out-Null
     $source = Join-Path $script:AudioProgramDir 'UsbAudioServer.cs'
     $exe = Join-Path $script:AudioProgramDir 'GpuVMAudio.exe'
@@ -213,7 +231,23 @@ function Install-GpuVMAudio {
     # virtual_sink makes Sunshine switch the default output to the speaker while streaming.
     Set-SunshineConfig -Path (Join-Path $env:ProgramFiles 'Sunshine\config\sunshine.conf') -Settings ([ordered]@{ virtual_sink = $endpoint })
     Restart-GpuVMSunshine
+    $null = Remove-GpuVMVBCable -Root $Root
     'ok'
+}
+
+# VMs created before 0.3 have VB-CABLE, installed by GpuVM (its package is in C:\GpuVM\VB-CABLE). Inside a VM its
+# output reaches Sunshine as silence (lab 011), so once the speaker works it is removed: driver, device and package.
+# A VB-CABLE the user installed on their own (no GpuVM package) is left alone.
+function Remove-GpuVMVBCable {
+    param([Parameter(Mandatory)][string]$Root)
+    $package = Join-Path $Root 'VB-CABLE'
+    if (-not (Test-Path $package)) { return 'none' }
+    # /uninstall also removes the devices that use the driver.
+    Get-WindowsDriver -Online | Where-Object OriginalFileName -match 'vbMmeCable' | ForEach-Object {
+        pnputil.exe /delete-driver $_.Driver /uninstall /force | Out-Null
+    }
+    Remove-Item $package -Recurse -Force -ErrorAction SilentlyContinue
+    'removed'
 }
 
 # Run on every open (from the host, through PowerShell Direct): 'install' if the speaker is missing or its server is
