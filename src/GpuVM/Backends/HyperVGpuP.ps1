@@ -113,6 +113,7 @@ function Set-HyperVGpuPVM {
     }
     # The guest cannot pose as a DHCP server or router to other machines, nor change its MAC.
     Set-VMNetworkAdapter -VMName $Name -DhcpGuard On -RouterGuard On -MacAddressSpoofing Off
+    Update-GpuVMNetworkIsolation -Name $Name -State @{ config = $Config }
 
     $percent = $Config['gpu']['allocationPercent']
     Write-Step "GPU: partición al $percent %"

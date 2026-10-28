@@ -4,6 +4,11 @@ Aquí se documentan los cambios importantes de GpuVM. El formato sigue [Keep a C
 
 [English](CHANGELOG.md)
 
+## [Sin publicar]
+
+### Seguridad
+- **La VM queda aislada de tu red por defecto.** Conserva internet, pero no llega a este equipo ni a tu red local, salvo al DHCP y DNS del Default Switch y a las respuestas de las conexiones que abre Moonlight. Las reglas viven en el puerto del switch virtual de la VM y las aplica el equipo, así que una VM dañada o infectada no puede quitarlas; se renuevan antes de cada encendido porque el Default Switch cambia la dirección del equipo. Se desactiva por VM en **Opciones → Red** (por ejemplo, para llegar a un NAS). No se aplica en un switch externo, con un aviso (laboratorio 010).
+
 ## [0.2.0] - 2026-10-27
 
 ### Agregado

@@ -42,13 +42,13 @@ export function Slider({ value, min, max, step = 1, onChange, label }: SliderPro
   );
 }
 
-interface SegmentedProps<T extends string | number> {
+interface SegmentedProps<T extends string | number | boolean> {
   value: T;
   options: { value: T; label: ReactNode }[];
   onChange: (v: T) => void;
 }
 
-export function Segmented<T extends string | number>({ value, options, onChange }: SegmentedProps<T>) {
+export function Segmented<T extends string | number | boolean>({ value, options, onChange }: SegmentedProps<T>) {
   return (
     <div className="segmented" role="radiogroup">
       {options.map((o) => (

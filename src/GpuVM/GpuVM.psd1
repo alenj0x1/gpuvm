@@ -40,6 +40,7 @@
         'Send-GpuVMClipboard'
         'Stop-GpuVMAll'
         'Set-GpuVMCapture'
+        'Set-GpuVMNetworkIsolation'
     )
     CmdletsToExport   = @()
     AliasesToExport   = @()

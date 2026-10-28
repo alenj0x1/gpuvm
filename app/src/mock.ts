@@ -11,7 +11,7 @@ const vms: VmOverview[] = [
     memoryAssignedGB: 8, memoryDemandGB: 5.1, uptimeSeconds: 4320, hasGpu: true, gpuName: "NVIDIA GeForce RTX 4060",
     gpuPercent: 61, driverInSync: true, streaming: true, paired: true, guestCredential: true, address: "172.29.111.201",
     client: { app: "Desktop", resolution: "1920x1080", fps: 60, bitrateKbps: 0, codec: "auto" },
-    options: { cpu: 8, memoryGB: 8, gpuPercent: 100, diskGB: 200, diskType: "Fixed", diskFreeGB: 232, captureMode: "ddx" },
+    options: { cpu: 8, memoryGB: 8, gpuPercent: 100, diskGB: 200, diskType: "Fixed", diskFreeGB: 232, captureMode: "ddx", networkIsolation: true },
   },
   {
     id: "a1b2c3d4", name: "win11-pruebas", state: "Off", managed: true, profile: "balanced",
@@ -19,7 +19,7 @@ const vms: VmOverview[] = [
     memoryAssignedGB: 0, memoryDemandGB: 0, uptimeSeconds: 0, hasGpu: true, gpuName: "NVIDIA GeForce RTX 4060",
     gpuPercent: 0, driverInSync: false, streaming: true, paired: false, guestCredential: true, address: null,
     client: { app: "Desktop", resolution: "2560x1440", fps: 120, bitrateKbps: 40000, codec: "HEVC" },
-    options: { cpu: 8, memoryGB: 8, gpuPercent: 100, diskGB: 200, diskType: "Fixed", diskFreeGB: 232, captureMode: "ddx" },
+    options: { cpu: 8, memoryGB: 8, gpuPercent: 100, diskGB: 200, diskType: "Fixed", diskFreeGB: 232, captureMode: "ddx", networkIsolation: true },
   },
   {
     id: "99ff0011", name: "ubuntu-server", state: "Off", managed: false, profile: null, edition: null, generation: 2,
@@ -116,6 +116,9 @@ export async function ps(cmd: string, args: Record<string, unknown>): Promise<un
       vm.state = action === "Start" || action === "Resume" || action === "Restart" ? "Running" : action === "Pause" ? "Paused" : "Off";
       return [{ name: vm.name, state: vm.state }];
     }
+    case "Set-GpuVMNetworkIsolation":
+      vms.find((v) => v.name === args.Name)!.options!.networkIsolation = args.Enabled as boolean;
+      return [];
     case "Set-GpuVMCapture":
       vms.find((v) => v.name === args.Name)!.options!.captureMode = args.Mode as "ddx" | "wgc";
       return [];

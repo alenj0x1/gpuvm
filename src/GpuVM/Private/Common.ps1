@@ -26,6 +26,9 @@ function Assert-VMCanStart {
     param([Parameter(Mandatory)][string]$Name)
     $vm = Get-VM -Name $Name
     if ($vm.State -eq 'Off') { Assert-FreeMemory -RequiredGB ($vm.MemoryStartup / 1GB) }
+    # A GpuVM VM starts isolated, with the host's address of today (the Default Switch changes it on restart).
+    $state = try { Get-GpuVMState -Name $Name } catch { $null }
+    if ($state) { Update-GpuVMNetworkIsolation -Name $Name -State $state }
 }
 
 $script:AdminSids = @('S-1-5-32-544', 'S-1-5-18')

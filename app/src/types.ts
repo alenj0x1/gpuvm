@@ -32,7 +32,7 @@ export interface VmOverview {
   guestCredential: boolean;
   address: string | null;
   client: ClientSettings | null;
-  options: { cpu: number; memoryGB: number; gpuPercent: number; diskGB: number; diskType: string; diskFreeGB: number; captureMode: "ddx" | "wgc" } | null;
+  options: { cpu: number; memoryGB: number; gpuPercent: number; diskGB: number; diskType: string; diskFreeGB: number; captureMode: "ddx" | "wgc"; networkIsolation: boolean } | null;
 }
 
 export type DisplayMode = "fullscreen" | "windowed" | "borderless";

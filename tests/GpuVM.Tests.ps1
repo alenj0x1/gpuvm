@@ -471,4 +471,97 @@ InModuleScope GpuVM {
 
         $script:DataRoot = $originalData
     }
+
+    Describe 'Network isolation' {
+        $acl = { param($w, $action, $dir, $ip, $proto = 'ANY', $local = 'ANY', $remote = 'ANY', $stateful = $false)
+            [pscustomobject]@{ Weight = $w; Action = $action; Direction = $dir; RemoteIPAddress = $ip; Protocol = $proto; LocalPort = $local; RemotePort = $remote; Stateful = $stateful } }
+        # What Hyper-V returns after the rules for a host at $ip were applied from weight $base.
+        $applied = { param($ip, $base)
+            $rules = @(Get-GpuVMIsolationRules -HostAddress $ip)
+            $w = $base + $rules.Count
+            foreach ($r in $rules) {
+                $p = if ($r.Contains('Protocol')) { $r['Protocol'] } else { 'ANY' }
+                $l = if ($r.Contains('LocalPort')) { $r['LocalPort'] } else { 'ANY' }
+                $rp = if ($r.Contains('RemotePort')) { $r['RemotePort'] } else { 'ANY' }
+                & $acl $w $r['Action'] $r['Direction'] $r['RemoteIPAddress'] $p $l $rp ([bool]$r['Stateful'])
+                $w--
+            }
+        }
+        $state = @{ config = @{ vm = @{ network = @{ switch = 'Default Switch' } } } }
+
+        It 'is on unless it was turned off explicitly' {
+            Get-GpuVMNetworkIsolation -State $state | Should Be $true
+            Get-GpuVMNetworkIsolation -State @{ config = @{ vm = @{} } } | Should Be $true
+            Get-GpuVMNetworkIsolation -State @{ config = @{ vm = @{ network = @{ isolation = $false } } } } | Should Be $false
+        }
+
+        It 'blocks private networks, multicast and IPv6, and lets only DHCP, DNS and Moonlight replies reach the host' {
+            $rules = @(Get-GpuVMIsolationRules -HostAddress '172.29.96.1')
+            $deny = @($rules | Where-Object { $_['Action'] -eq 'Deny' })
+            foreach ($range in '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '169.254.0.0/16', '100.64.0.0/10', '224.0.0.0/4', '::/0') {
+                @($deny | Where-Object { $_['RemoteIPAddress'] -eq $range -and $_['Direction'] -eq 'Outbound' }).Count | Should Be 1
+            }
+            $allow = @($rules | Where-Object { $_['Action'] -eq 'Allow' })
+            @($allow | Where-Object { $_['RemoteIPAddress'] -ne '172.29.96.1' }).Count | Should Be 0
+            # From the VM, only DHCP and DNS; anything else toward the host has to be a reply to Moonlight.
+            (@($allow | Where-Object { $_['Direction'] -eq 'Outbound' } | ForEach-Object { $_['RemotePort'] } | Sort-Object -Unique) -join ',') | Should Be '53,67'
+            @($allow | Where-Object { $_['Direction'] -eq 'Inbound' -and -not $_['Stateful'] }).Count | Should Be 0
+            # Allows get the higher weights.
+            $rules[0]['Action'] | Should Be 'Allow'
+            $rules[-1]['Action'] | Should Be 'Deny'
+        }
+
+        It 'does nothing when the rules already match the host address' {
+            Mock Get-VMNetworkAdapterExtendedAcl { & $applied '172.29.96.1' 20000 }
+            Mock Get-VMNetworkAdapter { [pscustomobject]@{ SwitchName = 'Default Switch' } }
+            Mock Get-VMSwitch { [pscustomobject]@{ SwitchType = 'Internal' } }
+            Mock Get-GpuVMHostNetwork { [pscustomobject]@{ Address = '172.29.96.1'; PrefixLength = 20 } }
+            Mock Add-VMNetworkAdapterExtendedAcl {}
+            Mock Remove-VMNetworkAdapterExtendedAcl {}
+            Update-GpuVMNetworkIsolation -Name 'vm' -State $state
+            Assert-MockCalled Add-VMNetworkAdapterExtendedAcl -Times 0 -Exactly -Scope It
+            Assert-MockCalled Remove-VMNetworkAdapterExtendedAcl -Times 0 -Exactly -Scope It
+        }
+
+        It 'adds the new rules in the free block before removing the old ones when the host address changed' {
+            $script:calls = [System.Collections.Generic.List[string]]::new()
+            Mock Get-VMNetworkAdapterExtendedAcl { & $applied '172.29.96.1' 20000 }
+            Mock Get-VMNetworkAdapter { [pscustomobject]@{ SwitchName = 'Default Switch' } }
+            Mock Get-VMSwitch { [pscustomobject]@{ SwitchType = 'Internal' } }
+            Mock Get-GpuVMHostNetwork { [pscustomobject]@{ Address = '172.18.0.1'; PrefixLength = 20 } }
+            Mock Add-VMNetworkAdapterExtendedAcl { $script:calls.Add("add $Weight $RemoteIPAddress") }
+            Mock Remove-VMNetworkAdapterExtendedAcl { $script:calls.Add('remove') }
+            Update-GpuVMNetworkIsolation -Name 'vm' -State $state
+            $adds = @($script:calls | Where-Object { $_ -like 'add *' })
+            $adds.Count | Should Be 12
+            @($adds | Where-Object { [int]($_ -split ' ')[1] -lt 20100 }).Count | Should Be 0
+            @($adds | Where-Object { $_ -like '*172.29.96.1' }).Count | Should Be 0
+            $script:calls.IndexOf('remove') | Should BeGreaterThan $script:calls.LastIndexOf($adds[-1])
+        }
+
+        It 'removes its rules, and only its own, when turned off or on an external switch' {
+            Mock Get-VMNetworkAdapterExtendedAcl { @(& $applied '172.29.96.1' 20000) + @(& $acl 500 'Deny' 'Outbound' '8.8.8.8') }
+            Mock Remove-VMNetworkAdapterExtendedAcl {}
+            Mock Add-VMNetworkAdapterExtendedAcl {}
+            Update-GpuVMNetworkIsolation -Name 'vm' -State @{ config = @{ vm = @{ network = @{ isolation = $false } } } }
+            Assert-MockCalled Remove-VMNetworkAdapterExtendedAcl -Times 12 -Exactly -Scope It -ParameterFilter { $Weight -ge 20000 }
+            Assert-MockCalled Remove-VMNetworkAdapterExtendedAcl -Times 0 -Exactly -Scope It -ParameterFilter { $Weight -eq 500 }
+
+            Mock Get-VMNetworkAdapter { [pscustomobject]@{ SwitchName = 'LAN' } }
+            Mock Get-VMSwitch { [pscustomobject]@{ SwitchType = 'External' } }
+            Update-GpuVMNetworkIsolation -Name 'vm' -State $state -WarningAction SilentlyContinue
+            Assert-MockCalled Add-VMNetworkAdapterExtendedAcl -Times 0 -Exactly -Scope It
+        }
+
+        It 'without the host address it still applies the blocks' {
+            Mock Get-VMNetworkAdapterExtendedAcl { @() }
+            Mock Get-VMNetworkAdapter { [pscustomobject]@{ SwitchName = 'Default Switch' } }
+            Mock Get-VMSwitch { [pscustomobject]@{ SwitchType = 'Internal' } }
+            Mock Get-GpuVMHostNetwork { throw 'sin dirección' }
+            Mock Add-VMNetworkAdapterExtendedAcl {}
+            Update-GpuVMNetworkIsolation -Name 'vm' -State $state -WarningAction SilentlyContinue
+            Assert-MockCalled Add-VMNetworkAdapterExtendedAcl -Times 7 -Exactly -Scope It -ParameterFilter { $Action -eq 'Deny' }
+            Assert-MockCalled Add-VMNetworkAdapterExtendedAcl -Times 0 -Exactly -Scope It -ParameterFilter { $Action -eq 'Allow' }
+        }
+    }
 }

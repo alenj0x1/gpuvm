@@ -65,6 +65,7 @@ function Get-GpuVMOverview {
                     diskType   = $state['config']['vm']['disk']['type']
                     diskFreeGB = Get-DriveFreeGB $state['config']['vm']['root']
                     captureMode = Get-GpuVMCaptureMode -State $state
+                    networkIsolation = Get-GpuVMNetworkIsolation -State $state
                 }
             } else { $null }
         }

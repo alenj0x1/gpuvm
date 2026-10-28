@@ -15,7 +15,8 @@
       "type": "Dynamic"
     },
     "network": {
-      "switch": "Default Switch"
+      "switch": "Default Switch",
+      "isolation": true
     },
     "secureBoot": true,
     "tpm": true,

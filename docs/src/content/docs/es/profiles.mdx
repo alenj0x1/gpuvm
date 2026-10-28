@@ -55,6 +55,7 @@ Como `guest.optimizations` es una lista, reemplaza la del padre en lugar de suma
 | `vm.memoryGB` | 8 | Memoria fija. Al menos 4, dejando al menos 4 GB al host. |
 | `vm.disk.sizeGB` / `vm.disk.type` | 128 / `Dynamic` | Al menos 64 GB; `Dynamic` o `Fixed`. |
 | `vm.network.switch` | `Default Switch` | Switch de Hyper-V. |
+| `vm.network.isolation` | `true` | Solo internet: la VM no llega al equipo ni a la red local ([laboratorio 010](/gpuvm/es/labs/)). No se aplica en un switch externo. |
 | `vm.secureBoot`, `vm.tpm` | `true` | Secure Boot y TPM. |
 | `vm.mmio.lowGB` / `vm.mmio.highGB` | 1 / 32 | Espacio de E/S mapeada en memoria para la GPU. |
 | `gpu.match` | `NVIDIA` | Texto que debe contener el nombre de la GPU del host. |

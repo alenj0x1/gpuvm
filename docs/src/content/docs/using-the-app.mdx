@@ -108,8 +108,11 @@ For VMs created with GpuVM:
 - **Captura** (Capture): how Sunshine captures the screen.
   - **Estándar** (Standard, the default): shows everything, including Windows' administrator prompts, but programs in exclusive fullscreen look black.
   - **Pantalla completa exclusiva** (Exclusive fullscreen): also shows programs in exclusive fullscreen at any resolution, but Windows' administrator prompts are **not** shown in the stream. See [Streaming](/gpuvm/streaming/#capture-modes).
+- **Red** (Network):
+  - **Solo internet** (Internet only, the default): the VM reaches neither this PC nor your local network, except for what the stream needs. The rules live on the VM's virtual switch port, outside the VM, so an infected VM can't remove them.
+  - **Internet y red local** (Internet and local network): the VM reaches this PC and the rest of your network. Use it only when you need it, for example for a NAS.
 
-Moonlight and capture settings are saved without stopping the VM: Moonlight's apply the next time you open it, and the capture right away if the VM is running (it restarts Sunshine). Processor, memory, GPU and disk need the VM off: if it's running the button reads **Apagar y aplicar** (Shut down and apply), which validates, shuts the VM down, applies and starts it again. If it can't start again (for example, not enough free memory), the previous settings are restored.
+Moonlight, capture and network settings are saved without stopping the VM: Moonlight's apply the next time you open it, the capture right away if the VM is running (it restarts Sunshine), and the network right away. Processor, memory, GPU and disk need the VM off: if it's running the button reads **Apagar y aplicar** (Shut down and apply), which validates, shuts the VM down, applies and starts it again. If it can't start again (for example, not enough free memory), the previous settings are restored.
 
 ## Guest password banner
 

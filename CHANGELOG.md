@@ -4,6 +4,11 @@ All notable changes to GpuVM are documented here. The format follows [Keep a Cha
 
 [Español](CHANGELOG.es.md)
 
+## [Unreleased]
+
+### Security
+- **The VM is isolated from your network by default.** It keeps internet, but reaches neither this PC nor your local network, except for the Default Switch's DHCP and DNS and the replies to the connections Moonlight opens. The rules live on the VM's virtual switch port, enforced by the host, so a damaged or infected VM can't remove them; they are refreshed before every start because the Default Switch changes the host's address. Turn it off per VM in **Options → Red** (for example, to reach a NAS). Not applied on an external switch, with a warning (lab 010).
+
 ## [0.2.0] - 2026-10-27
 
 ### Added

@@ -1,0 +1,26 @@
+{
+  "id": "010-network-isolation",
+  "title": "Network isolation of the VM",
+  "hypothesis": "Extended port ACLs on the VM's vSwitch port (enforced by the host, outside the guest) can keep the VM away from the host and the LAN while it keeps internet, DHCP and DNS, and Moonlight still streams through stateful rules for the connections it opens.",
+  "vm": "win10",
+  "status": "adopted",
+  "createdAt": "2026-10-28T01:06:07-05:00",
+  "variants": {
+    "baseline": { "profile": "max-performance", "override": null },
+    "candidate": { "profile": "max-performance", "override": { "vm": { "network": { "isolation": true } } } }
+  },
+  "results": [
+    { "variant": "baseline", "metric": "host TCP ports reachable from the VM", "value": 4.0, "unit": "ports", "lowerIsBetter": true, "notes": "135 (RPC), 2179 (VMConnect), 7680 (Delivery Optimization) and a test listener; also over the host's IPv6 link-local address", "at": "2026-10-28T01:10:35-05:00" },
+    { "variant": "candidate", "metric": "host TCP ports reachable from the VM", "value": 0.0, "unit": "ports", "lowerIsBetter": true, "notes": "none, neither by IPv4, the host's LAN address nor IPv6 link-local; DNS of the Default Switch still answers", "at": "2026-10-28T01:11:08-05:00" },
+    { "variant": "baseline", "metric": "LAN router reachable (TCP 80, TCP 53, ping)", "value": 3.0, "unit": "of 3", "lowerIsBetter": true, "notes": "", "at": "2026-10-28T01:10:35-05:00" },
+    { "variant": "candidate", "metric": "LAN router reachable (TCP 80, TCP 53, ping)", "value": 0.0, "unit": "of 3", "lowerIsBetter": true, "notes": "", "at": "2026-10-28T01:11:08-05:00" },
+    { "variant": "baseline", "metric": "internet, DNS, DHCP renew working", "value": 4.0, "unit": "of 4", "lowerIsBetter": false, "notes": "TCP 443 to 1.1.1.1, DNS resolution, HTTP, ipconfig /renew", "at": "2026-10-28T01:10:35-05:00" },
+    { "variant": "candidate", "metric": "internet, DNS, DHCP renew working", "value": 4.0, "unit": "of 4", "lowerIsBetter": false, "notes": "", "at": "2026-10-28T01:11:08-05:00" },
+    { "variant": "baseline", "metric": "Sunshine reachable from the host (TCP 47984, 47990, UDP echo)", "value": 3.0, "unit": "of 3", "lowerIsBetter": false, "notes": "", "at": "2026-10-28T01:10:35-05:00" },
+    { "variant": "candidate", "metric": "Sunshine reachable from the host (TCP 47984, 47990, UDP echo)", "value": 3.0, "unit": "of 3", "lowerIsBetter": false, "notes": "the UDP reply passes through the stateful rule although the VM->host direction is blocked", "at": "2026-10-28T01:11:08-05:00" },
+    { "variant": "baseline", "metric": "TCP connect host->VM:47990, median of 20", "value": 0.363, "unit": "ms", "lowerIsBetter": true, "notes": "reverted run: 0.396", "at": "2026-10-28T01:10:35-05:00" },
+    { "variant": "candidate", "metric": "TCP connect host->VM:47990, median of 20", "value": 0.348, "unit": "ms", "lowerIsBetter": true, "notes": "applied by GpuVM itself (probe.ps1 -Installed); the first lab run measured 0.623 right after adding the rules", "at": "2026-10-28T01:17:44-05:00" }
+  ],
+  "conclusion": "Adopted, on by default for every VM (Options > Red: Solo internet). GpuVM applies the rules before every start because the Default Switch changes the host's address when the host restarts; new rules go in before the old ones are removed. Without the host's address only the blocks are applied (fails closed). On an external switch the rules are not applied (DHCP and DNS are on the LAN) and a warning says so. Raises security: what remains reachable on the host is the Default Switch's DHCP and DNS, which the VM needs to have a network.",
+  "closedAt": "2026-10-28T01:20:00-05:00"
+}

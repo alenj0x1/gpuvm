@@ -19,3 +19,4 @@ isos.json
 # Session-specific scripts (hard-coded paths) and lab outputs
 tools/session/
 tools/latency/out/
+labs/*/out/

@@ -106,8 +106,11 @@ Para las VMs creadas con GpuVM:
 - **Captura:** cómo captura Sunshine la pantalla.
   - **Estándar** (la predeterminada): muestra todo, incluidos los avisos de administrador de Windows, pero los programas en pantalla completa exclusiva se ven en negro.
   - **Pantalla completa exclusiva:** además muestra programas en pantalla completa exclusiva a cualquier resolución, pero los avisos de administrador de Windows **no** se ven en el stream. Consulta [Streaming](/gpuvm/es/streaming/#modos-de-captura).
+- **Red:**
+  - **Solo internet** (la predeterminada): la VM no llega a este equipo ni a tu red local, salvo a lo que necesita el stream. Las reglas viven en el puerto del switch virtual de la VM, fuera de ella, así que una VM infectada no puede quitarlas.
+  - **Internet y red local:** la VM llega a este equipo y al resto de tu red. Úsala solo si la necesitas, por ejemplo para un NAS.
 
-Los ajustes de Moonlight y de captura se guardan sin apagar la VM: los de Moonlight se aplican la próxima vez que la abras, y la captura en el momento si la VM está encendida (reinicia Sunshine). Procesador, memoria, GPU y disco necesitan la VM apagada: si está encendida, el botón dice **Apagar y aplicar**, que valida, apaga la VM, aplica y la vuelve a encender. Si no puede volver a encenderla (por ejemplo, por falta de memoria libre), restaura la configuración anterior.
+Los ajustes de Moonlight, de captura y de red se guardan sin apagar la VM: los de Moonlight se aplican la próxima vez que la abras, la captura en el momento si la VM está encendida (reinicia Sunshine) y la red en el momento. Procesador, memoria, GPU y disco necesitan la VM apagada: si está encendida, el botón dice **Apagar y aplicar**, que valida, apaga la VM, aplica y la vuelve a encender. Si no puede volver a encenderla (por ejemplo, por falta de memoria libre), restaura la configuración anterior.
 
 ## Aviso de la contraseña del invitado
 

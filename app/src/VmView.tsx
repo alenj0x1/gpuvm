@@ -3,6 +3,7 @@ import {
   IconCpu, IconDeviceDesktop, IconDots, IconExternalLink, IconKey, IconLoader2, IconPlayerPause, IconPlayerPlay,
   IconPower, IconRefresh, IconRefreshAlert, IconTrash, IconPlugOff, IconClock, IconTopologyStar3, IconPalette,
   IconBolt, IconDeviceFloppy, IconLink, IconDownload, IconCheck, IconChartLine, IconArrowsMaximize, IconAppWindow, IconApps, IconClipboardText, IconScreenShare, IconMaximize,
+  IconWorld, IconNetwork,
 } from "@tabler/icons-react";
 import type { AppInfo, DisplayMode, HostInfo, Sample, VmOverview } from "./types";
 import { AppPicker, FPS, RESOLUTIONS } from "./pickers";
@@ -328,6 +329,7 @@ function Options({ vm, host, busy, startJob, run }: Pick<Props, "vm" | "host" | 
     resolution: vm.client?.resolution ?? "1920x1080", fps: vm.client?.fps ?? 60,
     displayMode: (vm.client?.displayMode === "windowed" ? "windowed" : "fullscreen") as DisplayMode,
     captureMode: vm.options!.captureMode ?? "ddx",
+    networkIsolation: vm.options!.networkIsolation ?? true,
   };
   const [draft, setDraft] = useState(initial);
   const [saved, setSaved] = useState(false);
@@ -342,11 +344,13 @@ function Options({ vm, host, busy, startJob, run }: Pick<Props, "vm" | "host" | 
   const vmDirty = draft.cpu !== initial.cpu || draft.memoryGB !== initial.memoryGB || draft.gpuPercent !== initial.gpuPercent || draft.diskGB !== initial.diskGB;
   const clientDirty = draft.resolution !== initial.resolution || draft.fps !== initial.fps || draft.displayMode !== initial.displayMode;
   const captureDirty = draft.captureMode !== initial.captureMode;
+  const networkDirty = draft.networkIsolation !== initial.networkIsolation;
   const off = vm.state === "Off";
 
   const save = async () => {
     if (clientDirty && !(await run(vm.name, "Guardando", () => api.setClient(vm.name, draft.resolution, draft.fps, draft.displayMode !== initial.displayMode ? draft.displayMode : undefined)))) return;
     if (captureDirty && !(await run(vm.name, "Cambiando la captura", () => api.setCapture(vm.name, draft.captureMode)))) return;
+    if (networkDirty && !(await run(vm.name, "Cambiando la red", () => api.setNetworkIsolation(vm.name, draft.networkIsolation)))) return;
     if (!vmDirty) { setSaved(true); return; }
     const override = {
       vm: { cpu: { count: draft.cpu }, memoryGB: draft.memoryGB, disk: { sizeGB: draft.diskGB } },
@@ -406,10 +410,22 @@ function Options({ vm, host, busy, startJob, run }: Pick<Props, "vm" | "host" | 
               : "Muestra todo, incluidos los avisos de administrador. Los programas en pantalla completa exclusiva se ven en negro."}</span>
           </div>
         )}
+        <div className="field">
+          <div className="field-top"><span>Red</span></div>
+          <div className="segment-row">
+            <Segmented value={draft.networkIsolation} onChange={(networkIsolation) => setDraft({ ...draft, networkIsolation })} options={[
+              { value: true, label: <><IconWorld size={15} />Solo internet</> },
+              { value: false, label: <><IconNetwork size={15} />Internet y red local</> },
+            ]} />
+          </div>
+          <span className="hint">{draft.networkIsolation
+            ? "La VM no llega a este equipo ni a tu red local; si se infecta, no puede salir de ahí."
+            : "La VM llega a este equipo y a los demás de tu red. Úsalo solo si necesitas, por ejemplo, un NAS."}</span>
+        </div>
       </div>
-      {(vmDirty || clientDirty || captureDirty || saved) && (
+      {(vmDirty || clientDirty || captureDirty || networkDirty || saved) && (
         <div className="options-foot">
-          {saved && !vmDirty && !clientDirty && !captureDirty ? (
+          {saved && !vmDirty && !clientDirty && !captureDirty && !networkDirty ? (
             <span className="saved"><IconCheck size={16} />Guardado</span>
           ) : (
             <>

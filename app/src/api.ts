@@ -26,6 +26,7 @@ export const api = {
   apps: () => ps<AppInfo>("Get-GpuVMApp"),
   pasteToVm: (name: string) => ps("Send-GpuVMClipboard", { Name: name }),
   setCapture: (name: string, mode: "ddx" | "wgc") => ps("Set-GpuVMCapture", { Name: name, Mode: mode }),
+  setNetworkIsolation: (name: string, enabled: boolean) => ps("Set-GpuVMNetworkIsolation", { Name: name, Enabled: enabled }),
   saveProfile: (name: string, description: string, extendsName: string, settings: Partial<ProfileSettings>, previous?: string) =>
     ps<ProfileInfo>("Save-GpuVMProfile", { Name: name, Description: description, Extends: extendsName, Settings: settings, ...(previous ? { Previous: previous } : {}) }),
   removeProfile: (name: string) => ps("Remove-GpuVMProfile", { Name: name }),
