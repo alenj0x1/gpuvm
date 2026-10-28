@@ -88,7 +88,10 @@ npm --prefix app run dev          # UI with sample data in the browser (?mock=em
 npm --prefix app run tauri build  # installer in app/src-tauri/target/release/bundle/nsis/
 Invoke-Pester ./tests             # module tests, no administrator needed
 npm --prefix docs run dev         # documentation site
+python scripts/release.py 0.4.0   # release: changelog, versions, commit and tag (--dry-run, --next)
 ```
+
+Changes go under **Unreleased** in `CHANGELOG.md` and **Sin publicar** in `CHANGELOG.es.md` until they are released.
 
 The CLI covers the same features: `./gpuvm.ps1 check`, `new`, `connect`, `list`, `sync-driver`, `set`, `remove`, `lab-*` (see the docs).
 

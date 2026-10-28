@@ -4,6 +4,8 @@ Aquí se documentan los cambios importantes de GpuVM. El formato sigue [Keep a C
 
 [English](CHANGELOG.md)
 
+Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (esa sección solo existe mientras haya alguno y el sitio de documentación no la muestra); `scripts/release.py` la convierte en la versión nueva.
+
 ## [Sin publicar]
 
 ### Cambiado

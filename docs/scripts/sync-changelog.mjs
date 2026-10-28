@@ -36,6 +36,11 @@ function toPage(markdown) {
     .replace(/^#\s+.*\n+/, '')
     // Language switch lines that link to the other CHANGELOG file only make sense on GitHub.
     .replace(/^.*\]\(CHANGELOG(\.es)?\.md\).*\n+/gm, '')
+    // Only released versions: the section of changes waiting for the next one, its compare link and the
+    // line that explains it stay on GitHub.
+    .replace(/^## \[(Unreleased|Sin publicar)\]\n[\s\S]*?(?=^## |(?![\s\S]))/m, '')
+    .replace(/^\[(Unreleased|Sin publicar)\]: .*\n?/gm, '')
+    .replace(/^.*scripts\/release\.py.*\n+/gm, '')
     .trim();
 }
 

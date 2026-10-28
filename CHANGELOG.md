@@ -4,6 +4,8 @@ All notable changes to GpuVM are documented here. The format follows [Keep a Cha
 
 [Español](CHANGELOG.es.md)
 
+Changes waiting for the next version sit under **Unreleased** at the top (this section only exists while there are some, and the docs site doesn't show it); `scripts/release.py` turns it into the new version.
+
 ## [Unreleased]
 
 ### Changed
