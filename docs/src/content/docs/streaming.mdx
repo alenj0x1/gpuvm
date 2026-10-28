@@ -14,7 +14,7 @@ The Hyper-V console only shows the basic Hyper-V display, not what the GPU draws
 | [Sunshine](https://github.com/LizardByte/Sunshine) | VM | Captures the virtual display and encodes with NVENC. | `v2026.914.233613` |
 | [Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver) | VM | A monitor drawn by the GPU. | `25.7.23` |
 | [nefcon](https://github.com/nefarius/nefcon) | VM | Command-line driver installer; creates the virtual display device. | `v1.14.0` |
-| [usbip-win2](https://github.com/vadimgrn/usbip-win2) | VM | Plugs in GpuVM's USB speaker, which Sunshine captures. | 0.9.8.0 |
+| [usbip-win2](https://github.com/vadimgrn/usbip-win2) | VM | Plugs in GpuVM's USB speaker, which Sunshine captures. | `0.9.8.0` |
 | [Moonlight](https://moonlight-stream.org) | Host | Shows the VM. | Installed separately |
 
 The installers are downloaded on the **host** when the VM is created, verified against the SHA-256 pinned in `streaming/components.json` and copied to the VM's disk. The guest downloads nothing. They are kept in a `cache` folder (in `%ProgramData%\GpuVM` when installed).

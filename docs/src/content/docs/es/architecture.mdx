@@ -59,7 +59,7 @@ Los cmdlets públicos solo hablan con esta interfaz. El backend actual es `hyper
 - **PowerShell 7 por ruta absoluta:** `pwsh.exe` de `Program Files\PowerShell\7` (MSI) o de la carpeta del paquete de Microsoft Store en `Program Files\WindowsApps`, nunca un `pwsh.exe` que aparezca antes en el `PATH` del usuario.
 - **Datos solo para administradores:** `%ProgramData%\GpuVM` (laboratorios, descargas) y la carpeta de las VMs (`C:\GpuVM`, que heredaría de `C:\` el permiso "Usuarios autenticados: modificar") quedan limitados a Administradores, SYSTEM y las máquinas virtuales de Hyper-V.
 - **DPAPI:** las credenciales de Sunshine y la contraseña del invitado se guardan cifradas con DPAPI en el host.
-- **Componentes fijados:** Sunshine, Virtual Display Driver, nefcon y VB-CABLE están fijados por SHA-256 en `streaming/components.json`. Un archivo cuyo hash no coincide no se usa. El invitado no descarga nada. Solo se confía en el certificado que firmó el driver de la pantalla virtual.
+- **Componentes fijados:** Sunshine, Virtual Display Driver, nefcon y usbip-win2 están fijados por SHA-256 en `streaming/components.json`. Un archivo cuyo hash no coincide no se usa. El invitado no descarga nada. Solo se confía en el certificado que firmó el driver de la pantalla virtual; los drivers de usbip-win2 deben estar firmados por Microsoft.
 - **Limpieza de la contraseña:** `unattend.xml` guarda la contraseña en texto plano y se borra dentro de la VM en cuanto ya no hace falta.
 - **Sin inyección de argumentos:** el nombre de la app de Moonlight se valida antes de armar la línea de comandos de Moonlight.
 

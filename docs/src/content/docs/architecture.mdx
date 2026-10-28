@@ -59,7 +59,7 @@ Public cmdlets only talk to this interface. The current backend is `hyperv-gpup`
 - **PowerShell 7 by absolute path:** `pwsh.exe` from `Program Files\PowerShell\7` (MSI) or from the Microsoft Store package folder under `Program Files\WindowsApps`, never a `pwsh.exe` that appears earlier in the user's `PATH`.
 - **Data restricted to administrators:** `%ProgramData%\GpuVM` (labs, downloads) and the VMs folder (`C:\GpuVM`, which would inherit "Authenticated Users: modify" from `C:\`) are limited to Administrators, SYSTEM and Hyper-V's virtual machines.
 - **DPAPI:** the Sunshine credentials and the guest password are stored encrypted with DPAPI on the host.
-- **Pinned components:** Sunshine, the Virtual Display Driver, nefcon and VB-CABLE are pinned by SHA-256 in `streaming/components.json`. A file whose hash doesn't match isn't used. The guest downloads nothing. Only the certificate that signed the virtual display driver is trusted.
+- **Pinned components:** Sunshine, the Virtual Display Driver, nefcon and usbip-win2 are pinned by SHA-256 in `streaming/components.json`. A file whose hash doesn't match isn't used. The guest downloads nothing. Only the certificate that signed the virtual display driver is trusted; usbip-win2's drivers must be signed by Microsoft.
 - **Password cleanup:** `unattend.xml` holds the password in plain text and is deleted inside the VM as soon as it's no longer needed.
 - **No argument injection:** the Moonlight app name is validated before building Moonlight's command line.
 

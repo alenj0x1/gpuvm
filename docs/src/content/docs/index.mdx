@@ -26,7 +26,7 @@ A regular Hyper-V VM only gets a basic display adapter, so games and GPU apps do
 
 1. **Create the VM.** GpuVM checks the host, applies the Windows edition from your ISO straight to a VHDX (without going through the installer), copies the host GPU driver into the guest and leaves an unattended setup: local account, no OOBE screens, Remote Desktop enabled and autologon. The VM is Generation 2 with Secure Boot and TPM, so Windows 11 installs without tricks, and gets the profile's CPU, fixed memory, MMIO space, no checkpoints and the GPU partition.
 
-2. **First boot.** Inside the VM, the guest setup script applies the profile's optimizations, installs the streaming components (Sunshine, a virtual display and VB-CABLE audio) and deletes `unattend.xml`, which holds the password. The VM then restarts once on its own.
+2. **First boot.** Inside the VM, the guest setup script applies the profile's optimizations, installs the streaming components (Sunshine, a virtual display and GpuVM's own USB speaker for audio) and deletes `unattend.xml`, which holds the password. The VM then restarts once on its own.
 
 3. **Start and open.** One click starts the VM, syncs the GPU driver if the host's changed, waits for Windows and Sunshine, fixes the session and the display, pairs Moonlight automatically and opens the stream.
 
@@ -46,7 +46,7 @@ A regular Hyper-V VM only gets a basic display adapter, so games and GPU apps do
     The `GpuVM` module (PowerShell 7) does the work; `gpuvm.ps1` exposes it as short commands.
   </Card>
   <Card title="Streaming" icon="rocket">
-    Sunshine inside the VM, a virtual display drawn by the GPU, VB-CABLE audio and Moonlight on the host.
+    Sunshine inside the VM, a virtual display drawn by the GPU, GpuVM's own USB speaker for audio and Moonlight on the host.
   </Card>
   <Card title="Profiles and labs" icon="setting">
     JSON profiles with inheritance, and labs that compare a baseline against a candidate before a change is adopted.
