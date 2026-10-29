@@ -1,0 +1,22 @@
+{
+  "id": "015-early-completion",
+  "title": "Completing transfers early to avoid underruns",
+  "hypothesis": "Completing each transfer 5 ms before its last packet's time makes Windows send the next one sooner, so the speaker's queue no longer runs dry and its audible gaps (lab 014) disappear, without adding latency to what Sunshine captures.",
+  "vm": "win10",
+  "status": "rejected",
+  "createdAt": "2026-10-28T20:15:00-05:00",
+  "variants": {
+    "baseline": { "profile": "max-performance", "override": null, "leadMs": 0 },
+    "candidate": { "profile": "max-performance", "override": null, "leadMs": 5 }
+  },
+  "results": [
+    { "variant": "baseline", "metric": "latency, VM play to this PC's output (median of 30 bursts, 1 ms windows)", "value": 84, "unit": "ms", "lowerIsBetter": true, "notes": "p90 84, 74-84; clock error ±1.7 ms", "at": "2026-10-28T20:18:00-05:00" },
+    { "variant": "candidate", "metric": "latency, VM play to this PC's output (median of 30 bursts, 1 ms windows)", "value": 86, "unit": "ms", "lowerIsBetter": true, "notes": "p90 86, 81-86; clock error ±1.7 ms", "at": "2026-10-28T20:30:00-05:00" },
+    { "variant": "baseline", "metric": "gaps in this PC's output", "value": 1, "unit": "per 10 min", "lowerIsBetter": true, "notes": "9 ms; 2 breaks in the wave", "at": "2026-10-28T20:28:00-05:00" },
+    { "variant": "candidate", "metric": "gaps in this PC's output", "value": 18, "unit": "per 10 min", "lowerIsBetter": true, "notes": "1-84 ms; 10535 breaks in the wave (distortion)", "at": "2026-10-28T20:40:00-05:00" },
+    { "variant": "baseline", "metric": "speaker underruns", "value": 5, "unit": "per 10 min", "lowerIsBetter": true, "notes": "26.9 ms in total; 9.4 ms queued on average", "at": "2026-10-28T20:28:00-05:00" },
+    { "variant": "candidate", "metric": "speaker underruns", "value": 36, "unit": "per 10 min", "lowerIsBetter": true, "notes": "345.7 ms in total; 14.3 ms queued on average", "at": "2026-10-28T20:40:00-05:00" }
+  ],
+  "conclusion": "Rejected. Completing transfers 5 ms early made the sound much worse: 36 underruns instead of 5, 18 gaps of up to 84 ms instead of 1 of 9 ms, and continuous breaks in the wave, with 2 ms more latency. The likely reason is that Windows' USB audio driver follows the speaker's clock from when transfers complete, so shifting them disturbs it instead of giving it room. The lead stays at 0 (the server keeps it as an optional argument for later labs). The remaining clicks are rare: one of 9 ms in this 10-minute run.",
+  "closedAt": "2026-10-28T20:45:00-05:00"
+}

@@ -3,7 +3,7 @@
 // a normal audio output that WASAPI loopback (Sunshine) can capture. The audio itself is consumed at real-time pace
 // and discarded; only its level is kept for diagnostics. Listens on 127.0.0.1 only and serves one session at a time.
 // Proven in labs/012-usb-audio-over-usbip. Compiled inside the VM by Add-Type (C# 5) and run as LOCAL SERVICE.
-// Usage: GpuVMAudio.exe <port> <log file> <status file>
+// Usage: GpuVMAudio.exe <port> <log file> <status file> [lead ms]
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -60,9 +60,13 @@ public static class UsbAudioServer {
     // Largest transfer a full-speed audio device sees; anything bigger is a misbehaving client.
     const int MaxTransfer = 65536, MaxPackets = 1024;
     static int active;
+    // Each transfer is completed this many milliseconds before its last packet's time, so Windows sends the next one
+    // sooner and a late wake-up in the VM doesn't leave the queue empty. The pace stays one packet per millisecond.
+    static double leadMs;
 
     public static int Main(string[] args) {
-        if (args.Length != 3) { Console.Error.WriteLine("usage: GpuVMAudio.exe <port> <log> <status>"); return 2; }
+        if (args.Length < 3 || args.Length > 4) { Console.Error.WriteLine("usage: GpuVMAudio.exe <port> <log> <status> [lead ms]"); return 2; }
+        if (args.Length == 4) leadMs = Math.Max(0, Math.Min(20, double.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture)));
         Run(int.Parse(args[0]), args[1], args[2]);
         return 0;
     }
@@ -85,7 +89,7 @@ public static class UsbAudioServer {
         status.IsBackground = true; status.Start();
         var listener = new TcpListener(IPAddress.Loopback, port);
         listener.Start();
-        Log("listening on 127.0.0.1:" + port);
+        Log("listening on 127.0.0.1:" + port + ", lead " + leadMs + " ms");
         while (true) {
             var client = listener.AcceptTcpClient();
             client.NoDelay = true;
@@ -99,7 +103,7 @@ public static class UsbAudioServer {
             var c = System.Globalization.CultureInfo.InvariantCulture;
             return ",\"underruns\":" + underruns + ",\"underrunMs\":" + underrunMs.ToString("0.0", c) +
                 ",\"aheadSamples\":" + aheadSamples + ",\"aheadSumMs\":" + aheadSumMs.ToString("0.0", c) +
-                ",\"aheadMaxMs\":" + aheadMaxMs.ToString("0.0", c);
+                ",\"aheadMaxMs\":" + aheadMaxMs.ToString("0.0", c) + ",\"leadMs\":" + leadMs.ToString("0.0", c);
         }
     }
 
@@ -266,7 +270,7 @@ public static class UsbAudioServer {
                 }
                 lastSubmit = now;
                 nextDue += packets;
-                queue.Add(new Pending { Seq = seq, Due = nextDue, StartFrame = frame, Iso = isoDesc, Packets = packets, Length = length });
+                queue.Add(new Pending { Seq = seq, Due = nextDue - leadMs, StartFrame = frame, Iso = isoDesc, Packets = packets, Length = length });
                 frame = (frame + (uint)packets) & 0x7FF;
                 Monitor.PulseAll(queueLock);
             }

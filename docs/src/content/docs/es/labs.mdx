@@ -71,8 +71,9 @@ Los laboratorios 001 a 007 están abiertos; el 008 y el 009 se adoptaron.
 | 012 | Audio con un altavoz USB propio | Un dispositivo de audio USB servido por GpuVM dentro de la VM y conectado con usbip-win2 lo maneja el driver de Windows, así que Sunshine captura sonido real. | `streaming.audio: usb` |
 | 013 | Latencia y cortes del audio | En una sesión de 10 minutos el altavoz de GpuVM no agrega más demora que Steam Streaming Speakers y suena sin vaciados de cola ni cortes de 15 ms o más. | Mismo perfil, dos salidas |
 | 014 | Vaciados audibles | Los vaciados cortos del altavoz no llegan a Moonlight: Sunshine captura la mezcla de Windows antes de que vaya al altavoz. | Mismo perfil, dos salidas |
+| 015 | Confirmar transferencias antes | Confirmar cada transferencia 5 ms antes le da margen a Windows para mandar la siguiente, así la cola del altavoz no se vacía, sin sumar latencia. | Margen del altavoz: 0 vs 5 ms |
 
-Los laboratorios 004 a 014 usan `max-performance` en las dos variantes.
+Los laboratorios 004 a 015 usan `max-performance` en las dos variantes.
 
 ### Lo que encontraron los laboratorios hasta ahora
 
@@ -88,3 +89,4 @@ Los laboratorios 004 a 014 usan `max-performance` en las dos variantes.
 - **012 (adoptado):** el altavoz de GpuVM, **Altavoces (GpuVM Audio)**, se capturó al mismo nivel que el medidor de Windows (0,356) y llegó a Moonlight a 0,351, más que el 0,265 de Steam, sin errores de transferencia. Los drivers de usbip-win2 están firmados por Microsoft y no agrega certificados. Consulta [Audio](/gpuvm/es/streaming/#audio).
 - **013 (adoptado):** en 10 minutos el altavoz llegó a Moonlight 63,4 ms después de que sonó en la VM (Steam Streaming Speakers: 59,8 ms, ±1,8 ms) sin cortes de 15 ms o más. Tuvo 7 vaciados de cola de unos 2 ms cada uno y mantiene ~9 ms de audio en cola; con un poco más en cola desaparecerían, a cambio de esa latencia.
 - **014 (rechazado):** grabando la salida de este equipo milisegundo a milisegundo, 2 de los 15 vaciados del altavoz en 10 minutos llegaron a Moonlight como huecos de 9 ms (Steam Streaming Speakers: ninguno en 5 minutos), y cada hueco coincidió con un vaciado. Siguiente paso: confirmar las transferencias unos milisegundos antes y medir el efecto en la latencia.
+- **015 (rechazado):** confirmar las transferencias 5 ms antes lo empeoró mucho: 36 vaciados en vez de 5 y 18 huecos de hasta 84 ms en vez de 1 de 9 ms en 10 minutos, con 2 ms más de latencia. El altavoz sigue confirmando a tiempo.

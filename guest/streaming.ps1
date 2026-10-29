@@ -112,6 +112,8 @@ function Restart-GpuVMSunshine {
 # Nothing leaves the VM: the server listens on 127.0.0.1 only and runs as LOCAL SERVICE from Program Files (admins only).
 $script:AudioTask = 'GpuVM-Audio'
 $script:AudioPort = 3240
+# Milliseconds each transfer is completed early (UsbAudioServer.cs, lab 015).
+$script:AudioLeadMs = 0
 $script:AudioProgramDir = Join-Path $env:ProgramFiles 'GpuVM\Audio'
 $script:AudioDataDir = Join-Path $env:ProgramData 'GpuVM\Audio'
 
@@ -134,6 +136,12 @@ function Wait-GpuVMAudioEndpoint {
         if ($endpoint) { return $endpoint }
         Start-Sleep -Seconds 1
     } while ((Get-Date) -lt $deadline)
+}
+
+function Get-GpuVMAudioArguments {
+    $log = Join-Path $script:AudioDataDir 'server.log'
+    $status = Join-Path $script:AudioDataDir 'status.json'
+    "$($script:AudioPort) `"$log`" `"$status`" $($script:AudioLeadMs)"
 }
 
 # Attaches the speaker if usbip-win2 does not have it, once the server is listening.
@@ -209,9 +217,7 @@ function Install-GpuVMAudio {
     # LOCAL SERVICE only writes its log and status.
     icacls.exe $script:AudioDataDir /grant '*S-1-5-19:(OI)(CI)M' | Out-Null
 
-    $log = Join-Path $script:AudioDataDir 'server.log'
-    $status = Join-Path $script:AudioDataDir 'status.json'
-    $action = New-ScheduledTaskAction -Execute $exe -Argument "$($script:AudioPort) `"$log`" `"$status`""
+    $action = New-ScheduledTaskAction -Execute $exe -Argument (Get-GpuVMAudioArguments)
     $trigger = New-ScheduledTaskTrigger -AtStartup
     $principal = New-ScheduledTaskPrincipal -UserId 'NT AUTHORITY\LOCAL SERVICE' -LogonType ServiceAccount
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
@@ -259,7 +265,7 @@ function Repair-GpuVMAudio {
     $task = Get-ScheduledTask -TaskName $script:AudioTask -ErrorAction SilentlyContinue
     $current = $usbip -and $task -and $task.Principal.UserId -match 'LOCAL SERVICE' -and
         (Test-Path (Join-Path $script:AudioProgramDir 'GpuVMAudio.exe')) -and (Test-Path $source) -and
-        (Get-FileHash $source -Algorithm SHA256).Hash -eq $SourceHash
+        (Get-FileHash $source -Algorithm SHA256).Hash -eq $SourceHash -and $task.Actions[0].Arguments -eq (Get-GpuVMAudioArguments)
     if (-not $current) { return 'install' }
     if (Get-GpuVMAudioEndpoint) { return 'ok' }
     # Right after boot usbip-win2 may still be attaching it; if not, attach it again.
