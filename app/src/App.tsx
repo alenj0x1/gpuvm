@@ -277,7 +277,8 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
             startJob(NEW_VM, "New-GpuVM", args, () => {
               setCreating(false);
               setCreateTemplate(null);
-              setSelected(name);
+              // Open the new machine once the list has it; before that, the route would fall back to Home.
+              refresh().then(() => setSelected(name));
               push("ok", template ? `${name} está lista.` : `${name} está lista. Windows termina de configurarse solo en unos minutos.`);
             });
           }} />

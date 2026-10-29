@@ -6,6 +6,11 @@ Aquí se documentan los cambios importantes de GpuVM. El formato sigue [Keep a C
 
 Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (esa sección solo existe mientras haya alguno y el sitio de documentación no la muestra); `scripts/release.py` la convierte en la versión nueva.
 
+## [Sin publicar]
+
+### Corregido
+- Después de crear una máquina, la app la abre en vez de volver a **Inicio**.
+
 ## [0.4.1] - 2026-10-28
 
 ### Añadido

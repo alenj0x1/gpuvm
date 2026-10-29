@@ -6,6 +6,11 @@ All notable changes to GpuVM are documented here. The format follows [Keep a Cha
 
 Changes waiting for the next version sit under **Unreleased** at the top (this section only exists while there are some, and the docs site doesn't show it); `scripts/release.py` turns it into the new version.
 
+## [Unreleased]
+
+### Fixed
+- After creating a machine, the app opens it instead of going back to **Inicio**.
+
 ## [0.4.1] - 2026-10-28
 
 ### Added
