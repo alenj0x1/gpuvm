@@ -127,8 +127,8 @@
   function summarize(text) {
     const m = text.match(/^\*\*(.+?)\*\*\s*(.*)$/);
     const title = m ? m[1].replace(/[.:,]$/, "") : null;
-    // Asides in parentheses are examples or menu paths: the summary reads better without them.
-    const body = (m ? m[2] : text).replace(/\s*\([^()]*\)/g, "");
+    // Links keep their text; asides in parentheses are examples or menu paths: the summary reads better without them.
+    const body = (m ? m[2] : text).replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/\s*\([^()]*\)/g, "");
     // Only a full stop ends the sentence: a colon or semicolon would leave it hanging.
     const end = body.search(/\.(\s|$)/);
     let sentence = end > 0 ? body.slice(0, end + 1) : body;
@@ -159,6 +159,11 @@
       shown = wide.flatMap((w, r) => (r % 2 ? [{ ...w, wide: true }, narrow[r]] : [narrow[r], { ...w, wide: true }]));
     }
     const dark = root.dataset.mode === "dark" ? "-dark" : "";
+    // Without thumbnails to pair, the grid still fills its rows: two columns for an even count, or a wide first card.
+    if (!shown.some((i) => i.wide)) {
+      if (shown.length % 3 === 2) shown[0] = { ...shown[0], wide: true };
+      box.classList.toggle("two", shown.length % 3 === 1 && shown.length % 2 === 0);
+    } else box.classList.remove("two");
     box.innerHTML = shown.map(({ kind, text, thumb, wide }) => {
       const tag = tags[kind]?.[lang === "es" ? 0 : 1] ?? kind;
       const { title, body } = summarize(text);

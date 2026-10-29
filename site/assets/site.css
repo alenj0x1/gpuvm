@@ -232,6 +232,7 @@ i[data-ic] svg { display: block; width: 100%; height: 100%; }
 /* A bento: each row pairs a wide card (for a wide, short thumbnail) with a narrow one, alternating sides. */
 .news-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 48px 0 8px; }
 .news-item.wide { grid-column: span 2; }
+.news-list.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .news-item { background: var(--surface); border-radius: var(--r); box-shadow: var(--shadow-sm); color: var(--muted); font-size: 15px; overflow: hidden; display: flex; flex-direction: column; }
 .news-body { padding: 20px 24px 22px; }
 /* The thumbnail shows the whole real card, scaled to fit and centered, so every card lines up at one height. */
@@ -284,6 +285,7 @@ details p { padding: 0 24px 22px; color: var(--muted); }
   .formation .fig.lead { --s: 84px; }
   .grid-3, .news-list { grid-template-columns: minmax(0, 1fr); }
   .news-item.wide { grid-column: auto; }
+  .news-list.two { grid-template-columns: minmax(0, 1fr); }
   .stats-row { gap: 28px; }
   .hero-actions .btn, .install .btn { width: 100%; justify-content: center; }
   .window { padding: 6px; border-radius: 16px; }
