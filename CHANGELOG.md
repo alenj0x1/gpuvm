@@ -6,7 +6,7 @@ All notable changes to GpuVM are documented here. The format follows [Keep a Cha
 
 Changes waiting for the next version sit under **Unreleased** at the top (this section only exists while there are some, and the docs site doesn't show it); `scripts/release.py` turns it into the new version.
 
-## [Unreleased]
+## [0.4.1] - 2026-10-28
 
 ### Added
 - A website at [alenj0x1.github.io/gpuvm](https://alenj0x1.github.io/gpuvm/): the app itself, live and clickable on sample data (Home, a machine, templates, shared disks, clean Windows), the patterns and profiles, what's new in the latest version (read from this changelog) and the install. The documentation moves to [/gpuvm/docs](https://alenj0x1.github.io/gpuvm/docs/).
@@ -119,6 +119,7 @@ First version.
 - Third-party installers are pinned by SHA-256 and verified again right before copying them into the VM.
 - Streaming and guest credentials are encrypted with DPAPI.
 
+[0.4.1]: https://github.com/alenj0x1/gpuvm/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/alenj0x1/gpuvm/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/alenj0x1/gpuvm/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/alenj0x1/gpuvm/compare/v0.1.1...v0.2.0
