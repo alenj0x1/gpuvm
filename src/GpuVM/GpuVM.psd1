@@ -41,6 +41,8 @@
         'Stop-GpuVMAll'
         'Set-GpuVMCapture'
         'Set-GpuVMNetworkIsolation'
+        'Set-GpuVMCleanup'
+        'Get-GpuVMCleanup'
     )
     CmdletsToExport   = @()
     AliasesToExport   = @()

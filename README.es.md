@@ -30,7 +30,8 @@
 - **Crea máquinas sin pasar por el instalador.** Eliges un ISO oficial de Windows y un perfil: la imagen se aplica directo al disco y se configura sola.
 - **Estadísticas y opciones.** Uso en vivo de CPU, memoria y GPU; procesadores, memoria, parte de la GPU y calidad de la imagen de cada VM.
 - **Biblioteca.** Tus propios perfiles (procesadores, memoria, GPU, disco, ISO, apps, cómo abre Moonlight), los discos que quedaron de VMs eliminadas para volver a crearlas, y las ISOs que usaste.
-- **Apps en un paso.** Steam, Epic Games, Discord, Chrome, Brave, Proton VPN y Firefox, instaladas dentro de la VM solo si las firma su empresa.
+- **Windows limpio.** Elige un nivel (privacidad, sin apps de más, mínimo) para quitar telemetría, publicidad, sugerencias, Copilot y apps preinstaladas, sin tocar Defender, Windows Update ni el firewall.
+- **Apps en un paso.** 16 apps (tiendas de juegos, navegadores, multimedia, Discord, 7-Zip, WinRAR, Proton VPN) con buscador y categorías, instaladas dentro de la VM solo si las firma su empresa o coinciden con un hash fijado.
 - **Juegos en pantalla completa exclusiva.** Una opción de captura por VM los muestra en vez de una pantalla negra; pega texto del PC en la VM con un botón.
 - **Mantiene aparte al equipo.** Moonlight corre sin permisos de administrador, y el portapapeles solo va del PC a la VM, nunca al revés.
 - **Laboratorios.** Cada idea de rendimiento se mide (base contra candidata) antes de volverse un valor por defecto.
@@ -103,6 +104,8 @@ GpuVM descarga e instala dentro de la VM, verificados por SHA-256:
 - [usbip-win2](https://github.com/vadimgrn/usbip-win2) (BSD-2-Clause): cliente USB/IP con drivers firmados por Microsoft; conecta el altavoz USB propio de GpuVM dentro de la VM.
 
 En el equipo usa [Moonlight](https://moonlight-stream.org) (GPL-3.0), instalado con winget.
+
+El catálogo de apps muestra el ícono de cada app, tomado de su instalador o sitio oficial; los íconos y nombres son marcas de sus dueños y solo identifican sus apps.
 
 ## Registro de cambios
 

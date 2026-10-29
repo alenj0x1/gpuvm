@@ -32,7 +32,7 @@ export interface VmOverview {
   guestCredential: boolean;
   address: string | null;
   client: ClientSettings | null;
-  options: { cpu: number; memoryGB: number; gpuPercent: number; diskGB: number; diskType: string; diskFreeGB: number; captureMode: "ddx" | "wgc"; networkIsolation: boolean } | null;
+  options: { cpu: number; memoryGB: number; gpuPercent: number; diskGB: number; diskType: string; diskFreeGB: number; captureMode: "ddx" | "wgc"; networkIsolation: boolean; cleanup: CleanupLevelId } | null;
 }
 
 export type DisplayMode = "fullscreen" | "windowed" | "borderless";
@@ -56,6 +56,7 @@ export interface ProfileSettings {
   diskType: "Dynamic" | "Fixed";
   iso: string | null;
   apps: string[];
+  cleanup: CleanupLevelId;
   resolution: string | null;
   fps: number | null;
   displayMode: DisplayMode;
@@ -69,10 +70,21 @@ export interface ProfileInfo {
   Settings?: ProfileSettings | null;
 }
 
+export type CleanupLevelId = "none" | "privacy" | "apps" | "minimal";
+
+/** A Windows cleanup level and what it adds to the ones before it. */
+export interface CleanupLevel {
+  id: CleanupLevelId;
+  name: string;
+  items: { id: string; description: string }[];
+}
+
 export interface AppInfo {
   id: string;
   name: string;
-  signer: string;
+  signer: string | null;
+  category: string;
+  categoryName: string;
 }
 
 export interface DiskInfo {

@@ -29,6 +29,14 @@ try {
         }
     }
 
+    $cleanup = $null
+    if ($config.cleanup -and $config.cleanup -ne 'none') {
+        . (Join-Path $root 'cleanup.ps1')
+        Write-Host "Limpiando Windows: $($config.cleanup)"
+        $cleanup = @(Invoke-GpuVMCleanup -Level $config.cleanup)
+        $cleanup | Where-Object { -not $_.ok } | ForEach-Object { Write-Warning "Falló $($_.name): $($_.detail)" }
+    }
+
     $streaming = $null
     if (Test-Path (Join-Path $root 'streaming\streaming-config.json')) {
         . (Join-Path $root 'streaming.ps1')
@@ -40,6 +48,7 @@ try {
     [pscustomobject]@{
         finishedAt    = (Get-Date).ToString('o')
         optimizations = $applied
+        cleanup       = $cleanup
         streaming     = $streaming
         rebootPending = [bool]($streaming -and $streaming.hyperVVideo -eq 'disabled')
         gpus          = $gpus

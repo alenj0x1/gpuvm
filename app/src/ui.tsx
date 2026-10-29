@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import { IconAlertTriangle, IconCircleCheck, IconCircleX, IconX } from "@tabler/icons-react";
 
 interface SliderProps {
@@ -122,3 +122,27 @@ export const stateLabel: Record<string, string> = {
   Pausing: "Pausando",
   Resuming: "Reanudando",
 };
+
+/** For a box that scrolls: "fade-start" / "fade-end" while there is hidden content on that side, so the edge fades. */
+export function useScrollFade<T extends HTMLElement>(axis: "x" | "y" = "y") {
+  const ref = useRef<T>(null);
+  const [fade, setFade] = useState("");
+  const measure = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    const [pos, size, total] = axis === "y" ? [el.scrollTop, el.clientHeight, el.scrollHeight] : [el.scrollLeft, el.clientWidth, el.scrollWidth];
+    const next = `${pos > 2 ? "fade-start" : ""} ${pos + size < total - 2 ? "fade-end" : ""}`.trim();
+    setFade((prev) => (prev === next ? prev : next));
+  }, [axis]);
+  // Content changes (a search, a new section) change what is hidden: measure after every render.
+  useLayoutEffect(measure);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    el.addEventListener("scroll", measure, { passive: true });
+    return () => { observer.disconnect(); el.removeEventListener("scroll", measure); };
+  }, [measure]);
+  return [ref, fade] as const;
+}

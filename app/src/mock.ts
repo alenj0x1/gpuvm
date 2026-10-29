@@ -1,4 +1,5 @@
 import type { DiskInfo, DisplayMode, IsoFile, JobEvent, ProfileInfo, ProfileSettings, VmOverview } from "./types";
+import catalog from "../../apps/catalog.json";
 
 // Sample data for designing in the browser (there is no Hyper-V outside the app).
 const params = new URLSearchParams(location.search);
@@ -11,7 +12,7 @@ const vms: VmOverview[] = [
     memoryAssignedGB: 8, memoryDemandGB: 5.1, uptimeSeconds: 4320, hasGpu: true, gpuName: "NVIDIA GeForce RTX 4060",
     gpuPercent: 61, driverInSync: true, streaming: true, paired: true, guestCredential: true, address: "172.29.111.201",
     client: { app: "Desktop", resolution: "1920x1080", fps: 60, bitrateKbps: 0, codec: "auto" },
-    options: { cpu: 8, memoryGB: 8, gpuPercent: 100, diskGB: 200, diskType: "Fixed", diskFreeGB: 232, captureMode: "ddx", networkIsolation: true },
+    options: { cpu: 8, memoryGB: 8, gpuPercent: 100, diskGB: 200, diskType: "Fixed", diskFreeGB: 232, captureMode: "ddx", networkIsolation: true, cleanup: "none" },
   },
   {
     id: "a1b2c3d4", name: "win11-pruebas", state: "Off", managed: true, profile: "balanced",
@@ -19,7 +20,7 @@ const vms: VmOverview[] = [
     memoryAssignedGB: 0, memoryDemandGB: 0, uptimeSeconds: 0, hasGpu: true, gpuName: "NVIDIA GeForce RTX 4060",
     gpuPercent: 0, driverInSync: false, streaming: true, paired: false, guestCredential: true, address: null,
     client: { app: "Desktop", resolution: "2560x1440", fps: 120, bitrateKbps: 40000, codec: "HEVC" },
-    options: { cpu: 8, memoryGB: 8, gpuPercent: 100, diskGB: 200, diskType: "Fixed", diskFreeGB: 232, captureMode: "ddx", networkIsolation: true },
+    options: { cpu: 8, memoryGB: 8, gpuPercent: 100, diskGB: 200, diskType: "Fixed", diskFreeGB: 232, captureMode: "ddx", networkIsolation: true, cleanup: "none" },
   },
   {
     id: "99ff0011", name: "ubuntu-server", state: "Off", managed: false, profile: null, edition: null, generation: 2,
@@ -30,7 +31,7 @@ const vms: VmOverview[] = [
 ];
 
 const builtIn = (cpu: number, diskGB: number, diskType: "Dynamic" | "Fixed"): ProfileSettings =>
-  ({ cpu, memoryGB: 8, gpuPercent: 100, diskGB, diskType, iso: null, apps: [], resolution: "1920x1080", fps: 60, displayMode: "fullscreen" });
+  ({ cpu, memoryGB: 8, gpuPercent: 100, diskGB, diskType, iso: null, apps: [], cleanup: "none", resolution: "1920x1080", fps: 60, displayMode: "fullscreen" });
 
 let profiles: ProfileInfo[] = [
   { Name: "balanced", Extends: "base", Description: "Buen rendimiento dejando holgura al host: 8 hilos, 8 GB, disco dinámico.", BuiltIn: true, Settings: builtIn(8, 128, "Dynamic") },
@@ -95,11 +96,11 @@ export async function ps(cmd: string, args: Record<string, unknown>): Promise<un
       profiles = profiles.filter((p) => p.Name !== args.Name);
       return [];
     case "Get-GpuVMApp":
-      return [
-        { id: "steam", name: "Steam", signer: "Valve" }, { id: "epic", name: "Epic Games", signer: "Epic Games" },
-        { id: "discord", name: "Discord", signer: "Discord" }, { id: "chrome", name: "Chrome", signer: "Google" },
-        { id: "protonvpn", name: "Proton VPN", signer: "Proton AG" }, { id: "brave", name: "Brave", signer: "Brave Software, Inc." }, { id: "firefox", name: "Firefox", signer: "Mozilla" },
-      ];
+      // The real catalog, so the mock shows every app and category the app ships with.
+      return Object.entries(catalog.apps).map(([id, a]: [string, { name: string; signer?: string; category: string }]) => (
+        { id, name: a.name, signer: a.signer ?? null, category: a.category, categoryName: (catalog.categories as Record<string, string>)[a.category] }));
+    case "Get-GpuVMCleanup":
+      return CLEANUP_LEVELS;
     case "Get-GpuVMDisk":
       return disks;
     case "Remove-GpuVMDisk":
@@ -139,9 +140,33 @@ export function onJob(handler: (e: JobEvent) => void) {
   return () => listeners.delete(handler);
 }
 
+// Same levels and texts as guest/cleanup.ps1 (Get-GpuVMCleanup), shortened to what the UI needs.
+const CLEANUP_LEVELS = [
+  { id: "none", name: "Normal", items: [] },
+  { id: "privacy", name: "Privacidad", items: [
+    { id: "telemetry-minimum", description: "Datos de diagnóstico al mínimo que permite la edición (en Pro, «Requerido»; en Enterprise y Education, apagados)." },
+    { id: "advertising", description: "Sin identificador de publicidad ni experiencias personalizadas con tus datos de diagnóstico." },
+    { id: "activity-history", description: "Sin historial de actividad ni envío de actividad a Microsoft." },
+    { id: "suggestions", description: "Sin sugerencias, consejos, Spotlight ni apps promocionadas que se instalan solas." },
+    { id: "web-search", description: "La búsqueda de Inicio busca solo en el equipo, sin Bing." },
+    { id: "copilot-recall", description: "Sin Copilot ni Recall (las capturas de pantalla que guarda Windows 11)." },
+  ] },
+  { id: "apps", name: "Sin apps de más", items: [
+    { id: "store-apps", description: "Quita apps preinstaladas que no hacen falta (noticias, clima, Solitario, Clipchamp, Teams personal, Outlook nuevo...), también para usuarios nuevos. Se pueden volver a instalar desde Microsoft Store." },
+    { id: "onedrive", description: "Quita OneDrive y evita que se vuelva a instalar." },
+    { id: "widgets", description: "Sin widgets ni «Noticias e intereses» en la barra de tareas." },
+  ] },
+  { id: "minimal", name: "Mínimo", items: [
+    { id: "telemetry-services", description: "Apaga los servicios que envían telemetría y el informe de errores a Microsoft." },
+    { id: "unneeded-services", description: "Apaga servicios que una VM no usa: mapas, ubicación, fax, modo demo y uso compartido de Windows Media." },
+    { id: "background-apps", description: "Las apps de Microsoft Store no corren en segundo plano." },
+  ] },
+];
+
 export async function job(jobId: string, cmd: string, args: Record<string, unknown>) {
   const emit = (e: Omit<JobEvent, "jobId">) => listeners.forEach((l) => l({ jobId, ...e }));
-  const steps = cmd === "New-GpuVM"
+  const steps = cmd === "Set-GpuVMCleanup" ? ["Esperando a que Windows arranque", "Limpiando Windows", "Limpieza aplicada"]
+    : cmd === "New-GpuVM"
     ? ["Edición: Windows 10 Pro (es-MX)", "Leyendo archivos del driver", "Creando disco Fixed de 96 GB", "Aplicando la imagen de Windows", "Copiando el driver de la GPU al invitado", "Registrando la VM en Hyper-V"]
     : ["Encendiendo", "Esperando a que Windows arranque", "Esperando a Sunshine", "Sunshine capturará la pantalla virtual", "Abriendo Desktop a 1920x1080 y 60 FPS"];
   for (const message of steps) {
@@ -153,6 +178,7 @@ export async function job(jobId: string, cmd: string, args: Record<string, unkno
   } else {
     const vm = vms.find((v) => v.name === args.Name);
     if (vm) vm.state = "Running";
+    if (vm?.options && cmd === "Set-GpuVMCleanup") vm.options.cleanup = args.Level as typeof vm.options.cleanup;
   }
   emit({ type: "result", ok: true, data: [] });
 }

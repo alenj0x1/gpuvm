@@ -505,13 +505,41 @@ InModuleScope GpuVM {
             Test-Path $iso | Should Be $true
         }
 
-        It 'every catalog app has a download URL, a signer and an install check' {
+        It 'every catalog app has a download URL, a signer or hash, a known category and an install check' {
+            $categories = Get-AppCategory
             foreach ($app in Get-GpuVMApp) {
                 $entry = (Get-AppCatalog)[$app['id']]
                 $entry['url'] | Should Match '^https://'
-                $entry['signer'] | Should Not BeNullOrEmpty
+                [bool]($entry['signer'] -or $entry['sha256'] -match '^[0-9A-Fa-f]{64}$') | Should Be $true
+                $categories.Contains($entry['category']) | Should Be $true
+                $app['categoryName'] | Should Not BeNullOrEmpty
                 $entry['installed'] | Should Not BeNullOrEmpty
             }
+        }
+
+        It 'every cleanup item has a known level, a description and something to do' {
+            . (Get-RepoPath 'guest\cleanup.ps1')
+            foreach ($name in $GpuVMCleanup.Keys) {
+                $item = $GpuVMCleanup[$name]
+                @('privacy', 'apps', 'minimal') -contains $item['Level'] | Should Be $true
+                $item['Description'] | Should Not BeNullOrEmpty
+                [bool]($item['Registry'] -or $item['Services'] -or $item['Packages'] -or $item['Script']) | Should Be $true
+            }
+        }
+
+        It 'cleanup never touches Defender, Windows Update, SmartScreen, UAC, the firewall or the Store' {
+            . (Get-RepoPath 'guest\cleanup.ps1')
+            $text = ($GpuVMCleanup.Values | ForEach-Object {
+                    @($_['Registry'] | Where-Object { $_ } | ForEach-Object { "$($_['Path'])\$($_['Name'])" }) + @($_['Services'] | Where-Object { $_ } | ForEach-Object { $_['Name'] }) + @($_['Packages']) + "$($_['Script'])"
+                }) -join "`n"
+            $text | Should Not Match 'Defender|WinDefend|wuauserv|WindowsUpdate|UsoSvc|SmartScreen|EnableLUA|MpsSvc|Firewall|SecHealth|WindowsStore|DesktopAppInstaller|GamingApp|Xbox'
+        }
+
+        It 'lists the cleanup levels in order, each with its items' {
+            $levels = @(Get-GpuVMCleanup)
+            ($levels | ForEach-Object { $_['id'] }) -join ',' | Should Be 'none,privacy,apps,minimal'
+            $levels[0]['items'].Count | Should Be 0
+            foreach ($level in $levels[1..3]) { $level['items'].Count | Should BeGreaterThan 0 }
         }
 
         $script:DataRoot = $originalData

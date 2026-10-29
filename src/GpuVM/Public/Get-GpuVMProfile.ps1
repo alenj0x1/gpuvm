@@ -42,6 +42,7 @@ function ConvertTo-ProfileSettings {
         diskType    = $Config['vm']['disk']['type']
         iso         = if ($Config.Contains('iso')) { $Config['iso'] } else { $null }
         apps        = @(if ($Config['guest'].Contains('apps')) { $Config['guest']['apps'] })
+        cleanup     = if ($Config['guest'].Contains('cleanup') -and $Config['guest']['cleanup']) { $Config['guest']['cleanup'] } else { 'none' }
         resolution  = if ($client) { $client['resolution'] } else { $null }
         fps         = if ($client) { $client['fps'] } else { $null }
         displayMode = if ($client -and $client.Contains('displayMode') -and $client['displayMode']) { $client['displayMode'] } else { 'fullscreen' }

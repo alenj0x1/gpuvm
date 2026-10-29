@@ -6,7 +6,7 @@ import { Preferences } from "./Preferences";
 import { Library, type LibraryTab } from "./Library";
 import type { HostInfo, JobEvent, Sample, VmOverview } from "./types";
 import { api, onJob, relaunchAsAdmin, startJob as runJob } from "./api";
-import { Bauhaus, tintVars } from "./bauhaus";
+import { Bauhaus } from "./bauhaus";
 import { MAX_SAMPLES } from "./Chart";
 import { VmView, type JobInfo } from "./VmView";
 import { CreateDialog } from "./CreateDialog";
@@ -166,7 +166,7 @@ export function App() {
     return (
       <div className="app single">
         <TitleBar />
-        <div className="empty" style={tintVars("#2f5bd3") as React.CSSProperties}>
+        <div className="empty">
           <Bauhaus name="gpuvm-admin" size={96} radius={24} cols={3} rows={3} />
           <h2>GpuVM necesita permisos de administrador</h2>
           <p>Hyper-V solo deja crear y controlar máquinas a un administrador.</p>
@@ -239,7 +239,7 @@ export function App() {
             startJob={startJob} run={run} onRemoved={() => setSelected("")} />
         ) : (
           <div className="main">
-            <div className="empty" style={tintVars("#f2b632") as React.CSSProperties}>
+            <div className="empty">
               <Bauhaus name="primera-maquina" size={112} radius={28} cols={3} rows={3} />
               <h2>Crea tu primera máquina</h2>
               <p>Windows 10 u 11 con {host?.gpuName ? `tu ${host.gpuName.replace("NVIDIA GeForce ", "")}` : "tu GPU"}, lista para abrir con Moonlight en un clic.</p>
@@ -252,9 +252,9 @@ export function App() {
       {creating && (
         <CreateDialog existing={vms ?? []} job={createJob} error={createError}
           onClose={() => setCreating(false)}
-          onCreate={({ name, iso, profile, password, apps }) => {
+          onCreate={({ name, iso, profile, password, apps, cleanup }) => {
             setCreateError(null);
-            startJob(NEW_VM, "New-GpuVM", { Name: name, IsoPath: iso, Profile: profile, Override: { guest: { apps } }, Credential: { user: "gpuvm", password }, Start: true }, () => {
+            startJob(NEW_VM, "New-GpuVM", { Name: name, IsoPath: iso, Profile: profile, Override: { guest: { apps, cleanup } }, Credential: { user: "gpuvm", password }, Start: true }, () => {
               setCreating(false);
               setSelected(name);
               push("ok", `${name} está lista. Windows termina de configurarse solo en unos minutos.`);

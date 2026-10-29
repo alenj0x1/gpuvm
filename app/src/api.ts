@@ -1,4 +1,4 @@
-import type { AppInfo, DiskInfo, DisplayMode, HostInfo, IsoFile, JobEvent, ProfileInfo, ProfileSettings, VmOverview } from "./types";
+import type { AppInfo, CleanupLevel, DiskInfo, DisplayMode, HostInfo, IsoFile, JobEvent, ProfileInfo, ProfileSettings, VmOverview } from "./types";
 import * as mock from "./mock";
 
 // Outside Tauri (browser) the UI runs on sample data so it can be designed.
@@ -24,6 +24,7 @@ export const api = {
     ps("Set-GpuVMStreamingClient", { Name: name, Resolution: resolution, Fps: fps, ...(displayMode ? { DisplayMode: displayMode } : {}) }),
   remove: (name: string, deleteDisk: boolean) => ps("Remove-GpuVM", { Name: name, DeleteDisk: deleteDisk, Confirm: false }),
   apps: () => ps<AppInfo>("Get-GpuVMApp"),
+  cleanupLevels: () => ps<CleanupLevel>("Get-GpuVMCleanup"),
   pasteToVm: (name: string) => ps("Send-GpuVMClipboard", { Name: name }),
   setCapture: (name: string, mode: "ddx" | "wgc") => ps("Set-GpuVMCapture", { Name: name, Mode: mode }),
   setNetworkIsolation: (name: string, enabled: boolean) => ps("Set-GpuVMNetworkIsolation", { Name: name, Enabled: enabled }),

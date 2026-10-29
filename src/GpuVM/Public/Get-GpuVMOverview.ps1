@@ -66,6 +66,7 @@ function Get-GpuVMOverview {
                     diskFreeGB = Get-DriveFreeGB $state['config']['vm']['root']
                     captureMode = Get-GpuVMCaptureMode -State $state
                     networkIsolation = Get-GpuVMNetworkIsolation -State $state
+                    cleanup    = if ($state['config']['guest'].Contains('cleanup') -and $state['config']['guest']['cleanup']) { $state['config']['guest']['cleanup'] } else { 'none' }
                 }
             } else { $null }
         }

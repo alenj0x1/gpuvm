@@ -39,6 +39,7 @@ With no VMs yet, the app invites you to create the first one.
    - **Nombre** (Name): letters, numbers, `_` or hyphens, up to 40 characters, no spaces. It suggests `win-gpu`.
    - **Imagen de Windows** (Windows image): the ISOs you already used or added first, then the ones found in your Downloads and Desktop folders, or **Buscar otro ISO** to browse for one.
    - **Perfil** (Profile): **Equilibrado** (`balanced`), **Máximo rendimiento** (`max-performance`, the default) or one of your own from the [Library](#library). The profile fills in the rest, including its ISO and apps. See [Profiles](/gpuvm/profiles/).
+   - **Windows**: how clean Windows is. See [Windows](#windows).
    - **Apps que se instalan** (Apps to install): installed the first time the VM opens. See [Apps](#apps).
    - **Contraseña de Windows** (Windows password) for the local user `gpuvm`, at least 6 characters, typed twice.
 
@@ -92,9 +93,20 @@ Four cards, refreshed every 2 seconds while a VM is on (every 6 seconds otherwis
 
 The **Uso** (Usage) chart plots CPU and GPU over the last 5 minutes.
 
+## Windows
+
+The **Windows** card sets how clean Windows is inside the VM. Each level includes the previous ones:
+
+- **Normal**: Windows as it comes.
+- **Privacidad** (Privacy): diagnostic data at the minimum the edition allows (on Pro, Windows doesn't go below "Required"), no advertising ID, activity history, suggestions, Spotlight, Bing in Start, Copilot or Recall.
+- **Sin apps de más** (No extra apps): also removes preinstalled apps (News, Weather, Solitaire, Clipchamp, personal Teams, the new Outlook...), also for new users, plus OneDrive and widgets. They can be installed again from Microsoft Store.
+- **Mínimo** (Minimal): also turns off the telemetry and error reporting services and services a VM doesn't use (maps, location, fax, demo mode), and keeps Store apps from running in the background.
+
+Choose a level and click **Aplicar** (Apply), or **Encender y aplicar** (Start and apply) if the VM is off. A lower level undoes the settings of the higher ones. Microsoft Defender, Windows Update, SmartScreen, UAC, the firewall, Microsoft Store and Xbox are never touched. You can also choose the level when creating the machine or in a profile; it is applied on Windows' first sign-in.
+
 ## Apps
 
-The **Apps** card installs Steam, Epic Games, Discord, Chrome, Brave, Proton VPN and Firefox in the VM: choose them and click **Instalar** (Install), or **Encender e instalar** (Start and install) if the VM is off. You can also choose them when creating the machine; they are installed the first time it opens. Each installer is downloaded inside the VM and only runs if Windows confirms it is signed by its publisher; pinned versions are also checked by SHA-256. The card needs the [guest password](#guest-password-banner).
+The **Apps** card installs game launchers (Steam, Epic Games, Battle.net, EA app, GOG Galaxy, Ubisoft Connect), browsers (Chrome, Brave, Firefox), media (VLC, OBS Studio, Spotify), Discord, 7-Zip, WinRAR and Proton VPN in the VM. Search them with **Buscar** (Search) or filter by category, then choose them and click **Instalar** (Install), or **Encender e instalar** (Start and install) if the VM is off. You can also choose them when creating the machine; they are installed the first time it opens. Each installer is downloaded inside the VM and only runs if Windows confirms it is signed by its publisher; pinned versions are also checked by SHA-256. The card needs the [guest password](#guest-password-banner).
 
 ## Options
 

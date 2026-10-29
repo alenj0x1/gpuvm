@@ -6,9 +6,9 @@ import {
 } from "@tabler/icons-react";
 import type { AppInfo, DiskInfo, HostInfo, IsoFile, ProfileInfo, ProfileSettings } from "./types";
 import { api, pickIso } from "./api";
-import { PatternButton, machineColor, tintVars } from "./bauhaus";
-import { AppPicker, FPS, IsoPicker, RESOLUTIONS, isoDetail, profileLabel, profileSummary } from "./pickers";
-import { Segmented, Slider, humanError } from "./ui";
+import { PatternButton } from "./bauhaus";
+import { AppPicker, CleanupPicker, FPS, IsoPicker, useCleanupLevels, RESOLUTIONS, isoDetail, profileLabel, profileSummary } from "./pickers";
+import { Segmented, Slider, humanError, useScrollFade } from "./ui";
 
 export type LibraryTab = "perfiles" | "discos" | "isos";
 
@@ -53,7 +53,7 @@ export function Library({ tab, onTab, host, startJob, busy, notify, onOpenVm }: 
     ]} />
   );
   return (
-    <div className="main" style={tintVars("#2f5bd3") as React.CSSProperties}>
+    <div className="main">
       {tab === "perfiles" && <Profiles tabs={tabs} host={host} notify={notify} />}
       {tab === "discos" && <Disks tabs={tabs} startJob={startJob} busy={busy} notify={notify} onOpenVm={onOpenVm} />}
       {tab === "isos" && <Isos tabs={tabs} notify={notify} />}
@@ -147,6 +147,8 @@ function ProfileEditor({ initial, host, apps, existing, onCancel, onSaved, notif
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [onCancel]);
+  const cleanupLevels = useCleanupLevels();
+  const [bodyRef, bodyFade] = useScrollFade<HTMLDivElement>();
   const set = (patch: Partial<ProfileSettings>) => setDraft({ ...draft, settings: { ...s, ...patch } });
   useEffect(() => { api.isos().then(setIsos).catch(() => setIsos([])); }, []);
 
@@ -154,11 +156,16 @@ function ProfileEditor({ initial, host, apps, existing, onCancel, onSaved, notif
   const maxMem = Math.max(4, Math.floor(host?.memoryGB ?? 16) - 4);
   const bases = existing.filter((p) => p.BuiltIn);
 
+  // Checked as you type; "Guardar perfil" stays disabled until the name is valid.
+  const trimmed = draft.name.trim();
+  const nameError = !trimmed ? "" : !/^[\w-]{1,40}$/.test(trimmed) ? "Usa letras, números o guiones, sin espacios"
+    : existing.some((p) => p.Name === trimmed && p.Name !== draft.previous) ? "Ya hay un perfil con ese nombre" : "";
+  const complete = !!trimmed && !nameError;
+
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     const name = draft.name.trim();
-    if (!/^[\w-]{1,40}$/.test(name)) { setError("El nombre usa letras, números o guiones, sin espacios"); return; }
-    if (existing.some((p) => p.Name === name && p.Name !== draft.previous)) { setError("Ya hay un perfil con ese nombre"); return; }
+    if (!complete) return;
     setSaving(true);
     try {
       await api.saveProfile(name, draft.description.trim(), draft.extends, s, draft.previous);
@@ -178,85 +185,94 @@ function ProfileEditor({ initial, host, apps, existing, onCancel, onSaved, notif
   // Rendered at app level, like "Create machine": inside the scrolling content its fade mask would clip it.
   return createPortal(
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && !dirty && onCancel()}>
-    <div className="dialog" role="dialog" aria-modal="true" aria-label={draft.previous ? `Editar ${draft.previous}` : "Nuevo perfil"}
-      style={tintVars(machineColor(`perfil-${draft.name || "nuevo"}`)) as React.CSSProperties}>
+    <div className="dialog" role="dialog" aria-modal="true" aria-label={draft.previous ? `Editar ${draft.previous}` : "Nuevo perfil"}>
       <div className="dialog-head">
         <PatternButton name={`perfil-${draft.name || "nuevo"}`} size={44} radius={12} onChange={() => repaint((n) => n + 1)} />
         <h2>{draft.previous ? `Editar ${draft.previous}` : "Nuevo perfil"}</h2>
         <button type="button" className="icon-btn" aria-label="Cerrar" onClick={onCancel}><IconX size={18} /></button>
       </div>
       <form className="dialog-form" onSubmit={save}>
-        <div className="two">
-          <div className="field">
-            <label className="field-top" htmlFor="p-name"><span>Nombre</span></label>
-            <input id="p-name" className="text-input" value={draft.name} autoFocus placeholder="juegos" onChange={(e) => { setDraft({ ...draft, name: e.target.value }); setError(null); }} />
-          </div>
-          <div className="field">
-            <label className="field-top" htmlFor="p-desc"><span>Descripción</span></label>
-            <input id="p-desc" className="text-input" value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
-          </div>
-        </div>
-
-        <div className="field">
-          <div className="field-top"><span>Basado en</span></div>
-          <div className="segment-row">
-            <Segmented value={draft.extends} onChange={(v) => setDraft({ ...draft, extends: v })}
-              options={bases.map((b) => ({ value: b.Name, label: profileLabel(b.Name) }))} />
-          </div>
-        </div>
-
-        <div className="options">
-          <div className="field">
-            <div className="field-top"><span>Procesador</span><strong>{s.cpu} hilos</strong></div>
-            <Slider label="Hilos" value={Math.min(s.cpu, maxCpu)} min={2} max={maxCpu} onChange={(cpu) => set({ cpu })} />
-          </div>
-          <div className="field">
-            <div className="field-top"><span>Memoria</span><strong>{s.memoryGB} GB</strong></div>
-            <Slider label="Memoria" value={Math.min(s.memoryGB, maxMem)} min={4} max={maxMem} onChange={(memoryGB) => set({ memoryGB })} />
-          </div>
-          <div className="field">
-            <div className="field-top"><span>GPU para la VM</span><strong>{s.gpuPercent} %</strong></div>
-            <Slider label="GPU" value={s.gpuPercent} min={10} max={100} step={10} onChange={(gpuPercent) => set({ gpuPercent })} />
-          </div>
-          <div className="field">
-            <div className="field-top"><span>Disco</span><strong>{s.diskGB} GB</strong></div>
-            <Slider label="Disco" value={s.diskGB} min={64} max={1024} step={16} onChange={(diskGB) => set({ diskGB })} />
-          </div>
-          <div className="field">
-            <div className="field-top"><span>Tipo de disco</span></div>
-            <div className="segment-row">
-              <Segmented value={s.diskType} onChange={(diskType) => set({ diskType })} options={[
-                { value: "Fixed", label: "Fijo" }, { value: "Dynamic", label: "Dinámico" },
-              ]} />
+        <div ref={bodyRef} className={`dialog-body ${bodyFade}`}>
+          <div className="two">
+            <div className="field">
+              <label className="field-top" htmlFor="p-name"><span>Nombre</span></label>
+              <input id="p-name" className="text-input" value={draft.name} autoFocus placeholder="juegos" onChange={(e) => { setDraft({ ...draft, name: e.target.value }); setError(null); }} />
+              {nameError && <span className="error-text">{nameError}</span>}
+            </div>
+            <div className="field">
+              <label className="field-top" htmlFor="p-desc"><span>Descripción</span></label>
+              <input id="p-desc" className="text-input" value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
             </div>
           </div>
+
           <div className="field">
-            <div className="field-top"><span>Moonlight</span></div>
+            <div className="field-top"><span>Basado en</span></div>
             <div className="segment-row">
-              <Segmented value={s.resolution ?? "1920x1080"} onChange={(resolution) => set({ resolution })}
-                options={RESOLUTIONS.map((r) => ({ value: r, label: r.split("x")[1] + "p" }))} />
-              <Segmented value={s.fps ?? 60} onChange={(fps) => set({ fps })} options={FPS.map((f) => ({ value: f, label: `${f} FPS` }))} />
-              <Segmented value={s.displayMode === "windowed" ? "windowed" : "fullscreen"} onChange={(displayMode) => set({ displayMode })} options={[
-                { value: "fullscreen", label: "Pantalla completa" }, { value: "windowed", label: "Ventana" },
-              ]} />
+              <Segmented value={draft.extends} onChange={(v) => setDraft({ ...draft, extends: v })}
+                options={bases.map((b) => ({ value: b.Name, label: profileLabel(b.Name) }))} />
             </div>
           </div>
-        </div>
 
-        <div className="field">
-          <div className="field-top"><span>Apps que se instalan</span></div>
-          <AppPicker apps={apps} value={s.apps} onChange={(v) => set({ apps: v })} />
-        </div>
+          <div className="options">
+            <div className="field">
+              <div className="field-top"><span>Procesador</span><strong>{s.cpu} hilos</strong></div>
+              <Slider label="Hilos" value={Math.min(s.cpu, maxCpu)} min={2} max={maxCpu} onChange={(cpu) => set({ cpu })} />
+            </div>
+            <div className="field">
+              <div className="field-top"><span>Memoria</span><strong>{s.memoryGB} GB</strong></div>
+              <Slider label="Memoria" value={Math.min(s.memoryGB, maxMem)} min={4} max={maxMem} onChange={(memoryGB) => set({ memoryGB })} />
+            </div>
+            <div className="field">
+              <div className="field-top"><span>GPU para la VM</span><strong>{s.gpuPercent} %</strong></div>
+              <Slider label="GPU" value={s.gpuPercent} min={10} max={100} step={10} onChange={(gpuPercent) => set({ gpuPercent })} />
+            </div>
+            <div className="field">
+              <div className="field-top"><span>Disco</span><strong>{s.diskGB} GB</strong></div>
+              <Slider label="Disco" value={s.diskGB} min={64} max={1024} step={16} onChange={(diskGB) => set({ diskGB })} />
+            </div>
+            <div className="field">
+              <div className="field-top"><span>Tipo de disco</span></div>
+              <div className="segment-row">
+                <Segmented value={s.diskType} onChange={(diskType) => set({ diskType })} options={[
+                  { value: "Fixed", label: "Fijo" }, { value: "Dynamic", label: "Dinámico" },
+                ]} />
+              </div>
+            </div>
+            <div className="field">
+              <div className="field-top"><span>Moonlight</span></div>
+              <div className="segment-row">
+                <Segmented value={s.resolution ?? "1920x1080"} onChange={(resolution) => set({ resolution })}
+                  options={RESOLUTIONS.map((r) => ({ value: r, label: r.split("x")[1] + "p" }))} />
+                <Segmented value={s.fps ?? 60} onChange={(fps) => set({ fps })} options={FPS.map((f) => ({ value: f, label: `${f} FPS` }))} />
+                <Segmented value={s.displayMode === "windowed" ? "windowed" : "fullscreen"} onChange={(displayMode) => set({ displayMode })} options={[
+                  { value: "fullscreen", label: "Pantalla completa" }, { value: "windowed", label: "Ventana" },
+                ]} />
+              </div>
+            </div>
+          </div>
 
-        <div className="field">
-          <div className="field-top"><span>Imagen de Windows</span></div>
-          <IsoPicker isos={isos} value={s.iso} onChange={(iso) => set({ iso })} onBrowse={browse} allowNone />
+          {cleanupLevels.length > 0 && (
+            <div className="field">
+              <div className="field-top"><span>Windows</span></div>
+              <CleanupPicker levels={cleanupLevels} value={s.cleanup ?? "none"} onChange={(cleanup) => set({ cleanup })} />
+            </div>
+          )}
+
+          <div className="field">
+            <div className="field-top"><span>Apps que se instalan</span></div>
+            <AppPicker apps={apps} value={s.apps} onChange={(v) => set({ apps: v })} scroll={false} />
+          </div>
+
+          <div className="field">
+            <div className="field-top"><span>Imagen de Windows</span></div>
+            <IsoPicker isos={isos} value={s.iso} onChange={(iso) => set({ iso })} onBrowse={browse} allowNone />
+          </div>
         </div>
         {error && <div className="notice error-notice"><span className="grow">{error}</span></div>}
 
         <div className="dialog-foot">
           <button type="button" className="btn ghost" onClick={onCancel}>Cancelar</button>
-          <button type="submit" className="primary compact" disabled={saving}>
+          <button type="submit" className="primary compact" disabled={saving || !complete}>
             {saving ? <IconLoader2 size={16} className="spin" /> : <IconDeviceFloppy size={16} />}Guardar perfil
           </button>
         </div>

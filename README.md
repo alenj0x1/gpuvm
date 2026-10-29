@@ -30,7 +30,8 @@ English | [Español](README.es.md)
 - **Create machines without the installer.** Pick an official Windows ISO and a profile: the image is applied straight to a disk and set up unattended.
 - **Stats and options.** Live CPU, memory and GPU usage; processors, memory, GPU share and stream quality for each VM.
 - **Library.** Your own profiles (processors, memory, GPU, disk, ISO, apps, how Moonlight opens), the disks kept from deleted VMs to create them again, and the ISOs you used.
-- **Apps in one step.** Steam, Epic Games, Discord, Chrome, Brave, Proton VPN and Firefox, installed inside the VM only if signed by their publisher.
+- **Clean Windows.** Pick a level (privacy, no extra apps, minimal) to cut telemetry, ads, suggestions, Copilot and preinstalled apps, without touching Defender, Windows Update or the firewall.
+- **Apps in one step.** 16 apps (game launchers, browsers, media, Discord, 7-Zip, WinRAR, Proton VPN) with search and categories, installed inside the VM only if signed by their publisher or matching a pinned hash.
 - **Games in exclusive fullscreen.** A per-VM capture option shows them instead of a black screen; paste text from the PC into the VM with one button.
 - **Keeps the host apart.** Moonlight runs without administrator rights, and the clipboard only goes from the PC to the VM, never back.
 - **Labs.** Every performance idea is measured (baseline vs candidate) before it becomes a default.
@@ -105,6 +106,8 @@ GpuVM downloads and installs these inside the VM, verified by SHA-256:
 - [usbip-win2](https://github.com/vadimgrn/usbip-win2) (BSD-2-Clause) — USB/IP client with Microsoft-signed drivers; it plugs in GpuVM's own USB speaker inside the VM.
 
 On the host it uses [Moonlight](https://moonlight-stream.org) (GPL-3.0), installed with winget.
+
+The app catalog shows each app's own icon, taken from its official installer or website; the icons and names are trademarks of their owners and only identify their apps.
 
 ## Changelog
 

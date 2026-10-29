@@ -39,25 +39,6 @@ export function machineColor(name: string, variant = patternVariant(name)) {
   return COLORS[hash(`${name}#${variant}`) % COLORS.length];
 }
 
-function mix(a: string, b: string, amount: number) {
-  const pa = [1, 3, 5].map((i) => parseInt(a.slice(i, i + 2), 16));
-  const pb = [1, 3, 5].map((i) => parseInt(b.slice(i, i + 2), 16));
-  return "#" + pa.map((v, i) => Math.round(v + (pb[i] - v) * amount).toString(16).padStart(2, "0")).join("");
-}
-
-/** CSS variables for the primary button tint, based on the machine color. */
-export function tintVars(color: string): Record<string, string> {
-  return {
-    "--tint-bg": mix(color, "#ffffff", 0.84),
-    "--tint-bg-hover": mix(color, "#ffffff", 0.76),
-    "--tint-fg": mix(color, "#000000", 0.42),
-    "--tint-bg-dark": mix(color, "#26282c", 0.7),
-    "--tint-bg-dark-hover": mix(color, "#26282c", 0.6),
-    "--tint-fg-dark": mix(color, "#ffffff", 0.6),
-    "--machine": color,
-  };
-}
-
 type Shape = (x: number, y: number, s: number, fill: string, r: () => number, key: string) => JSX.Element | null;
 
 const shapes: Shape[] = [

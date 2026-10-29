@@ -107,6 +107,9 @@ function Test-GpuVMProfileData {
             if ($app -notin $known) { $problems.Add("guest.apps: no existe la app '$app' en el catálogo.") }
         }
     }
+    if ($guest -and $guest.Contains('cleanup') -and $guest['cleanup'] -notin 'none', 'privacy', 'apps', 'minimal') {
+        $problems.Add('guest.cleanup debe ser none, privacy, apps o minimal.')
+    }
     if ($Config.Contains('iso') -and $Config['iso'] -and [IO.Path]::GetExtension($Config['iso']) -ne '.iso') {
         $problems.Add('iso debe ser la ruta de un archivo .iso.')
     }

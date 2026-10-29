@@ -1,8 +1,17 @@
 {
-  "description": "Apps GpuVM can install inside a VM. Each one is downloaded from its publisher inside the guest, and installed only if its Authenticode signature is valid and from the expected signer.",
+  "description": "Apps GpuVM can install inside a VM. Each one is downloaded from its publisher inside the guest, and installed only if its Authenticode signature is valid and from the expected signer. A pinned version also carries its sha256; an app its publisher does not sign (7-Zip) must carry one. asUser runs the installer as the signed-in user without elevation (Spotify refuses to install as administrator).",
+  "categories": {
+    "games": "Juegos",
+    "browsers": "Navegadores",
+    "media": "Multimedia",
+    "chat": "Comunicación",
+    "tools": "Utilidades",
+    "privacy": "Privacidad"
+  },
   "apps": {
     "steam": {
       "name": "Steam",
+      "category": "games",
       "url": "https://cdn.cloudflare.steamstatic.com/client/installer/SteamSetup.exe",
       "file": "SteamSetup.exe",
       "args": ["/S"],
@@ -11,39 +20,63 @@
     },
     "epic": {
       "name": "Epic Games",
+      "category": "games",
       "url": "https://launcher-public-service-prod06.ol.epicgames.com/launcher/api/installer/download/EpicGamesLauncherInstaller.msi",
       "file": "EpicGamesLauncherInstaller.msi",
       "args": ["/qn", "/norestart"],
       "signer": "Epic Games Inc.",
       "installed": "${ProgramFiles(x86)}\\Epic Games\\Launcher\\Portal\\Binaries\\Win64\\EpicGamesLauncher.exe"
     },
-    "discord": {
-      "name": "Discord",
-      "url": "https://discord.com/api/downloads/distributions/app/installers/latest?channel=stable&platform=win&arch=x64",
-      "file": "DiscordSetup.exe",
-      "args": ["-s"],
-      "signer": "Discord Inc.",
-      "installed": "${LOCALAPPDATA}\\Discord\\Update.exe"
+    "battlenet": {
+      "name": "Battle.net",
+      "category": "games",
+      "url": "https://downloader.battle.net/download/getInstaller?os=win&installer=Battle.net-Setup.exe",
+      "file": "Battle.net-Setup.exe",
+      "args": ["--lang=esMX", "--installpath=\"C:\\Program Files (x86)\\Battle.net\""],
+      "signer": "Blizzard Entertainment, Inc.",
+      "installed": "${ProgramFiles(x86)}\\Battle.net\\Battle.net Launcher.exe"
+    },
+    "ea": {
+      "name": "EA app",
+      "category": "games",
+      "url": "https://origin-a.akamaihd.net/EA-Desktop-Client-Download/installer-releases/EAappInstaller-13.813.1.6327-16195906.exe",
+      "sha256": "85084BBDE077F1DBB0549726D26EDD1C524422E24C3A9AE8EEF5DF9B1967A46A",
+      "file": "EAappInstaller.exe",
+      "args": ["/quiet", "/norestart"],
+      "signer": "Electronic Arts, Inc.",
+      "installed": "${ProgramFiles}\\Electronic Arts\\EA Desktop\\EA Desktop\\EADesktop.exe"
+    },
+    "gog": {
+      "name": "GOG Galaxy",
+      "category": "games",
+      "url": "https://content-system.gog.com/open_link/download?path=/open/galaxy/client/setup_galaxy_2.1.10.56.exe",
+      "sha256": "EC1EF3744A6BA365C022D5E114A482B74FF0496E00A91924EBDAE401E2C9291B",
+      "file": "setup_galaxy.exe",
+      "args": ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
+      "signer": "GOG  sp. z o.o",
+      "installed": "${ProgramFiles(x86)}\\GOG Galaxy\\GalaxyClient.exe"
+    },
+    "ubisoft": {
+      "name": "Ubisoft Connect",
+      "category": "games",
+      "url": "https://static3.cdn.ubi.com/orbit/launcher_installer/UbisoftConnectInstaller.exe",
+      "file": "UbisoftConnectInstaller.exe",
+      "args": ["/S"],
+      "signer": "UBISOFT ENTERTAINMENT INC.",
+      "installed": "${ProgramFiles(x86)}\\Ubisoft\\Ubisoft Game Launcher\\UbisoftConnect.exe"
     },
     "chrome": {
       "name": "Chrome",
+      "category": "browsers",
       "url": "https://dl.google.com/chrome/install/latest/chrome_installer.exe",
       "file": "ChromeSetup.exe",
       "args": ["/silent", "/install"],
       "signer": "Google LLC",
       "installed": "${ProgramFiles}\\Google\\Chrome\\Application\\chrome.exe"
     },
-    "protonvpn": {
-      "name": "Proton VPN",
-      "url": "https://vpn.protondownload.com/download/ProtonVPN_v5.1.9_x64.exe",
-      "sha256": "8454eba06a37c0a636ec8dcfe6a7a823a68a78ee8fe2eeda2d651cd5cd6c3d70",
-      "file": "ProtonVPN_x64.exe",
-      "args": ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
-      "signer": "Proton AG",
-      "installed": "${ProgramFiles}\\Proton\\VPN"
-    },
     "brave": {
       "name": "Brave",
+      "category": "browsers",
       "url": "https://laptop-updates.brave.com/latest/winx64",
       "file": "BraveBrowserSetup.exe",
       "args": ["/silent", "/install"],
@@ -55,11 +88,80 @@
     },
     "firefox": {
       "name": "Firefox",
+      "category": "browsers",
       "url": "https://download.mozilla.org/?product=firefox-latest-ssl&os=win64&lang=es-MX",
       "file": "FirefoxSetup.exe",
       "args": ["/S"],
       "signer": "Mozilla Corporation",
       "installed": "${ProgramFiles}\\Mozilla Firefox\\firefox.exe"
+    },
+    "vlc": {
+      "name": "VLC",
+      "category": "media",
+      "url": "https://download.videolan.org/pub/videolan/vlc/3.0.24/win64/vlc-3.0.24-win64.exe",
+      "sha256": "D711E1E1FE52052748C39080C7DCE63F6B7E4C315EFEDF1774A3F1957B782FF3",
+      "file": "vlc-win64.exe",
+      "args": ["/S"],
+      "signer": "VideoLAN",
+      "installed": "${ProgramFiles}\\VideoLAN\\VLC\\vlc.exe"
+    },
+    "obs": {
+      "name": "OBS Studio",
+      "category": "media",
+      "url": "https://github.com/obsproject/obs-studio/releases/download/33.0.0/OBS-Studio-33.0.0-Windows-x64-Installer.exe",
+      "sha256": "3BF55DAE6D9DB651505828090DE74540296C742ED2A94A28CF055CB6DDC6BED3",
+      "file": "OBS-Studio-Installer.exe",
+      "args": ["/S"],
+      "signer": "OBS Project, LLC",
+      "installed": "${ProgramFiles}\\obs-studio\\bin\\64bit\\obs64.exe"
+    },
+    "spotify": {
+      "name": "Spotify",
+      "category": "media",
+      "url": "https://download.scdn.co/SpotifyFullSetupX64.exe",
+      "file": "SpotifyFullSetupX64.exe",
+      "args": ["/silent", "/skip-app-launch"],
+      "signer": "Spotify AB",
+      "asUser": true,
+      "installed": "${APPDATA}\\Spotify\\Spotify.exe"
+    },
+    "discord": {
+      "name": "Discord",
+      "category": "chat",
+      "url": "https://discord.com/api/downloads/distributions/app/installers/latest?channel=stable&platform=win&arch=x64",
+      "file": "DiscordSetup.exe",
+      "args": ["-s"],
+      "signer": "Discord Inc.",
+      "installed": "${LOCALAPPDATA}\\Discord\\Update.exe"
+    },
+    "7zip": {
+      "name": "7-Zip",
+      "category": "tools",
+      "url": "https://github.com/ip7z/7zip/releases/download/26.05/7z2605-x64.exe",
+      "sha256": "FD99E86F57D8F429EF5ED045BF98315AF962E2309B0F1BA87A147A44C71647D0",
+      "file": "7z-x64.exe",
+      "args": ["/S"],
+      "installed": "${ProgramFiles}\\7-Zip\\7z.exe"
+    },
+    "winrar": {
+      "name": "WinRAR",
+      "category": "tools",
+      "url": "https://www.rarlab.com/rar/winrar-x64-723es.exe",
+      "sha256": "F4DD23753353667AE8589BD4F4BB9C7B7A8BC6FFD59835D79D6A74D8E7B7437D",
+      "file": "winrar-x64.exe",
+      "args": ["/S"],
+      "signer": "win.rar GmbH",
+      "installed": "${ProgramFiles}\\WinRAR\\WinRAR.exe"
+    },
+    "protonvpn": {
+      "name": "Proton VPN",
+      "category": "privacy",
+      "url": "https://vpn.protondownload.com/download/ProtonVPN_v5.1.9_x64.exe",
+      "sha256": "8454eba06a37c0a636ec8dcfe6a7a823a68a78ee8fe2eeda2d651cd5cd6c3d70",
+      "file": "ProtonVPN_x64.exe",
+      "args": ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
+      "signer": "Proton AG",
+      "installed": "${ProgramFiles}\\Proton\\VPN"
     }
   }
 }

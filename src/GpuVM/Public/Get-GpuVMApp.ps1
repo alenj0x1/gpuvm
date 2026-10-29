@@ -6,7 +6,12 @@ function Get-GpuVMApp {
     [CmdletBinding()]
     param()
     $catalog = Get-AppCatalog
+    $categories = Get-AppCategory
     foreach ($id in $catalog.Keys) {
-        [ordered]@{ id = $id; name = $catalog[$id]['name']; signer = $catalog[$id]['signer'] }
+        $category = $catalog[$id]['category']
+        [ordered]@{
+            id = $id; name = $catalog[$id]['name']; signer = $catalog[$id]['signer']
+            category = $category; categoryName = $categories[$category]
+        }
     }
 }

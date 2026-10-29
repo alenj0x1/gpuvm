@@ -2,6 +2,7 @@
 # downloads each installer from its publisher and runs it only if Windows says it is signed by the expected company.
 
 function Get-AppCatalog { (Read-JsonFile (Get-RepoPath 'apps\catalog.json'))['apps'] }
+function Get-AppCategory { (Read-JsonFile (Get-RepoPath 'apps\catalog.json'))['categories'] }
 
 # Installs the apps that are missing, from inside the running guest. Returns one result per app.
 function Install-GuestApp {
@@ -14,6 +15,7 @@ function Install-GuestApp {
     foreach ($id in $App) {
         $entry = $catalog[$id]
         if (-not $entry) { throw "No existe la app '$id' en el catálogo." }
+        if (-not $entry['signer'] -and -not $entry['sha256']) { throw "La app '$id' no tiene firmante ni hash: no se puede verificar." }
         Write-Step "Instalando $($entry['name'])"
         $result = Invoke-Command -VMName $Name -Credential $Credential -ErrorAction Stop -ArgumentList (, $entry) -ScriptBlock {
             param($entry)
@@ -32,26 +34,55 @@ function Install-GuestApp {
                 Remove-Item -LiteralPath $file -Force
                 return @{ status = 'unsigned'; detail = 'el archivo no coincide con la versión verificada' }
             }
-            $signature = Get-AuthenticodeSignature -LiteralPath $file
-            $subject = if ($signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { '' }
-            # The organization (O=) must be exactly the publisher's legal name, not just start with it.
-            $signer = [regex]::Escape($entry['signer'])
-            if ($signature.Status -ne 'Valid' -or $subject -notmatch "(^|,\s*)O=`"?$signer`"?(,|$)") {
-                Remove-Item -LiteralPath $file -Force
-                return @{ status = 'unsigned'; detail = "$($signature.Status) $subject" }
+            # Without a signer (the publisher does not sign, as 7-Zip) the pinned hash above is the only check.
+            if ($entry['signer']) {
+                $signature = Get-AuthenticodeSignature -LiteralPath $file
+                $subject = if ($signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { '' }
+                # The organization (O=) must be exactly the publisher's legal name, not just start with it.
+                $signer = [regex]::Escape($entry['signer'])
+                if ($signature.Status -ne 'Valid' -or $subject -notmatch "(^|,\s*)O=`"?$signer`"?(,|$)") {
+                    Remove-Item -LiteralPath $file -Force
+                    return @{ status = 'unsigned'; detail = "$($signature.Status) $subject" }
+                }
             }
-            $process = if ($file.EndsWith('.msi')) {
-                Start-Process msiexec.exe -ArgumentList (@('/i', "`"$file`"") + $entry['args']) -PassThru
+            if ($entry['asUser']) {
+                # Installers that refuse administrator rights (Spotify) run as the signed-in user, unelevated,
+                # through a one-shot scheduled task in that user's session.
+                $user = (Get-CimInstance Win32_ComputerSystem).UserName
+                if (-not $user) { return @{ status = 'failed'; detail = 'no hay una sesión iniciada en la VM' } }
+                $task = "GpuVM-App-$([guid]::NewGuid().ToString('n'))"
+                $action = New-ScheduledTaskAction -Execute $file -Argument ($entry['args'] -join ' ')
+                $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
+                Register-ScheduledTask -TaskName $task -Action $action -Principal $principal -Force | Out-Null
+                try {
+                    Start-ScheduledTask -TaskName $task
+                    # 0x41301: running; 0x41303: has not run yet.
+                    $code = 0x41303
+                    for ($i = 0; $i -lt 300; $i++) {
+                        Start-Sleep -Seconds 2
+                        $code = (Get-ScheduledTaskInfo -TaskName $task).LastTaskResult
+                        if ($code -notin 0x41301, 0x41303) { break }
+                    }
+                }
+                finally { Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue }
+                $finished = $code -notin 0x41301, 0x41303
+                $exitCode = $code
             }
-            else { Start-Process -FilePath $file -ArgumentList $entry['args'] -PassThru }
-            # Only the installer itself is waited for (-Wait would also wait for what it leaves running, such as
-            # Discord or Chrome's updater, and never return), with a limit.
-            $finished = $process.WaitForExit(600000)
+            else {
+                $process = if ($file.EndsWith('.msi')) {
+                    Start-Process msiexec.exe -ArgumentList (@('/i', "`"$file`"") + $entry['args']) -PassThru
+                }
+                else { Start-Process -FilePath $file -ArgumentList $entry['args'] -PassThru }
+                # Only the installer itself is waited for (-Wait would also wait for what it leaves running, such as
+                # Discord or Chrome's updater, and never return), with a limit.
+                $finished = $process.WaitForExit(600000)
+                $exitCode = $process.ExitCode
+            }
             Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
             if (-not $finished) { return @{ status = 'failed'; detail = 'el instalador no terminó en 10 minutos' } }
             # Some installers (Discord, Chrome) hand off to a background process; give them a moment.
             for ($i = 0; $i -lt 60 -and -not (& $isInstalled); $i++) { Start-Sleep -Seconds 2 }
-            @{ status = if (& $isInstalled) { 'installed' } else { 'failed' }; detail = "código $($process.ExitCode)" }
+            @{ status = if (& $isInstalled) { 'installed' } else { 'failed' }; detail = "código $exitCode" }
         }
         # Only primitive values from the guest are used.
         $status = [string]$result['status']

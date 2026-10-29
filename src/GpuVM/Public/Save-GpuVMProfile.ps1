@@ -36,7 +36,10 @@ function Save-GpuVMProfile {
     if ($vm.Count) { $data['vm'] = $vm }
     if ($s.ContainsKey('gpuPercent')) { $data['gpu'] = [ordered]@{ allocationPercent = [int]$s['gpuPercent'] } }
     if ($client.Count) { $data['streaming'] = [ordered]@{ client = $client } }
-    if ($s.ContainsKey('apps')) { $data['guest'] = [ordered]@{ apps = @($s['apps'] | Where-Object { $_ } | ForEach-Object { [string]$_ }) } }
+    $guest = [ordered]@{}
+    if ($s.ContainsKey('apps')) { $guest['apps'] = @($s['apps'] | Where-Object { $_ } | ForEach-Object { [string]$_ }) }
+    if ($s['cleanup']) { $guest['cleanup'] = [string]$s['cleanup'] }
+    if ($guest.Count) { $data['guest'] = $guest }
     if ($s['iso']) { $data['iso'] = [IO.Path]::GetFullPath([string]$s['iso']) }
 
     # Validate the result as it will be used, against this computer's hardware.

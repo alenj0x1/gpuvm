@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  IconSparkles,
   IconCpu, IconDeviceDesktop, IconDots, IconExternalLink, IconKey, IconLoader2, IconPlayerPause, IconPlayerPlay,
   IconPower, IconRefresh, IconRefreshAlert, IconTrash, IconPlugOff, IconClock, IconTopologyStar3, IconPalette,
   IconBolt, IconDeviceFloppy, IconLink, IconDownload, IconCheck, IconChartLine, IconArrowsMaximize, IconAppWindow, IconApps, IconClipboardText, IconScreenShare, IconMaximize,
   IconWorld, IconNetwork,
 } from "@tabler/icons-react";
-import type { AppInfo, DisplayMode, HostInfo, Sample, VmOverview } from "./types";
-import { AppPicker, FPS, RESOLUTIONS } from "./pickers";
-import { Bauhaus, machineColor, patternVariant, setPatternVariant, tintVars } from "./bauhaus";
+import type { AppInfo, CleanupLevelId, DisplayMode, HostInfo, Sample, VmOverview } from "./types";
+import { AppPicker, CleanupPicker, FPS, RESOLUTIONS, useCleanupLevels } from "./pickers";
+import { Bauhaus, patternVariant, setPatternVariant } from "./bauhaus";
 import { MAX_SAMPLES, UsageChart } from "./Chart";
 import { CheckMark, Segmented, Slider, formatUptime, stateLabel } from "./ui";
 import { api, openConsole } from "./api";
@@ -33,12 +34,11 @@ const TRANSITION: Record<string, string> = { Starting: "Encendiendo", Stopping: 
 
 export function VmView({ vm, host, samples, busy, startJob, run, onRemoved }: Props) {
   const [variant, setVariant] = useState(() => patternVariant(vm.name));
-  const color = machineColor(vm.name, variant);
   const running = vm.state === "Running";
   const off = vm.state === "Off";
 
   return (
-    <div className="main" style={tintVars(color) as React.CSSProperties}>
+    <div className="main">
       <Header vm={vm} busy={busy} variant={variant} startJob={startJob} run={run} onRemoved={onRemoved}
         onPattern={() => {
           const v = variant + 1;
@@ -88,7 +88,31 @@ export function VmView({ vm, host, samples, busy, startJob, run, onRemoved }: Pr
       </div>
 
       {vm.managed && vm.options && <Options vm={vm} host={host} busy={busy} startJob={startJob} run={run} />}
+      {vm.managed && vm.guestCredential && vm.options && <Cleanup vm={vm} busy={busy} startJob={startJob} />}
       {vm.managed && vm.guestCredential && <Apps vm={vm} busy={busy} startJob={startJob} />}
+    </div>
+  );
+}
+
+function Cleanup({ vm, busy, startJob }: Pick<Props, "vm" | "busy" | "startJob">) {
+  const levels = useCleanupLevels();
+  const current = vm.options?.cleanup ?? "none";
+  const [chosen, setChosen] = useState<CleanupLevelId>(current);
+  useEffect(() => setChosen(current), [vm.name, current]);
+  if (!levels.length) return null;
+  const applying = busy?.cmd === "Set-GpuVMCleanup";
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h2 className="section-title">Windows</h2>
+        {(chosen !== current || applying) && (
+          <button className="btn" disabled={!!busy} onClick={() => startJob(vm.name, "Set-GpuVMCleanup", { Name: vm.name, Level: chosen })}>
+            {applying ? <IconLoader2 size={16} className="spin" /> : <IconSparkles size={16} />}
+            {applying ? busy!.message : vm.state === "Off" ? "Encender y aplicar" : "Aplicar"}
+          </button>
+        )}
+      </div>
+      <CleanupPicker levels={levels} value={chosen} onChange={setChosen} />
     </div>
   );
 }
@@ -383,7 +407,7 @@ function Options({ vm, host, busy, startJob, run }: Pick<Props, "vm" | "host" | 
             : <span className="hint">Sin espacio libre en el equipo para ampliarlo</span>}
         </div>
         {vm.streaming && (
-          <div className="field">
+          <div className="field wide">
             <div className="field-top"><span>Moonlight</span></div>
             <div className="segment-row">
               <Segmented value={draft.resolution} onChange={(resolution) => setDraft({ ...draft, resolution })}

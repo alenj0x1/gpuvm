@@ -48,6 +48,7 @@
     "edition": "Pro",
     "userName": "gpuvm",
     "autoLogon": true,
+    "cleanup": "none",
     "optimizations": [
       "power-plan-high",
       "disable-sleep",

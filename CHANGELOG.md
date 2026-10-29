@@ -6,6 +6,18 @@ All notable changes to GpuVM are documented here. The format follows [Keep a Cha
 
 Changes waiting for the next version sit under **Unreleased** at the top (this section only exists while there are some, and the docs site doesn't show it); `scripts/release.py` turns it into the new version.
 
+## [Unreleased]
+
+### Added
+- **Clean Windows.** Choose how clean Windows is when creating a VM, in a profile, or later in each VM's **Windows** card: *Privacidad* (diagnostic data at the minimum the edition allows, no advertising ID, activity history, suggestions, Spotlight, Bing in Start, Copilot or Recall), *Sin apps de más* (also removes preinstalled apps such as News, Weather, Solitaire, Clipchamp, personal Teams and the new Outlook, plus OneDrive and widgets) or *Mínimo* (also turns off the telemetry, error reporting and unneeded services). Each level includes the previous ones, and a lower level undoes the settings of the higher ones; removed apps come back from Microsoft Store. Microsoft Defender, Windows Update, SmartScreen, UAC, the firewall, the Store and Xbox are never touched (a test enforces it). On Pro, Windows doesn't allow diagnostic data below "Required".
+- Nine more apps in the catalog: Battle.net, EA app, GOG Galaxy, Ubisoft Connect, VLC, OBS Studio, Spotify, 7-Zip and WinRAR, each checked against its publisher's signature and, for pinned versions, its hash. 7-Zip isn't signed by its author, so it is pinned by hash only; Spotify refuses to install as administrator, so it installs as the VM's user.
+- The app picker has a search box and category tabs, keeps to four rows and shows each app's own icon in color.
+
+### Changed
+- Moonlight's resolution, FPS and window mode sit side by side in one row in **Options**.
+- Dialogs keep their header and buttons in place and scroll only their content, once (the app list no longer scrolls inside them). **Crear máquina** uses two columns, and its button, like **Guardar perfil**, stays disabled until the form is complete, with errors shown next to each field as you type.
+- Buttons, checkboxes, sliders and focus use one fixed blue accent instead of each machine's color, so an action never looks red like a warning; red is kept for deleting and errors. The machine's color stays in its pattern.
+
 ## [0.3.0] - 2026-10-28
 
 ### Changed

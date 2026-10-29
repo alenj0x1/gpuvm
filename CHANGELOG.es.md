@@ -6,6 +6,18 @@ Aquí se documentan los cambios importantes de GpuVM. El formato sigue [Keep a C
 
 Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (esa sección solo existe mientras haya alguno y el sitio de documentación no la muestra); `scripts/release.py` la convierte en la versión nueva.
 
+## [Sin publicar]
+
+### Añadido
+- **Windows limpio.** Elige qué tan limpio queda Windows al crear la VM, en un perfil o después en la tarjeta **Windows** de cada VM: *Privacidad* (datos de diagnóstico al mínimo que permite la edición, sin identificador de publicidad, historial de actividad, sugerencias, Spotlight, Bing en Inicio, Copilot ni Recall), *Sin apps de más* (además quita apps preinstaladas como Noticias, El tiempo, Solitario, Clipchamp, Teams personal y el Outlook nuevo, OneDrive y los widgets) o *Mínimo* (además apaga la telemetría, el informe de errores y servicios que no hacen falta). Cada nivel incluye los anteriores y uno más bajo deshace los ajustes de los más altos; las apps quitadas vuelven desde Microsoft Store. Nunca se tocan Microsoft Defender, Windows Update, SmartScreen, UAC, el firewall, la Store ni Xbox (una prueba lo garantiza). En Pro, Windows no permite bajar los datos de diagnóstico de «Requerido».
+- Nueve apps más en el catálogo: Battle.net, EA app, GOG Galaxy, Ubisoft Connect, VLC, OBS Studio, Spotify, 7-Zip y WinRAR, cada una verificada con la firma de su editor y, si la versión está fijada, con su hash. 7-Zip no lo firma su autor, así que se fija solo por hash; Spotify no se deja instalar como administrador, así que se instala como el usuario de la VM.
+- El selector de apps tiene buscador y pestañas por categoría, ocupa como mucho cuatro filas y muestra el ícono de cada app a color.
+
+### Cambiado
+- La resolución, los FPS y el modo de ventana de Moonlight van lado a lado en una sola fila en **Opciones**.
+- Las ventanas de diálogo dejan fijos su encabezado y sus botones y desplazan solo el contenido, con un único scroll (la lista de apps ya no se desplaza por dentro). **Crear máquina** usa dos columnas, y su botón, como **Guardar perfil**, queda deshabilitado hasta que el formulario esté completo, con los errores junto a cada campo mientras escribes.
+- Los botones, casillas, sliders y el foco usan un solo azul fijo en vez del color de cada máquina, para que una acción nunca se vea roja como una advertencia; el rojo queda para borrar y para errores. El color de la máquina sigue en su patrón.
+
 ## [0.3.0] - 2026-10-28
 
 ### Cambiado
