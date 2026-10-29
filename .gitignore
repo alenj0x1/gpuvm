@@ -20,3 +20,8 @@ isos.json
 tools/session/
 tools/latency/out/
 labs/*/out/
+
+# Website files built from the app and the changelogs (by .github/workflows/pages.yml)
+site/assets/embed.js
+site/data/changelog.json
+_site/

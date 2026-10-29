@@ -12,8 +12,9 @@ English | [Español](README.es.md)
 
 <p align="center">
   <a href="https://github.com/alenj0x1/gpuvm/releases"><img src="https://img.shields.io/github/v/release/alenj0x1/gpuvm?include_prereleases&label=version" alt="Version"></a>
-  <a href="https://alenj0x1.github.io/gpuvm/"><img src="https://img.shields.io/badge/docs-alenj0x1.github.io%2Fgpuvm-2f5bd3" alt="Documentation"></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-0.2.0-6b6e75" alt="Changelog"></a>
+  <a href="https://alenj0x1.github.io/gpuvm/"><img src="https://img.shields.io/badge/website-alenj0x1.github.io%2Fgpuvm-2f5bd3" alt="Website"></a>
+  <a href="https://alenj0x1.github.io/gpuvm/docs/"><img src="https://img.shields.io/badge/docs-English%20%7C%20Espa%C3%B1ol-2f5bd3" alt="Documentation"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-latest-6b6e75" alt="Changelog"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2f9e6a" alt="MIT license"></a>
 </p>
 
@@ -69,7 +70,7 @@ The interface is in Spanish for now.
 
 ## Documentation
 
-Full guide, CLI reference, architecture and troubleshooting: **[alenj0x1.github.io/gpuvm](https://alenj0x1.github.io/gpuvm/)** (English and Spanish).
+Full guide, CLI reference, architecture and troubleshooting: **[alenj0x1.github.io/gpuvm/docs](https://alenj0x1.github.io/gpuvm/docs/)** (English and Spanish).
 
 ## How it works
 
@@ -90,7 +91,9 @@ npm --prefix app run dev          # UI with sample data in the browser (?mock=em
 npm --prefix app run tauri build  # installer in app/src-tauri/target/release/bundle/nsis/
 Invoke-Pester ./tests             # module tests, no administrator needed
 npm --prefix docs run dev         # documentation site
-python scripts/release.py 0.4.0   # release: changelog, versions, commit and tag (--dry-run, --next)
+node scripts/site/changelog.mjs   # website (site/): what's new, from the changelogs
+npm --prefix app run build:embed  # website: the app's live components (site/assets/embed.js)
+python scripts/release.py 0.4.1   # release: changelog, versions, commit and tag (--dry-run, --next)
 ```
 
 Changes go under **Unreleased** in `CHANGELOG.md` and **Sin publicar** in `CHANGELOG.es.md` until they are released.

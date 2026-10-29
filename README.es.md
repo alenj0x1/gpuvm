@@ -12,8 +12,9 @@
 
 <p align="center">
   <a href="https://github.com/alenj0x1/gpuvm/releases"><img src="https://img.shields.io/github/v/release/alenj0x1/gpuvm?include_prereleases&label=versi%C3%B3n" alt="Versión"></a>
-  <a href="https://alenj0x1.github.io/gpuvm/es/"><img src="https://img.shields.io/badge/docs-alenj0x1.github.io%2Fgpuvm-2f5bd3" alt="Documentación"></a>
-  <a href="CHANGELOG.es.md"><img src="https://img.shields.io/badge/cambios-0.2.0-6b6e75" alt="Registro de cambios"></a>
+  <a href="https://alenj0x1.github.io/gpuvm/"><img src="https://img.shields.io/badge/sitio-alenj0x1.github.io%2Fgpuvm-2f5bd3" alt="Sitio web"></a>
+  <a href="https://alenj0x1.github.io/gpuvm/docs/es/"><img src="https://img.shields.io/badge/docs-Espa%C3%B1ol%20%7C%20English-2f5bd3" alt="Documentación"></a>
+  <a href="CHANGELOG.es.md"><img src="https://img.shields.io/badge/cambios-%C3%BAltima%20versi%C3%B3n-6b6e75" alt="Registro de cambios"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/licencia-MIT-2f9e6a" alt="Licencia MIT"></a>
 </p>
 
@@ -67,7 +68,7 @@ Descarga `GpuVM_x.y.z_x64-setup.exe` desde [Releases](https://github.com/alenj0x
 
 ## Documentación
 
-Guía completa, referencia de la CLI, arquitectura y solución de problemas: **[alenj0x1.github.io/gpuvm/es](https://alenj0x1.github.io/gpuvm/es/)** (español e inglés).
+Guía completa, referencia de la CLI, arquitectura y solución de problemas: **[alenj0x1.github.io/gpuvm/docs/es](https://alenj0x1.github.io/gpuvm/docs/es/)** (español e inglés).
 
 ## Cómo funciona
 
@@ -87,8 +88,10 @@ npm --prefix app install
 npm --prefix app run dev          # interfaz con datos de ejemplo en el navegador (?mock=empty, ?mock=noadmin)
 npm --prefix app run tauri build  # instalador en app/src-tauri/target/release/bundle/nsis/
 Invoke-Pester ./tests             # pruebas del módulo, sin administrador
+node scripts/site/changelog.mjs   # sitio web (site/): lo nuevo, desde los changelogs
+npm --prefix app run build:embed  # sitio web: los componentes en vivo de la app (site/assets/embed.js)
 npm --prefix docs run dev         # sitio de documentación
-python scripts/release.py 0.4.0   # versión nueva: changelog, versiones, commit y etiqueta (--dry-run, --next)
+python scripts/release.py 0.4.1   # versión nueva: changelog, versiones, commit y etiqueta (--dry-run, --next)
 ```
 
 Los cambios van en **Unreleased** de `CHANGELOG.md` y **Sin publicar** de `CHANGELOG.es.md` hasta que se publican.

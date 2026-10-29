@@ -13,11 +13,11 @@ The usual causes, in order:
 
 To look at the VM's screen without the GPU, open the Hyper-V console (**Ver consola de Hyper-V**, or `vmconnect.exe localhost <vm>`). While the virtual display works, the Hyper-V display is turned off; Remote Desktop still works as a fallback.
 
-Known open issue ([lab 002](/gpuvm/labs/#what-the-labs-found-so-far)): Sunshine can report "Display device configuration API is temporarily unavailable" and not change the resolution.
+Known open issue ([lab 002](/gpuvm/docs/labs/#what-the-labs-found-so-far)): Sunshine can report "Display device configuration API is temporarily unavailable" and not change the resolution.
 
 ## A fullscreen program shows a black screen
 
-The desktop streams fine, but a game or program in **exclusive fullscreen** shows black (it may appear when it loses focus). The standard capture can't see exclusive fullscreen on a virtual display ([lab 009](/gpuvm/labs/#what-the-labs-found-so-far)). In **Options → Captura** (Capture) choose **Pantalla completa exclusiva** (Exclusive fullscreen) and save. In that mode Windows' administrator prompts aren't shown in the stream; switch back to **Estándar** (Standard) when you need them. See [Capture modes](/gpuvm/streaming/#capture-modes).
+The desktop streams fine, but a game or program in **exclusive fullscreen** shows black (it may appear when it loses focus). The standard capture can't see exclusive fullscreen on a virtual display ([lab 009](/gpuvm/docs/labs/#what-the-labs-found-so-far)). In **Options → Captura** (Capture) choose **Pantalla completa exclusiva** (Exclusive fullscreen) and save. In that mode Windows' administrator prompts aren't shown in the stream; switch back to **Estándar** (Standard) when you need them. See [Capture modes](/gpuvm/docs/streaming/#capture-modes).
 
 ## Windows open where I can't see them
 
@@ -41,11 +41,11 @@ The first boot installs Windows and the streaming components, then restarts once
 
 ## No audio
 
-The VM's sound comes from GpuVM's USB speaker, **Speakers (GpuVM Audio)** ([Streaming](/gpuvm/streaming/#audio)). **Encender y abrir** (Start and open) installs it, plugs it in again and points Sunshine at it (`virtual_sink`) whenever it's missing, as long as the VM's Windows password is saved in GpuVM. Inside the VM, the server's status is in `C:\ProgramData\GpuVM\Audio\status.json`. Without the password, opening the VM shows a warning. If the profile has `"audio": "none"`, no audio device is installed.
+The VM's sound comes from GpuVM's USB speaker, **Speakers (GpuVM Audio)** ([Streaming](/gpuvm/docs/streaming/#audio)). **Encender y abrir** (Start and open) installs it, plugs it in again and points Sunshine at it (`virtual_sink`) whenever it's missing, as long as the VM's Windows password is saved in GpuVM. Inside the VM, the server's status is in `C:\ProgramData\GpuVM\Audio\status.json`. Without the password, opening the VM shows a warning. If the profile has `"audio": "none"`, no audio device is installed.
 
 ## Pairing fails
 
-Use **Volver a emparejar Moonlight** in the menu, or `./gpuvm.ps1 connect -Name <vm> -Pair`. If Moonlight isn't installed, install it ([Install](/gpuvm/install/#install-moonlight)).
+Use **Volver a emparejar Moonlight** in the menu, or `./gpuvm.ps1 connect -Name <vm> -Pair`. If Moonlight isn't installed, install it ([Install](/gpuvm/docs/install/#install-moonlight)).
 
 ## The VM doesn't start: not enough memory
 
@@ -53,9 +53,9 @@ Hyper-V's fixed memory must be free when the VM starts. Close programs, or lower
 
 ## Known limits of GPU-P
 
-- **Display:** the Hyper-V console doesn't show the GPU; streaming is the way to see it. The streaming path is still being validated on a real VM ([lab 002](/gpuvm/labs/)).
-- **Audio:** the VM has no sound card; GpuVM's own USB speaker gives it one, verified on a real VM through Moonlight ([lab 012](/gpuvm/labs/)).
+- **Display:** the Hyper-V console doesn't show the GPU; streaming is the way to see it. The streaming path is still being validated on a real VM ([lab 002](/gpuvm/docs/labs/)).
+- **Audio:** the VM has no sound card; GpuVM's own USB speaker gives it one, verified on a real VM through Moonlight ([lab 012](/gpuvm/docs/labs/)).
 - **Driver:** the guest has to use the same version as the host (see above).
-- **GPU selection on Windows 10:** you can't choose which GPU the VM gets. If the integrated GPU is also partitionable, the VM may get the wrong one. `check` warns about it; disable the integrated GPU in Device Manager before starting the VM ([lab 001](/gpuvm/labs/)).
+- **GPU selection on Windows 10:** you can't choose which GPU the VM gets. If the integrated GPU is also partitionable, the VM may get the wrong one. `check` warns about it; disable the integrated GPU in Device Manager before starting the VM ([lab 001](/gpuvm/docs/labs/)).
 - **No checkpoints or saved state:** the VM shuts down instead.
 - **Anti-cheat:** some anti-cheat systems block virtual machines.

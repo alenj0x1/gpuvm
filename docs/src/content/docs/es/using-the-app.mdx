@@ -28,7 +28,7 @@ Si la app no está corriendo como administrador, muestra **GpuVM necesita permis
 La app abre en **Inicio**, lo primero de la barra lateral:
 
 - **La última máquina que abriste**, con **Abrir** o **Encender y abrir**.
-- **Memoria:** cuánta tiene libre el equipo, qué la usa más y cada máquina con **Encendida**, **Puede encender** o cuánta memoria le falta. Una máquina que no cabe ofrece **Abrir con N GB**: baja su memoria a lo que cabe (queda guardado, como al cambiarla en Opciones) y la abre. La página de la máquina muestra lo mismo.
+- **Memoria:** cuánta tiene libre el equipo, qué la usa más y cada máquina con **Encendida**, **Puede encender** o cuánta memoria le falta. Una máquina que no cabe ofrece abrirla con la memoria que sí cabe, por ejemplo **Abrir con 6 GB**: baja su memoria a lo que cabe (queda guardado, como al cambiarla en Opciones) y la abre. La página de la máquina muestra lo mismo.
 - **Lo que necesita atención**, solo cuando hay algo: un driver de la GPU desactualizado, Moonlight sin emparejar, apps por instalar, la contraseña de Windows sin guardar o poco espacio en el disco, cada cosa con el botón que la arregla.
 
 ## Crear una VM
@@ -45,7 +45,7 @@ Si todavía no hay VMs, la app te invita a crear la primera.
    - **Nombre:** letras, números, `_` o guiones, hasta 40 caracteres, sin espacios. Sugiere `win-gpu`.
    - **Instalar Windows** / **Desde plantilla**, si tienes [plantillas](#plantillas): desde una plantilla la VM queda lista en segundos y solo pide el nombre y el perfil; Windows, sus apps, el nivel de limpieza y la contraseña vienen de la plantilla.
    - **Imagen de Windows:** primero los ISOs que ya usaste o agregaste, después los que encuentra en tus carpetas Descargas y Escritorio, o **Buscar otro ISO** para elegir uno.
-   - **Perfil:** **Equilibrado** (`balanced`), **Máximo rendimiento** (`max-performance`, el predeterminado) o uno tuyo de la [Biblioteca](#biblioteca). El perfil llena lo demás, incluidos su ISO y sus apps. Consulta [Perfiles](/gpuvm/es/profiles/).
+   - **Perfil:** **Equilibrado** (`balanced`), **Máximo rendimiento** (`max-performance`, el predeterminado) o uno tuyo de la [Biblioteca](#biblioteca). El perfil llena lo demás, incluidos su ISO y sus apps. Consulta [Perfiles](/gpuvm/docs/es/profiles/).
    - **Windows:** qué tan limpio queda Windows. Consulta [Windows](#windows).
    - **Apps que se instalan:** se instalan la primera vez que se abre la VM. Consulta [Apps](#apps).
    - **Contraseña de Windows** del usuario local `gpuvm`, de al menos 6 caracteres, escrita dos veces.
@@ -128,7 +128,7 @@ Para las VMs creadas con GpuVM:
 - **Moonlight:** resolución (720p, 1080p, 1440p, 2160p), FPS (30, 60, 120, 144) y **Pantalla completa** o **Ventana** (del tamaño de la resolución elegida).
 - **Captura:** cómo captura Sunshine la pantalla.
   - **Estándar** (la predeterminada): muestra todo, incluidos los avisos de administrador de Windows, pero los programas en pantalla completa exclusiva se ven en negro.
-  - **Pantalla completa exclusiva:** además muestra programas en pantalla completa exclusiva a cualquier resolución, pero los avisos de administrador de Windows **no** se ven en el stream. Consulta [Streaming](/gpuvm/es/streaming/#modos-de-captura).
+  - **Pantalla completa exclusiva:** además muestra programas en pantalla completa exclusiva a cualquier resolución, pero los avisos de administrador de Windows **no** se ven en el stream. Consulta [Streaming](/gpuvm/docs/es/streaming/#modos-de-captura).
 - **Red:**
   - **Solo internet** (la predeterminada): la VM no llega a este equipo ni a tu red local, salvo a lo que necesita el stream. Las reglas viven en el puerto del switch virtual de la VM, fuera de ella, así que una VM infectada no puede quitarlas.
   - **Internet y red local:** la VM llega a este equipo y al resto de tu red. Úsala solo si la necesitas, por ejemplo para un NAS.

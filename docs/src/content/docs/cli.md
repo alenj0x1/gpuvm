@@ -89,7 +89,7 @@ No parameters. Does nothing if Moonlight is already installed.
 
 ### components-update
 
-`-Name` (one or more components: `sunshine`, `vdd`, `nefcon`, `usbip`; all by default, except those on hold). Supports `-WhatIf`. See [Streaming](/gpuvm/streaming/#updating-components).
+`-Name` (one or more components: `sunshine`, `vdd`, `nefcon`, `usbip`; all by default, except those on hold). Supports `-WhatIf`. See [Streaming](/gpuvm/docs/streaming/#updating-components).
 
 ### remove
 

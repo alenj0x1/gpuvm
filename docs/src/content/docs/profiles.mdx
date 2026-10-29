@@ -46,7 +46,7 @@ Because `guest.optimizations` is a list, it replaces the parent's list instead o
 
 | Field | Default (`base`) | Meaning |
 |---|---|---|
-| `backend` | `hyperv-gpup` | How the GPU is given to the VM. See [Architecture](/gpuvm/architecture/#backends). |
+| `backend` | `hyperv-gpup` | How the GPU is given to the VM. See [Architecture](/gpuvm/docs/architecture/#backends). |
 | `vm.root` | `C:\GpuVM` | Folder for the VMs. |
 | `vm.cpu.count` | 6 | Threads. At least 2, and at least one left for the host. |
 | `vm.cpu.reservePercent` | 0 | CPU reserve, 0–100. |
@@ -55,12 +55,12 @@ Because `guest.optimizations` is a list, it replaces the parent's list instead o
 | `vm.memoryGB` | 8 | Fixed memory. At least 4, leaving at least 4 GB to the host. |
 | `vm.disk.sizeGB` / `vm.disk.type` | 128 / `Dynamic` | At least 64 GB; `Dynamic` or `Fixed`. |
 | `vm.network.switch` | `Default Switch` | Hyper-V switch. |
-| `vm.network.isolation` | `true` | Internet only: the VM reaches neither the host nor the local network ([lab 010](/gpuvm/labs/)). Not applied on an external switch. |
+| `vm.network.isolation` | `true` | Internet only: the VM reaches neither the host nor the local network ([lab 010](/gpuvm/docs/labs/)). Not applied on an external switch. |
 | `vm.secureBoot`, `vm.tpm` | `true` | Secure Boot and TPM. |
 | `vm.mmio.lowGB` / `vm.mmio.highGB` | 1 / 32 | Memory-mapped I/O space for the GPU. |
 | `gpu.match` | `NVIDIA` | Text that the host GPU name must contain. |
 | `gpu.allocationPercent` | 100 | GPU share for the VM, 1–100. |
-| `streaming` | Sunshine, virtual display, USB speaker | See [Streaming](/gpuvm/streaming/#profile-settings). |
+| `streaming` | Sunshine, virtual display, USB speaker | See [Streaming](/gpuvm/docs/streaming/#profile-settings). |
 | `guest.edition` | `Pro` | Windows edition applied from the ISO. |
 | `guest.userName` | `gpuvm` | Local account. |
 | `guest.autoLogon` | `true` | Automatic sign-in. |
@@ -110,4 +110,4 @@ Add a JSON file to `profiles/` that extends an existing one, and choose it by na
 ./gpuvm.ps1 check -Profile my-profile   # validate it against this PC
 ```
 
-Test a change in a [lab](/gpuvm/labs/) before making it part of a profile.
+Test a change in a [lab](/gpuvm/docs/labs/) before making it part of a profile.

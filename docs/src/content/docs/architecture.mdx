@@ -17,12 +17,12 @@ import { architecture } from '../../diagrams';
 | `app/` | Desktop app: React UI in `app/src`, Tauri/Rust in `app/src-tauri`. |
 | `src/GpuVM/` | The PowerShell 7 module: `Private/` (helpers), `Backends/` (one file per backend), `Public/` (one file per exported cmdlet). |
 | `src/bridge.ps1` | Bridge between the app and the module. |
-| `gpuvm.ps1` | CLI. See [CLI reference](/gpuvm/cli/). |
-| `profiles/` | JSON [profiles](/gpuvm/profiles/). |
+| `gpuvm.ps1` | CLI. See [CLI reference](/gpuvm/docs/cli/). |
+| `profiles/` | JSON [profiles](/gpuvm/docs/profiles/). |
 | `guest/` | Scripts that run inside the VM: first-boot setup, optimizations, streaming, audio, display resolution and `collect-info.ps1` for labs. |
 | `templates/` | `unattend.xml` template. |
 | `streaming/components.json` | Versions, URLs and SHA-256 of the streaming components. |
-| `labs/` | [Labs](/gpuvm/labs/). |
+| `labs/` | [Labs](/gpuvm/docs/labs/). |
 | `tests/` | Pester tests. |
 
 ## The module

@@ -1,0 +1,62 @@
+name: Pages
+
+# The website (site/) at the root of GitHub Pages and the documentation (docs/) under /docs, deployed together.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'docs/**'
+      - 'app/src/**'
+      - 'app/vite.embed.config.ts'
+      - 'scripts/site/**'
+      - 'CHANGELOG.md'
+      - 'CHANGELOG.es.md'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a newer push doesn't cancel one already deploying.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            docs/package-lock.json
+            app/package-lock.json
+      # Docs: prebuild copies CHANGELOG.md and CHANGELOG.es.md from the repo root into them.
+      - run: npm ci && npm run build
+        working-directory: docs
+      # The app's real components the website shows, on sample data (site/assets/embed.js).
+      - run: npm ci && npm run build:embed
+        working-directory: app
+      # What's new on the website, read from the changelogs.
+      - run: node --test scripts/site/changelog.test.mjs && node scripts/site/changelog.mjs
+      - run: mkdir _site && cp -r site/. _site/ && cp -r docs/dist _site/docs
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

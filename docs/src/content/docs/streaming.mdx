@@ -25,7 +25,7 @@ nefcon is pinned to v1.14.0, the version the official VDD install script uses, e
 
 Sunshine runs inside the VM. Its username and password are generated when the VM is created; on the host they are stored encrypted with DPAPI. The password travels in plain text to the guest only for the install and is deleted afterwards.
 
-Each time you **start and open** a VM, GpuVM reads Sunshine's display list through its API, sets `output_name` to the virtual display and restarts Sunshine if that changed, so it never captures the Hyper-V display by mistake. When GpuVM has already turned the Hyper-V display off, it also sets `dd_configuration_option` to `disabled`: if Sunshine changes the display on every session, it re-tests all its encoders and the first frame takes 22 to 27 s instead of about 2 s ([lab 008](/gpuvm/labs/#what-the-labs-found-so-far)). Changing the resolution or FPS still costs 10 to 15 s, because Sunshine sees the display change. Otherwise it uses `ensure_only_display`.
+Each time you **start and open** a VM, GpuVM reads Sunshine's display list through its API, sets `output_name` to the virtual display and restarts Sunshine if that changed, so it never captures the Hyper-V display by mistake. When GpuVM has already turned the Hyper-V display off, it also sets `dd_configuration_option` to `disabled`: if Sunshine changes the display on every session, it re-tests all its encoders and the first frame takes 22 to 27 s instead of about 2 s ([lab 008](/gpuvm/docs/labs/#what-the-labs-found-so-far)). Changing the resolution or FPS still costs 10 to 15 s, because Sunshine sees the display change. Otherwise it uses `ensure_only_display`.
 
 ## Capture modes
 
@@ -36,7 +36,7 @@ Sunshine can capture the virtual display in two ways, chosen per VM in **Options
 | `ddx` (desktop duplication) | **Estándar** (Standard, the default) | As a Windows service (SYSTEM). | Everything, including Windows' administrator prompts. | Programs in exclusive fullscreen: black. |
 | `wgc` (Windows.Graphics.Capture) | **Pantalla completa exclusiva** (Exclusive fullscreen) | In the signed-in user's session, started by a logon task (`conhost --headless`, so no console window); the service is set to manual. | Programs in exclusive fullscreen, at any resolution. | Administrator prompts (they are drawn on the secure desktop). |
 
-With `ddx`, desktop duplication gets no new frames from the virtual display while a program is in exclusive fullscreen, so the stream stays black; it only shows the program when it loses focus ([lab 009](/gpuvm/labs/#what-the-labs-found-so-far)). The mode is applied right away if the VM is running and checked on every **Encender y abrir** (Start and open); when it's already set, Sunshine isn't restarted. Applying it needs the guest password.
+With `ddx`, desktop duplication gets no new frames from the virtual display while a program is in exclusive fullscreen, so the stream stays black; it only shows the program when it loses focus ([lab 009](/gpuvm/docs/labs/#what-the-labs-found-so-far)). The mode is applied right away if the VM is running and checked on every **Encender y abrir** (Start and open); when it's already set, Sunshine isn't restarted. Applying it needs the guest password.
 
 ## Virtual display
 
@@ -71,11 +71,11 @@ Hyper-V Generation 2 VMs have no sound card. GpuVM gives the VM **its own USB sp
 - Nothing leaves the VM: the server listens on `127.0.0.1` only, runs as `LOCAL SERVICE` and its program lives in `C:\Program Files\GpuVM\Audio`, where only administrators can write.
 - usbip-win2 installs only its client, silently. Its drivers are signed by Microsoft: no test mode, no certificate of its own. GpuVM checks both and uninstalls it if either fails.
 - The speaker is persistent: usbip-win2 plugs it in again every time Windows starts, so no restart or sign-in is needed. **Encender y abrir** (Start and open) checks it every time, plugs it in again if it was lost and updates the server when GpuVM brings a new one.
-- VMs created with VB-CABLE move to the speaker the next time they are opened. VB-CABLE's output is silent to Sunshine inside a VM, so the earlier sound came from Steam Streaming Speakers ([labs 011 and 012](/gpuvm/labs/)).
+- VMs created with VB-CABLE move to the speaker the next time they are opened. VB-CABLE's output is silent to Sunshine inside a VM, so the earlier sound came from Steam Streaming Speakers ([labs 011 and 012](/gpuvm/docs/labs/)).
 
 ## Profile settings
 
-The `streaming` section of the [profile](/gpuvm/profiles/) sets the defaults:
+The `streaming` section of the [profile](/gpuvm/docs/profiles/) sets the defaults:
 
 ```jsonc
 "streaming": {
@@ -98,4 +98,4 @@ Moonlight is started as the signed-in user, without administrator rights, even t
 ./gpuvm.ps1 components-update -WhatIf   # see whether newer versions exist
 ```
 
-It looks up the latest GitHub release of each component and updates version, URL and SHA-256 in `streaming/components.json`. usbip-win2 stays on 0.9.8.0 (`hold` in the file) until a lab proves a newer one. A new version isn't tested: validate it in a [lab](/gpuvm/labs/) before creating VMs with it. The app can't run this command.
+It looks up the latest GitHub release of each component and updates version, URL and SHA-256 in `streaming/components.json`. usbip-win2 stays on 0.9.8.0 (`hold` in the file) until a lab proves a newer one. A new version isn't tested: validate it in a [lab](/gpuvm/docs/labs/) before creating VMs with it. The app can't run this command.

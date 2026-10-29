@@ -30,7 +30,7 @@ If the app isn't running as administrator, it shows **GpuVM necesita permisos de
 The app opens on **Inicio** (Home), the first item in the sidebar:
 
 - **The last machine you opened**, with **Abrir** (Open) or **Encender y abrir** (Start and open).
-- **Memoria** (Memory): how much the PC has free, what is using the most, and each machine with **Encendida** (On), **Puede encender** (Can start) or how much memory it is missing. A machine that doesn't fit offers **Abrir con N GB** (Open with N GB): it lowers its memory to what fits (saved, like changing it in Options) and opens it. The machine's own page shows the same.
+- **Memoria** (Memory): how much the PC has free, what is using the most, and each machine with **Encendida** (On), **Puede encender** (Can start) or how much memory it is missing. A machine that doesn't fit offers to open with the memory that does fit, for example **Abrir con 6 GB** (Open with 6 GB): it lowers its memory to what fits (saved, like changing it in Options) and opens it. The machine's own page shows the same.
 - **What needs attention**, only when there is something: a GPU driver out of date, Moonlight not paired, apps waiting to be installed, the Windows password missing or little disk space left, each with the button that fixes it.
 
 ## Create a VM
@@ -47,7 +47,7 @@ With no VMs yet, the app invites you to create the first one.
    - **Nombre** (Name): letters, numbers, `_` or hyphens, up to 40 characters, no spaces. It suggests `win-gpu`.
    - **Instalar Windows** / **Desde plantilla** (Install Windows / From a template), when you have [templates](#templates): from a template the VM is ready in seconds and only asks for the name and profile; Windows, its apps, cleanup level and password come from the template.
    - **Imagen de Windows** (Windows image): the ISOs you already used or added first, then the ones found in your Downloads and Desktop folders, or **Buscar otro ISO** to browse for one.
-   - **Perfil** (Profile): **Equilibrado** (`balanced`), **Máximo rendimiento** (`max-performance`, the default) or one of your own from the [Library](#library). The profile fills in the rest, including its ISO and apps. See [Profiles](/gpuvm/profiles/).
+   - **Perfil** (Profile): **Equilibrado** (`balanced`), **Máximo rendimiento** (`max-performance`, the default) or one of your own from the [Library](#library). The profile fills in the rest, including its ISO and apps. See [Profiles](/gpuvm/docs/profiles/).
    - **Windows**: how clean Windows is. See [Windows](#windows).
    - **Apps que se instalan** (Apps to install): installed the first time the VM opens. See [Apps](#apps).
    - **Contraseña de Windows** (Windows password) for the local user `gpuvm`, at least 6 characters, typed twice.
@@ -130,7 +130,7 @@ For VMs created with GpuVM:
 - **Moonlight:** resolution (720p, 1080p, 1440p, 2160p), FPS (30, 60, 120, 144) and **Pantalla completa** (Fullscreen) or **Ventana** (Window, the size of the chosen resolution).
 - **Captura** (Capture): how Sunshine captures the screen.
   - **Estándar** (Standard, the default): shows everything, including Windows' administrator prompts, but programs in exclusive fullscreen look black.
-  - **Pantalla completa exclusiva** (Exclusive fullscreen): also shows programs in exclusive fullscreen at any resolution, but Windows' administrator prompts are **not** shown in the stream. See [Streaming](/gpuvm/streaming/#capture-modes).
+  - **Pantalla completa exclusiva** (Exclusive fullscreen): also shows programs in exclusive fullscreen at any resolution, but Windows' administrator prompts are **not** shown in the stream. See [Streaming](/gpuvm/docs/streaming/#capture-modes).
 - **Red** (Network):
   - **Solo internet** (Internet only, the default): the VM reaches neither this PC nor your local network, except for what the stream needs. The rules live on the VM's virtual switch port, outside the VM, so an infected VM can't remove them.
   - **Internet y red local** (Internet and local network): the VM reaches this PC and the rest of your network. Use it only when you need it, for example for a NAS.

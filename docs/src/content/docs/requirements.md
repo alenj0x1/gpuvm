@@ -9,11 +9,11 @@ GpuVM checks this for you before creating a VM: `./gpuvm.ps1 check -Profile <pro
 
 - **Windows 10 or 11** Pro, Enterprise, Education or Pro for Workstations.
 - **Hardware virtualization** turned on in the BIOS/UEFI (Intel VT-x or AMD-V).
-- **Hyper-V** enabled. See [Install](/gpuvm/install/#enable-hyper-v).
-- **A GPU that supports GPU partitioning** with its current driver. The bundled profiles pick the GPU whose name matches `NVIDIA` (`gpu.match` in the [profile](/gpuvm/profiles/)), and Sunshine encodes with NVENC.
+- **Hyper-V** enabled. See [Install](/gpuvm/docs/install/#enable-hyper-v).
+- **A GPU that supports GPU partitioning** with its current driver. The bundled profiles pick the GPU whose name matches `NVIDIA` (`gpu.match` in the [profile](/gpuvm/docs/profiles/)), and Sunshine encodes with NVENC.
 - **PowerShell 7** ([aka.ms/powershell](https://aka.ms/powershell)). The app looks for it in `Program Files\PowerShell\7` (MSI install) or in the Microsoft Store package folder.
 - **Administrator rights.** Hyper-V only lets administrators create and control VMs. The installed app asks for elevation when it opens; the CLI needs PowerShell 7 as administrator to create and modify VMs.
-- **Moonlight** on the host to see the VM. See [Install](/gpuvm/install/#install-moonlight).
+- **Moonlight** on the host to see the VM. See [Install](/gpuvm/docs/install/#install-moonlight).
 
 ## Resources for the VM
 

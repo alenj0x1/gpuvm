@@ -5,7 +5,7 @@ import starlightLinksValidator from 'starlight-links-validator';
 
 export default defineConfig({
   site: 'https://alenj0x1.github.io',
-  base: '/gpuvm',
+  base: '/gpuvm/docs',
   integrations: [
     starlight({
       title: 'GpuVM',

@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="es" data-lang="es" data-title-es="GpuVM · Tu GPU, dentro de una máquina virtual" data-title-en="GpuVM · Your GPU, inside a virtual machine">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GpuVM · Tu GPU, dentro de una máquina virtual</title>
+<meta name="description" content="GpuVM crea máquinas virtuales de Windows 10 y 11 que usan tu GPU NVIDIA de verdad, aisladas de tu equipo, y las abre en Moonlight con un clic.">
+<meta property="og:title" content="GpuVM · Tu GPU, dentro de una máquina virtual">
+<meta property="og:description" content="Windows 10 u 11 con tu NVIDIA de verdad, aislado de tu equipo y abierto en Moonlight con un clic.">
+<meta property="og:image" content="https://alenj0x1.github.io/gpuvm/images/home.webp">
+<meta property="og:type" content="website">
+<link rel="icon" type="image/png" href="images/icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script>
+  // Mode and language before the first paint: the stored choice wins, then the system / Spanish.
+  (function () {
+    var d = document.documentElement, mode, lang;
+    try { mode = localStorage.getItem("gpuvm-site:mode"); lang = localStorage.getItem("gpuvm-site:lang"); } catch (e) {}
+    if (mode !== "light" && mode !== "dark") mode = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    if (lang !== "es" && lang !== "en") lang = "es";
+    d.dataset.mode = mode; d.dataset.lang = lang; d.lang = lang;
+  })();
+</script>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+
+<header class="nav" id="nav">
+  <div class="nav-inner">
+    <a class="brand" href="#top"><img src="images/icon.png" alt="" width="28" height="28">GpuVM</a>
+    <nav class="nav-links">
+      <a href="#funciones"><span data-l="es">Funciones</span><span data-l="en">Features</span></a>
+      <a href="#seguridad"><span data-l="es">Seguridad</span><span data-l="en">Security</span></a>
+      <a href="#instalar"><span data-l="es">Instalar</span><span data-l="en">Install</span></a>
+      <a href="docs/" data-docs><span data-l="es">Documentación</span><span data-l="en">Docs</span></a>
+    </nav>
+    <div class="nav-tools">
+      <div class="seg" role="group" aria-label="Idioma / Language">
+        <button type="button" data-set-lang="es">ES</button><button type="button" data-set-lang="en">EN</button>
+      </div>
+      <button type="button" class="icon-btn" data-toggle-mode aria-label="Cambiar modo / Toggle mode"><i data-ic="mode"></i></button>
+      <a class="icon-btn" href="https://github.com/alenj0x1/gpuvm" aria-label="GitHub"><i data-ic="github"></i></a>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="formation" aria-hidden="true">
+      <span class="fig" data-fig="sailboat" data-c="green" data-pos="-3"></span>
+      <span class="fig" data-fig="fox" data-c="red" data-pos="-2"></span>
+      <span class="fig" data-fig="owl" data-c="blue" data-pos="-1"></span>
+      <span class="fig lead" data-fig="planet" data-c="yellow" data-pos="0"></span>
+      <span class="fig" data-fig="rocket" data-c="green" data-pos="1"></span>
+      <span class="fig" data-fig="penguin" data-c="red" data-pos="2"></span>
+      <span class="fig" data-fig="moon" data-c="blue" data-pos="3"></span>
+    </div>
+    <h1 class="hero-title">
+      <span data-l="es"><span class="line">Tu GPU, dentro de</span> <span class="line accent">una máquina virtual</span></span>
+      <span data-l="en"><span class="line">Your GPU, inside</span> <span class="line accent">a virtual machine</span></span>
+    </h1>
+    <p class="hero-sub">
+      <span data-l="es">Windows 10 u 11 con tu NVIDIA de verdad, aislado de tu equipo y abierto en Moonlight con un clic.</span>
+      <span data-l="en">Windows 10 or 11 with your real NVIDIA, isolated from your PC and opened in Moonlight in one click.</span>
+    </p>
+    <div class="hero-actions">
+      <a class="btn primary" data-download href="https://github.com/alenj0x1/gpuvm/releases/latest"><i data-ic="download"></i><span data-l="es">Descargar</span><span data-l="en">Download</span> <span data-version></span></a>
+      <a class="btn" href="https://github.com/alenj0x1/gpuvm"><i data-ic="github"></i><span data-l="es">Ver en GitHub</span><span data-l="en">View on GitHub</span></a>
+    </div>
+    <p class="hero-note">
+      <span data-l="es">Gratis y de código abierto · Windows 10 y 11 Pro · Licencia MIT</span>
+      <span data-l="en">Free and open source · Windows 10 and 11 Pro · MIT license</span>
+    </p>
+    <div class="hero-shot">
+      <div class="window">
+        <div class="demo app-demo" data-demo="app" aria-label="GpuVM, la app real con datos de ejemplo"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pillars -->
+  <section class="section pillars">
+    <div class="wrap grid-3">
+      <article class="pillar reveal">
+        <span class="pillar-ic"><i data-ic="gpu"></i></span>
+        <h3><span data-l="es">Tu GPU de verdad</span><span data-l="en">Your real GPU</span></h3>
+        <p><span data-l="es">La máquina usa una parte de tu tarjeta con GPU partitioning de Hyper-V, con el mismo driver del equipo. No es una tarjeta emulada.</span><span data-l="en">The machine uses a share of your card through Hyper-V GPU partitioning, with your PC's own driver. Not an emulated card.</span></p>
+      </article>
+      <article class="pillar reveal">
+        <span class="pillar-ic"><i data-ic="play"></i></span>
+        <h3><span data-l="es">Un clic para jugar</span><span data-l="en">One click to play</span></h3>
+        <p><span data-l="es">«Encender y abrir» enciende Windows, prepara la pantalla y el audio, empareja Moonlight y te deja dentro.</span><span data-l="en">"Start and open" boots Windows, sets up display and audio, pairs Moonlight and puts you inside.</span></p>
+      </article>
+      <article class="pillar reveal">
+        <span class="pillar-ic"><i data-ic="shield"></i></span>
+        <h3><span data-l="es">Aislada por diseño</span><span data-l="en">Isolated by design</span></h3>
+        <p><span data-l="es">La máquina sale a internet, pero no llega a tu equipo ni a tu red local. Las reglas viven fuera de ella.</span><span data-l="en">The machine reaches the internet, but not your PC or your local network. The rules live outside it.</span></p>
+      </article>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <div id="funciones"></div>
+
+  <section class="section feature">
+    <div class="wrap feature-grid">
+      <div class="feature-text reveal">
+        <h2><span data-l="es">Todo tu equipo, <em>de un vistazo</em></span><span data-l="en">Your whole PC, <em>at a glance</em></span></h2>
+        <p class="lead-p"><span data-l="es">Inicio te deja seguir con la última máquina, te dice cuál cabe en memoria y qué falta arreglar.</span><span data-l="en">Home lets you pick up the last machine, tells you which one fits in memory and what needs fixing.</span></p>
+        <ul class="ticks">
+          <li><span data-l="es">Si una máquina no cabe, lo dice antes del clic y ofrece «Abrir con 6 GB».</span><span data-l="en">If a machine doesn't fit, it says so before the click and offers "Open with 6 GB".</span></li>
+          <li><span data-l="es">Driver desactualizado, Moonlight sin emparejar, apps pendientes: cada uno con su botón.</span><span data-l="en">Outdated driver, Moonlight not paired, apps waiting: each with its button.</span></li>
+          <li><span data-l="es">Nombra lo que ocupa tu memoria para que decidas qué cerrar.</span><span data-l="en">Names what is using your memory so you decide what to close.</span></li>
+        </ul>
+      </div>
+      <div class="feature-media reveal">
+        <div class="demo" data-demo="home" aria-label="Inicio de GpuVM, la app real con datos de ejemplo"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section feature alt">
+    <div class="wrap feature-grid">
+      <div class="feature-text reveal">
+        <h2><span data-l="es">Una máquina nueva <em>en segundos</em></span><span data-l="en">A new machine <em>in seconds</em></span></h2>
+        <p class="lead-p"><span data-l="es">Guarda una máquina como plantilla, con sus apps y su limpieza, y crea otras encima. Cada copia solo guarda lo que cambia.</span><span data-l="en">Save a machine as a template, with its apps and cleanup, and build others on top. Each copy only stores what changes.</span></p>
+        <div class="stats-row">
+          <div class="stat"><b data-count="7.3" data-dec="1">7,3</b><span>s</span><small><span data-l="es">para crear una copia</span><span data-l="en">to create a copy</span></small></div>
+          <div class="stat"><b data-count="78">78</b><span>MB</span><small><span data-l="es">ocupa recién creada</span><span data-l="en">when just created</span></small></div>
+        </div>
+        <p class="fine"><span data-l="es">Cada copia tiene su propio nombre de equipo y su propia identidad para Moonlight. Medido en el laboratorio 016.</span><span data-l="en">Each copy gets its own computer name and its own identity for Moonlight. Measured in lab 016.</span></p>
+      </div>
+      <div class="feature-media reveal">
+        <div class="tree" aria-hidden="true">
+          <div class="tree-base"><span class="fig" data-fig="bear" data-c="green"></span><b>juegos-base</b><small><span data-l="es">plantilla</span><span data-l="en">template</span></small></div>
+          <svg class="tree-lines" viewBox="0 0 300 60" preserveAspectRatio="none"><path d="M150 0 V20 M50 20 H250 M50 20 V60 M150 20 V60 M250 20 V60"/></svg>
+          <div class="tree-kids">
+            <div><span class="fig" data-fig="fox" data-c="red"></span><b>win-gpu</b><small>78 MB</small></div>
+            <div><span class="fig" data-fig="rocket" data-c="blue"></span><b>pruebas</b><small>1,2 GB</small></div>
+            <div><span class="fig" data-fig="owl" data-c="yellow"></span><b>amigos</b><small>2,7 GB</small></div>
+          </div>
+        </div>
+        <div class="window"><img data-shot="create" alt="Crear máquina desde una plantilla" width="1600" height="1000"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section feature">
+    <div class="wrap feature-grid">
+      <div class="feature-text reveal">
+        <h2><span data-l="es">Tus juegos pasan <em>de una máquina a otra</em></span><span data-l="en">Your games move <em>between machines</em></span></h2>
+        <p class="lead-p"><span data-l="es">Un disco compartido guarda tu biblioteca aparte de Windows. Conéctalo a la máquina que quieras, también encendida, y Steam lo encuentra solo.</span><span data-l="en">A shared disk keeps your library apart from Windows. Attach it to any machine, even while it runs, and Steam finds it on its own.</span></p>
+        <ul class="ticks">
+          <li><span data-l="es">Importa la biblioteca de Steam de tu equipo: solo copia los juegos, con el avance en el botón.</span><span data-l="en">Import your PC's Steam library: it only copies the games, with progress on the button.</span></li>
+          <li><span data-l="es">La copia va solo de tu equipo al disco, nunca al revés.</span><span data-l="en">The copy only goes from your PC to the disk, never back.</span></li>
+        </ul>
+        <div class="stats-row">
+          <div class="stat"><b data-count="0">0</b><span></span><small><span data-l="es">reinicios para conectarlo</span><span data-l="en">restarts to attach it</span></small></div>
+          <div class="stat"><b data-count="1.3" data-dec="1">1,3</b><span>s</span><small><span data-l="es">para importar 200 MB</span><span data-l="en">to import 200 MB</span></small></div>
+        </div>
+      </div>
+      <div class="feature-media reveal">
+        <div class="move" aria-hidden="true">
+          <div><span class="fig" data-fig="bear" data-c="green"></span><b>win10</b></div>
+          <i data-ic="arrow" class="move-arrow"></i>
+          <div class="move-disk"><i data-ic="disk"></i><b>juegos</b><small>500 GB</small></div>
+          <i data-ic="arrow" class="move-arrow"></i>
+          <div><span class="fig" data-fig="cat" data-c="red"></span><b>estudio</b></div>
+        </div>
+        <div class="demo" data-demo="shared" data-vm="win10" aria-label="Discos compartidos de win10, la app real con datos de ejemplo"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section feature alt">
+    <div class="wrap feature-grid">
+      <div class="feature-text reveal">
+        <h2><span data-l="es">Windows limpio, <em>sin perder seguridad</em></span><span data-l="en">A clean Windows, <em>just as safe</em></span></h2>
+        <p class="lead-p"><span data-l="es">Elige un nivel y GpuVM quita telemetría, publicidad, sugerencias, Copilot y apps preinstaladas.</span><span data-l="en">Pick a level and GpuVM removes telemetry, ads, suggestions, Copilot and preinstalled apps.</span></p>
+      </div>
+      <div class="feature-media reveal">
+        <div class="demo" data-demo="cleanup" data-vm="estudio" aria-label="Limpieza de Windows de estudio, la app real con datos de ejemplo"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section apps-section">
+    <div class="wrap center">
+      <h2 class="reveal"><span data-l="es">16 apps, <em>verificadas antes de instalar</em></span><span data-l="en">16 apps, <em>verified before installing</em></span></h2>
+      <p class="lead-p reveal"><span data-l="es">Cada instalador se descarga dentro de la máquina y solo corre si lo firma su empresa o coincide con un hash fijado.</span><span data-l="en">Each installer is downloaded inside the machine and only runs if its publisher signed it or it matches a pinned hash.</span></p>
+      <div class="app-cloud" data-apps></div>
+    </div>
+  </section>
+
+  <!-- Personalization -->
+  <section class="section yours">
+    <div class="wrap">
+      <div class="center">
+        <h2 class="reveal"><span data-l="es">Cada máquina, <em>a tu manera</em></span><span data-l="en">Every machine, <em>your way</em></span></h2>
+        <p class="lead-p reveal"><span data-l="es">Ponle su figura, elige cuánto equipo le das y guarda la receta para la próxima.</span><span data-l="en">Give it a figure, choose how much of your PC it gets and save the recipe for next time.</span></p>
+      </div>
+      <div class="yours-grid">
+        <div class="pattern-card reveal">
+          <button type="button" class="pattern-big fig" data-fig="fox" data-c="red" data-pattern aria-label="Otro patrón"></button>
+          <b class="pattern-name">estudio</b>
+          <span class="pattern-sub"><span data-l="es">Encendida · Windows 11 Pro</span><span data-l="en">On · Windows 11 Pro</span></span>
+          <button type="button" class="btn" data-next-pattern><i data-ic="palette"></i><span data-l="es">Otro patrón</span><span data-l="en">Another pattern</span></button>
+          <p class="fine"><span data-l="es">18 figuras y 4 colores. La misma figura en la barra, en Inicio y en cada lista.</span><span data-l="en">18 figures and 4 colors. The same figure in the sidebar, on Home and in every list.</span></p>
+        </div>
+        <div class="profiles">
+          <div class="profile reveal"><span class="fig" data-fig="planet" data-c="blue"></span><div><b><span data-l="es">Equilibrado</span><span data-l="en">Balanced</span></b><span><span data-l="es">8 hilos · 8 GB · disco dinámico de 128 GB, con holgura para tu equipo</span><span data-l="en">8 threads · 8 GB · 128 GB dynamic disk, with headroom for your PC</span></span></div></div>
+          <div class="profile reveal"><span class="fig" data-fig="rocket" data-c="red"></span><div><b><span data-l="es">Máximo rendimiento</span><span data-l="en">Maximum performance</span></b><span><span data-l="es">8 hilos reservados · 8 GB fijos · disco fijo y Windows ajustado para jugar</span><span data-l="en">8 reserved threads · 8 GB fixed · fixed disk and Windows tuned for games</span></span></div></div>
+          <div class="profile reveal"><span class="fig" data-fig="cat" data-c="yellow"></span><div><b><span data-l="es">Los tuyos</span><span data-l="en">Your own</span></b><span><span data-l="es">Guarda procesador, memoria, GPU, disco, ISO, apps, limpieza y cómo abre Moonlight. Por ejemplo, «juegos»: 1440p a 120 FPS con Steam y Discord.</span><span data-l="en">Save processor, memory, GPU, disk, ISO, apps, cleanup and how Moonlight opens. For example, "games": 1440p at 120 FPS with Steam and Discord.</span></span></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Measured -->
+  <section class="section measured">
+    <div class="wrap center">
+      <h2 class="reveal"><span data-l="es">Medido, <em>no prometido</em></span><span data-l="en">Measured, <em>not promised</em></span></h2>
+      <p class="lead-p reveal"><span data-l="es">Cada decisión pasa por un laboratorio en tu propio equipo antes de llegar a la app.</span><span data-l="en">Every decision goes through a lab on real hardware before it reaches the app.</span></p>
+      <div class="grid-4">
+        <div class="metric reveal"><b><span data-count="33.8" data-dec="1">33,8</span> ms</b><span data-l="es">de latencia de punta a punta a 60 FPS</span><span data-l="en">end-to-end latency at 60 FPS</span><small>lab 004</small></div>
+        <div class="metric reveal"><b><span data-count="0">0</span></b><span data-l="es">cortes de audio de 15 ms o más en 10 min</span><span data-l="en">audio dropouts of 15 ms or more in 10 min</span><small>lab 013</small></div>
+        <div class="metric reveal"><b><span data-count="7.3" data-dec="1">7,3</span> s</b><span data-l="es">para una máquina nueva desde plantilla</span><span data-l="en">for a new machine from a template</span><small>lab 016</small></div>
+        <div class="metric reveal"><b><span data-count="3">3</span> s</b><span data-l="es">para quitar un disco con la máquina encendida</span><span data-l="en">to detach a disk while it runs</span><small>lab 017</small></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Security -->
+  <section class="section security" id="seguridad">
+    <div class="wrap">
+      <div class="center">
+        <h2 class="reveal"><span data-l="es">Lo que pasa en la máquina, <em>se queda en la máquina</em></span><span data-l="en">What happens in the machine <em>stays there</em></span></h2>
+        <p class="lead-p reveal"><span data-l="es">Ninguna función se agrega si baja la seguridad de tu equipo.</span><span data-l="en">No feature ships if it lowers your PC's security.</span></p>
+      </div>
+      <div class="grid-3 sec-grid">
+        <div class="sec reveal"><i data-ic="network"></i><h3><span data-l="es">Sin acceso a tu red</span><span data-l="en">No access to your network</span></h3><p><span data-l="es">Reglas en el switch virtual, del lado del equipo: una máquina infectada no las puede quitar.</span><span data-l="en">Rules on the virtual switch, on the host side: an infected machine can't remove them.</span></p></div>
+        <div class="sec reveal"><i data-ic="sign"></i><h3><span data-l="es">Todo verificado</span><span data-l="en">Everything verified</span></h3><p><span data-l="es">Componentes fijados por SHA-256 y apps solo con la firma de su empresa.</span><span data-l="en">Components pinned by SHA-256 and apps only with their publisher's signature.</span></p></div>
+        <div class="sec reveal"><i data-ic="key"></i><h3><span data-l="es">Secretos cifrados</span><span data-l="en">Encrypted secrets</span></h3><p><span data-l="es">Contraseñas guardadas con DPAPI y Moonlight sin permisos de administrador.</span><span data-l="en">Passwords stored with DPAPI and Moonlight without administrator rights.</span></p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Install -->
+  <section class="section install" id="instalar">
+    <div class="wrap install-grid">
+      <div class="reveal">
+        <h2><span data-l="es">Listo en <em>tres pasos</em></span><span data-l="en">Ready in <em>three steps</em></span></h2>
+        <ol class="steps">
+          <li><b><span data-l="es">Descarga el instalador</span><span data-l="en">Download the installer</span></b><span><span data-l="es">La app instala sola Moonlight y los componentes que necesita cada máquina.</span><span data-l="en">The app installs Moonlight and the components each machine needs on its own.</span></span></li>
+          <li><b><span data-l="es">Crea una máquina</span><span data-l="en">Create a machine</span></b><span><span data-l="es">Elige tu ISO de Windows, un perfil y las apps. Windows se instala solo.</span><span data-l="en">Pick your Windows ISO, a profile and the apps. Windows installs itself.</span></span></li>
+          <li><b><span data-l="es">Encender y abrir</span><span data-l="en">Start and open</span></b><span><span data-l="es">Un clic y estás dentro, con tu GPU.</span><span data-l="en">One click and you're in, with your GPU.</span></span></li>
+        </ol>
+        <a class="btn primary" data-download href="https://github.com/alenj0x1/gpuvm/releases/latest"><i data-ic="download"></i><span data-l="es">Descargar</span><span data-l="en">Download</span> <span data-version></span></a>
+      </div>
+      <div class="req reveal">
+        <h3><span data-l="es">Necesitas</span><span data-l="en">You need</span></h3>
+        <ul class="ticks">
+          <li><span data-l="es">Windows 10 u 11 Pro, Enterprise o Education</span><span data-l="en">Windows 10 or 11 Pro, Enterprise or Education</span></li>
+          <li><span data-l="es">Virtualización activada en el BIOS y Hyper-V</span><span data-l="en">Virtualization enabled in BIOS, and Hyper-V</span></li>
+          <li><span data-l="es">Una GPU con GPU partitioning (probado con NVIDIA)</span><span data-l="en">A GPU with GPU partitioning (tested with NVIDIA)</span></li>
+          <li><span data-l="es">PowerShell 7</span><span data-l="en">PowerShell 7</span></li>
+          <li><span data-l="es">8 GB libres para la máquina y una ISO oficial de Windows</span><span data-l="en">8 GB free for the machine and an official Windows ISO</span></li>
+        </ul>
+        <a class="text-link" href="docs/" data-docs data-docs-path="requirements/"><span data-l="es">Ver todos los requisitos</span><span data-l="en">See all requirements</span><i data-ic="arrow"></i></a>
+      </div>
+    </div>
+  </section>
+
+  <!-- What's new -->
+  <section class="section news">
+    <div class="wrap">
+      <div class="center">
+        <h2 class="reveal"><span data-l="es">Lo nuevo en <em data-version>0.4.0</em></span><span data-l="en">New in <em data-version>0.4.0</em></span></h2>
+        <p class="lead-p reveal" data-release-date></p>
+      </div>
+      <div class="news-list reveal" data-news></div>
+      <div class="center"><a class="text-link" href="docs/" data-docs data-docs-path="changelog/"><span data-l="es">Ver el historial completo</span><span data-l="en">See the full changelog</span><i data-ic="arrow"></i></a></div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="section faq">
+    <div class="wrap narrow">
+      <h2 class="center reveal"><span data-l="es">Preguntas frecuentes</span><span data-l="en">Questions</span></h2>
+      <details class="reveal"><summary><span data-l="es">¿Necesito Steam o una cuenta?</span><span data-l="en">Do I need Steam or an account?</span></summary><p><span data-l="es">No. GpuVM usa Sunshine dentro de la máquina y Moonlight en tu equipo, y trae su propio altavoz virtual para el sonido.</span><span data-l="en">No. GpuVM uses Sunshine inside the machine and Moonlight on your PC, and brings its own virtual speaker for sound.</span></p></details>
+      <details class="reveal"><summary><span data-l="es">¿La máquina se lleva toda mi GPU?</span><span data-l="en">Does the machine take my whole GPU?</span></summary><p><span data-l="es">No: la GPU se comparte. Tu equipo la sigue usando y tú decides qué parte recibe cada máquina en Opciones.</span><span data-l="en">No: the GPU is shared. Your PC keeps using it and you decide each machine's share in Options.</span></p></details>
+      <details class="reveal"><summary><span data-l="es">¿Qué pasa si una máquina se infecta?</span><span data-l="en">What if a machine gets infected?</span></summary><p><span data-l="es">Sale a internet pero no llega a tu equipo ni a tu red, y nada copia archivos desde ella hacia tu equipo. Bórrala y crea otra desde tu plantilla en segundos.</span><span data-l="en">It reaches the internet but not your PC or your network, and nothing copies files from it to your PC. Delete it and create another from your template in seconds.</span></p></details>
+      <details class="reveal"><summary><span data-l="es">¿Cuánto espacio necesito?</span><span data-l="en">How much space do I need?</span></summary><p><span data-l="es">Unos 40 GB por máquina con disco dinámico. Las copias de una plantilla empiezan en menos de 100 MB.</span><span data-l="en">About 40 GB per machine with a dynamic disk. Copies of a template start under 100 MB.</span></p></details>
+      <details class="reveal"><summary><span data-l="es">¿Puedo usarla desde la terminal?</span><span data-l="en">Can I use it from the terminal?</span></summary><p><span data-l="es">Sí: todo lo que hace la app está en un módulo de PowerShell 7 con su CLI.</span><span data-l="en">Yes: everything the app does is in a PowerShell 7 module with its CLI.</span></p></details>
+    </div>
+  </section>
+
+  <section class="section closing">
+    <div class="wrap center">
+      <div class="closing-figs" aria-hidden="true">
+        <span class="fig" data-fig="cat" data-c="blue"></span><span class="fig" data-fig="planet" data-c="yellow"></span><span class="fig" data-fig="whale" data-c="red"></span>
+      </div>
+      <h2 class="reveal"><span data-l="es">Tu próxima máquina <em>está a un clic</em></span><span data-l="en">Your next machine <em>is one click away</em></span></h2>
+      <div class="hero-actions reveal">
+        <a class="btn primary" data-download href="https://github.com/alenj0x1/gpuvm/releases/latest"><i data-ic="download"></i><span data-l="es">Descargar</span><span data-l="en">Download</span> <span data-version></span></a>
+        <a class="btn" href="docs/" data-docs><i data-ic="book"></i><span data-l="es">Leer la documentación</span><span data-l="en">Read the docs</span></a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-inner">
+    <a class="brand" href="#top"><img src="images/icon.png" alt="" width="24" height="24">GpuVM</a>
+    <span class="muted"><span data-l="es">Licencia MIT · Usa Sunshine, Moonlight, Virtual Display Driver y usbip-win2</span><span data-l="en">MIT license · Uses Sunshine, Moonlight, Virtual Display Driver and usbip-win2</span></span>
+    <nav><a href="docs/" data-docs><span data-l="es">Documentación</span><span data-l="en">Docs</span></a><a href="https://github.com/alenj0x1/gpuvm">GitHub</a><a href="https://github.com/alenj0x1/gpuvm/releases"><span data-l="es">Versiones</span><span data-l="en">Releases</span></a></nav>
+  </div>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+<script src="assets/site.js"></script>
+<script src="assets/embed.js" defer></script>
+</body>
+</html>

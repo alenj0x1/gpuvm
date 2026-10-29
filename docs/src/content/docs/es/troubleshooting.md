@@ -13,11 +13,11 @@ Las causas habituales, en orden:
 
 Para ver la pantalla de la VM sin la GPU, abre la consola de Hyper-V (**Ver consola de Hyper-V**, o `vmconnect.exe localhost <vm>`). Mientras la pantalla virtual funciona, la de Hyper-V está desactivada; Escritorio remoto sigue disponible como respaldo.
 
-Problema abierto ([laboratorio 002](/gpuvm/es/labs/#lo-que-encontraron-los-laboratorios-hasta-ahora)): Sunshine puede decir "Display device configuration API is temporarily unavailable" y no cambiar la resolución.
+Problema abierto ([laboratorio 002](/gpuvm/docs/es/labs/#lo-que-encontraron-los-laboratorios-hasta-ahora)): Sunshine puede decir "Display device configuration API is temporarily unavailable" y no cambiar la resolución.
 
 ## Un programa en pantalla completa se ve en negro
 
-El escritorio se ve bien, pero un juego o programa en **pantalla completa exclusiva** se ve en negro (puede aparecer cuando pierde el foco). La captura estándar no ve la pantalla completa exclusiva en una pantalla virtual ([laboratorio 009](/gpuvm/es/labs/#lo-que-encontraron-los-laboratorios-hasta-ahora)). En **Opciones → Captura** elige **Pantalla completa exclusiva** y guarda. En ese modo los avisos de administrador de Windows no se ven en el stream; vuelve a **Estándar** cuando los necesites. Consulta [Modos de captura](/gpuvm/es/streaming/#modos-de-captura).
+El escritorio se ve bien, pero un juego o programa en **pantalla completa exclusiva** se ve en negro (puede aparecer cuando pierde el foco). La captura estándar no ve la pantalla completa exclusiva en una pantalla virtual ([laboratorio 009](/gpuvm/docs/es/labs/#lo-que-encontraron-los-laboratorios-hasta-ahora)). En **Opciones → Captura** elige **Pantalla completa exclusiva** y guarda. En ese modo los avisos de administrador de Windows no se ven en el stream; vuelve a **Estándar** cuando los necesites. Consulta [Modos de captura](/gpuvm/docs/es/streaming/#modos-de-captura).
 
 ## Las ventanas se abren donde no las veo
 
@@ -41,11 +41,11 @@ El primer inicio instala Windows y el streaming, y después reinicia una vez. **
 
 ## No hay audio
 
-El sonido de la VM sale del altavoz USB de GpuVM, **Altavoces (GpuVM Audio)** ([Streaming](/gpuvm/es/streaming/#audio)). **Encender y abrir** lo instala, lo reconecta y apunta Sunshine a él (`virtual_sink`) cuando falta, siempre que la contraseña de Windows de la VM esté guardada en GpuVM. Dentro de la VM, el estado del servidor está en `C:\ProgramData\GpuVM\Audio\status.json`. Sin la contraseña, al abrir la VM aparece un aviso. Si el perfil tiene `"audio": "none"`, no se instala ningún dispositivo de audio.
+El sonido de la VM sale del altavoz USB de GpuVM, **Altavoces (GpuVM Audio)** ([Streaming](/gpuvm/docs/es/streaming/#audio)). **Encender y abrir** lo instala, lo reconecta y apunta Sunshine a él (`virtual_sink`) cuando falta, siempre que la contraseña de Windows de la VM esté guardada en GpuVM. Dentro de la VM, el estado del servidor está en `C:\ProgramData\GpuVM\Audio\status.json`. Sin la contraseña, al abrir la VM aparece un aviso. Si el perfil tiene `"audio": "none"`, no se instala ningún dispositivo de audio.
 
 ## Falla el emparejamiento
 
-Usa **Volver a emparejar Moonlight** en el menú, o `./gpuvm.ps1 connect -Name <vm> -Pair`. Si Moonlight no está instalado, instálalo ([Instalación](/gpuvm/es/install/#instalar-moonlight)).
+Usa **Volver a emparejar Moonlight** en el menú, o `./gpuvm.ps1 connect -Name <vm> -Pair`. Si Moonlight no está instalado, instálalo ([Instalación](/gpuvm/docs/es/install/#instalar-moonlight)).
 
 ## La VM no enciende por falta de memoria
 
@@ -53,9 +53,9 @@ La memoria fija de Hyper-V tiene que estar libre al encender la VM. Cierra progr
 
 ## Límites conocidos de GPU-P
 
-- **Pantalla:** la consola de Hyper-V no muestra la GPU; se ve con el streaming. Falta validar el streaming en una VM real ([laboratorio 002](/gpuvm/es/labs/)).
-- **Audio:** la VM no tiene tarjeta de sonido; el altavoz USB propio de GpuVM se la da, comprobado en una VM real a través de Moonlight ([laboratorio 012](/gpuvm/es/labs/)).
+- **Pantalla:** la consola de Hyper-V no muestra la GPU; se ve con el streaming. Falta validar el streaming en una VM real ([laboratorio 002](/gpuvm/docs/es/labs/)).
+- **Audio:** la VM no tiene tarjeta de sonido; el altavoz USB propio de GpuVM se la da, comprobado en una VM real a través de Moonlight ([laboratorio 012](/gpuvm/docs/es/labs/)).
 - **Driver:** el invitado tiene que usar la misma versión que el host (ver arriba).
-- **Selección de GPU en Windows 10:** no se puede elegir cuál GPU recibe la VM. Si la integrada también es particionable, puede tocarle la equivocada. `check` lo advierte; desactiva la integrada en el Administrador de dispositivos antes de encender la VM ([laboratorio 001](/gpuvm/es/labs/)).
+- **Selección de GPU en Windows 10:** no se puede elegir cuál GPU recibe la VM. Si la integrada también es particionable, puede tocarle la equivocada. `check` lo advierte; desactiva la integrada en el Administrador de dispositivos antes de encender la VM ([laboratorio 001](/gpuvm/docs/es/labs/)).
 - **Sin puntos de control ni estado guardado:** la VM se apaga directamente.
 - **Anti-cheat:** algunos sistemas anti-cheat bloquean las máquinas virtuales.

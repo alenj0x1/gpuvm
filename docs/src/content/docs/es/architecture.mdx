@@ -17,12 +17,12 @@ import { architecture } from '../../../diagrams';
 | `app/` | App de escritorio: interfaz React en `app/src`, Tauri/Rust en `app/src-tauri`. |
 | `src/GpuVM/` | El módulo de PowerShell 7: `Private/` (utilidades), `Backends/` (un archivo por backend), `Public/` (un archivo por cmdlet exportado). |
 | `src/bridge.ps1` | Puente entre la app y el módulo. |
-| `gpuvm.ps1` | CLI. Consulta la [referencia de la CLI](/gpuvm/es/cli/). |
-| `profiles/` | [Perfiles](/gpuvm/es/profiles/) en JSON. |
+| `gpuvm.ps1` | CLI. Consulta la [referencia de la CLI](/gpuvm/docs/es/cli/). |
+| `profiles/` | [Perfiles](/gpuvm/docs/es/profiles/) en JSON. |
 | `guest/` | Scripts que corren dentro de la VM: configuración del primer inicio, optimizaciones, streaming, audio, resolución de pantalla y `collect-info.ps1` para los laboratorios. |
 | `templates/` | Plantilla de `unattend.xml`. |
 | `streaming/components.json` | Versiones, URLs y SHA-256 de los componentes de streaming. |
-| `labs/` | [Laboratorios](/gpuvm/es/labs/). |
+| `labs/` | [Laboratorios](/gpuvm/docs/es/labs/). |
 | `tests/` | Pruebas con Pester. |
 
 ## El módulo
