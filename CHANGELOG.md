@@ -6,7 +6,7 @@ All notable changes to GpuVM are documented here. The format follows [Keep a Cha
 
 Changes waiting for the next version sit under **Unreleased** at the top (this section only exists while there are some, and the docs site doesn't show it); `scripts/release.py` turns it into the new version.
 
-## [Unreleased]
+## [0.4.0] - 2026-10-28
 
 ### Added
 - **Home.** The app opens on **Inicio** (Home): the last machine you opened, ready to open again; how much memory the PC has free, what is using the most, and whether each machine fits; and what needs attention across all machines (a GPU driver out of date, Moonlight not paired, apps waiting, the Windows password missing, little disk space left), each with the button that fixes it.
@@ -107,6 +107,7 @@ First version.
 - Third-party installers are pinned by SHA-256 and verified again right before copying them into the VM.
 - Streaming and guest credentials are encrypted with DPAPI.
 
+[0.4.0]: https://github.com/alenj0x1/gpuvm/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/alenj0x1/gpuvm/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/alenj0x1/gpuvm/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/alenj0x1/gpuvm/compare/v0.1.0...v0.1.1
