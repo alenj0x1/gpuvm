@@ -30,6 +30,7 @@
 - **Crea máquinas sin pasar por el instalador.** Eliges un ISO oficial de Windows y un perfil: la imagen se aplica directo al disco y se configura sola.
 - **Estadísticas y opciones.** Uso en vivo de CPU, memoria y GPU; procesadores, memoria, parte de la GPU y calidad de la imagen de cada VM.
 - **Biblioteca.** Tus propios perfiles (procesadores, memoria, GPU, disco, ISO, apps, cómo abre Moonlight), los discos que quedaron de VMs eliminadas para volver a crearlas, y las ISOs que usaste.
+- **Plantillas y discos compartidos.** Guarda una VM como plantilla y crea otras encima en segundos; deja tu biblioteca de juegos en un disco compartido que pasa de una VM a otra, importada desde la biblioteca de Steam de tu equipo.
 - **Windows limpio.** Elige un nivel (privacidad, sin apps de más, mínimo) para quitar telemetría, publicidad, sugerencias, Copilot y apps preinstaladas, sin tocar Defender, Windows Update ni el firewall.
 - **Apps en un paso.** 16 apps (tiendas de juegos, navegadores, multimedia, Discord, 7-Zip, WinRAR, Proton VPN) con buscador y categorías, instaladas dentro de la VM solo si las firma su empresa o coinciden con un hash fijado.
 - **Juegos en pantalla completa exclusiva.** Una opción de captura por VM los muestra en vez de una pantalla negra; pega texto del PC en la VM con un botón.

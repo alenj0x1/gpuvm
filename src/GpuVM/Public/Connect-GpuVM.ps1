@@ -15,7 +15,9 @@ function Connect-GpuVM {
         [int]$BitrateKbps,
         [ValidateSet('auto', 'H.264', 'HEVC', 'AV1')][string]$Codec,
         [ValidatePattern('^[\w .-]{1,60}$')][string]$App,
-        [switch]$Pair
+        [switch]$Pair,
+        # Opens with this much memory when it doesn't fit as configured (saved, like changing it in Options).
+        [ValidateRange(4, 256)][int]$MemoryGB
     )
     Assert-Admin
     $state = Get-GpuVMState -Name $Name
@@ -31,6 +33,11 @@ function Connect-GpuVM {
         if ($hostGpu -and $hostGpu.DriverVersion -ne $state['gpu']['driverVersion']) {
             Write-Step 'Actualizando el driver de la GPU'
             Sync-GpuVMDriver -Name $Name -Confirm:$false | Out-Null
+            $state = Get-GpuVMState -Name $Name
+        }
+        if ($MemoryGB -and $MemoryGB -ne $state['config']['vm']['memoryGB']) {
+            Write-Step "Memoria: $MemoryGB GB"
+            Set-GpuVM -Name $Name -Override @{ vm = @{ memoryGB = $MemoryGB } } -Confirm:$false | Out-Null
             $state = Get-GpuVMState -Name $Name
         }
         Assert-VMCanStart -Name $Name
@@ -128,4 +135,8 @@ function Connect-GpuVM {
     Write-Step "Abriendo a $($client['resolution']) y $($client['fps']) FPS"
     # Moonlight runs as the signed-in user, not as administrator: it talks to a server the guest controls.
     Start-UnelevatedProcess -FilePath $moonlight -ArgumentList (Get-MoonlightStreamArguments -Address $address -Client $client) | Out-Null
+    # For the home screen's "continue where you left off".
+    $state = Get-GpuVMState -Name $Name
+    $state['lastOpenedAt'] = (Get-Date).ToString('o')
+    Save-GpuVMState $state
 }

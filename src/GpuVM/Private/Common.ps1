@@ -22,6 +22,13 @@ function Assert-FreeMemory {
     }
 }
 
+# The most memory a VM could start with right now (whole GB, keeping the same margin), or 0 below the 4 GB minimum.
+function Get-FittingMemoryGB {
+    param([Parameter(Mandatory)][double]$FreeGB)
+    $fit = [math]::Floor($FreeGB - 0.3)
+    if ($fit -lt 4) { 0 } else { [int]$fit }
+}
+
 function Assert-VMCanStart {
     param([Parameter(Mandatory)][string]$Name)
     $vm = Get-VM -Name $Name

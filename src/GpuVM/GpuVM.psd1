@@ -43,6 +43,16 @@
         'Set-GpuVMNetworkIsolation'
         'Set-GpuVMCleanup'
         'Get-GpuVMCleanup'
+        'New-GpuVMTemplate'
+        'Get-GpuVMTemplate'
+        'Remove-GpuVMTemplate'
+        'New-GpuVMSharedDisk'
+        'Get-GpuVMSharedDisk'
+        'Connect-GpuVMSharedDisk'
+        'Disconnect-GpuVMSharedDisk'
+        'Import-GpuVMSharedDisk'
+        'Remove-GpuVMSharedDisk'
+        'Get-GpuVMHome'
     )
     CmdletsToExport   = @()
     AliasesToExport   = @()

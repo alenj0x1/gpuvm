@@ -95,6 +95,7 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
 .side { background: var(--side); display: flex; flex-direction: column; padding: 4px 12px 16px; gap: 4px; min-width: 0; }
 .side-head { display: flex; align-items: center; gap: 10px; padding: 0 4px 16px; }
 .side-head strong { font-weight: 600; font-size: 15px; }
+.side-logo img { display: block; border-radius: 8px; }
 .side-list { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; mask-image: linear-gradient(#000 92%, transparent); }
 .side-item { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: var(--r); text-align: left; width: 100%; min-width: 0; }
 .side-item:hover { background: var(--hover); }
@@ -274,6 +275,7 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
 .dialog-body.fade-end { border-bottom-color: var(--line); }
 .dialog.wide { width: min(960px, 100%); }
 .dialog-columns { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 18px 28px; align-items: start; padding: 4px 0; }
+.dialog-columns.single { grid-template-columns: minmax(0, 1fr); }
 .dialog-column { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
 @media (max-width: 860px) { .dialog-columns { grid-template-columns: minmax(0, 1fr); } }
 .dialog > .log { min-height: 0; overflow-y: auto; }
@@ -334,6 +336,23 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
 .cleanup-items li { display: flex; gap: 8px; align-items: flex-start; }
 .cleanup-items svg { flex: none; display: block; margin-top: 3px; color: var(--ok); }
 .app-logo { display: block; width: 20px; height: 20px; object-fit: contain; }
+/* Home */
+.home-continue .actions { gap: 8px; }
+.home-continue { flex-wrap: wrap; }
+.home-continue > .grow { flex: 1 1 200px; min-width: 0; }
+/* When the window is narrow the actions drop below the name instead of being cut off. */
+@media (max-width: 960px) { .home-continue .actions { width: 100%; justify-content: flex-end; } }
+.home-memory { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+.home-memory .hint { color: var(--faint); font-size: 13px; }
+.row-link { width: 100%; text-align: left; border-radius: var(--r); padding: 10px 8px; margin: 0 -8px; width: calc(100% + 16px); }
+.row-link:hover { background: var(--hover); }
+.fit { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; color: var(--muted); }
+.fit svg { display: block; }
+.fit.ok { color: var(--ok); }
+.fit.no { color: var(--warn); }
+.row-link { cursor: pointer; }
+.row-link .btn { margin-left: 4px; }
+.warn-text { color: var(--warn); }
 .app-none { grid-column: 1 / -1; margin: 0; padding: 12px 2px; color: var(--muted); font-size: 13px; }
 .check.box { border-radius: 5px; }
 .choice.missing { opacity: 0.6; cursor: default; }

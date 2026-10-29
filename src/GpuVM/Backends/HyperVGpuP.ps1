@@ -136,6 +136,7 @@ function Expand-HyperVGpuPDisk {
         return
     }
     if ($target -eq $vhd.Size) { return }
+    if ($vhd.VhdType -eq 'Differencing') { throw 'El disco de una máquina creada desde una plantilla mide lo mismo que la plantilla y no se amplía.' }
     if ($vhd.VhdType -eq 'Fixed') {
         $free = (Get-Volume -DriveLetter (Split-Path $Path -Qualifier).TrimEnd(':')).SizeRemaining
         $needed = $target - $vhd.Size
@@ -256,6 +257,66 @@ Register-GpuVMBackend -Name 'hyperv-gpup' -Description 'Hyper-V con GPU Partitio
                 driverVersion = $gpu.DriverVersion
                 syncedAt      = (Get-Date).ToString('o')
             }
+            createdAt   = (Get-Date).ToString('o')
+            toolVersion = $script:ToolVersion
+            statePath   = Join-Path $vmDir 'gpuvm.json'
+        }
+    }
+
+    # A VM on top of a template: a differencing disk (only what changes is written), with Sunshine's identity reset
+    # on it before the first boot. Disk folder, cleanup on failure and returned state work as in New.
+    Clone      = {
+        param($Context)
+        $name = $Context.Name
+        $config = $Context.Config
+        $template = $Context.Template
+        $vmDir = Join-Path $config['vm']['root'] $name
+        $vhdPath = Join-Path $vmDir "Virtual Hard Disks\$name.vhdx"
+        if (Test-Path -LiteralPath $vmDir) {
+            throw "Ya existe la carpeta $vmDir de un intento anterior. Elige otro nombre o bórrala."
+        }
+        Initialize-GpuVMRoot -Path $config['vm']['root']
+        New-Item -ItemType Directory -Path (Split-Path $vhdPath -Parent) -Force | Out-Null
+        try {
+            Write-Step "Creando el disco sobre la plantilla '$($template['name'])'"
+            New-VHD -Path $vhdPath -ParentPath $template['vhdPath'] -Differencing | Out-Null
+            Invoke-WithMountedWindows -Path $vhdPath -ScriptBlock {
+                param($root)
+                Write-Step 'Dando a la copia su propia identidad de streaming'
+                Reset-ClonedGuestIdentity -WindowsRoot $root
+            }
+
+            Write-Step "Registrando la VM '$name' en Hyper-V"
+            $switch = $config['vm']['network']['switch']
+            $vmParams = @{
+                Name               = $name
+                Generation         = 2
+                MemoryStartupBytes = [int64]$config['vm']['memoryGB'] * 1GB
+                VHDPath            = $vhdPath
+                Path               = $config['vm']['root']
+            }
+            if ($switch -and (Get-VMSwitch -Name $switch -ErrorAction SilentlyContinue)) { $vmParams['SwitchName'] = $switch }
+            New-VM @vmParams | Out-Null
+            Set-HyperVGpuPVM -Name $name -Config $config
+        }
+        catch {
+            Write-Step 'La creación falló; limpiando lo que se alcanzó a crear'
+            if (Get-VM -Name $name -ErrorAction SilentlyContinue) { Remove-VM -Name $name -Force -ErrorAction SilentlyContinue }
+            if ((Get-VHD -Path $vhdPath -ErrorAction SilentlyContinue).Attached) { Dismount-VHD -Path $vhdPath -ErrorAction SilentlyContinue }
+            Remove-Item -LiteralPath $vmDir -Recurse -Force -ErrorAction SilentlyContinue
+            throw
+        }
+
+        [ordered]@{
+            name        = $name
+            backend     = 'hyperv-gpup'
+            profile     = $config['name']
+            config      = $config
+            vmDir       = $vmDir
+            vhdPath     = $vhdPath
+            # The driver inside is the template's; if the host's changed since, it is updated on the first open.
+            gpu         = $template['gpu']
+            template    = $template['name']
             createdAt   = (Get-Date).ToString('o')
             toolVersion = $script:ToolVersion
             statePath   = Join-Path $vmDir 'gpuvm.json'

@@ -125,24 +125,24 @@ export const stateLabel: Record<string, string> = {
 
 /** For a box that scrolls: "fade-start" / "fade-end" while there is hidden content on that side, so the edge fades. */
 export function useScrollFade<T extends HTMLElement>(axis: "x" | "y" = "y") {
-  const ref = useRef<T>(null);
+  // A callback ref: the box can appear later or be replaced (a dialog's form after its progress log, tabs that
+  // come back after a search), and the listeners must follow the element that is there now.
+  const [el, setEl] = useState<T | null>(null);
   const [fade, setFade] = useState("");
   const measure = useCallback(() => {
-    const el = ref.current;
-    if (!el) return;
+    if (!el) { setFade(""); return; }
     const [pos, size, total] = axis === "y" ? [el.scrollTop, el.clientHeight, el.scrollHeight] : [el.scrollLeft, el.clientWidth, el.scrollWidth];
     const next = `${pos > 2 ? "fade-start" : ""} ${pos + size < total - 2 ? "fade-end" : ""}`.trim();
     setFade((prev) => (prev === next ? prev : next));
-  }, [axis]);
+  }, [el, axis]);
   // Content changes (a search, a new section) change what is hidden: measure after every render.
   useLayoutEffect(measure);
   useEffect(() => {
-    const el = ref.current;
     if (!el) return;
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     el.addEventListener("scroll", measure, { passive: true });
     return () => { observer.disconnect(); el.removeEventListener("scroll", measure); };
-  }, [measure]);
-  return [ref, fade] as const;
+  }, [el, measure]);
+  return [setEl, fade] as const;
 }

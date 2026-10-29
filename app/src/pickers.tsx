@@ -19,12 +19,14 @@ function AppLogo({ id }: { id: string }) {
   return <img className="app-logo" src={src} alt="" width={20} height={20} draggable={false} />;
 }
 
-export function profileSummary(s: ProfileSettings, apps: AppInfo[] = []) {
+/** hardwareOnly: for a VM built on a template, whose Windows, apps and cleanup come from the template. */
+export function profileSummary(s: ProfileSettings, apps: AppInfo[] = [], hardwareOnly = false) {
   const parts = [
     `${s.cpu} hilos`, `${s.memoryGB} GB`, `GPU ${s.gpuPercent} %`,
     `disco ${s.diskType === "Fixed" ? "fijo" : "dinámico"} de ${s.diskGB} GB`,
   ];
   if (s.resolution) parts.push(`${s.resolution.split("x")[1]}p ${s.fps ?? 60} FPS${s.displayMode === "windowed" ? " en ventana" : ""}`);
+  if (hardwareOnly) return parts.slice(0, 3).join(" · ");
   const cleanup = cleanupCache?.find((l) => l.id === s.cleanup);
   if (cleanup && s.cleanup !== "none") parts.push(`Windows: ${cleanup.name.toLowerCase()}`);
   const names = s.apps.map((id) => apps.find((a) => a.id === id)?.name ?? id);

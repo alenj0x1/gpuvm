@@ -76,7 +76,8 @@ function Test-GpuVMProfileData {
         $problems.Add("vm.memoryGB ($mem) deja menos de 4 GB al host (tiene $([math]::Round($HostMemoryGB,1)) GB).")
     }
 
-    if ($vm['disk']['type'] -notin 'Dynamic', 'Fixed') { $problems.Add('vm.disk.type debe ser "Dynamic" o "Fixed".') }
+    # Differencing: a VM built on a template (set by GpuVM, never by a profile).
+    if ($vm['disk']['type'] -notin 'Dynamic', 'Fixed', 'Differencing') { $problems.Add('vm.disk.type debe ser "Dynamic" o "Fixed".') }
     if ($vm['disk']['sizeGB'] -lt 64) { $problems.Add('vm.disk.sizeGB debe ser al menos 64.') }
 
     $alloc = $Config['gpu']['allocationPercent']

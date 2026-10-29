@@ -160,6 +160,8 @@ function Invoke-GpuVMCleanup {
     foreach ($entry in Get-GpuVMCleanupItem -Level $Level) {
         $item = $entry.Item
         $result = [ordered]@{ name = $entry.Name; applied = $entry.Included; ok = $true; detail = '' }
+        # Registry and service cmdlets report failures as non-terminating errors: make them stop the item.
+        $ErrorActionPreference = 'Stop'
         try {
             foreach ($value in @($item['Registry'])) {
                 if (-not $value) { continue }
@@ -188,8 +190,7 @@ function Invoke-GpuVMCleanup {
                     Get-AppxProvisionedPackage -Online | Where-Object DisplayName -eq $package |
                         ForEach-Object { Remove-AppxProvisionedPackage -Online -PackageName $_.PackageName -ErrorAction SilentlyContinue | Out-Null }
                     Get-AppxPackage -AllUsers -Name $package | ForEach-Object {
-                        Remove-AppxPackage -Package $_.PackageFullName -AllUsers -ErrorAction SilentlyContinue
-                        $removed++
+                        try { Remove-AppxPackage -Package $_.PackageFullName -AllUsers -ErrorAction Stop; $removed++ } catch { }
                     }
                 }
                 $result.detail = "$removed apps quitadas"

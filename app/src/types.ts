@@ -27,6 +27,10 @@ export interface VmOverview {
   gpuName: string | null;
   gpuPercent: number;
   driverInSync: boolean | null;
+  /** Whether it fits in the host's free memory now (always true unless off), and the most it could start with. */
+  fits: boolean;
+  fitGB: number;
+  missingGB: number;
   streaming: boolean;
   paired: boolean;
   guestCredential: boolean;
@@ -68,6 +72,37 @@ export interface ProfileInfo {
   Description: string;
   BuiltIn?: boolean;
   Settings?: ProfileSettings | null;
+}
+
+/** A VM's Windows saved as a base disk that new VMs build on. */
+export interface TemplateInfo {
+  name: string;
+  fromVM: string;
+  createdAt: string;
+  edition: string | null;
+  sizeGB: number;
+  fileGB: number;
+  cleanup: CleanupLevelId;
+  usedBy: string[];
+}
+
+/** A data disk (a game library, for example) attached to one VM at a time. */
+export interface SharedDiskInfo {
+  name: string;
+  purpose: "games" | "general";
+  sizeGB: number;
+  fileGB: number;
+  vm: string | null;
+  vmRunning: boolean;
+  createdAt: string;
+}
+
+/** The home screen: the last machine opened, what fits in memory now and what needs attention. */
+export interface HomeInfo {
+  lastOpened: { name: string; at: string } | null;
+  host: { memoryTotalGB: number; memoryFreeGB: number; diskFreeGB: number; topProcesses: { name: string; gb: number }[] };
+  machines: { name: string; state: string; memoryGB: number; needGB: number; fits: boolean; fitGB: number }[];
+  attention: { vm: string | null; kind: string; text: string; label: string; cmd: string | null; args: Record<string, unknown> | null }[];
 }
 
 export type CleanupLevelId = "none" | "privacy" | "apps" | "minimal";

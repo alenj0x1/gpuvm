@@ -8,6 +8,8 @@ function Get-GpuVMOverview {
     param()
     Assert-Admin
     $vms = @(Get-VM)
+    # Whether each stopped VM fits in memory now, so the app says so before the click (cheap: one CIM read).
+    $freeGB = (Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1MB
     $anyRunning = [bool]($vms | Where-Object State -eq 'Running')
     # GPU counters and VM processes only if any VM is running: it is the most expensive part of the query.
     $gpuByPid = if ($anyRunning) { Get-GpuUsageByProcess } else { @{} }
@@ -47,6 +49,9 @@ function Get-GpuVMOverview {
             memoryAssignedGB = [math]::Round($vm.MemoryAssigned / 1GB, 1)
             memoryDemandGB = [math]::Round($vm.MemoryDemand / 1GB, 1)
             uptimeSeconds  = [int]$vm.Uptime.TotalSeconds
+            fits           = $vm.State -ne 'Off' -or $freeGB -ge $vm.MemoryStartup / 1GB + 0.3
+            fitGB          = Get-FittingMemoryGB -FreeGB $freeGB
+            missingGB      = if ($vm.State -eq 'Off') { [math]::Max(0, [math]::Round($vm.MemoryStartup / 1GB + 0.3 - $freeGB, 1)) } else { 0 }
             hasGpu         = $hasGpu
             gpuName        = if ($state) { $state['gpu']['name'] } elseif ($hasGpu) { 'GPU-P' } else { $null }
             gpuPercent     = if ($workerPid -and $gpuByPid.ContainsKey($workerPid)) { [int]$gpuByPid[$workerPid] } else { 0 }

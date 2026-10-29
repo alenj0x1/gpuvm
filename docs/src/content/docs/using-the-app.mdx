@@ -25,6 +25,14 @@ The app's interface is in Spanish. This page names each control by its label in 
 
 If the app isn't running as administrator, it shows **GpuVM necesita permisos de administrador** with an **Abrir como administrador** (Open as administrator) button that reopens it elevated. If Hyper-V can't be read, a notice shows the error with **Reintentar** (Retry).
 
+## Home
+
+The app opens on **Inicio** (Home), the first item in the sidebar:
+
+- **The last machine you opened**, with **Abrir** (Open) or **Encender y abrir** (Start and open).
+- **Memoria** (Memory): how much the PC has free, what is using the most, and each machine with **Encendida** (On), **Puede encender** (Can start) or how much memory it is missing. A machine that doesn't fit offers **Abrir con N GB** (Open with N GB): it lowers its memory to what fits (saved, like changing it in Options) and opens it. The machine's own page shows the same.
+- **What needs attention**, only when there is something: a GPU driver out of date, Moonlight not paired, apps waiting to be installed, the Windows password missing or little disk space left, each with the button that fixes it.
+
 ## Create a VM
 
 With no VMs yet, the app invites you to create the first one.
@@ -37,11 +45,14 @@ With no VMs yet, the app invites you to create the first one.
 
 2. Fill in the form:
    - **Nombre** (Name): letters, numbers, `_` or hyphens, up to 40 characters, no spaces. It suggests `win-gpu`.
+   - **Instalar Windows** / **Desde plantilla** (Install Windows / From a template), when you have [templates](#templates): from a template the VM is ready in seconds and only asks for the name and profile; Windows, its apps, cleanup level and password come from the template.
    - **Imagen de Windows** (Windows image): the ISOs you already used or added first, then the ones found in your Downloads and Desktop folders, or **Buscar otro ISO** to browse for one.
    - **Perfil** (Profile): **Equilibrado** (`balanced`), **Máximo rendimiento** (`max-performance`, the default) or one of your own from the [Library](#library). The profile fills in the rest, including its ISO and apps. See [Profiles](/gpuvm/profiles/).
    - **Windows**: how clean Windows is. See [Windows](#windows).
    - **Apps que se instalan** (Apps to install): installed the first time the VM opens. See [Apps](#apps).
    - **Contraseña de Windows** (Windows password) for the local user `gpuvm`, at least 6 characters, typed twice.
+
+   **Crear máquina** stays disabled until the form is complete; any problem shows next to its field as you type.
 
 3. Click **Crear máquina**. The dialog shows each step as it happens. You can close it: the progress stays in the sidebar, and if creation fails the dialog opens again with the error.
 
@@ -143,7 +154,8 @@ The **⋯** menu has:
 - **Ver consola de Hyper-V** (Hyper-V console). It only shows the basic Hyper-V display, not what the GPU draws.
 - **Volver a emparejar Moonlight** (Pair Moonlight again).
 - **Actualizar driver de la GPU** (Update GPU driver), or **Apagar y actualizar driver** if it's running.
-- **Otro patrón** (Another pattern): changes the VM's Bauhaus icon and color. Clicking the pattern next to the VM's name (or a profile's) does the same; the new one shows everywhere at once.
+- **Crear plantilla** (Create template), or **Apagar y crear plantilla** if it's running: saves this VM's Windows as a [template](#templates). The VM stays as it is and starts again afterwards.
+- **Otro patrón** (Another pattern): changes the VM's icon (an animal or object on its color) and its color. Clicking the pattern next to the VM's name (or a profile's) does the same; the new one shows everywhere at once.
 - **Eliminar máquina** (Delete machine): removes the VM from Hyper-V, keeping the `.vhdx` disk or deleting it too. It can't be undone.
 
 <Aside type="caution">
@@ -152,11 +164,30 @@ Don't use Remote Desktop while streaming: it takes the console session away from
 
 ## Library
 
-**Biblioteca** (Library), the layers icon in the title bar, has three tabs:
+**Biblioteca** (Library), the layers icon in the title bar, has five tabs:
 
 - **Perfiles** (Profiles): the built-in profiles (marked **Incluido**, Built-in) and your own. **Nuevo perfil** (New profile) or **Duplicar** (Duplicate) starts one from another; yours can also be edited (**Editar**) and deleted (**Eliminar**, click again to confirm). Each keeps processor, memory, GPU share, disk size and type (**Fijo** / **Dinámico**, Fixed / Dynamic), Windows image, apps to install and how Moonlight opens (resolution, FPS, fullscreen or window), on top of the built-in profile it is **Basado en** (Based on). **Crear máquina** fills everything in from the chosen profile.
+- **Plantillas** (Templates): see [Templates](#templates).
 - **Discos** (Disks): the disks in the GpuVM folder, which VM uses each one (**En uso**, In use, or **Libre**, Free) and the free space on the PC. **Crear máquina con este disco** (Create machine with this disk) creates a VM again from a disk kept when its VM was deleted, with Windows and its apps as they were; free disks can be deleted (click again to confirm, it can't be undone).
+- **Compartidos** (Shared): see [Shared disks](#shared-disks).
 - **ISOs**: the Windows images you used, with the machines that used them, plus the ones in Downloads and Desktop. **Agregar ISO** (Add ISO) or **Agregar a la lista** (Add to the list) remembers one, and **Quitar de la lista** (Remove from the list) forgets it without deleting the file. Remembered ISOs are offered first in **Crear máquina**.
+
+## Templates
+
+A template is a VM's Windows saved as a read-only base disk, with its apps, cleanup level and password. Create one from a VM's **⋯** menu (**Crear plantilla**). A VM created **Desde plantilla** (From a template) gets a disk on top of it that only stores what changes, so it is ready in seconds and takes a few GB. Each copy gets its own streaming identity (Moonlight pairs with it as a new host) and its own computer name. Its disk has the template's size and can't be enlarged.
+
+The **Plantillas** tab lists each template with the VM it came from, its size and the machines built on it (**Base de**, Base of). **Crear máquina** opens the dialog with that template chosen. A template can only be deleted when no machine is built on it.
+
+## Shared disks
+
+A shared disk keeps your games or files apart from Windows and moves between machines, so a new VM doesn't download everything again. In the **Compartidos** tab, **Nuevo disco** (New disk) asks for a name, a use (**Juegos** or **General**, Games or General) and a maximum size; it only takes on the PC what you store on it.
+
+- **Connect it** from the VM's **Discos compartidos** card: **Conectar** (Connect), also while the VM runs. Inside, it gets a drive letter. A **Juegos** disk gets `SteamLibrary`, added to Steam's libraries (GpuVM closes Steam, adds it and opens it again; if a game keeps Steam open, it says so). **Desconectar** (Disconnect) closes it inside Windows first; if a program is using it, it tells you instead. A disk attached to another machine that is off can be moved with **Traer desde** (Bring from).
+- **Importar carpeta** (Import folder) copies a folder of this PC into the disk, with its progress on the button. A Steam library brings only its games (`steamapps`). It works while the disk isn't attached to a running VM. GpuVM's own folders, Windows and folders that contain them (such as a drive or the Users folder) can't be imported.
+
+<Aside type="note">
+The copy only goes from this PC to the disk. Before writing, GpuVM checks that the disk has no links anywhere it would write (a VM could have left one to redirect the copy out of the disk); if it finds one, or a folder it can't check, it doesn't copy. A disk another machine wrote can still hold files that machine left: treat it like any disk you plug in.
+</Aside>
 
 ## Preferences
 

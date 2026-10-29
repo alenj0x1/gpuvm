@@ -1,19 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  IconAdjustmentsHorizontal, IconCopyPlus, IconDatabase, IconDeviceFloppy, IconDisc, IconLoader2, IconPencil, IconPlus,
-  IconRestore, IconTrash, IconX,
+  IconAdjustmentsHorizontal, IconCopyPlus, IconDatabase, IconDeviceFloppy, IconDisc, IconFolderDown, IconLoader2, IconPencil, IconPlus,
+  IconRestore, IconStack2, IconTemplate, IconTrash, IconX,
 } from "@tabler/icons-react";
-import type { AppInfo, DiskInfo, HostInfo, IsoFile, ProfileInfo, ProfileSettings } from "./types";
-import { api, pickIso } from "./api";
+import type { AppInfo, DiskInfo, HostInfo, IsoFile, ProfileInfo, ProfileSettings, SharedDiskInfo, TemplateInfo } from "./types";
+import { api, pickFolder, pickIso } from "./api";
 import { PatternButton } from "./bauhaus";
 import { AppPicker, CleanupPicker, FPS, IsoPicker, useCleanupLevels, RESOLUTIONS, isoDetail, profileLabel, profileSummary } from "./pickers";
 import { Segmented, Slider, humanError, useScrollFade } from "./ui";
 
-export type LibraryTab = "perfiles" | "discos" | "isos";
+export type LibraryTab = "perfiles" | "plantillas" | "discos" | "compartidos" | "isos";
 
 // What each tab loaded last, so switching tabs shows it at once while it refreshes.
-const cache: { profiles?: ProfileInfo[]; apps?: AppInfo[]; disks?: DiskInfo[]; isos?: IsoFile[] } = {};
+const cache: { profiles?: ProfileInfo[]; apps?: AppInfo[]; disks?: DiskInfo[]; isos?: IsoFile[]; templates?: TemplateInfo[]; shared?: SharedDiskInfo[] } = {};
 
 /** Loading rows with the shape of the real ones (pattern, name, detail). */
 function RowSkeletons({ count = 3 }: { count?: number }) {
@@ -39,16 +39,21 @@ interface Props {
   /** Long jobs (restoring a disk) run like the VM ones, with their progress in the sidebar. */
   startJob: (vm: string, cmd: string, args: Record<string, unknown>, after?: () => void) => void;
   busy: (vm: string) => boolean;
+  /** The running job's progress message for a key (a template or shared disk), if any. */
+  progress: (key: string) => string | null;
   notify: (kind: "ok" | "error", text: string) => void;
   onOpenVm: (name: string) => void;
+  onCreateFromTemplate: (template: string) => void;
 }
 
-export function Library({ tab, onTab, host, startJob, busy, notify, onOpenVm }: Props) {
+export function Library({ tab, onTab, host, startJob, busy, progress, notify, onOpenVm, onCreateFromTemplate }: Props) {
   // Each tab puts its own action (new profile, add ISO…) next to the tabs, so the card needs no title.
   const tabs = (
     <Segmented<LibraryTab> value={tab} onChange={onTab} options={[
       { value: "perfiles", label: <><IconAdjustmentsHorizontal size={15} />Perfiles</> },
+      { value: "plantillas", label: <><IconTemplate size={15} />Plantillas</> },
       { value: "discos", label: <><IconDatabase size={15} />Discos</> },
+      { value: "compartidos", label: <><IconStack2 size={15} />Compartidos</> },
       { value: "isos", label: <><IconDisc size={15} />ISOs</> },
     ]} />
   );
@@ -56,6 +61,8 @@ export function Library({ tab, onTab, host, startJob, busy, notify, onOpenVm }: 
     <div className="main">
       {tab === "perfiles" && <Profiles tabs={tabs} host={host} notify={notify} />}
       {tab === "discos" && <Disks tabs={tabs} startJob={startJob} busy={busy} notify={notify} onOpenVm={onOpenVm} />}
+      {tab === "plantillas" && <Templates tabs={tabs} notify={notify} onOpenVm={onOpenVm} onCreate={onCreateFromTemplate} />}
+      {tab === "compartidos" && <SharedDisks tabs={tabs} startJob={startJob} progress={progress} notify={notify} onOpenVm={onOpenVm} />}
       {tab === "isos" && <Isos tabs={tabs} notify={notify} />}
     </div>
   );
@@ -340,6 +347,182 @@ function Disks({ tabs, startJob, busy, notify, onOpenVm }: Pick<Props, "startJob
     </div>
     </>
   );
+}
+
+/* ---------- Templates ---------- */
+
+function Templates({ tabs, notify, onOpenVm, onCreate }: { tabs: React.ReactNode; notify: Props["notify"]; onOpenVm: Props["onOpenVm"]; onCreate: (name: string) => void }) {
+  const [templates, setTemplates] = useState<TemplateInfo[] | null>(cache.templates ?? null);
+  const [confirm, setConfirm] = useState<string | null>(null);
+  const cleanupLevels = useCleanupLevels();
+  const load = useCallback(() => api.templates().then((t) => { cache.templates = t; setTemplates(t); }).catch((e) => { setTemplates([]); notify("error", humanError(e)); }), [notify]);
+  useEffect(() => { load(); }, [load]);
+  const remove = async (name: string) => {
+    try { await api.removeTemplate(name); setConfirm(null); load(); notify("ok", `Plantilla ${name} eliminada.`); }
+    catch (e) { notify("error", humanError(e)); }
+  };
+
+  return (
+    <>
+    <div className="library-head">{tabs}</div>
+    <div className="card">
+      <div className="rows">
+        {templates === null && <RowSkeletons />}
+        {templates?.length === 0 && <p className="muted-note">Crea una plantilla desde el menú «…» de una máquina: guarda su Windows con sus apps para crear otras en segundos.</p>}
+        {templates?.map((t) => {
+          const level = t.cleanup !== "none" ? cleanupLevels.find((l) => l.id === t.cleanup)?.name : null;
+          return (
+            <div className="row" key={t.name}>
+              <PatternButton name={`plantilla-${t.name}`} size={36} radius={10} />
+              <div className="row-text">
+                <strong>{t.name}{t.usedBy.length > 0 && <span className="tag">{t.usedBy.length === 1 ? `Base de ${t.usedBy[0]}` : `Base de ${t.usedBy.length} máquinas`}</span>}</strong>
+                <span>{[`Desde ${t.fromVM}`, t.edition, `ocupa ${t.fileGB} GB`, level && `Windows: ${level.toLowerCase()}`].filter(Boolean).join(" · ")}</span>
+              </div>
+              <div className="row-actions">
+                {t.usedBy.length === 1 && <button className="btn ghost" onClick={() => onOpenVm(t.usedBy[0])}>Ver máquina</button>}
+                <button className="btn" onClick={() => onCreate(t.name)}><IconPlus size={16} />Crear máquina</button>
+                {t.usedBy.length === 0 && (
+                  <button className={`btn ${confirm === t.name ? "danger-fill" : "ghost danger"}`} onClick={() => confirm === t.name ? remove(t.name) : setConfirm(t.name)}>
+                    <IconTrash size={16} />{confirm === t.name ? `Borrar ${t.fileGB} GB` : "Eliminar"}
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+    </>
+  );
+}
+
+/* ---------- Shared disks ---------- */
+
+const PURPOSE_LABEL = { games: "Juegos", general: "General" } as const;
+
+function SharedDisks({ tabs, startJob, progress, notify, onOpenVm }: Pick<Props, "startJob" | "progress" | "notify" | "onOpenVm"> & { tabs: React.ReactNode }) {
+  const [disks, setDisks] = useState<SharedDiskInfo[] | null>(cache.shared ?? null);
+  const [creating, setCreating] = useState(false);
+  const [confirm, setConfirm] = useState<string | null>(null);
+  const load = useCallback(() => api.sharedDisks().then((d) => { cache.shared = d; setDisks(d); }).catch((e) => { setDisks([]); notify("error", humanError(e)); }), [notify]);
+  useEffect(() => { load(); }, [load]);
+  const remove = async (name: string) => {
+    try { await api.removeSharedDisk(name); setConfirm(null); load(); notify("ok", `Disco ${name} eliminado.`); }
+    catch (e) { notify("error", humanError(e)); }
+  };
+  const importFolder = async (name: string) => {
+    const folder = await pickFolder();
+    if (!folder) return;
+    startJob(`compartido:${name}`, "Import-GpuVMSharedDisk", { Name: name, Path: folder }, () => { load(); notify("ok", `Carpeta copiada al disco ${name}.`); });
+  };
+
+  return (
+    <>
+    <div className="library-head">
+      {tabs}
+      <button className="btn" onClick={() => setCreating(true)}><IconPlus size={16} />Nuevo disco</button>
+    </div>
+    <div className="card">
+      <div className="rows">
+        {disks === null && <RowSkeletons />}
+        {disks?.length === 0 && <p className="muted-note">Un disco compartido guarda tus juegos o archivos aparte y pasa de una máquina a otra sin descargar todo de nuevo.</p>}
+        {disks?.map((d) => {
+          const working = progress(`compartido:${d.name}`);
+          return (
+            <div className="row" key={d.name}>
+              <PatternButton name={`compartido-${d.name}`} size={36} radius={10} />
+              <div className="row-text">
+                <strong>{d.name}<span className={`tag ${d.vm ? "" : "free"}`}>{d.vm ? `En ${d.vm}` : "Libre"}</span></strong>
+                <span>{PURPOSE_LABEL[d.purpose]} · {d.sizeGB} GB · ocupa {d.fileGB} GB</span>
+              </div>
+              <div className="row-actions">
+                {d.vm && <button className="btn ghost" onClick={() => onOpenVm(d.vm!)}>Ver máquina</button>}
+                <button className="btn" disabled={!!working} onClick={() => importFolder(d.name)} title="Copiar una carpeta de este equipo al disco">
+                  {working ? <IconLoader2 size={16} className="spin" /> : <IconFolderDown size={16} />}{working ?? "Importar carpeta"}
+                </button>
+                {!d.vm && !working && (
+                  <button className={`btn ${confirm === d.name ? "danger-fill" : "ghost danger"}`} onClick={() => confirm === d.name ? remove(d.name) : setConfirm(d.name)}>
+                    <IconTrash size={16} />{confirm === d.name ? `Borrar ${d.fileGB} GB` : "Eliminar"}
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+    {creating && <NewSharedDisk existing={disks ?? []} notify={notify} onCancel={() => setCreating(false)} onCreated={() => { setCreating(false); load(); }} />}
+    </>
+  );
+}
+
+function NewSharedDisk({ existing, notify, onCancel, onCreated }: {
+  existing: SharedDiskInfo[]; notify: Props["notify"]; onCancel: () => void; onCreated: () => void;
+}) {
+  const [name, setName] = useState(existing.some((d) => d.name === "juegos") ? "" : "juegos");
+  const [purpose, setPurpose] = useState<"games" | "general">("games");
+  // Dynamic: it only takes what its files use, so the size is a ceiling, not space taken now.
+  const maxGB = 2048;
+  const [sizeGB, setSizeGB] = useState(512);
+  const [saving, setSaving] = useState(false);
+  const [bodyRef, bodyFade] = useScrollFade<HTMLDivElement>();
+  const trimmed = name.trim();
+  const nameError = !trimmed ? "" : !/^[\w-]{1,40}$/.test(trimmed) ? "Usa letras, números o guiones, sin espacios"
+    : existing.some((d) => d.name.toLowerCase() === trimmed.toLowerCase()) ? "Ya hay un disco con ese nombre" : "";
+  const complete = !!trimmed && !nameError;
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel(); };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [onCancel]);
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!complete) return;
+    setSaving(true);
+    try { await api.newSharedDisk(trimmed, sizeGB, purpose); notify("ok", `Disco ${trimmed} creado.`); onCreated(); }
+    catch (err) { notify("error", humanError(err)); setSaving(false); }
+  };
+
+  return createPortal(
+    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && !trimmed && onCancel()}>
+    <div className="dialog narrow" role="dialog" aria-modal="true" aria-label="Nuevo disco compartido">
+      <div className="dialog-head">
+        <PatternButton name={`compartido-${trimmed || "nuevo"}`} size={44} radius={12} />
+        <h2>Nuevo disco compartido</h2>
+        <button type="button" className="icon-btn" aria-label="Cerrar" onClick={onCancel}><IconX size={18} /></button>
+      </div>
+      <form className="dialog-form" onSubmit={save}>
+        <div ref={bodyRef} className={`dialog-body ${bodyFade}`}>
+          <div className="field">
+            <label className="field-top" htmlFor="sd-name"><span>Nombre</span></label>
+            <input id="sd-name" className="text-input" value={name} autoFocus onChange={(e) => setName(e.target.value)} />
+            {nameError && <span className="error-text">{nameError}</span>}
+          </div>
+          <div className="field">
+            <div className="field-top"><span>Uso</span></div>
+            <div className="segment-row">
+              <Segmented value={purpose} onChange={setPurpose} options={[{ value: "games", label: "Juegos" }, { value: "general", label: "General" }]} />
+            </div>
+            <span className="hint">{purpose === "games"
+              ? "Al conectarlo, Steam lo suma a sus bibliotecas en la máquina."
+              : "Aparece como un disco más en la máquina."}</span>
+          </div>
+          <div className="field">
+            <div className="field-top"><span>Tamaño máximo</span><strong>{sizeGB} GB</strong></div>
+            <Slider label="Tamaño" value={sizeGB} min={64} max={maxGB} step={64} onChange={setSizeGB} />
+            <span className="hint">Solo ocupa en el equipo lo que guardes en él.</span>
+          </div>
+        </div>
+        <div className="dialog-foot">
+          <button type="button" className="btn ghost" onClick={onCancel}>Cancelar</button>
+          <button type="submit" className="primary compact" disabled={saving || !complete}>
+            {saving ? <IconLoader2 size={16} className="spin" /> : <IconPlus size={16} />}Crear disco
+          </button>
+        </div>
+      </form>
+    </div>
+    </div>,
+    document.querySelector(".app") ?? document.body);
 }
 
 /* ---------- ISOs ---------- */

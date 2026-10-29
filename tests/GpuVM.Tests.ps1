@@ -637,4 +637,83 @@ InModuleScope GpuVM {
             Assert-MockCalled Add-VMNetworkAdapterExtendedAcl -Times 0 -Exactly -Scope It -ParameterFilter { $Action -eq 'Allow' }
         }
     }
+
+    Describe 'Templates and shared disks' {
+        It 'gives a copy its own Sunshine identity, keeping the web credentials' {
+            $root = Join-Path $TestDrive 'clone'
+            $config = Join-Path $root 'Program Files\Sunshine\config'
+            New-Item -ItemType Directory -Path (Join-Path $config 'credentials') -Force | Out-Null
+            '{"username":"gpuvm","salt":"s","password":"p","root":{"uniqueid":"ABC","named_devices":[{"name":"host"}]}}' |
+                Set-Content -LiteralPath (Join-Path $config 'sunshine_state.json')
+            'cert' | Set-Content -LiteralPath (Join-Path $config 'credentials\cacert.pem')
+            'key' | Set-Content -LiteralPath (Join-Path $config 'credentials\cakey.pem')
+            Reset-ClonedGuestIdentity -WindowsRoot $root
+            $state = Get-Content -Raw -LiteralPath (Join-Path $config 'sunshine_state.json') | ConvertFrom-Json -AsHashtable
+            $state.Contains('root') | Should Be $false
+            $state['username'] | Should Be 'gpuvm'
+            $state['password'] | Should Be 'p'
+            Test-Path (Join-Path $config 'credentials\cacert.pem') | Should Be $false
+            Test-Path (Join-Path $config 'credentials\cakey.pem') | Should Be $false
+        }
+
+        It 'never follows a link planted in the copy towards the host' {
+            $root = Join-Path $TestDrive 'clone-link'
+            $outside = Join-Path $TestDrive 'host-files'
+            New-Item -ItemType Directory -Path (Join-Path $outside 'credentials') -Force | Out-Null
+            'host' | Set-Content -LiteralPath (Join-Path $outside 'credentials\cacert.pem')
+            New-Item -ItemType Directory -Path (Join-Path $root 'Program Files\Sunshine') -Force | Out-Null
+            New-Item -ItemType Junction -Path (Join-Path $root 'Program Files\Sunshine\config') -Target $outside | Out-Null
+            Test-Throws { Reset-ClonedGuestIdentity -WindowsRoot $root } | Should Be $true
+            Test-Path (Join-Path $outside 'credentials\cacert.pem') | Should Be $true
+        }
+
+        It 'keeps shared disk labels within NTFS limits and rejects bad names' {
+            Get-SharedDiskLabel 'juegos' | Should Be 'juegos'
+            (Get-SharedDiskLabel ('a' * 40)).Length | Should Be 32
+            Test-Throws { Get-SharedDiskPath -Name '..\fuera' } | Should Be $true
+            Test-Throws { Get-TemplateDirectory -Name 'a b' } | Should Be $true
+        }
+
+        It 'keeps templates and shared disks out of the VM folders' {
+            Mock Get-GpuVMDefaultRoot { 'C:\GpuVM' }
+            Get-TemplateRoot | Should Be 'C:\GpuVM\.templates'
+            Get-SharedDiskRoot | Should Be 'C:\GpuVM\.shared'
+            # A VM name can't start with a dot, so no VM folder can be one of these.
+            '.templates' -match '^[\w-]{1,40}$' | Should Be $false
+            '.shared' -match '^[\w-]{1,40}$' | Should Be $false
+        }
+
+        It 'builds a copy with the profile hardware and the template Windows, at the template size' {
+            $config = Resolve-GpuVMProfile 'max-performance'
+            $template = @{ sizeGB = 200; config = @{ guest = @{ userName = 'gpuvm'; apps = @('steam'); cleanup = 'privacy' } } }
+            $clone = New-TemplateCloneConfig -Config $config -Template $template
+            $clone['vm']['cpu']['count'] | Should Be 8
+            $clone['vm']['disk']['sizeGB'] | Should Be 200
+            $clone['vm']['disk']['type'] | Should Be 'Differencing'
+            $clone['guest']['cleanup'] | Should Be 'privacy'
+            $clone.Contains('iso') | Should Be $false
+            (Test-GpuVMProfileData -Config $clone -HostLogicalProcessors 12 -HostMemoryGB 16).Count | Should Be 0
+        }
+
+        It 'refuses to import GpuVM, Windows or anything that contains them' {
+            Mock Get-GpuVMDefaultRoot { 'C:\GpuVM' }
+            Test-Throws { Assert-ImportableFolder -Path 'C:\' } | Should Be $true
+            Test-Throws { Assert-ImportableFolder -Path 'C:\GpuVM\win10' } | Should Be $true
+            Test-Throws { Assert-ImportableFolder -Path $env:SystemRoot } | Should Be $true
+            Test-Throws { Assert-ImportableFolder -Path (Split-Path ([Environment]::GetFolderPath('UserProfile')) -Parent) } | Should Be $true
+            Test-Throws { Assert-ImportableFolder -Path 'D:\Juegos\SteamLibrary' } | Should Be $false
+            Test-Throws { Assert-ImportableFolder -Path (Join-Path ${env:ProgramFiles(x86)} 'Steam') } | Should Be $false
+        }
+
+        It 'stops an import at any link below the target, however deep' {
+            $root = Join-Path $TestDrive 'shared'
+            $deep = Join-Path $root 'SteamLibrary\steamapps\common\Foo'
+            New-Item -ItemType Directory -Path $deep -Force | Out-Null
+            Test-Throws { Assert-NoReparsePointBelow -Root $root -Path (Join-Path $root 'SteamLibrary') } | Should Be $false
+            $outside = Join-Path $TestDrive 'host-startup'
+            New-Item -ItemType Directory -Path $outside -Force | Out-Null
+            New-Item -ItemType Junction -Path (Join-Path $deep 'bin') -Target $outside | Out-Null
+            Test-Throws { Assert-NoReparsePointBelow -Root $root -Path (Join-Path $root 'SteamLibrary') } | Should Be $true
+        }
+    }
 }

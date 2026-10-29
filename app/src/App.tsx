@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
+import { IconHome,
   IconAlertTriangle, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconLoader2, IconPlus, IconRefresh, IconShieldLock,
 } from "@tabler/icons-react";
 import { Preferences } from "./Preferences";
 import { Library, type LibraryTab } from "./Library";
+import { Home } from "./Home";
+// The app's own icon (the installer and the window use it), never a machine figure.
+import appIcon from "../src-tauri/icons/128x128.png";
 import type { HostInfo, JobEvent, Sample, VmOverview } from "./types";
 import { api, onJob, relaunchAsAdmin, startJob as runJob } from "./api";
 import { Bauhaus } from "./bauhaus";
@@ -17,10 +20,12 @@ const NEW_VM = "__new__";
 // Route of the preferences screen in the URL hash, shaped so it doesn't look like a VM name.
 const PREFS = ":preferencias";
 const LIBRARY = ":biblioteca";
+// The home screen, where the app opens.
+const HOME = ":inicio";
 const libraryTab = (route: string): LibraryTab | null => {
   if (!route.startsWith(LIBRARY)) return null;
   const tab = route.slice(LIBRARY.length + 1);
-  return tab === "discos" || tab === "isos" ? tab : "perfiles";
+  return tab === "plantillas" || tab === "discos" || tab === "compartidos" || tab === "isos" ? tab : "perfiles";
 };
 
 interface RunningJob extends JobInfo {
@@ -37,6 +42,8 @@ export function App() {
   const [selected, setSelected] = useState(() => decodeURIComponent(location.hash.slice(1)));
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem("gpuvm.collapsed") === "1"; } catch { return false; } });
   const [creating, setCreating] = useState(false);
+  // Template preselected when "Crear máquina" is opened from a template in the library.
+  const [createTemplate, setCreateTemplate] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   const [jobs, setJobs] = useState<Record<string, RunningJob>>({});
   // Short actions (start, shut down, save…) in progress per VM, to show their state instantly.
@@ -98,7 +105,7 @@ export function App() {
   }, []);
   useEffect(() => { try { localStorage.setItem("gpuvm.collapsed", collapsed ? "1" : "0"); } catch { /* no storage */ } }, [collapsed]);
   useEffect(() => {
-    if (selected !== PREFS && !libraryTab(selected) && vms && vms.length && !vms.some((v) => v.name === selected)) setSelected(vms[0].name);
+    if (selected !== PREFS && selected !== HOME && !libraryTab(selected) && vms && vms.length && !vms.some((v) => v.name === selected)) setSelected(HOME);
   }, [vms, selected]);
 
   // "Otro patrón" (another pattern) is reflected instantly in the sidebar too.
@@ -167,7 +174,7 @@ export function App() {
       <div className="app single">
         <TitleBar />
         <div className="empty">
-          <Bauhaus name="gpuvm-admin" size={96} radius={24} cols={3} rows={3} />
+          <Bauhaus name="gpuvm-admin" size={96} radius={24} />
           <h2>GpuVM necesita permisos de administrador</h2>
           <p>Hyper-V solo deja crear y controlar máquinas a un administrador.</p>
           <button className="primary" onClick={relaunchAsAdmin}><IconShieldLock size={17} />Abrir como administrador</button>
@@ -178,17 +185,22 @@ export function App() {
 
   return (
     <div className={`app ${collapsed ? "collapsed" : ""}`}>
-      <TitleBar prefsOpen={selected === PREFS} onPrefs={() => setSelected(selected === PREFS ? (vms?.[0]?.name ?? "") : PREFS)}
-        libraryOpen={!!libraryTab(selected)} onLibrary={() => setSelected(libraryTab(selected) ? (vms?.[0]?.name ?? "") : LIBRARY)} />
+      <TitleBar prefsOpen={selected === PREFS} onPrefs={() => setSelected(selected === PREFS ? HOME : PREFS)}
+        libraryOpen={!!libraryTab(selected)} onLibrary={() => setSelected(libraryTab(selected) ? HOME : LIBRARY)} />
       <aside className="side">
         <div className="side-head">
-          <span className="side-logo"><Bauhaus name="gpuvm" size={28} radius={8} /></span>
+          <span className="side-logo"><img src={appIcon} alt="" width={28} height={28} draggable={false} /></span>
           <strong>GpuVM</strong>
           <button className="icon-btn side-toggle" aria-label={collapsed ? "Expandir barra" : "Contraer barra"} onClick={() => setCollapsed((c) => !c)}>
             {collapsed ? <IconLayoutSidebarLeftExpand size={18} /> : <IconLayoutSidebarLeftCollapse size={18} />}
           </button>
         </div>
         <nav className="side-list">
+          {vms && vms.length > 0 && (
+            <button className={`side-item side-home ${selected === HOME ? "active" : ""}`} onClick={() => setSelected(HOME)} title="Inicio">
+              <span className="add-icon"><IconHome size={16} /></span><span className="name">Inicio</span>
+            </button>
+          )}
           {vms === null && [0, 1, 2].map((i) => (
             <div key={i} className="side-item side-skeleton" aria-hidden="true">
               <span className="skeleton icon" />
@@ -229,18 +241,21 @@ export function App() {
             <div className="stats">{[0, 1, 2, 3].map((i) => <div key={i} className="skeleton" style={{ height: 96 }} />)}</div>
             <div className="skeleton" style={{ height: 170 }} />
           </div>
+        ) : selected === HOME && vms.length > 0 ? (
+          <Home vms={vms} busyFor={busyFor} startJob={startJob} onOpenVm={setSelected} onRoute={setSelected} />
         ) : selected === PREFS ? (
           <Preferences />
         ) : libraryTab(selected) ? (
           <Library tab={libraryTab(selected)!} onTab={(t) => setSelected(`${LIBRARY}:${t}`)} host={host} startJob={startJob}
-            busy={(name) => !!busyFor(name)} notify={push} onOpenVm={setSelected} />
+            busy={(name) => !!busyFor(name)} progress={(key) => busyFor(key)?.message ?? null} notify={push} onOpenVm={setSelected}
+            onCreateFromTemplate={(template) => { setCreateTemplate(template); setCreating(true); }} />
         ) : current ? (
           <VmView key={current.id} vm={current} host={host} samples={history.current[current.name] ?? []} busy={busyFor(current.name)}
             startJob={startJob} run={run} onRemoved={() => setSelected("")} />
         ) : (
           <div className="main">
             <div className="empty">
-              <Bauhaus name="primera-maquina" size={112} radius={28} cols={3} rows={3} />
+              <Bauhaus name="primera-maquina" size={112} radius={28} />
               <h2>Crea tu primera máquina</h2>
               <p>Windows 10 u 11 con {host?.gpuName ? `tu ${host.gpuName.replace("NVIDIA GeForce ", "")}` : "tu GPU"}, lista para abrir con Moonlight en un clic.</p>
               <button className="primary" onClick={() => setCreating(true)}><IconPlus size={17} />Crear máquina</button>
@@ -250,14 +265,18 @@ export function App() {
       </div>
 
       {creating && (
-        <CreateDialog existing={vms ?? []} job={createJob} error={createError}
-          onClose={() => setCreating(false)}
-          onCreate={({ name, iso, profile, password, apps, cleanup }) => {
+        <CreateDialog existing={vms ?? []} job={createJob} error={createError} template={createTemplate}
+          onClose={() => { setCreating(false); setCreateTemplate(null); }}
+          onCreate={({ name, iso, template, profile, password, apps, cleanup }) => {
             setCreateError(null);
-            startJob(NEW_VM, "New-GpuVM", { Name: name, IsoPath: iso, Profile: profile, Override: { guest: { apps, cleanup } }, Credential: { user: "gpuvm", password }, Start: true }, () => {
+            const args = template
+              ? { Name: name, Template: template, Profile: profile, Start: true }
+              : { Name: name, IsoPath: iso, Profile: profile, Override: { guest: { apps, cleanup } }, Credential: { user: "gpuvm", password }, Start: true };
+            startJob(NEW_VM, "New-GpuVM", args, () => {
               setCreating(false);
+              setCreateTemplate(null);
               setSelected(name);
-              push("ok", `${name} está lista. Windows termina de configurarse solo en unos minutos.`);
+              push("ok", template ? `${name} está lista.` : `${name} está lista. Windows termina de configurarse solo en unos minutos.`);
             });
           }} />
       )}

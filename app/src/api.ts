@@ -1,4 +1,4 @@
-import type { AppInfo, CleanupLevel, DiskInfo, DisplayMode, HostInfo, IsoFile, JobEvent, ProfileInfo, ProfileSettings, VmOverview } from "./types";
+import type { AppInfo, CleanupLevel, HomeInfo, SharedDiskInfo, TemplateInfo, DiskInfo, DisplayMode, HostInfo, IsoFile, JobEvent, ProfileInfo, ProfileSettings, VmOverview } from "./types";
 import * as mock from "./mock";
 
 // Outside Tauri (browser) the UI runs on sample data so it can be designed.
@@ -12,6 +12,7 @@ async function ps<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T
 
 export const api = {
   overview: () => ps<VmOverview>("Get-GpuVMOverview"),
+  home: () => ps<HomeInfo>("Get-GpuVMHome").then((r) => r[0]),
   isos: () => ps<IsoFile>("Get-GpuVMIsoList"),
   hostInfo: () => ps<HostInfo>("Get-GpuVMHostInfo"),
   profiles: () => ps<ProfileInfo>("Get-GpuVMProfile"),
@@ -32,6 +33,11 @@ export const api = {
     ps<ProfileInfo>("Save-GpuVMProfile", { Name: name, Description: description, Extends: extendsName, Settings: settings, ...(previous ? { Previous: previous } : {}) }),
   removeProfile: (name: string) => ps("Remove-GpuVMProfile", { Name: name }),
   disks: () => ps<DiskInfo>("Get-GpuVMDisk"),
+  templates: () => ps<TemplateInfo>("Get-GpuVMTemplate"),
+  removeTemplate: (name: string) => ps("Remove-GpuVMTemplate", { Name: name, Confirm: false }),
+  sharedDisks: () => ps<SharedDiskInfo>("Get-GpuVMSharedDisk"),
+  newSharedDisk: (name: string, sizeGB: number, purpose: string) => ps<SharedDiskInfo>("New-GpuVMSharedDisk", { Name: name, SizeGB: sizeGB, Purpose: purpose }),
+  removeSharedDisk: (name: string) => ps("Remove-GpuVMSharedDisk", { Name: name, Confirm: false }),
   removeDisk: (name: string) => ps("Remove-GpuVMDisk", { Name: name, Confirm: false }),
   addIso: (path: string) => ps("Add-GpuVMIso", { Path: path }),
   removeIso: (path: string) => ps("Remove-GpuVMIso", { Path: path }),
@@ -66,4 +72,11 @@ export async function pickIso(): Promise<string | null> {
   const { open } = await import("@tauri-apps/plugin-dialog");
   const file = await open({ multiple: false, filters: [{ name: "Imagen de Windows", extensions: ["iso"] }] });
   return typeof file === "string" ? file : null;
+}
+
+export async function pickFolder(): Promise<string | null> {
+  if (!inTauri) return "D:\\SteamLibrary";
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const folder = await open({ directory: true, multiple: false });
+  return typeof folder === "string" ? folder : null;
 }

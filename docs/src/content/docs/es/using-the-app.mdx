@@ -23,6 +23,14 @@ import preferencesDark from '../../../assets/screenshots/preferences-dark.png';
 
 Si la app no está corriendo como administrador, muestra **GpuVM necesita permisos de administrador** con el botón **Abrir como administrador**, que la vuelve a abrir con permisos. Si no puede leer Hyper-V, un aviso muestra el error con **Reintentar**.
 
+## Inicio
+
+La app abre en **Inicio**, lo primero de la barra lateral:
+
+- **La última máquina que abriste**, con **Abrir** o **Encender y abrir**.
+- **Memoria:** cuánta tiene libre el equipo, qué la usa más y cada máquina con **Encendida**, **Puede encender** o cuánta memoria le falta. Una máquina que no cabe ofrece **Abrir con N GB**: baja su memoria a lo que cabe (queda guardado, como al cambiarla en Opciones) y la abre. La página de la máquina muestra lo mismo.
+- **Lo que necesita atención**, solo cuando hay algo: un driver de la GPU desactualizado, Moonlight sin emparejar, apps por instalar, la contraseña de Windows sin guardar o poco espacio en el disco, cada cosa con el botón que la arregla.
+
 ## Crear una VM
 
 Si todavía no hay VMs, la app te invita a crear la primera.
@@ -35,11 +43,14 @@ Si todavía no hay VMs, la app te invita a crear la primera.
 
 2. Completa el formulario:
    - **Nombre:** letras, números, `_` o guiones, hasta 40 caracteres, sin espacios. Sugiere `win-gpu`.
+   - **Instalar Windows** / **Desde plantilla**, si tienes [plantillas](#plantillas): desde una plantilla la VM queda lista en segundos y solo pide el nombre y el perfil; Windows, sus apps, el nivel de limpieza y la contraseña vienen de la plantilla.
    - **Imagen de Windows:** primero los ISOs que ya usaste o agregaste, después los que encuentra en tus carpetas Descargas y Escritorio, o **Buscar otro ISO** para elegir uno.
    - **Perfil:** **Equilibrado** (`balanced`), **Máximo rendimiento** (`max-performance`, el predeterminado) o uno tuyo de la [Biblioteca](#biblioteca). El perfil llena lo demás, incluidos su ISO y sus apps. Consulta [Perfiles](/gpuvm/es/profiles/).
    - **Windows:** qué tan limpio queda Windows. Consulta [Windows](#windows).
    - **Apps que se instalan:** se instalan la primera vez que se abre la VM. Consulta [Apps](#apps).
    - **Contraseña de Windows** del usuario local `gpuvm`, de al menos 6 caracteres, escrita dos veces.
+
+   **Crear máquina** queda deshabilitado hasta que el formulario esté completo; cada problema aparece junto a su campo mientras escribes.
 
 3. Haz clic en **Crear máquina**. El diálogo muestra cada paso a medida que avanza. Puedes cerrarlo: el avance sigue en la barra lateral, y si la creación falla el diálogo se vuelve a abrir con el error.
 
@@ -141,7 +152,8 @@ El menú **⋯** tiene:
 - **Ver consola de Hyper-V**. Solo muestra la pantalla básica de Hyper-V, no lo que dibuja la GPU.
 - **Volver a emparejar Moonlight**.
 - **Actualizar driver de la GPU**, o **Apagar y actualizar driver** si está encendida.
-- **Otro patrón**: cambia el ícono Bauhaus y el color de la VM. Hacer clic en el patrón junto al nombre de la VM (o de un perfil) hace lo mismo; el nuevo se ve en todas partes al instante.
+- **Crear plantilla**, o **Apagar y crear plantilla** si está encendida: guarda el Windows de esta VM como [plantilla](#plantillas). La VM queda igual y vuelve a encender al terminar.
+- **Otro patrón**: cambia el ícono de la VM (un animal u objeto sobre su color) y su color. Hacer clic en el patrón junto al nombre de la VM (o de un perfil) hace lo mismo; el nuevo se ve en todas partes al instante.
 - **Eliminar máquina**: quita la VM de Hyper-V, conservando el disco `.vhdx` o borrándolo también. No se puede deshacer.
 
 <Aside type="caution">
@@ -150,11 +162,30 @@ No uses Escritorio remoto mientras transmites: se lleva la sesión de la consola
 
 ## Biblioteca
 
-La **Biblioteca**, el ícono de capas en la barra de título, tiene tres pestañas:
+La **Biblioteca**, el ícono de capas en la barra de título, tiene cinco pestañas:
 
 - **Perfiles:** los perfiles incluidos (marcados **Incluido**) y los tuyos. **Nuevo perfil** o **Duplicar** crea uno a partir de otro; los tuyos también se pueden editar (**Editar**) y borrar (**Eliminar**, haz clic otra vez para confirmar). Cada uno guarda procesador, memoria, parte de la GPU, tamaño y tipo de disco (**Fijo** / **Dinámico**), imagen de Windows, apps por instalar y cómo abre Moonlight (resolución, FPS, pantalla completa o ventana), sobre el perfil incluido en el que está **Basado en**. **Crear máquina** llena todo con el perfil elegido.
+- **Plantillas:** consulta [Plantillas](#plantillas).
 - **Discos:** los discos de la carpeta de GpuVM, qué VM usa cada uno (**En uso** o **Libre**) y el espacio libre del equipo. **Crear máquina con este disco** vuelve a crear una VM con un disco que se conservó al eliminarla, con Windows y sus apps como estaban; los discos libres se pueden borrar (haz clic otra vez para confirmar, no se puede deshacer).
+- **Compartidos:** consulta [Discos compartidos](#discos-compartidos).
 - **ISOs:** las imágenes de Windows que usaste, con las máquinas que las usaron, más las de Descargas y Escritorio. **Agregar ISO** o **Agregar a la lista** la recuerda, y **Quitar de la lista** la olvida sin borrar el archivo. Las ISOs recordadas se ofrecen primero en **Crear máquina**.
+
+## Plantillas
+
+Una plantilla es el Windows de una VM guardado como disco base de solo lectura, con sus apps, nivel de limpieza y contraseña. Se crea desde el menú **⋯** de una VM (**Crear plantilla**). Una VM creada **Desde plantilla** recibe un disco encima que solo guarda lo que cambia, así queda lista en segundos y ocupa pocos GB. Cada copia tiene su propia identidad de streaming (Moonlight se empareja con ella como un equipo nuevo) y su propio nombre de equipo. Su disco mide lo mismo que la plantilla y no se puede ampliar.
+
+La pestaña **Plantillas** muestra cada plantilla con la VM de la que salió, cuánto ocupa y las máquinas creadas sobre ella (**Base de**). **Crear máquina** abre el diálogo con esa plantilla elegida. Una plantilla solo se puede borrar cuando ninguna máquina está creada sobre ella.
+
+## Discos compartidos
+
+Un disco compartido guarda tus juegos o archivos aparte de Windows y pasa de una máquina a otra, así una VM nueva no descarga todo de nuevo. En la pestaña **Compartidos**, **Nuevo disco** pide un nombre, un uso (**Juegos** o **General**) y un tamaño máximo; en el equipo solo ocupa lo que guardes en él.
+
+- **Conéctalo** desde la tarjeta **Discos compartidos** de la VM: **Conectar**, también con la VM encendida. Dentro recibe una letra de unidad. Un disco de **Juegos** recibe `SteamLibrary`, que se suma a las bibliotecas de Steam (GpuVM cierra Steam, la suma y lo vuelve a abrir; si un juego mantiene Steam abierto, te avisa). **Desconectar** primero lo cierra dentro de Windows; si un programa lo está usando, te avisa en vez de quitarlo. Un disco conectado a otra máquina apagada se puede mover con **Traer desde**.
+- **Importar carpeta** copia una carpeta de este equipo al disco, con el avance en el botón. Una biblioteca de Steam trae solo sus juegos (`steamapps`). Funciona mientras el disco no esté conectado a una VM encendida. No se pueden importar las carpetas de GpuVM, Windows ni carpetas que las contengan (como una unidad o la carpeta Usuarios).
+
+<Aside type="note">
+La copia solo va de este equipo al disco. Antes de escribir, GpuVM revisa que el disco no tenga enlaces donde va a escribir (una VM pudo dejar uno para sacar la copia del disco); si encuentra uno, o una carpeta que no puede revisar, no copia. Un disco que escribió otra máquina puede tener archivos que ella dejó: trátalo como cualquier disco que conectas.
+</Aside>
 
 ## Preferencias
 

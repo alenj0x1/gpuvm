@@ -130,7 +130,7 @@ function Assert-NoReparsePoint {
         # Nothing exists from here down: it will be created as plain folders.
         if ($null -eq $attributes) { return }
         if ($attributes -band [IO.FileAttributes]::ReparsePoint) {
-            throw "El disco de la VM tiene un enlace en $current; no se copia el driver para no escribir fuera de la VM."
+            throw "El disco de la VM tiene un enlace en $current; no se escribe en él para no escribir fuera de la VM."
         }
     }
 }

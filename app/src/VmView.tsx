@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  IconAlertTriangle, IconPlugConnected, IconStack2, IconTemplate,
   IconSparkles,
   IconCpu, IconDeviceDesktop, IconDots, IconExternalLink, IconKey, IconLoader2, IconPlayerPause, IconPlayerPlay,
   IconPower, IconRefresh, IconRefreshAlert, IconTrash, IconPlugOff, IconClock, IconTopologyStar3, IconPalette,
   IconBolt, IconDeviceFloppy, IconLink, IconDownload, IconCheck, IconChartLine, IconArrowsMaximize, IconAppWindow, IconApps, IconClipboardText, IconScreenShare, IconMaximize,
   IconWorld, IconNetwork,
 } from "@tabler/icons-react";
-import type { AppInfo, CleanupLevelId, DisplayMode, HostInfo, Sample, VmOverview } from "./types";
+import type { AppInfo, CleanupLevelId, SharedDiskInfo, DisplayMode, HostInfo, Sample, VmOverview } from "./types";
 import { AppPicker, CleanupPicker, FPS, RESOLUTIONS, useCleanupLevels } from "./pickers";
 import { Bauhaus, patternVariant, setPatternVariant } from "./bauhaus";
 import { MAX_SAMPLES, UsageChart } from "./Chart";
@@ -88,8 +89,51 @@ export function VmView({ vm, host, samples, busy, startJob, run, onRemoved }: Pr
       </div>
 
       {vm.managed && vm.options && <Options vm={vm} host={host} busy={busy} startJob={startJob} run={run} />}
+      {vm.managed && vm.options && <SharedDisks vm={vm} busy={busy} startJob={startJob} />}
       {vm.managed && vm.guestCredential && vm.options && <Cleanup vm={vm} busy={busy} startJob={startJob} />}
       {vm.managed && vm.guestCredential && <Apps vm={vm} busy={busy} startJob={startJob} />}
+    </div>
+  );
+}
+
+/** Shared disks: attach one to this machine or take it away, also while it runs. Hidden until a disk exists. */
+function SharedDisks({ vm, busy, startJob }: Pick<Props, "vm" | "busy" | "startJob">) {
+  const [disks, setDisks] = useState<SharedDiskInfo[]>([]);
+  const load = () => api.sharedDisks().then(setDisks).catch(() => {});
+  useEffect(() => { load(); }, [vm.name, vm.state, busy?.cmd]);
+  if (!disks.length) return null;
+  const working = busy?.cmd === "Connect-GpuVMSharedDisk" || busy?.cmd === "Disconnect-GpuVMSharedDisk";
+  return (
+    <div className="card">
+      <div className="card-head"><h2 className="section-title">Discos compartidos</h2></div>
+      <div className="rows">
+        {disks.map((d) => {
+          const here = d.vm === vm.name;
+          // Another running machine has it: it has to be taken away there first.
+          const elsewhere = !!d.vm && !here;
+          return (
+            <div className="row" key={d.name}>
+              <span className="row-icon"><IconStack2 size={18} /></span>
+              <div className="row-text">
+                <strong>{d.name}{here && <span className="tag">Conectado</span>}</strong>
+                <span>{[d.purpose === "games" ? "Juegos" : "General", `${d.sizeGB} GB`, `ocupa ${d.fileGB} GB`, elsewhere && `En ${d.vm}`].filter(Boolean).join(" · ")}</span>
+              </div>
+              <div className="row-actions">
+                {here ? (
+                  <button className="btn ghost" disabled={!!busy} onClick={() => startJob(vm.name, "Disconnect-GpuVMSharedDisk", { Name: d.name }, load)}>
+                    {working ? <IconLoader2 size={16} className="spin" /> : <IconPlugOff size={16} />}{working ? busy!.message : "Desconectar"}
+                  </button>
+                ) : (
+                  <button className="btn" disabled={!!busy || (elsewhere && d.vmRunning)} onClick={() => startJob(vm.name, "Connect-GpuVMSharedDisk", { Name: d.name, VMName: vm.name }, load)}
+                    title={elsewhere && d.vmRunning ? `Desconéctalo en ${d.vm} o apágala para traerlo` : undefined}>
+                    <IconPlugConnected size={16} />{elsewhere ? `Traer desde ${d.vm}` : "Conectar"}
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -159,6 +203,7 @@ function Header({ vm, busy, variant, startJob, run, onRemoved, onPattern }: Head
   const [menu, setMenu] = useState(false);
   const [confirmOff, setConfirmOff] = useState(false);
   const [confirm, setConfirm] = useState(false);
+  const [templating, setTemplating] = useState(false);
   const [pasting, setPasting] = useState<"busy" | "done" | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const running = vm.state === "Running";
@@ -182,9 +227,17 @@ function Header({ vm, busy, variant, startJob, run, onRemoved, onPattern }: Head
   };
   const job = (cmd: string, args: Record<string, unknown>) => { setMenu(false); startJob(vm.name, cmd, args); };
 
-  let primary: { label: string; icon: React.ReactNode; onClick: () => void };
+  let primary: { label: string; icon: React.ReactNode; onClick: () => void; disabled?: boolean; title?: string };
+  // Off and doesn't fit in the free memory as configured: said before the click, with a way out.
+  const short = off && !vm.fits;
   if (paused) primary = { label: "Reanudar", icon: <IconPlayerPlay size={17} />, onClick: () => power("Resume", "Reanudando") };
-  else if (vm.managed && vm.streaming) {
+  else if (short && vm.managed && vm.streaming && vm.fitGB >= 4 && vm.fitGB < vm.memoryStartupGB) {
+    // Opens with what does fit; it is saved, like changing it in Options.
+    primary = { label: `Abrir con ${vm.fitGB} GB`, icon: <IconPlayerPlay size={17} />, onClick: () => job("Connect-GpuVM", { Name: vm.name, MemoryGB: vm.fitGB }),
+      title: `Usa ${vm.fitGB} GB de memoria en vez de ${vm.memoryStartupGB} GB; puedes volver a subirla en Opciones` };
+  } else if (short) {
+    primary = { label: "Falta memoria", icon: <IconAlertTriangle size={17} />, onClick: () => {}, disabled: true, title: "Cierra programas en este equipo para encenderla" };
+  } else if (vm.managed && vm.streaming) {
     primary = running
       ? { label: "Abrir", icon: <IconExternalLink size={17} />, onClick: () => job("Connect-GpuVM", { Name: vm.name }) }
       : { label: "Encender y abrir", icon: <IconPlayerPlay size={17} />, onClick: () => job("Connect-GpuVM", { Name: vm.name }) };
@@ -208,6 +261,7 @@ function Header({ vm, busy, variant, startJob, run, onRemoved, onPattern }: Head
           {[vm.edition, vm.gpuName && vm.hasGpu ? vm.gpuName.replace("NVIDIA GeForce ", "") : null, vm.profile].filter(Boolean).map((t) => (
             <span key={t as string}>· {t}</span>
           ))}
+          {short && <span className="warn-text">· Le faltan {vm.missingGB.toLocaleString("es")} GB de memoria libre</span>}
         </div>
       </div>
       <div className="actions" ref={menuRef}>
@@ -226,7 +280,7 @@ function Header({ vm, busy, variant, startJob, run, onRemoved, onPattern }: Head
         {working ? (
           <span className="primary busy" role="status" title={working}><IconLoader2 size={17} className="spin" /><span className="ellipsis">{working}</span></span>
         ) : (
-          <button className="primary" onClick={primary.onClick}>{primary.icon}<span className="ellipsis">{primary.label}</span></button>
+          <button className="primary" onClick={primary.onClick} disabled={primary.disabled} title={primary.title}>{primary.icon}<span className="ellipsis">{primary.label}</span></button>
         )}
         {menu && (
           <div className="menu" role="menu">
@@ -264,6 +318,11 @@ function Header({ vm, busy, variant, startJob, run, onRemoved, onPattern }: Head
                 <IconDownload size={16} />{off ? "Actualizar driver de la GPU" : "Apagar y actualizar driver"}
               </button>
             )}
+            {!locked && vm.managed && (
+              <button role="menuitem" onClick={() => { setMenu(false); setTemplating(true); }}>
+                <IconTemplate size={16} />{off ? "Crear plantilla" : "Apagar y crear plantilla"}
+              </button>
+            )}
             <button role="menuitem" onClick={() => { setMenu(false); onPattern(); }}><IconPalette size={16} />Otro patrón</button>
             {!locked && vm.managed && (
               <>
@@ -275,6 +334,48 @@ function Header({ vm, busy, variant, startJob, run, onRemoved, onPattern }: Head
         )}
       </div>
       {confirm && <ConfirmRemove vm={vm} run={run} onClose={() => setConfirm(false)} onRemoved={onRemoved} />}
+      {templating && (
+        <NewTemplate vm={vm} onClose={() => setTemplating(false)}
+          onCreate={(name) => { setTemplating(false); startJob(vm.name, "New-GpuVMTemplate", { Name: name, VMName: vm.name, ShutdownIfRunning: true, Confirm: false }); }} />
+      )}
+    </div>
+  );
+}
+
+/** Names the template; the copy itself runs as a job on the machine (its button shows the progress). */
+function NewTemplate({ vm, onClose, onCreate }: { vm: VmOverview; onClose: () => void; onCreate: (name: string) => void }) {
+  const [name, setName] = useState(`${vm.name}-base`);
+  const [existing, setExisting] = useState<string[]>([]);
+  useEffect(() => { api.templates().then((t) => setExisting(t.map((x) => x.name))).catch(() => {}); }, []);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [onClose]);
+  const trimmed = name.trim();
+  const nameError = !trimmed ? "" : !/^[\w-]{1,40}$/.test(trimmed) ? "Usa letras, números o guiones, sin espacios"
+    : existing.some((x) => x.toLowerCase() === trimmed.toLowerCase()) ? "Ya hay una plantilla con ese nombre" : "";
+  const complete = !!trimmed && !nameError;
+  const running = vm.state !== "Off";
+  return (
+    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="dialog narrow" role="dialog" aria-modal="true" aria-label={`Crear plantilla de ${vm.name}`}>
+        <div className="dialog-head"><Bauhaus name={`plantilla-${trimmed || vm.name}`} size={40} radius={10} /><h2>Crear plantilla</h2></div>
+        <form className="dialog-form" onSubmit={(e) => { e.preventDefault(); if (complete) onCreate(trimmed); }}>
+          <div className="dialog-body">
+            <p className="dialog-text">Guarda el Windows de {vm.name}, con sus apps y ajustes, para crear otras máquinas en segundos. {vm.name} sigue igual.</p>
+            <div className="field">
+              <label className="field-top" htmlFor="tpl-name"><span>Nombre</span></label>
+              <input id="tpl-name" className="text-input" value={name} autoFocus onChange={(e) => setName(e.target.value)} />
+              {nameError && <span className="error-text">{nameError}</span>}
+            </div>
+          </div>
+          <div className="dialog-foot">
+            <button type="button" className="btn ghost" onClick={onClose}>Cancelar</button>
+            <button type="submit" className="primary compact" disabled={!complete}><IconTemplate size={16} />{running ? "Apagar y crear" : "Crear plantilla"}</button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -402,7 +503,7 @@ function Options({ vm, host, busy, startJob, run }: Pick<Props, "vm" | "host" | 
         </div>
         <div className="field">
           <div className="field-top"><span>Disco</span><strong>{draft.diskGB} GB</strong></div>
-          {maxDisk > initial.diskGB
+          {vm.options!.diskType === "Differencing" ? <span className="hint">Sobre una plantilla: mide lo mismo que ella</span> : maxDisk > initial.diskGB
             ? <Slider label="Disco" value={draft.diskGB} min={initial.diskGB} max={maxDisk} step={8} onChange={(diskGB) => setDraft({ ...draft, diskGB })} />
             : <span className="hint">Sin espacio libre en el equipo para ampliarlo</span>}
         </div>
