@@ -6,6 +6,17 @@ Aquí se documentan los cambios importantes de GpuVM. El formato sigue [Keep a C
 
 Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (esa sección solo existe mientras haya alguno y el sitio de documentación no la muestra); `scripts/release.py` la convierte en la versión nueva.
 
+## [Sin publicar]
+
+### Añadido
+- Tres clics rápidos en el patrón de cualquier máquina cambian todos los patrones a morado, negro y azul; otros tres los devuelven.
+
+### Cambiado
+- El encabezado de la máquina pasa a dos líneas en una ventana angosta en vez de apretar sus botones.
+
+### Corregido
+- Elegir una opción de un selector dentro de un formulario (como **Desde plantilla** en **Crear máquina**) ya no envía el formulario ni crea la máquina.
+
 ## [0.4.0] - 2026-10-28
 
 ### Añadido

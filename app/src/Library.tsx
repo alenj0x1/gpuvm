@@ -8,7 +8,7 @@ import type { AppInfo, DiskInfo, HostInfo, IsoFile, ProfileInfo, ProfileSettings
 import { api, pickFolder, pickIso } from "./api";
 import { PatternButton } from "./bauhaus";
 import { AppPicker, CleanupPicker, FPS, IsoPicker, useCleanupLevels, RESOLUTIONS, isoDetail, profileLabel, profileSummary } from "./pickers";
-import { Segmented, Slider, humanError, useScrollFade } from "./ui";
+import { Segmented, Slider, humanError, portalRoot, useScrollFade } from "./ui";
 
 export type LibraryTab = "perfiles" | "plantillas" | "discos" | "compartidos" | "isos";
 
@@ -286,7 +286,7 @@ function ProfileEditor({ initial, host, apps, existing, onCancel, onSaved, notif
       </form>
     </div>
     </div>,
-    document.querySelector(".app") ?? document.body);
+    portalRoot());
 }
 
 /* ---------- Disks ---------- */
@@ -522,7 +522,7 @@ function NewSharedDisk({ existing, notify, onCancel, onCreated }: {
       </form>
     </div>
     </div>,
-    document.querySelector(".app") ?? document.body);
+    portalRoot());
 }
 
 /* ---------- ISOs ---------- */

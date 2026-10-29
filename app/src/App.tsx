@@ -34,12 +34,13 @@ interface RunningJob extends JobInfo {
   after?: () => void;
 }
 
-export function App() {
+/** `embedded`: the app runs inside another page (the website), so its route stays in memory and off the page's URL. */
+export function App({ embedded = false }: { embedded?: boolean } = {}) {
   const [vms, setVms] = useState<VmOverview[] | null>(null);
   const [host, setHost] = useState<HostInfo | null>(null);
   const [needsAdmin, setNeedsAdmin] = useState(false);
   const [readError, setReadError] = useState<string | null>(null);
-  const [selected, setSelected] = useState(() => decodeURIComponent(location.hash.slice(1)));
+  const [selected, setSelected] = useState(() => embedded ? HOME : decodeURIComponent(location.hash.slice(1)));
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem("gpuvm.collapsed") === "1"; } catch { return false; } });
   const [creating, setCreating] = useState(false);
   // Template preselected when "Crear máquina" is opened from a template in the library.
@@ -97,12 +98,13 @@ export function App() {
   }, [refresh]);
 
   useEffect(() => { api.hostInfo().then((h) => setHost(h[0] ?? null)).catch(() => {}); }, []);
-  useEffect(() => { window.history.replaceState(null, "", selected ? `#${encodeURIComponent(selected)}` : " "); }, [selected]);
+  useEffect(() => { if (!embedded) window.history.replaceState(null, "", selected ? `#${encodeURIComponent(selected)}` : " "); }, [selected, embedded]);
   useEffect(() => {
+    if (embedded) return;
     const onHash = () => setSelected(decodeURIComponent(location.hash.slice(1)));
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
-  }, []);
+  }, [embedded]);
   useEffect(() => { try { localStorage.setItem("gpuvm.collapsed", collapsed ? "1" : "0"); } catch { /* no storage */ } }, [collapsed]);
   useEffect(() => {
     if (selected !== PREFS && selected !== HOME && !libraryTab(selected) && vms && vms.length && !vms.some((v) => v.name === selected)) setSelected(HOME);

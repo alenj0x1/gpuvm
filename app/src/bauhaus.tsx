@@ -1,9 +1,37 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 // Seeded Bauhaus patterns: each machine always gets the same one (its background is the machine's color).
 
-const COLORS = ["#2f5bd3", "#e5483f", "#f2b632", "#1f8f6a"];
-const NEUTRALS = ["#f6f5f2", "#23252a"];
+const NORMAL = { colors: ["#2f5bd3", "#e5483f", "#f2b632", "#1f8f6a"], neutrals: ["#f6f5f2", "#23252a"], swap: "#f2b632", night: "" };
+// A hidden palette: three quick clicks on any pattern turn every pattern purple, black and blue; three more undo it.
+// `night` is its near-black background: there the dark ink would vanish, so it becomes a vivid purple.
+const PURPLE = { colors: ["#6d3fd8", "#2f5bd3", "#9a6cf2", "#1e1b26"], neutrals: ["#efe9ff", "#120f19"], swap: "#9a6cf2", night: "#1e1b26" };
+const PALETTE_KEY = "gpuvm.palette";
+let purple = (() => { try { return localStorage.getItem(PALETTE_KEY) === "purple"; } catch { return false; } })();
+const palette = () => (purple ? PURPLE : NORMAL);
+
+function subscribePalette(onChange: () => void) {
+  window.addEventListener("gpuvm-palette", onChange);
+  return () => window.removeEventListener("gpuvm-palette", onChange);
+}
+function usePalette() { return useSyncExternalStore(subscribePalette, () => purple); }
+
+// A triple click, not three changes at a normal pace: each click must come less than 300 ms after the previous one.
+const QUICK_MS = 300;
+let streak = 0;
+let lastClick = -Infinity;
+/** Call on every click of a pattern. True on the third quick click in a row: the palette has just switched. */
+export function patternClick(): boolean {
+  const now = performance.now();
+  streak = now - lastClick < QUICK_MS ? streak + 1 : 1;
+  lastClick = now;
+  if (streak < 3) return false;
+  streak = 0;
+  purple = !purple;
+  try { localStorage.setItem(PALETTE_KEY, purple ? "purple" : "normal"); } catch { /* no storage */ }
+  window.dispatchEvent(new Event("gpuvm-palette"));
+  return true;
+}
 
 function hash(text: string) {
   let h = 2166136261;
@@ -35,7 +63,8 @@ export function setPatternVariant(name: string, variant: number) {
 }
 
 export function machineColor(name: string, variant = patternVariant(name)) {
-  return COLORS[hash(`${name}#${variant}`) % COLORS.length];
+  const { colors } = palette();
+  return colors[hash(`${name}#${variant}`) % colors.length];
 }
 
 // Figures for the machines' icons: animals and objects built from circles, triangles and rectangles, drawn on a
@@ -237,14 +266,17 @@ interface Props {
 /** A machine's icon: a square in its color with an animal or object, the same one every time for that name.
  *  "Otro patrón" (another pattern) moves to the next variant. `muted` dims it for powered-off machines without a GPU. */
 export function Bauhaus({ name, size, radius = 10, variant, muted }: Props) {
+  usePalette();
+  const { colors, neutrals, swap, night } = palette();
   const v = variant ?? patternVariant(name);
   const r = random(hash(`${name}#${v}#figure`));
   const bg = machineColor(name, v);
-  const accents = COLORS.filter((c) => c !== bg);
+  // On the palest background (yellow, or light purple) the light ink would hardly show: light and dark swap.
+  const [l, d] = bg === swap ? [neutrals[1], neutrals[0]] : bg === night ? [neutrals[0], swap] : neutrals;
+  // Accents never repeat the background or the dark ink (eyes on a body of the same color would vanish).
+  const accents = colors.filter((c) => c !== bg && c !== d);
   const a = accents[Math.floor(r() * accents.length)];
   const b = accents.filter((c) => c !== a)[Math.floor(r() * (accents.length - 1))];
-  // On yellow, the light ink would hardly show: light and dark swap.
-  const [l, d] = bg === "#f2b632" ? [NEUTRALS[1], NEUTRALS[0]] : NEUTRALS;
   const figure = figures[hash(`${name}#${v}`) % figures.length];
   return (
     <svg width={size} height={size} viewBox="0 0 100 100"
@@ -267,6 +299,15 @@ export function PatternButton({ name, onChange, ...props }: Omit<Props, "variant
     return () => window.removeEventListener("gpuvm-pattern", sync);
   }, [name]);
   const next = () => {
+    // The third quick click switched the palette: the two clicks before it go back, so only the colors change.
+    if (patternClick()) {
+      const v = Math.max(0, variant - 2);
+      setPatternVariant(name, v);
+      setVariant(v);
+      onChange?.(v);
+      window.dispatchEvent(new Event("gpuvm-pattern"));
+      return;
+    }
     const v = variant + 1;
     setPatternVariant(name, v);
     setVariant(v);

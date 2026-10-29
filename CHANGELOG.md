@@ -6,6 +6,17 @@ All notable changes to GpuVM are documented here. The format follows [Keep a Cha
 
 Changes waiting for the next version sit under **Unreleased** at the top (this section only exists while there are some, and the docs site doesn't show it); `scripts/release.py` turns it into the new version.
 
+## [Unreleased]
+
+### Added
+- Three quick clicks on any machine's pattern switch every pattern to purple, black and blue; three more switch them back.
+
+### Changed
+- The machine's header wraps onto two lines in a narrow window instead of squeezing its buttons.
+
+### Fixed
+- Choosing an option in a switch inside a form (such as **Desde plantilla** in **Crear máquina**) no longer submits the form and creates the machine.
+
 ## [0.4.0] - 2026-10-28
 
 ### Added

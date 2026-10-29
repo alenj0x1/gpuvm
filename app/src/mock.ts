@@ -23,10 +23,12 @@ const vms: VmOverview[] = [
     options: { cpu: 8, memoryGB: 8, gpuPercent: 100, diskGB: 200, diskType: "Fixed", diskFreeGB: 232, captureMode: "ddx", networkIsolation: true, cleanup: "none" },
   },
   {
-    id: "99ff0011", name: "ubuntu-server", state: "Off", managed: false, profile: null, edition: null, generation: 2,
-    processorCount: 2, cpuPercent: 0, memoryStartupGB: 2, memoryAssignedGB: 0, memoryDemandGB: 0, uptimeSeconds: 0,
-    hasGpu: false, gpuName: null, gpuPercent: 0, driverInSync: null, fits: true, fitGB: 6, missingGB: 0, streaming: false, paired: false,
-    guestCredential: false, address: null, client: null, options: null,
+    // GpuVM's demo machines are all Windows: it only creates Windows 10 and 11 VMs.
+    id: "99ff0011", name: "estudio", state: "Off", managed: true, profile: "balanced", edition: "Windows 11 Pro", generation: 2,
+    processorCount: 6, cpuPercent: 0, memoryStartupGB: 6, memoryAssignedGB: 0, memoryDemandGB: 0, uptimeSeconds: 0,
+    hasGpu: true, gpuName: "NVIDIA GeForce RTX 4060", gpuPercent: 0, driverInSync: true, fits: true, fitGB: 6, missingGB: 0, streaming: true, paired: true,
+    guestCredential: true, address: null, client: { app: "Desktop", resolution: "1920x1080", fps: 60, bitrateKbps: 0, codec: "auto" },
+    options: { cpu: 6, memoryGB: 6, gpuPercent: 60, diskGB: 128, diskType: "Dynamic", diskFreeGB: 232, captureMode: "ddx", networkIsolation: true, cleanup: "privacy" },
   },
 ];
 
@@ -104,10 +106,7 @@ export async function ps(cmd: string, args: Record<string, unknown>): Promise<un
         lastOpened: { name: "win10", at: new Date(Date.now() - 2 * 3600e3).toISOString() },
         host: { memoryTotalGB: 15.8, memoryFreeGB: 6.4, diskFreeGB: 212, topProcesses: [{ name: "Translay", gb: 2.7 }, { name: "brave", gb: 1.1 }, { name: "Code", gb: 0.8 }] },
         machines: vms.map((v) => ({ name: v.name, state: v.state, memoryGB: v.options?.memoryGB ?? 2, needGB: (v.options?.memoryGB ?? 2) + 0.3, fits: v.state !== "Off" || (v.options?.memoryGB ?? 2) + 0.3 <= 6.4, fitGB: 6 })),
-        attention: [
-          { vm: "win11-pruebas", kind: "driver", text: "Su driver de la GPU no es el del equipo (32.0.15.8180)", label: "Actualizar driver", cmd: "Sync-GpuVMDriver", args: { Name: "win11-pruebas" } },
-          { vm: "win11-pruebas", kind: "apps", text: "Faltan por instalar: Steam, Discord", label: "Encender e instalar", cmd: "Install-GpuVMApp", args: { Name: "win11-pruebas", App: ["steam", "discord"] } },
-        ],
+        attention,
       }];
     case "Get-GpuVMTemplate":
       return templates;
@@ -165,6 +164,12 @@ export function onJob(handler: (e: JobEvent) => void) {
   return () => listeners.delete(handler);
 }
 
+let attention = [
+  { vm: "win11-pruebas", kind: "driver", text: "Su driver de la GPU no es el del equipo (32.0.15.8180)", label: "Actualizar driver", cmd: "Sync-GpuVMDriver", args: { Name: "win11-pruebas" } },
+  { vm: "win11-pruebas", kind: "apps", text: "Faltan por instalar: Steam, Discord", label: "Encender e instalar", cmd: "Install-GpuVMApp", args: { Name: "win11-pruebas", App: ["steam", "discord"] } },
+];
+const APP_NAMES: Record<string, string> = Object.fromEntries(Object.entries(catalog.apps).map(([id, a]) => [id, (a as { name: string }).name]));
+
 let templates: TemplateInfo[] = [
   { name: "juegos-base", fromVM: "win10", createdAt: "2026-10-28T20:00:00Z", edition: "Windows 10 Pro", sizeGB: 200, fileGB: 61.4, cleanup: "privacy", usedBy: ["win11-pruebas"] },
 ];
@@ -198,10 +203,13 @@ const CLEANUP_LEVELS = [
 export async function job(jobId: string, cmd: string, args: Record<string, unknown>) {
   const emit = (e: Omit<JobEvent, "jobId">) => listeners.forEach((l) => l({ jobId, ...e }));
   const steps = cmd === "New-GpuVMTemplate" ? ["Apagando", "Copiando el disco de win10 (puede tardar unos minutos)", "Encendiendo", "Plantilla lista (61.4 GB)"]
-    : cmd === "Import-GpuVMSharedDisk" ? ["Midiendo la carpeta", "Copiando a SteamLibrary\steamapps", "Copiando 18 %", "Copiando 47 %", "Copiando 83 %", "Copiado: 92.4 GB en SteamLibrary\steamapps"]
-    : cmd === "Connect-GpuVMSharedDisk" ? ["Conectando el disco", "Disco en G: dentro de la VM", "Biblioteca de Steam en G:\SteamLibrary"]
+    : cmd === "Import-GpuVMSharedDisk" ? ["Midiendo la carpeta", "Copiando a SteamLibrary\\steamapps", "Copiando 18 %", "Copiando 47 %", "Copiando 83 %", "Copiado: 92,4 GB en SteamLibrary\\steamapps"]
+    : cmd === "Connect-GpuVMSharedDisk" ? ["Conectando el disco", "Disco en G: dentro de la VM", "Biblioteca de Steam en G:\\SteamLibrary"]
     : cmd === "Disconnect-GpuVMSharedDisk" ? ["Cerrando el disco dentro de la VM", "Quitando el disco"]
     : cmd === "Set-GpuVMCleanup" ? ["Esperando a que Windows arranque", "Limpiando Windows", "Limpieza aplicada"]
+    : cmd === "Sync-GpuVMDriver" ? ["Leyendo archivos del driver 32.0.15.8180", "Driver copiado: 4 carpetas del DriverStore y 31 archivos"]
+    : cmd === "Install-GpuVMApp" ? ["Esperando a que Windows arranque", ...((args.App as string[]) ?? []).flatMap((id) => [`Instalando ${APP_NAMES[id] ?? id}`, `${APP_NAMES[id] ?? id} instalado`])]
+    : cmd === "Connect-GpuVM" && args.MemoryGB ? [`Memoria: ${args.MemoryGB} GB`, "Encendiendo", "Esperando a que Windows arranque", "Esperando a Sunshine", "Abriendo a 1920x1080 y 60 FPS"]
     : cmd === "New-GpuVM"
     ? ["Edición: Windows 10 Pro (es-MX)", "Leyendo archivos del driver", "Creando disco Fixed de 96 GB", "Aplicando la imagen de Windows", "Copiando el driver de la GPU al invitado", "Registrando la VM en Hyper-V"]
     : ["Encendiendo", "Esperando a que Windows arranque", "Esperando a Sunshine", "Sunshine capturará la pantalla virtual", "Abriendo Desktop a 1920x1080 y 60 FPS"];
@@ -218,6 +226,10 @@ export async function job(jobId: string, cmd: string, args: Record<string, unkno
     if (cmd === "Connect-GpuVMSharedDisk") shared = shared.map((d) => d.name === args.Name ? { ...d, vm: String(args.VMName), vmRunning: true } : d);
     if (cmd === "Disconnect-GpuVMSharedDisk") shared = shared.map((d) => d.name === args.Name ? { ...d, vm: null, vmRunning: false } : d);
     if (vm?.options && cmd === "Set-GpuVMCleanup") vm.options.cleanup = args.Level as typeof vm.options.cleanup;
+    if (vm?.options && args.MemoryGB) { vm.options.memoryGB = Number(args.MemoryGB); vm.memoryStartupGB = Number(args.MemoryGB); vm.fits = true; vm.missingGB = 0; }
+    if (vm && cmd === "Sync-GpuVMDriver") vm.driverInSync = true;
+    // What was fixed leaves the home screen's list.
+    attention = attention.filter((a) => !(a.vm === args.Name && a.cmd === cmd));
   }
   emit({ type: "result", ok: true, data: [] });
 }

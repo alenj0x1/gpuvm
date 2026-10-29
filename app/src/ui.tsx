@@ -52,7 +52,8 @@ export function Segmented<T extends string | number | boolean>({ value, options,
   return (
     <div className="segmented" role="radiogroup">
       {options.map((o) => (
-        <button key={String(o.value)} role="radio" aria-checked={o.value === value} className={o.value === value ? "on" : ""}
+        // type="button": inside a form (Crear máquina, profiles) a plain button would submit it.
+        <button type="button" key={String(o.value)} role="radio" aria-checked={o.value === value} className={o.value === value ? "on" : ""}
           onClick={() => onChange(o.value)}>
           {o.label}
         </button>
@@ -146,3 +147,9 @@ export function useScrollFade<T extends HTMLElement>(axis: "x" | "y" = "y") {
   }, [el, measure]);
   return [setEl, fade] as const;
 }
+
+// Where dialogs opened through a portal go: the app's own root, so they keep its styles (set by the website demo,
+// whose app lives in a shadow root the document can't query).
+let portalHost: Element | null = null;
+export const setPortalRoot = (el: Element | null) => { portalHost = el; };
+export const portalRoot = () => portalHost ?? document.querySelector(".app") ?? document.body;

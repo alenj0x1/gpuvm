@@ -9,7 +9,7 @@ import {
 } from "@tabler/icons-react";
 import type { AppInfo, CleanupLevelId, SharedDiskInfo, DisplayMode, HostInfo, Sample, VmOverview } from "./types";
 import { AppPicker, CleanupPicker, FPS, RESOLUTIONS, useCleanupLevels } from "./pickers";
-import { Bauhaus, patternVariant, setPatternVariant } from "./bauhaus";
+import { Bauhaus, patternClick, patternVariant, setPatternVariant } from "./bauhaus";
 import { MAX_SAMPLES, UsageChart } from "./Chart";
 import { CheckMark, Segmented, Slider, formatUptime, stateLabel } from "./ui";
 import { api, openConsole } from "./api";
@@ -42,7 +42,8 @@ export function VmView({ vm, host, samples, busy, startJob, run, onRemoved }: Pr
     <div className="main">
       <Header vm={vm} busy={busy} variant={variant} startJob={startJob} run={run} onRemoved={onRemoved}
         onPattern={() => {
-          const v = variant + 1;
+          // The third quick click switches every pattern's palette; the two before it are undone.
+          const v = patternClick() ? Math.max(0, variant - 2) : variant + 1;
           setPatternVariant(vm.name, v);
           setVariant(v);
           window.dispatchEvent(new Event("gpuvm-pattern"));
@@ -97,7 +98,7 @@ export function VmView({ vm, host, samples, busy, startJob, run, onRemoved }: Pr
 }
 
 /** Shared disks: attach one to this machine or take it away, also while it runs. Hidden until a disk exists. */
-function SharedDisks({ vm, busy, startJob }: Pick<Props, "vm" | "busy" | "startJob">) {
+export function SharedDisks({ vm, busy, startJob }: Pick<Props, "vm" | "busy" | "startJob">) {
   const [disks, setDisks] = useState<SharedDiskInfo[]>([]);
   const load = () => api.sharedDisks().then(setDisks).catch(() => {});
   useEffect(() => { load(); }, [vm.name, vm.state, busy?.cmd]);
@@ -138,7 +139,7 @@ function SharedDisks({ vm, busy, startJob }: Pick<Props, "vm" | "busy" | "startJ
   );
 }
 
-function Cleanup({ vm, busy, startJob }: Pick<Props, "vm" | "busy" | "startJob">) {
+export function Cleanup({ vm, busy, startJob }: Pick<Props, "vm" | "busy" | "startJob">) {
   const levels = useCleanupLevels();
   const current = vm.options?.cleanup ?? "none";
   const [chosen, setChosen] = useState<CleanupLevelId>(current);
@@ -161,7 +162,7 @@ function Cleanup({ vm, busy, startJob }: Pick<Props, "vm" | "busy" | "startJob">
   );
 }
 
-function Apps({ vm, busy, startJob }: Pick<Props, "vm" | "busy" | "startJob">) {
+export function Apps({ vm, busy, startJob }: Pick<Props, "vm" | "busy" | "startJob">) {
   const [catalog, setCatalog] = useState<AppInfo[]>([]);
   const [chosen, setChosen] = useState<string[]>([]);
   useEffect(() => { api.apps().then(setCatalog).catch(() => {}); }, []);
