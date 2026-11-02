@@ -44,7 +44,6 @@
 /* Mobile menu button: Starlight paints it as an inverted block (white on the dark theme) with padding that,
    plus a border, pushes the icon off-center. Theme colors, a thin border and the icon centered exactly. */
 button.sl-menu-button {
-  display: grid;
   place-items: center;
   padding: 0;
   background-color: var(--sl-color-gray-6);
@@ -52,12 +51,32 @@ button.sl-menu-button {
   border: 1px solid var(--sl-color-gray-5);
   box-shadow: none;
 }
+/* only on phones (from 50rem there is a sidebar): its own display would beat md:sl-hidden on desktop */
+@media (max-width: 49.99rem) {
+  button.sl-menu-button { display: grid; }
+  /* room between the language select and the menu button */
+  [data-has-sidebar] .header {
+    padding-inline-end: calc(var(--sl-nav-gap) * 1.5 + var(--sl-nav-pad-x) + var(--sl-menu-button-size));
+  }
+}
 button.sl-menu-button svg {
-  display: block;
   grid-area: 1 / 1;
+}
+/* one icon: three lines when closed, an X when open (forcing both visible stacked them) */
+button.sl-menu-button:not(:has(~ :popover-open)) .close-menu,
+button.sl-menu-button:has(~ :popover-open) .open-menu {
+  display: none;
 }
 button.sl-menu-button:has(~ :popover-open) {
   background-color: var(--sl-color-gray-5);
+}
+
+/* right outline: as wide as its content, not half of the spare width */
+@media (min-width: 72rem) {
+  .right-sidebar-container,
+  .right-sidebar {
+    width: 16rem;
+  }
 }
 :root[data-theme='light'] button.sl-menu-button {
   background-color: var(--sl-color-black);

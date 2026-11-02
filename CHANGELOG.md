@@ -10,6 +10,7 @@ Changes waiting for the next version sit under **Unreleased** at the top (this s
 
 ### Fixed
 - After creating a machine, the app opens it instead of going back to **Inicio**.
+- Docs site: the menu button only shows on phones, with one icon (three lines closed, X open) and room next to the language selector; the page outline on the right is narrower.
 
 ## [0.4.1] - 2026-10-28
 

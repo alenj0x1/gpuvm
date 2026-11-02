@@ -10,6 +10,7 @@ Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (es
 
 ### Corregido
 - Después de crear una máquina, la app la abre en vez de volver a **Inicio**.
+- Sitio de documentación: el botón de menú solo aparece en el celular, con un solo ícono (tres líneas cerrado, X abierto) y con espacio junto al selector de idioma; el índice de la derecha es más angosto.
 
 ## [0.4.1] - 2026-10-28
 
