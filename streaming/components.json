@@ -35,5 +35,15 @@
     "url": "https://github.com/vadimgrn/usbip-win2/releases/download/v.0.9.8.0/USBip-0.9.8.0-x64.exe",
     "sha256": "81f426741f7ee2ed991febe24a22daca8400b6ae2f171054e3fb404897e15d39",
     "hold": "0.9.8.1 is a large rewrite its author warns may have regressions and 0.9.7.8 has a known crash; update only after repeating lab 012."
+  },
+  "vigembus": {
+    "description": "Virtual gamepad bus driver ViGEmBus (BSD-3-Clause), signed by Nefarius Software Solutions. Sunshine uses it to create the Xbox 360 / DualShock 4 controllers Moonlight forwards.",
+    "repo": "nefarius/ViGEmBus",
+    "assetPattern": "^ViGEmBus_[\\d.]+_x64_x86_arm64\\.exe$",
+    "version": "v1.22.0",
+    "file": "ViGEmBus_1.22.0_x64_x86_arm64.exe",
+    "url": "https://github.com/nefarius/ViGEmBus/releases/download/v1.22.0/ViGEmBus_1.22.0_x64_x86_arm64.exe",
+    "sha256": "89220a7865076b342892f98865f3499fb7c4cfd673159e89d352c360fd014c6a",
+    "hold": "Retired: the repository was archived in Nov 2023 and 1.22.0 is its last release. The hash matches Chocolatey's verification file; GitHub publishes none."
   }
 }

@@ -115,7 +115,7 @@ function Initialize-GuestSharedDisk {
         [Parameter(Mandatory)][pscredential]$Credential,
         [Parameter(Mandatory)][System.Collections.IDictionary]$Disk
     )
-    $r = Invoke-Command -VMName $VMName -Credential $Credential -ErrorAction Stop -ScriptBlock $script:GuestSharedDiskSetup -ArgumentList $Disk['label'], $Disk['purpose']
+    $r = Invoke-Guest -Name $VMName -Credential $Credential -ScriptBlock $script:GuestSharedDiskSetup -ArgumentList $Disk['label'], $Disk['purpose']
     # Only primitive values from the guest are used.
     $status = [string]$r['status']
     $letter = [string]$r['letter']

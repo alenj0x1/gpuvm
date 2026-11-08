@@ -3,7 +3,8 @@
 #   wgc: Windows.Graphics.Capture, Sunshine in the signed-in user's session. Sees games in exclusive fullscreen,
 #        which ddx cannot capture on a virtual display, but not the administrator prompts (secure desktop).
 # Does nothing if it is already in that mode, so opening the VM doesn't restart Sunshine for no reason.
-param([Parameter(Mandatory)][ValidateSet('ddx', 'wgc')][string]$Mode)
+# -Restart restarts it anyway: after the display changed, so it tests its encoders now instead of when Moonlight connects.
+param([Parameter(Mandatory)][ValidateSet('ddx', 'wgc')][string]$Mode, [switch]$Restart)
 
 $exe = 'C:\Program Files\Sunshine\sunshine.exe'
 $conf = 'C:\Program Files\Sunshine\config\sunshine.conf'
@@ -20,7 +21,7 @@ $userTask = Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue
 
 if ($Mode -eq 'wgc') {
     $ready = -not $confChanged -and $service.Status -ne 'Running' -and $userTask -and $userTask.State -eq 'Running'
-    if ($ready) { return 'unchanged' }
+    if ($ready -and -not $Restart) { return 'unchanged' }
     $user = (Get-CimInstance Win32_ComputerSystem).UserName
     if (-not $user) { return 'nosession' }
     if ($confChanged) { [IO.File]::WriteAllLines($conf, [string[]]$lines, (New-Object Text.UTF8Encoding $false)) }
@@ -38,7 +39,7 @@ if ($Mode -eq 'wgc') {
 }
 
 $ready = -not $confChanged -and $service.Status -eq 'Running' -and -not $userTask
-if ($ready) { return 'unchanged' }
+if ($ready -and -not $Restart) { return 'unchanged' }
 if ($userTask) {
     Stop-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName $task -Confirm:$false

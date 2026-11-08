@@ -18,7 +18,7 @@ function Expand-GuestSystemDisk {
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][pscredential]$Credential
     )
-    $grown = Invoke-Command -VMName $Name -Credential $Credential -ErrorAction Stop -ScriptBlock {
+    $grown = Invoke-Guest -Name $Name -Credential $Credential -ScriptBlock {
         $partition = Get-Partition -DriveLetter C
         $max = (Get-PartitionSupportedSize -DriveLetter C).SizeMax
         if ($max - $partition.Size -lt 1GB) { return 0 }

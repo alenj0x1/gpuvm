@@ -1,4 +1,4 @@
-function Test-IsAdmin {
+﻿function Test-IsAdmin {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     ([Security.Principal.WindowsPrincipal]$identity).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
@@ -16,9 +16,12 @@ function Assert-FreeMemory {
         [double]$ExtraFreeGB = 0
     )
     $freeGB = (Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1MB + $ExtraFreeGB
+    # The figure shown already includes the margin Windows keeps for itself, so "needs 6, has 6.1" never happens.
     if ($freeGB -lt $RequiredGB + 0.3) {
-        $suggest = [math]::Max(4, [math]::Floor($freeGB - 0.5))
-        throw ("La VM necesita {0} GB libres y hay {1:N1} GB. Cierra programas o baja su memoria a {2} GB en Opciones." -f $RequiredGB, $freeGB, $suggest)
+        # Rounded so the figures never look equal: what is needed up, what is free down.
+        $message = "La VM necesita {0:N1} GB libres y hay {1:N1} GB. Cierra programas" -f ([math]::Ceiling(($RequiredGB + 0.3) * 10) / 10), ([math]::Floor($freeGB * 10) / 10)
+        $fit = Get-FittingMemoryGB -FreeGB $freeGB
+        throw $(if ($fit) { "$message o baja su memoria a $fit GB en Opciones." } else { "$message." })
     }
 }
 

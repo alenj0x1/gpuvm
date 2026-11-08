@@ -1,4 +1,4 @@
-# External components (Sunshine, virtual display, nefcon) with version and SHA-256 pinned in streaming/components.json.
+﻿# External components (Sunshine, virtual display, nefcon) with version and SHA-256 pinned in streaming/components.json.
 # They are downloaded once on the host, verified and copied to the VM disk; the guest downloads nothing.
 
 # If components were updated in an installation, the editable copy lives in the data folder; otherwise, the code one.
@@ -9,7 +9,17 @@ function Get-ComponentManifestPath {
     Get-RepoPath 'streaming\components.json'
 }
 
-function Get-ComponentManifest { Read-JsonFile (Get-ComponentManifestPath) }
+# A manifest in the data folder (written by Update-GpuVMComponent) wins, but components added in later versions of
+# GpuVM are taken from the one it ships with, so an older copy doesn't make them "unknown".
+function Get-ComponentManifest {
+    $manifest = Read-JsonFile (Get-ComponentManifestPath)
+    $shipped = Get-RepoPath 'streaming\components.json'
+    if ((Get-ComponentManifestPath) -ne $shipped -and (Test-Path -LiteralPath $shipped)) {
+        $base = Read-JsonFile $shipped
+        foreach ($name in $base.Keys) { if (-not $manifest.Contains($name)) { $manifest[$name] = $base[$name] } }
+    }
+    $manifest
+}
 
 function Get-ComponentCacheRoot {
     # The override is for tests; an elevated process ignores it (see GpuVM.psm1).

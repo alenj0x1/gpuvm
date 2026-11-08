@@ -15,6 +15,8 @@ using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 
 public static class GpuVMDisplay {
+    /// Whether this run changed anything (mode, position or other displays): Sunshine notices and re-tests its encoders.
+    public static bool Changed;
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     struct DISPLAY_DEVICE {
         public int cb;
@@ -100,6 +102,7 @@ public static class GpuVMDisplay {
         if (EnumDisplaySettings(device, -1, ref current) && current.dmPelsWidth == best.dmPelsWidth &&
             current.dmPelsHeight == best.dmPelsHeight && current.dmDisplayFrequency == best.dmDisplayFrequency) return 0;
         best.dmFields = 0x80000 | 0x100000 | 0x400000;   // width, height and frequency
+        Changed = true;
         return ChangeDisplaySettingsEx(device, ref best, IntPtr.Zero, 0x1, IntPtr.Zero);   // CDS_UPDATEREGISTRY
     }
 
@@ -126,6 +129,7 @@ public static class GpuVMDisplay {
             if (d.DeviceName != device && (d.StateFlags & 0x1) != 0) alone = false;
         }
         if (alone) return off.ToArray();
+        Changed = true;
         primary.dmPositionX = 0; primary.dmPositionY = 0;
         primary.dmFields = POSITION;
         if (ChangeDisplaySettingsEx(device, ref primary, IntPtr.Zero, UPDATEREGISTRY | SET_PRIMARY | NORESET, IntPtr.Zero) != 0) return null;
@@ -161,7 +165,7 @@ try {
     }
     # Sunshine no longer rearranges displays per session (that costs ~20 s), so GpuVM leaves the virtual one alone.
     $off = [GpuVMDisplay]::MakeOnlyDisplay($device)
-    $result = @{ ok = ($code -eq 0 -and $null -ne $off); code = $code; device = $device; applied = $applied; turnedOff = (@($off) -join ', ') }
+    $result = @{ ok = ($code -eq 0 -and $null -ne $off); code = $code; device = $device; applied = $applied; turnedOff = (@($off) -join ', '); changed = [GpuVMDisplay]::Changed }
     if ($null -eq $off) { $result.error = 'Windows no dejó apagar las otras pantallas de la VM.' }
     Write-Result $result
 }

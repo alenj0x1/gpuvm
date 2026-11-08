@@ -1,4 +1,4 @@
-# Apps installed inside the guest (Steam, Epic, Discord...). The catalog lives in apps/catalog.json; the guest
+﻿# Apps installed inside the guest (Steam, Epic, Discord...). The catalog lives in apps/catalog.json; the guest
 # downloads each installer from its publisher and runs it only if Windows says it is signed by the expected company.
 
 function Get-AppCatalog { (Read-JsonFile (Get-RepoPath 'apps\catalog.json'))['apps'] }
@@ -17,7 +17,7 @@ function Install-GuestApp {
         if (-not $entry) { throw "No existe la app '$id' en el catálogo." }
         if (-not $entry['signer'] -and -not $entry['sha256']) { throw "La app '$id' no tiene firmante ni hash: no se puede verificar." }
         Write-Step "Instalando $($entry['name'])"
-        $result = Invoke-Command -VMName $Name -Credential $Credential -ErrorAction Stop -ArgumentList (, $entry) -ScriptBlock {
+        $result = Invoke-Guest -Name $Name -Credential $Credential -ArgumentList (, $entry) -ScriptBlock {
             param($entry)
             $ErrorActionPreference = 'Stop'
             $expand = { param($path) [regex]::Replace($path, '\$\{([^}]+)\}', { param($m) [Environment]::GetEnvironmentVariable($m.Groups[1].Value) }) }
@@ -109,17 +109,29 @@ function Install-GuestApp {
 function Invoke-GuestPendingWork {
     param(
         [Parameter(Mandatory)][string]$Name,
-        [Parameter(Mandatory)][pscredential]$Credential
+        [Parameter(Mandatory)][pscredential]$Credential,
+        # Size of the system disk now: C: is only grown when it differs from the last time it was (lab 019: checking
+        # it took ~10 s of every open).
+        [string]$DiskBytes
     )
-    try { Expand-GuestSystemDisk -Name $Name -Credential $Credential }
-    catch { Write-Warning "No se pudo ampliar el disco C: de la VM: $($_.Exception.Message)" }
-
     $state = Get-GpuVMState -Name $Name
+    if (-not $DiskBytes -or -not $state.Contains('diskExpandedBytes') -or [string]$state['diskExpandedBytes'] -ne $DiskBytes) {
+        try {
+            Expand-GuestSystemDisk -Name $Name -Credential $Credential
+            if ($DiskBytes) {
+                $state = Get-GpuVMState -Name $Name
+                $state['diskExpandedBytes'] = $DiskBytes
+                Save-GpuVMState $state
+            }
+        }
+        catch { Write-Warning "No se pudo ampliar el disco C: de la VM: $($_.Exception.Message)" }
+    }
+
     # A copy of a template still has the template's computer name; it takes its own from the next restart.
     if ($state.Contains('pendingRename') -and $state['pendingRename']) {
         try {
             $computerName = ConvertTo-ComputerName $Name
-            Invoke-Command -VMName $Name -Credential $Credential -ErrorAction Stop -ArgumentList $computerName -ScriptBlock {
+            Invoke-Guest -Name $Name -Credential $Credential -ArgumentList $computerName -ScriptBlock {
                 param($computerName)
                 if ($env:COMPUTERNAME -ne $computerName) {
                     Rename-Computer -NewName $computerName -Force -WarningAction SilentlyContinue
