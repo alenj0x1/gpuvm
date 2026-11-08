@@ -254,6 +254,8 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
 .pref-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .pref-text strong { font-weight: 500; }
 .pref-text span { color: var(--muted); font-size: 13px; }
+.pref-side { display: flex; align-items: center; gap: 16px; flex: none; }
+.pref-state { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
 .segment-row { display: flex; gap: 8px; flex-wrap: wrap; }
 /* Segmented controls in a row grow to fill it, so stacked rows line up on both edges. */
 .segment-row > .segmented { flex: 1 1 auto; }
@@ -380,3 +382,27 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
 .side-skeleton .name { display: flex; flex-direction: column; gap: 6px; }
 .side-skeleton .line { height: 12px; width: 70%; }
 .side-skeleton .line.short { height: 10px; width: 45%; }
+/* "Avanzado" in a card: a quiet text button whose chevron turns when open. */
+.disclosure { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; height: 28px; color: var(--muted); font-size: 13px; }
+.disclosure:hover { color: var(--text); }
+.disclosure svg { transition: transform 0.15s ease; }
+.disclosure[aria-expanded="true"] svg { transform: rotate(90deg); }
+.segment-row.disabled { opacity: 0.4; pointer-events: none; }
+/* A choice group never wraps inside its pill: when the card is narrow, one option per row, as a list. */
+@media (max-width: 600px) {
+  .segment-row > .segmented { flex-direction: column; flex-wrap: nowrap; width: 100%; }
+  .segment-row > .segmented button { justify-content: flex-start; }
+}
+/* Administrator-prompt card (PromptCard): its own transparent window over Moonlight. */
+html.prompt-window, html.prompt-window body, html.prompt-window #root { background: transparent; min-height: 0; height: 100%; overflow: hidden; }
+.prompt-card { box-sizing: border-box; height: 100%; display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: var(--r-lg);
+  background: var(--surface); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
+.prompt-head { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.prompt-head strong { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prompt-icon { display: grid; place-items: center; width: 30px; height: 30px; border-radius: var(--r); background: var(--bg); color: var(--accent); flex: none; }
+.prompt-icon svg { display: block; }
+.prompt-app { display: flex; flex-direction: column; gap: 2px; padding-left: 40px; min-width: 0; }
+.prompt-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prompt-publisher { font-size: 12px; color: var(--muted); }
+.prompt-publisher.unknown { color: var(--warn, var(--muted)); }
+.prompt-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: auto; }

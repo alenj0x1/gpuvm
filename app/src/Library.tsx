@@ -7,7 +7,7 @@ import {
 import type { AppInfo, DiskInfo, HostInfo, IsoFile, ProfileInfo, ProfileSettings, SharedDiskInfo, TemplateInfo } from "./types";
 import { api, pickFolder, pickIso } from "./api";
 import { PatternButton } from "./bauhaus";
-import { AppPicker, CleanupPicker, FPS, IsoPicker, useCleanupLevels, RESOLUTIONS, isoDetail, profileLabel, profileSummary } from "./pickers";
+import { AppPicker, CleanupPicker, FPS_OPTIONS, IsoPicker, useCleanupLevels, RESOLUTIONS, USES, isoDetail, profileLabel, profileSummary, streamUseOf } from "./pickers";
 import { Segmented, Slider, humanError, portalRoot, useScrollFade } from "./ui";
 
 export type LibraryTab = "perfiles" | "plantillas" | "discos" | "compartidos" | "isos";
@@ -157,6 +157,7 @@ function ProfileEditor({ initial, host, apps, existing, onCancel, onSaved, notif
   const cleanupLevels = useCleanupLevels();
   const [bodyRef, bodyFade] = useScrollFade<HTMLDivElement>();
   const set = (patch: Partial<ProfileSettings>) => setDraft({ ...draft, settings: { ...s, ...patch } });
+  const profileUse = streamUseOf({ fps: s.fps ?? 60, vsync: s.vsync ?? true, framePacing: s.framePacing ?? false, mouse: s.mouse ?? "capture" });
   useEffect(() => { api.isos().then(setIsos).catch(() => setIsos([])); }, []);
 
   const maxCpu = Math.max(2, (host?.logicalProcessors ?? 12) - 1);
@@ -250,12 +251,21 @@ function ProfileEditor({ initial, host, apps, existing, onCancel, onSaved, notif
               <div className="segment-row">
                 <Segmented value={s.resolution ?? "1920x1080"} onChange={(resolution) => set({ resolution })}
                   options={RESOLUTIONS.map((r) => ({ value: r, label: r.split("x")[1] + "p" }))} />
-                <Segmented value={s.fps ?? 60} onChange={(fps) => set({ fps })} options={FPS.map((f) => ({ value: f, label: `${f} FPS` }))} />
+                <Segmented value={s.fps ?? 60} onChange={(fps) => set({ fps })} options={FPS_OPTIONS} />
                 <Segmented value={s.displayMode === "windowed" ? "windowed" : "fullscreen"} onChange={(displayMode) => set({ displayMode })} options={[
                   { value: "fullscreen", label: "Pantalla completa" }, { value: "windowed", label: "Ventana" },
                 ]} />
               </div>
             </div>
+          </div>
+
+          <div className="field">
+            <div className="field-top"><span>Tipo de uso</span></div>
+            <div className="segment-row">
+              <Segmented value={profileUse ?? ""} onChange={(id) => set({ ...USES.find((u) => u.id === id)!.client })}
+                options={USES.map((u) => ({ value: u.id, label: <><u.icon size={15} />{u.label}</> }))} />
+            </div>
+            <span className="hint">{profileUse ? USES.find((u) => u.id === profileUse)!.description : "Personalizado. Los ajustes de Moonlight se cambiaron a mano."}</span>
           </div>
 
           {cleanupLevels.length > 0 && (

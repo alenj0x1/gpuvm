@@ -38,7 +38,10 @@
     "client": {
       "app": "Desktop",
       "resolution": "1920x1080",
-      "fps": 60,
+      "fps": 0,
+      "vsync": true,
+      "framePacing": false,
+      "mouse": "capture",
       "bitrateKbps": 0,
       "codec": "auto",
       "captureSystemKeys": "fullscreen"

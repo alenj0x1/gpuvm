@@ -60,6 +60,10 @@ function Get-GpuVMOverview {
             paired         = [bool]($state -and $state['streaming'] -and $state['streaming']['pairedClient'])
             guestCredential = [bool]($state -and $state['guest'])
             address        = $address
+            # A Windows administrator prompt open in the VM (WGC can't stream it; the app offers Allow / Deny).
+            adminPrompt    = if ($state -and $state['streaming'] -and $vm.State -eq 'Running' -and (Get-GpuVMCaptureMode -State $state) -eq 'wgc') {
+                try { Get-GuestAdminPrompt -Name $vm.Name } catch { $null }
+            } else { $null }
             client         = if ($state -and $state['config']['streaming']) { $state['config']['streaming']['client'] } else { $null }
             options        = if ($state) {
                 [ordered]@{

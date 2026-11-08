@@ -8,22 +8,29 @@ Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (es
 
 ## [Sin publicar]
 
-### Agregado
+### Añadido
 - Los mandos funcionan en las máquinas: GpuVM instala el controlador de mando virtual (ViGEmBus) en la VM, y un control conectado a este equipo llega a Windows en la VM como un control de Xbox 360.
-- Opción **Servicio de GpuVM** en **Preferencias**: **Con GpuVM** (la predeterminada) enciende el servicio al abrir la app y lo apaga al cerrarla, cuando termina lo que estaba haciendo; **Con Windows** lo enciende con Windows; **Manual** lo enciende y apaga solo desde **Preferencias**, que también muestra su estado.
+- Cada máquina tiene un **Tipo de uso** que ajusta Moonlight para lo que haces en ella. **Juegos**, **Películas y video** o **Trabajo** ajustan los FPS, la sincronización vertical, el ritmo de cuadros y el mouse de Moonlight para ese uso; si cambias alguno a mano, aparece **Personalizado**. Los perfiles de la Biblioteca también lo guardan.
+- Sincronización vertical, ritmo de cuadros y, en **Avanzado**, el mouse (para juegos, o libre como en escritorio remoto), el códec y la calidad de imagen se ajustan por máquina.
+- La máquina puede transmitir a la frecuencia de tu monitor con los FPS **Monitor**. Se toma en cada apertura y GpuVM agrega esa frecuencia a la pantalla virtual de la VM si no la tiene. A la frecuencia del monitor, la sincronización vertical no agrega latencia y los tirones bajan a la mitad. Las máquinas nuevas la usan, con la sincronización vertical activada.
+- Cuando Windows en una máquina pide permiso de administrador, GpuVM muestra una tarjeta pequeña encima de todo, Moonlight incluido, con el programa y su editor; **Permitir** y **Rechazar** lo responden. Solo este equipo puede responder: un programa dentro de la máquina no puede aprobarse a sí mismo.
+- Puedes elegir cuándo corre el servicio de GpuVM, en **Preferencias**. **Con GpuVM** (la predeterminada) enciende el servicio al abrir la app y lo apaga al cerrarla, cuando termina lo que estaba haciendo; **Con Windows** lo enciende con Windows; **Manual** lo enciende y apaga solo desde **Preferencias**, que también muestra su estado.
 - Si el servicio de GpuVM está detenido o falta, la app lo dice con un botón para iniciarlo o repararlo.
 
 ### Cambiado
 - Abrir una máquina encendida tarda 7-10 s hasta ver la imagen en vez de unos 25 s: GpuVM hace cada preparación una vez por arranque de Windows y por una sola conexión, y el botón **Abrir** espera a que aparezca la imagen. Volver a hacer clic trae al frente la ventana de Moonlight abierta en vez de abrir otra.
+- La captura predeterminada ahora es **Rápida** (Windows.Graphics.Capture): la imagen aparece unos 2,6 s después de conectar, cuando la duplicación de escritorio podía quedar en negro hasta que algo cambiara en pantalla, y además se ven los juegos en pantalla completa exclusiva. **Clásica** (duplicación de escritorio) sigue disponible por máquina.
 - GpuVM se abre sin permisos de administrador, así los programas que manejan otras ventanas (herramientas de teclado, control o accesibilidad) también pueden manejarlo. El nuevo servicio de Windows **GpuVM** hace el trabajo de Hyper-V con los permisos de administrador de tu cuenta.
 - Borrar una máquina, un disco, un disco compartido o una plantilla pide confirmarlo en un aviso de administrador de Windows; si dices que no, no se borra nada.
 - GpuVM trae su propio PowerShell 7 (7.6.9), así la app ya no necesita tenerlo instalado.
+- Los grupos de opciones pasan a una opción por fila cuando la ventana es angosta, en vez de partirse dentro de su píldora.
 
 ### Seguridad
 - Solo la app de GpuVM, abierta por una cuenta de administrador con sesión iniciada en el equipo, puede usar el servicio; otros programas y conexiones de red se rechazan.
 - Los archivos y carpetas que nombra una petición (un ISO, una carpeta a importar) se abren primero con tus propios permisos, sin elevar, y se rechazan las rutas que pasan por un enlace a otro lugar.
 
 ### Corregido
+- Abrir una máquina apagada ya no espera hasta 20 minutos su dirección de red: GpuVM avisa al instante que está apagada.
 - El mensaje de memoria dice exactamente cuánta memoria libre necesita la máquina, con el margen de seguridad incluido.
 - Una petición mal formada ya no detiene el proceso de PowerShell del módulo.
 - Después de crear una máquina, la app la abre en vez de volver a **Inicio**.

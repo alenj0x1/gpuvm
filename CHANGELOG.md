@@ -10,20 +10,27 @@ Changes waiting for the next version sit under **Unreleased** at the top (this s
 
 ### Added
 - Gamepads work in the machines: GpuVM installs the virtual gamepad driver (ViGEmBus) in the VM, and a controller on this PC reaches Windows in the VM as an Xbox 360 controller.
-- **GpuVM service** option in **Preferences**: **Con GpuVM** (With GpuVM, the default) starts the service when the app opens and stops it when the app quits, once what it was doing is finished; **Con Windows** (With Windows) starts it with Windows; **Manual** starts and stops it only from **Preferences**, which also shows its state.
+- Each machine has a **Tipo de uso** (Use) that tunes Moonlight for what you do in it. **Juegos** (Games), **Películas y video** (Movies and video) or **Trabajo** (Work) set Moonlight's frame rate, V-Sync, frame pacing and mouse for that use; changing any of them by hand shows **Personalizado** (Custom). Library profiles carry it too.
+- V-Sync, frame pacing and, under **Avanzado** (Advanced), the mouse (for games, or free as in remote desktop), codec and image quality can be set per machine.
+- A machine can stream at your monitor's refresh rate with the **Monitor** frame rate. It is read on every open, and GpuVM adds that rate to the VM's virtual display when it lacks it. At the monitor's own rate V-Sync adds no latency and stutters halve. New machines use it, with V-Sync on.
+- When Windows in a machine asks for administrator permission, GpuVM shows a small card over everything, Moonlight included, with the program and its publisher; **Permitir** (Allow) and **Rechazar** (Deny) answer it. Only this PC can answer: a program inside the machine can't approve itself.
+- You can choose when the GpuVM service runs, in **Preferences**. **Con GpuVM** (With GpuVM, the default) starts the service when the app opens and stops it when the app quits, once what it was doing is finished; **Con Windows** (With Windows) starts it with Windows; **Manual** starts and stops it only from **Preferences**, which also shows its state.
 - If the GpuVM service is stopped or missing, the app says so with a button to start it or repair it.
 
 ### Changed
 - Opening a machine that is on takes 7-10 s to the picture instead of about 25 s: GpuVM does each preparation once per Windows boot over a single connection, and the **Abrir** (Open) button waits until the picture shows. Clicking it again brings the open Moonlight window to the front instead of opening a second one.
+- The default capture is now **Rápida** (fast, Windows.Graphics.Capture): the picture shows about 2.6 s after connecting, where desktop duplication could stay black until something on screen changed, and games in exclusive fullscreen are shown too. **Clásica** (classic, desktop duplication) stays available per machine.
 - GpuVM opens without administrator rights, so programs that drive other windows (keyboard, controller or accessibility tools) can drive it too. The new **GpuVM** Windows service does the Hyper-V work with your account's administrator rights.
 - Deleting a machine, a disk, a shared disk or a template asks for confirmation in a Windows administrator prompt; if you say no, nothing is deleted.
 - GpuVM carries its own PowerShell 7 (7.6.9), so the app no longer needs it installed.
+- Choice groups switch to one option per row when the window is narrow, instead of wrapping inside their pill.
 
 ### Security
 - Only GpuVM's own app, run by an administrator account signed in at the PC, can use the service; other programs and network connections are refused.
 - Files and folders a request names (an ISO, a folder to import) are opened first with your own rights, unelevated, and paths that go through a link to another place are refused.
 
 ### Fixed
+- Opening a machine that is off no longer waits up to 20 minutes for its network address: GpuVM says at once that it is off.
 - The memory message says exactly how much free memory the machine needs, including the safety margin.
 - A malformed request no longer stops the module's PowerShell process.
 - After creating a machine, the app opens it instead of going back to **Inicio** (Home).

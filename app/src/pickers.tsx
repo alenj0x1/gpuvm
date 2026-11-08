@@ -1,11 +1,42 @@
-import { IconAlertTriangle, IconApps, IconCheck, IconDisc, IconFolderOpen, IconSearch, IconX } from "@tabler/icons-react";
+import {
+  IconAlertTriangle, IconApps, IconBriefcase, IconCheck, IconDeviceGamepad2, IconDisc, IconFolderOpen, IconMovie, IconSearch, IconX,
+} from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./api";
-import type { AppInfo, CleanupLevel, CleanupLevelId, IsoFile, ProfileSettings } from "./types";
+import type { AppInfo, CleanupLevel, CleanupLevelId, IsoFile, MouseMode, ProfileSettings } from "./types";
 import { CheckMark, Segmented, useScrollFade } from "./ui";
 
 export const RESOLUTIONS = ["1280x720", "1920x1080", "2560x1440", "3840x2160"];
 export const FPS = [30, 60, 120, 144];
+/** 0 = the host monitor's refresh rate, read each time the VM opens (lab 022). */
+export const MONITOR_FPS = 0;
+export const FPS_OPTIONS = [...FPS.map((f) => ({ value: f, label: `${f} FPS` })), { value: MONITOR_FPS, label: "Monitor" }];
+export const fpsLabel = (fps: number | null | undefined) => (fps === MONITOR_FPS ? "al ritmo del monitor" : `${fps ?? 60} FPS`);
+export const CODECS = [{ value: "auto", label: "Automático" }, { value: "H.264", label: "H.264" }, { value: "HEVC", label: "HEVC" }, { value: "AV1", label: "AV1" }];
+
+/** What a VM is used for: each use sets the stream settings measured for it (labs 020-022). At the monitor's own
+ * refresh rate V-Sync costs no latency and halves the stutters, so no use has to trade one for the other. */
+export type StreamUse = "games" | "video" | "work";
+export interface StreamUseInfo {
+  id: StreamUse;
+  label: string;
+  icon: typeof IconMovie;
+  description: string;
+  client: { fps: number; vsync: boolean; framePacing: boolean; mouse: MouseMode };
+}
+export const USES: StreamUseInfo[] = [
+  { id: "games", label: "Juegos", icon: IconDeviceGamepad2, description: "Al ritmo de tu monitor, con la respuesta más rápida y la imagen siempre entera.",
+    client: { fps: MONITOR_FPS, vsync: true, framePacing: false, mouse: "capture" } },
+  { id: "video", label: "Películas y video", icon: IconMovie, description: "Movimiento parejo para películas y series, con menos uso de red.",
+    client: { fps: 60, vsync: true, framePacing: true, mouse: "absolute" } },
+  { id: "work", label: "Trabajo", icon: IconBriefcase, description: "Todo el monitor fluido, con el mouse libre como en escritorio remoto.",
+    client: { fps: MONITOR_FPS, vsync: true, framePacing: false, mouse: "absolute" } },
+];
+
+/** The use whose settings match exactly, or null when they were changed by hand. */
+export function streamUseOf(c: { fps: number; vsync: boolean; framePacing: boolean; mouse: MouseMode }) {
+  return USES.find((u) => u.client.fps === c.fps && u.client.vsync === c.vsync && u.client.framePacing === c.framePacing && u.client.mouse === c.mouse)?.id ?? null;
+}
 
 const PROFILE_NAMES: Record<string, string> = { balanced: "Equilibrado", "max-performance": "Máximo rendimiento" };
 export const profileLabel = (name: string) => PROFILE_NAMES[name] ?? name;
@@ -25,7 +56,7 @@ export function profileSummary(s: ProfileSettings, apps: AppInfo[] = [], hardwar
     `${s.cpu} hilos`, `${s.memoryGB} GB`, `GPU ${s.gpuPercent} %`,
     `disco ${s.diskType === "Fixed" ? "fijo" : "dinámico"} de ${s.diskGB} GB`,
   ];
-  if (s.resolution) parts.push(`${s.resolution.split("x")[1]}p ${s.fps ?? 60} FPS${s.displayMode === "windowed" ? " en ventana" : ""}`);
+  if (s.resolution) parts.push(`${s.resolution.split("x")[1]}p ${fpsLabel(s.fps)}${s.displayMode === "windowed" ? " en ventana" : ""}`);
   if (hardwareOnly) return parts.slice(0, 3).join(" · ");
   const cleanup = cleanupCache?.find((l) => l.id === s.cleanup);
   if (cleanup && s.cleanup !== "none") parts.push(`Windows: ${cleanup.name.toLowerCase()}`);

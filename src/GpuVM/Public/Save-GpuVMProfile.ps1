@@ -29,8 +29,10 @@ function Save-GpuVMProfile {
     if ($disk.Count) { $vm['disk'] = $disk }
     $client = [ordered]@{}
     if ($s['resolution']) { $client['resolution'] = [string]$s['resolution'] }
-    if ($s['fps']) { $client['fps'] = [int]$s['fps'] }
+    if ($s.ContainsKey('fps') -and $null -ne $s['fps']) { $client['fps'] = [int]$s['fps'] }
     if ($s['displayMode']) { $client['displayMode'] = [string]$s['displayMode'] }
+    foreach ($key in 'vsync', 'framePacing') { if ($s.ContainsKey($key) -and $null -ne $s[$key]) { $client[$key] = [bool]$s[$key] } }
+    if ($s['mouse'] -in 'capture', 'absolute') { $client['mouse'] = [string]$s['mouse'] }
 
     $data = [ordered]@{ extends = $Extends; description = $Description }
     if ($vm.Count) { $data['vm'] = $vm }

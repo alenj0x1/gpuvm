@@ -7,7 +7,25 @@ export interface ClientSettings {
   bitrateKbps: number;
   codec: string;
   displayMode?: DisplayMode;
+  /** Undefined = Moonlight's own default (V-Sync on, frame pacing off, mouse captured). */
+  vsync?: boolean;
+  framePacing?: boolean;
+  mouse?: MouseMode;
 }
+
+/** capture: relative mouse for games; absolute: the pointer moves freely, as in remote desktop. */
+export type MouseMode = "capture" | "absolute";
+
+/** A Windows administrator prompt open in a VM captured with WGC (it can't be streamed; GpuVM answers it). */
+export interface AdminPrompt {
+  name: string;
+  /** The prompt's own id: an answer only applies to this prompt. */
+  id: number;
+  app: string | null;
+  publisher: string | null;
+}
+
+export type StreamSettings = Partial<Pick<ClientSettings, "vsync" | "framePacing" | "mouse" | "codec" | "bitrateKbps">>;
 
 export interface VmOverview {
   id: string;
@@ -64,6 +82,9 @@ export interface ProfileSettings {
   resolution: string | null;
   fps: number | null;
   displayMode: DisplayMode;
+  vsync?: boolean;
+  framePacing?: boolean;
+  mouse?: MouseMode;
 }
 
 export interface ProfileInfo {

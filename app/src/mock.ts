@@ -1,4 +1,4 @@
-import type { DiskInfo, SharedDiskInfo, TemplateInfo, DisplayMode, IsoFile, JobEvent, ProfileInfo, ProfileSettings, VmOverview } from "./types";
+import type { DiskInfo, SharedDiskInfo, TemplateInfo, DisplayMode, IsoFile, JobEvent, MouseMode, ProfileInfo, ProfileSettings, VmOverview } from "./types";
 import catalog from "../../apps/catalog.json";
 
 // Sample data for designing in the browser (there is no Hyper-V outside the app).
@@ -11,8 +11,8 @@ const vms: VmOverview[] = [
     edition: "Windows 10 Pro", generation: 2, processorCount: 8, cpuPercent: 34, memoryStartupGB: 8,
     memoryAssignedGB: 8, memoryDemandGB: 5.1, uptimeSeconds: 4320, hasGpu: true, gpuName: "NVIDIA GeForce RTX 4060",
     gpuPercent: 61, driverInSync: true, fits: true, fitGB: 6, missingGB: 0, streaming: true, paired: true, guestCredential: true, address: "172.29.111.201",
-    client: { app: "Desktop", resolution: "1920x1080", fps: 60, bitrateKbps: 0, codec: "auto" },
-    options: { cpu: 8, memoryGB: 8, gpuPercent: 100, diskGB: 200, diskType: "Fixed", diskFreeGB: 232, captureMode: "ddx", networkIsolation: true, cleanup: "none" },
+    client: { app: "Desktop", resolution: "1920x1080", fps: 0, bitrateKbps: 0, codec: "auto", vsync: true, framePacing: false, mouse: "capture" },
+    options: { cpu: 8, memoryGB: 8, gpuPercent: 100, diskGB: 200, diskType: "Fixed", diskFreeGB: 232, captureMode: "wgc", networkIsolation: true, cleanup: "none" },
   },
   {
     id: "a1b2c3d4", name: "win11-pruebas", state: "Off", managed: true, profile: "balanced",
@@ -20,7 +20,7 @@ const vms: VmOverview[] = [
     memoryAssignedGB: 0, memoryDemandGB: 0, uptimeSeconds: 0, hasGpu: true, gpuName: "NVIDIA GeForce RTX 4060",
     gpuPercent: 0, driverInSync: false, fits: false, fitGB: 6, missingGB: 1.9, streaming: true, paired: false, guestCredential: true, address: null,
     client: { app: "Desktop", resolution: "2560x1440", fps: 120, bitrateKbps: 40000, codec: "HEVC" },
-    options: { cpu: 8, memoryGB: 8, gpuPercent: 100, diskGB: 200, diskType: "Fixed", diskFreeGB: 232, captureMode: "ddx", networkIsolation: true, cleanup: "none" },
+    options: { cpu: 8, memoryGB: 8, gpuPercent: 100, diskGB: 200, diskType: "Fixed", diskFreeGB: 232, captureMode: "wgc", networkIsolation: true, cleanup: "none" },
   },
   {
     // GpuVM's demo machines are all Windows: it only creates Windows 10 and 11 VMs.
@@ -28,12 +28,19 @@ const vms: VmOverview[] = [
     processorCount: 6, cpuPercent: 0, memoryStartupGB: 6, memoryAssignedGB: 0, memoryDemandGB: 0, uptimeSeconds: 0,
     hasGpu: true, gpuName: "NVIDIA GeForce RTX 4060", gpuPercent: 0, driverInSync: true, fits: true, fitGB: 6, missingGB: 0, streaming: true, paired: true,
     guestCredential: true, address: null, client: { app: "Desktop", resolution: "1920x1080", fps: 60, bitrateKbps: 0, codec: "auto" },
-    options: { cpu: 6, memoryGB: 6, gpuPercent: 60, diskGB: 128, diskType: "Dynamic", diskFreeGB: 232, captureMode: "ddx", networkIsolation: true, cleanup: "privacy" },
+    options: { cpu: 6, memoryGB: 6, gpuPercent: 60, diskGB: 128, diskType: "Dynamic", diskFreeGB: 232, captureMode: "wgc", networkIsolation: true, cleanup: "privacy" },
   },
 ];
 
+// The card over Moonlight (PromptCard): open http://localhost:1420/?prompt to see it with a sample prompt.
+// The website's demo of the card turns it on with showSamplePrompt().
+let samplePrompt = params.has("prompt");
+export const showSamplePrompt = () => { samplePrompt = true; };
+export const adminPrompts = async () =>
+  samplePrompt ? [{ name: "win10", id: 4242, app: "Procesador de comandos de Windows", publisher: params.get("prompt") === "unknown" ? "Desconocido" : "Microsoft Windows" }] : [];
+
 const builtIn = (cpu: number, diskGB: number, diskType: "Dynamic" | "Fixed"): ProfileSettings =>
-  ({ cpu, memoryGB: 8, gpuPercent: 100, diskGB, diskType, iso: null, apps: [], cleanup: "none", resolution: "1920x1080", fps: 60, displayMode: "fullscreen" });
+  ({ cpu, memoryGB: 8, gpuPercent: 100, diskGB, diskType, iso: null, apps: [], cleanup: "none", resolution: "1920x1080", fps: 0, displayMode: "fullscreen", vsync: true, framePacing: false, mouse: "capture" });
 
 let profiles: ProfileInfo[] = [
   { Name: "balanced", Extends: "base", Description: "Buen rendimiento dejando holgura al host: 8 hilos, 8 GB, disco dinámico.", BuiltIn: true, Settings: builtIn(8, 128, "Dynamic") },
@@ -60,6 +67,8 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export async function ps(cmd: string, args: Record<string, unknown>): Promise<unknown[]> {
   await wait(250);
   if (scenario === "noadmin") throw new Error("Este comando necesita PowerShell 7 abierto como administrador.");
+  if (scenario === "noservice") throw new Error("El servicio de GpuVM no está instalado.");
+  if (scenario === "servicestopped") throw new Error("El servicio de GpuVM está detenido.");
   // ?mock=loading keeps every screen in its loading state, to design the skeletons.
   if (scenario === "loading") return new Promise(() => {});
   switch (cmd) {
@@ -132,7 +141,14 @@ export async function ps(cmd: string, args: Record<string, unknown>): Promise<un
       return [];
     case "Set-GpuVMStreamingClient": {
       const vm = vms.find((v) => v.name === args.Name)!;
-      vm.client = { ...vm.client!, resolution: String(args.Resolution), fps: Number(args.Fps), displayMode: args.DisplayMode as DisplayMode };
+      vm.client = {
+        ...vm.client!, resolution: String(args.Resolution), fps: Number(args.Fps), displayMode: (args.DisplayMode as DisplayMode) ?? vm.client!.displayMode,
+        ...(args.VSync !== undefined ? { vsync: Boolean(args.VSync) } : {}),
+        ...(args.FramePacing !== undefined ? { framePacing: Boolean(args.FramePacing) } : {}),
+        ...(args.Mouse ? { mouse: args.Mouse as MouseMode } : {}),
+        ...(args.Codec ? { codec: String(args.Codec) } : {}),
+        ...(args.BitrateKbps !== undefined ? { bitrateKbps: Number(args.BitrateKbps) } : {}),
+      };
       return [];
     }
     case "Invoke-GpuVMPower": {

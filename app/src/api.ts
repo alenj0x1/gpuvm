@@ -1,4 +1,4 @@
-import type { AppInfo, CleanupLevel, HomeInfo, SharedDiskInfo, TemplateInfo, DiskInfo, DisplayMode, HostInfo, IsoFile, JobEvent, ProfileInfo, ProfileSettings, VmOverview } from "./types";
+import type { AppInfo, CleanupLevel, HomeInfo, SharedDiskInfo, TemplateInfo, DiskInfo, DisplayMode, HostInfo, IsoFile, JobEvent, ProfileInfo, ProfileSettings, StreamSettings, VmOverview, AdminPrompt } from "./types";
 import * as mock from "./mock";
 
 // Outside Tauri (browser) the UI runs on sample data so it can be designed.
@@ -12,6 +12,9 @@ async function ps<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T
 
 export const api = {
   overview: () => ps<VmOverview>("Get-GpuVMOverview"),
+  adminPrompts: () => adminPromptsNow(),
+  answerAdminPrompt: (name: string, answer: "Allow" | "Deny", id: number) =>
+    ps("Resolve-GpuVMAdminPrompt", { Name: name, Answer: answer, PromptId: id }),
   home: () => ps<HomeInfo>("Get-GpuVMHome").then((r) => r[0]),
   isos: () => ps<IsoFile>("Get-GpuVMIsoList"),
   hostInfo: () => ps<HostInfo>("Get-GpuVMHostInfo"),
@@ -21,8 +24,16 @@ export const api = {
     ps("Set-GpuVMGuestCredential", { Name: name, Credential: { user, password } }),
   applyOptions: (name: string, override: Record<string, unknown>) => ps("Set-GpuVM", { Name: name, Override: override }),
   // DisplayMode only goes when it changed, so a mode the app doesn't show (borderless) is kept.
-  setClient: (name: string, resolution: string, fps: number, displayMode?: DisplayMode) =>
-    ps("Set-GpuVMStreamingClient", { Name: name, Resolution: resolution, Fps: fps, ...(displayMode ? { DisplayMode: displayMode } : {}) }),
+  // The stream settings (V-Sync, pacing, mouse, codec, bitrate) also go only when they changed.
+  setClient: (name: string, resolution: string, fps: number, displayMode?: DisplayMode, stream: StreamSettings = {}) =>
+    ps("Set-GpuVMStreamingClient", {
+      Name: name, Resolution: resolution, Fps: fps, ...(displayMode ? { DisplayMode: displayMode } : {}),
+      ...(stream.vsync !== undefined ? { VSync: stream.vsync } : {}),
+      ...(stream.framePacing !== undefined ? { FramePacing: stream.framePacing } : {}),
+      ...(stream.mouse ? { Mouse: stream.mouse } : {}),
+      ...(stream.codec ? { Codec: stream.codec } : {}),
+      ...(stream.bitrateKbps !== undefined ? { BitrateKbps: stream.bitrateKbps } : {}),
+    }),
   remove: (name: string, deleteDisk: boolean) => ps("Remove-GpuVM", { Name: name, DeleteDisk: deleteDisk, Confirm: false }),
   apps: () => ps<AppInfo>("Get-GpuVMApp"),
   cleanupLevels: () => ps<CleanupLevel>("Get-GpuVMCleanup"),
@@ -55,12 +66,59 @@ export async function onJob(handler: (e: JobEvent) => void): Promise<() => void>
   return listen<JobEvent>("job", (e) => handler(e.payload));
 }
 
+// Administrator prompts (PromptCard): the list the app's poller last saw, and the person's answer.
+export async function adminPromptsNow(): Promise<AdminPrompt[]> {
+  if (!inTauri) return mock.adminPrompts();
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<AdminPrompt[]>("admin_prompts");
+}
+
+export async function adminPromptAnswered(id: number) {
+  if (!inTauri) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("admin_prompt_answered", { id });
+}
+
 export async function openConsole(name: string) {
   if (!inTauri) return;
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("open_console", { name });
 }
 
+/** Installs and starts the GpuVM service again (UAC prompt). */
+export async function repairService() {
+  if (!inTauri) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("repair_service");
+}
+
+export interface ServiceStatus { state: "running" | "starting" | "stopping" | "stopped" | "missing"; withWindows: boolean }
+
+/** The GpuVM service: its state, start and stop (no UAC), and whether it starts with Windows (UAC). */
+export const service = {
+  status: async (): Promise<ServiceStatus> => {
+    if (!inTauri) return { state: "running", withWindows: false };
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke<ServiceStatus>("service_status");
+  },
+  start: async () => {
+    if (!inTauri) return;
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("start_service");
+  },
+  stop: async () => {
+    if (!inTauri) return;
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("stop_service");
+  },
+  setStartup: async (withWindows: boolean) => {
+    if (!inTauri) return;
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("set_service_startup", { withWindows });
+  },
+};
+
+/** Development builds only: they start the module themselves and need administrator. */
 export async function relaunchAsAdmin() {
   if (!inTauri) return;
   const { invoke } = await import("@tauri-apps/api/core");

@@ -96,6 +96,23 @@ InModuleScope GpuVM {
             ($a -join ' ') | Should Be 'stream 1.2.3.4 "Desktop" --no-vsync --performance-overlay --display-mode fullscreen --capture-system-keys fullscreen'
         }
 
+        It 'passes the mouse mode of the use (a free pointer for movies and work)' {
+            $a = Get-MoonlightStreamArguments -Address '1.2.3.4' -Client @{ app = 'Desktop'; vsync = $true; framePacing = $true; mouse = 'absolute' }
+            ($a -join ' ') | Should Match '--vsync --frame-pacing --absolute-mouse'
+            $b = Get-MoonlightStreamArguments -Address '1.2.3.4' -Client @{ app = 'Desktop'; mouse = 'capture' }
+            ($b -join ' ') | Should Match '--no-absolute-mouse'
+            $c = Get-MoonlightStreamArguments -Address '1.2.3.4' -Client @{ app = 'Desktop'; mouse = 'x --y' }
+            ($c -join ' ') | Should Not Match 'mouse'
+        }
+
+        It 'streams at the monitor refresh rate when fps is 0' {
+            $hz = Resolve-GpuVMStreamFps 0
+            ($hz -ge 30 -and $hz -le 240) | Should Be $true
+            Resolve-GpuVMStreamFps 120 | Should Be 120
+            $a = Get-MoonlightStreamArguments -Address '1.2.3.4' -Client @{ app = 'Desktop'; fps = 0 }
+            ($a -join ' ') | Should Match "--fps $hz( |$)"
+        }
+
         It 'data lives outside the code when installed; in the repo, in the repo' {
             $script:DataRoot | Should Be $script:RepoRoot
         }

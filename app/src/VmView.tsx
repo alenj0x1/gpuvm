@@ -4,11 +4,11 @@ import {
   IconSparkles,
   IconCpu, IconDeviceDesktop, IconDots, IconExternalLink, IconKey, IconLoader2, IconPlayerPause, IconPlayerPlay,
   IconPower, IconRefresh, IconRefreshAlert, IconTrash, IconPlugOff, IconClock, IconTopologyStar3, IconPalette,
-  IconBolt, IconDeviceFloppy, IconLink, IconDownload, IconCheck, IconChartLine, IconArrowsMaximize, IconAppWindow, IconApps, IconClipboardText, IconScreenShare, IconMaximize,
-  IconWorld, IconNetwork,
+  IconBolt, IconDeviceFloppy, IconLink, IconDownload, IconCheck, IconChartLine, IconArrowsMaximize, IconAppWindow, IconApps, IconClipboardText, IconScreenShare,
+  IconWorld, IconNetwork, IconRectangle, IconWaveSine, IconPlayerTrackNext, IconChevronRight, IconDeviceGamepad2, IconPointer,
 } from "@tabler/icons-react";
-import type { AppInfo, CleanupLevelId, SharedDiskInfo, DisplayMode, HostInfo, Sample, VmOverview } from "./types";
-import { AppPicker, CleanupPicker, FPS, RESOLUTIONS, useCleanupLevels } from "./pickers";
+import type { AppInfo, CleanupLevelId, SharedDiskInfo, DisplayMode, HostInfo, MouseMode, Sample, StreamSettings, VmOverview } from "./types";
+import { AppPicker, CleanupPicker, CODECS, FPS_OPTIONS, RESOLUTIONS, USES, streamUseOf, useCleanupLevels } from "./pickers";
 import { Bauhaus, patternClick, patternVariant, setPatternVariant } from "./bauhaus";
 import { MAX_SAMPLES, UsageChart } from "./Chart";
 import { CheckMark, Segmented, Slider, formatUptime, stateLabel } from "./ui";
@@ -454,7 +454,13 @@ function Options({ vm, host, busy, startJob, run }: Pick<Props, "vm" | "host" | 
     cpu: vm.options!.cpu, memoryGB: vm.options!.memoryGB, gpuPercent: vm.options!.gpuPercent, diskGB: vm.options!.diskGB,
     resolution: vm.client?.resolution ?? "1920x1080", fps: vm.client?.fps ?? 60,
     displayMode: (vm.client?.displayMode === "windowed" ? "windowed" : "fullscreen") as DisplayMode,
-    captureMode: vm.options!.captureMode ?? "ddx",
+    // Unset = Moonlight's own defaults.
+    vsync: vm.client?.vsync ?? true,
+    framePacing: vm.client?.framePacing ?? false,
+    mouse: (vm.client?.mouse ?? "capture") as MouseMode,
+    codec: vm.client?.codec ?? "auto",
+    bitrateKbps: vm.client?.bitrateKbps ?? 0,
+    captureMode: vm.options!.captureMode ?? "wgc",
     networkIsolation: vm.options!.networkIsolation ?? true,
   };
   const [draft, setDraft] = useState(initial);
@@ -468,13 +474,18 @@ function Options({ vm, host, busy, startJob, run }: Pick<Props, "vm" | "host" | 
   // A disk only grows; a fixed one needs that much free space on the host (keeping 10 GB for it).
   const maxDisk = Math.max(initial.diskGB, Math.min(1024, initial.diskGB + (vm.options!.diskType === "Fixed" ? vm.options!.diskFreeGB - 10 : 1024)));
   const vmDirty = draft.cpu !== initial.cpu || draft.memoryGB !== initial.memoryGB || draft.gpuPercent !== initial.gpuPercent || draft.diskGB !== initial.diskGB;
-  const clientDirty = draft.resolution !== initial.resolution || draft.fps !== initial.fps || draft.displayMode !== initial.displayMode;
+  const streamKeys = ["vsync", "framePacing", "mouse", "codec", "bitrateKbps"] as const;
+  const streamChanges: StreamSettings = Object.fromEntries(streamKeys.filter((k) => draft[k] !== initial[k]).map((k) => [k, draft[k]]));
+  const clientDirty = draft.resolution !== initial.resolution || draft.fps !== initial.fps || draft.displayMode !== initial.displayMode
+    || Object.keys(streamChanges).length > 0;
+  const use = streamUseOf(draft);
+  const [advanced, setAdvanced] = useState(false);
   const captureDirty = draft.captureMode !== initial.captureMode;
   const networkDirty = draft.networkIsolation !== initial.networkIsolation;
   const off = vm.state === "Off";
 
   const save = async () => {
-    if (clientDirty && !(await run(vm.name, "Guardando", () => api.setClient(vm.name, draft.resolution, draft.fps, draft.displayMode !== initial.displayMode ? draft.displayMode : undefined)))) return;
+    if (clientDirty && !(await run(vm.name, "Guardando", () => api.setClient(vm.name, draft.resolution, draft.fps, draft.displayMode !== initial.displayMode ? draft.displayMode : undefined, streamChanges)))) return;
     if (captureDirty && !(await run(vm.name, "Cambiando la captura", () => api.setCapture(vm.name, draft.captureMode)))) return;
     if (networkDirty && !(await run(vm.name, "Cambiando la red", () => api.setNetworkIsolation(vm.name, draft.networkIsolation)))) return;
     if (!vmDirty) { setSaved(true); return; }
@@ -510,11 +521,21 @@ function Options({ vm, host, busy, startJob, run }: Pick<Props, "vm" | "host" | 
         </div>
         {vm.streaming && (
           <div className="field wide">
+            <div className="field-top"><span>Tipo de uso</span></div>
+            <div className="segment-row">
+              <Segmented value={use ?? ""} onChange={(id) => setDraft({ ...draft, ...USES.find((u) => u.id === id)!.client })}
+                options={USES.map((u) => ({ value: u.id, label: <><u.icon size={15} />{u.label}</> }))} />
+            </div>
+            <span className="hint">{use ? USES.find((u) => u.id === use)!.description : "Personalizado. Los ajustes de abajo se cambiaron a mano."}</span>
+          </div>
+        )}
+        {vm.streaming && (
+          <div className="field wide">
             <div className="field-top"><span>Moonlight</span></div>
             <div className="segment-row">
               <Segmented value={draft.resolution} onChange={(resolution) => setDraft({ ...draft, resolution })}
                 options={RESOLUTIONS.map((r) => ({ value: r, label: r.split("x")[1] + "p" }))} />
-              <Segmented value={draft.fps} onChange={(fps) => setDraft({ ...draft, fps })} options={FPS.map((f) => ({ value: f, label: `${f} FPS` }))} />
+              <Segmented value={draft.fps} onChange={(fps) => setDraft({ ...draft, fps })} options={FPS_OPTIONS} />
               <Segmented value={draft.displayMode} onChange={(displayMode) => setDraft({ ...draft, displayMode })} options={[
                 { value: "fullscreen", label: <><IconArrowsMaximize size={15} />Pantalla completa</> },
                 { value: "windowed", label: <><IconAppWindow size={15} />Ventana</> },
@@ -524,16 +545,46 @@ function Options({ vm, host, busy, startJob, run }: Pick<Props, "vm" | "host" | 
         )}
         {vm.streaming && (
           <div className="field">
+            <div className="field-top"><span>Sincronización vertical</span></div>
+            <div className="segment-row">
+              <Segmented value={draft.vsync} onChange={(vsync) => setDraft({ ...draft, vsync, framePacing: vsync && draft.framePacing })} options={[
+                { value: true, label: <><IconRectangle size={15} />Imagen entera</> },
+                { value: false, label: <><IconBolt size={15} />Más rápida</> },
+              ]} />
+            </div>
+            <span className="hint">{draft.vsync
+              ? "Cada cuadro llega entero al monitor. Al ritmo del monitor no agrega espera."
+              : "Cada cuadro sale apenas llega, aunque el monitor esté a mitad de dibujar el anterior."}</span>
+          </div>
+        )}
+        {vm.streaming && (
+          <div className="field">
+            <div className="field-top"><span>Ritmo de cuadros</span></div>
+            <div className={`segment-row${draft.vsync ? "" : " disabled"}`}>
+              <Segmented value={draft.framePacing} onChange={(framePacing) => draft.vsync && setDraft({ ...draft, framePacing })} options={[
+                { value: true, label: <><IconWaveSine size={15} />Parejo</> },
+                { value: false, label: <><IconPlayerTrackNext size={15} />Al instante</> },
+              ]} />
+            </div>
+            <span className="hint">{!draft.vsync
+              ? "Solo con la imagen entera."
+              : draft.framePacing
+                ? "Reparte los cuadros a ritmo constante, ideal a 60 FPS."
+                : "Muestra cada cuadro apenas está listo."}</span>
+          </div>
+        )}
+        {vm.streaming && (
+          <div className="field">
             <div className="field-top"><span>Captura</span></div>
             <div className="segment-row">
               <Segmented value={draft.captureMode} onChange={(captureMode) => setDraft({ ...draft, captureMode })} options={[
-                { value: "ddx", label: <><IconScreenShare size={15} />Estándar</> },
-                { value: "wgc", label: <><IconMaximize size={15} />Pantalla completa exclusiva</> },
+                { value: "wgc", label: <><IconBolt size={15} />Rápida</> },
+                { value: "ddx", label: <><IconScreenShare size={15} />Clásica</> },
               ]} />
             </div>
             <span className="hint">{draft.captureMode === "wgc"
-              ? "Muestra programas en pantalla completa exclusiva. Los avisos de administrador de Windows no se ven en el stream."
-              : "Muestra todo, incluidos los avisos de administrador. Los programas en pantalla completa exclusiva se ven en negro."}</span>
+              ? "La imagen aparece apenas te conectas y se ven los juegos en pantalla completa exclusiva. Los avisos de administrador de Windows se responden desde GpuVM."
+              : "Los avisos de administrador se ven en Moonlight, pero la imagen puede tardar en aparecer al conectar y los juegos en pantalla completa exclusiva se ven en negro."}</span>
           </div>
         )}
         <div className="field">
@@ -548,6 +599,42 @@ function Options({ vm, host, busy, startJob, run }: Pick<Props, "vm" | "host" | 
             ? "La VM no llega a este equipo ni a tu red local; si se infecta, no puede salir de ahí."
             : "La VM llega a este equipo y a los demás de tu red. Úsalo solo si necesitas, por ejemplo, un NAS."}</span>
         </div>
+        {vm.streaming && (
+          <div className="field wide">
+            <button type="button" className="disclosure" aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}>
+              <IconChevronRight size={15} />Avanzado
+            </button>
+          </div>
+        )}
+        {vm.streaming && advanced && (
+          <>
+            <div className="field">
+              <div className="field-top"><span>Mouse</span></div>
+              <div className="segment-row">
+                <Segmented value={draft.mouse} onChange={(mouse) => setDraft({ ...draft, mouse })} options={[
+                  { value: "capture", label: <><IconDeviceGamepad2 size={15} />Para juegos</> },
+                  { value: "absolute", label: <><IconPointer size={15} />Libre</> },
+                ]} />
+              </div>
+              <span className="hint">{draft.mouse === "capture"
+                ? "La VM toma el mouse, como necesitan los juegos para girar la cámara."
+                : "El puntero entra y sale de la ventana como en escritorio remoto. No sirve en la mayoría de juegos."}</span>
+            </div>
+            <div className="field">
+              <div className="field-top"><span>Códec</span></div>
+              <div className="segment-row">
+                <Segmented value={draft.codec} onChange={(codec) => setDraft({ ...draft, codec })} options={CODECS} />
+              </div>
+              <span className="hint">{draft.codec === "auto" ? "Moonlight elige el mejor que tu equipo puede mostrar." : "Si la imagen no aparece, vuelve a Automático."}</span>
+            </div>
+            <div className="field wide">
+              <div className="field-top"><span>Calidad de imagen</span><strong>{draft.bitrateKbps ? `${draft.bitrateKbps / 1000} Mbps` : "Automática"}</strong></div>
+              <Slider label="Calidad de imagen" value={draft.bitrateKbps / 1000} min={0} max={150} step={5}
+                onChange={(mbps) => setDraft({ ...draft, bitrateKbps: mbps * 1000 })} />
+              <span className="hint">Más calidad usa más red. Al mínimo, Moonlight la ajusta a la resolución y los FPS.</span>
+            </div>
+          </>
+        )}
       </div>
       {(vmDirty || clientDirty || captureDirty || networkDirty || saved) && (
         <div className="options-foot">

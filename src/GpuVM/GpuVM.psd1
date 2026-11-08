@@ -40,6 +40,8 @@
         'Send-GpuVMClipboard'
         'Stop-GpuVMAll'
         'Set-GpuVMCapture'
+        'Resolve-GpuVMAdminPrompt'
+        'Get-GpuVMAdminPrompt'
         'Set-GpuVMNetworkIsolation'
         'Set-GpuVMCleanup'
         'Get-GpuVMCleanup'
