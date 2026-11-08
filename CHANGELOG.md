@@ -8,8 +8,22 @@ Changes waiting for the next version sit under **Unreleased** at the top (this s
 
 ## [Unreleased]
 
+### Added
+- **GpuVM service** option in **Preferences**: **Con GpuVM** (With GpuVM, the default) starts the service when the app opens and stops it when the app quits, once what it was doing is finished; **Con Windows** (With Windows) starts it with Windows; **Manual** starts and stops it only from **Preferences**, which also shows its state.
+- If the GpuVM service is stopped or missing, the app says so with a button to start it or repair it.
+
+### Changed
+- GpuVM opens without administrator rights, so programs that drive other windows (keyboard, controller or accessibility tools) can drive it too. The new **GpuVM** Windows service does the Hyper-V work with your account's administrator rights.
+- Deleting a machine, a disk, a shared disk or a template asks for confirmation in a Windows administrator prompt; if you say no, nothing is deleted.
+- GpuVM carries its own PowerShell 7 (7.6.9), so the app no longer needs it installed.
+
+### Security
+- Only GpuVM's own app, run by an administrator account signed in at the PC, can use the service; other programs and network connections are refused.
+- Files and folders a request names (an ISO, a folder to import) are opened first with your own rights, unelevated, and paths that go through a link to another place are refused.
+
 ### Fixed
-- After creating a machine, the app opens it instead of going back to **Inicio**.
+- A malformed request no longer stops the module's PowerShell process.
+- After creating a machine, the app opens it instead of going back to **Inicio** (Home).
 - Docs site: the menu button only shows on phones, with one icon (three lines closed, X open) and room next to the language selector; the page outline on the right is narrower.
 - Docs site: two-column tables without titles no longer show an empty first row.
 

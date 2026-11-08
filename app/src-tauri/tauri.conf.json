@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeDevCommand": "node scripts/prepare.mjs && npm run dev",
+    "beforeBuildCommand": "npm run build && node scripts/prepare.mjs"
   },
   "app": {
     "windows": [
@@ -28,21 +28,33 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "resources": {
       "../../src/": "gpuvm/src/",
       "../../profiles/": "gpuvm/profiles/",
       "../../guest/": "gpuvm/guest/",
       "../../templates/": "gpuvm/templates/",
       "../../streaming/": "gpuvm/streaming/",
-      "../../apps/": "gpuvm/apps/"
+      "../../apps/": "gpuvm/apps/",
+      "../.cache/pwsh/": "pwsh/",
+      "../host/target/release/gpuvm-host.exe": "gpuvm-host.exe"
     },
     "windows": {
       "nsis": {
         "installMode": "perMachine",
-        "languages": ["Spanish"]
+        "languages": [
+          "Spanish"
+        ],
+        "installerHooks": "./windows/hooks.nsh"
       }
     },
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"]
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ]
   }
 }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconHome,
-  IconAlertTriangle, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconLoader2, IconPlus, IconRefresh, IconShieldLock,
+  IconAlertTriangle, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconLoader2, IconPlugConnected, IconPlus, IconRefresh, IconShieldLock,
 } from "@tabler/icons-react";
 import { Preferences } from "./Preferences";
 import { Library, type LibraryTab } from "./Library";
@@ -8,7 +8,7 @@ import { Home } from "./Home";
 // The app's own icon (the installer and the window use it), never a machine figure.
 import appIcon from "../src-tauri/icons/128x128.png";
 import type { HostInfo, JobEvent, Sample, VmOverview } from "./types";
-import { api, onJob, relaunchAsAdmin, startJob as runJob } from "./api";
+import { api, onJob, relaunchAsAdmin, repairService, service, startJob as runJob } from "./api";
 import { Bauhaus } from "./bauhaus";
 import { MAX_SAMPLES } from "./Chart";
 import { VmView, type JobInfo } from "./VmView";
@@ -38,7 +38,10 @@ interface RunningJob extends JobInfo {
 export function App({ embedded = false }: { embedded?: boolean } = {}) {
   const [vms, setVms] = useState<VmOverview[] | null>(null);
   const [host, setHost] = useState<HostInfo | null>(null);
-  const [needsAdmin, setNeedsAdmin] = useState(false);
+  // "stopped": the GpuVM service is stopped and set to start by hand; "missing": it isn't installed (installed app);
+  // "admin": development build without administrator.
+  const [blocked, setBlocked] = useState<"stopped" | "missing" | "admin" | null>(null);
+  const [repair, setRepair] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
   const [readError, setReadError] = useState<string | null>(null);
   const [selected, setSelected] = useState(() => embedded ? HOME : decodeURIComponent(location.hash.slice(1)));
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem("gpuvm.collapsed") === "1"; } catch { return false; } });
@@ -68,11 +71,13 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       }
       const json = JSON.stringify(list);
       if (json !== lastJson.current) { lastJson.current = json; setVms(list); }
-      setNeedsAdmin(false);
+      setBlocked(null);
       setReadError(null);
     } catch (e) {
       const msg = humanError(e);
-      if (msg.includes("administrador")) setNeedsAdmin(true);
+      if (msg.includes("servicio de GpuVM está detenido")) setBlocked("stopped");
+      else if (msg.includes("servicio de GpuVM no está instalado")) setBlocked("missing");
+      else if (msg.includes("administrador")) setBlocked("admin");
       else setReadError(msg);
       setVms((v) => v ?? []);
     }
@@ -171,7 +176,30 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
   const createJob = Object.values(jobs).find((j) => j.vm === NEW_VM) ?? null;
   const current = vms?.find((v) => v.name === selected) ?? null;
 
-  if (needsAdmin) {
+  if (blocked === "stopped" || blocked === "missing") {
+    const stopped = blocked === "stopped";
+    const fix = async () => {
+      setRepair({ busy: true, error: null });
+      try { await (stopped ? service.start() : repairService()); setRepair({ busy: false, error: null }); refresh(); }
+      catch (e) { setRepair({ busy: false, error: humanError(e) }); }
+    };
+    return (
+      <div className="app single">
+        <TitleBar />
+        <div className="empty">
+          <Bauhaus name="gpuvm-admin" size={96} radius={24} />
+          <h2>{stopped ? "El servicio de GpuVM está detenido" : "Falta el servicio de GpuVM"}</h2>
+          <p>{stopped ? "Es la parte de GpuVM que controla Hyper-V. En Preferencias está en modo manual." : "Es la parte de GpuVM que controla Hyper-V. Repararlo pide permiso de administrador una vez."}</p>
+          <button className="primary" onClick={fix} disabled={repair.busy}>
+            {stopped ? <><IconPlugConnected size={17} />{repair.busy ? "Iniciando…" : "Iniciar servicio"}</> : <><IconShieldLock size={17} />{repair.busy ? "Reparando…" : "Reparar"}</>}
+          </button>
+          {repair.error && <span className="error-text">{repair.error}</span>}
+        </div>
+      </div>
+    );
+  }
+
+  if (blocked === "admin") {
     return (
       <div className="app single">
         <TitleBar />

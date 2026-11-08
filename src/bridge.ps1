@@ -11,8 +11,9 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 [Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
-# The app runs elevated: modules (Hyper-V, Storage, ...) are only resolved from system folders and this one,
-# never from folders in the user's environment (Documents\PowerShell\Modules, a PSModulePath they set).
+# The bridge runs elevated (the GpuVM service starts it with the user's elevated token): modules (Hyper-V,
+# Storage, ...) are only resolved from system folders and this one, never from folders in the user's environment
+# (Documents\PowerShell\Modules, a PSModulePath they set).
 $env:PSModulePath = @("$PSHOME\Modules", "$([Environment]::GetFolderPath('System'))\WindowsPowerShell\v1.0\Modules", $PSScriptRoot) -join ';'
 Import-Module (Join-Path $PSScriptRoot 'GpuVM\GpuVM.psd1') -Force -DisableNameChecking
 
@@ -35,7 +36,12 @@ function ConvertTo-Argument($Value) {
 
 while ($null -ne ($line = [Console]::In.ReadLine())) {
     if (-not $line.Trim()) { continue }
-    $request = $line | ConvertFrom-Json -AsHashtable
+    # A line that is not valid JSON gets an error back instead of ending the bridge.
+    try { $request = $line | ConvertFrom-Json -AsHashtable }
+    catch {
+        Send-Event @{ id = $null; type = 'result'; ok = $false; error = 'Petición no válida.' }
+        continue
+    }
     $id = $request['id']
     $global:GpuVMProgressSink = { param($message) Send-Event @{ id = $id; type = 'progress'; message = $message } }.GetNewClosure()
     try {

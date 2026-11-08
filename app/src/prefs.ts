@@ -1,20 +1,23 @@
 import { useEffect, useState } from "react";
 import { inTauri } from "./api";
 
-// App preferences, kept in localStorage. The close behavior is also handed to the Rust side,
-// which decides what the window's close button does.
+// App preferences, kept in localStorage. The close, quit and service behaviors are also handed to the Rust side,
+// which decides what the window's close button and quitting do.
 export type ThemePref = "system" | "light" | "dark";
 export type ClosePref = "quit" | "tray";
 export type VmsOnQuitPref = "keep" | "stop";
+/** When the GpuVM service runs: while GpuVM is open, from Windows' start, or only when started by hand. */
+export type ServicePref = "app" | "windows" | "manual";
 
 export interface Prefs {
   theme: ThemePref;
   close: ClosePref;
   vmsOnQuit: VmsOnQuitPref;
+  service: ServicePref;
 }
 
 const KEY = "gpuvm.prefs";
-const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "keep" };
+const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "keep", service: "app" };
 const EVENT = "gpuvm-prefs";
 const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
 
@@ -42,12 +45,19 @@ async function applyVmsOnQuit(pref: VmsOnQuitPref) {
   await invoke("set_stop_vms_on_quit", { enabled: pref === "stop" }).catch(() => {});
 }
 
+async function applyService(mode: ServicePref) {
+  if (!inTauri) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("set_service_mode", { mode }).catch(() => {});
+}
+
 export function savePrefs(change: Partial<Prefs>) {
   const next = { ...readPrefs(), ...change };
   try { localStorage.setItem(KEY, JSON.stringify(next)); } catch { /* no storage */ }
   applyTheme(next.theme);
   if (change.close) applyClose(next.close);
   if (change.vmsOnQuit) applyVmsOnQuit(next.vmsOnQuit);
+  if (change.service) applyService(next.service);
   window.dispatchEvent(new Event(EVENT));
 }
 
@@ -57,6 +67,7 @@ export function initPrefs() {
   applyTheme(prefs.theme);
   applyClose(prefs.close);
   applyVmsOnQuit(prefs.vmsOnQuit);
+  applyService(prefs.service);
   systemDark.addEventListener("change", () => {
     if (readPrefs().theme === "system") { applyTheme("system"); window.dispatchEvent(new Event(EVENT)); }
   });

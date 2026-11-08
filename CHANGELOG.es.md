@@ -8,7 +8,21 @@ Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (es
 
 ## [Sin publicar]
 
+### Agregado
+- Opción **Servicio de GpuVM** en **Preferencias**: **Con GpuVM** (la predeterminada) enciende el servicio al abrir la app y lo apaga al cerrarla, cuando termina lo que estaba haciendo; **Con Windows** lo enciende con Windows; **Manual** lo enciende y apaga solo desde **Preferencias**, que también muestra su estado.
+- Si el servicio de GpuVM está detenido o falta, la app lo dice con un botón para iniciarlo o repararlo.
+
+### Cambiado
+- GpuVM se abre sin permisos de administrador, así los programas que manejan otras ventanas (herramientas de teclado, control o accesibilidad) también pueden manejarlo. El nuevo servicio de Windows **GpuVM** hace el trabajo de Hyper-V con los permisos de administrador de tu cuenta.
+- Borrar una máquina, un disco, un disco compartido o una plantilla pide confirmarlo en un aviso de administrador de Windows; si dices que no, no se borra nada.
+- GpuVM trae su propio PowerShell 7 (7.6.9), así la app ya no necesita tenerlo instalado.
+
+### Seguridad
+- Solo la app de GpuVM, abierta por una cuenta de administrador con sesión iniciada en el equipo, puede usar el servicio; otros programas y conexiones de red se rechazan.
+- Los archivos y carpetas que nombra una petición (un ISO, una carpeta a importar) se abren primero con tus propios permisos, sin elevar, y se rechazan las rutas que pasan por un enlace a otro lugar.
+
 ### Corregido
+- Una petición mal formada ya no detiene el proceso de PowerShell del módulo.
 - Después de crear una máquina, la app la abre en vez de volver a **Inicio**.
 - Sitio de documentación: el botón de menú solo aparece en el celular, con un solo ícono (tres líneas cerrado, X abierto) y con espacio junto al selector de idioma; el índice de la derecha es más angosto.
 - Sitio de documentación: las tablas de dos columnas sin títulos ya no muestran una primera fila vacía.
