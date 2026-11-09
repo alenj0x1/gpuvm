@@ -6,7 +6,7 @@ All notable changes to GpuVM are documented here. The format follows [Keep a Cha
 
 Changes waiting for the next version sit under **Unreleased** at the top (this section only exists while there are some, and the docs site doesn't show it); `scripts/release.py` turns it into the new version.
 
-## [Unreleased]
+## [0.5.0] - 2026-11-08
 
 ### Added
 - Gamepads work in the machines: GpuVM installs the virtual gamepad driver (ViGEmBus) in the VM, and a controller on this PC reaches Windows in the VM as an Xbox 360 controller.
@@ -150,6 +150,7 @@ First version.
 - Third-party installers are pinned by SHA-256 and verified again right before copying them into the VM.
 - Streaming and guest credentials are encrypted with DPAPI.
 
+[0.5.0]: https://github.com/alenj0x1/gpuvm/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/alenj0x1/gpuvm/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/alenj0x1/gpuvm/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/alenj0x1/gpuvm/compare/v0.2.0...v0.3.0

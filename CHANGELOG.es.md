@@ -6,7 +6,7 @@ Aquí se documentan los cambios importantes de GpuVM. El formato sigue [Keep a C
 
 Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (esa sección solo existe mientras haya alguno y el sitio de documentación no la muestra); `scripts/release.py` la convierte en la versión nueva.
 
-## [Sin publicar]
+## [0.5.0] - 2026-11-08
 
 ### Añadido
 - Los mandos funcionan en las máquinas: GpuVM instala el controlador de mando virtual (ViGEmBus) en la VM, y un control conectado a este equipo llega a Windows en la VM como un control de Xbox 360.
@@ -150,6 +150,7 @@ Primera versión.
 - Los instaladores de terceros están fijados por SHA-256 y se vuelven a verificar justo antes de copiarlos a la VM.
 - Las credenciales de streaming y del invitado se cifran con DPAPI.
 
+[0.5.0]: https://github.com/alenj0x1/gpuvm/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/alenj0x1/gpuvm/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/alenj0x1/gpuvm/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/alenj0x1/gpuvm/compare/v0.2.0...v0.3.0
