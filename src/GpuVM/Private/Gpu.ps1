@@ -34,11 +34,20 @@ function Test-GpuInstancePathSupport {
 # Uses WMI (Win32_PnPSignedDriverCIMDataFile, ~30 s); that provider sometimes fails with "Shutting down",
 # so it is retried and, if it keeps failing, the list is built from the driver's .inf.
 function Get-GpuDriverFileSet {
-    param([Parameter(Mandatory)][string]$PnpDeviceId)
+    param(
+        [Parameter(Mandatory)][string]$PnpDeviceId,
+        # With the driver's version, the list is remembered: asking WMI walks every driver's files (~30 s, lab 027).
+        [string]$DriverVersion
+    )
+    $cached = if ($DriverVersion) { Read-GpuDriverFileSetCache -PnpDeviceId $PnpDeviceId -DriverVersion $DriverVersion }
+    if ($cached) { return $cached }
     for ($attempt = 1; $attempt -le 3; $attempt++) {
         try {
             $set = Get-GpuDriverFileSetFromWmi -PnpDeviceId $PnpDeviceId
-            if ($set.DriverStoreFolders.Count) { return $set }
+            if ($set.DriverStoreFolders.Count) {
+                if ($DriverVersion) { Save-GpuDriverFileSetCache -PnpDeviceId $PnpDeviceId -DriverVersion $DriverVersion -Set $set }
+                return $set
+            }
         }
         catch {
             Write-Verbose "WMI falló (intento $attempt): $_"
@@ -47,6 +56,42 @@ function Get-GpuDriverFileSet {
     }
     Write-Warning 'WMI no devolvió los archivos del driver; se usa el método alternativo basado en el .inf.'
     Get-GpuDriverFileSetFromInf -PnpDeviceId $PnpDeviceId
+}
+
+# The remembered list is only used for the same device and driver version, when every path is still a file or folder
+# of the host's Windows where drivers live (it decides what is copied from the host into a VM, so nothing else is
+# accepted even if the file was changed) and still exists. Otherwise WMI is asked again.
+function Read-GpuDriverFileSetCache {
+    param([string]$PnpDeviceId, [string]$DriverVersion)
+    $path = Get-DataPath 'gpu-driver-files.json'
+    if (-not (Test-Path -LiteralPath $path)) { return $null }
+    $entry = try { Read-JsonFile $path } catch { return $null }
+    if ($entry['pnpDeviceId'] -ne $PnpDeviceId -or $entry['driverVersion'] -ne $DriverVersion) { return $null }
+    $windows = [IO.Path]::GetFullPath($env:windir).TrimEnd('\') + '\'
+    $store = Join-Path $windows 'System32\DriverStore\FileRepository\'
+    $folders = @($entry['driverStoreFolders'])
+    $files = @($entry['files'])
+    if (-not $folders.Count) { return $null }
+    foreach ($f in $folders) {
+        if (-not $f -or [IO.Path]::GetFullPath($f) -ne $f -or -not $f.StartsWith($store, [StringComparison]::OrdinalIgnoreCase) -or
+            -not (Test-Path -LiteralPath $f -PathType Container)) { return $null }
+    }
+    foreach ($f in $files) {
+        if (-not $f -or [IO.Path]::GetFullPath($f) -ne $f -or -not $f.StartsWith($windows, [StringComparison]::OrdinalIgnoreCase) -or
+            $f.StartsWith((Join-Path $windows 'INF\'), [StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path -LiteralPath $f -PathType Leaf)) { return $null }
+    }
+    [pscustomobject]@{ DriverStoreFolders = $folders; Files = $files }
+}
+
+function Save-GpuDriverFileSetCache {
+    param([string]$PnpDeviceId, [string]$DriverVersion, $Set)
+    try {
+        Write-JsonFile -Path (Get-DataPath 'gpu-driver-files.json') -Data ([ordered]@{
+                pnpDeviceId = $PnpDeviceId; driverVersion = $DriverVersion
+                driverStoreFolders = @($Set.DriverStoreFolders); files = @($Set.Files)
+            })
+    }
+    catch { Write-Verbose "No se pudo recordar la lista del driver: $_" }
 }
 
 # The DriverStore folder is the one containing an identical copy of the device's oemNN.inf.

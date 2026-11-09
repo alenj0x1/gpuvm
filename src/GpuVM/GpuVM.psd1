@@ -48,6 +48,8 @@
         'New-GpuVMTemplate'
         'Get-GpuVMTemplate'
         'Remove-GpuVMTemplate'
+        'Get-GpuVMBase'
+        'Remove-GpuVMBase'
         'New-GpuVMSharedDisk'
         'Get-GpuVMSharedDisk'
         'Connect-GpuVMSharedDisk'

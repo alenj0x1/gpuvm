@@ -1,4 +1,4 @@
-import type { DiskInfo, SharedDiskInfo, TemplateInfo, DisplayMode, IsoFile, JobEvent, MouseMode, ProfileInfo, ProfileSettings, VmOverview } from "./types";
+import type { BaseInfo, DiskInfo, SharedDiskInfo, TemplateInfo, DisplayMode, IsoFile, JobEvent, MouseMode, ProfileInfo, ProfileSettings, VmOverview } from "./types";
 import catalog from "../../apps/catalog.json";
 
 // Sample data for designing in the browser (there is no Hyper-V outside the app).
@@ -56,6 +56,9 @@ let isos: IsoFile[] = [
   { path: "C:\\Users\\demo\\Desktop\\Win11_25H2_Spanish_x64.iso", name: "Win11_25H2_Spanish_x64.iso", sizeGB: 7.1, modified: "2026-10-20T10:00:00", remembered: false, missing: false, lastUsed: null, usedBy: [] },
 ];
 
+let bases: BaseInfo[] = [
+  { key: "3f9c2a71b8e04d15", edition: "Windows 11 Pro", language: "es-MX", createdAt: "2026-11-08T18:00:00", fileGB: 11.8 },
+];
 let disks: DiskInfo[] = [
   { name: "win10", path: "C:\\GpuVM\\win10\\Virtual Hard Disks\\win10.vhdx", sizeGB: 200, fileGB: 200, type: "Fixed", vm: "win10", restorable: false, profile: "max-performance", edition: "Windows 10 Pro", createdAt: "2026-10-26T22:40:00", hostFreeGB: 232 },
   { name: "win11-pruebas", path: "C:\\GpuVM\\win11-pruebas\\Virtual Hard Disks\\win11-pruebas.vhdx", sizeGB: 128, fileGB: 31.4, type: "Dynamic", vm: "win11-pruebas", restorable: false, profile: "balanced", edition: "Windows 11 Pro", createdAt: "2026-10-27T09:00:00", hostFreeGB: 232 },
@@ -136,6 +139,11 @@ export async function ps(cmd: string, args: Record<string, unknown>): Promise<un
       return CLEANUP_LEVELS;
     case "Get-GpuVMDisk":
       return disks;
+    case "Get-GpuVMBase":
+      return bases;
+    case "Remove-GpuVMBase":
+      bases = bases.filter((b) => b.key !== args.Key);
+      return [];
     case "Remove-GpuVMDisk":
       disks = disks.filter((d) => d.name !== args.Name);
       return [];

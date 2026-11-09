@@ -6,6 +6,18 @@ All notable changes to GpuVM are documented here. The format follows [Keep a Cha
 
 Changes waiting for the next version sit under **Unreleased** at the top (this section only exists while there are some, and the docs site doesn't show it); `scripts/release.py` turns it into the new version.
 
+## [Unreleased]
+
+### Added
+- **Library → Disks** lists each prepared Windows (**Windows preparado**) with the space it takes, and can delete it after a UAC confirmation. The module adds `Get-GpuVMBase` and `Remove-GpuVMBase`.
+
+### Changed
+- Creating a machine takes about 1 minute instead of nearly 3, and the PC no longer slows down meanwhile. Windows is applied once per ISO and edition (about 12.5 GB, kept in the VM folder) and every new machine copies it; the first machine with a new ISO takes about 6 minutes, also without slowing the PC.
+- Applying Windows runs at low priority, and the copy paces its own writes so other programs' saves don't stall while it runs.
+- Disks are mounted without a drive letter while a machine is created, so no drive appears in File Explorer.
+- The list of the GPU driver's files is remembered per driver version, so creating a machine or updating its driver skips about 30 s of searching.
+- `max-performance` uses a dynamic disk: a fixed one was not faster inside the VM, and writing its 96 GB at creation took minutes. **Fixed** stays available in custom profiles.
+
 ## [0.5.0] - 2026-11-08
 
 ### Added

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  IconAdjustmentsHorizontal, IconCopyPlus, IconDatabase, IconDeviceFloppy, IconDisc, IconFolderDown, IconLoader2, IconPencil, IconPlus,
+  IconAdjustmentsHorizontal, IconBrandWindows, IconCopyPlus, IconDatabase, IconDeviceFloppy, IconDisc, IconFolderDown, IconLoader2, IconPencil, IconPlus,
   IconRestore, IconStack2, IconTemplate, IconTrash, IconX,
 } from "@tabler/icons-react";
-import type { AppInfo, DiskInfo, HostInfo, IsoFile, ProfileInfo, ProfileSettings, SharedDiskInfo, TemplateInfo } from "./types";
+import type { AppInfo, BaseInfo, DiskInfo, HostInfo, IsoFile, ProfileInfo, ProfileSettings, SharedDiskInfo, TemplateInfo } from "./types";
 import { api, pickFolder, pickIso } from "./api";
 import { PatternButton } from "./bauhaus";
 import { AppPicker, CleanupPicker, FPS_OPTIONS, IsoPicker, useCleanupLevels, RESOLUTIONS, USES, isoDetail, profileLabel, profileSummary, streamUseOf } from "./pickers";
@@ -13,7 +13,7 @@ import { Segmented, Slider, humanError, portalRoot, useScrollFade } from "./ui";
 export type LibraryTab = "perfiles" | "plantillas" | "discos" | "compartidos" | "isos";
 
 // What each tab loaded last, so switching tabs shows it at once while it refreshes.
-const cache: { profiles?: ProfileInfo[]; apps?: AppInfo[]; disks?: DiskInfo[]; isos?: IsoFile[]; templates?: TemplateInfo[]; shared?: SharedDiskInfo[] } = {};
+const cache: { bases?: BaseInfo[]; profiles?: ProfileInfo[]; apps?: AppInfo[]; disks?: DiskInfo[]; isos?: IsoFile[]; templates?: TemplateInfo[]; shared?: SharedDiskInfo[] } = {};
 
 /** Loading rows with the shape of the real ones (pattern, name, detail). */
 function RowSkeletons({ count = 3 }: { count?: number }) {
@@ -304,11 +304,19 @@ function ProfileEditor({ initial, host, apps, existing, onCancel, onSaved, notif
 function Disks({ tabs, startJob, busy, notify, onOpenVm }: Pick<Props, "startJob" | "busy" | "notify" | "onOpenVm"> & { tabs: React.ReactNode }) {
   const [disks, setDisks] = useState<DiskInfo[] | null>(cache.disks ?? null);
   const [confirm, setConfirm] = useState<string | null>(null);
-  const load = useCallback(() => api.disks().then((d) => { cache.disks = d; setDisks(d); }).catch((e) => { setDisks([]); notify("error", humanError(e)); }), [notify]);
+  const [bases, setBases] = useState<BaseInfo[]>(cache.bases ?? []);
+  const load = useCallback(() => {
+    api.disks().then((d) => { cache.disks = d; setDisks(d); }).catch((e) => { setDisks([]); notify("error", humanError(e)); });
+    api.bases().then((b) => { cache.bases = b; setBases(b); }).catch(() => setBases([]));
+  }, [notify]);
   useEffect(() => { load(); }, [load]);
 
   const remove = async (name: string) => {
     try { await api.removeDisk(name); setConfirm(null); load(); notify("ok", `Disco ${name} borrado.`); }
+    catch (e) { notify("error", humanError(e)); }
+  };
+  const removeBase = async (b: BaseInfo) => {
+    try { await api.removeBase(b.key); setConfirm(null); load(); notify("ok", `Se liberaron ${b.fileGB} GB.`); }
     catch (e) { notify("error", humanError(e)); }
   };
   const free = disks?.[0]?.hostFreeGB;
@@ -349,6 +357,23 @@ function Disks({ tabs, startJob, busy, notify, onOpenVm }: Pick<Props, "startJob
                     <IconTrash size={16} />{confirm === d.name ? `Borrar ${d.sizeGB} GB` : "Eliminar"}
                   </button>
                 )}
+              </div>
+            </div>
+          );
+        })}
+        {bases.map((b) => {
+          const id = `base:${b.key}`;
+          return (
+            <div className="row" key={id}>
+              <span className="row-icon"><IconBrandWindows size={18} /></span>
+              <div className="row-text">
+                <strong>{b.edition ?? "Windows"}<span className="tag">Windows preparado</span></strong>
+                <span>Ocupa {b.fileGB} GB. Las máquinas nuevas con este Windows se crean copiándolo</span>
+              </div>
+              <div className="row-actions">
+                <button className={`btn ${confirm === id ? "danger-fill" : "ghost danger"}`} onClick={() => confirm === id ? removeBase(b) : setConfirm(id)}>
+                  <IconTrash size={16} />{confirm === id ? `Borrar ${b.fileGB} GB` : "Eliminar"}
+                </button>
               </div>
             </div>
           );

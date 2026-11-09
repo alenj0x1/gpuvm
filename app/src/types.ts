@@ -157,6 +157,15 @@ export interface DiskInfo {
   hostFreeGB: number;
 }
 
+/** An ISO's edition applied once, so new VMs with it are copies instead of a new install. */
+export interface BaseInfo {
+  key: string;
+  edition: string | null;
+  language: string | null;
+  createdAt: string;
+  fileGB: number;
+}
+
 export interface JobEvent {
   jobId: string;
   type: "progress" | "warning" | "result";

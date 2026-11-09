@@ -38,7 +38,7 @@ pub const PIPE: &str = r"\\.\pipe\gpuvm";
 // includes FILE_CREATE_PIPE_INSTANCE, which would let any user program serve its own instances of the name.
 const CLIENT_ACCESS: u32 = 0x0010_0083;
 /// Commands that destroy data: they run only after a UAC confirmation.
-const NEEDS_CONSENT: &[&str] = &["Remove-GpuVM", "Remove-GpuVMDisk", "Remove-GpuVMSharedDisk", "Remove-GpuVMTemplate"];
+const NEEDS_CONSENT: &[&str] = &["Remove-GpuVM", "Remove-GpuVMDisk", "Remove-GpuVMSharedDisk", "Remove-GpuVMTemplate", "Remove-GpuVMBase"];
 const CONSENT_TTL: Duration = Duration::from_secs(120);
 
 /// Requests running right now: a stop waits for them.

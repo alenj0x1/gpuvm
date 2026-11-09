@@ -78,6 +78,7 @@ InModuleScope GpuVM {
 
         It 'switching profile keeps disk, folder and Moonlight preferences' {
             $config = Resolve-GpuVMProfile -Name 'max-performance'
+            $config['vm']['disk']['type'] = 'Fixed'
             $config['streaming']['client']['fps'] = 120
             Mock Get-CimInstance { [pscustomobject]@{ TotalPhysicalMemory = 16GB; NumberOfLogicalProcessors = 12 } }
             $new = Resolve-GpuVMSettings -State @{ config = $config } -Profile 'balanced'
@@ -488,7 +489,7 @@ InModuleScope GpuVM {
             $p = Resolve-GpuVMProfile -Name 'juegos'
             ($p['chain'] -join ',') | Should Be 'base,balanced,max-performance,juegos'
             $p['vm']['disk']['sizeGB'] | Should Be 250
-            $p['vm']['disk']['type'] | Should Be 'Fixed'
+            $p['vm']['disk']['type'] | Should Be 'Dynamic'
             $p['guest']['apps'] | Should Be @('steam')
             $s = ConvertTo-ProfileSettings $p
             $s['displayMode'] | Should Be 'windowed'
@@ -732,5 +733,65 @@ InModuleScope GpuVM {
             New-Item -ItemType Junction -Path (Join-Path $deep 'bin') -Target $outside | Out-Null
             Test-Throws { Assert-NoReparsePointBelow -Root $root -Path (Join-Path $root 'SteamLibrary') } | Should Be $true
         }
+    }
+}
+
+InModuleScope GpuVM {
+    Describe 'Low priority' {
+        It 'quotes arguments the way Windows programs read them' {
+            ConvertTo-CommandLineArgument '/Index:1' | Should Be '/Index:1'
+            ConvertTo-CommandLineArgument 'C:\a b\' | Should Be '"C:\a b\\"'
+            ConvertTo-CommandLineArgument 'say "hi"' | Should Be '"say \"hi\""'
+            ConvertTo-CommandLineArgument '' | Should Be '""'
+        }
+
+        It 'returns the exit code and runs everything it starts at idle priority with low I/O' {
+            Invoke-LowPriority -FilePath "$env:SystemRoot\System32\cmd.exe" -ArgumentList '/c', 'exit 7' | Should Be 7
+            $out = Join-Path $TestDrive 'priority.txt'
+            # A child of a child: the priority must reach processes it starts, as DISM starts DismHost.
+            $script = "Set-Content -LiteralPath '$out' -Value (Get-Process -Id `$PID).PriorityClass"
+            $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))
+            $null = Invoke-LowPriority -FilePath "$env:SystemRoot\System32\cmd.exe" -ArgumentList '/c', 'powershell', '-NoProfile', '-EncodedCommand', $encoded
+            (Get-Content $out).Trim() | Should Be 'Idle'
+        }
+
+        It 'copies a file exactly, in several chunks and with an odd size, without its read-only mark' {
+            $src = Join-Path $TestDrive 'base.vhdx'; $dst = Join-Path $TestDrive 'vm.vhdx'
+            $bytes = [byte[]]::new(9MB + 123); [Random]::new(3).NextBytes($bytes)
+            [IO.File]::WriteAllBytes($src, $bytes)
+            (Get-Item $src).IsReadOnly = $true
+            $stats = Copy-PacedFile -Source $src -Destination $dst
+            $stats.Count | Should Be 3
+            (Get-FileHash $dst).Hash | Should Be (Get-FileHash $src).Hash
+            (Get-Item $dst).IsReadOnly | Should Be $false
+            Test-Throws { Copy-PacedFile -Source $src -Destination $dst } | Should Be $true
+            Test-Path $dst | Should Be $true
+        }
+    }
+}
+
+InModuleScope GpuVM {
+    Describe 'Remembered GPU driver files' {
+        $saved = $script:DataRoot
+        $script:DataRoot = $TestDrive
+        $folder = (Get-ChildItem (Join-Path $env:windir 'System32\DriverStore\FileRepository') -Directory | Select-Object -First 1).FullName
+        $file = Join-Path $env:windir 'System32\kernel32.dll'
+
+        It 'is used for the same device and driver version' {
+            Save-GpuDriverFileSetCache -PnpDeviceId 'PCI\X' -DriverVersion '1.0' -Set ([pscustomobject]@{ DriverStoreFolders = @($folder); Files = @($file) })
+            (Read-GpuDriverFileSetCache -PnpDeviceId 'PCI\X' -DriverVersion '1.0').Files | Should Be $file
+            Read-GpuDriverFileSetCache -PnpDeviceId 'PCI\X' -DriverVersion '2.0' | Should Be $null
+        }
+
+        It 'is ignored when a path leaves the places drivers live' {
+            foreach ($bad in @("$env:USERPROFILE\secret.txt", "$env:windir\System32\..\..\Users\x.dll", "$env:windir\INF\oem1.inf")) {
+                Save-GpuDriverFileSetCache -PnpDeviceId 'PCI\X' -DriverVersion '1.0' -Set ([pscustomobject]@{ DriverStoreFolders = @($folder); Files = @($bad) })
+                Read-GpuDriverFileSetCache -PnpDeviceId 'PCI\X' -DriverVersion '1.0' | Should Be $null
+            }
+            Save-GpuDriverFileSetCache -PnpDeviceId 'PCI\X' -DriverVersion '1.0' -Set ([pscustomobject]@{ DriverStoreFolders = @("$env:windir\System32"); Files = @($file) })
+            Read-GpuDriverFileSetCache -PnpDeviceId 'PCI\X' -DriverVersion '1.0' | Should Be $null
+        }
+
+        $script:DataRoot = $saved
     }
 }

@@ -6,6 +6,18 @@ Aquí se documentan los cambios importantes de GpuVM. El formato sigue [Keep a C
 
 Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (esa sección solo existe mientras haya alguno y el sitio de documentación no la muestra); `scripts/release.py` la convierte en la versión nueva.
 
+## [Sin publicar]
+
+### Añadido
+- **Biblioteca → Discos** muestra cada **Windows preparado** con el espacio que ocupa, y se puede borrar tras confirmar en UAC. El módulo suma `Get-GpuVMBase` y `Remove-GpuVMBase`.
+
+### Cambiado
+- Crear una máquina tarda cerca de 1 minuto en vez de casi 3, y el equipo ya no se pone lento mientras tanto. Windows se aplica una vez por ISO y edición (unos 12,5 GB, guardados en la carpeta de las VMs) y cada máquina nueva lo copia; la primera máquina con un ISO nuevo tarda unos 6 minutos, también sin frenar el equipo.
+- Aplicar Windows corre con prioridad baja, y la copia regula sus propias escrituras para que los guardados de los demás programas no se traben mientras corre.
+- Los discos se montan sin letra de unidad mientras se crea una máquina, así no aparece ninguna unidad en el Explorador de archivos.
+- La lista de archivos del driver de la GPU se recuerda por versión del driver, así crear una máquina o actualizar su driver se ahorra unos 30 s de búsqueda.
+- `max-performance` usa disco dinámico: uno fijo no era más rápido dentro de la VM y escribir sus 96 GB al crearla tardaba minutos. **Fijo** sigue disponible en los perfiles personalizados.
+
 ## [0.5.0] - 2026-11-08
 
 ### Añadido

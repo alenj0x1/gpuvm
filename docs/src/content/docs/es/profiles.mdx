@@ -13,7 +13,7 @@ Un perfil describe cómo se arma una VM: CPU, memoria, disco, parte de la GPU, s
 | Perfil | CPU | Memoria | Disco | Invitado |
 |---|---|---|---|---|
 | `balanced` | 8 hilos | 8 GB fijos | dinámico, 128 GB | plan Alto rendimiento, sin suspensión |
-| `max-performance` | 8 hilos, reserva 100 %, peso máximo (10000), topología SMT del host | 8 GB fijos | fijo, 96 GB | plan Máximo rendimiento, Modo de juego, sin SysMain ni indexador, efectos visuales mínimos |
+| `max-performance` | 8 hilos, reserva 100 %, peso máximo (10000), topología SMT del host | 8 GB fijos | dinámico, 96 GB | plan Máximo rendimiento, Modo de juego, sin SysMain ni indexador, efectos visuales mínimos |
 
 `base` tiene los valores comunes a todos los perfiles y no se usa directamente. En la app, `balanced` aparece como **Equilibrado** y `max-performance` como **Máximo rendimiento**.
 
@@ -32,7 +32,7 @@ Un perfil puede extender otro. **Los objetos se mezclan** (ganan los valores del
   "vm": {
     "cpu": { "count": 8, "reservePercent": 100, "relativeWeight": 10000, "hwThreadsPerCore": 0 },
     "memoryGB": 8,
-    "disk": { "sizeGB": 96, "type": "Fixed" }
+    "disk": { "sizeGB": 96, "type": "Dynamic" }
   },
   "guest": {
     "optimizations": ["power-plan-ultimate", "disable-sleep", "game-mode", "disable-sysmain", "disable-search-indexing", "visual-effects-performance"]

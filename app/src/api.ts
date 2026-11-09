@@ -1,4 +1,4 @@
-import type { AppInfo, CleanupLevel, HomeInfo, SharedDiskInfo, TemplateInfo, DiskInfo, DisplayMode, HostInfo, IsoFile, JobEvent, ProfileInfo, ProfileSettings, StreamSettings, VmOverview, AdminPrompt } from "./types";
+import type { AppInfo, BaseInfo, CleanupLevel, HomeInfo, SharedDiskInfo, TemplateInfo, DiskInfo, DisplayMode, HostInfo, IsoFile, JobEvent, ProfileInfo, ProfileSettings, StreamSettings, VmOverview, AdminPrompt } from "./types";
 import * as mock from "./mock";
 
 // Outside Tauri (browser) the UI runs on sample data so it can be designed.
@@ -50,6 +50,8 @@ export const api = {
   newSharedDisk: (name: string, sizeGB: number, purpose: string) => ps<SharedDiskInfo>("New-GpuVMSharedDisk", { Name: name, SizeGB: sizeGB, Purpose: purpose }),
   removeSharedDisk: (name: string) => ps("Remove-GpuVMSharedDisk", { Name: name, Confirm: false }),
   removeDisk: (name: string) => ps("Remove-GpuVMDisk", { Name: name, Confirm: false }),
+  bases: () => ps<BaseInfo>("Get-GpuVMBase"),
+  removeBase: (key: string) => ps("Remove-GpuVMBase", { Key: key, Confirm: false }),
   addIso: (path: string) => ps("Add-GpuVMIso", { Path: path }),
   removeIso: (path: string) => ps("Remove-GpuVMIso", { Path: path }),
 };

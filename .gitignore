@@ -15,6 +15,7 @@ docs/.astro/
 *.log
 user-profiles/
 isos.json
+gpu-driver-files.json
 
 # Session-specific scripts (hard-coded paths) and lab outputs
 tools/session/

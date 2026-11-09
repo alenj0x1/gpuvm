@@ -169,11 +169,12 @@ Besides the cmdlets above, the module exports these, used mainly by the app:
 | `Get-GpuVMApp` / `Install-GpuVMApp` | The app catalog / installs apps in a VM (starts it if needed). |
 | `Add-GpuVMIso` / `Remove-GpuVMIso` | Remembers an ISO in the library / forgets it (the file stays). |
 | `Get-GpuVMDisk` / `Restore-GpuVM` / `Remove-GpuVMDisk` | The disks in the GpuVM folder / creates a VM again from a kept disk / deletes a free disk. |
+| `Get-GpuVMBase` / `Remove-GpuVMBase` | The prepared Windows bases (one per ISO and edition) / deletes one; the next VM with that Windows prepares it again. |
 | `Save-GpuVMProfile` / `Remove-GpuVMProfile` | Creates or updates a user profile / deletes it. |
 | `New-GpuVMTemplate` / `Get-GpuVMTemplate` / `Remove-GpuVMTemplate` | Saves a stopped VM as a template / lists templates / deletes one no VM is built on. |
 | `New-GpuVMSharedDisk` / `Get-GpuVMSharedDisk` / `Connect-GpuVMSharedDisk` / `Disconnect-GpuVMSharedDisk` / `Import-GpuVMSharedDisk` / `Remove-GpuVMSharedDisk` | Shared disks: create, list, attach, detach, copy a folder of this PC into one, delete. |
 
-Through the app, `Remove-GpuVM`, `Remove-GpuVMDisk`, `Remove-GpuVMSharedDisk` and `Remove-GpuVMTemplate` also need a UAC confirmation ([Architecture](/gpuvm/docs/architecture/#bridge-between-the-app-and-powershell)).
+Through the app, `Remove-GpuVM`, `Remove-GpuVMDisk`, `Remove-GpuVMBase`, `Remove-GpuVMSharedDisk` and `Remove-GpuVMTemplate` also need a UAC confirmation ([Architecture](/gpuvm/docs/architecture/#bridge-between-the-app-and-powershell)).
 
 ### Set-GpuVMStreamingClient
 

@@ -158,8 +158,8 @@ function Sync-HyperVGpuPDriver {
     $gpu = Get-HostGpu -Match $State['config']['gpu']['match'] | Select-Object -First 1
     if (-not $gpu) { throw "No se encontró la GPU '$($State['config']['gpu']['match'])' en el host." }
 
-    Write-Step "Leyendo archivos del driver $($gpu.DriverVersion) de $($gpu.Name) (unos 30 s)"
-    $fileSet = Get-GpuDriverFileSet -PnpDeviceId $gpu.PnpDeviceId
+    Write-Step "Leyendo archivos del driver $($gpu.DriverVersion) de $($gpu.Name)"
+    $fileSet = Get-GpuDriverFileSet -PnpDeviceId $gpu.PnpDeviceId -DriverVersion $gpu.DriverVersion
     $vhd = (Get-VMHardDiskDrive -VMName $Name | Select-Object -First 1).Path
     Invoke-WithMountedWindows -Path $vhd -ScriptBlock {
         param($root)
@@ -186,13 +186,13 @@ Register-GpuVMBackend -Name 'hyperv-gpup' -Description 'Hyper-V con GPU Partitio
         $gpu = Get-HostGpu -Match $config['gpu']['match'] | Select-Object -First 1
         if (-not $gpu) { throw "No se encontró la GPU '$($config['gpu']['match'])' en el host." }
         Write-Step "Leyendo archivos del driver $($gpu.DriverVersion) de $($gpu.Name)"
-        $fileSet = Get-GpuDriverFileSet -PnpDeviceId $gpu.PnpDeviceId
+        $fileSet = Get-GpuDriverFileSet -PnpDeviceId $gpu.PnpDeviceId -DriverVersion $gpu.DriverVersion
 
         New-Item -ItemType Directory -Path (Split-Path $vhdPath -Parent) -Force | Out-Null
         # If something fails halfway, no half-built VM or disk is left behind to get in the way of a retry.
         try {
         New-WindowsVhdx -Path $vhdPath -SizeGB $config['vm']['disk']['sizeGB'] -Type $config['vm']['disk']['type'] `
-            -ImageFile $Context.ImageFile -ImageIndex $Context.ImageIndex -Customize {
+            -ImageFile $Context.ImageFile -ImageIndex $Context.ImageIndex -Edition $Context.Edition -Language $Context.Language -Customize {
             param($root)
             Write-Step 'Preparando instalación desatendida y scripts del invitado'
             $panther = Join-Path $root 'Windows\Panther'

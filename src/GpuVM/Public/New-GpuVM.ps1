@@ -59,6 +59,8 @@ function New-GpuVM {
             Config      = $config
             ImageFile   = $iso.ImageFile
             ImageIndex  = $image.Index
+            Edition     = $image.Name
+            Language    = $language
             UnattendXml = $unattend
             GuestFiles  = if ($streaming) { $streaming.GuestFiles } else { @() }
             GuestJson   = if ($streaming) { $streaming.GuestJson } else { @{} }
