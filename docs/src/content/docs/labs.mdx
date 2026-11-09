@@ -78,6 +78,8 @@ Labs 001–007 are open; the status of the others is in [What the labs found so 
 | 024 | DDX restarts at session start | Something avoidable in the VM's picture makes desktop duplication restart, so it could start as fast as WGC. | `ddx` with the picture changed in several ways |
 | 025 | Administrator prompts with WGC | GpuVM can tell cheaply when a prompt is open and let you answer it through the Hyper-V console. | Guest watcher over Hyper-V data exchange (KVP) |
 | 026 | Answering administrator prompts from GpuVM | A SYSTEM helper on the guest's secure desktop can read the prompt and press Yes or No on the host's order. | Watcher + helper in the guest, card on the host |
+| 027 | Disk creation | Creating a VM slows the PC because DISM unpacks the ISO at normal priority every time. Applying each ISO edition once to a base disk, copying it and running the heavy work at low priority makes creation faster without the PC noticing. | Base per ISO and edition, low priority, paced copy |
+| 028 | Fixed vs dynamic disk | A fixed VHDX is faster inside the VM than a dynamic one. | 8 GB fixed and dynamic disks on the same VM |
 
 Labs 004–012 use `max-performance` for both variants.
 
@@ -102,3 +104,5 @@ Labs 004–012 use `max-performance` for both variants.
 - **024 (rejected):** the full-screen window isn't the cause, and nothing tried brings desktop duplication close to WGC: its first real frame still takes about 6 s.
 - **025 (partly rejected):** detecting the prompt through KVP works (about 3 s, about 100 ms per read), but the Hyper-V console can't see a GPU-P VM's display, so it can't answer it.
 - **026 (adopted):** the helper reads the prompt and answers it; end to end the host lists it 1.1–1.2 s after it opens and an answer takes about 5 s. An answer for a prompt that changed is refused. See [Administrator prompts](/gpuvm/docs/architecture/#administrator-prompts).
+- **027 (adopted):** creating a VM went from 162 s, with the host's CPU tasks 4–10x slower and saves waiting up to 100 ms, to 57–84 s with no effect on the host; the first VM of an ISO takes 346 s, also without effect. A plain copy of the 12.5 GB base filled the SSD's fast cache and stalled saves for 300–800 ms; pacing the copy (260 MB/s) removed it. See [Creating the disk](/gpuvm/docs/architecture/#creating-the-disk).
+- **028 (adopted):** the dynamic disk was as fast as the fixed one (filling at 1214–1311 MB/s, same 4 KB latency); the fixed disk's low figures came right after Hyper-V wrote its zeros. `max-performance` now uses a dynamic disk.

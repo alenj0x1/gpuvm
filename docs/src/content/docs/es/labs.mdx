@@ -78,6 +78,8 @@ Los laboratorios 001 a 007 están abiertos; el estado de los demás está en [Lo
 | 024 | Reinicios de DDX al empezar la sesión | Algo evitable en la imagen de la VM hace que desktop duplication se reinicie, así podría arrancar tan rápido como WGC. | `ddx` con la imagen cambiada de varias formas |
 | 025 | Avisos de administrador con WGC | GpuVM puede saber con poco costo cuándo hay un aviso abierto y dejarte responderlo por la consola de Hyper-V. | Vigilante en el invitado por el intercambio de datos de Hyper-V (KVP) |
 | 026 | Responder avisos de administrador desde GpuVM | Un ayudante SYSTEM en el escritorio seguro del invitado puede leer el aviso y presionar Sí o No por orden del equipo. | Vigilante y ayudante en el invitado, tarjeta en el equipo |
+| 027 | Creación de discos | Crear una VM frena el equipo porque DISM descomprime el ISO con prioridad normal cada vez. Aplicar cada edición del ISO una vez en un disco base, copiarlo y correr el trabajo pesado con prioridad baja hace la creación más rápida sin que el equipo lo note. | Base por ISO y edición, prioridad baja, copia regulada |
+| 028 | Disco fijo contra dinámico | Un VHDX fijo es más rápido dentro de la VM que uno dinámico. | Discos de 8 GB fijo y dinámico en la misma VM |
 
 Los laboratorios 004 a 012 usan `max-performance` en las dos variantes.
 
@@ -102,3 +104,5 @@ Los laboratorios 004 a 012 usan `max-performance` en las dos variantes.
 - **024 (rechazado):** la ventana a pantalla completa no es la causa, y nada de lo probado acerca desktop duplication a WGC: su primer cuadro real sigue tardando unos 6 s.
 - **025 (rechazado en parte):** detectar el aviso por KVP funciona (unos 3 s, unos 100 ms por lectura), pero la consola de Hyper-V no ve la pantalla de una VM con GPU-P, así que no sirve para responderlo.
 - **026 (adoptado):** el ayudante lee el aviso y lo responde; de punta a punta, el equipo lo lista 1,1 a 1,2 s después de que se abre y una respuesta tarda unos 5 s. Se rechaza una respuesta para un aviso que cambió. Consulta [Avisos de administrador](/gpuvm/docs/es/architecture/#avisos-de-administrador).
+- **027 (adoptado):** crear una VM pasó de 162 s, con las tareas de CPU del equipo 4 a 10 veces más lentas y guardados que esperaban hasta 100 ms, a 57–84 s sin efecto en el equipo; la primera VM de un ISO tarda 346 s, también sin efecto. Una copia normal de la base de 12,5 GB llenaba la caché rápida del SSD y frenaba los guardados 300–800 ms; regular la copia (260 MB/s) lo quitó. Consulta [Creación del disco](/gpuvm/docs/es/architecture/#creación-del-disco).
+- **028 (adoptado):** el disco dinámico fue igual de rápido que el fijo (se llenó a 1214–1311 MB/s, misma latencia de 4 KB); los números bajos del fijo aparecieron justo después de que Hyper-V escribiera sus ceros. `max-performance` ahora usa disco dinámico.
