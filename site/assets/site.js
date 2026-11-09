@@ -151,7 +151,8 @@
     const sections = release[lang] ?? release.en;
     const tags = { added: ["Nuevo", "New"], changed: ["Cambió", "Changed"], security: ["Seguridad", "Security"], fixed: ["Arreglo", "Fixed"] };
     // The highlights: the changes the app can show (with a thumbnail) first, six at most, in their own order.
-    const items = Object.entries(sections).flatMap(([kind, list]) => list.map((text) => ({ kind, text, thumb: thumbFor(summarize(text).title ?? text.slice(0, 60)) })));
+    // Only a new feature gets a thumbnail: a change or a fix that merely names a screen (a template, the memory) is not it.
+    const items = Object.entries(sections).flatMap(([kind, list]) => list.map((text) => ({ kind, text, thumb: kind === "added" ? thumbFor(summarize(text).title ?? text.slice(0, 60)) : null })));
     let shown = [...items.filter((i) => i.thumb), ...items.filter((i) => !i.thumb)].slice(0, 6);
     // Bento rows: a wide card and a narrow one, on alternating sides. Wide thumbnails go in the wide cards.
     const wide = shown.filter((i) => WIDE_THUMBS.has(i.thumb)), narrow = shown.filter((i) => !WIDE_THUMBS.has(i.thumb));

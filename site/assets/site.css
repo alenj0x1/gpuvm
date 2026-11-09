@@ -299,3 +299,4 @@ details p { padding: 0 24px 22px; color: var(--muted); }
 /* A secondary button inside a card takes the card's second surface, as in the app, so it still reads as a button. */
 .pattern-card .btn { background: var(--surface-2); }
 .pattern-card .btn:hover { background: var(--bg-2); }
+.prompt-stage { width: 100%; max-width: 420px; align-self: center; min-height: 0; }

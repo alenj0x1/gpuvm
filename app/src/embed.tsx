@@ -9,10 +9,15 @@ import { Home } from "./Home";
 import { readPrefs, resolvedTheme, savePrefs } from "./prefs";
 import { setPortalRoot } from "./ui";
 import { Apps, Cleanup, SharedDisks, type JobInfo } from "./VmView";
-import type { VmOverview } from "./types";
+import { PromptCard } from "./PromptCard";
+import { FPS_OPTIONS, USES, streamUseOf } from "./pickers";
+import { Segmented } from "./ui";
+import { showSamplePrompt } from "./mock";
+import { IconBolt, IconPlayerTrackNext, IconRectangle, IconWaveSine } from "@tabler/icons-react";
+import type { MouseMode, VmOverview } from "./types";
 import appCss from "./styles.css?inline";
 
-type View = "app" | "home" | "cleanup" | "apps" | "shared";
+type View = "app" | "home" | "cleanup" | "apps" | "shared" | "stream" | "prompt";
 interface RunningJob extends JobInfo { vm: string; after?: () => void }
 
 // One job list for every mounted demo, like the app's: what one demo starts shows in the others too.
@@ -38,6 +43,63 @@ function start(vm: string, cmd: string, args: Record<string, unknown>, after?: (
   runJob(id, cmd, args);
 }
 
+// How the machine streams: its use and the settings each use sets, with the same controls as the machine's Options.
+function Stream({ vm }: { vm: VmOverview }) {
+  const [draft, setDraft] = useState({ fps: vm.client?.fps ?? 0, vsync: vm.client?.vsync ?? true, framePacing: vm.client?.framePacing ?? false,
+    mouse: (vm.client?.mouse ?? "capture") as MouseMode });
+  const use = streamUseOf(draft);
+  return (
+    <div className="card">
+      <div className="options">
+        <div className="field wide">
+          <div className="field-top"><span>Tipo de uso</span></div>
+          <div className="segment-row">
+            <Segmented value={use ?? ""} onChange={(id) => setDraft({ ...draft, ...USES.find((u) => u.id === id)!.client })}
+              options={USES.map((u) => ({ value: u.id, label: <><u.icon size={15} />{u.label}</> }))} />
+          </div>
+          <span className="hint">{use ? USES.find((u) => u.id === use)!.description : "Personalizado. Los ajustes de abajo se cambiaron a mano."}</span>
+        </div>
+        <div className="field wide">
+          <div className="field-top"><span>FPS</span></div>
+          <div className="segment-row">
+            <Segmented value={draft.fps} onChange={(fps) => setDraft({ ...draft, fps })} options={FPS_OPTIONS} />
+          </div>
+        </div>
+        <div className="field">
+          <div className="field-top"><span>Sincronización vertical</span></div>
+          <div className="segment-row">
+            <Segmented value={draft.vsync} onChange={(vsync) => setDraft({ ...draft, vsync, framePacing: vsync && draft.framePacing })} options={[
+              { value: true, label: <><IconRectangle size={15} />Imagen entera</> },
+              { value: false, label: <><IconBolt size={15} />Más rápida</> },
+            ]} />
+          </div>
+        </div>
+        <div className="field">
+          <div className="field-top"><span>Ritmo de cuadros</span></div>
+          <div className={`segment-row${draft.vsync ? "" : " disabled"}`}>
+            <Segmented value={draft.framePacing} onChange={(framePacing) => draft.vsync && setDraft({ ...draft, framePacing })} options={[
+              { value: true, label: <><IconWaveSine size={15} />Parejo</> },
+              { value: false, label: <><IconPlayerTrackNext size={15} />Al instante</> },
+            ]} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// The card over Moonlight with a sample prompt. Answering it shows the next one, as another program would ask.
+function Prompt() {
+  const [round, setRound] = useState(0);
+  return (
+    <div className="prompt-demo" onClickCapture={(e) => {
+      if ((e.target as HTMLElement).closest("button")) setTimeout(() => setRound((r) => r + 1), 1400);
+    }}>
+      <PromptCard key={round} />
+    </div>
+  );
+}
+
 function Demo({ view, vmName }: { view: View; vmName: string }) {
   const [vms, setVms] = useState<VmOverview[]>([]);
   const [, tick] = useState(0);
@@ -53,6 +115,7 @@ function Demo({ view, vmName }: { view: View; vmName: string }) {
   if (!vms.length || (view !== "home" && !vm)) return null;
   if (view === "home") return <Home vms={vms} busyFor={busyFor} startJob={start} onOpenVm={() => {}} onRoute={() => {}} />;
   const props = { vm: vm!, busy: busyFor(vm!.name), startJob: start };
+  if (view === "stream") return <Stream vm={vm!} />;
   if (view === "cleanup") return <Cleanup {...props} />;
   if (view === "apps") return <Apps {...props} />;
   return <SharedDisks {...props} />;
@@ -72,6 +135,7 @@ const scopedCss = appCss
   + `:host { display: block; background: none; color: var(--text); font-family: "Plus Jakarta Sans", system-ui, sans-serif; font-size: 14px; }
   .demo-root { display: flex; flex-direction: column; gap: 16px; }
   .demo-root > .main { padding: 0; overflow: visible; mask-image: none; }
+  .prompt-demo { height: 158px; }
   /* The whole app: drawn at a desktop window's size and scaled to fit. The transform also keeps its dialogs and
      toasts (position: fixed) inside the window instead of the page. */
   .demo-root.full { display: block; transform-origin: 0 0; background: var(--bg); }
@@ -104,6 +168,11 @@ function mount(el: HTMLElement, options: { view: View; vm?: string; theme?: "lig
     new ResizeObserver(fit).observe(el);
     fit();
     createRoot(host).render(<App embedded />);
+    return;
+  }
+  if (options.view === "prompt") {
+    showSamplePrompt();
+    createRoot(host).render(<Prompt />);
     return;
   }
   createRoot(host).render(<Demo view={options.view} vmName={options.vm ?? "win10"} />);
