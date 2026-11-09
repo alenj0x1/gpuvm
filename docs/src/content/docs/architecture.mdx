@@ -1,10 +1,10 @@
 ---
 title: Architecture and extending
-description: How the module, the backends, the app bridge and the security model fit together, and how to extend GpuVM.
+description: How the app, the GpuVM service, the module, the backends, the administrator prompt path and the security model fit together, and how to extend GpuVM.
 ---
 
 import Diagram from '../../components/Diagram.astro';
-import { architecture } from '../../diagrams';
+import { adminPrompt, architecture } from '../../diagrams';
 
 ## Overview
 
@@ -14,14 +14,14 @@ import { architecture } from '../../diagrams';
 
 | Path | Contents |
 |---|---|
-| `app/` | Desktop app: React UI in `app/src`, Tauri/Rust in `app/src-tauri`. |
+| `app/` | Desktop app: React UI in `app/src`, Tauri/Rust in `app/src-tauri`; the GpuVM service (`gpuvm-host.exe`) in `app/host`; the bundled PowerShell 7, pinned in `app/tools.json`. |
 | `src/GpuVM/` | The PowerShell 7 module: `Private/` (helpers), `Backends/` (one file per backend), `Public/` (one file per exported cmdlet). |
 | `src/bridge.ps1` | Bridge between the app and the module. |
 | `gpuvm.ps1` | CLI. See [CLI reference](/gpuvm/docs/cli/). |
 | `profiles/` | JSON [profiles](/gpuvm/docs/profiles/). |
-| `guest/` | Scripts that run inside the VM: first-boot setup, optimizations, streaming, audio, display resolution and `collect-info.ps1` for labs. |
+| `guest/` | Scripts that run inside the VM: first-boot setup, optimizations, streaming, audio, display resolution, capture mode, the administrator prompt watcher (`admin-prompt.ps1`) and `collect-info.ps1` for labs. |
 | `templates/` | `unattend.xml` template. |
-| `streaming/components.json` | Versions, URLs and SHA-256 of the streaming components. |
+| `streaming/components.json` | Versions, URLs and SHA-256 of the streaming components and ViGEmBus. |
 | `labs/` | [Labs](/gpuvm/docs/labs/). |
 | `tests/` | Pester tests. |
 
@@ -47,19 +47,40 @@ Public cmdlets only talk to this interface. The current backend is `hyperv-gpup`
 
 ## Bridge between the app and PowerShell
 
-- **Quick queries** (overview, host info, power actions, saving options) go through one **persistent** `pwsh` process, one at a time. If the process died before the request was sent, it is restarted once; once a request is sent it is never retried, because the command may already have run (shut down, delete…). A query times out after 180 s.
-- **Long jobs** (create a VM, start and open, sync the driver, apply settings) run in their **own** `pwsh` process (`bridge.ps1 -Once`), so they don't block the stats. Their progress arrives as `job` events.
+The app runs without administrator rights. The Hyper-V work happens in the **GpuVM service** (`gpuvm-host.exe`, `app/host/`), a Windows service the installer registers. The app talks to it through the named pipe `\\.\pipe\gpuvm`; for each connection the service starts `bridge.ps1` in GpuVM's own PowerShell 7 with the elevated token of the user signed in at that session, so the module sees the same profile, saved passwords and folders as that user running it as administrator. In development the app starts `bridge.ps1` itself and needs to run as administrator.
+
+- **Quick queries** (overview, host info, power actions, saving options) go through one **persistent** connection, one at a time. If it was lost before the request was sent, it is opened again once; once a request is sent it is never retried, because the command may already have run (shut down, delete…). A query times out after 180 s.
+- **Long jobs** (create a VM, start and open, sync the driver, apply settings) use a connection **each**, so they don't block the stats. Their progress arrives as `job` events.
+- **Deletions** (`Remove-GpuVM`, `Remove-GpuVMDisk`, `Remove-GpuVMSharedDisk`, `Remove-GpuVMTemplate`) are answered with a one-time code. The app runs a copy of itself elevated (`gpuvm.exe --consent <code>`, a UAC prompt) that hands the code to the service, then sends the same request again with it. The code is only valid for that app instance, that exact request and two minutes.
+- **Starting and stopping:** the service can be started and stopped by users signed in at the PC (nothing else), so the app starts it when it opens and, with the default preference, asks it to stop once its last connection closes. A stop lets running requests finish first. Starting it with Windows (`gpuvm-host startup auto|demand`) changes its configuration, so it goes through a UAC prompt.
+- **Each bridge** runs in a job object that closes with the service, so no `bridge.ps1` outlives it. Connecting through the pipe adds under 1 ms; queries take the same time as from an elevated process.
 - `bridge.ps1` reads one JSON request per line, `{"id", "cmd", "args"}`, and writes one JSON event per line: `progress`, `warning` (sent as soon as it appears) and `result` (`ok` with `data`, or `error`). Arguments shaped `{"user", "password"}` become a `PSCredential`.
 - The app can only call functions exported by the module, and `Update-GpuVMComponent` is blocked.
 
+## Administrator prompts
+
+With the default capture (Windows.Graphics.Capture), Windows' administrator prompts in the VM are drawn on the secure desktop, which can't be streamed. GpuVM carries them to the host and back:
+
+<Diagram {...adminPrompt('en')} />
+
+1. **Guest watcher.** `guest/admin-prompt.ps1 -Mode watch` runs in the VM as SYSTEM from boot (scheduled task `GpuVM-AdminPrompt`, installed by `Connect-GpuVM` under `C:\Program Files\GpuVM\AdminPrompt` and updated when its hash changes). When a UAC prompt opens, it starts itself on the secure desktop (`-Mode secure`) to read the program and publisher with UI Automation, and writes them, with the prompt's id (its `consent.exe` process id), to the Hyper-V data exchange (KVP) key `GpuVMAdminPrompt`.
+2. **App poller.** The Rust side calls `Get-GpuVMAdminPrompt` every 2 s. It reads the KVP of running VMs captured with WGC (about 100 ms, no PowerShell Direct) and rebuilds each value from short, checked strings, since everything comes from the guest. Polling lives in Rust, not in the page, so it keeps running while Moonlight covers the window.
+3. **Card.** While a prompt is open, a separate always-on-top window shows the machine, program and publisher with **Allow** and **Deny**; answered prompts are remembered so a late KVP update doesn't bring the card back, and the focus returns to Moonlight afterwards.
+4. **Resolve.** `Resolve-GpuVMAdminPrompt -Name <vm> -Answer Allow|Deny -PromptId <id>` goes through PowerShell Direct with the guest password and runs `-Mode answer`, which starts a one-time SYSTEM helper on the secure desktop of the console session. It presses Yes or No only if the open prompt is still `<id>`; otherwise it fails with "the prompt changed".
+
+Only the host can start step 4: the guest publishes data but nothing in the guest can order an answer, so a program in the VM can't approve its own prompt.
+
 ## Security
 
-- **Elevation:** the release build asks for administrator when it opens (the manifest requires it). In development it starts normally and offers to reopen as administrator.
-- **Only scripts from Program Files:** the installed app runs the module and scripts bundled next to it in Program Files, which only an administrator can modify, so a program running as the user can't change what the elevated app runs.
-- **PowerShell 7 by absolute path:** `pwsh.exe` from `Program Files\PowerShell\7` (MSI) or from the Microsoft Store package folder under `Program Files\WindowsApps`, never a `pwsh.exe` that appears earlier in the user's `PATH`.
+- **No elevated window:** the app runs as the user (`asInvoker`). Only the GpuVM service runs elevated.
+- **Who may use the service:** the pipe grants users read and write only (not creating instances of its name) and refuses network clients. The service checks that the program on the other end is the `gpuvm.exe` installed next to it and that its user is signed in at that session with an administrator account; anything else is refused. The app checks that the pipe's server is the GpuVM service (its process ID comes from Windows' service manager), not a program that took the name while the service was stopped.
+- **Paths checked as the user:** files and folders a request names (an ISO, a folder to import) are opened first while the service impersonates the user, unelevated: the service never reads, for them, something they couldn't read themselves. Paths must be plain local paths, and a path whose real location differs (a junction or symbolic link on the way) is refused.
+- **Deletions confirmed in UAC:** see [the bridge](#bridge-between-the-app-and-powershell).
+- **Administrator prompts answered only from the host:** see [Administrator prompts](#administrator-prompts). The watcher lives under Program Files in the guest, where only administrators can change what runs as SYSTEM.
+- **Only scripts from Program Files:** the service runs the module, the scripts and PowerShell 7 bundled next to it in Program Files, which only an administrator can modify. PowerShell 7 is pinned by version and SHA-256 (`app/tools.json`).
 - **Data restricted to administrators:** `%ProgramData%\GpuVM` (labs, downloads) and the VMs folder (`C:\GpuVM`, which would inherit "Authenticated Users: modify" from `C:\`) are limited to Administrators, SYSTEM and Hyper-V's virtual machines.
 - **DPAPI:** the Sunshine credentials and the guest password are stored encrypted with DPAPI on the host.
-- **Pinned components:** Sunshine, the Virtual Display Driver, nefcon and usbip-win2 are pinned by SHA-256 in `streaming/components.json`. A file whose hash doesn't match isn't used. The guest downloads nothing. Only the certificate that signed the virtual display driver is trusted; usbip-win2's drivers must be signed by Microsoft.
+- **Pinned components:** Sunshine, the Virtual Display Driver, nefcon, usbip-win2 and ViGEmBus are pinned by SHA-256 in `streaming/components.json`. A file whose hash doesn't match isn't used. The guest downloads nothing. Only the certificate that signed the virtual display driver is trusted; usbip-win2's drivers must be signed by Microsoft.
 - **Password cleanup:** `unattend.xml` holds the password in plain text and is deleted inside the VM as soon as it's no longer needed.
 - **No argument injection:** the Moonlight app name is validated before building Moonlight's command line.
 

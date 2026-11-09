@@ -30,31 +30,60 @@ export const overview = (lang: Lang) => ({
   ],
 });
 
-// How the app reaches Hyper-V: UI → Rust → bridge.ps1 → module → Hyper-V, with the CLI on the same module.
+// How the app reaches Hyper-V: UI → Rust → (named pipe) GpuVM service → bridge.ps1 → module → Hyper-V, with the CLI
+// on the same module. The app runs as the user; only the service is elevated.
 export const architecture = (lang: Lang) => ({
   width: 400,
-  height: 900,
+  height: 1110,
   label: t(lang,
-    'The React UI calls the Rust side, which sends JSON requests to bridge.ps1 in PowerShell 7; the bridge runs cmdlets of the GpuVM module, which the CLI also imports, and the module drives Hyper-V through its backend.',
-    'La interfaz en React llama a la parte en Rust, que envía peticiones JSON a bridge.ps1 en PowerShell 7; el puente ejecuta cmdlets del módulo GpuVM, que también importa la CLI, y el módulo controla Hyper-V mediante su backend.'),
+    'The React UI calls the Rust side, which runs as the user and talks through a named pipe to the GpuVM service; the service starts bridge.ps1 in PowerShell 7 with the elevated token of the user, the bridge runs cmdlets of the GpuVM module, which the CLI also imports, and the module drives Hyper-V through its backend.',
+    'La interfaz en React llama a la parte en Rust, que corre como el usuario y habla por un pipe con nombre con el servicio GpuVM; el servicio inicia bridge.ps1 en PowerShell 7 con el token elevado del usuario, el puente ejecuta cmdlets del módulo GpuVM, que también importa la CLI, y el módulo controla Hyper-V mediante su backend.'),
   groups: [
-    { x: 10, y: 20, w: 250, h: 320, title: t(lang, 'GpuVM app · Tauri 2', 'App GpuVM · Tauri 2'), icon: 'app-window' },
-    { x: 10, y: 400, w: 380, h: 310, title: 'PowerShell 7', icon: 'terminal-2' },
+    { x: 10, y: 20, w: 250, h: 320, title: t(lang, 'GpuVM app · as the user', 'App GpuVM · como el usuario'), icon: 'app-window' },
+    { x: 10, y: 400, w: 250, h: 160, title: t(lang, 'Windows service · elevated', 'Servicio de Windows · elevado'), icon: 'shield-lock' },
+    { x: 10, y: 620, w: 380, h: 310, title: 'PowerShell 7', icon: 'terminal-2' },
   ],
   nodes: [
     { id: 'ui', x: 135, y: 105, icon: 'brand-react', label: t(lang, 'React UI', 'Interfaz') },
     { id: 'rust', x: 135, y: 265, icon: 'brand-rust', label: t(lang, 'Rust side', 'Parte en Rust') },
-    { id: 'bridge', x: 135, y: 485, icon: 'code', label: 'bridge.ps1' },
-    { id: 'module', x: 135, y: 645, icon: 'packages', label: t(lang, 'GpuVM module', 'Módulo GpuVM') },
-    { id: 'cli', x: 315, y: 645, icon: 'terminal', label: 'gpuvm.ps1' },
-    { id: 'hyperv', x: 135, y: 840, icon: 'server', label: 'Hyper-V' },
+    { id: 'host', x: 135, y: 485, icon: 'server-2', label: 'gpuvm-host.exe' },
+    { id: 'bridge', x: 135, y: 705, icon: 'code', label: 'bridge.ps1' },
+    { id: 'module', x: 135, y: 865, icon: 'packages', label: t(lang, 'GpuVM module', 'Módulo GpuVM') },
+    { id: 'cli', x: 315, y: 865, icon: 'terminal', label: 'gpuvm.ps1' },
+    { id: 'hyperv', x: 135, y: 1050, icon: 'server', label: 'Hyper-V' },
   ],
   edges: [
     { from: 'ui', to: 'rust', label: 'invoke' },
-    { from: 'rust', to: 'bridge', label: t(lang, 'JSON per line', 'JSON por línea') },
+    { from: 'rust', to: 'host', label: t(lang, 'named pipe', 'pipe con nombre') },
+    { from: 'host', to: 'bridge', label: t(lang, 'JSON per line', 'JSON por línea') },
     { from: 'bridge', to: 'module', label: 'cmdlet' },
     { from: 'cli', to: 'module', label: t(lang, 'imports', 'importa'), dashed: true },
     { from: 'module', to: 'hyperv', label: 'backend' },
+  ],
+});
+
+// Administrator prompts with WGC capture: the guest watcher publishes the prompt through Hyper-V's data exchange, the
+// app shows it on the host, and the person's answer goes back through the module to a helper on the secure desktop.
+export const adminPrompt = (lang: Lang) => ({
+  width: 460,
+  height: 520,
+  label: t(lang,
+    'Inside the VM a watcher publishes the open administrator prompt through Hyper-V data exchange (KVP); the app shows it in a card on the host; Allow or Deny goes to the GpuVM module, which starts a helper on the secure desktop of the VM through PowerShell Direct to press the button.',
+    'Dentro de la VM un vigilante publica el aviso de administrador abierto por el intercambio de datos de Hyper-V (KVP); la app lo muestra en una tarjeta en el equipo; Permitir o Rechazar va al módulo GpuVM, que inicia por PowerShell Direct un ayudante en el escritorio seguro de la VM que presiona el botón.'),
+  groups: [
+    { x: 10, y: 20, w: 440, h: 170, title: t(lang, 'Your PC', 'Tu PC'), icon: 'device-desktop-analytics' },
+    { x: 10, y: 330, w: 440, h: 170, title: 'VM · SYSTEM', icon: 'brand-windows', titleAt: 'bottom' as const },
+  ],
+  nodes: [
+    { id: 'card', x: 100, y: 115, icon: 'message-2', label: t(lang, 'App card', 'Tarjeta\nde la app') },
+    { id: 'module', x: 350, y: 115, icon: 'packages', label: t(lang, 'GpuVM module', 'Módulo\nGpuVM') },
+    { id: 'watcher', x: 100, y: 405, icon: 'eye', label: t(lang, 'Prompt\nwatcher', 'Vigilante\nde avisos') },
+    { id: 'helper', x: 350, y: 405, icon: 'hand-click', label: t(lang, 'Secure desktop\nhelper', 'Ayudante del\nescritorio seguro') },
+  ],
+  edges: [
+    { from: 'watcher', to: 'card', label: 'KVP' },
+    { from: 'card', to: 'module', label: t(lang, 'Allow / Deny', 'Permitir / Rechazar') },
+    { from: 'module', to: 'helper', label: 'PowerShell Direct' },
   ],
 });
 

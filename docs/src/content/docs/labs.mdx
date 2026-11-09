@@ -53,7 +53,7 @@ Each lab is a folder `labs/NNN-name/` with `lab.json` (hypothesis, variants, res
 
 ## Current labs
 
-Labs 001–007 are open; 008 and 009 were adopted.
+Labs 001–007 are open; the status of the others is in [What the labs found so far](#what-the-labs-found-so-far).
 
 | # | Lab | Hypothesis | Candidate |
 |---|---|---|---|
@@ -69,6 +69,15 @@ Labs 001–007 are open; 008 and 009 were adopted.
 | 010 | Network isolation | Port ACLs on the VM's virtual switch port, enforced by the host, keep the VM away from the host and the LAN while it keeps internet, DHCP and DNS; stateful rules let Moonlight's connections through. | `vm.network.isolation: true` |
 | 011 | Audio without Steam: VB-CABLE | Sunshine captures VB-CABLE's output (stereo or 16 channels) and carries the VM's sound without Steam Streaming Speakers. | `streaming.audio: vbcable` |
 | 012 | Audio over a USB speaker of our own | A USB audio device served by GpuVM inside the VM and plugged in with usbip-win2 is driven by Windows' built-in driver, so Sunshine captures real sound. | `streaming.audio: usb` |
+| 018 | Unelevated window, elevated service | The window can run without administrator if a Windows service runs `bridge.ps1` behind a named pipe; the pipe adds no noticeable latency and only GpuVM, run by the signed-in user, can use it. | Service with the user's elevated token vs as SYSTEM; direct elevated bridge as baseline |
+| 019 | Open time | Opening is slow because of steps repeated on every open, not only Windows booting; and **Open** returns before the picture shows. | One PowerShell Direct session, work once per boot, wait for the first frame |
+| 020 | Input latency | Turning V-Sync and frame pacing off, another window mode and the host's refresh rate lower the time from a key, click, mouse move or gamepad button to the change in Moonlight's picture. | `streaming.client`: `vsync`, `framePacing`, `displayMode`, `fps` |
+| 021 | Stream smoothness | Frame pacing evens out motion at a small latency cost, and more FPS is smoother. | `framePacing` at 60, 120 and 165 FPS |
+| 022 | Matched refresh rate | With the VM's virtual display at the host monitor's rate, V-Sync costs nothing and stutters drop. | `streaming.client.fps: 0` (monitor's rate) |
+| 023 | Black picture after reconnecting | The black picture after reconnecting comes from Sunshine's capture restarting at session start; another capture method avoids it. | `captureMode: wgc` |
+| 024 | DDX restarts at session start | Something avoidable in the VM's picture makes desktop duplication restart, so it could start as fast as WGC. | `ddx` with the picture changed in several ways |
+| 025 | Administrator prompts with WGC | GpuVM can tell cheaply when a prompt is open and let you answer it through the Hyper-V console. | Guest watcher over Hyper-V data exchange (KVP) |
+| 026 | Answering administrator prompts from GpuVM | A SYSTEM helper on the guest's secure desktop can read the prompt and press Yes or No on the host's order. | Watcher + helper in the guest, card on the host |
 
 Labs 004–012 use `max-performance` for both variants.
 
@@ -80,7 +89,16 @@ Labs 004–012 use `max-performance` for both variants.
 - **006:** rewritten. The host reports the root scheduler (`Hypervisor scheduler type is 0x4`), and Microsoft documents that caps, weights and reserves only apply with the classic or core scheduler, so 30 % vs 100 % reserve couldn't show a difference. It now compares 8 vs 6 virtual processors. No results yet.
 - **007:** rewritten. The first candidate (preset 1, `quarter_res`, latency over power) equalled Sunshine's defaults. The new candidate turns off two-pass, the VBV increase and split encode. No results yet.
 - **008 (adopted):** opening without changing resolution or FPS went from 22–27 s to the first frame (26.8 s measured) to **2.1 s**. Changing the mode still costs 10–15 s (13.3 s for 120 FPS after 60). With `ensure_only_display`, Sunshine's log showed "Encoder reenumeration is required" on every session. `connect` now sets `dd_configuration_option = disabled` when GpuVM already turned the Hyper-V display off. See [Streaming](/gpuvm/docs/streaming/#sunshine).
-- **009 (adopted):** A game in exclusive fullscreen at 800×600 was black with `ddx` (Sunshine got no new frames and re-sent the last one) and visible with `wgc`. Adopted as a per-VM option, off by default (**Options → Captura**): `wgc` doesn't show Windows' administrator prompts (secure desktop). No security change: in `wgc` Sunshine runs as the signed-in user (elevated) instead of SYSTEM. See [Capture modes](/gpuvm/docs/streaming/#capture-modes).
-- **010 (adopted):** with the rules, none of the host's TCP ports (4 before) and none of the router's checks (3 before) were reachable from the VM, by IPv4 or IPv6; internet, DNS, DHCP and Sunshine kept working and connect time didn't change (0.35 ms). On by default (**Options → Red**).
+- **009 (adopted):** A game in exclusive fullscreen at 800×600 was black with `ddx` (Sunshine got no new frames and re-sent the last one) and visible with `wgc`. Adopted as a per-VM option, off by default (**Options → Capture**; Fast, `wgc`, became the default after lab 023): `wgc` doesn't show Windows' administrator prompts (secure desktop). No security change: in `wgc` Sunshine runs as the signed-in user (elevated) instead of SYSTEM. See [Capture modes](/gpuvm/docs/streaming/#capture-modes).
+- **010 (adopted):** with the rules, none of the host's TCP ports (4 before) and none of the router's checks (3 before) were reachable from the VM, by IPv4 or IPv6; internet, DNS, DHCP and Sunshine kept working and connect time didn't change (0.35 ms). On by default (**Options → Network**).
 - **011 (rejected):** both VB-CABLE outputs reach Sunshine as digital silence inside the VM while Windows' meter shows sound; Moonlight received nothing. The sound that seemed to work came from Steam Streaming Speakers (0.265 in Moonlight).
 - **012 (adopted):** GpuVM's speaker, **Speakers (GpuVM Audio)**, was captured at the same level as Windows' meter (0.356) and reached Moonlight at 0.351, louder than Steam's 0.265, with no transfer errors. usbip-win2's drivers are signed by Microsoft and it adds no certificate. See [Audio](/gpuvm/docs/streaming/#audio).
+- **018 (adopted):** the pipe costs under 1 ms to connect and queries take the same time; the client and server checks held. The bridge runs with the user's elevated token, not as SYSTEM (as SYSTEM the saved guest passwords can't be decrypted), GpuVM carries its own PowerShell 7, paths are checked as the unelevated user and deletions ask for UAC. See [Architecture](/gpuvm/docs/architecture/#bridge-between-the-app-and-powershell).
+- **019 (adopted):** a warm open spent about 22 of its ~25 s repeating guest work through separate PowerShell Direct calls, and the job ended 3–17 s before the first frame. With one session, work once per boot, readiness from the heartbeat and waiting for the first frame: warm 7–10 s including the first frame, cold about 55 s (was 77–90 s). Still open: Sunshine's own startup.
+- **020 (adopted with 022):** about 16.6 ms median from input on the host to Moonlight's picture at 120 FPS or more (5.6 ms locally, so the stream adds about 11 ms); 60 FPS adds a host frame; codec and window mode don't change the median. Led to the per-machine uses and the V-Sync, frame pacing and mouse settings.
+- **021 (partly adopted):** frame pacing only helps at 60 FPS, the **Movies and video** use; at 120 FPS and above it adds stutters. 165 FPS was the smoothest.
+- **022 (adopted):** at the monitor's rate (180 Hz) stutters fell to 0.4–0.8 % (about 1 % before) and V-Sync added no latency. `fps = 0` follows the monitor; new VMs use it with V-Sync on.
+- **023 (adopted):** desktop duplication restarts silently at session start; WGC showed the picture in about 2.6 s in 9 of 10 reconnects. WGC became the default capture.
+- **024 (rejected):** the full-screen window isn't the cause, and nothing tried brings desktop duplication close to WGC: its first real frame still takes about 6 s.
+- **025 (partly rejected):** detecting the prompt through KVP works (about 3 s, about 100 ms per read), but the Hyper-V console can't see a GPU-P VM's display, so it can't answer it.
+- **026 (adopted):** the helper reads the prompt and answers it; end to end the host lists it 1.1–1.2 s after it opens and an answer takes about 5 s. An answer for a prompt that changed is refused. See [Administrator prompts](/gpuvm/docs/architecture/#administrator-prompts).

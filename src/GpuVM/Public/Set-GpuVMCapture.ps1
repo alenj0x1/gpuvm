@@ -1,11 +1,13 @@
 function Set-GpuVMCapture {
     <#
     .SYNOPSIS
-    Chooses how Sunshine captures the VM's screen. "ddx" (default) shows everything, including Windows'
-    administrator prompts. "wgc" also shows programs in exclusive fullscreen, which "ddx" sees as a black screen
-    on a virtual display, but not the administrator prompts. Applied now if the VM is running, otherwise on open.
+    Chooses how Sunshine captures the VM's screen. "wgc" (default) shows the picture right after connecting and
+    programs in exclusive fullscreen; Windows administrator prompts can't be streamed, so GpuVM shows them in its
+    own card (Get-GpuVMAdminPrompt, Resolve-GpuVMAdminPrompt). "ddx" streams the prompts too, but the picture can
+    stay black after connecting until something on screen changes, and exclusive fullscreen programs show black.
+    Applied now if the VM is running, otherwise on open.
     .EXAMPLE
-    Set-GpuVMCapture -Name win10 -Mode wgc
+    Set-GpuVMCapture -Name win10 -Mode ddx
     #>
     [CmdletBinding()]
     param(

@@ -28,9 +28,9 @@ Una VM normal de Hyper-V solo tiene un adaptador de pantalla básico, así que l
 
 2. **Primer inicio.** Dentro de la VM, el script de configuración del invitado aplica las optimizaciones del perfil, instala el streaming (Sunshine, una pantalla virtual y el altavoz USB propio de GpuVM para el audio) y borra `unattend.xml`, que contiene la contraseña. Después la VM se reinicia una vez sola.
 
-3. **Encender y abrir.** Un clic enciende la VM, sincroniza el driver de la GPU si el del host cambió, espera a Windows y a Sunshine, corrige la sesión y la pantalla, empareja Moonlight solo y abre la transmisión.
+3. **Encender y abrir.** Un clic enciende la VM, sincroniza el driver de la GPU si el del host cambió, espera a Windows y a Sunshine, corrige la sesión y la pantalla, empareja Moonlight solo y abre la transmisión, por defecto a la frecuencia de tu monitor. Una VM ya encendida muestra su imagen en unos 7 a 10 segundos.
 
-4. **Usar y medir.** Usas la VM en Moonlight en el host, con la imagen que dibuja la GPU. La app muestra el uso de CPU, memoria y GPU en vivo, y los [laboratorios](/gpuvm/docs/es/labs/) te permiten probar cambios con mediciones reales.
+4. **Usar y medir.** Usas la VM en Moonlight en el host, con la imagen que dibuja la GPU, tu teclado, mouse y mandos, unos 11 ms detrás de jugar en el equipo a 120 FPS o más. Los avisos de administrador de Windows en la VM se responden desde una tarjeta en el equipo. La app muestra el uso de CPU, memoria y GPU en vivo, y los [laboratorios](/gpuvm/docs/es/labs/) te permiten probar cambios con mediciones reales.
 
 </Steps>
 
@@ -40,13 +40,13 @@ Una VM normal de Hyper-V solo tiene un adaptador de pantalla básico, así que l
 
 <CardGrid>
   <Card title="App de escritorio" icon="laptop">
-    Tauri 2 + React. Todas las VMs de Hyper-V en una lista, encender y abrir en un clic, estadísticas en vivo, opciones, asistente para crear máquinas y acciones de energía.
+    Tauri 2 + React, sin permisos de administrador; un servicio de Windows hace el trabajo de Hyper-V. Todas las VMs de Hyper-V en una lista, encender y abrir en un clic, un tipo de uso por máquina (juegos, películas, trabajo), estadísticas en vivo, opciones y acciones de energía.
   </Card>
   <Card title="Módulo de PowerShell y CLI" icon="seti:powershell">
     El módulo `GpuVM` (PowerShell 7) hace el trabajo; `gpuvm.ps1` lo expone como comandos cortos.
   </Card>
   <Card title="Streaming" icon="rocket">
-    Sunshine dentro de la VM, una pantalla virtual que dibuja la GPU, el altavoz USB propio de GpuVM para el audio y Moonlight en el host.
+    Sunshine dentro de la VM, una pantalla virtual que dibuja la GPU a la frecuencia de tu monitor, el altavoz USB propio de GpuVM para el audio, mandos, y Moonlight en el host.
   </Card>
   <Card title="Perfiles y laboratorios" icon="setting">
     Perfiles JSON con herencia, y laboratorios que comparan una configuración base con una candidata antes de adoptar un cambio.

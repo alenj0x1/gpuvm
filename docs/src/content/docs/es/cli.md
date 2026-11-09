@@ -3,7 +3,7 @@ title: Referencia de la CLI
 description: Los comandos de gpuvm.ps1 y los cmdlets del módulo de PowerShell GpuVM.
 ---
 
-`gpuvm.ps1`, en la raíz del repositorio, es un atajo para el módulo `GpuVM`. Ejecútalo desde PowerShell 7 **como administrador** para crear y modificar VMs.
+`gpuvm.ps1`, en la raíz del repositorio, es un atajo para el módulo `GpuVM`. Ejecútalo desde PowerShell 7 **como administrador** para crear y modificar VMs. (La app no lo necesita: trae su propio PowerShell 7 y el servicio GpuVM ejecuta el módulo por ella.)
 
 ```powershell
 ./gpuvm.ps1 <comando> [-Parámetro valor ...]
@@ -80,8 +80,9 @@ Revisa la edición de Windows, los permisos de administrador, la virtualización
 | `-Codec` | `auto`, `H.264`, `HEVC` o `AV1`. |
 | `-App` | App de Sunshine que se abre (por defecto `Desktop`). |
 | `-Pair` | Vuelve a emparejar aunque ya esté emparejado. |
+| `-MemoryGB` | De 4 a 256. Abre con esa memoria cuando la VM no cabe como está configurada (se guarda, como al cambiarla en Opciones). |
 
-Los valores que pases aquí valen solo para esta conexión; los predeterminados vienen de `streaming.client` del perfil.
+Los valores que pases aquí valen solo para esta conexión; los predeterminados vienen de `streaming.client` de la VM (se cambian con `Set-GpuVMStreamingClient`), donde unos FPS de `0` significan la frecuencia del monitor del equipo. `connect` termina cuando Moonlight muestra el primer cuadro; si la VM ya está abierta en Moonlight (y no se pasa `-Pair`), trae esa ventana al frente. Si la VM está apagada, guardada o en pausa mientras espera su dirección, falla al instante.
 
 ### client-install
 
@@ -89,7 +90,7 @@ Sin parámetros. No hace nada si Moonlight ya está instalado.
 
 ### components-update
 
-`-Name` (uno o más componentes: `sunshine`, `vdd`, `nefcon`, `usbip`; todos por defecto, salvo los retenidos). Admite `-WhatIf`. Consulta [Streaming](/gpuvm/docs/es/streaming/#actualizar-componentes).
+`-Name` (uno o más componentes: `sunshine`, `vdd`, `nefcon`, `usbip`, `vigembus`; todos por defecto, salvo los retenidos). Admite `-WhatIf`. Consulta [Streaming](/gpuvm/docs/es/streaming/#actualizar-componentes).
 
 ### remove
 
@@ -155,5 +156,39 @@ Además de los cmdlets anteriores, el módulo exporta estos, que usa sobre todo 
 | `Get-GpuVMIsoList` | ISOs de Windows en Descargas y Escritorio. |
 | `Invoke-GpuVMPower` | `-Action` `Start`, `Shutdown`, `TurnOff`, `Restart`, `Pause` o `Resume` sobre cualquier VM. |
 | `Set-GpuVMGuestCredential` | Guarda la cuenta del invitado (DPAPI) para que GpuVM corrija cosas dentro de la VM por PowerShell Direct. |
-| `Set-GpuVMStreamingClient` | Cambia la resolución, los FPS, el bitrate o el codec con los que Moonlight abre la VM. No requiere apagarla. |
+| `Set-GpuVMStreamingClient` | Cambia cómo abre Moonlight la VM. No requiere apagarla. Consulta [más abajo](#set-gpuvmstreamingclient). |
+| `Set-GpuVMCapture` | `-Name`, `-Mode` `wgc` (la predeterminada: Windows.Graphics.Capture, la imagen aparece apenas te conectas y captura la pantalla completa exclusiva) o `ddx` (desktop duplication: muestra los avisos de administrador de Windows en el stream). Se aplica en el momento si la VM está encendida (reinicia Sunshine); si no, la próxima vez que se abra. Consulta [Modos de captura](/gpuvm/docs/es/streaming/#modos-de-captura). |
+| `Get-GpuVMAdminPrompt` | Los avisos de administrador de Windows abiertos en las máquinas de GpuVM encendidas que capturan con `wgc`: `name`, `id`, `app`, `publisher`. Solo lee el intercambio de datos de Hyper-V (unos 100 ms, sin PowerShell Direct); la app lo consulta cada 2 s. |
+| `Resolve-GpuVMAdminPrompt` | `-Name`, `-Answer` `Allow` o `Deny`, `-PromptId` (el `id` de `Get-GpuVMAdminPrompt`). Presiona Sí o No en la VM, solo si ese aviso sigue siendo el que está abierto; si no, falla sin presionar nada. Necesita la contraseña del invitado. Consulta [Avisos de administrador](/gpuvm/docs/es/streaming/#avisos-de-administrador). |
 | `Update-GpuVMSettings` | Aplica procesador, memoria o GPU aunque la VM esté encendida: valida, la apaga, aplica y la vuelve a encender; si no puede encenderla, restaura la configuración anterior. |
+| `Get-GpuVMHome` | Lo que muestra el Inicio de la app: la última máquina abierta, qué máquinas caben en memoria y lo que necesita atención. |
+| `Stop-GpuVMAll` | Apaga de forma ordenada todas las máquinas de GpuVM encendidas, a la vez. |
+| `Send-GpuVMClipboard` | Pone texto en el portapapeles de la VM (solo del PC a la VM). |
+| `Set-GpuVMNetworkIsolation` | Activa (la predeterminada) o desactiva el aislamiento de red de la VM. |
+| `Get-GpuVMCleanup` / `Set-GpuVMCleanup` | Los niveles de limpieza de Windows / aplica uno a una VM. |
+| `Get-GpuVMApp` / `Install-GpuVMApp` | El catálogo de apps / instala apps en una VM (la enciende si hace falta). |
+| `Add-GpuVMIso` / `Remove-GpuVMIso` | Recuerda un ISO en la biblioteca / lo olvida (el archivo queda). |
+| `Get-GpuVMDisk` / `Restore-GpuVM` / `Remove-GpuVMDisk` | Los discos de la carpeta de GpuVM / vuelve a crear una VM con un disco conservado / borra un disco libre. |
+| `Save-GpuVMProfile` / `Remove-GpuVMProfile` | Crea o actualiza un perfil propio / lo borra. |
+| `New-GpuVMTemplate` / `Get-GpuVMTemplate` / `Remove-GpuVMTemplate` | Guarda una VM apagada como plantilla / lista las plantillas / borra una sobre la que no hay VMs. |
+| `New-GpuVMSharedDisk` / `Get-GpuVMSharedDisk` / `Connect-GpuVMSharedDisk` / `Disconnect-GpuVMSharedDisk` / `Import-GpuVMSharedDisk` / `Remove-GpuVMSharedDisk` | Discos compartidos: crear, listar, conectar, desconectar, copiar a uno una carpeta de este equipo, borrar. |
+
+Desde la app, `Remove-GpuVM`, `Remove-GpuVMDisk`, `Remove-GpuVMSharedDisk` y `Remove-GpuVMTemplate` además piden confirmación en UAC ([Arquitectura](/gpuvm/docs/es/architecture/#puente-entre-la-app-y-powershell)).
+
+### Set-GpuVMStreamingClient
+
+| Parámetro | |
+|---|---|
+| `-Name` | Obligatorio. |
+| `-Resolution` | Por ejemplo `2560x1440`. |
+| `-Fps` | De 10 a 480, o `0` para la frecuencia del monitor del equipo, que se lee cada vez que se abre la VM. |
+| `-BitrateKbps` | De 0 a 500000; `0` deja que Moonlight lo elija según la resolución y los FPS. |
+| `-Codec` | `auto`, `H.264`, `HEVC` o `AV1`. |
+| `-DisplayMode` | `fullscreen`, `windowed` (una ventana del tamaño de la resolución que se puede redimensionar) o `borderless`. |
+| `-VSync` | `$true` o `$false`. Sin indicarlo, queda como está. |
+| `-FramePacing` | `$true` o `$false`. Se apaga siempre que la sincronización vertical está apagada. |
+| `-Mouse` | `capture` (la VM toma el mouse, para juegos) o `absolute` (el puntero se mueve libre, como en escritorio remoto). |
+
+```powershell
+Set-GpuVMStreamingClient -Name win11 -Fps 0 -VSync $true -FramePacing $false -Mouse capture   # el uso «Juegos»
+```

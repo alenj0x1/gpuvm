@@ -53,7 +53,7 @@ Cada laboratorio es una carpeta `labs/NNN-nombre/` con `lab.json` (hipótesis, v
 
 ## Laboratorios actuales
 
-Los laboratorios 001 a 007 están abiertos; el 008 y el 009 se adoptaron.
+Los laboratorios 001 a 007 están abiertos; el estado de los demás está en [Lo que encontraron los laboratorios hasta ahora](#lo-que-encontraron-los-laboratorios-hasta-ahora).
 
 | # | Laboratorio | Hipótesis | Candidata |
 |---|---|---|---|
@@ -69,6 +69,15 @@ Los laboratorios 001 a 007 están abiertos; el 008 y el 009 se adoptaron.
 | 010 | Aislamiento de red | ACLs en el puerto del switch virtual de la VM, aplicadas por el equipo, mantienen a la VM lejos del equipo y de la red local sin quitarle internet, DHCP ni DNS; reglas con estado dejan pasar las conexiones de Moonlight. | `vm.network.isolation: true` |
 | 011 | Audio sin Steam: VB-CABLE | Sunshine captura la salida de VB-CABLE (estéreo o 16 canales) y lleva el sonido de la VM sin Steam Streaming Speakers. | `streaming.audio: vbcable` |
 | 012 | Audio con un altavoz USB propio | Un dispositivo de audio USB servido por GpuVM dentro de la VM y conectado con usbip-win2 lo maneja el driver de Windows, así que Sunshine captura sonido real. | `streaming.audio: usb` |
+| 018 | Ventana sin elevar, servicio elevado | La ventana puede correr sin administrador si un servicio de Windows ejecuta `bridge.ps1` detrás de un pipe con nombre; el pipe no agrega latencia notable y solo GpuVM, abierto por el usuario con sesión iniciada, puede usarlo. | Servicio con el token elevado del usuario frente a SYSTEM; puente elevado directo como base |
+| 019 | Tiempo de apertura | Abrir es lento por pasos que se repiten en cada apertura, no solo por el arranque de Windows; y **Abrir** termina antes de que aparezca la imagen. | Una sola sesión de PowerShell Direct, trabajo una vez por arranque, esperar el primer cuadro |
+| 020 | Latencia de entrada | Apagar la sincronización vertical y el ritmo de cuadros, otro modo de ventana y la frecuencia del equipo bajan el tiempo desde una tecla, un clic, un movimiento del mouse o un botón del mando hasta el cambio en la imagen de Moonlight. | `streaming.client`: `vsync`, `framePacing`, `displayMode`, `fps` |
+| 021 | Fluidez del stream | El ritmo de cuadros empareja el movimiento a cambio de un poco de latencia, y más FPS es más fluido. | `framePacing` a 60, 120 y 165 FPS |
+| 022 | Frecuencia igual a la del monitor | Con la pantalla virtual de la VM a la frecuencia del monitor del equipo, la sincronización vertical no cuesta nada y bajan los tirones. | `streaming.client.fps: 0` (frecuencia del monitor) |
+| 023 | Imagen negra al reconectar | La imagen negra al reconectar viene de que la captura de Sunshine se reinicia al empezar la sesión; otro método de captura lo evita. | `captureMode: wgc` |
+| 024 | Reinicios de DDX al empezar la sesión | Algo evitable en la imagen de la VM hace que desktop duplication se reinicie, así podría arrancar tan rápido como WGC. | `ddx` con la imagen cambiada de varias formas |
+| 025 | Avisos de administrador con WGC | GpuVM puede saber con poco costo cuándo hay un aviso abierto y dejarte responderlo por la consola de Hyper-V. | Vigilante en el invitado por el intercambio de datos de Hyper-V (KVP) |
+| 026 | Responder avisos de administrador desde GpuVM | Un ayudante SYSTEM en el escritorio seguro del invitado puede leer el aviso y presionar Sí o No por orden del equipo. | Vigilante y ayudante en el invitado, tarjeta en el equipo |
 
 Los laboratorios 004 a 012 usan `max-performance` en las dos variantes.
 
@@ -84,3 +93,12 @@ Los laboratorios 004 a 012 usan `max-performance` en las dos variantes.
 - **010 (adoptado):** con las reglas, desde la VM no se alcanzó ningún puerto TCP del equipo (antes 4) ni ninguna prueba al router (antes 3), ni por IPv4 ni por IPv6; internet, DNS, DHCP y Sunshine siguieron funcionando y el tiempo de conexión no cambió (0,35 ms). Activado por defecto (**Opciones → Red**).
 - **011 (rechazado):** las dos salidas de VB-CABLE le llegan a Sunshine como silencio digital dentro de la VM mientras el medidor de Windows muestra sonido; Moonlight no recibió nada. El sonido que parecía funcionar venía de Steam Streaming Speakers (0,265 en Moonlight).
 - **012 (adoptado):** el altavoz de GpuVM, **Altavoces (GpuVM Audio)**, se capturó al mismo nivel que el medidor de Windows (0,356) y llegó a Moonlight a 0,351, más que el 0,265 de Steam, sin errores de transferencia. Los drivers de usbip-win2 están firmados por Microsoft y no agrega certificados. Consulta [Audio](/gpuvm/docs/es/streaming/#audio).
+- **018 (adoptado):** el pipe tarda menos de 1 ms en conectar y las consultas tardan lo mismo; las comprobaciones del cliente y del servidor se sostuvieron. El puente corre con el token elevado del usuario, no como SYSTEM (como SYSTEM no se pueden descifrar las contraseñas guardadas del invitado), GpuVM trae su propio PowerShell 7, las rutas se comprueban como el usuario sin elevar y los borrados piden UAC. Consulta [Arquitectura](/gpuvm/docs/es/architecture/#puente-entre-la-app-y-powershell).
+- **019 (adoptado):** una apertura con la VM encendida gastaba unos 22 de sus ~25 s en repetir trabajo en el invitado con llamadas separadas de PowerShell Direct, y el trabajo terminaba 3 a 17 s antes del primer cuadro. Con una sola sesión, el trabajo una vez por arranque, Windows listo según el latido y la espera del primer cuadro: encendida, 7 a 10 s con el primer cuadro incluido; apagada, unos 55 s (antes 77 a 90 s). Sigue abierto: el arranque del propio Sunshine.
+- **020 (adoptado con el 022):** unos 16,6 ms de mediana desde la entrada en el equipo hasta la imagen de Moonlight a 120 FPS o más (5,6 ms en local, así que el stream agrega unos 11 ms); 60 FPS suma un cuadro del equipo; el códec y el modo de ventana no cambian la mediana. Llevó a los tipos de uso por máquina y a los ajustes de sincronización vertical, ritmo de cuadros y mouse.
+- **021 (adoptado en parte):** el ritmo de cuadros solo ayuda a 60 FPS, el uso **Películas y video**; a 120 FPS o más agrega tirones. 165 FPS fue lo más fluido.
+- **022 (adoptado):** a la frecuencia del monitor (180 Hz) los tirones bajaron a 0,4–0,8 % (antes cerca de 1 %) y la sincronización vertical no agregó latencia. `fps = 0` sigue al monitor; las VMs nuevas lo usan con la sincronización vertical activada.
+- **023 (adoptado):** desktop duplication se reinicia sin avisar al empezar la sesión; WGC mostró la imagen en unos 2,6 s en 9 de 10 reconexiones. WGC pasó a ser la captura predeterminada.
+- **024 (rechazado):** la ventana a pantalla completa no es la causa, y nada de lo probado acerca desktop duplication a WGC: su primer cuadro real sigue tardando unos 6 s.
+- **025 (rechazado en parte):** detectar el aviso por KVP funciona (unos 3 s, unos 100 ms por lectura), pero la consola de Hyper-V no ve la pantalla de una VM con GPU-P, así que no sirve para responderlo.
+- **026 (adoptado):** el ayudante lee el aviso y lo responde; de punta a punta, el equipo lo lista 1,1 a 1,2 s después de que se abre y una respuesta tarda unos 5 s. Se rechaza una respuesta para un aviso que cambió. Consulta [Avisos de administrador](/gpuvm/docs/es/architecture/#avisos-de-administrador).

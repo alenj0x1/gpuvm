@@ -7,26 +7,25 @@ import { Aside, Steps } from '@astrojs/starlight/components';
 
 <Steps>
 
-1. **Install PowerShell 7** from [aka.ms/powershell](https://aka.ms/powershell) if you don't have it.
+1. **Enable Hyper-V** ([see below](#enable-hyper-v)) and restart.
 
-2. **Enable Hyper-V** ([see below](#enable-hyper-v)) and restart.
+2. **Download the installer** (NSIS `.exe`) from [GitHub Releases](https://github.com/alenj0x1/gpuvm/releases) and run it.
 
-3. **Download the installer** (NSIS `.exe`) from [GitHub Releases](https://github.com/alenj0x1/gpuvm/releases) and run it.
+3. **Install Moonlight** ([see below](#install-moonlight)).
 
-4. **Install Moonlight** ([see below](#install-moonlight)).
-
-5. **Open GpuVM.** It asks for administrator rights every time it opens.
+4. **Open GpuVM.** It opens without administrator rights.
 
 </Steps>
 
 ## What the installer does
 
-- Installs GpuVM **for the whole machine** in **Program Files**, with the PowerShell module, the profiles, the guest scripts, the `unattend.xml` template and the streaming component list inside.
+- Installs GpuVM **for the whole machine** in **Program Files**, with its own PowerShell 7, the PowerShell module, the profiles, the guest scripts, the `unattend.xml` template and the streaming component list inside.
+- Registers the **GpuVM** service (`gpuvm-host.exe`), which does the Hyper-V work for the app. By default it starts when the app opens and stops when it quits (see [Preferences](/gpuvm/docs/using-the-app/#preferences)). Uninstalling removes it.
 - The data that changes (labs and downloaded installers) goes to **`%ProgramData%\GpuVM`**, which is also restricted to administrators.
 - The installer and the app interface are in Spanish.
 
 <Aside type="note" title="Why Program Files">
-The app runs elevated, so it only runs scripts from Program Files, which only an administrator can modify. See [Architecture](/gpuvm/docs/architecture/#security).
+The GpuVM service runs the module with administrator rights, so it only runs scripts and PowerShell from Program Files, which only an administrator can modify. See [Architecture](/gpuvm/docs/architecture/#security).
 </Aside>
 
 ## Enable Hyper-V

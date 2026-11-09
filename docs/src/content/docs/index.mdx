@@ -28,9 +28,9 @@ A regular Hyper-V VM only gets a basic display adapter, so games and GPU apps do
 
 2. **First boot.** Inside the VM, the guest setup script applies the profile's optimizations, installs the streaming components (Sunshine, a virtual display and GpuVM's own USB speaker for audio) and deletes `unattend.xml`, which holds the password. The VM then restarts once on its own.
 
-3. **Start and open.** One click starts the VM, syncs the GPU driver if the host's changed, waits for Windows and Sunshine, fixes the session and the display, pairs Moonlight automatically and opens the stream.
+3. **Start and open.** One click starts the VM, syncs the GPU driver if the host's changed, waits for Windows and Sunshine, fixes the session and the display, pairs Moonlight automatically and opens the stream, by default at your monitor's refresh rate. A VM that is already on shows its picture in about 7 to 10 seconds.
 
-4. **Use and measure.** You use the VM in Moonlight on the host, with the image the GPU renders. The app shows live CPU, memory and GPU usage, and [labs](/gpuvm/docs/labs/) let you test changes with real measurements.
+4. **Use and measure.** You use the VM in Moonlight on the host, with the image the GPU renders, your keyboard, mouse and gamepads, about 11 ms behind playing locally at 120 FPS or more. Windows' administrator prompts in the VM are answered from a card on the host. The app shows live CPU, memory and GPU usage, and [labs](/gpuvm/docs/labs/) let you test changes with real measurements.
 
 </Steps>
 
@@ -40,13 +40,13 @@ A regular Hyper-V VM only gets a basic display adapter, so games and GPU apps do
 
 <CardGrid>
   <Card title="Desktop app" icon="laptop">
-    Tauri 2 + React. Every Hyper-V VM in one list, one-click start and open, live stats, options, a create wizard and power actions.
+    Tauri 2 + React, without administrator rights; a Windows service does the Hyper-V work. Every Hyper-V VM in one list, one-click start and open, a use per machine (games, movies, work), live stats, options and power actions.
   </Card>
   <Card title="PowerShell module and CLI" icon="seti:powershell">
     The `GpuVM` module (PowerShell 7) does the work; `gpuvm.ps1` exposes it as short commands.
   </Card>
   <Card title="Streaming" icon="rocket">
-    Sunshine inside the VM, a virtual display drawn by the GPU, GpuVM's own USB speaker for audio and Moonlight on the host.
+    Sunshine inside the VM, a virtual display drawn by the GPU at your monitor's refresh rate, GpuVM's own USB speaker for audio, gamepads, and Moonlight on the host.
   </Card>
   <Card title="Profiles and labs" icon="setting">
     JSON profiles with inheritance, and labs that compare a baseline against a candidate before a change is adopted.

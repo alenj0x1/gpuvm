@@ -11,8 +11,8 @@ GpuVM revisa esto por ti antes de crear una VM: `./gpuvm.ps1 check -Profile <per
 - **Virtualización por hardware** activada en el BIOS/UEFI (Intel VT-x o AMD-V).
 - **Hyper-V** activo. Consulta [Instalación](/gpuvm/docs/es/install/#activar-hyper-v).
 - **Una GPU que admita GPU partitioning** con su driver actual. Los perfiles incluidos eligen la GPU cuyo nombre contiene `NVIDIA` (`gpu.match` en el [perfil](/gpuvm/docs/es/profiles/)), y Sunshine codifica con NVENC.
-- **PowerShell 7** ([aka.ms/powershell](https://aka.ms/powershell)). La app lo busca en `Program Files\PowerShell\7` (instalador MSI) o en la carpeta del paquete de Microsoft Store.
-- **Permisos de administrador.** Hyper-V solo deja crear y controlar máquinas a un administrador. La app instalada pide permisos al abrirse; la CLI necesita PowerShell 7 como administrador para crear y modificar VMs.
+- **Una cuenta de administrador.** Hyper-V solo deja crear y controlar máquinas a un administrador. La app se abre sin permisos: el servicio **GpuVM** hace el trabajo de Hyper-V con los permisos de administrador de tu cuenta, y borrar una máquina o un disco pide confirmarlo en un aviso de UAC.
+- **PowerShell 7** solo para la CLI ([aka.ms/powershell](https://aka.ms/powershell)), como administrador para crear y modificar VMs. La app trae el suyo.
 - **Moonlight** en el host para ver la VM. Consulta [Instalación](/gpuvm/docs/es/install/#instalar-moonlight).
 
 ## Recursos para la VM

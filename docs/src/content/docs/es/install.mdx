@@ -7,26 +7,25 @@ import { Aside, Steps } from '@astrojs/starlight/components';
 
 <Steps>
 
-1. **Instala PowerShell 7** desde [aka.ms/powershell](https://aka.ms/powershell) si no lo tienes.
+1. **Activa Hyper-V** ([más abajo](#activar-hyper-v)) y reinicia.
 
-2. **Activa Hyper-V** ([más abajo](#activar-hyper-v)) y reinicia.
+2. **Descarga el instalador** (`.exe` de NSIS) desde [GitHub Releases](https://github.com/alenj0x1/gpuvm/releases) y ejecútalo.
 
-3. **Descarga el instalador** (`.exe` de NSIS) desde [GitHub Releases](https://github.com/alenj0x1/gpuvm/releases) y ejecútalo.
+3. **Instala Moonlight** ([más abajo](#instalar-moonlight)).
 
-4. **Instala Moonlight** ([más abajo](#instalar-moonlight)).
-
-5. **Abre GpuVM.** Pide permisos de administrador cada vez que se abre.
+4. **Abre GpuVM.** Se abre sin permisos de administrador.
 
 </Steps>
 
 ## Qué hace el instalador
 
 - Instala GpuVM **para todo el equipo** en **Program Files**, con el módulo de PowerShell, los perfiles, los scripts del invitado, la plantilla de `unattend.xml` y la lista de componentes de streaming.
+- Registra el servicio **GpuVM** (`gpuvm-host.exe`), que hace el trabajo de Hyper-V para la app. Por defecto se enciende al abrir la app y se apaga al salir (consulta [Preferencias](/gpuvm/docs/es/using-the-app/#preferencias)). Al desinstalar se quita.
 - Los datos que cambian (laboratorios e instaladores descargados) van a **`%ProgramData%\GpuVM`**, que también queda solo para administradores.
 - El instalador y la interfaz de la app están en español.
 
 <Aside type="note" title="Por qué Program Files">
-La app corre como administrador, así que solo ejecuta scripts de Program Files, que solo un administrador puede modificar. Consulta [Arquitectura](/gpuvm/docs/es/architecture/#seguridad).
+El servicio GpuVM ejecuta el módulo con permisos de administrador, así que solo ejecuta scripts y PowerShell de Program Files, que solo un administrador puede modificar. Consulta [Arquitectura](/gpuvm/docs/es/architecture/#seguridad).
 </Aside>
 
 ## Activar Hyper-V
