@@ -9,6 +9,7 @@ Changes waiting for the next version sit under **Unreleased** at the top (this s
 ## [Unreleased]
 
 ### Added
+- Choose the monitor a machine opens on. **Preferences → Open machines on** sets it for all machines (**Primary**, the default, follows Windows' primary monitor) and each machine's **Options → Open on** can override it. Moonlight has no setting for this, so GpuVM keeps Moonlight's windows on that monitor while it opens; the choice is saved, and an unplugged monitor falls back to the primary one. With the frame rate on **Monitor**, the stream uses that monitor's refresh rate. The module adds `Get-GpuVMMonitor`, `Connect-GpuVM -Monitor` and `Set-GpuVMStreamingClient -Monitor`.
 - The **Apps** card knows which apps are already in the machine: they show a check mark instead of a checkbox and can't be chosen again. Clicking one, or right-clicking it, offers **Reinstalar** (Reinstall) and **Desinstalar** (Uninstall), which runs the app's own uninstaller after asking. The module adds `Get-GpuVMInstalledApp`, `Uninstall-GpuVMApp` and `Install-GpuVMApp -Reinstall`; templates and their copies keep the list.
 
 ## [0.6.0] - 2026-11-09

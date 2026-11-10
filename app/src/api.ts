@@ -1,4 +1,4 @@
-import type { AppInfo, InstalledApp, BaseInfo, CleanupLevel, HomeInfo, SharedDiskInfo, TemplateInfo, DiskInfo, DisplayMode, HostInfo, IsoFile, JobEvent, ProfileInfo, ProfileSettings, StreamSettings, VmOverview, AdminPrompt } from "./types";
+import type { AppInfo, InstalledApp, BaseInfo, CleanupLevel, HomeInfo, SharedDiskInfo, TemplateInfo, DiskInfo, DisplayMode, HostInfo, IsoFile, JobEvent, ProfileInfo, ProfileSettings, StreamSettings, VmOverview, AdminPrompt, HostMonitor } from "./types";
 import * as mock from "./mock";
 
 // Outside Tauri (browser) the UI runs on sample data so it can be designed.
@@ -34,6 +34,9 @@ export const api = {
       ...(stream.codec ? { Codec: stream.codec } : {}),
       ...(stream.bitrateKbps !== undefined ? { BitrateKbps: stream.bitrateKbps } : {}),
     }),
+  monitors: () => ps<HostMonitor>("Get-GpuVMMonitor"),
+  /** A monitor's id, "primary", or "default" to follow Preferences. */
+  setMonitor: (name: string, monitor: string) => ps("Set-GpuVMStreamingClient", { Name: name, Monitor: monitor }),
   remove: (name: string, deleteDisk: boolean) => ps("Remove-GpuVM", { Name: name, DeleteDisk: deleteDisk, Confirm: false }),
   apps: () => ps<AppInfo>("Get-GpuVMApp"),
   installedApps: (name: string) => ps<InstalledApp>("Get-GpuVMInstalledApp", { Name: name }),

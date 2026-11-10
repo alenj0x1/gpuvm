@@ -36,6 +36,7 @@
         'Save-GpuVMProfile'
         'Remove-GpuVMProfile'
         'Get-GpuVMApp'
+        'Get-GpuVMMonitor'
         'Install-GpuVMApp'
         'Get-GpuVMInstalledApp'
         'Uninstall-GpuVMApp'

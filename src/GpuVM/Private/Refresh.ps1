@@ -1,4 +1,4 @@
-# "fps = 0" means "the host monitor's refresh rate". When the VM's virtual display runs at the same rate as the monitor
+﻿# "fps = 0" means "the host monitor's refresh rate". When the VM's virtual display runs at the same rate as the monitor
 # that shows Moonlight, every streamed frame lands on one refresh: half the stutters and the same or lower input
 # latency with V-Sync on, so the picture never tears (lab 022). The rate is read when the VM is opened, so it follows
 # the monitor in use.
@@ -49,10 +49,11 @@ public static class GpuVMHostDisplay {
 }
 
 # The frame rate to stream with: the client's, or the host monitor's when it is 0 (between 30 and 240; 60 if unknown).
+# -Hz is the rate of the monitor the VM opens on; without it, the primary monitor's.
 function Resolve-GpuVMStreamFps {
-    param($Fps)
+    param($Fps, [double]$Hz)
     if ([int]$Fps -gt 0) { return [int]$Fps }
-    $hz = [math]::Round([GpuVMHostDisplay]::PrimaryRefresh())
+    $hz = if ($Hz -gt 0) { [math]::Round($Hz) } else { [math]::Round([GpuVMHostDisplay]::PrimaryRefresh()) }
     if ($hz -lt 30) { return 60 }
     [int][math]::Min(240, $hz)
 }

@@ -8,6 +8,7 @@ import { Home } from "./Home";
 // The app's own icon (the installer and the window use it), never a machine figure.
 import appIcon from "../src-tauri/icons/128x128.png";
 import type { HostInfo, JobEvent, Sample, VmOverview } from "./types";
+import { readPrefs } from "./prefs";
 import { api, onJob, relaunchAsAdmin, repairService, service, startJob as runJob } from "./api";
 import { Bauhaus } from "./bauhaus";
 import { MAX_SAMPLES } from "./Chart";
@@ -149,6 +150,10 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
   }, [push, refresh]);
 
   const startJob = useCallback((vm: string, cmd: string, args: Record<string, unknown>, after?: () => void) => {
+    // A VM without a monitor of its own opens on the one chosen in Preferences.
+    if (cmd === "Connect-GpuVM" && !args.Monitor && !vmsRef.current?.find((v) => v.name === vm)?.client?.monitor) {
+      args = { ...args, Monitor: readPrefs().monitor };
+    }
     const jobId = `${cmd}-${Date.now()}`;
     const first = cmd === "Connect-GpuVM" ? "Preparando" : cmd === "New-GpuVM" ? "Revisando el equipo" : "Trabajando";
     const job = { vm, cmd, message: first, log: [first], after, name: String(args.Name ?? "") };

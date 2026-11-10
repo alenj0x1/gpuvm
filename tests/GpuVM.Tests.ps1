@@ -114,6 +114,21 @@ InModuleScope GpuVM {
             ($a -join ' ') | Should Match "--fps $hz( |$)"
         }
 
+        It 'streams at the rate of the monitor it opens on, and lists the monitors' {
+            Resolve-GpuVMStreamFps 0 -Hz 165 | Should Be 165
+            Resolve-GpuVMStreamFps 0 -Hz 500 | Should Be 240
+            Resolve-GpuVMStreamFps 0 -Hz 24 | Should Be 60
+            Resolve-GpuVMStreamFps 90 -Hz 165 | Should Be 90
+            # Without a desktop session (CI) there may be no monitors to read.
+            $monitors = @(Get-HostMonitor)
+            if ($monitors) {
+                @($monitors | Where-Object { $_['primary'] }).Count | Should Be 1
+                $monitors | ForEach-Object { $_['id'] | Should Not BeNullOrEmpty; $_['width'] -gt 0 | Should Be $true }
+                (Resolve-HostMonitor -Monitor 'not-connected')['primary'] | Should Be $true
+                (Resolve-HostMonitor -Monitor $monitors[-1]['id'])['id'] | Should Be $monitors[-1]['id']
+            }
+        }
+
         It 'data lives outside the code when installed; in the repo, in the repo' {
             $script:DataRoot | Should Be $script:RepoRoot
         }

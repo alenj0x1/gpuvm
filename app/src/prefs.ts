@@ -14,10 +14,12 @@ export interface Prefs {
   close: ClosePref;
   vmsOnQuit: VmsOnQuitPref;
   service: ServicePref;
+  /** The monitor VMs open on unless a VM has its own: a monitor's id or "primary". */
+  monitor: string;
 }
 
 const KEY = "gpuvm.prefs";
-const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "keep", service: "app" };
+const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "keep", service: "app", monitor: "primary" };
 const EVENT = "gpuvm-prefs";
 const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
 

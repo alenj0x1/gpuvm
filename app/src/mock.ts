@@ -117,6 +117,11 @@ export async function ps(cmd: string, args: Record<string, unknown>): Promise<un
       return Object.entries(catalog.apps).map(([id, a]: [string, { name: string; signer?: string; category: string; uninstall?: { match: string; interactive?: boolean } }]) => (
         { id, name: a.name, signer: a.signer ?? null, category: a.category, categoryName: (catalog.categories as Record<string, string>)[a.category],
           interactiveUninstall: !!a.uninstall?.interactive }));
+    case "Get-GpuVMMonitor":
+      return [
+        { id: "mock-qms20", name: "QMS20", primary: false, x: -1920, y: 0, width: 1920, height: 1080, hz: 60 },
+        { id: "mock-kg241y", name: "KG241Y S", primary: true, x: 0, y: 0, width: 1920, height: 1080, hz: 180 },
+      ];
     case "Get-GpuVMInstalledApp":
       await wait(700);
       return (installed[String(args.Name)] ?? []).map((id) => ({ id, name: APP_NAMES[id] ?? id }));
@@ -156,6 +161,11 @@ export async function ps(cmd: string, args: Record<string, unknown>): Promise<un
       return [];
     case "Set-GpuVMStreamingClient": {
       const vm = vms.find((v) => v.name === args.Name)!;
+      if (args.Monitor !== undefined && args.Resolution === undefined) {
+        const { monitor: _, ...rest } = vm.client!;
+        vm.client = args.Monitor === "default" ? rest : { ...rest, monitor: String(args.Monitor) };
+        return [];
+      }
       vm.client = {
         ...vm.client!, resolution: String(args.Resolution), fps: Number(args.Fps), displayMode: (args.DisplayMode as DisplayMode) ?? vm.client!.displayMode,
         ...(args.VSync !== undefined ? { vsync: Boolean(args.VSync) } : {}),

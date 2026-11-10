@@ -1,4 +1,4 @@
-function Set-GpuVMStreamingClient {
+﻿function Set-GpuVMStreamingClient {
     <#
     .SYNOPSIS
     Changes the resolution, FPS, V-Sync, frame pacing, mouse or other values Moonlight uses to open the VM. Does not require shutting it down.
@@ -17,7 +17,9 @@ function Set-GpuVMStreamingClient {
         [Nullable[bool]]$VSync,
         [Nullable[bool]]$FramePacing,
         # capture: the VM takes the mouse (games); absolute: the pointer moves freely, as in remote desktop.
-        [ValidateSet('capture', 'absolute')][string]$Mouse
+        [ValidateSet('capture', 'absolute')][string]$Mouse,
+        # The monitor to open on: a monitor's id (Get-GpuVMMonitor), "primary", or "default" to follow the app's choice.
+        [ValidateLength(1, 300)][string]$Monitor
     )
     $state = Get-GpuVMState -Name $Name
     if (-not $state['config']['streaming']) { throw "La VM '$Name' no tiene streaming." }
@@ -30,6 +32,8 @@ function Set-GpuVMStreamingClient {
     if ($null -ne $VSync) { $client['vsync'] = $VSync }
     if ($null -ne $FramePacing) { $client['framePacing'] = $FramePacing }
     if ($Mouse) { $client['mouse'] = $Mouse }
+    if ($Monitor -eq 'default') { $client.Remove('monitor') }
+    elseif ($Monitor) { $client['monitor'] = $Monitor }
     # Moonlight only paces frames with V-Sync on.
     if ($client.Contains('vsync') -and $client['vsync'] -eq $false) { $client['framePacing'] = $false }
     Save-GpuVMState $state

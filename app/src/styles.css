@@ -413,3 +413,19 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .prompt-publisher.unknown { color: var(--warn, var(--muted)); }
 .prompt-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: auto; }
 .dialog-logo { width: 40px; height: 40px; border-radius: 10px; background: var(--surface-2); }
+.pref-stack { flex-direction: column; align-items: flex-end; gap: 6px; }
+.pref-stack .segment-row { justify-content: flex-end; }
+.pref-stack > .hint { color: var(--faint); font-size: 13px; }
+/* Narrow window: each preference stacks its text above its choices, which take the whole width; on a phone the
+   choices become a list, one per line, so none is cut. */
+@media (max-width: 720px) {
+  .pref-row { flex-direction: column; align-items: stretch; gap: 12px; }
+  .pref-side { flex: auto; justify-content: space-between; }
+  .pref-stack { align-items: stretch; }
+  .pref-row .segmented { display: flex; width: 100%; }
+  .pref-row .segmented button { flex: 1 1 0; justify-content: center; min-width: 0; }
+}
+@media (max-width: 480px) {
+  .pref-row .segmented { flex-direction: column; }
+  .pref-row .segmented button { flex: none; justify-content: flex-start; }
+}

@@ -16,6 +16,8 @@
         [ValidateSet('auto', 'H.264', 'HEVC', 'AV1')][string]$Codec,
         [ValidatePattern('^[\w .-]{1,60}$')][string]$App,
         [switch]$Pair,
+        # The monitor to open on: a monitor's id (Get-GpuVMMonitor) or "primary". Without it, the one saved for the VM.
+        [ValidateLength(0, 300)][string]$Monitor,
         # Opens with this much memory when it doesn't fit as configured (saved, like changing it in Options).
         [ValidateRange(4, 256)][int]$MemoryGB
     )
@@ -86,6 +88,10 @@
         if ($Codec) { $override['codec'] = $Codec }
         if ($App) { $override['app'] = $App }
         $client = Merge-Hashtable -Base $state['config']['streaming']['client'] -Override $override
+        # Moonlight goes on this monitor, and "the monitor's rate" (fps 0) is this one's.
+        $chosenMonitor = if ($Monitor) { $Monitor } elseif ($client.Contains('monitor')) { [string]$client['monitor'] } else { '' }
+        $target = try { Resolve-HostMonitor -Monitor $chosenMonitor } catch { $null }
+        if ([int]$client['fps'] -le 0) { $client['fps'] = Resolve-GpuVMStreamFps 0 -Hz $(if ($target) { $target['hz'] } else { 0 }) }
         $restartSunshine = $false
         if ($guest) {
             # The display is set in the user's session, so it has to be on the screen Sunshine captures first.
@@ -218,6 +224,10 @@
     $launched = Get-Date
     # Moonlight runs as the signed-in user, not as administrator: it talks to a server the guest controls.
     Start-UnelevatedProcess -FilePath $moonlight -ArgumentList (Get-MoonlightStreamArguments -Address $address -Client $client) | Out-Null
+    if ($target) {
+        try { Move-MoonlightToMonitor -Since $launched -Monitor $target }
+        catch { Write-Warning "No se pudo mover Moonlight a $($target['name']): $($_.Exception.Message)" }
+    }
     # For the home screen's "continue where you left off", and what is already done in this boot.
     $state = Get-GpuVMState -Name $Name
     $state['lastOpenedAt'] = (Get-Date).ToString('o')

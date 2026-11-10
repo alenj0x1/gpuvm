@@ -3,6 +3,7 @@ import { IconAppWindow, IconBrandWindows, IconDeviceDesktop, IconHandStop, IconL
 import { service, type ServiceStatus } from "./api";
 import { savePrefs, usePrefs, type ClosePref, type ServicePref, type ThemePref, type VmsOnQuitPref } from "./prefs";
 import { Segmented, humanError } from "./ui";
+import { MonitorPicker, useMonitors } from "./pickers";
 
 const SERVICE_TEXT: Record<ServicePref, string> = {
   app: "Se enciende al abrir GpuVM y se apaga al salir, cuando termina lo que estaba haciendo.",
@@ -93,6 +94,7 @@ function ServicePrefs() {
 
 export function Preferences() {
   const prefs = usePrefs();
+  const monitors = useMonitors();
   return (
     <div className="main">
       <div className="card">
@@ -120,6 +122,14 @@ export function Preferences() {
               { value: "stop", label: <><IconPlayerStop size={15} />Apagarlas</> },
             ]} />
           </div>
+          {monitors.length > 1 && (
+            <div className="pref-row">
+              <div className="pref-text"><strong>Abrir las máquinas en</strong><span>Cada máquina puede tener el suyo en sus opciones.</span></div>
+              <div className="pref-side pref-stack">
+                <MonitorPicker monitors={monitors} value={prefs.monitor} onChange={(monitor) => savePrefs({ monitor })} />
+              </div>
+            </div>
+          )}
           <ServicePrefs />
         </div>
       </div>

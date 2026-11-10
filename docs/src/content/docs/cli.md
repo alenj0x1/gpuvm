@@ -80,9 +80,10 @@ Checks Windows edition, administrator rights, virtualization, Hyper-V, partition
 | `-Codec` | `auto`, `H.264`, `HEVC` or `AV1`. |
 | `-App` | Sunshine app to open (default `Desktop`). |
 | `-Pair` | Pair again even if already paired. |
+| `-Monitor` | The monitor to open on: an `id` from `Get-GpuVMMonitor`, or `primary`. Without it, the one saved for the VM, or the primary one. |
 | `-MemoryGB` | 4–256. Opens with this much memory when the VM doesn't fit as configured (saved, like changing it in Options). |
 
-Values given here apply to this connection only; the defaults come from the VM's `streaming.client` (set with `Set-GpuVMStreamingClient`), where an FPS of `0` means the host monitor's refresh rate. `connect` returns when Moonlight shows the first frame; if the VM is already open in Moonlight (and `-Pair` isn't given), it brings that window to the front instead. A VM that is off, saved or paused while it waits for the VM's address fails at once.
+Values given here apply to this connection only; the defaults come from the VM's `streaming.client` (set with `Set-GpuVMStreamingClient`), where an FPS of `0` means the refresh rate of the monitor it opens on. `connect` returns when Moonlight shows the first frame; if the VM is already open in Moonlight (and `-Pair` isn't given), it brings that window to the front instead. A VM that is off, saved or paused while it waits for the VM's address fails at once.
 
 ### client-install
 
@@ -166,6 +167,7 @@ Besides the cmdlets above, the module exports these, used mainly by the app:
 | `Send-GpuVMClipboard` | Puts text into the VM's clipboard (only from the PC to the VM). |
 | `Set-GpuVMNetworkIsolation` | Turns the VM's network isolation on (the default) or off. |
 | `Get-GpuVMCleanup` / `Set-GpuVMCleanup` | The Windows cleanup levels / applies one to a VM. |
+| `Get-GpuVMMonitor` | This PC's monitors, left to right (`id`, name, size, refresh rate, which one is primary), to choose where a VM opens. |
 | `Get-GpuVMApp` / `Install-GpuVMApp` | The app catalog / installs apps in a VM (starts it if needed). Apps already installed are left as they are; `-Reinstall` uninstalls them first and installs them again. |
 | `Get-GpuVMInstalledApp` | `-Name`. The catalog apps installed in a VM: checked inside Windows while it runs, the last ones seen while it is off. |
 | `Uninstall-GpuVMApp` | `-Name`, `-App`. Uninstalls apps with each one's own uninstaller, silently (starts the VM if needed). Battle.net's has no silent mode: it opens on the VM's desktop to finish there. |
@@ -191,6 +193,7 @@ Through the app, `Remove-GpuVM`, `Remove-GpuVMDisk`, `Remove-GpuVMBase`, `Remove
 | `-VSync` | `$true` or `$false`. Unset leaves it as is. |
 | `-FramePacing` | `$true` or `$false`. Turned off whenever V-Sync is off. |
 | `-Mouse` | `capture` (the VM takes the mouse, for games) or `absolute` (the pointer moves freely, as in remote desktop). |
+| `-Monitor` | The monitor Moonlight opens on: an `id` from `Get-GpuVMMonitor`, `primary`, or `default` to follow the app's choice in Preferences. |
 
 ```powershell
 Set-GpuVMStreamingClient -Name win11 -Fps 0 -VSync $true -FramePacing $false -Mouse capture   # the "Games" use

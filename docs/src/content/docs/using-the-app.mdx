@@ -150,7 +150,8 @@ For VMs created with GpuVM:
   | **Movies and video** | 60 FPS | On | On | Free |
   | **Work** | Monitor | On | Off | Free |
 
-- **Moonlight:** resolution (720p, 1080p, 1440p, 2160p), frame rate (30, 60, 120, 144 FPS or **Monitor**) and **Fullscreen** or **Window** (the size of the chosen resolution). **Monitor** streams at the refresh rate of the monitor you open the VM on, read every time it opens; GpuVM adds that rate to the VM's virtual display when it lacks it. At the monitor's own rate V-Sync adds no latency and stutters halve. New machines use it.
+- **Moonlight:** resolution (720p, 1080p, 1440p, 2160p), frame rate (30, 60, 120, 144 FPS or **Monitor**) and **Fullscreen** or **Window** (the size of the chosen resolution). **Monitor** streams at the refresh rate of the monitor the VM opens on, read every time it opens; GpuVM adds that rate to the VM's virtual display when it lacks it. At the monitor's own rate V-Sync adds no latency and stutters halve. New machines use it.
+- **Open on** (with more than one monitor): **Default** follows the choice in [Preferences](#preferences); **Primary** is Windows' primary monitor, whichever it is at the time; or a monitor by its name. A chosen monitor that isn't connected falls back to the primary one.
 - **V-Sync:** **Whole picture** (on) shows every frame complete on the monitor; **Faster** (off) shows each frame as soon as it arrives, even if the monitor is halfway through drawing the previous one (tearing).
 - **Frame pacing:** **Even** spreads the frames at a steady rhythm, best at 60 FPS; **Instant** shows each frame as soon as it's ready. Only with V-Sync on.
 - **Capture:** how Sunshine captures the screen.
@@ -229,6 +230,7 @@ The copy only goes from this PC to the disk. Before writing, GpuVM checks that t
 - **When quitting GpuVM**:
   - **Keep them running** (the default): the machines keep running after GpuVM quits.
   - **Shut them down**: quitting GpuVM shuts down every running GpuVM machine cleanly, like the Start menu inside Windows, and frees its memory. GpuVM closes at once; the shutdown continues in the background.
+- **Open machines on** (with more than one monitor): **Primary** (the default) follows Windows' primary monitor; or a monitor by its name. Each machine can have its own in its options. Moonlight has no setting for this, so GpuVM moves Moonlight's window to that monitor as it opens, and the picture shows there, fullscreen or windowed.
 - **GpuVM service**, the Windows service that does the Hyper-V work for the app:
   - **With GpuVM** (the default): it starts when GpuVM opens and stops when it quits, once what it was doing is finished (shutting the machines down, a machine being created).
   - **With Windows**: it starts with Windows.

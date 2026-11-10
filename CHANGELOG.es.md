@@ -9,6 +9,7 @@ Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (es
 ## [Sin publicar]
 
 ### Añadido
+- Elige el monitor donde se abre una máquina. **Preferencias → Abrir las máquinas en** lo fija para todas (**Principal**, el predeterminado, sigue al monitor principal de Windows) y **Opciones → Abrir en** de cada máquina puede cambiarlo. Moonlight no tiene un ajuste para esto, así que GpuVM mantiene sus ventanas en ese monitor mientras se abre; la elección se guarda y, si el monitor no está conectado, se abre en el principal. Con los FPS en **Monitor**, el stream usa la frecuencia de ese monitor. El módulo suma `Get-GpuVMMonitor`, `Connect-GpuVM -Monitor` y `Set-GpuVMStreamingClient -Monitor`.
 - La tarjeta **Apps** sabe qué apps ya están en la máquina: muestran una marca en lugar de la casilla y no se pueden elegir otra vez. Con un clic, o clic derecho, ofrecen **Reinstalar** y **Desinstalar**, que usa el desinstalador de la propia app tras pedir confirmación. El módulo suma `Get-GpuVMInstalledApp`, `Uninstall-GpuVMApp` e `Install-GpuVMApp -Reinstall`; las plantillas y sus copias conservan la lista.
 
 ## [0.6.0] - 2026-11-09

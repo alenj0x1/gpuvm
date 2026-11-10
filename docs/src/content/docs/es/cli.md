@@ -80,6 +80,7 @@ Revisa la edición de Windows, los permisos de administrador, la virtualización
 | `-Codec` | `auto`, `H.264`, `HEVC` o `AV1`. |
 | `-App` | App de Sunshine que se abre (por defecto `Desktop`). |
 | `-Pair` | Vuelve a emparejar aunque ya esté emparejado. |
+| `-Monitor` | El monitor donde se abre: un `id` de `Get-GpuVMMonitor` o `primary`. Sin él, el guardado para la VM o el principal. |
 | `-MemoryGB` | De 4 a 256. Abre con esa memoria cuando la VM no cabe como está configurada (se guarda, como al cambiarla en Opciones). |
 
 Los valores que pases aquí valen solo para esta conexión; los predeterminados vienen de `streaming.client` de la VM (se cambian con `Set-GpuVMStreamingClient`), donde unos FPS de `0` significan la frecuencia del monitor del equipo. `connect` termina cuando Moonlight muestra el primer cuadro; si la VM ya está abierta en Moonlight (y no se pasa `-Pair`), trae esa ventana al frente. Si la VM está apagada, guardada o en pausa mientras espera su dirección, falla al instante.
@@ -166,6 +167,7 @@ Además de los cmdlets anteriores, el módulo exporta estos, que usa sobre todo 
 | `Send-GpuVMClipboard` | Pone texto en el portapapeles de la VM (solo del PC a la VM). |
 | `Set-GpuVMNetworkIsolation` | Activa (la predeterminada) o desactiva el aislamiento de red de la VM. |
 | `Get-GpuVMCleanup` / `Set-GpuVMCleanup` | Los niveles de limpieza de Windows / aplica uno a una VM. |
+| `Get-GpuVMMonitor` | Los monitores de este equipo, de izquierda a derecha (`id`, nombre, tamaño, frecuencia y cuál es el principal), para elegir dónde se abre una VM. |
 | `Get-GpuVMApp` / `Install-GpuVMApp` | El catálogo de apps / instala apps en una VM (la enciende si hace falta). Las que ya están instaladas quedan como están; `-Reinstall` primero las desinstala y luego las instala de nuevo. |
 | `Get-GpuVMInstalledApp` | `-Name`. Las apps del catálogo instaladas en una VM: se revisan dentro de Windows mientras está encendida; apagada, las últimas que se vieron. |
 | `Uninstall-GpuVMApp` | `-Name`, `-App`. Desinstala apps con el desinstalador de cada una, en silencio (enciende la VM si hace falta). El de Battle.net no tiene modo silencioso: se abre en el escritorio de la VM para terminarlo ahí. |
@@ -191,6 +193,7 @@ Desde la app, `Remove-GpuVM`, `Remove-GpuVMDisk`, `Remove-GpuVMBase`, `Remove-Gp
 | `-VSync` | `$true` o `$false`. Sin indicarlo, queda como está. |
 | `-FramePacing` | `$true` o `$false`. Se apaga siempre que la sincronización vertical está apagada. |
 | `-Mouse` | `capture` (la VM toma el mouse, para juegos) o `absolute` (el puntero se mueve libre, como en escritorio remoto). |
+| `-Monitor` | El monitor donde se abre Moonlight: un `id` de `Get-GpuVMMonitor`, `primary`, o `default` para seguir lo elegido en Preferencias de la app. |
 
 ```powershell
 Set-GpuVMStreamingClient -Name win11 -Fps 0 -VSync $true -FramePacing $false -Mouse capture   # el uso «Juegos»

@@ -9,7 +9,8 @@ import {
   IconWorld, IconNetwork, IconRectangle, IconWaveSine, IconPlayerTrackNext, IconChevronRight, IconDeviceGamepad2, IconPointer,
 } from "@tabler/icons-react";
 import type { AppInfo, CleanupLevelId, SharedDiskInfo, DisplayMode, HostInfo, MouseMode, Sample, StreamSettings, VmOverview } from "./types";
-import { AppLogo, AppPicker, CleanupPicker, CODECS, FPS_OPTIONS, RESOLUTIONS, USES, streamUseOf, useCleanupLevels } from "./pickers";
+import { usePrefs } from "./prefs";
+import { AppLogo, AppPicker, CleanupPicker, MonitorPicker, useMonitors, CODECS, FPS_OPTIONS, RESOLUTIONS, USES, streamUseOf, useCleanupLevels } from "./pickers";
 import { Bauhaus, patternClick, patternVariant, setPatternVariant } from "./bauhaus";
 import { MAX_SAMPLES, UsageChart } from "./Chart";
 import { CheckMark, Segmented, Slider, formatUptime, stateLabel } from "./ui";
@@ -515,6 +516,8 @@ function Options({ vm, host, busy, startJob, run }: Pick<Props, "vm" | "host" | 
     bitrateKbps: vm.client?.bitrateKbps ?? 0,
     captureMode: vm.options!.captureMode ?? "wgc",
     networkIsolation: vm.options!.networkIsolation ?? true,
+    // "default": the monitor chosen in Preferences.
+    monitor: vm.client?.monitor ?? "default",
   };
   const [draft, setDraft] = useState(initial);
   const [saved, setSaved] = useState(false);
@@ -535,12 +538,16 @@ function Options({ vm, host, busy, startJob, run }: Pick<Props, "vm" | "host" | 
   const [advanced, setAdvanced] = useState(false);
   const captureDirty = draft.captureMode !== initial.captureMode;
   const networkDirty = draft.networkIsolation !== initial.networkIsolation;
+  const monitorDirty = draft.monitor !== initial.monitor;
+  const monitors = useMonitors();
+  const prefs = usePrefs();
   const off = vm.state === "Off";
 
   const save = async () => {
     if (clientDirty && !(await run(vm.name, "Guardando", () => api.setClient(vm.name, draft.resolution, draft.fps, draft.displayMode !== initial.displayMode ? draft.displayMode : undefined, streamChanges)))) return;
     if (captureDirty && !(await run(vm.name, "Cambiando la captura", () => api.setCapture(vm.name, draft.captureMode)))) return;
     if (networkDirty && !(await run(vm.name, "Cambiando la red", () => api.setNetworkIsolation(vm.name, draft.networkIsolation)))) return;
+    if (monitorDirty && !(await run(vm.name, "Guardando", () => api.setMonitor(vm.name, draft.monitor)))) return;
     if (!vmDirty) { setSaved(true); return; }
     const override = {
       vm: { cpu: { count: draft.cpu }, memoryGB: draft.memoryGB, disk: { sizeGB: draft.diskGB } },
@@ -594,6 +601,12 @@ function Options({ vm, host, busy, startJob, run }: Pick<Props, "vm" | "host" | 
                 { value: "windowed", label: <><IconAppWindow size={15} />Ventana</> },
               ]} />
             </div>
+          </div>
+        )}
+        {vm.streaming && monitors.length > 1 && (
+          <div className="field wide">
+            <div className="field-top"><span>Abrir en</span></div>
+            <MonitorPicker monitors={monitors} value={draft.monitor} inherited={prefs.monitor} onChange={(monitor) => setDraft({ ...draft, monitor })} />
           </div>
         )}
         {vm.streaming && (
@@ -689,9 +702,9 @@ function Options({ vm, host, busy, startJob, run }: Pick<Props, "vm" | "host" | 
           </>
         )}
       </div>
-      {(vmDirty || clientDirty || captureDirty || networkDirty || saved) && (
+      {(vmDirty || clientDirty || captureDirty || networkDirty || monitorDirty || saved) && (
         <div className="options-foot">
-          {saved && !vmDirty && !clientDirty && !captureDirty && !networkDirty ? (
+          {saved && !vmDirty && !clientDirty && !captureDirty && !networkDirty && !monitorDirty ? (
             <span className="saved"><IconCheck size={16} />Guardado</span>
           ) : (
             <>

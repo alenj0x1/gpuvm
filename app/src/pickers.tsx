@@ -1,10 +1,10 @@
 import {
-  IconAlertTriangle, IconApps, IconBriefcase, IconCheck, IconDeviceGamepad2, IconDisc, IconDots, IconFolderOpen, IconMovie, IconRefresh, IconSearch, IconTrash, IconX,
+  IconAdjustments, IconAlertTriangle, IconApps, IconDeviceDesktop, IconDeviceDesktopOff, IconDeviceDesktopStar, IconBriefcase, IconCheck, IconDeviceGamepad2, IconDisc, IconDots, IconFolderOpen, IconMovie, IconRefresh, IconSearch, IconTrash, IconX,
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api } from "./api";
-import type { AppInfo, CleanupLevel, CleanupLevelId, IsoFile, MouseMode, ProfileSettings } from "./types";
+import type { AppInfo, CleanupLevel, CleanupLevelId, HostMonitor, IsoFile, MouseMode, ProfileSettings } from "./types";
 import { CheckMark, Segmented, useScrollFade } from "./ui";
 
 export const RESOLUTIONS = ["1280x720", "1920x1080", "2560x1440", "3840x2160"];
@@ -253,4 +253,44 @@ export function isoDetail(f: IsoFile) {
   if (f.usedBy?.length) parts.push(`Usada en ${f.usedBy.join(", ")}`);
   else if (!f.remembered) parts.push(f.path.includes("\\Desktop\\") ? "En el escritorio" : "En descargas");
   return parts.join(" · ");
+}
+
+// Monitors only change when one is plugged in or out: read once per screen that shows them.
+export function useMonitors() {
+  const [monitors, setMonitors] = useState<HostMonitor[]>([]);
+  useEffect(() => { api.monitors().then(setMonitors).catch(() => {}); }, []);
+  return monitors;
+}
+
+const monitorText = (m: HostMonitor) => `${m.name} · ${m.width}×${m.height} · ${m.hz} Hz`;
+
+/** Where Moonlight opens: the primary monitor (follows Windows), a given one, or (per VM) what Preferences say. */
+export function MonitorPicker({ monitors, value, onChange, inherited }: {
+  monitors: HostMonitor[]; value: string; onChange: (v: string) => void;
+  /** Per VM: the monitor Preferences choose, offered as "Predeterminado". */
+  inherited?: string;
+}) {
+  const primary = monitors.find((m) => m.primary) ?? monitors[0];
+  const describe = (id: string): string => {
+    if (id === "primary") return primary ? `El principal de Windows, ahora ${primary.name}.` : "El principal de Windows.";
+    const m = monitors.find((x) => x.id === id);
+    return m ? `${monitorText(m)}.` : "No está conectado, se abre en el principal.";
+  };
+  const known = value === "default" || value === "primary" || monitors.some((m) => m.id === value);
+  const options = [
+    ...(inherited !== undefined ? [{ value: "default", label: <><IconAdjustments size={15} />Predeterminado</> }] : []),
+    { value: "primary", label: <><IconDeviceDesktopStar size={15} />Principal</> },
+    ...monitors.map((m) => ({ value: m.id, label: <><IconDeviceDesktop size={15} />{m.name}</> })),
+    // A saved monitor that is unplugged stays chosen until another is picked.
+    ...(known ? [] : [{ value, label: <><IconDeviceDesktopOff size={15} />Desconectado</> }]),
+  ];
+  const hint = value === "default" && inherited !== undefined ? `Como en Preferencias. ${describe(inherited)}` : describe(value);
+  return (
+    <>
+      <div className="segment-row">
+        <Segmented value={value} onChange={onChange} options={options} />
+      </div>
+      <span className="hint">{hint}</span>
+    </>
+  );
 }

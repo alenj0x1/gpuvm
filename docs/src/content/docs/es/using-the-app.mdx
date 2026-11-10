@@ -148,7 +148,8 @@ Para las VMs creadas con GpuVM:
   | **Películas y video** | 60 FPS | Imagen entera | Parejo | Libre |
   | **Trabajo** | Monitor | Imagen entera | Al instante | Libre |
 
-- **Moonlight:** resolución (720p, 1080p, 1440p, 2160p), FPS (30, 60, 120, 144 o **Monitor**) y **Pantalla completa** o **Ventana** (del tamaño de la resolución elegida). **Monitor** transmite a la frecuencia del monitor donde abres la VM, que se lee en cada apertura; GpuVM agrega esa frecuencia a la pantalla virtual de la VM si no la tiene. A la frecuencia del monitor, la sincronización vertical no agrega latencia y los tirones bajan a la mitad. Las máquinas nuevas la usan.
+- **Moonlight:** resolución (720p, 1080p, 1440p, 2160p), FPS (30, 60, 120, 144 o **Monitor**) y **Pantalla completa** o **Ventana** (del tamaño de la resolución elegida). **Monitor** transmite a la frecuencia del monitor donde se abre la VM, que se lee en cada apertura; GpuVM agrega esa frecuencia a la pantalla virtual de la VM si no la tiene. A la frecuencia del monitor, la sincronización vertical no agrega latencia y los tirones bajan a la mitad. Las máquinas nuevas la usan.
+- **Abrir en** (con más de un monitor): **Predeterminado** sigue lo elegido en [Preferencias](#preferencias); **Principal** es el monitor principal de Windows, el que sea en ese momento; o un monitor por su nombre. Si el monitor elegido no está conectado, se abre en el principal.
 - **Sincronización vertical:** **Imagen entera** muestra cada cuadro completo en el monitor; **Más rápida** muestra cada cuadro apenas llega, aunque el monitor esté a mitad de dibujar el anterior (se puede ver un corte).
 - **Ritmo de cuadros:** **Parejo** reparte los cuadros a ritmo constante, ideal a 60 FPS; **Al instante** muestra cada cuadro apenas está listo. Solo con **Imagen entera**.
 - **Captura:** cómo captura Sunshine la pantalla.
@@ -227,6 +228,7 @@ La copia solo va de este equipo al disco. Antes de escribir, GpuVM revisa que el
 - **Al salir de GpuVM:**
   - **Dejarlas encendidas** (el predeterminado): las máquinas siguen encendidas después de cerrar GpuVM.
   - **Apagarlas:** al salir de GpuVM se apagan de forma ordenada todas las máquinas de GpuVM encendidas, como desde el menú Inicio de Windows, y se libera su memoria. GpuVM se cierra al instante; el apagado sigue en segundo plano.
+- **Abrir las máquinas en** (con más de un monitor): **Principal** (el predeterminado) sigue al monitor principal de Windows; o un monitor por su nombre. Cada máquina puede tener el suyo en sus opciones. Moonlight no tiene un ajuste para esto, así que GpuVM mueve la ventana de Moonlight a ese monitor mientras se abre, y la imagen aparece ahí, en pantalla completa o en ventana.
 - **Servicio de GpuVM**, el servicio de Windows que hace el trabajo de Hyper-V para la app:
   - **Con GpuVM** (el predeterminado): se enciende al abrir GpuVM y se apaga al salir, cuando termina lo que estaba haciendo (apagar las máquinas, una máquina que se está creando).
   - **Con Windows:** se enciende con Windows.

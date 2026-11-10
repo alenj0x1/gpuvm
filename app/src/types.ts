@@ -11,6 +11,20 @@ export interface ClientSettings {
   vsync?: boolean;
   framePacing?: boolean;
   mouse?: MouseMode;
+  /** The monitor Moonlight opens on: a monitor's id or "primary". Unset = the app's choice in Preferences. */
+  monitor?: string;
+}
+
+/** A monitor of this PC (Get-GpuVMMonitor), in physical pixels. */
+export interface HostMonitor {
+  id: string;
+  name: string;
+  primary: boolean;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  hz: number;
 }
 
 /** capture: relative mouse for games; absolute: the pointer moves freely, as in remote desktop. */
