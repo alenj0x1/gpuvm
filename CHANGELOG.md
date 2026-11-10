@@ -6,7 +6,7 @@ All notable changes to GpuVM are documented here. The format follows [Keep a Cha
 
 Changes waiting for the next version sit under **Unreleased** at the top (this section only exists while there are some, and the docs site doesn't show it); `scripts/release.py` turns it into the new version.
 
-## [Unreleased]
+## [0.7.0] - 2026-11-09
 
 ### Added
 - Choose the monitor a machine opens on. **Preferences → Open machines on** sets it for all machines (**Primary**, the default, follows Windows' primary monitor) and each machine's **Options → Open on** can override it. Moonlight has no setting for this, so GpuVM keeps Moonlight's windows on that monitor while it opens; the choice is saved, and an unplugged monitor falls back to the primary one. With the frame rate on **Monitor**, the stream uses that monitor's refresh rate. The module adds `Get-GpuVMMonitor`, `Connect-GpuVM -Monitor` and `Set-GpuVMStreamingClient -Monitor`.
@@ -172,6 +172,7 @@ First version.
 - Third-party installers are pinned by SHA-256 and verified again right before copying them into the VM.
 - Streaming and guest credentials are encrypted with DPAPI.
 
+[0.7.0]: https://github.com/alenj0x1/gpuvm/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/alenj0x1/gpuvm/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/alenj0x1/gpuvm/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/alenj0x1/gpuvm/compare/v0.4.0...v0.4.1
