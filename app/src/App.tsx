@@ -155,7 +155,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       args = { ...args, Monitor: readPrefs().monitor };
     }
     const jobId = `${cmd}-${Date.now()}`;
-    const first = cmd === "Connect-GpuVM" ? "Preparando" : cmd === "New-GpuVM" ? "Revisando el equipo" : "Trabajando";
+    const first = cmd === "Connect-GpuVM" ? "Preparando" : cmd === "New-GpuVM" ? "Revisando el equipo" : cmd === "Invoke-GpuVMPower" ? "Apagando" : "Trabajando";
     const job = { vm, cmd, message: first, log: [first], after, name: String(args.Name ?? "") };
     // Also registered in the ref so events arriving before the next render are not lost.
     jobsRef.current = { ...jobsRef.current, [jobId]: job };

@@ -129,6 +129,44 @@ InModuleScope GpuVM {
             }
         }
 
+        It 'waits for Windows to sign in, saying when it installs updates or restarts' {
+            $script:answers = [System.Collections.Generic.Queue[object]]::new([object[]]@('updating', 'restart', 'signing-in', 'ready'))
+            $script:steps = @()
+            Mock Invoke-Guest { $a = $script:answers.Dequeue(); if ($a -eq 'restart') { throw 'la VM se reinició' }; $a }
+            Mock Write-Step { $script:steps += $Message }
+            Mock Start-Sleep { }
+            Mock Wait-GuestReady { $script:steps += "ready:$BootMessage" }
+            Mock Open-GuestSession { }
+            Mock Close-GuestSession { }
+            Wait-GuestSignIn -Name vm -Credential ([pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force))) | Should Be $true
+            ($script:steps -join '|') | Should Be 'Terminando actualizaciones|Windows se está reiniciando|ready:Windows se está reiniciando|Iniciando sesión en Windows'
+        }
+
+        It 'remembers pending updates when GpuVM shuts a VM down, and never fails the shutdown' {
+            $script:saved = $null
+            Mock Get-GpuVMState { @{ name = 'vm'; guest = @{ user = 'u' } } }
+            Mock Get-GpuVMGuestCredential { [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force)) }
+            Mock Get-VM { [pscustomobject]@{ State = 'Running' } }
+            Mock Save-GpuVMState { $script:saved = $State }
+            Mock Test-GuestUpdatePending { $true }
+            Register-GuestUpdateBeforeShutdown -Name vm | Should Be $true
+            $script:saved['updatesPending'] | Should Be $true
+            Mock Test-GuestUpdatePending { $false }
+            Register-GuestUpdateBeforeShutdown -Name vm | Should Be $false
+            Mock Test-GuestUpdatePending { throw 'sin conexión' }
+            Register-GuestUpdateBeforeShutdown -Name vm | Should Be $false
+        }
+
+        It 'gives up waiting for the sign-in with a warning instead of hanging' {
+            Mock Invoke-Guest { 'signing-in' }
+            Mock Write-Step { }
+            Mock Start-Sleep { }
+            Mock Write-Warning { $script:warned = $true }
+            $script:warned = $false
+            Wait-GuestSignIn -Name vm -Credential ([pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force))) -TimeoutSec 0 | Should Be $false
+            $script:warned | Should Be $true
+        }
+
         It 'data lives outside the code when installed; in the repo, in the repo' {
             $script:DataRoot | Should Be $script:RepoRoot
         }

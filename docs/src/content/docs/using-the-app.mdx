@@ -76,7 +76,7 @@ The main button changes with the VM's state:
 **Start and open** leaves everything ready on its own, and the button shows each step while it works:
 
 1. If the VM is off and the host's GPU driver changed, it copies the new driver into the VM first (avoids a black screen or error code 43).
-2. Starts the VM and waits for Windows (the first time, Windows finishes its setup) and for Sunshine.
+2. Starts the VM and waits for Windows (the first time, Windows finishes its setup) to start and sign in on its own. If Windows is finishing updates, or restarts to finish them, the button says so.
 3. Returns the Windows session to the GPU display if it was taken somewhere else.
 4. Sets the VM's display to the Moonlight resolution and frame rate, and makes Sunshine capture it.
 5. Installs gamepad support and the administrator prompt watcher the first time.
@@ -180,7 +180,7 @@ If the VM's NVIDIA driver differs from the host's, a notice says so. It updates 
 The **⋯** menu has:
 
 - **Start without opening**.
-- **Shut down** (orderly), **Turn off** (click twice to confirm; unsaved work is lost), **Restart**, **Pause** / **Resume**.
+- **Shut down** (orderly; when Windows has updates waiting it installs them first, which can take a few minutes, and the button says so), **Turn off** (click twice to confirm; unsaved work is lost), **Restart**, **Pause** / **Resume**.
 - **Hyper-V console**. It only shows the basic Hyper-V display, not what the GPU draws.
 - **Pair Moonlight again**.
 - **Update GPU driver**, or **Shut down and update driver** if it's running.

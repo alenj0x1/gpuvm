@@ -12,6 +12,10 @@ Changes waiting for the next version sit under **Unreleased** at the top (this s
 - Choose the monitor a machine opens on. **Preferences → Open machines on** sets it for all machines (**Primary**, the default, follows Windows' primary monitor) and each machine's **Options → Open on** can override it. Moonlight has no setting for this, so GpuVM keeps Moonlight's windows on that monitor while it opens; the choice is saved, and an unplugged monitor falls back to the primary one. With the frame rate on **Monitor**, the stream uses that monitor's refresh rate. The module adds `Get-GpuVMMonitor`, `Connect-GpuVM -Monitor` and `Set-GpuVMStreamingClient -Monitor`.
 - The **Apps** card knows which apps are already in the machine: they show a check mark instead of a checkbox and can't be chosen again. Clicking one, or right-clicking it, offers **Reinstalar** (Reinstall) and **Desinstalar** (Uninstall), which runs the app's own uninstaller after asking. The module adds `Get-GpuVMInstalledApp`, `Uninstall-GpuVMApp` and `Install-GpuVMApp -Reinstall`; templates and their copies keep the list.
 
+### Fixed
+- Opening a machine from off no longer prepares its display and Sunshine's capture before Windows signs in: they failed (with warnings) and left the picture at the wrong resolution. GpuVM now waits for the sign-in, showing **Iniciando sesión en Windows**, and says when Windows is finishing updates or restarting to finish them instead of a plain wait.
+- **Shut down** says when Windows is installing updates first, which can take minutes, and the next start says Windows is finishing them; quitting GpuVM with **Shut them down** remembers it too. The machine's main button is wider so its steps fit.
+
 ## [0.6.0] - 2026-11-09
 
 ### Added

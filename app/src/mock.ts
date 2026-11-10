@@ -247,17 +247,18 @@ export async function job(jobId: string, cmd: string, args: Record<string, unkno
     : cmd === "Import-GpuVMSharedDisk" ? ["Midiendo la carpeta", "Copiando a SteamLibrary\\steamapps", "Copiando 18 %", "Copiando 47 %", "Copiando 83 %", "Copiado: 92,4 GB en SteamLibrary\\steamapps"]
     : cmd === "Connect-GpuVMSharedDisk" ? ["Conectando el disco", "Disco en G: dentro de la VM", "Biblioteca de Steam en G:\\SteamLibrary"]
     : cmd === "Disconnect-GpuVMSharedDisk" ? ["Cerrando el disco dentro de la VM", "Quitando el disco"]
-    : cmd === "Set-GpuVMCleanup" ? ["Esperando a que Windows arranque", "Limpiando Windows", "Limpieza aplicada"]
+    : cmd === "Set-GpuVMCleanup" ? ["Esperando a Windows", "Limpiando Windows", "Limpieza aplicada"]
     : cmd === "Sync-GpuVMDriver" ? ["Leyendo archivos del driver 32.0.15.8180", "Driver copiado: 4 carpetas del DriverStore y 31 archivos"]
-    : cmd === "Install-GpuVMApp" ? ["Esperando a que Windows arranque", ...((args.App as string[]) ?? []).flatMap((id) => [
+    : cmd === "Install-GpuVMApp" ? ["Esperando a Windows", ...((args.App as string[]) ?? []).flatMap((id) => [
       ...(args.Reinstall ? [`Desinstalando ${APP_NAMES[id] ?? id}`, `${APP_NAMES[id] ?? id} desinstalado`] : []),
       `Instalando ${APP_NAMES[id] ?? id}`, `${APP_NAMES[id] ?? id} instalado`])]
-    : cmd === "Uninstall-GpuVMApp" ? ["Esperando a que Windows arranque", ...((args.App as string[]) ?? []).flatMap((id) => [`Desinstalando ${APP_NAMES[id] ?? id}`, `${APP_NAMES[id] ?? id} desinstalado`])]
-    : cmd === "Connect-GpuVM" && args.MemoryGB ? [`Memoria: ${args.MemoryGB} GB`, "Encendiendo", "Esperando a que Windows arranque", "Esperando a Sunshine", "Abriendo a 1920x1080 y 60 FPS"]
-    : cmd === "New-GpuVM" && args.Template ? [`Copia diferencial de ${args.Template}`, "Identidad propia: nombre de equipo y Sunshine", "Encendiendo", "Esperando a que Windows arranque"]
+    : cmd === "Uninstall-GpuVMApp" ? ["Esperando a Windows", ...((args.App as string[]) ?? []).flatMap((id) => [`Desinstalando ${APP_NAMES[id] ?? id}`, `${APP_NAMES[id] ?? id} desinstalado`])]
+    : cmd === "Invoke-GpuVMPower" ? ["Instalando actualizaciones"]
+    : cmd === "Connect-GpuVM" && args.MemoryGB ? [`Memoria: ${args.MemoryGB} GB`, "Encendiendo", "Esperando a Windows", "Esperando a Sunshine", "Abriendo a 1920x1080 y 60 FPS"]
+    : cmd === "New-GpuVM" && args.Template ? [`Copia diferencial de ${args.Template}`, "Identidad propia: nombre de equipo y Sunshine", "Encendiendo", "Esperando a Windows"]
     : cmd === "New-GpuVM"
     ? ["Edición: Windows 10 Pro (es-MX)", "Leyendo archivos del driver", "Creando disco Fixed de 96 GB", "Aplicando la imagen de Windows", "Copiando el driver de la GPU al invitado", "Registrando la VM en Hyper-V"]
-    : ["Encendiendo", "Esperando a que Windows arranque", "Esperando a Sunshine", "Sunshine capturará la pantalla virtual", "Abriendo Desktop a 1920x1080 y 60 FPS"];
+    : ["Encendiendo", "Esperando a Windows", "Iniciando sesión en Windows", "Esperando a Sunshine", "Sunshine capturará la pantalla virtual", "Abriendo Desktop a 1920x1080 y 60 FPS"];
   for (const message of steps) {
     emit({ type: "progress", message });
     await wait(900);
@@ -266,7 +267,7 @@ export async function job(jobId: string, cmd: string, args: Record<string, unkno
     vms.push({ ...vms[1], id: String(Date.now()), name: String(args.Name), state: "Running", paired: false });
   } else {
     const vm = vms.find((v) => v.name === args.Name);
-    if (vm) vm.state = "Running";
+    if (vm) vm.state = cmd === "Invoke-GpuVMPower" ? "Off" : "Running";
     if (cmd === "New-GpuVMTemplate") templates = [...templates, { name: String(args.Name), fromVM: String(args.VMName), createdAt: new Date().toISOString(), edition: "Windows 10 Pro", sizeGB: 200, fileGB: 61.4, cleanup: "none", usedBy: [] }];
     if (cmd === "Connect-GpuVMSharedDisk") shared = shared.map((d) => d.name === args.Name ? { ...d, vm: String(args.VMName), vmRunning: true } : d);
     if (cmd === "Disconnect-GpuVMSharedDisk") shared = shared.map((d) => d.name === args.Name ? { ...d, vm: null, vmRunning: false } : d);

@@ -63,8 +63,16 @@
 
     $guest = Get-GpuVMGuestCredential -State $state
     if ($guest) {
-        Wait-GuestReady -Name $Name -Credential $guest
+        # Updates found when GpuVM shut the VM down finish installing while Windows starts.
+        $bootMessage = if ($state.Contains('updatesPending') -and $state['updatesPending']) { 'Terminando actualizaciones' } else { 'Esperando a Windows' }
+        Wait-GuestReady -Name $Name -Credential $guest -BootMessage $bootMessage
         Open-GuestSession -Name $Name -Credential $guest
+        $null = Wait-GuestSignIn -Name $Name -Credential $guest
+        if ($state.Contains('updatesPending') -and $state['updatesPending']) {
+            $state = Get-GpuVMState -Name $Name
+            $state['updatesPending'] = $false
+            Save-GpuVMState $state
+        }
     }
     $audioCheck = $null
     $audioLater = $false
@@ -166,7 +174,7 @@
         # Without the guest password GpuVM can't tell whether Windows is still setting itself up; a VM that has been on
         # for a while is past that, so the first-boot message only shows when it can still be the case.
         $firstBoot = -not $guest -and (Get-VM -Name $Name).Uptime.TotalMinutes -lt 15
-        $waiting = if ($firstBoot) { 'Esperando a Sunshine (el primer arranque instala Windows y el streaming; puede tardar varios minutos)' } else { 'Esperando a que Sunshine responda' }
+        $waiting = if ($firstBoot) { 'Esperando a Sunshine (el primer arranque instala Windows y el streaming; puede tardar varios minutos)' } else { 'Esperando a Sunshine' }
         Wait-SunshineReady -Address $address -Credential $credential -Message $waiting
         if ($state['config']['streaming']['virtualDisplay']) {
             Set-SunshineVirtualDisplay -Address $address -Credential $credential -OnlyDisplay:([bool]$state['config']['streaming']['disableHyperVVideo'])

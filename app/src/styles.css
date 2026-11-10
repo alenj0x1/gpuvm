@@ -429,3 +429,5 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
   .pref-row .segmented { flex-direction: column; }
   .pref-row .segmented button { flex: none; justify-content: flex-start; }
 }
+/* The machine's main button shows each step while it works: wide enough for them, the same width idle and busy. */
+.card.head .actions .primary { width: 260px; }

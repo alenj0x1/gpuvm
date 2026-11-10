@@ -74,7 +74,7 @@ El botón principal cambia según el estado de la VM:
 **Encender y abrir** deja todo listo solo, y el botón muestra cada paso mientras trabaja:
 
 1. Si la VM está apagada y el driver de la GPU del host cambió, primero copia el driver nuevo a la VM (evita la pantalla negra o el código 43).
-2. Enciende la VM y espera a Windows (la primera vez, Windows termina de configurarse) y a Sunshine.
+2. Enciende la VM y espera a que Windows arranque (la primera vez, termina de configurarse) e inicie sesión solo. Si Windows está terminando actualizaciones, o se reinicia para terminarlas, el botón lo dice.
 3. Devuelve la sesión de Windows a la pantalla de la GPU si se la había llevado otra.
 4. Ajusta la pantalla de la VM a la resolución y los FPS de Moonlight, y hace que Sunshine la capture.
 5. La primera vez, instala el soporte de mandos y el vigilante de avisos de administrador.
@@ -178,7 +178,7 @@ Si el driver de NVIDIA de la VM es distinto al del host, un aviso lo indica. Se 
 El menú **⋯** tiene:
 
 - **Encender sin abrir**.
-- **Apagar** (apagado ordenado), **Forzar apagado** (haz clic dos veces para confirmar; se pierde lo no guardado), **Reiniciar**, **Pausar** / **Reanudar**.
+- **Apagar** (apagado ordenado; si Windows tiene actualizaciones pendientes, primero las instala, lo que puede tardar unos minutos, y el botón lo dice), **Forzar apagado** (haz clic dos veces para confirmar; se pierde lo no guardado), **Reiniciar**, **Pausar** / **Reanudar**.
 - **Ver consola de Hyper-V**. Solo muestra la pantalla básica de Hyper-V, no lo que dibuja la GPU.
 - **Volver a emparejar Moonlight**.
 - **Actualizar driver de la GPU**, o **Apagar y actualizar driver** si está encendida.

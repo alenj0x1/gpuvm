@@ -11,7 +11,13 @@ function Invoke-GpuVMPower {
     Assert-Admin
     switch ($Action) {
         'Start' { Assert-VMCanStart -Name $Name; Start-VM -Name $Name }
-        'Shutdown' { Stop-VM -Name $Name -Force }
+        'Shutdown' {
+            # Windows installs its pending updates while it shuts down, which can take minutes: said, and remembered for
+            # the next start (it finishes them then).
+            if (Register-GuestUpdateBeforeShutdown -Name $Name) { Write-Step 'Instalando actualizaciones' }
+            else { Write-Step 'Apagando' }
+            Stop-VM -Name $Name -Force
+        }
         'TurnOff' { Stop-VM -Name $Name -TurnOff -Force }
         # Reboot asks Windows to restart cleanly; Reset (the default) is like pulling the plug.
         'Restart' { Restart-VM -Name $Name -Type Reboot -Force }

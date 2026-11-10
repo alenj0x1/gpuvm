@@ -154,7 +154,7 @@ function Get-GpuVMEndpoint {
         if ($stopped.ContainsKey([string]$vm.State)) { throw "La VM '$Name' está $($stopped[[string]$vm.State]). Ábrela desde GpuVM para encenderla." }
         if (((Get-Date) - $lastReport).TotalSeconds -ge 60) {
             $heartbeat = (Get-VMIntegrationService -VMName $Name | Where-Object { $_.Id -like '*84EAAE65-2F2E-45F5-9BB5-0E857DC8EB47*' }).PrimaryStatusDescription
-            Write-Step ("Esperando a que Windows arranque en '{0}' ({1:N0} min; estado {2}, CPU {3} %, latido {4}). Para ver la pantalla: vmconnect.exe localhost {0}" -f
+            Write-Step ("Esperando a Windows en '{0}' ({1:N0} min; estado {2}, CPU {3} %, latido {4}). Para ver la pantalla: vmconnect.exe localhost {0}" -f
                 $Name, ((Get-Date) - $started).TotalMinutes, $vm.State, $vm.CPUUsage, ($heartbeat ? $heartbeat : 'sin datos'))
             $lastReport = Get-Date
         }
@@ -203,7 +203,7 @@ function Wait-SunshineReady {
         [Parameter(Mandatory)][pscredential]$Credential,
         [int]$TimeoutSec = 900,
         # What is shown while waiting: only the caller knows whether this is the first boot or just a restart.
-        [string]$Message = 'Esperando a que Sunshine responda'
+        [string]$Message = 'Esperando a Sunshine'
     )
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     $announced = $false
@@ -477,13 +477,15 @@ function Wait-GuestReady {
     param(
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][pscredential]$Credential,
-        [int]$TimeoutSec = 1800
+        [int]$TimeoutSec = 1800,
+        # What the wait for Windows to start is called (it finishes installing updates first when they were pending).
+        [string]$BootMessage = 'Esperando a Windows'
     )
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     $announced = $null
     while ((Get-Date) -lt $deadline) {
         if (-not (Test-GuestHeartbeat -Name $Name)) {
-            $message = 'Esperando a que Windows arranque'
+            $message = $BootMessage
             if ($announced -ne $message) { Write-Step $message; $announced = $message }
             Start-Sleep -Seconds 1
             continue
@@ -503,11 +505,85 @@ function Wait-GuestReady {
         $ready = $answer.Count -eq 1 -and $answer[0] -is [bool] -and $answer[0]
         if ($ready) { return }
         # No answer is Windows still booting; an answer of "not done" is the first-time setup.
-        $message = if ($answer.Count) { 'Windows termina de configurarse (solo la primera vez)' } else { 'Esperando a que Windows arranque' }
+        $message = if ($answer.Count) { 'Windows termina de configurarse (solo la primera vez)' } else { $BootMessage }
         if ($announced -ne $message) { Write-Step $message; $announced = $message }
         Start-Sleep -Seconds 3
     }
     Write-Warning 'La configuración inicial de la VM está tardando más de lo normal; se continúa igual.'
+}
+
+# Windows signs in on its own after it starts (automatic sign-in), but the display, Sunshine's capture (which runs in
+# that session) and the sound need the session: preparing them before it exists fails. Measured on a VM that had just
+# installed updates: Windows answered 92 s after starting, and signed in 98 s after that (2026-11-09). Waits until the
+# desktop is there, saying what Windows is doing; if Windows restarts to finish its updates, it waits for it again.
+# Returns $false when no one signed in in time (automatic sign-in turned off): the rest goes on as before.
+function Wait-GuestSignIn {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][pscredential]$Credential,
+        [int]$TimeoutSec = 900
+    )
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    $announced = $null
+    while ((Get-Date) -lt $deadline) {
+        $status = try {
+            Invoke-Guest -Name $Name -Credential $Credential -ScriptBlock {
+                $user = (Get-CimInstance Win32_ComputerSystem).UserName
+                $desktop = [bool](Get-Process explorer -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -gt 0 })
+                # TiWorker is Windows' update installer at work.
+                $updating = [bool](Get-Process TiWorker -ErrorAction SilentlyContinue)
+                if ($user -and $desktop) { 'ready' } elseif ($updating) { 'updating' } else { 'signing-in' }
+            }
+        }
+        catch { 'restarting' }
+        $status = [string](@($status)[-1])
+        if ($status -eq 'ready') { return $true }
+        $message = switch ($status) {
+            'updating' { 'Terminando actualizaciones' }
+            'restarting' { 'Windows se está reiniciando' }
+            default { 'Iniciando sesión en Windows' }
+        }
+        if ($announced -ne $message) { Write-Step $message; $announced = $message }
+        if ($status -eq 'restarting') {
+            # The session died with the restart: wait for Windows again, then reconnect.
+            Close-GuestSession -Name $Name
+            Start-Sleep -Seconds 3
+            Wait-GuestReady -Name $Name -Credential $Credential -TimeoutSec ([math]::Max(30, ($deadline - (Get-Date)).TotalSeconds)) -BootMessage 'Windows se está reiniciando'
+            Open-GuestSession -Name $Name -Credential $Credential
+            $announced = $null
+            continue
+        }
+        Start-Sleep -Seconds 2
+    }
+    Write-Warning 'Windows no inició sesión en la VM a tiempo; la pantalla y el sonido podrían no quedar listos.'
+    $false
+}
+
+# Whether Windows has updates waiting for the next restart or shutdown: they install while it shuts down and finish when
+# it starts again (measured: 4 min 38 s more to shut down, one extra restart when starting, 2026-11-09).
+function Test-GuestUpdatePending {
+    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential)
+    $pending = Invoke-Guest -Name $Name -Credential $Credential -ScriptBlock {
+        (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending') -or
+        (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired')
+    }
+    @($pending)[-1] -eq $true
+}
+
+# Before GpuVM shuts a VM down: if Windows will install updates on the way, remembers it so the next start says Windows
+# is finishing them. Returns whether it will. Only for running VMs whose Windows password GpuVM has; never fails.
+function Register-GuestUpdateBeforeShutdown {
+    param([Parameter(Mandatory)][string]$Name)
+    try {
+        $state = Get-GpuVMState -Name $Name
+        $guest = Get-GpuVMGuestCredential -State $state
+        if (-not $guest -or (Get-VM -Name $Name).State -ne 'Running') { return $false }
+        if (-not (Test-GuestUpdatePending -Name $Name -Credential $guest)) { return $false }
+        $state['updatesPending'] = $true
+        Save-GpuVMState $state
+        $true
+    }
+    catch { $false }
 }
 
 # Sets the virtual display to Moonlight's resolution and FPS. Runs in the user's session inside the VM

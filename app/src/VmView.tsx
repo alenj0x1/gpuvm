@@ -344,7 +344,7 @@ function Header({ vm, busy, variant, startJob, run, onRemoved, onPattern }: Head
             )}
             {!locked && !off && (
               <>
-                <button role="menuitem" onClick={() => power("Shutdown", "Apagando")}><IconPower size={16} />Apagar</button>
+                <button role="menuitem" onClick={() => job("Invoke-GpuVMPower", { Name: vm.name, Action: "Shutdown" })}><IconPower size={16} />Apagar</button>
                 <button role="menuitem" className={confirmOff ? "danger" : ""}
                   onClick={() => confirmOff ? power("TurnOff", "Forzando el apagado") : setConfirmOff(true)}>
                   <IconPlugOff size={16} />{confirmOff ? "Forzar: se pierde lo no guardado" : "Forzar apagado"}
