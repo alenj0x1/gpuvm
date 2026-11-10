@@ -1,5 +1,5 @@
 {
-  "description": "Apps GpuVM can install inside a VM. Each one is downloaded from its publisher inside the guest, and installed only if its Authenticode signature is valid and from the expected signer. A pinned version also carries its sha256; an app its publisher does not sign (7-Zip) must carry one. asUser runs the installer as the signed-in user without elevation (Spotify refuses to install as administrator).",
+  "description": "Apps GpuVM can install inside a VM. Each one is downloaded from its publisher inside the guest, and installed only if its Authenticode signature is valid and from the expected signer. A pinned version also carries its sha256; an app its publisher does not sign (7-Zip) must carry one. asUser runs the installer as the signed-in user without elevation (Spotify refuses to install as administrator). uninstall finds the app's own uninstaller in Windows' list of programs by DisplayName (match) and runs it silently: the publisher's QuietUninstallString if it has one, msiexec /x for MSI, or its UninstallString plus args; interactive opens it on the VM's desktop, for uninstallers without a silent mode (Battle.net).",
   "categories": {
     "games": "Juegos",
     "browsers": "Navegadores",
@@ -16,7 +16,8 @@
       "file": "SteamSetup.exe",
       "args": ["/S"],
       "signer": "Valve Corp.",
-      "installed": "${ProgramFiles(x86)}\\Steam\\steam.exe"
+      "installed": "${ProgramFiles(x86)}\\Steam\\steam.exe",
+      "uninstall": {"match": "^Steam$", "args": ["/S"]}
     },
     "epic": {
       "name": "Epic Games",
@@ -25,7 +26,8 @@
       "file": "EpicGamesLauncherInstaller.msi",
       "args": ["/qn", "/norestart"],
       "signer": "Epic Games Inc.",
-      "installed": "${ProgramFiles(x86)}\\Epic Games\\Launcher\\Portal\\Binaries\\Win64\\EpicGamesLauncher.exe"
+      "installed": "${ProgramFiles(x86)}\\Epic Games\\Launcher\\Portal\\Binaries\\Win64\\EpicGamesLauncher.exe",
+      "uninstall": {"match": "^Epic Games Launcher$", "args": []}
     },
     "battlenet": {
       "name": "Battle.net",
@@ -34,7 +36,8 @@
       "file": "Battle.net-Setup.exe",
       "args": ["--lang=esMX", "--installpath=\"C:\\Program Files (x86)\\Battle.net\""],
       "signer": "Blizzard Entertainment, Inc.",
-      "installed": "${ProgramFiles(x86)}\\Battle.net\\Battle.net Launcher.exe"
+      "installed": "${ProgramFiles(x86)}\\Battle.net\\Battle.net Launcher.exe",
+      "uninstall": {"match": "^Battle\\.net$", "interactive": true}
     },
     "ea": {
       "name": "EA app",
@@ -44,7 +47,8 @@
       "file": "EAappInstaller.exe",
       "args": ["/quiet", "/norestart"],
       "signer": "Electronic Arts, Inc.",
-      "installed": "${ProgramFiles}\\Electronic Arts\\EA Desktop\\EA Desktop\\EADesktop.exe"
+      "installed": "${ProgramFiles}\\Electronic Arts\\EA Desktop\\EA Desktop\\EADesktop.exe",
+      "uninstall": {"match": "^EA app$", "args": ["/quiet", "/norestart"]}
     },
     "gog": {
       "name": "GOG Galaxy",
@@ -54,7 +58,8 @@
       "file": "setup_galaxy.exe",
       "args": ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
       "signer": "GOG  sp. z o.o",
-      "installed": "${ProgramFiles(x86)}\\GOG Galaxy\\GalaxyClient.exe"
+      "installed": "${ProgramFiles(x86)}\\GOG Galaxy\\GalaxyClient.exe",
+      "uninstall": {"match": "^GOG Galaxy", "args": ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"]}
     },
     "ubisoft": {
       "name": "Ubisoft Connect",
@@ -63,7 +68,8 @@
       "file": "UbisoftConnectInstaller.exe",
       "args": ["/S"],
       "signer": "UBISOFT ENTERTAINMENT INC.",
-      "installed": "${ProgramFiles(x86)}\\Ubisoft\\Ubisoft Game Launcher\\UbisoftConnect.exe"
+      "installed": "${ProgramFiles(x86)}\\Ubisoft\\Ubisoft Game Launcher\\UbisoftConnect.exe",
+      "uninstall": {"match": "^Ubisoft Connect$", "args": ["/S"]}
     },
     "chrome": {
       "name": "Chrome",
@@ -72,7 +78,8 @@
       "file": "ChromeSetup.exe",
       "args": ["/silent", "/install"],
       "signer": "Google LLC",
-      "installed": "${ProgramFiles}\\Google\\Chrome\\Application\\chrome.exe"
+      "installed": "${ProgramFiles}\\Google\\Chrome\\Application\\chrome.exe",
+      "uninstall": {"match": "^Google Chrome$", "args": ["--force-uninstall"]}
     },
     "brave": {
       "name": "Brave",
@@ -84,7 +91,8 @@
       "installed": [
         "${ProgramFiles}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe",
         "${LOCALAPPDATA}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe"
-      ]
+      ],
+      "uninstall": {"match": "^Brave$", "args": ["--force-uninstall"]}
     },
     "firefox": {
       "name": "Firefox",
@@ -93,7 +101,8 @@
       "file": "FirefoxSetup.exe",
       "args": ["/S"],
       "signer": "Mozilla Corporation",
-      "installed": "${ProgramFiles}\\Mozilla Firefox\\firefox.exe"
+      "installed": "${ProgramFiles}\\Mozilla Firefox\\firefox.exe",
+      "uninstall": {"match": "^Mozilla Firefox", "args": ["/S"]}
     },
     "vlc": {
       "name": "VLC",
@@ -103,7 +112,8 @@
       "file": "vlc-win64.exe",
       "args": ["/S"],
       "signer": "VideoLAN",
-      "installed": "${ProgramFiles}\\VideoLAN\\VLC\\vlc.exe"
+      "installed": "${ProgramFiles}\\VideoLAN\\VLC\\vlc.exe",
+      "uninstall": {"match": "^VLC media player", "args": ["/S"]}
     },
     "obs": {
       "name": "OBS Studio",
@@ -113,7 +123,8 @@
       "file": "OBS-Studio-Installer.exe",
       "args": ["/S"],
       "signer": "OBS Project, LLC",
-      "installed": "${ProgramFiles}\\obs-studio\\bin\\64bit\\obs64.exe"
+      "installed": "${ProgramFiles}\\obs-studio\\bin\\64bit\\obs64.exe",
+      "uninstall": {"match": "^OBS Studio", "args": ["/S"]}
     },
     "spotify": {
       "name": "Spotify",
@@ -123,7 +134,8 @@
       "args": ["/silent", "/skip-app-launch"],
       "signer": "Spotify AB",
       "asUser": true,
-      "installed": "${APPDATA}\\Spotify\\Spotify.exe"
+      "installed": "${APPDATA}\\Spotify\\Spotify.exe",
+      "uninstall": {"match": "^Spotify$", "args": ["/silent"]}
     },
     "discord": {
       "name": "Discord",
@@ -132,7 +144,8 @@
       "file": "DiscordSetup.exe",
       "args": ["-s"],
       "signer": "Discord Inc.",
-      "installed": "${LOCALAPPDATA}\\Discord\\Update.exe"
+      "installed": "${LOCALAPPDATA}\\Discord\\Update.exe",
+      "uninstall": {"match": "^Discord$", "args": ["-s"]}
     },
     "7zip": {
       "name": "7-Zip",
@@ -141,7 +154,8 @@
       "sha256": "FD99E86F57D8F429EF5ED045BF98315AF962E2309B0F1BA87A147A44C71647D0",
       "file": "7z-x64.exe",
       "args": ["/S"],
-      "installed": "${ProgramFiles}\\7-Zip\\7z.exe"
+      "installed": "${ProgramFiles}\\7-Zip\\7z.exe",
+      "uninstall": {"match": "^7-Zip", "args": ["/S"]}
     },
     "winrar": {
       "name": "WinRAR",
@@ -151,7 +165,8 @@
       "file": "winrar-x64.exe",
       "args": ["/S"],
       "signer": "win.rar GmbH",
-      "installed": "${ProgramFiles}\\WinRAR\\WinRAR.exe"
+      "installed": "${ProgramFiles}\\WinRAR\\WinRAR.exe",
+      "uninstall": {"match": "^WinRAR", "args": ["/S"]}
     },
     "protonvpn": {
       "name": "Proton VPN",
@@ -161,7 +176,8 @@
       "file": "ProtonVPN_x64.exe",
       "args": ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
       "signer": "Proton AG",
-      "installed": "${ProgramFiles}\\Proton\\VPN"
+      "installed": "${ProgramFiles}\\Proton\\VPN",
+      "uninstall": {"match": "^Proton VPN", "args": ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"]}
     }
   }
 }

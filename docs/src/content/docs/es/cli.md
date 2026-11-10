@@ -166,7 +166,9 @@ Además de los cmdlets anteriores, el módulo exporta estos, que usa sobre todo 
 | `Send-GpuVMClipboard` | Pone texto en el portapapeles de la VM (solo del PC a la VM). |
 | `Set-GpuVMNetworkIsolation` | Activa (la predeterminada) o desactiva el aislamiento de red de la VM. |
 | `Get-GpuVMCleanup` / `Set-GpuVMCleanup` | Los niveles de limpieza de Windows / aplica uno a una VM. |
-| `Get-GpuVMApp` / `Install-GpuVMApp` | El catálogo de apps / instala apps en una VM (la enciende si hace falta). |
+| `Get-GpuVMApp` / `Install-GpuVMApp` | El catálogo de apps / instala apps en una VM (la enciende si hace falta). Las que ya están instaladas quedan como están; `-Reinstall` primero las desinstala y luego las instala de nuevo. |
+| `Get-GpuVMInstalledApp` | `-Name`. Las apps del catálogo instaladas en una VM: se revisan dentro de Windows mientras está encendida; apagada, las últimas que se vieron. |
+| `Uninstall-GpuVMApp` | `-Name`, `-App`. Desinstala apps con el desinstalador de cada una, en silencio (enciende la VM si hace falta). El de Battle.net no tiene modo silencioso: se abre en el escritorio de la VM para terminarlo ahí. |
 | `Add-GpuVMIso` / `Remove-GpuVMIso` | Recuerda un ISO en la biblioteca / lo olvida (el archivo queda). |
 | `Get-GpuVMDisk` / `Restore-GpuVM` / `Remove-GpuVMDisk` | Los discos de la carpeta de GpuVM / vuelve a crear una VM con un disco conservado / borra un disco libre. |
 | `Get-GpuVMBase` / `Remove-GpuVMBase` | Los Windows preparados (uno por ISO y edición) / borra uno; la próxima VM con ese Windows lo vuelve a preparar. |

@@ -120,6 +120,7 @@ function New-GpuVMFromTemplate {
     $state['guest'] = $base['guest']
     $state['pendingRename'] = $true
     $state['pendingApps'] = @(if ($base.Contains('pendingApps')) { $base['pendingApps'] })
+    $state['installedApps'] = @(if ($base.Contains('installedApps')) { $base['installedApps'] })
     Save-GpuVMState $state
 
     Write-Step "VM '$Name' lista sobre la plantilla '$Template'."

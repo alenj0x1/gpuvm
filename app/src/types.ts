@@ -141,6 +141,14 @@ export interface AppInfo {
   signer: string | null;
   category: string;
   categoryName: string;
+  /** Its uninstaller has no silent mode: it opens on the VM's desktop. */
+  interactiveUninstall?: boolean;
+}
+
+/** A catalog app installed in a VM. */
+export interface InstalledApp {
+  id: string;
+  name: string;
 }
 
 export interface DiskInfo {

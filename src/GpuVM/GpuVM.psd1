@@ -37,6 +37,8 @@
         'Remove-GpuVMProfile'
         'Get-GpuVMApp'
         'Install-GpuVMApp'
+        'Get-GpuVMInstalledApp'
+        'Uninstall-GpuVMApp'
         'Send-GpuVMClipboard'
         'Stop-GpuVMAll'
         'Set-GpuVMCapture'

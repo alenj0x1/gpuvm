@@ -12,6 +12,7 @@ function Get-GpuVMApp {
         [ordered]@{
             id = $id; name = $catalog[$id]['name']; signer = $catalog[$id]['signer']
             category = $category; categoryName = $categories[$category]
+            interactiveUninstall = [bool]($catalog[$id]['uninstall'] -and $catalog[$id]['uninstall']['interactive'])
         }
     }
 }

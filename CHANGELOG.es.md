@@ -6,6 +6,11 @@ Aquí se documentan los cambios importantes de GpuVM. El formato sigue [Keep a C
 
 Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (esa sección solo existe mientras haya alguno y el sitio de documentación no la muestra); `scripts/release.py` la convierte en la versión nueva.
 
+## [Sin publicar]
+
+### Añadido
+- La tarjeta **Apps** sabe qué apps ya están en la máquina: muestran una marca en lugar de la casilla y no se pueden elegir otra vez. Con un clic, o clic derecho, ofrecen **Reinstalar** y **Desinstalar**, que usa el desinstalador de la propia app tras pedir confirmación. El módulo suma `Get-GpuVMInstalledApp`, `Uninstall-GpuVMApp` e `Install-GpuVMApp -Reinstall`; las plantillas y sus copias conservan la lista.
+
 ## [0.6.0] - 2026-11-09
 
 ### Añadido

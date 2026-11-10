@@ -67,6 +67,9 @@ let disks: DiskInfo[] = [
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Catalog apps already in each sample machine's Windows.
+const installed: Record<string, string[]> = { win10: ["steam", "discord", "chrome", "7zip"], "win11-pruebas": ["steam"] };
+
 export async function ps(cmd: string, args: Record<string, unknown>): Promise<unknown[]> {
   await wait(250);
   if (scenario === "noadmin") throw new Error("Este comando necesita PowerShell 7 abierto como administrador.");
@@ -111,8 +114,12 @@ export async function ps(cmd: string, args: Record<string, unknown>): Promise<un
       return [];
     case "Get-GpuVMApp":
       // The real catalog, so the mock shows every app and category the app ships with.
-      return Object.entries(catalog.apps).map(([id, a]: [string, { name: string; signer?: string; category: string }]) => (
-        { id, name: a.name, signer: a.signer ?? null, category: a.category, categoryName: (catalog.categories as Record<string, string>)[a.category] }));
+      return Object.entries(catalog.apps).map(([id, a]: [string, { name: string; signer?: string; category: string; uninstall?: { match: string; interactive?: boolean } }]) => (
+        { id, name: a.name, signer: a.signer ?? null, category: a.category, categoryName: (catalog.categories as Record<string, string>)[a.category],
+          interactiveUninstall: !!a.uninstall?.interactive }));
+    case "Get-GpuVMInstalledApp":
+      await wait(700);
+      return (installed[String(args.Name)] ?? []).map((id) => ({ id, name: APP_NAMES[id] ?? id }));
     case "Get-GpuVMHome":
       return [{
         lastOpened: { name: "win10", at: new Date(Date.now() - 2 * 3600e3).toISOString() },
@@ -232,7 +239,10 @@ export async function job(jobId: string, cmd: string, args: Record<string, unkno
     : cmd === "Disconnect-GpuVMSharedDisk" ? ["Cerrando el disco dentro de la VM", "Quitando el disco"]
     : cmd === "Set-GpuVMCleanup" ? ["Esperando a que Windows arranque", "Limpiando Windows", "Limpieza aplicada"]
     : cmd === "Sync-GpuVMDriver" ? ["Leyendo archivos del driver 32.0.15.8180", "Driver copiado: 4 carpetas del DriverStore y 31 archivos"]
-    : cmd === "Install-GpuVMApp" ? ["Esperando a que Windows arranque", ...((args.App as string[]) ?? []).flatMap((id) => [`Instalando ${APP_NAMES[id] ?? id}`, `${APP_NAMES[id] ?? id} instalado`])]
+    : cmd === "Install-GpuVMApp" ? ["Esperando a que Windows arranque", ...((args.App as string[]) ?? []).flatMap((id) => [
+      ...(args.Reinstall ? [`Desinstalando ${APP_NAMES[id] ?? id}`, `${APP_NAMES[id] ?? id} desinstalado`] : []),
+      `Instalando ${APP_NAMES[id] ?? id}`, `${APP_NAMES[id] ?? id} instalado`])]
+    : cmd === "Uninstall-GpuVMApp" ? ["Esperando a que Windows arranque", ...((args.App as string[]) ?? []).flatMap((id) => [`Desinstalando ${APP_NAMES[id] ?? id}`, `${APP_NAMES[id] ?? id} desinstalado`])]
     : cmd === "Connect-GpuVM" && args.MemoryGB ? [`Memoria: ${args.MemoryGB} GB`, "Encendiendo", "Esperando a que Windows arranque", "Esperando a Sunshine", "Abriendo a 1920x1080 y 60 FPS"]
     : cmd === "New-GpuVM" && args.Template ? [`Copia diferencial de ${args.Template}`, "Identidad propia: nombre de equipo y Sunshine", "Encendiendo", "Esperando a que Windows arranque"]
     : cmd === "New-GpuVM"
@@ -253,6 +263,9 @@ export async function job(jobId: string, cmd: string, args: Record<string, unkno
     if (vm?.options && cmd === "Set-GpuVMCleanup") vm.options.cleanup = args.Level as typeof vm.options.cleanup;
     if (vm?.options && args.MemoryGB) { vm.options.memoryGB = Number(args.MemoryGB); vm.memoryStartupGB = Number(args.MemoryGB); vm.fits = true; vm.missingGB = 0; }
     if (vm && cmd === "Sync-GpuVMDriver") vm.driverInSync = true;
+    const ids = (args.App as string[] | undefined) ?? [];
+    if (vm && cmd === "Install-GpuVMApp") installed[vm.name] = [...new Set([...(installed[vm.name] ?? []), ...ids])];
+    if (vm && cmd === "Uninstall-GpuVMApp") installed[vm.name] = (installed[vm.name] ?? []).filter((id) => !ids.includes(id));
     // What was fixed leaves the home screen's list.
     attention = attention.filter((a) => !(a.vm === args.Name && a.cmd === cmd));
   }

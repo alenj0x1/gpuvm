@@ -532,7 +532,33 @@ InModuleScope GpuVM {
                 $categories.Contains($entry['category']) | Should Be $true
                 $app['categoryName'] | Should Not BeNullOrEmpty
                 $entry['installed'] | Should Not BeNullOrEmpty
+                # Uninstall finds the app in Windows' list of programs and runs its uninstaller silently, or opens it.
+                $entry['uninstall']['match'] | Should Not BeNullOrEmpty
+                [regex]::new($entry['uninstall']['match']) | Should Not BeNullOrEmpty
+                [bool]($entry['uninstall']['interactive'] -or $entry['uninstall'].Contains('args')) | Should Be $true
             }
+        }
+
+        It 'remembers installed apps per VM and keeps the list when it changes' {
+            $state = [ordered]@{ statePath = Join-Path $TestDrive 'apps-state.json' }
+            Mock Get-GpuVMState { $s = Read-JsonFile $state['statePath']; $s['statePath'] = $state['statePath']; $s }
+            Write-JsonFile -Path $state['statePath'] -Data ([ordered]@{ installedApps = @('steam') })
+            Update-InstalledAppState -Name vm -Installed discord, steam
+            @((Read-JsonFile $state['statePath'])['installedApps']) -join ',' | Should Be 'steam,discord'
+            Update-InstalledAppState -Name vm -Removed steam
+            @((Read-JsonFile $state['statePath'])['installedApps']) -join ',' | Should Be 'discord'
+            Update-InstalledAppState -Name vm -Installed chrome -Replace
+            @((Read-JsonFile $state['statePath'])['installedApps']) -join ',' | Should Be 'chrome'
+        }
+
+        It 'reinstall does not install over an app whose uninstall failed' {
+            Mock Start-GuestForApp { [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force)) }
+            Mock Assert-Admin { }
+            Mock Uninstall-GuestApp { foreach ($id in $App) { [ordered]@{ app = $id; status = $(if ($id -eq 'steam') { 'failed' } else { 'uninstalled' }) } } }
+            Mock Install-GuestApp { foreach ($id in $App) { [ordered]@{ app = $id; status = 'installed' } } }
+            $results = @(Install-GpuVMApp -Name vm -App steam, discord -Reinstall)
+            Assert-MockCalled Install-GuestApp -Times 1 -ParameterFilter { ($App -join ',') -eq 'discord' }
+            ($results | ForEach-Object { "$($_['app'])=$($_['status'])" }) -join ',' | Should Be 'steam=failed,discord=installed'
         }
 
         It 'every cleanup item has a known level, a description and something to do' {

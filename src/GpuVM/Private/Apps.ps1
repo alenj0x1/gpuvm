@@ -4,6 +4,89 @@
 function Get-AppCatalog { (Read-JsonFile (Get-RepoPath 'apps\catalog.json'))['apps'] }
 function Get-AppCategory { (Read-JsonFile (Get-RepoPath 'apps\catalog.json'))['categories'] }
 
+# Runs a program as the user signed in to the guest, unelevated, through a one-shot scheduled task (installers that
+# refuse administrator rights, and uninstallers of per-user apps). It goes to the guest as text: a script block
+# can't be passed to Invoke-Command as data.
+$script:GuestRunAsUser = @'
+param([string]$File, [string[]]$Arguments)
+$user = (Get-CimInstance Win32_ComputerSystem).UserName
+if (-not $user) { return @{ finished = $false; error = 'no hay una sesión iniciada en la VM' } }
+$task = "GpuVM-App-$([guid]::NewGuid().ToString('n'))"
+$action = if ($Arguments) { New-ScheduledTaskAction -Execute $File -Argument ($Arguments -join ' ') } else { New-ScheduledTaskAction -Execute $File }
+$principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
+Register-ScheduledTask -TaskName $task -Action $action -Principal $principal -Force | Out-Null
+try {
+    Start-ScheduledTask -TaskName $task
+    # 0x41301: running; 0x41303: has not run yet.
+    $code = 0x41303
+    for ($i = 0; $i -lt 300; $i++) {
+        Start-Sleep -Seconds 2
+        $code = (Get-ScheduledTaskInfo -TaskName $task).LastTaskResult
+        if ($code -notin 0x41301, 0x41303) { break }
+    }
+}
+finally { Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue }
+@{ finished = $code -notin 0x41301, 0x41303; code = $code }
+'@
+
+# The places that say an app is installed ("installed" in the catalog, with ${VARIABLE}s), by app id.
+function Get-AppInstalledPlace {
+    $places = [ordered]@{}
+    $catalog = Get-AppCatalog
+    foreach ($id in $catalog.Keys) { $places[$id] = @($catalog[$id]['installed']) }
+    $places
+}
+
+# Which catalog apps are installed in the running guest: the ids whose "installed" path exists.
+function Get-GuestInstalledApp {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][pscredential]$Credential
+    )
+    $places = Get-AppInstalledPlace
+    $found = Invoke-Guest -Name $Name -Credential $Credential -ArgumentList (, $places) -ScriptBlock {
+        param($places)
+        $expand = { param($path) [regex]::Replace($path, '\$\{([^}]+)\}', { param($m) [Environment]::GetEnvironmentVariable($m.Groups[1].Value) }) }
+        foreach ($id in @($places.Keys)) {
+            if (@($places[$id]) | Where-Object { Test-Path -LiteralPath (& $expand $_) }) { [string]$id }
+        }
+    }
+    # Only ids GpuVM knows come back from the guest.
+    @($found | ForEach-Object { [string]$_ } | Where-Object { $places.Contains($_) })
+}
+
+# Remembers in the VM's state what is installed, so the app knows it while the VM is off.
+function Update-InstalledAppState {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [string[]]$Installed = @(),
+        [string[]]$Removed = @(),
+        # The whole list, from a check of the guest.
+        [switch]$Replace
+    )
+    $state = Get-GpuVMState -Name $Name
+    $current = @(if ($state.Contains('installedApps')) { $state['installedApps'] | Where-Object { $_ } })
+    $next = if ($Replace) { @($Installed) } else { @(@($current) + @($Installed) | Where-Object { $_ -notin $Removed }) }
+    $state['installedApps'] = @($next | Select-Object -Unique)
+    Save-GpuVMState $state
+}
+
+# Powers the VM on if needed and waits for Windows, for installing or uninstalling apps. Returns the guest credential.
+function Start-GuestForApp {
+    param([Parameter(Mandatory)][string]$Name)
+    $state = Get-GpuVMState -Name $Name
+    $guest = Get-GpuVMGuestCredential -State $state
+    if (-not $guest) { throw 'Guarda la contraseña de Windows de la VM para que GpuVM pueda instalar apps.' }
+    $vm = Get-VM -Name $Name
+    if ($vm.State -eq 'Off') {
+        Assert-VMCanStart -Name $Name
+        Write-Step 'Encendiendo'
+        Start-VM -Name $Name
+    }
+    Wait-GuestReady -Name $Name -Credential $guest
+    $guest
+}
+
 # Installs the apps that are missing, from inside the running guest. Returns one result per app.
 function Install-GuestApp {
     param(
@@ -17,8 +100,8 @@ function Install-GuestApp {
         if (-not $entry) { throw "No existe la app '$id' en el catálogo." }
         if (-not $entry['signer'] -and -not $entry['sha256']) { throw "La app '$id' no tiene firmante ni hash: no se puede verificar." }
         Write-Step "Instalando $($entry['name'])"
-        $result = Invoke-Guest -Name $Name -Credential $Credential -ArgumentList (, $entry) -ScriptBlock {
-            param($entry)
+        $result = Invoke-Guest -Name $Name -Credential $Credential -ArgumentList $entry, $script:GuestRunAsUser -ScriptBlock {
+            param($entry, $runAsUser)
             $ErrorActionPreference = 'Stop'
             $expand = { param($path) [regex]::Replace($path, '\$\{([^}]+)\}', { param($m) [Environment]::GetEnvironmentVariable($m.Groups[1].Value) }) }
             # "installed" may list several places (some installers go per-machine or per-user depending on context).
@@ -48,27 +131,11 @@ function Install-GuestApp {
                     }
                 }
                 if ($entry['asUser']) {
-                    # Installers that refuse administrator rights (Spotify) run as the signed-in user, unelevated,
-                    # through a one-shot scheduled task in that user's session.
-                    $user = (Get-CimInstance Win32_ComputerSystem).UserName
-                    if (-not $user) { return @{ status = 'failed'; detail = 'no hay una sesión iniciada en la VM' } }
-                    $task = "GpuVM-App-$([guid]::NewGuid().ToString('n'))"
-                    $action = New-ScheduledTaskAction -Execute $file -Argument ($entry['args'] -join ' ')
-                    $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
-                    Register-ScheduledTask -TaskName $task -Action $action -Principal $principal -Force | Out-Null
-                    try {
-                        Start-ScheduledTask -TaskName $task
-                        # 0x41301: running; 0x41303: has not run yet.
-                        $code = 0x41303
-                        for ($i = 0; $i -lt 300; $i++) {
-                            Start-Sleep -Seconds 2
-                            $code = (Get-ScheduledTaskInfo -TaskName $task).LastTaskResult
-                            if ($code -notin 0x41301, 0x41303) { break }
-                        }
-                    }
-                    finally { Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue }
-                    $finished = $code -notin 0x41301, 0x41303
-                    $exitCode = $code
+                    # Installers that refuse administrator rights (Spotify) run as the signed-in user, unelevated.
+                    $run = & ([scriptblock]::Create($runAsUser)) $file @($entry['args'])
+                    if ($run['error']) { return @{ status = 'failed'; detail = $run['error'] } }
+                    $finished = $run['finished']
+                    $exitCode = $run['code']
                 }
                 else {
                     $process = if ($file.EndsWith('.msi')) {
@@ -100,6 +167,103 @@ function Install-GuestApp {
             'unsigned' { Write-Warning "No se instaló $($entry['name']): el instalador no está firmado por $($entry['signer']) ($detail)." }
             default { Write-Warning "La instalación de $($entry['name']) no terminó bien ($detail)." }
         }
+        if ($status -in 'installed', 'present') { Update-InstalledAppState -Name $Name -Installed $id }
+        [ordered]@{ app = $id; name = $entry['name']; status = $status }
+    }
+}
+
+# Uninstalls apps from inside the running guest with the uninstaller the app registered in Windows (Apps y
+# características). Returns one result per app: uninstalled, absent or failed.
+function Uninstall-GuestApp {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][pscredential]$Credential,
+        [Parameter(Mandatory)][string[]]$App
+    )
+    $catalog = Get-AppCatalog
+    foreach ($id in $App) {
+        $entry = $catalog[$id]
+        if (-not $entry) { throw "No existe la app '$id' en el catálogo." }
+        if (-not $entry['uninstall']) { throw "La app '$id' no sabe desinstalarse." }
+        Write-Step $(if ($entry['uninstall']['interactive']) { "Termina de desinstalar $($entry['name']) en la ventana de la VM" } else { "Desinstalando $($entry['name'])" })
+        $result = Invoke-Guest -Name $Name -Credential $Credential -ArgumentList $entry, $script:GuestRunAsUser -ScriptBlock {
+            param($entry, $runAsUser)
+            $ErrorActionPreference = 'Stop'
+            $expand = { param($path) [regex]::Replace($path, '\$\{([^}]+)\}', { param($m) [Environment]::GetEnvironmentVariable($m.Groups[1].Value) }) }
+            $places = @($entry['installed'] | ForEach-Object { & $expand $_ })
+            $isInstalled = { [bool]($places | Where-Object { Test-Path -LiteralPath $_ }) }
+            if (-not (& $isInstalled)) { return @{ status = 'absent' } }
+
+            # The app's entry in Windows' list of programs: per machine (64 and 32 bit) or per user (the session's
+            # and those of users with a loaded profile, such as the one signed in).
+            $match = $entry['uninstall']['match']
+            $keys = @(
+                @{ path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*'; machine = $true }
+                @{ path = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'; machine = $true }
+                @{ path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'; machine = $false }
+                @{ path = 'Registry::HKEY_USERS\*\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'; machine = $false }
+            )
+            $found = foreach ($key in $keys) {
+                Get-ItemProperty -Path $key.path -ErrorAction SilentlyContinue |
+                    Where-Object { $_.DisplayName -match $match -and ($_.UninstallString -or $_.QuietUninstallString) } |
+                    ForEach-Object { @{ item = $_; machine = $key.machine } }
+            }
+            # A bundle's own parts (SystemComponent = 1) are hidden from the list; the visible entry removes them all.
+            $pick = @($found | Sort-Object { [int]($_.item.SystemComponent -eq 1) }) | Select-Object -First 1
+            if (-not $pick) { return @{ status = 'failed'; detail = 'Windows no tiene registrado su desinstalador' } }
+            $item = $pick.item
+
+            # Splits a command line into the program and its arguments.
+            $split = {
+                param([string]$line)
+                $line = $line.Trim()
+                if ($line -match '^"([^"]+)"\s*(.*)$') { return @($Matches[1], $Matches[2]) }
+                if ($line -match '^(.+?\.exe)\s*(.*)$') { return @($Matches[1], $Matches[2]) }
+                @($line, '')
+            }
+            $quiet = [string]$item.QuietUninstallString
+            $line = [string]$item.UninstallString
+            if ($quiet) {
+                # The publisher's own silent uninstall.
+                $file, $arguments = & $split $quiet
+            }
+            elseif ($line -match '(?i)msiexec' -and ($line + ' ' + $item.PSChildName) -match '(\{[0-9A-Fa-f-]{36}\})') {
+                $file = Join-Path $env:SystemRoot 'System32\msiexec.exe'
+                $arguments = "/x $($Matches[1]) /qn /norestart"
+            }
+            else {
+                $file, $arguments = & $split $line
+                $arguments = (@($arguments) + @($entry['uninstall']['args']) | Where-Object { $_ }) -join ' '
+            }
+            if (-not (Test-Path -LiteralPath $file)) { return @{ status = 'failed'; detail = "no está su desinstalador ($file)" } }
+
+            # A per-user entry can be written by the user's own programs: it runs as that user, never elevated. An
+            # uninstaller without a silent mode opens on the signed-in user's desktop, to finish it there.
+            if ($entry['asUser'] -or -not $pick.machine -or $entry['uninstall']['interactive']) {
+                $run = & ([scriptblock]::Create($runAsUser)) $file @($arguments)
+                if ($run['error']) { return @{ status = 'failed'; detail = $run['error'] } }
+                $finished = $run['finished']
+                $exitCode = $run['code']
+            }
+            else {
+                $process = if ($arguments) { Start-Process -FilePath $file -ArgumentList $arguments -PassThru } else { Start-Process -FilePath $file -PassThru }
+                $finished = $process.WaitForExit(600000)
+                $exitCode = $process.ExitCode
+            }
+            if (-not $finished) { return @{ status = 'failed'; detail = 'el desinstalador no terminó en 10 minutos' } }
+            # NSIS and Inno uninstallers copy themselves to TEMP and return at once; the files go a moment later.
+            for ($i = 0; $i -lt 90 -and (& $isInstalled); $i++) { Start-Sleep -Seconds 2 }
+            @{ status = if (& $isInstalled) { 'failed' } else { 'uninstalled' }; detail = "código $exitCode" }
+        }
+        $status = [string]$result['status']
+        $detail = ([string]$result['detail'])
+        if ($detail.Length -gt 200) { $detail = $detail.Substring(0, 200) }
+        switch ($status) {
+            'absent' { Write-Step "$($entry['name']) no estaba instalado" }
+            'uninstalled' { Write-Step "$($entry['name']) desinstalado" }
+            default { Write-Warning "No se pudo desinstalar $($entry['name']) ($detail)." }
+        }
+        if ($status -in 'uninstalled', 'absent') { Update-InstalledAppState -Name $Name -Removed $id }
         [ordered]@{ app = $id; name = $entry['name']; status = $status }
     }
 }

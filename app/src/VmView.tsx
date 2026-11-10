@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   IconAlertTriangle, IconPlugConnected, IconStack2, IconTemplate,
   IconSparkles,
@@ -8,7 +9,7 @@ import {
   IconWorld, IconNetwork, IconRectangle, IconWaveSine, IconPlayerTrackNext, IconChevronRight, IconDeviceGamepad2, IconPointer,
 } from "@tabler/icons-react";
 import type { AppInfo, CleanupLevelId, SharedDiskInfo, DisplayMode, HostInfo, MouseMode, Sample, StreamSettings, VmOverview } from "./types";
-import { AppPicker, CleanupPicker, CODECS, FPS_OPTIONS, RESOLUTIONS, USES, streamUseOf, useCleanupLevels } from "./pickers";
+import { AppLogo, AppPicker, CleanupPicker, CODECS, FPS_OPTIONS, RESOLUTIONS, USES, streamUseOf, useCleanupLevels } from "./pickers";
 import { Bauhaus, patternClick, patternVariant, setPatternVariant } from "./bauhaus";
 import { MAX_SAMPLES, UsageChart } from "./Chart";
 import { CheckMark, Segmented, Slider, formatUptime, stateLabel } from "./ui";
@@ -162,25 +163,77 @@ export function Cleanup({ vm, busy, startJob }: Pick<Props, "vm" | "busy" | "sta
   );
 }
 
+const APP_JOBS = ["Install-GpuVMApp", "Uninstall-GpuVMApp"];
+
 export function Apps({ vm, busy, startJob }: Pick<Props, "vm" | "busy" | "startJob">) {
   const [catalog, setCatalog] = useState<AppInfo[]>([]);
   const [chosen, setChosen] = useState<string[]>([]);
+  const [installed, setInstalled] = useState<string[]>([]);
+  const [uninstalling, setUninstalling] = useState<AppInfo | null>(null);
   useEffect(() => { api.apps().then(setCatalog).catch(() => {}); }, []);
+  // Checked again when the machine turns on and after every job (an install, a template, a cleanup) ends.
+  const idle = !busy;
+  useEffect(() => {
+    if (!idle) return;
+    let live = true;
+    api.installedApps(vm.name).then((list) => {
+      if (!live) return;
+      const ids = list.map((a) => a.id);
+      setInstalled(ids);
+      setChosen((c) => c.filter((id) => !ids.includes(id)));
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [vm.name, vm.state, idle]);
   if (!catalog.length) return null;
-  const installing = busy?.cmd === "Install-GpuVMApp";
+  const working = !!busy && APP_JOBS.includes(busy.cmd);
+  const reinstall = (app: AppInfo) => startJob(vm.name, "Install-GpuVMApp", { Name: vm.name, App: [app.id], Reinstall: true });
   return (
     <div className="card">
       <div className="card-head">
         <h2 className="section-title">Apps</h2>
-        {chosen.length > 0 && (
+        {(chosen.length > 0 || working) && (
           <button className="btn" disabled={!!busy} onClick={() => startJob(vm.name, "Install-GpuVMApp", { Name: vm.name, App: chosen }, () => setChosen([]))}>
-            {installing ? <IconLoader2 size={16} className="spin" /> : <IconApps size={16} />}
-            {installing ? busy!.message : vm.state === "Off" ? "Encender e instalar" : "Instalar"}
+            {working ? <IconLoader2 size={16} className="spin" /> : <IconApps size={16} />}
+            {working ? busy!.message : vm.state === "Off" ? "Encender e instalar" : "Instalar"}
           </button>
         )}
       </div>
-      <AppPicker apps={catalog} value={chosen} onChange={setChosen} />
+      <AppPicker apps={catalog} value={chosen} onChange={setChosen} installed={installed} locked={!!busy}
+        onReinstall={reinstall} onUninstall={setUninstalling} />
+      {uninstalling && (
+        <ConfirmUninstall vm={vm} app={uninstalling} onClose={() => setUninstalling(null)}
+          onConfirm={() => { setUninstalling(null); startJob(vm.name, "Uninstall-GpuVMApp", { Name: vm.name, App: [uninstalling.id], Confirm: false }); }} />
+      )}
     </div>
+  );
+}
+
+function ConfirmUninstall({ vm, app, onClose, onConfirm }: { vm: VmOverview; app: AppInfo; onClose: () => void; onConfirm: () => void }) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    cancelRef.current?.focus();
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [onClose]);
+  // In a portal: inside the card, the overlay would be laid out within it.
+  return createPortal(
+    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="dialog narrow" role="dialog" aria-modal="true" aria-label={`Desinstalar ${app.name}`}>
+        <div className="dialog-head"><span className="choice-icon dialog-logo"><AppLogo id={app.id} /></span><h2>Desinstalar {app.name}</h2></div>
+        <p className="dialog-text">
+          {app.interactiveUninstall
+            ? `Su desinstalador se abre en la ventana de ${vm.name}. Termínalo ahí.`
+            : `Se quita de ${vm.name} con su propio desinstalador, junto con lo que guarda en su carpeta.`}
+          {vm.state === "Off" && " La máquina se enciende para hacerlo."}
+        </p>
+        <div className="dialog-foot">
+          <button ref={cancelRef} className="btn ghost" onClick={onClose}>Cancelar</button>
+          <button className="btn danger-fill" onClick={onConfirm}><IconTrash size={16} />Desinstalar</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 

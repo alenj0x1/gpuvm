@@ -68,6 +68,8 @@ function New-GpuVMTemplate {
                 guest     = $state['guest']
                 # Apps chosen for the VM but not installed yet (it was never opened): its copies install them.
                 pendingApps = @(if ($state.Contains('pendingApps')) { $state['pendingApps'] })
+                # Apps already in its Windows: its copies show them as installed before their first check.
+                installedApps = @(if ($state.Contains('installedApps')) { $state['installedApps'] })
             })
     }
     catch {

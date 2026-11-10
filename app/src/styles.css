@@ -356,6 +356,12 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
 .app-none { grid-column: 1 / -1; margin: 0; padding: 12px 2px; color: var(--muted); font-size: 13px; }
 .check.box { border-radius: 5px; }
 .choice.missing { opacity: 0.6; cursor: default; }
+.choice.installed .check.done { box-shadow: none; color: var(--ok); }
+.choice-more { color: var(--faint); flex: none; }
+.choice.installed:hover .choice-more, .choice.installed.open .choice-more { color: var(--text); }
+.choice.installed.open { background: var(--hover); }
+.choice.installed:disabled { opacity: 0.4; }
+.menu.floating { position: fixed; top: auto; right: auto; min-width: 200px; width: 200px; z-index: 30; }
 .field > .hint { color: var(--faint); font-size: 13px; }
 @media (max-width: 720px) {
   .row { flex-wrap: wrap; }
@@ -406,3 +412,4 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .prompt-publisher { font-size: 12px; color: var(--muted); }
 .prompt-publisher.unknown { color: var(--warn, var(--muted)); }
 .prompt-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: auto; }
+.dialog-logo { width: 40px; height: 40px; border-radius: 10px; background: var(--surface-2); }

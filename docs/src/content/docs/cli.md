@@ -166,7 +166,9 @@ Besides the cmdlets above, the module exports these, used mainly by the app:
 | `Send-GpuVMClipboard` | Puts text into the VM's clipboard (only from the PC to the VM). |
 | `Set-GpuVMNetworkIsolation` | Turns the VM's network isolation on (the default) or off. |
 | `Get-GpuVMCleanup` / `Set-GpuVMCleanup` | The Windows cleanup levels / applies one to a VM. |
-| `Get-GpuVMApp` / `Install-GpuVMApp` | The app catalog / installs apps in a VM (starts it if needed). |
+| `Get-GpuVMApp` / `Install-GpuVMApp` | The app catalog / installs apps in a VM (starts it if needed). Apps already installed are left as they are; `-Reinstall` uninstalls them first and installs them again. |
+| `Get-GpuVMInstalledApp` | `-Name`. The catalog apps installed in a VM: checked inside Windows while it runs, the last ones seen while it is off. |
+| `Uninstall-GpuVMApp` | `-Name`, `-App`. Uninstalls apps with each one's own uninstaller, silently (starts the VM if needed). Battle.net's has no silent mode: it opens on the VM's desktop to finish there. |
 | `Add-GpuVMIso` / `Remove-GpuVMIso` | Remembers an ISO in the library / forgets it (the file stays). |
 | `Get-GpuVMDisk` / `Restore-GpuVM` / `Remove-GpuVMDisk` | The disks in the GpuVM folder / creates a VM again from a kept disk / deletes a free disk. |
 | `Get-GpuVMBase` / `Remove-GpuVMBase` | The prepared Windows bases (one per ISO and edition) / deletes one; the next VM with that Windows prepares it again. |
