@@ -141,7 +141,7 @@
   }
   // A thumbnail of the change itself, when the app has a screen for it.
   const THUMBS = [[/inicio|home/i, "home-memory"], [/memoria|memory/i, "memory"], [/plantilla|template/i, "templates-card"],
-    [/compartido|shared/i, "shared-card"], [/windows limpio|clean windows/i, "windows"], [/apps/i, "apps"]];
+    [/compartido|shared/i, "shared-card"], [/windows limpio|clean windows/i, "windows"], [/apps/i, "apps"], [/monitor/i, "monitor"]];
   const WIDE_THUMBS = new Set(["memory", "templates-card", "shared-card"]);
   const thumbFor = (text) => THUMBS.find(([re]) => re.test(text))?.[1] ?? null;
   function renderNews() {
