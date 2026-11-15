@@ -1218,3 +1218,48 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .app.collapsed .side-add { margin-top: 0; }
 .home-space:has(.game-stage) .space-bar, .home-space:has(.game-gallery) .space-bar { display: none; }
 .game-tile-art canvas { cursor: pointer; pointer-events: none; }
+
+/* The screen before a game: the game playing on its own at the left, the picks and the controls at the right.
+   It fills the stage as the stage itself (no frame of its own, so no edges show over the card's). */
+.game-start { position: absolute; inset: 0; z-index: 3; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(280px, 1fr); gap: 16px; padding: 16px; background: var(--surface); }
+.game-start-preview { position: relative; border-radius: var(--r); overflow: hidden; background: var(--surface-2); min-height: 0; }
+.game-start-preview canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.game-start-record { position: absolute; left: 12px; bottom: 12px; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; background: var(--surface); }
+.game-start-side { display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow-y: auto; scrollbar-width: none; }
+.game-start-head { display: flex; flex-direction: column; gap: 4px; }
+.game-start-head strong { font-size: 20px; font-weight: 600; }
+.game-start-head span { color: var(--muted); font-size: 13px; line-height: 1.45; }
+.game-start-group { display: flex; flex-direction: column; gap: 6px; }
+.game-start-label { font-size: 12px; color: var(--faint); }
+.game-start-list { display: flex; flex-direction: column; gap: 2px; }
+.game-start-option { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: var(--r); text-align: left; width: 100%; min-width: 0; }
+.game-start-option:hover:not(:disabled) { background: var(--hover); }
+.game-start-option.on { background: var(--pick-bg); box-shadow: inset 0 0 0 1px var(--pick-line); }
+.game-start-option:disabled { opacity: 0.4; cursor: default; }
+.game-start-option .grow { flex: 1; min-width: 0; }
+.game-start-option .title { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.game-start-option .desc { display: block; font-size: 12px; color: var(--muted); line-height: 1.4; margin-top: 1px; }
+.game-start-option-icon { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; flex: none; color: var(--muted); background: var(--surface-2); }
+.game-start-option.on .game-start-option-icon { color: var(--accent); }
+.game-controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px 12px; }
+.game-control { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.game-control-input { display: inline-flex; align-items: center; gap: 4px; flex: none; color: var(--muted); }
+.game-control-label { font-size: 13px; color: var(--text); min-width: 0; }
+.game-control-or { font-size: 11px; color: var(--faint); margin: 0 2px; }
+.keycap { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 5px; font: 600 11px "Plus Jakarta Sans", sans-serif; color: var(--text); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line), inset 0 -2px 0 var(--line); }
+.keycap.wide { padding: 0 8px; }
+.keys-wasd { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; }
+.keys-wasd > span { display: inline-flex; gap: 2px; }
+.keys-row { display: inline-flex; align-items: center; }
+.mouse-glyph { display: block; }
+.game-tips { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.game-tips li { display: flex; gap: 8px; align-items: baseline; }
+.game-tips li::before { content: ""; width: 4px; height: 4px; border-radius: 50%; background: var(--faint); flex: none; transform: translateY(-2px); }
+.game-start-actions { display: flex; gap: 8px; margin-top: auto; padding-top: 4px; }
+.game-start-actions .primary { flex: 1; justify-content: center; }
+@media (max-width: 900px) { .game-start { grid-template-columns: minmax(0, 1fr); grid-template-rows: 180px minmax(0, 1fr); } }
+/* The gallery fills the stage too, without a frame of its own */
+.game-gallery { inset: 0; border-radius: 0; box-shadow: none; padding: 16px; }
+/* The actions stay in view at the foot of the column however long the picks get */
+.game-start-actions { position: sticky; bottom: 0; background: var(--surface); padding: 10px 0 0; box-shadow: 0 -1px 0 var(--line); }
+.game-start-side { padding-bottom: 0; }

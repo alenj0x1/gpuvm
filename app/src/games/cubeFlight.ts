@@ -593,12 +593,17 @@ export const CUBE_FLIGHT: GameDef = {
     { id: "team", name: "En equipo", description: "Tus otras máquinas vuelan contigo y disparan solas. Llegan más rivales y más duros.", team: true },
   ],
   controls: [
-    "Muévete con W A S D o las flechas",
-    "Apunta con el mouse y dispara con clic (o la barra espaciadora)",
+    { label: "Moverte", keys: ["W", "A", "S", "D"] },
+    { label: "Apuntar", mouse: "move" },
+    { label: "Disparar", mouse: "left", keys: ["Espacio"] },
+    { label: "Habilidad", mouse: "right", keys: ["E"] },
+    { label: "Pausa", keys: ["P"] },
+  ],
+  tips: [
     "Los stickers traen armas, escudo o una vida",
     "Derribar llena el frenesí: figuras gigantes por unos segundos",
-    "Disparar carga tu habilidad: úsala con clic derecho (o E)",
-    "Los núcleos de colores cambian tu habilidad",
+    "Disparar carga tu habilidad; los núcleos de colores la cambian",
+    "Cada 40 segundos cruzas a otra zona",
   ],
   create,
 };

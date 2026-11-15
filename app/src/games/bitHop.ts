@@ -197,6 +197,10 @@ export const BIT_HOP: GameDef = {
     { id: "board", name: "Placa base", description: "Torres de condensadores y chips sobre las pistas de la placa." },
     { id: "blocks", name: "Bloques", description: "Torres de bloques de colores bajo un cielo con nubes de bloques." },
   ],
-  controls: ["Salta con clic, la barra espaciadora o la flecha arriba", "Junta los bits de los huecos: valen doble"],
+  controls: [
+    { label: "Saltar", mouse: "left", keys: ["Espacio", "↑"] },
+    { label: "Pausa", keys: ["P"] },
+  ],
+  tips: ["Cada hueco que cruzas suma un punto", "Los bits de los huecos valen doble", "Los huecos se angostan con el puntaje"],
   create,
 };

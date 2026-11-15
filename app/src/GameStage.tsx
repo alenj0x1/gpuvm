@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { IconDeviceGamepad2, IconHeart, IconPlayerPause, IconPlayerPlay, IconRefresh, IconTrophy, IconX } from "@tabler/icons-react";
 import { GAMES, bestScore, saveBest, type GameDef, type GameHud, type GameInstance, type GameMachine } from "./games";
-import { IconBolt } from "@tabler/icons-react";
+import { IconBolt, IconUser, IconUsersGroup } from "@tabler/icons-react";
+import { ambientInfo } from "./ambient";
+import type { Control } from "./games/types";
 import { colorOfDecor, readDecor, useDecor, type Decor } from "./decor/store";
 import { MachineIcon } from "./machineIcon";
-import { Segmented } from "./ui";
 
 type Phase = "ready" | "playing" | "paused" | "over";
 
@@ -98,33 +99,59 @@ function GameStage({ game, machines, first, fallback, world, onClose }: {
         </div>
       )}
       {phase === "ready" && (
-        <div className="game-card wide">
-          <span className="game-card-icon"><IconDeviceGamepad2 size={22} /></span>
-          <strong>{game.name}</strong>
-          <span className="game-card-desc">{game.description}</span>
-          {machines.length > 0 && (
-            <div className="game-pick" role="radiogroup" aria-label="Máquina con la que juegas">
-              {machines.map((n) => (
-                <button key={n} type="button" role="radio" aria-checked={n === player} className={`game-pick-item${n === player ? " on" : ""}`} onClick={() => setPlayer(n)}>
-                  <MachineIcon name={n} size={22} radius={6} /><span>{n}</span>
-                </button>
-              ))}
+        <div className="game-start">
+          {/* The game itself, playing on its own with the machine and the mode picked beside it. */}
+          <div className="game-start-preview">
+            <GameDemo key={`${player}|${mode}`} game={game} player={player} fallback={fallback} world={world} mode={mode}
+              team={modeInfo?.team ? machines.filter((n) => n !== player).slice(0, 3) : []} />
+            {best > 0 && <span className="game-start-record"><IconTrophy size={14} />Récord {best.toLocaleString("es")}</span>}
+          </div>
+          <div className="game-start-side">
+            <div className="game-start-head">
+              <strong>{game.name}</strong>
+              <span>{game.description}</span>
             </div>
-          )}
-          {game.modes && game.modes.length > 1 && (
-            <>
-              <Segmented value={mode} options={game.modes.map((m) => ({ value: m.id, label: m.name }))}
-                onChange={(m) => setMode(m)} />
-              <span className="game-card-desc">
-                {modeInfo?.team && !teamReady ? "Necesitas al menos dos máquinas para jugar en equipo." : modeInfo?.description}
-              </span>
-            </>
-          )}
-          <ul>{game.controls.map((c) => <li key={c}>{c}</li>)}</ul>
-          {best > 0 && <span className="game-best"><IconTrophy size={14} />Récord {best.toLocaleString("es")}</span>}
-          <div className="game-card-actions">
-            <button type="button" className="btn ghost" onClick={onClose}>Salir</button>
-            <button type="button" className="primary compact" disabled={!!modeInfo?.team && !teamReady} onClick={play}><IconPlayerPlay size={16} />Jugar</button>
+            {machines.length > 1 && (
+              <div className="game-start-group">
+                <span className="game-start-label">Máquina</span>
+                <div className="game-start-list" role="radiogroup" aria-label="Máquina con la que juegas">
+                  {machines.map((n) => (
+                    <button key={n} type="button" role="radio" aria-checked={n === player} className={`game-start-option${n === player ? " on" : ""}`} onClick={() => setPlayer(n)}>
+                      <MachineIcon name={n} size={28} radius={8} />
+                      <span className="grow"><span className="title">{n}</span></span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {game.modes && game.modes.length > 1 && (
+              <div className="game-start-group">
+                <span className="game-start-label">{game.modes.some((m) => m.team) ? "Modo" : "Mundo"}</span>
+                <div className="game-start-list" role="radiogroup" aria-label="Modo">
+                  {game.modes.map((m) => {
+                    const off = !!m.team && !teamReady;
+                    const Icon = m.id === "solo" ? IconUser : m.team ? IconUsersGroup : ambientInfo(m.id).icon;
+                    return (
+                      <button key={m.id} type="button" role="radio" aria-checked={m.id === mode} disabled={off} className={`game-start-option${m.id === mode ? " on" : ""}`} onClick={() => setMode(m.id)}>
+                        <span className="game-start-option-icon"><Icon size={16} /></span>
+                        <span className="grow"><span className="title">{m.name}</span><span className="desc">{off ? "Necesitas al menos dos máquinas." : m.description}</span></span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            <div className="game-start-group">
+              <span className="game-start-label">Controles</span>
+              <div className="game-controls">
+                {game.controls.map((c) => <ControlRow key={c.label} c={c} />)}
+              </div>
+            </div>
+            {game.tips && <ul className="game-tips">{game.tips.map((t) => <li key={t}>{t}</li>)}</ul>}
+            <div className="game-start-actions">
+              <button type="button" className="btn ghost" onClick={onClose}>Salir</button>
+              <button type="button" className="primary" disabled={!!modeInfo?.team && !teamReady} onClick={play}><IconPlayerPlay size={16} />Jugar</button>
+            </div>
           </div>
         </div>
       )}
@@ -185,7 +212,7 @@ export function SpaceWithGames({ decor: shown, decorOf, machines = [], world, ch
 }
 
 /** One game playing by itself on its card: the real game, in a demo, with the machine in front. */
-function GameDemo({ game, player, fallback, world }: { game: GameDef; player?: string; fallback: Decor; world?: string }) {
+function GameDemo({ game, player, fallback, world, mode: pickedMode, team = [] }: { game: GameDef; player?: string; fallback: Decor; world?: string; mode?: string; team?: string[] }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const cv = ref.current;
@@ -193,11 +220,12 @@ function GameDemo({ game, player, fallback, world }: { game: GameDef; player?: s
     const light = document.documentElement.dataset.theme === "light";
     const accent = getComputedStyle(cv).getPropertyValue("--accent").trim() || "#7d9cf0";
     const me = player ? asPlayer(player, readDecor(player), light, accent) : asPlayer("", fallback, light, accent);
-    const mode = game.modes?.find((m) => m.id === world)?.id ?? (game.modes?.some((m) => m.team) ? "solo" : game.modes?.[0]?.id ?? "");
-    const inst = game.create(cv, { player: me, team: [], mode, light, color: me.color, figures: me.figures, world, demo: true, onHud: () => {}, onOver: () => {} });
+    const mode = pickedMode ?? game.modes?.find((m) => m.id === world)?.id ?? (game.modes?.some((m) => m.team) ? "solo" : game.modes?.[0]?.id ?? "");
+    const mates = team.map((n) => asPlayer(n, readDecor(n), light, accent));
+    const inst = game.create(cv, { player: me, team: mates, mode, light, color: me.color, figures: me.figures, world, demo: true, onHud: () => {}, onOver: () => {} });
     inst.start();
     return () => inst.stop();
-  }, [game, player, fallback, world]);
+  }, [game, player, fallback, world, pickedMode, team.join("|")]); // eslint-disable-line react-hooks/exhaustive-deps
   return <canvas ref={ref} />;
 }
 
@@ -233,6 +261,37 @@ function GameGallery({ player, fallback, world, onPick, onClose }: { player?: st
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/** A key as it looks on the keyboard. */
+const Key = ({ k }: { k: string }) => <kbd className={`keycap${k.length > 2 ? " wide" : ""}`}>{k}</kbd>;
+/** The mouse with the button that does the action in the accent (or its middle marked, to aim). */
+function Mouse({ part }: { part: "left" | "right" | "move" }) {
+  return (
+    <svg className="mouse-glyph" width="22" height="28" viewBox="0 0 22 28" aria-hidden="true">
+      <rect x="3" y="2" width="16" height="24" rx="8" fill="none" stroke="currentColor" strokeWidth="1.4" opacity=".7" />
+      <path d="M11 2v9M3 11h16" stroke="currentColor" strokeWidth="1.2" opacity=".5" />
+      {part === "left" && <path d="M11 2.7a7.3 7.3 0 0 0-7.3 7.3v.3H11z" fill="var(--accent)" />}
+      {part === "right" && <path d="M11 2.7a7.3 7.3 0 0 1 7.3 7.3v.3H11z" fill="var(--accent)" />}
+      {part === "move" && <circle cx="11" cy="18" r="2.4" fill="var(--accent)" />}
+    </svg>
+  );
+}
+/** One control: what does it (keys, a mouse button, or both) and what it is for. */
+function ControlRow({ c }: { c: Control }) {
+  const wasd = c.keys?.join("") === "WASD";
+  return (
+    <div className="game-control">
+      <span className="game-control-input">
+        {c.mouse && <Mouse part={c.mouse} />}
+        {c.mouse && c.keys && <span className="game-control-or">o</span>}
+        {wasd ? (
+          <span className="keys-wasd"><span><Key k="W" /></span><span><Key k="A" /><Key k="S" /><Key k="D" /></span></span>
+        ) : c.keys?.map((k, i) => <span key={k} className="keys-row">{i > 0 && <span className="game-control-or">o</span>}<Key k={k} /></span>)}
+      </span>
+      <span className="game-control-label">{c.label}</span>
     </div>
   );
 }

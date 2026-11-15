@@ -43,13 +43,18 @@ export interface GameInstance {
   stop: () => void;
 }
 
+/** One action of a game and what does it: keys (as written on them) and/or a mouse button. */
+export interface Control { label: string; keys?: string[]; mouse?: "left" | "right" | "move" }
+
 export interface GameDef {
   id: string;
   name: string;
   /** One line under its name. */
   description: string;
-  /** How it is played, in words, for the start screen. */
-  controls: string[];
+  /** How it is played: each action with the keys and mouse button that do it, drawn on the start screen. */
+  controls: Control[];
+  /** A few short lines about what happens in the game (pickups, scoring). */
+  tips?: string[];
   /** Ways to play it, picked on the start card; `team` modes bring your other machines along. */
   modes?: { id: string; name: string; description: string; team?: boolean }[];
   create: (canvas: HTMLCanvasElement, host: GameHost) => GameInstance;
