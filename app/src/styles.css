@@ -1039,3 +1039,20 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 /* The machine's specs in its header: small labeled pieces, not a run of words after dots. */
 .spec-chip { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 6px; background: var(--surface-2); color: var(--muted); font-size: 12px; white-space: nowrap; }
 .spec-chip svg { flex: none; }
+
+/* Personalizar: decoration of the machine's cube */
+.machine-cube.grab { cursor: move; }
+.machine-cube.holding { cursor: grabbing; }
+.decor-tiles { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+.decor-tile { padding: 10px 6px 10px; cursor: grab; }
+.decor-tile:active { cursor: grabbing; }
+.decor-tile-wrap { display: contents; }
+.decor-thumb { display: block; width: 64px; height: 64px; object-fit: contain; }
+.decor-add { cursor: pointer; color: var(--muted); }
+.decor-add-icon { display: grid; place-items: center; border-radius: var(--r); background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--accent); width: 48px; height: 48px; margin: 8px; }
+.customize .swatches { gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.led-swatch svg circle { transition: none; }
+.decor-picked { border-top: 1px solid var(--line); }
+.decor-picked-ctl { flex-direction: column; align-items: stretch; gap: 14px; }
+.decor-picked-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.decor-menu { min-width: 220px; }

@@ -11,6 +11,7 @@ import { readPrefs } from "./prefs";
 import { api, onJob, relaunchAsAdmin, repairService, service, startJob as runJob } from "./api";
 import { MachineIcon, renamePatternVariant } from "./machineIcon";
 import { renameSceneStyle } from "./Scene";
+import { renameDecor } from "./decor/store";
 import { MAX_SAMPLES } from "./Chart";
 import { VmView, type JobInfo } from "./VmView";
 import { CreateDialog } from "./CreateDialog";
@@ -217,6 +218,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     delete history.current[from];
     renameSceneStyle(from, to);
     renamePatternVariant(from, to);
+    renameDecor(from, to);
     setSelected(to);
   };
 

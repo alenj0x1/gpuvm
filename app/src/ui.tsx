@@ -11,6 +11,8 @@ interface SliderProps {
   label: string;
   /** How a scale number is written (e.g. 0 as "Auto"). */
   format?: (v: number) => string;
+  /** The numbers written under it, when the automatic ones don't fit the quantity (degrees: every 90). */
+  marks?: number[];
 }
 
 /** Scale numbers under a slider: about seven, on round values that are multiples of the step, always with both ends. */
@@ -32,7 +34,7 @@ function scaleMarks(min: number, max: number, step: number) {
 
 /** Custom slider (no native input): a bar with its scale written underneath, so it says how much each position is.
  *  Drag or click anywhere, arrows and the mouse wheel move one step. */
-export function Slider({ value, min, max, step = 1, onChange, label, format = String }: SliderProps) {
+export function Slider({ value, min, max, step = 1, onChange, label, format = String, marks }: SliderProps) {
   const ref = useRef<HTMLDivElement>(null);
   const clamp = (v: number) => Math.min(max, Math.max(min, v));
   const pct = max > min ? ((clamp(value) - min) / (max - min)) * 100 : 100;
@@ -82,7 +84,7 @@ export function Slider({ value, min, max, step = 1, onChange, label, format = St
       <div className="fill" style={{ width: `${pct}%` }} />
       <div className="thumb" style={{ left: `${pct}%` }} />
       <div className="scale" aria-hidden="true">
-        {scaleMarks(min, max, step).map((m, i, all) => (
+        {(marks ?? scaleMarks(min, max, step)).map((m, i, all) => (
           <span key={m} className={i === 0 ? "first" : i === all.length - 1 ? "last" : ""} style={{ left: `${((m - min) / (max - min || 1)) * 100}%` }}>{format(m)}</span>
         ))}
       </div>

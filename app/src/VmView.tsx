@@ -8,6 +8,7 @@ import { usePrefs } from "./prefs";
 import { AppLogo, FpsPicker, MonitorPicker, resolveMonitor, useMonitors, CODECS, RESOLUTIONS, USES, streamUseOf, useCleanupLevels, profileLabel } from "./pickers";
 import { MachineIcon, patternClick, patternVariant, setPatternVariant } from "./machineIcon";
 import { CLEANUP_REMOVED, MachineCube, cubeOf } from "./MachineCube";
+import { Customize, useDecorEdit } from "./Customize";
 import { Scene, nextSceneStyle, sceneStyle } from "./Scene";
 import { CleanupFlow, CleanupItems, LEVEL_LOOK } from "./CleanupFlow";
 import { Sparkline, series } from "./Chart";
@@ -37,8 +38,8 @@ interface Props {
 
 const TRANSITION: Record<string, string> = { Starting: "Encendiendo", Stopping: "Apagando", Saving: "Guardando", Pausing: "Pausando", Resuming: "Reanudando" };
 
-type VmTab = "machine" | "display" | "windows";
-const TAB_LABEL: Record<VmTab, string> = { machine: "Máquina", display: "Imagen y control", windows: "Windows" };
+type VmTab = "machine" | "display" | "windows" | "custom";
+const TAB_LABEL: Record<VmTab, string> = { machine: "Máquina", display: "Imagen y control", windows: "Windows", custom: "Personalizar" };
 
 export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRemoved, onRenamed }: Props) {
   const [variant, setVariant] = useState(() => patternVariant(vm.name));
@@ -55,6 +56,8 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
   if (vm.managed && vm.options) tabs.push("machine");
   if (vm.managed && vm.options && vm.streaming) tabs.push("display");
   if (vm.managed && vm.guestCredential) tabs.push("windows");
+  if (vm.managed && vm.options) tabs.push("custom");
+  const decorEdit = useDecorEdit(vm.name);
   // Every section is on the same page; the bar above them marks the one in view and takes you to the others.
   const mainRef = useRef<HTMLDivElement>(null);
   const sectionRefs = useRef<Partial<Record<VmTab, HTMLElement | null>>>({});
@@ -153,7 +156,13 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
           <Apps vm={vm} busy={busy} startJob={startJob} onPreview={setPreviewApps} />
         </section>
       )}
+      {tabs.includes("custom") && (
+        <section className="vm-section" ref={(el) => { sectionRefs.current.custom = el; }}>
+          <Customize name={vm.name} ops={decorEdit.ops} selected={decorEdit.selected} setSelected={decorEdit.setSelected} />
+        </section>
+      )}
       </div>
+      {decorEdit.menu}
       {/* The machine itself, always in view beside its options, following what is being changed before it is saved. */}
       {vm.managed && vm.options && (
         <aside className={`vm-cube${renameOpen ? " lifted" : ""}`}>
@@ -166,7 +175,7 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
             usage: { cpu: vm.cpuPercent, gpu: vm.gpuPercent, mem: (vm.memoryDemandGB / Math.max(vm.memoryAssignedGB, 0.1)) * 100, disk: 0 },
             apps: previewApps,
             removed: CLEANUP_REMOVED[preview.cleanup ?? vm.options.cleanup] ?? 0,
-          }} name={draftName || vm.name} others={vms.filter((v) => v.name !== vm.name).map((v) => ({ name: v.name, machine: cubeOf(v) }))} />
+          }} name={draftName || vm.name} decorOf={vm.name} edit={decorEdit.edit} others={vms.filter((v) => v.name !== vm.name).map((v) => ({ name: v.name, machine: cubeOf(v) }))} />
         </aside>
       )}
       </div>

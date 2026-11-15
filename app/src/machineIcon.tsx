@@ -1,4 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { decorColor, useDecor } from "./decor/store";
 
 // A machine's icon (a tile tinted with its color): the app logo's chip with one of its four parts in the machine's color — the part of the GPU it gets.
 // Each name always gets the same part and color; "Otro ícono" moves to the next variant.
@@ -73,6 +74,9 @@ export function renamePatternVariant(from: string, to: string) {
 }
 
 export function machineColor(name: string, variant = patternVariant(name)) {
+  // A color picked in Personalizar wins over the one from the name.
+  const own = decorColor(name);
+  if (own) return own;
   const colors = palette();
   return colors[hash(`${name}#${variant}`) % colors.length];
 }
@@ -95,6 +99,7 @@ const CELL = [[10, 10], [20.5, 10], [10, 20.5], [20.5, 20.5]];
 /** The machine's icon. `muted` dims it for powered-off machines without a GPU. */
 export function MachineIcon({ name, size, radius, variant, muted }: Props) {
   usePalette();
+  useDecor(name);
   const v = variant ?? patternVariant(name);
   const color = machineColor(name, v);
   const part = machinePart(name, v);
