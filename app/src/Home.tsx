@@ -8,6 +8,7 @@ import type { JobInfo } from "./VmView";
 import { api } from "./api";
 import { MachineIcon } from "./machineIcon";
 import { MachineCube, cubeOf, type CubeMachine } from "./MachineCube";
+import { randomDecor, randomMachine } from "./decor/random";
 import { Scene, sceneStyle } from "./Scene";
 import { formatUptime, stateLabel, useFlip, useScrollFade } from "./ui";
 
@@ -306,7 +307,14 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
 }
 
 /** A machine that doesn't exist yet: the cube with its pieces off, waiting. */
-const FIRST: CubeMachine = { power: "off", cores: 8, memoryGB: 16, gpuPercent: 100, diskGB: 256, usage: { cpu: 0, gpu: 0, mem: 0, disk: 0 }, apps: [], removed: 0 };
+/** With no machines yet, the space shows machines made up at random: a new decoration every few seconds, arriving
+ *  with a quick spin. The machine itself stays (changing its pieces would send the camera around them). */
+function Showcase() {
+  const [machine] = useState<CubeMachine>(randomMachine);
+  const [decor, setDecor] = useState(randomDecor);
+  useEffect(() => { const t = setInterval(() => setDecor(randomDecor()), 7000); return () => clearInterval(t); }, []);
+  return <MachineCube machine={machine} name="" decorShown={decor} />;
+}
 
 /** Home with no machines: the same stage, with an empty machine in its cube, and beside it the invitation to create
  *  the first one and what the Library already has ready for it. */
@@ -325,7 +333,7 @@ export function EmptyHome({ gpuName, onCreate, onRoute }: { gpuName: string | nu
   return (
     <div className="main home">
       <div className="card home-stage home-empty">
-        <div className="home-space"><MachineCube machine={FIRST} name="" /></div>
+        <div className="home-space"><Showcase /></div>
         <div className="home-split home-split-panel" aria-hidden="true" />
         <div className="home-panel home-empty-panel">
           <div className="home-empty-text">

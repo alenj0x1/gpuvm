@@ -109,10 +109,14 @@ export function useDecor(name: string): Decor {
 }
 export const onDecorChange = subscribe;
 
+/** A decoration's color for the theme, or null to follow the accent. */
+export function colorOfDecor(d: Decor, light = document.documentElement.dataset.theme === "light"): string | null {
+  const c = MACHINE_COLORS.find((m) => m.id === d.color);
+  return c ? (light ? c.light : c.dark) : null;
+}
 /** The machine's own color for the theme, or null to follow the accent. */
 export function decorColor(name: string, light = document.documentElement.dataset.theme === "light"): string | null {
-  const c = MACHINE_COLORS.find((m) => m.id === readDecor(name).color);
-  return c ? (light ? c.light : c.dark) : null;
+  return colorOfDecor(readDecor(name), light);
 }
 
 export const newId = () => Math.random().toString(36).slice(2, 10);

@@ -158,7 +158,7 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
       )}
       {tabs.includes("custom") && (
         <section className="vm-section" ref={(el) => { sectionRefs.current.custom = el; }}>
-          <Customize name={vm.name} ops={decorEdit.ops} selected={decorEdit.selected} setSelected={decorEdit.setSelected} />
+          <Customize name={vm.name} ops={decorEdit.ops} selected={decorEdit.selected} setSelected={decorEdit.setSelected} openMenu={decorEdit.openMenu} />
         </section>
       )}
       </div>
@@ -175,7 +175,7 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
             usage: { cpu: vm.cpuPercent, gpu: vm.gpuPercent, mem: (vm.memoryDemandGB / Math.max(vm.memoryAssignedGB, 0.1)) * 100, disk: 0 },
             apps: previewApps,
             removed: CLEANUP_REMOVED[preview.cleanup ?? vm.options.cleanup] ?? 0,
-          }} name={draftName || vm.name} decorOf={vm.name} edit={decorEdit.edit} others={vms.filter((v) => v.name !== vm.name).map((v) => ({ name: v.name, machine: cubeOf(v) }))} />
+          }} name={draftName || vm.name} decorOf={vm.name} edit={{ ...decorEdit.edit, holdStill: active === "custom" }} others={vms.filter((v) => v.name !== vm.name).map((v) => ({ name: v.name, machine: cubeOf(v) }))} />
         </aside>
       )}
       </div>

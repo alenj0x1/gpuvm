@@ -9,6 +9,11 @@ import "@fontsource/plus-jakarta-sans/600.css";
 import "./styles.css";
 
 initPrefs();
+// The web view's own menu (Back, Reload, Inspect) has no place in an app: right click only opens GpuVM's menus.
+// Text fields keep it, for copy and paste.
+window.addEventListener("contextmenu", (e) => {
+  if (!(e.target as HTMLElement)?.closest?.("input, textarea, [contenteditable='true']")) e.preventDefault();
+});
 // The administrator-prompt card runs in its own small window (label "prompt"; "?prompt" in the browser).
 const isPrompt = "__TAURI_INTERNALS__" in window
   ? (window as unknown as { __TAURI_INTERNALS__: { metadata: { currentWindow: { label: string } } } }).__TAURI_INTERNALS__.metadata.currentWindow.label === "prompt"

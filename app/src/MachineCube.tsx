@@ -1,9 +1,10 @@
 import { useEffect, useRef } from "react";
 import type { VmOverview } from "./types";
-import { useDecor, decorColor, saveDecor, newId, LED_COLORS, type Decor, type Face } from "./decor/store";
+import { useDecor, decorColor, colorOfDecor, saveDecor, newId, LED_COLORS, type Decor, type Face } from "./decor/store";
 import { ledColumns } from "./decor/ledFont";
 import { stickerImage } from "./decor/stickers";
-import { drawFigure, FIGURES } from "./decor/figures";
+import { FIGURES } from "./decor/figures";
+import { drawFigures as drawFiguresGL, mul3, turnY, viewRot, type FigureDraw } from "./decor/figureGL";
 
 /** What the cube shows: the machine's pieces, how much each one is working, and what it has installed. */
 export interface CubeMachine {
@@ -170,19 +171,26 @@ export interface CubeEdit {
   onSelect: (id: string | null) => void;
   /** Right click on a sticker or figure, at a point of the window. */
   onMenu: (id: string, x: number, y: number) => void;
+  /** While decorating, the machine stays in front instead of drifting off into the constellation. */
+  holdStill?: boolean;
 }
 
-export function MachineCube({ machine, name = "", others = [], className, perPart = false, decorOf, edit }: {
+export function MachineCube({ machine, name = "", others = [], className, perPart = false, decorOf, edit, decorShown }: {
   machine: CubeMachine; name?: string; others?: CubeNeighbor[]; className?: string; perPart?: boolean;
   /** Whose decoration to show (the machine's name; `name` can be a name still being typed). */
   decorOf?: string;
+  /** A decoration to show instead of a machine's own (Home's showcase); each new one arrives with a quick spin. */
+  decorShown?: Decor;
   edit?: CubeEdit;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const owner = decorOf ?? name;
   const decor = useDecor(owner);
   const decorRef = useRef({ decor, owner });
-  decorRef.current = { decor, owner };
+  decorRef.current = { decor: decorShown ?? decor, owner };
+  const spins = useRef(0);
+  const shownBefore = useRef(decorShown);
+  if (shownBefore.current !== decorShown) { shownBefore.current = decorShown; spins.current++; }
   const editRef = useRef(edit);
   editRef.current = edit;
   // What changed since the last render: one piece gets a close-up, several at once (a profile) get a sequence.
@@ -232,6 +240,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
     const mountedAt = performance.now();
     const before = lastSpace;
     const swap = { from: -1, t: 1, started: false, yaw: START_YAW };
+    let spun = spins.current;
     if (before && before.name !== space.current.name && performance.now() - before.at < 2500) {
       swap.from = space.current.others.findIndex((o) => o.name === before.name);
       if (swap.from >= 0) { swap.t = 0; swap.yaw = before.yaw; view.yaw = before.yaw; view.pitch = before.pitch; }
@@ -253,7 +262,9 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       const ed = editRef.current;
       if (ed) {
         const [x, y] = local(e), hit = pick(x, y);
-        if (e.button === 2 && hit) { ed.onSelect(hit.id); ed.onMenu(hit.id, e.clientX, e.clientY); return; }
+        // The menu opens on the contextmenu event that follows, which is also the one the browser's own menu
+        // would answer: opening it here let that event land on our menu and show the browser's on top.
+        if (e.button === 2 && hit) { ed.onSelect(hit.id); menuFor = hit.id; return; }
         if (e.button === 0 && hit) {
           stopCam();
           held = { ...hit, du: 0, dv: 0 };
@@ -312,7 +323,12 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       view.oy = my - (my - cy) * k - cv.clientHeight / 2;
       view.zoom = z1;
     };
-    const menu = (e: MouseEvent) => e.preventDefault();
+    let menuFor: string | null = null;
+    const menu = (e: MouseEvent) => {
+      e.preventDefault();
+      if (menuFor && editRef.current) editRef.current.onMenu(menuFor, e.clientX, e.clientY);
+      menuFor = null;
+    };
     cv.addEventListener("pointerdown", down);
     cv.addEventListener("pointermove", move);
     cv.addEventListener("pointerup", up);
@@ -798,7 +814,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
     const stepCamera = (dt: number) => {
       if (reduced) { requests.current.length = 0; return; }
       const idleFor = (performance.now() - idleSince) / 1000;
-      const wantRest = !drag && !held && !editRef.current?.selected && !cam.shots.length && !(cam.home && cam.back > 0) && idleFor > 8 && space.current.others.length > 0 ? 1 : 0;
+      const wantRest = !drag && !held && !editRef.current?.selected && !editRef.current?.holdStill && !cam.shots.length && !(cam.home && cam.back > 0) && idleFor > 8 && space.current.others.length > 0 ? 1 : 0;
       rest += (wantRest - rest) * (1 - Math.exp(-dt * (wantRest ? 0.8 : 2.2)));
       takeRequests();
       const a = 1 - Math.exp(-dt * cam.k);
@@ -892,7 +908,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       if (holo.width !== pw || holo.height !== ph) { holo.width = pw; holo.height = ph; }
       light = document.documentElement.dataset.theme === "light";
       // The machine's own color, when it has one, instead of the accent.
-      accent = decorColor(decorRef.current.owner, light) ?? (css.getPropertyValue("--accent").trim() || "#7d9cf0");
+      accent = colorOfDecor(decorRef.current.decor, light) ?? (css.getPropertyValue("--accent").trim() || "#7d9cf0");
       const per = (v: string) => css.getPropertyValue(v).trim() || accent;
       // The whole hologram in the accent color; `perPart` paints each piece in its resource color instead.
       part.cpu = perPart ? per(PART.cpu) : accent; part.mem = perPart ? per(PART.mem) : accent;
@@ -907,6 +923,8 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       const act = on * Math.max(U.cpu, U.gpu) * bootF;
       fan += on ? (0.5 + U.gpu * 10) * dt : 0;
       stepCamera(dt);
+      // A new decoration to show: the same quick turn as switching machines, with the hologram rebuilding.
+      if (spins.current !== spun) { spun = spins.current; swap.t = 0; swap.started = false; swap.yaw = view.yaw + Math.PI * 1.1; }
       if (swap.t < 1) {
         // Quick, like a cut in an action scene: the camera whips around while the machines trade places, with a
         // short push in, and the arriving hologram builds fast.
@@ -1076,7 +1094,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
         g.save();
         g.setTransform(dpr * (a[0] - o[0]), dpr * (a[1] - o[1]), -dpr * (b[0] - o[0]), -dpr * (b[1] - o[1]), dpr * o[0], dpr * o[1]);
         g.rotate((s.rot * Math.PI) / 180);
-        g.globalAlpha = front ? 1 : 0.45;
+        g.globalAlpha = front ? 1 : 0.16;
         g.drawImage(front ? img : stickerBack(img), -s.size / 2, -s.size / 2, s.size, s.size);
         if (front && editRef.current?.selected === s.id) {
           const h = s.size / 2 + 0.025;
@@ -1110,7 +1128,9 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
           const col = ledCols[(((fi * per + i + shift) % n) + n) % n], u = -1 + step * (i + 0.5);
           for (let row = 0; row < 7; row++) {
             const p = P(...onFace(f, u, -0.66 - row * step)), path = col[row] ? lit : dark;
-            path.moveTo(p[0] + r, p[1]); path.arc(p[0], p[1], r, 0, Math.PI * 2);
+            // Tiny dots look the same as squares and cost far less than circles.
+            if (r < 1.8) path.rect(p[0] - r, p[1] - r, r * 2, r * 2);
+            else { path.moveTo(p[0] + r, p[1]); path.arc(p[0], p[1], r, 0, Math.PI * 2); }
           }
         }
       });
@@ -1118,22 +1138,25 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       g.fillStyle = color; g.fill(lit);
     }
 
-    const figView = {
-      project: (p: V3) => P(...p),
-      toView: (n: V3): V3 => { const x1 = n[0] * cyw - n[2] * syw, z1 = n[0] * syw + n[2] * cyw; return [x1, n[1] * cpt - z1 * spt, n[1] * spt + z1 * cpt]; },
-    };
+    // The figures go to the GPU: the cube's projection is affine, so three probes give the matrix it uses.
     function drawFigures(D: Decor) {
-      const list = D.figures.slice().sort((a, b) => P(a.x, 2, a.z)[2] - P(b.x, 2, b.z)[2]);
-      for (const f of list) {
-        const sc = f.size * FIG;
-        if (editRef.current?.selected === f.id) {
-          const ring: V3[] = [];
-          for (let i = 0; i <= 40; i++) { const a = (i / 40) * Math.PI * 2; ring.push([f.x + Math.cos(a) * 0.36 * sc, 2.004, f.z + Math.sin(a) * 0.36 * sc]); }
-          g.beginPath(); ring.forEach((p, i) => { const q = P(...p); if (i) g.lineTo(q[0], q[1]); else g.moveTo(q[0], q[1]); });
-          g.setLineDash([4, 4]); g.lineWidth = 1.2; g.strokeStyle = light ? "rgba(28,27,24,.7)" : "rgba(235,232,225,.75)"; g.stroke(); g.setLineDash([]);
-        }
-        drawFigure(g, f.figure, [f.x, 2, f.z], (f.rot * Math.PI) / 180, sc, figView, accent);
+      if (!D.figures.length) return;
+      const o = P(0, 0, 0), ax = P(1, 0, 0), ay = P(0, 1, 0), az = P(0, 0, 1);
+      const A = [ax[0] - o[0], ax[1] - o[1], ax[2] - o[2], ay[0] - o[0], ay[1] - o[1], ay[2] - o[2], az[0] - o[0], az[1] - o[1], az[2] - o[2]];
+      const V = viewRot(view.yaw, view.pitch);
+      const draws: FigureDraw[] = D.figures.map((f) => {
+        const turn = (f.rot * Math.PI) / 180;
+        const t: V3 = [o[0] + A[0] * f.x + A[3] * 2 + A[6] * f.z, o[1] + A[1] * f.x + A[4] * 2 + A[7] * f.z, o[2] + A[2] * f.x + A[5] * 2 + A[8] * f.z];
+        return { id: f.figure, m: mul3(A, turnY(turn, f.size * FIG)), t, n: mul3(V, turnY(turn)) };
+      });
+      for (const f of D.figures) {
+        if (editRef.current?.selected !== f.id) continue;
+        const sc = f.size * FIG, ring: V3[] = [];
+        for (let i = 0; i <= 40; i++) { const a = (i / 40) * Math.PI * 2; ring.push([f.x + Math.cos(a) * 0.36 * sc, 2.004, f.z + Math.sin(a) * 0.36 * sc]); }
+        g.beginPath(); ring.forEach((p, i) => { const q = P(...p); if (i) g.lineTo(q[0], q[1]); else g.moveTo(q[0], q[1]); });
+        g.setLineDash([4, 4]); g.lineWidth = 1.2; g.strokeStyle = light ? "rgba(28,27,24,.7)" : "rgba(235,232,225,.75)"; g.stroke(); g.setLineDash([]);
       }
+      drawFiguresGL(g, draws, accent, W, H, window.devicePixelRatio || 1);
     }
 
     const loop = (now: number) => {

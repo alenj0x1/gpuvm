@@ -97,7 +97,7 @@ export const STICKERS: StickerDef[] = [
     },
   },
   {
-    id: "cat", name: "Gatito",
+    id: "cat", name: "Gato",
     draw: (g) => {
       const fur = "#f6a65a", dark = "#d9803a";
       poly(g, [[42, 96], [50, 26], [96, 66]], fur, 14);
@@ -124,7 +124,7 @@ export const STICKERS: StickerDef[] = [
     },
   },
   {
-    id: "dog", name: "Perrito",
+    id: "dog", name: "Perro",
     draw: (g) => {
       const cream = "#f3d9b1", brown = "#9a6a3f", patch = "#c28a55";
       ell(g, 100, 108, 56, 54, cream);
@@ -214,8 +214,9 @@ export function removeCustomSticker(id: string) {
 }
 
 const SIZE = 256, PAD = 28, BORDER = 9;
-/** The art with its die-cut border: a white margin following its shape and a hairline around it. */
-function dieCut(art: HTMLCanvasElement): HTMLCanvasElement {
+/** The art with its die-cut border: a white margin following its shape and a hairline around it. Drawn stickers
+ *  also get an ink line around the art, like printed illustrations, and every sticker a soft vinyl sheen. */
+function dieCut(art: HTMLCanvasElement, ink = false): HTMLCanvasElement {
   const out = document.createElement("canvas");
   out.width = out.height = SIZE;
   const g = out.getContext("2d")!;
@@ -230,7 +231,17 @@ function dieCut(art: HTMLCanvasElement): HTMLCanvasElement {
   };
   ring(BORDER + 1.5, "rgba(120,114,104,.55)");
   ring(BORDER, "#f8f6f1");
+  if (ink) ring(2.6, "#2b2420");
   g.drawImage(art, 0, 0);
+  // The vinyl's sheen: a wide light band across the upper left, only on the sticker itself.
+  g.globalCompositeOperation = "source-atop";
+  const sheen = g.createLinearGradient(0, 0, SIZE, SIZE);
+  sheen.addColorStop(0, "rgba(255,255,255,0.22)");
+  sheen.addColorStop(0.38, "rgba(255,255,255,0.06)");
+  sheen.addColorStop(0.42, "rgba(255,255,255,0)");
+  sheen.addColorStop(1, "rgba(0,0,0,0.05)");
+  g.fillStyle = sheen; g.fillRect(0, 0, SIZE, SIZE);
+  g.globalCompositeOperation = "source-over";
   return out;
 }
 
@@ -261,7 +272,7 @@ export function stickerImage(id: string, color: string): HTMLCanvasElement | nul
   g.translate(PAD, PAD);
   g.scale((SIZE - PAD * 2) / 200, (SIZE - PAD * 2) / 200);
   def.draw(g, color);
-  const done = dieCut(art);
+  const done = dieCut(art, id !== "logo");
   images.set(key, done);
   return done;
 }

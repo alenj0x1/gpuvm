@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  IconActivity, IconCat, IconCopy, IconLetterCase, IconPalette, IconPhotoPlus, IconRotate2, IconRotateClockwise2, IconSticker, IconTrash, IconTypography, IconZoomIn, IconZoomOut,
+  IconActivity, IconCat, IconCopy, IconX, IconLetterCase, IconPalette, IconPhotoPlus, IconRotate2, IconRotateClockwise2, IconSticker, IconTrash, IconTypography, IconZoomIn, IconZoomOut,
 } from "@tabler/icons-react";
 import { DND, type CubeEdit } from "./MachineCube";
-import { FIGURES, drawFigure, figureName, thumbView } from "./decor/figures";
+import { FIGURES, figureName } from "./decor/figures";
+import { drawFigureThumb } from "./decor/figureGL";
 import { STICKERS, addCustomSticker, customStickers, removeCustomSticker, stickerImage, stickerName } from "./decor/stickers";
 import { LED_COLORS, MACHINE_COLORS, newId, readDecor, saveDecor, useDecor, onDecorChange, type Decor, type Face, type LedColor } from "./decor/store";
 import { ACCENTS, usePrefs } from "./prefs";
@@ -70,7 +71,7 @@ export function useDecorEdit(name: string) {
     </div>,
     document.body,
   );
-  return { edit, ops, selected, setSelected, menu: menuNode };
+  return { edit, ops, selected, setSelected, menu: menuNode, openMenu: (id: string, x: number, y: number) => setMenu({ id, x, y }) };
 }
 
 const STICKER_MIN = 0.28, STICKER_MAX = 1.4, FIGURE_MIN = 0.5, FIGURE_MAX = 1.8;
@@ -135,38 +136,38 @@ function Swatch({ light, dark, on, title, onClick }: { light: string; dark: stri
   );
 }
 
-function StickerThumb({ id, color }: { id: string; color: string }) {
+function StickerThumb({ id, color, small }: { id: string; color: string; small?: boolean }) {
   const [, tick] = useState(0);
   useEffect(() => onDecorChange(() => tick((n) => n + 1)), []);
   const img = stickerImage(id, color);
   const src = useMemo(() => img?.toDataURL() ?? "", [img]);
-  return src ? <img className="decor-thumb" src={src} alt="" draggable={false} /> : <span className="decor-thumb" />;
+  const size = small ? { width: 24, height: 24 } : undefined;
+  return src ? <img className="decor-thumb" style={size} src={src} alt="" draggable={false} /> : <span className="decor-thumb" style={size} />;
 }
 
 /** The figure turning slowly while the pointer is over its tile. */
-function FigureThumb({ id, color, spin }: { id: string; color: string; spin: boolean }) {
+function FigureThumb({ id, color, spin, size = 64 }: { id: string; color: string; spin: boolean; size?: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const yaw = useRef(0.6);
   useEffect(() => {
     const cv = ref.current;
     if (!cv) return;
-    const def = FIGURES.find((f) => f.id === id);
-    const size = 64, dpr = window.devicePixelRatio || 1;
+    const dpr = window.devicePixelRatio || 1;
     cv.width = size * dpr; cv.height = size * dpr;
     const g = cv.getContext("2d")!;
     let frame = 0, last = performance.now();
     const draw = (now: number) => {
       yaw.current += spin ? ((now - last) / 1000) * 1.4 : 0;
       last = now;
-      g.setTransform(dpr, 0, 0, dpr, 0, 0);
-      g.clearRect(0, 0, size, size);
-      drawFigure(g, id, [0, 0, 0], 0, 1, thumbView(size, def?.height ?? 1, yaw.current), color);
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.clearRect(0, 0, cv.width, cv.height);
+      drawFigureThumb(g, id, size, yaw.current, color, dpr);
       if (spin) frame = requestAnimationFrame(draw);
     };
     draw(last);
     return () => cancelAnimationFrame(frame);
-  }, [id, color, spin]);
-  return <canvas ref={ref} className="decor-thumb" />;
+  }, [id, color, spin, size]);
+  return <canvas ref={ref} className="decor-thumb" style={{ width: size, height: size }} />;
 }
 
 function Tile({ kind, id, label, onAdd, onContext, children }: {
@@ -184,7 +185,26 @@ function Tile({ kind, id, label, onAdd, onContext, children }: {
 
 /** The Personalizar section: the machine's color, its LED sign, stickers for the glass and figures for its top.
  *  The cube beside it is where they are placed: dragged in, moved, turned and taken off. */
-export function Customize({ name, ops, selected, setSelected }: Pick<ReturnType<typeof useDecorEdit>, "ops" | "selected" | "setSelected"> & { name: string }) {
+/** What is already on the machine, as chips: a click picks it on the cube, the cross takes it off, a right click
+ *  opens the same menu as on the cube. */
+function Placed({ items, selected, onPick, onRemove, onMenu }: {
+  items: { id: string; label: string; thumb: React.ReactNode }[]; selected: string | null;
+  onPick: (id: string) => void; onRemove: (id: string) => void; onMenu: (id: string, x: number, y: number) => void;
+}) {
+  if (!items.length) return null;
+  return (
+    <div className="decor-placed">
+      {items.map((it) => (
+        <div key={it.id} className={`decor-chip${selected === it.id ? " on" : ""}`} onContextMenu={(e) => { e.preventDefault(); onPick(it.id); onMenu(it.id, e.clientX, e.clientY); }}>
+          <button type="button" className="decor-chip-main" onClick={() => onPick(it.id)}>{it.thumb}<span>{it.label}</span></button>
+          <button type="button" className="decor-chip-x" title="Quitar" aria-label={`Quitar ${it.label}`} onClick={() => onRemove(it.id)}><IconX size={13} /></button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function Customize({ name, ops, selected, setSelected, openMenu }: Pick<ReturnType<typeof useDecorEdit>, "ops" | "selected" | "setSelected" | "openMenu"> & { name: string }) {
   const decor = useDecor(name);
   const prefs = usePrefs();
   const color = useDecorColor(name);
@@ -282,15 +302,19 @@ export function Customize({ name, ops, selected, setSelected }: Pick<ReturnType<
             <span className="opt-desc">Arrástralos a cualquier cara del vidrio. Clic derecho en el cubo para girarlos o quitarlos.</span>
           </div>
           <div className="opt-below">
+            <Placed selected={selected} onPick={setSelected} onRemove={ops.remove} onMenu={openMenu}
+              items={decor.stickers.map((st) => ({ id: st.id, label: stickerName(st.sticker), thumb: <StickerThumb id={st.sticker} color={color} small /> }))} />
             <div className="app-tiles decor-tiles">
               {STICKERS.map((s) => (
                 <Tile key={s.id} kind="sticker" id={s.id} label={s.name} onAdd={() => ops.addSticker(s.id)}><StickerThumb id={s.id} color={color} /></Tile>
               ))}
               {customs.map((c) => (
-                <Tile key={c} kind="sticker" id={`custom:${c}`} label="Tu imagen" onAdd={() => ops.addSticker(`custom:${c}`)}
-                  onContext={(e) => { e.preventDefault(); removeCustomSticker(c); }}>
-                  <StickerThumb id={`custom:${c}`} color={color} />
-                </Tile>
+                <span key={c} className="decor-tile-custom">
+                  <Tile kind="sticker" id={`custom:${c}`} label="Tu imagen" onAdd={() => ops.addSticker(`custom:${c}`)}>
+                    <StickerThumb id={`custom:${c}`} color={color} />
+                  </Tile>
+                  <button type="button" className="decor-tile-x" title="Quitar de tus stickers" aria-label="Quitar de tus stickers" onClick={() => removeCustomSticker(c)}><IconX size={13} /></button>
+                </span>
               ))}
               <button type="button" className="app-tile decor-tile decor-add" onClick={() => fileRef.current?.click()}>
                 <span className="decor-thumb decor-add-icon"><IconPhotoPlus size={22} /></span>
@@ -310,6 +334,8 @@ export function Customize({ name, ops, selected, setSelected }: Pick<ReturnType<
             <span className="opt-desc">Se paran sobre el cubo. Arrástralas para moverlas.</span>
           </div>
           <div className="opt-below">
+            <Placed selected={selected} onPick={setSelected} onRemove={ops.remove} onMenu={openMenu}
+              items={decor.figures.map((f) => ({ id: f.id, label: figureName(f.figure), thumb: <FigureThumb id={f.figure} color={color} spin={false} size={24} /> }))} />
             <div className="app-tiles decor-tiles">
               {FIGURES.map((f) => (
                 <span key={f.id} onPointerEnter={() => setHover(f.id)} onPointerLeave={() => setHover(null)} className="decor-tile-wrap">
