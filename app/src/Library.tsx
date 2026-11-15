@@ -1,8 +1,9 @@
 import { MiniCube } from "./MiniCube";
+import { CLEANUP_REMOVED, MachineCube } from "./MachineCube";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  IconAdjustmentsHorizontal, IconBrandWindows, IconCopyPlus, IconDatabase, IconDeviceFloppy, IconDisc, IconFolderDown, IconLoader2, IconPencil, IconPlus,
+  IconAdjustmentsHorizontal, IconCopyPlus, IconDatabase, IconDeviceFloppy, IconDisc, IconFolderDown, IconLoader2, IconPencil, IconPlus,
   IconRestore, IconStack2, IconTemplate, IconTrash, IconX,
 } from "@tabler/icons-react";
 import type { VmOverview, AppInfo, BaseInfo, DiskInfo, HostInfo, IsoFile, ProfileInfo, ProfileSettings, SharedDiskInfo, TemplateInfo } from "./types";
@@ -10,7 +11,7 @@ import { api, pickFolder, pickIso } from "./api";
 import { PatternButton } from "./machineIcon";
 import { usePrefs } from "./prefs";
 import { AppPicker, CleanupPicker, FpsPicker, IsoPicker, resolveMonitor, useMonitors, useCleanupLevels, RESOLUTIONS, USES, isoDetail, profileLabel, streamUseOf } from "./pickers";
-import { Segmented, Slider, humanError, portalRoot, useScrollFade } from "./ui";
+import { Segmented, Slider, humanError, portalRoot, useFlip, useScrollFade } from "./ui";
 import { ResourceChips } from "./resources";
 import { NewTemplate } from "./VmView";
 
@@ -18,23 +19,6 @@ export type LibraryTab = "perfiles" | "plantillas" | "discos" | "compartidos" | 
 
 // What each tab loaded last, so switching tabs shows it at once while it refreshes.
 const cache: { bases?: BaseInfo[]; profiles?: ProfileInfo[]; apps?: AppInfo[]; disks?: DiskInfo[]; isos?: IsoFile[]; templates?: TemplateInfo[]; shared?: SharedDiskInfo[] } = {};
-
-/** Loading rows with the shape of the real ones (pattern, name, detail). */
-function RowSkeletons({ count = 3 }: { count?: number }) {
-  return (
-    <>
-      {Array.from({ length: count }, (_, i) => (
-        <div className="row row-skeleton" key={i} aria-hidden="true">
-          <span className="skeleton icon" />
-          <div className="row-text">
-            <span className="skeleton" style={{ width: "28%", height: 14 }} />
-            <span className="skeleton" style={{ width: "62%", height: 12 }} />
-          </div>
-        </div>
-      ))}
-    </>
-  );
-}
 
 interface Props {
   tab: LibraryTab;
@@ -82,7 +66,11 @@ export function Library({ tab, onTab, host, startJob, busy, progress, notify, on
     main.scrollTo({ top: Math.max(0, main.scrollTop + el.getBoundingClientRect().top - main.getBoundingClientRect().top - nav - 12), behavior: smooth ? "smooth" : "auto" });
   };
   // Arriving with a section in the route (from Inicio) scrolls to it.
-  useEffect(() => { const id = setTimeout(() => goTo(tab, false), 60); return () => clearTimeout(id); }, [tab]);
+  // The first section opens at the very top, with the storage overview above it in view.
+  useEffect(() => {
+    const id = setTimeout(() => { if (tab === SECTIONS[0].tab) mainRef.current?.scrollTo({ top: 0 }); else goTo(tab, false); }, 60);
+    return () => clearTimeout(id);
+  }, [tab]);
   useEffect(() => {
     const main = mainRef.current;
     if (!main) return;
@@ -107,7 +95,7 @@ export function Library({ tab, onTab, host, startJob, busy, progress, notify, on
             onClick={() => { goTo(x.tab); onTab(x.tab); }}>{x.label}</button>
         ))}
       </nav>
-      <StorageOverview />
+      <StorageOverview hostFreeGB={host?.disk?.freeGB ?? null} />
       {section("perfiles", <Profiles tabs={<SectionHead tab="perfiles" />} host={host} notify={notify} />)}
       {section("plantillas", <Templates tabs={<SectionHead tab="plantillas" />} notify={notify} onOpenVm={onOpenVm} onCreate={onCreateFromTemplate} startJob={startJob} />)}
       {section("compartidos", <SharedDisks tabs={<SectionHead tab="compartidos" />} startJob={startJob} progress={progress} notify={notify} onOpenVm={onOpenVm} />)}
@@ -117,17 +105,28 @@ export function Library({ tab, onTab, host, startJob, busy, progress, notify, on
   );
 }
 
+/** A grid of Library cards whose cards glide to their new places when the window changes size or one comes or goes. */
+function FlipGrid({ children }: { children: React.ReactNode }) {
+  const ref = useFlip<HTMLDivElement>();
+  return <div ref={ref} className="profile-grid">{children}</div>;
+}
+
 /* ---------- Storage ---------- */
 
 /** Where the drive's space goes: machine disks, templates, shared disks and ISOs, each with its color, and what is
  *  left free. */
-function StorageOverview() {
-  const [data, setData] = useState<{ parts: { label: string; gb: number; cls: string }[]; free: number } | null>(null);
+type Storage = { parts: { label: string; gb: number; cls: string }[]; free: number };
+// What it last showed, so coming back to the Library shows it at once while it refreshes.
+let storageCache: Storage | null = null;
+const STORAGE_PARTS = [["Discos de máquinas", "st-machines"], ["Plantillas", "st-templates"], ["Discos compartidos", "st-shared"], ["ISOs", "st-isos"]];
+
+function StorageOverview({ hostFreeGB }: { hostFreeGB: number | null }) {
+  const [data, setData] = useState<Storage | null>(storageCache);
   useEffect(() => {
     Promise.all([api.disks(), api.templates(), api.sharedDisks(), api.isos()]).then(([d, t, sd, i]) => {
       const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
-      setData({
-        free: d[0]?.hostFreeGB ?? 0,
+      setData(storageCache = {
+        free: d[0]?.hostFreeGB ?? hostFreeGB ?? 0,
         parts: [
           { label: "Discos de máquinas", gb: sum(d.map((x) => x.fileGB)), cls: "st-machines" },
           { label: "Plantillas", gb: sum(t.map((x) => x.fileGB)), cls: "st-templates" },
@@ -138,7 +137,16 @@ function StorageOverview() {
     }).catch(() => {});
   }, []);
   const fmt = (n: number) => `${Math.round(n).toLocaleString("es")} GB`;
-  if (!data) return <div className="card skeleton" style={{ height: 92 }} />;
+  // While it loads: the same panel, with its bar and legend waiting, never a bare strip.
+  if (!data) {
+    return (
+      <div className="card storage loading" aria-busy="true">
+        <div className="storage-top"><span className="storage-title">Espacio de GpuVM en el disco</span><span className="storage-free skeleton-text" /></div>
+        <div className="storage-bar" />
+        <div className="storage-legend">{STORAGE_PARTS.map(([label, cls]) => <span key={label}><i className={cls} />{label}<strong className="skeleton-text" /></span>)}</div>
+      </div>
+    );
+  }
   const total = data.free + data.parts.reduce((a, b) => a + b.gb, 0) || 1;
   return (
     <div className="card storage">
@@ -178,12 +186,9 @@ function Profiles({ tabs, host, notify }: { tabs: React.ReactNode; host: HostInf
 
   return (
     <>
-    <div className="library-head">
-      {tabs}
-      <button className="btn" disabled={!fallback?.Settings} onClick={() => fallback && startNew(fallback)}><IconPlus size={16} />Nuevo perfil</button>
-    </div>
+    <div className="library-head">{tabs}</div>
     {/* One card per profile, with its cube built from what it gives; the grid grows with however many there are. */}
-    <div className="profile-grid">
+    <FlipGrid>
       {profiles === null && [0, 1, 2].map((i) => <div key={i} className="card skeleton profile-skeleton" />)}
       {profiles?.map((p) => (
         <div className="card profile-card" key={p.Name}>
@@ -204,15 +209,24 @@ function Profiles({ tabs, host, notify }: { tabs: React.ReactNode; host: HostInf
                 <IconPencil size={15} />Editar
               </button>
             )}
-            {!p.BuiltIn && (
-              <button className={`btn compact ${confirm === p.Name ? "danger-fill" : "ghost danger"}`} onClick={() => confirm === p.Name ? remove(p.Name) : setConfirm(p.Name)}>
-                <IconTrash size={15} />{confirm === p.Name ? "Confirmar" : "Eliminar"}
-              </button>
-            )}
+            {!p.BuiltIn && (confirm === p.Name
+              ? <button className="btn compact danger-fill profile-delete" onClick={() => remove(p.Name)}><IconTrash size={15} />Confirmar</button>
+              : <button className="icon-btn profile-delete" aria-label={`Eliminar ${profileLabel(p.Name)}`} title="Eliminar" onClick={() => setConfirm(p.Name)}><IconTrash size={16} /></button>)}
           </div>
         </div>
       ))}
-    </div>
+      {/* The last card makes a new one: an empty cube waiting for its pieces. */}
+      {profiles && (
+        <div className="card profile-card profile-new">
+          <MiniCube className="profile-cube" ghost machine={{ cores: 8, memoryGB: 16, gpuPercent: 60, diskGB: 256, apps: 2 }} />
+          <div className="profile-new-text">
+            <strong>Crea tu propio perfil</strong>
+            <span className="profile-desc">Elige procesador, memoria, GPU, disco, apps y limpieza una vez, y úsalo para crear máquinas.</span>
+            <button type="button" className="btn" disabled={!fallback?.Settings} onClick={() => fallback && startNew(fallback)}><IconPlus size={16} />Nuevo perfil</button>
+          </div>
+        </div>
+      )}
+    </FlipGrid>
     {editing && (
       <ProfileEditor initial={editing} host={host} apps={apps} existing={profiles ?? []}
         onCancel={() => setEditing(null)}
@@ -281,13 +295,14 @@ function ProfileEditor({ initial, host, apps, existing, onCancel, onSaved, notif
   // Rendered at app level, like "Create machine": inside the scrolling content its fade mask would clip it.
   return createPortal(
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && !dirty && onCancel()}>
-    <div className="dialog" role="dialog" aria-modal="true" aria-label={draft.previous ? `Editar ${draft.previous}` : "Nuevo perfil"}>
+    <div className="dialog wide profile-dialog" role="dialog" aria-modal="true" aria-label={draft.previous ? `Editar ${draft.previous}` : "Nuevo perfil"}>
       <div className="dialog-head">
         <PatternButton name={`perfil-${draft.name || "nuevo"}`} size={44} radius={12} onChange={() => repaint((n) => n + 1)} />
         <h2>{draft.previous ? `Editar ${draft.previous}` : "Nuevo perfil"}</h2>
         <button type="button" className="icon-btn" aria-label="Cerrar" onClick={onCancel}><IconX size={18} /></button>
       </div>
       <form className="dialog-form" onSubmit={save}>
+        <div className="profile-editor">
         <div ref={bodyRef} className={`dialog-body ${bodyFade}`}>
           <div className="two">
             <div className="field">
@@ -378,6 +393,14 @@ function ProfileEditor({ initial, host, apps, existing, onCancel, onSaved, notif
             <IsoPicker isos={isos} value={s.iso} onChange={(iso) => set({ iso })} onBrowse={browse} allowNone />
           </div>
         </div>
+        {/* The machine this profile makes, built as it is edited, as when creating a machine. */}
+        <aside className="profile-editor-cube">
+          <MachineCube name={draft.name} machine={{
+            power: "on", cores: s.cpu, memoryGB: s.memoryGB, gpuPercent: s.gpuPercent, diskGB: s.diskGB,
+            usage: { cpu: 12, gpu: 18, mem: 30, disk: 8 }, apps: s.apps ?? [], removed: CLEANUP_REMOVED[s.cleanup ?? "none"] ?? 0,
+          }} />
+        </aside>
+        </div>
         {error && <div className="notice error-notice"><span className="grow">{error}</span></div>}
 
         <div className="dialog-foot">
@@ -420,59 +443,61 @@ function Disks({ tabs, startJob, busy, notify, onOpenVm }: Pick<Props, "startJob
       {tabs}
       {free !== undefined && <span className="muted-note">{free} GB libres en el equipo</span>}
     </div>
-    <div className="card">
-      <div className="rows">
-        {disks === null && <RowSkeletons />}
-        {disks?.length === 0 && <p className="muted-note">Aún no hay discos de GpuVM.</p>}
-        {disks?.map((d) => {
-          const working = busy(d.name);
-          return (
-            <div className="row" key={d.path}>
-              <PatternButton name={d.name} size={36} radius={10} />
-              <div className="row-text">
-                <strong>{d.name}<span className={`tag ${d.vm ? "" : "free"}`}>{!d.vm ? "Libre" : d.vm === d.name ? "En uso" : `En uso por ${d.vm}`}</span></strong>
-                <span>
-                  {d.sizeGB} GB {d.type === "Fixed" ? "fijo" : "dinámico"}
-                  {d.type !== "Fixed" && ` · ocupa ${d.fileGB} GB`}
-                  {d.edition && ` · ${d.edition}`}
-                </span>
-              </div>
-              <div className="row-actions">
-                {d.vm && <button className="btn ghost" onClick={() => onOpenVm(d.vm!)}>Ver máquina</button>}
-                {d.restorable && (
-                  <button className="btn" disabled={working} onClick={() => startJob(d.name, "Restore-GpuVM", { Name: d.name, Confirm: false }, () => { load(); onOpenVm(d.name); })}>
-                    {working ? <IconLoader2 size={16} className="spin" /> : <IconRestore size={16} />}Crear máquina con este disco
-                  </button>
-                )}
-                {!d.vm && (
-                  <button className={`btn ${confirm === d.name ? "danger-fill" : "ghost danger"}`} disabled={working}
-                    onClick={() => confirm === d.name ? remove(d.name) : setConfirm(d.name)}>
-                    <IconTrash size={16} />{confirm === d.name ? `Borrar ${d.sizeGB} GB` : "Eliminar"}
-                  </button>
-                )}
-              </div>
+    <FlipGrid>
+      {disks === null && [0, 1, 2].map((i) => <div key={i} className="card skeleton profile-skeleton" />)}
+      {disks?.length === 0 && bases.length === 0 && (
+        <div className="card profile-card profile-new">
+          <MiniCube className="profile-cube" kind="disk" ghost />
+          <div className="profile-new-text">
+            <strong>Sin discos de máquinas</strong>
+            <span className="profile-desc">Aquí aparece el disco de cada máquina que crees, y los que queden sin máquina para volver a usarlos.</span>
+          </div>
+        </div>
+      )}
+      {disks?.map((d) => {
+        const working = busy(d.name);
+        return (
+          <div className="card profile-card" key={d.path}>
+            <MiniCube className="profile-cube" kind="disk" fill={d.sizeGB ? d.fileGB / d.sizeGB : 0} />
+            <div className="profile-text">
+              <strong>{d.name}<span className={`tag ${d.vm ? "" : "free"}`}>{!d.vm ? "Libre" : d.vm === d.name ? "En uso" : `En uso por ${d.vm}`}</span></strong>
+              <span className="profile-desc">
+                {d.sizeGB} GB {d.type === "Fixed" ? "fijo" : "dinámico"}{d.type !== "Fixed" && ` · ocupa ${d.fileGB} GB`}{d.edition && ` · ${d.edition}`}
+              </span>
             </div>
-          );
-        })}
-        {bases.map((b) => {
-          const id = `base:${b.key}`;
-          return (
-            <div className="row" key={id}>
-              <span className="row-icon"><IconBrandWindows size={18} /></span>
-              <div className="row-text">
-                <strong>{b.edition ?? "Windows"}<span className="tag">Windows preparado</span></strong>
-                <span>Ocupa {b.fileGB} GB. Las máquinas nuevas con este Windows se crean copiándolo</span>
-              </div>
-              <div className="row-actions">
-                <button className={`btn ${confirm === id ? "danger-fill" : "ghost danger"}`} onClick={() => confirm === id ? removeBase(b) : setConfirm(id)}>
-                  <IconTrash size={16} />{confirm === id ? `Borrar ${b.fileGB} GB` : "Eliminar"}
+            <div className="profile-actions">
+              {d.vm && <button className="btn ghost compact" onClick={() => onOpenVm(d.vm!)}>Ver máquina</button>}
+              {d.restorable && (
+                <button className="btn compact" disabled={working} onClick={() => startJob(d.name, "Restore-GpuVM", { Name: d.name, Confirm: false }, () => { load(); onOpenVm(d.name); })}
+                  title="Crear una máquina con este disco">
+                  {working ? <IconLoader2 size={15} className="spin" /> : <IconRestore size={15} />}Crear máquina
                 </button>
-              </div>
+              )}
+              {!d.vm && (confirm === d.name
+                ? <button className="btn compact danger-fill profile-delete" disabled={working} onClick={() => remove(d.name)}><IconTrash size={15} />Borrar {d.sizeGB} GB</button>
+                : <button className="icon-btn profile-delete" aria-label={`Eliminar ${d.name}`} title="Eliminar" disabled={working} onClick={() => setConfirm(d.name)}><IconTrash size={16} /></button>)}
             </div>
-          );
-        })}
-      </div>
-    </div>
+          </div>
+        );
+      })}
+      {bases.map((b) => {
+        const id = `base:${b.key}`;
+        return (
+          <div className="card profile-card" key={id}>
+            <MiniCube className="profile-cube" kind="windows" />
+            <div className="profile-text">
+              <strong>{b.edition ?? "Windows"}<span className="tag">Windows preparado</span></strong>
+              <span className="profile-desc">Ocupa {b.fileGB} GB. Las máquinas nuevas con este Windows se crean copiándolo.</span>
+            </div>
+            <div className="profile-actions">
+              {confirm === id
+                ? <button className="btn compact danger-fill profile-delete" onClick={() => removeBase(b)}><IconTrash size={15} />Borrar {b.fileGB} GB</button>
+                : <button className="icon-btn profile-delete" aria-label={`Eliminar ${b.edition ?? "Windows"}`} title="Eliminar" onClick={() => setConfirm(id)}><IconTrash size={16} /></button>}
+            </div>
+          </div>
+        );
+      })}
+    </FlipGrid>
     </>
   );
 }
@@ -495,38 +520,43 @@ function Templates({ tabs, notify, onOpenVm, onCreate, startJob }: { tabs: React
 
   return (
     <>
-    <div className="library-head">{tabs}<button className="btn" onClick={openNew}><IconPlus size={16} />Nueva plantilla</button></div>
+    <div className="library-head">{tabs}</div>
     {newFrom && (
       <NewTemplate vms={newFrom} onClose={() => setNewFrom(null)}
         onCreate={(name, from) => { setNewFrom(null); startJob(from, "New-GpuVMTemplate", { Name: name, VMName: from, ShutdownIfRunning: true, Confirm: false }, load); }} />
     )}
-    <div className="card">
-      <div className="rows">
-        {templates === null && <RowSkeletons />}
-        {templates?.length === 0 && <div className="empty-small"><span className="empty-small-icon"><IconTemplate size={18} /></span><strong>Sin plantillas</strong></div>}
-        {templates?.map((t) => {
-          const level = t.cleanup !== "none" ? cleanupLevels.find((l) => l.id === t.cleanup)?.name : null;
-          return (
-            <div className="row" key={t.name}>
-              <PatternButton name={`plantilla-${t.name}`} size={36} radius={10} />
-              <div className="row-text">
-                <strong>{t.name}{t.usedBy.length > 0 && <span className="tag">{t.usedBy.length === 1 ? `Base de ${t.usedBy[0]}` : `Base de ${t.usedBy.length} máquinas`}</span>}</strong>
-                <span>{[`Desde ${t.fromVM}`, t.edition, `ocupa ${t.fileGB} GB`, level && `Windows: ${level.toLowerCase()}`].filter(Boolean).join(" · ")}</span>
-              </div>
-              <div className="row-actions">
-                {t.usedBy.length === 1 && <button className="btn ghost" onClick={() => onOpenVm(t.usedBy[0])}>Ver máquina</button>}
-                <button className="btn" onClick={() => onCreate(t.name)}><IconPlus size={16} />Crear máquina</button>
-                {t.usedBy.length === 0 && (
-                  <button className={`btn ${confirm === t.name ? "danger-fill" : "ghost danger"}`} onClick={() => confirm === t.name ? remove(t.name) : setConfirm(t.name)}>
-                    <IconTrash size={16} />{confirm === t.name ? `Borrar ${t.fileGB} GB` : "Eliminar"}
-                  </button>
-                )}
-              </div>
+    <FlipGrid>
+      {templates === null && [0, 1].map((i) => <div key={i} className="card skeleton profile-skeleton" />)}
+      {templates?.map((t) => {
+        const level = t.cleanup !== "none" ? cleanupLevels.find((l) => l.id === t.cleanup)?.name : null;
+        return (
+          <div className="card profile-card" key={t.name}>
+            <MiniCube className="profile-cube" kind="template" machine={{ cores: 0, memoryGB: 0, gpuPercent: 0, diskGB: 0, apps: 3 }} />
+            <div className="profile-text">
+              <strong>{t.name}{t.usedBy.length > 0 && <span className="tag">{t.usedBy.length === 1 ? `Base de ${t.usedBy[0]}` : `Base de ${t.usedBy.length} máquinas`}</span>}</strong>
+              <span className="profile-desc">{[`Desde ${t.fromVM}`, t.edition, `ocupa ${t.fileGB} GB`, level && `Windows: ${level.toLowerCase()}`].filter(Boolean).join(" · ")}</span>
             </div>
-          );
-        })}
-      </div>
-    </div>
+            <div className="profile-actions">
+              <button className="btn compact" onClick={() => onCreate(t.name)}><IconPlus size={15} />Crear máquina</button>
+              {t.usedBy.length === 1 && <button className="btn ghost compact" onClick={() => onOpenVm(t.usedBy[0])}>Ver máquina</button>}
+              {t.usedBy.length === 0 && (confirm === t.name
+                ? <button className="btn compact danger-fill profile-delete" onClick={() => remove(t.name)}><IconTrash size={15} />Borrar {t.fileGB} GB</button>
+                : <button className="icon-btn profile-delete" aria-label={`Eliminar ${t.name}`} title="Eliminar" onClick={() => setConfirm(t.name)}><IconTrash size={16} /></button>)}
+            </div>
+          </div>
+        );
+      })}
+      {templates && (
+        <div className="card profile-card profile-new">
+          <MiniCube className="profile-cube" kind="template" ghost machine={{ cores: 0, memoryGB: 0, gpuPercent: 0, diskGB: 0, apps: 3 }} />
+          <div className="profile-new-text">
+            <strong>Guarda un Windows listo</strong>
+            <span className="profile-desc">Copia el Windows de una máquina, con sus apps, para crear otras en segundos.</span>
+            <button type="button" className="btn" onClick={openNew}><IconPlus size={16} />Nueva plantilla</button>
+          </div>
+        </div>
+      )}
+    </FlipGrid>
     </>
   );
 }
@@ -553,39 +583,41 @@ function SharedDisks({ tabs, startJob, progress, notify, onOpenVm }: Pick<Props,
 
   return (
     <>
-    <div className="library-head">
-      {tabs}
-      <button className="btn" onClick={() => setCreating(true)}><IconPlus size={16} />Nuevo disco</button>
-    </div>
-    <div className="card">
-      <div className="rows">
-        {disks === null && <RowSkeletons />}
-        {disks?.length === 0 && <p className="muted-note">Un disco compartido guarda tus juegos o archivos aparte y pasa de una máquina a otra sin descargar todo de nuevo.</p>}
-        {disks?.map((d) => {
-          const working = progress(`compartido:${d.name}`);
-          return (
-            <div className="row" key={d.name}>
-              <PatternButton name={`compartido-${d.name}`} size={36} radius={10} />
-              <div className="row-text">
-                <strong>{d.name}<span className={`tag ${d.vm ? "" : "free"}`}>{d.vm ? `En ${d.vm}` : "Libre"}</span></strong>
-                <span>{PURPOSE_LABEL[d.purpose]} · {d.sizeGB} GB · ocupa {d.fileGB} GB</span>
-              </div>
-              <div className="row-actions">
-                {d.vm && <button className="btn ghost" onClick={() => onOpenVm(d.vm!)}>Ver máquina</button>}
-                <button className="btn" disabled={!!working} onClick={() => importFolder(d.name)} title="Copiar una carpeta de este equipo al disco">
-                  {working ? <IconLoader2 size={16} className="spin" /> : <IconFolderDown size={16} />}{working ?? "Importar carpeta"}
-                </button>
-                {!d.vm && !working && (
-                  <button className={`btn ${confirm === d.name ? "danger-fill" : "ghost danger"}`} onClick={() => confirm === d.name ? remove(d.name) : setConfirm(d.name)}>
-                    <IconTrash size={16} />{confirm === d.name ? `Borrar ${d.fileGB} GB` : "Eliminar"}
-                  </button>
-                )}
-              </div>
+    <div className="library-head">{tabs}</div>
+    <FlipGrid>
+      {disks === null && [0, 1].map((i) => <div key={i} className="card skeleton profile-skeleton" />)}
+      {disks?.map((d) => {
+        const working = progress(`compartido:${d.name}`);
+        return (
+          <div className="card profile-card" key={d.name}>
+            <MiniCube className="profile-cube" kind="disk" fill={d.sizeGB ? d.fileGB / d.sizeGB : 0} />
+            <div className="profile-text">
+              <strong>{d.name}<span className={`tag ${d.vm ? "" : "free"}`}>{d.vm ? `En ${d.vm}` : "Libre"}</span></strong>
+              <span className="profile-desc">{PURPOSE_LABEL[d.purpose]} · {d.fileGB} de {d.sizeGB} GB</span>
             </div>
-          );
-        })}
-      </div>
-    </div>
+            <div className="profile-actions">
+              <button className="btn compact" disabled={!!working} onClick={() => importFolder(d.name)} title="Copiar una carpeta de este equipo al disco">
+                {working ? <IconLoader2 size={15} className="spin" /> : <IconFolderDown size={15} />}{working ?? "Importar carpeta"}
+              </button>
+              {d.vm && <button className="btn ghost compact" onClick={() => onOpenVm(d.vm!)}>Ver máquina</button>}
+              {!d.vm && !working && (confirm === d.name
+                ? <button className="btn compact danger-fill profile-delete" onClick={() => remove(d.name)}><IconTrash size={15} />Borrar {d.fileGB} GB</button>
+                : <button className="icon-btn profile-delete" aria-label={`Eliminar ${d.name}`} title="Eliminar" onClick={() => setConfirm(d.name)}><IconTrash size={16} /></button>)}
+            </div>
+          </div>
+        );
+      })}
+      {disks && (
+        <div className="card profile-card profile-new">
+          <MiniCube className="profile-cube" kind="disk" ghost />
+          <div className="profile-new-text">
+            <strong>Crea un disco compartido</strong>
+            <span className="profile-desc">Tus juegos o archivos aparte, para pasarlos de una máquina a otra sin descargarlos de nuevo.</span>
+            <button type="button" className="btn" onClick={() => setCreating(true)}><IconPlus size={16} />Nuevo disco</button>
+          </div>
+        </div>
+      )}
+    </FlipGrid>
     {creating && <NewSharedDisk existing={disks ?? []} notify={notify} onCancel={() => setCreating(false)} onCreated={() => { setCreating(false); load(); }} />}
     </>
   );
@@ -678,30 +710,34 @@ function Isos({ tabs, notify }: { tabs: React.ReactNode; notify: Props["notify"]
 
   return (
     <>
-    <div className="library-head">
-      {tabs}
-      <button className="btn" onClick={() => add()}><IconPlus size={16} />Agregar ISO</button>
-    </div>
-    <div className="card">
-      <div className="rows">
-        {isos === null && <RowSkeletons />}
-        {isos?.length === 0 && <p className="muted-note">No hay imágenes de Windows en descargas ni en el escritorio.</p>}
-        {isos?.map((f) => (
-          <div className={`row ${f.missing ? "missing" : ""}`} key={f.path}>
-            <span className="row-icon"><IconDisc size={18} /></span>
-            <div className="row-text">
-              <strong title={f.path}>{f.name}</strong>
-              <span>{isoDetail(f)}</span>
-            </div>
-            <div className="row-actions">
-              {f.remembered
-                ? <button className="btn ghost" onClick={() => remove(f.path)}><IconX size={16} />Quitar de la lista</button>
-                : <button className="btn ghost" onClick={() => add(f.path)}><IconPlus size={16} />Agregar a la lista</button>}
-            </div>
+    <div className="library-head">{tabs}</div>
+    <FlipGrid>
+      {isos === null && [0, 1].map((i) => <div key={i} className="card skeleton profile-skeleton" />)}
+      {isos?.map((f) => (
+        <div className={`card profile-card${f.missing ? " missing" : ""}`} key={f.path}>
+          <MiniCube className="profile-cube" kind="iso" ghost={!!f.missing || !f.remembered} />
+          <div className="profile-text">
+            <strong className="profile-name-cut" title={f.path}>{f.name}</strong>
+            <span className="profile-desc">{isoDetail(f)}</span>
           </div>
-        ))}
-      </div>
-    </div>
+          <div className="profile-actions">
+            {f.remembered
+              ? <button className="btn ghost compact" onClick={() => remove(f.path)}><IconX size={15} />Quitar de la lista</button>
+              : <button className="btn compact" onClick={() => add(f.path)}><IconPlus size={15} />Agregar a la lista</button>}
+          </div>
+        </div>
+      ))}
+      {isos && (
+        <div className="card profile-card profile-new">
+          <MiniCube className="profile-cube" kind="iso" ghost />
+          <div className="profile-new-text">
+            <strong>Agrega una imagen de Windows</strong>
+            <span className="profile-desc">Un archivo ISO de Windows 10 u 11 para crear máquinas desde cero.</span>
+            <button type="button" className="btn" onClick={() => add()}><IconPlus size={16} />Agregar ISO</button>
+          </div>
+        </div>
+      )}
+    </FlipGrid>
     </>
   );
 }

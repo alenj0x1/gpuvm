@@ -314,3 +314,34 @@ export function useScrollFade<T extends HTMLElement>(axis: "x" | "y" = "y") {
 let portalHost: Element | null = null;
 export const setPortalRoot = (el: Element | null) => { portalHost = el; };
 export const portalRoot = () => portalHost ?? document.querySelector(".app") ?? document.body;
+
+/** Children of the returned element glide to their new places instead of jumping, when the window or the container
+ *  changes size or a child comes or goes (a notice that disappears, a card added). New children fade in. Positions are
+ *  taken relative to the container, so scrolling never counts as a move. */
+export function useFlip<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const where = (c: Element) => { const a = c.getBoundingClientRect(), b = el.getBoundingClientRect(); return { x: a.left - b.left, y: a.top - b.top }; };
+    let last = new Map<Element, { x: number; y: number }>();
+    const snap = () => { last = new Map([...el.children].map((c) => [c, where(c)])); };
+    const play = () => {
+      if (el.closest('[class*="dragging-"]')) { snap(); return; }
+      for (const c of el.children) {
+        const before = last.get(c), now = where(c);
+        if (!before) { c.animate([{ opacity: 0, transform: "scale(0.98)" }, { opacity: 1, transform: "none" }], { duration: 260, easing: "cubic-bezier(0.3, 0.8, 0.3, 1)" }); continue; }
+        const dx = before.x - now.x, dy = before.y - now.y;
+        if (Math.abs(dx) > 1 || Math.abs(dy) > 1) c.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: 340, easing: "cubic-bezier(0.3, 0.8, 0.3, 1)" });
+      }
+      snap();
+    };
+    snap();
+    const ro = new ResizeObserver(play);
+    ro.observe(el);
+    const mo = new MutationObserver(() => requestAnimationFrame(play));
+    mo.observe(el, { childList: true });
+    return () => { ro.disconnect(); mo.disconnect(); };
+  }, []);
+  return ref;
+}

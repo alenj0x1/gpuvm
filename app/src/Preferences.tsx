@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { MachineCube, type CubeMachine } from "./MachineCube";
 import { IconAppWindow, IconBrandWindows, IconDeviceDesktop, IconExternalLink, IconPalette, IconServer, IconHandStop, IconLayoutBottombarCollapse, IconMoon, IconPlayerPlay, IconPlayerStop, IconPlugConnected, IconPlugConnectedX, IconPower, IconSun } from "@tabler/icons-react";
 import { service, type ServiceStatus } from "./api";
@@ -110,33 +110,14 @@ export function Preferences() {
   const prefs = usePrefs();
   const monitors = useMonitors();
   const sections = PREF_SECTIONS.filter((x) => x.id !== "machines" || monitors.length > 1);
-  const mainRef = useRef<HTMLDivElement>(null);
-  const refs = useRef<Partial<Record<PrefSection, HTMLElement | null>>>({});
+  // The list on the left switches which section is shown: everything fits on screen, so scrolling to it did nothing.
   const [active, setActive] = useState<PrefSection>("look");
-  const key = sections.map((x) => x.id).join(",");
-  useEffect(() => {
-    const main = mainRef.current;
-    if (!main) return;
-    const list = key.split(",") as PrefSection[];
-    const spy = () => {
-      const line = main.getBoundingClientRect().top + 80;
-      let current = list[0];
-      for (const id of list) { const el = refs.current[id]; if (el && el.getBoundingClientRect().top <= line) current = id; }
-      if (main.scrollHeight > main.clientHeight + 4 && main.scrollTop + main.clientHeight >= main.scrollHeight - 4) current = list[list.length - 1];
-      setActive(current);
-    };
-    spy();
-    main.addEventListener("scroll", spy, { passive: true });
-    return () => main.removeEventListener("scroll", spy);
-  }, [key]);
-  const goTo = (id: PrefSection) => {
-    const main = mainRef.current, el = refs.current[id];
-    if (main && el) main.scrollTo({ top: Math.max(0, main.scrollTop + el.getBoundingClientRect().top - main.getBoundingClientRect().top - 24), behavior: "smooth" });
-  };
+  const shown = sections.some((x) => x.id === active) ? active : sections[0].id;
   const section = (id: PrefSection, children: React.ReactNode) => {
+    if (id !== shown) return null;
     const x = PREF_SECTIONS.find((y) => y.id === id)!;
     return (
-      <section className="card pref-section" ref={(el) => { refs.current[id] = el; }}>
+      <section className="card pref-section" key={id}>
         <div className="pref-head"><span className="opt-icon">{x.icon}</span><h2>{x.label}</h2></div>
         <div className="pref-list">{children}</div>
       </section>
@@ -144,10 +125,10 @@ export function Preferences() {
   };
 
   return (
-    <div className="main prefs" ref={mainRef}>
-      <nav className="pref-nav" aria-label="Secciones de Ajustes">
+    <div className="main prefs">
+      <nav className="pref-nav" role="tablist" aria-label="Secciones de Ajustes">
         {sections.map((x) => (
-          <button key={x.id} type="button" className={`pref-nav-item${x.id === active ? " on" : ""}`} onClick={() => goTo(x.id)}>{x.icon}{x.label}</button>
+          <button key={x.id} type="button" role="tab" aria-selected={x.id === shown} className={`pref-nav-item${x.id === shown ? " on" : ""}`} onClick={() => setActive(x.id)}>{x.icon}{x.label}</button>
         ))}
       </nav>
       <div className="pref-sections">

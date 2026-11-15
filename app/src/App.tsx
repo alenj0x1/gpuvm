@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { IconAlertTriangle, IconHome, IconLoader2, IconPlugConnected, IconPlus, IconRefresh, IconSettings, IconShieldLock, IconStack2 } from "@tabler/icons-react";
 import { Preferences } from "./Preferences";
 import { Library, type LibraryTab } from "./Library";
-import { Home } from "./Home";
+import { EmptyHome, Home, HomeSkeleton } from "./Home";
 // The app's own icon (the installer and the window use it), never a machine figure.
 import { Logo } from "./Logo";
+import { TripleSpark } from "./Chart";
 import type { HostInfo, JobEvent, Sample, VmOverview } from "./types";
 import { readPrefs } from "./prefs";
 import { api, onJob, relaunchAsAdmin, repairService, service, startJob as runJob } from "./api";
@@ -247,7 +248,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
           <strong>GpuVM</strong>
         </div>
         <nav ref={sideRef} className={`side-list ${sideFade}`}>
-          {vms && vms.length > 0 && (
+          {(
             <button className={`side-item side-home ${selected === HOME ? "active" : ""}`} onClick={() => setSelected(HOME)} title="Inicio">
               <span className="add-icon"><IconHome size={16} /></span><span className="name">Inicio</span>
             </button>
@@ -271,7 +272,8 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
                 <span className="side-icon"><MachineIcon name={vm.name} size={28} radius={8} /><span className={`dot badge ${vm.state}`} /></span>
                 <span className="name">{vm.name}</span>
                 {busy ? <IconLoader2 size={15} className="spin side-meta" />
-                  : vm.state === "Running" && vm.hasGpu ? <span className="side-meta">GPU {vm.gpuPercent} %</span> : null}
+                  : vm.state === "Running" ? <span className="side-meta" title={`Procesador ${vm.cpuPercent} %, memoria ${vm.memoryDemandGB} GB, GPU ${vm.gpuPercent} %`}>
+                    <TripleSpark samples={history.current[vm.name] ?? []} memGB={vm.memoryAssignedGB} /></span> : null}
               </button>
             );
           })}
@@ -309,11 +311,8 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
           </div>
         )}
         {vms === null ? (
-          <div className="main">
-            <div className="skeleton" style={{ height: 88 }} />
-            <div className="stats">{[0, 1, 2, 3].map((i) => <div key={i} className="skeleton" style={{ height: 96 }} />)}</div>
-            <div className="skeleton" style={{ height: 170 }} />
-          </div>
+          // While the machines load: the shape of Home, where the app opens.
+          <HomeSkeleton />
         ) : selected === HOME && vms.length > 0 ? (
           <Home vms={vms} busyFor={busyFor} startJob={startJob} onOpenVm={setSelected} onRoute={setSelected} onCreate={() => { setCreateError(null); setCreating(true); }} />
         ) : selected === PREFS ? (
@@ -325,15 +324,10 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
         ) : current ? (
           <VmView key={current.id} vm={current} vms={vms ?? []} host={host} samples={history.current[current.name] ?? []} busy={busyFor(current.name)}
             startJob={startJob} run={run} onRemoved={() => setSelected("")} />
+        ) : vms.length > 0 ? (
+          <Home vms={vms} busyFor={busyFor} startJob={startJob} onOpenVm={setSelected} onRoute={setSelected} onCreate={() => { setCreateError(null); setCreating(true); }} />
         ) : (
-          <div className="main">
-            <div className="empty">
-              <Logo className="empty-logo" size={112} />
-              <h2>Crea tu primera máquina</h2>
-              <p>Windows 10 u 11 con {host?.gpuName ? `tu ${host.gpuName.replace("NVIDIA GeForce ", "")}` : "tu GPU"}, lista para abrir con Moonlight en un clic.</p>
-              <button className="primary" onClick={() => setCreating(true)}><IconPlus size={17} />Crear máquina</button>
-            </div>
-          </div>
+          <EmptyHome gpuName={host?.gpuName ?? null} onRoute={setSelected} onCreate={() => { setCreateError(null); setCreating(true); }} />
         )}
       </div>
 

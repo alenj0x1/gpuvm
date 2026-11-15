@@ -20,3 +20,21 @@ export function Sparkline({ values, color }: { values: number[]; color: string }
 }
 
 export const series = (samples: Sample[], pick: (s: Sample) => number) => samples.map(pick);
+
+/** A tiny chart of the last minute for the sidebar: processor, memory and GPU as three lines in their resource
+ *  colors, so a running machine shows what it is doing at a glance. `memGB` turns memory samples into a share. */
+export function TripleSpark({ samples, memGB }: { samples: Sample[]; memGB: number }) {
+  const W = 44, H = 18, last = samples.slice(-24);
+  const line = (pick: (s: Sample) => number) => {
+    const step = W / 23, offset = 24 - last.length;
+    return last.map((s, i) => `${((offset + i) * step).toFixed(1)},${(H - 1.5 - (Math.min(100, Math.max(0, pick(s))) / 100) * (H - 3)).toFixed(1)}`).join(" ");
+  };
+  if (last.length < 2) return null;
+  return (
+    <svg className="triple-spark" width={W} height={H} viewBox={`0 0 ${W} ${H}`} aria-hidden="true">
+      <polyline points={line((s) => s.cpu)} fill="none" stroke="var(--res-cpu)" strokeWidth="1.3" strokeLinejoin="round" />
+      <polyline points={line((s) => (s.mem / Math.max(memGB, 0.1)) * 100)} fill="none" stroke="var(--res-mem)" strokeWidth="1.3" strokeLinejoin="round" />
+      <polyline points={line((s) => s.gpu)} fill="none" stroke="var(--res-gpu)" strokeWidth="1.3" strokeLinejoin="round" />
+    </svg>
+  );
+}

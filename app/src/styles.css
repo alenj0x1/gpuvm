@@ -123,11 +123,12 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
 .side-head { display: flex; align-items: center; gap: 10px; padding: 0 4px 16px; }
 .side-head strong { font-weight: 600; font-size: 15px; }
 .side-logo svg { display: block; }
-.side-list { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+.side-list { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; min-height: 0; flex: 1 1 auto; scrollbar-width: none; }
+.side-list::-webkit-scrollbar { display: none; }
 .side-list.fade-end { mask-image: linear-gradient(#000 calc(100% - 24px), transparent); }
 .side-list.fade-start { mask-image: linear-gradient(to top, #000 calc(100% - 24px), transparent); }
 .side-list.fade-start.fade-end { mask-image: linear-gradient(transparent, #000 24px, #000 calc(100% - 24px), transparent); }
-.side-item { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: var(--r); text-align: left; width: 100%; min-width: 0; }
+.side-item { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: var(--r); text-align: left; width: 100%; min-width: 0; flex: none; }
 .side-item:hover { background: var(--hover); }
 .side-item.active { background: var(--selected); }
 .side-item .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
@@ -201,7 +202,10 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
 .legend { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 10px; height: 3px; border-radius: 2px; display: inline-block; }
 
-.notice { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--r-lg); background: var(--warn-bg); color: var(--text); }
+/* Notices sit on the card surface like everything else; only their icon carries the warning color. */
+.notice { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--r-lg); background: var(--surface); color: var(--text); }
+.notice > svg:first-child, .notice-icon { flex: none; width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
+.notice > svg:first-child { padding: 7px; box-sizing: border-box; }
 .notice .grow { flex: 1; min-width: 0; }
 .notice.info { background: var(--surface); }
 .notice input { height: var(--control); border-radius: var(--r); border: 0; box-shadow: inset 0 0 0 1px var(--line); background: var(--surface-2); padding: 0 10px; width: 180px; }
@@ -878,7 +882,7 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 
 /* Home: the space of machines with the one in front and its panel, then a row with the others and the rest. */
 .main.home { display: flex; flex-direction: column; gap: 16px; }
-.home-stage { display: grid; grid-template-columns: minmax(0, 1fr) 320px; padding: 0; min-height: max(380px, calc(100vh - 330px)); overflow: hidden; }
+.home-stage { display: grid; grid-template-columns: minmax(0, 1fr) 0 var(--panel-w, 320px); padding: 0; flex: 1 1 auto; min-height: 260px; overflow: hidden; }
 .home-space { position: relative; min-height: 0; }
 .home-space .machine-cube { position: absolute; inset: 0; }
 .home-panel { display: flex; flex-direction: column; gap: 18px; padding: 18px; border-left: 1px solid var(--line); min-width: 0; }
@@ -889,8 +893,8 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .home-meter-bar { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--chart-grid); overflow: hidden; }
 .home-meter-bar span { display: block; height: 100%; border-radius: 3px; background: currentColor; transition: width 0.6s ease; }
 .home-panel .home-memory { margin: 0; }
-.home-panel-actions { display: flex; gap: 8px; margin-top: auto; flex-wrap: wrap; }
-.home-panel-actions .primary { flex: 1; width: auto; min-width: 150px; }
+.home-panel-actions { display: flex; gap: 8px; margin-top: auto; }
+.home-panel-actions .primary { flex: 1; width: auto; min-width: 0; }
 .home-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; align-items: start; }
 .home-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .btn.compact { padding: 4px 10px; min-height: 0; height: 28px; font-size: 12px; }
@@ -912,7 +916,118 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .profile-card { display: flex; flex-direction: column; gap: 10px; padding: 0 0 12px; overflow: hidden; }
 .profile-cube { display: block; width: 100%; height: 150px; background: var(--surface-2); }
 .profile-text { display: flex; flex-direction: column; gap: 6px; padding: 0 14px; min-width: 0; }
-.profile-text strong { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.profile-text strong { font-weight: 600; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
 .profile-desc { font-size: 12px; color: var(--muted); }
-.profile-actions { display: flex; gap: 6px; padding: 0 10px; margin-top: auto; flex-wrap: wrap; }
+.profile-actions { display: flex; gap: 6px; padding: 0 10px; margin-top: auto; align-items: center; }
+.profile-delete { margin-left: auto; }
+.icon-btn.profile-delete:hover { color: var(--danger); }
+.profile-new { background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
+.profile-new .profile-cube { background: transparent; }
+.profile-new-text { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 16px 18px 22px; text-align: center; }
+.profile-new-text strong { font-weight: 600; }
+.profile-new-text .btn { margin-top: 6px; }
 .profile-skeleton { height: 250px; }
+
+/* Home fits the window: the stage takes what the row below leaves, so the page doesn't scroll. */
+.main.home { overflow: hidden; height: 100%; min-height: 0; box-sizing: border-box; }
+.home-attention { display: flex; flex-direction: column; gap: 10px; }
+.home-attention-row { display: flex; align-items: center; gap: 12px; }
+.home-attention-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.home-attention-text strong { font-weight: 600; font-size: 13px; }
+.home-attention-text span { font-size: 12px; color: var(--muted); }
+.home-attention-row .btn { flex: none; }
+/* The row under the stage: the other machines, the Library and what needs attention, side by side. */
+.home-row { grid-template-columns: minmax(0, 1fr) 280px; align-items: stretch; }
+.home-row.with-attention { grid-template-columns: minmax(0, 1fr) 280px 360px; }
+.home-others { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(300px, calc((100% - (var(--count) - 1) * 16px) / var(--count))); gap: 16px; overflow-x: auto; scrollbar-width: none; }
+.home-others::-webkit-scrollbar { display: none; }
+.home-others.fade-end { mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
+.home-others.fade-start { mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent); }
+.home-others.fade-start.fade-end { mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent); }
+.home-others .home-machine { min-height: 0; }
+.home-others .home-machine-scene { flex: 1 1 auto; min-height: 64px; height: auto; }
+.home-attention-progress { color: var(--text) !important; }
+.home-attention-row .btn { white-space: nowrap; }
+@media (max-width: 1300px) { .home-row.with-attention { grid-template-columns: minmax(0, 1fr) 280px; } .home-row.with-attention .home-attention { grid-column: 1 / -1; } }
+@media (max-width: 1100px) { .main.home { overflow-y: auto; } .home-row, .home-row.with-attention { grid-template-columns: minmax(0, 1fr); } }
+
+/* Profile editor: the form and, beside it, the cube of the machine it makes. */
+.profile-editor { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; flex: 1 1 auto; min-height: 0; }
+.profile-editor .dialog-body { margin-right: 0; padding-right: 4px; }
+.profile-editor-cube { border-radius: var(--r-lg); background: var(--surface-2); overflow: hidden; min-height: 0; }
+@media (max-width: 900px) { .profile-editor { grid-template-columns: minmax(0, 1fr); } .profile-editor-cube { display: none; } }
+.pref-section { animation: appear 0.22s cubic-bezier(0.3, 0.8, 0.3, 1) both; }
+@media (prefers-reduced-motion: reduce) { .pref-section { animation: none; } }
+.storage .skeleton-text { display: inline-block; width: 54px; height: 10px; border-radius: 4px; background: var(--chart-grid); vertical-align: middle; }
+.storage.loading .storage-legend i { opacity: 0.4; }
+.profile-name-cut { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block !important; }
+.profile-card.missing .profile-text { opacity: 0.55; }
+
+/* Home's sizes: the row under the stage has the height you leave it, the stage takes the rest. */
+.main.home { gap: 0; }
+.home-row { height: var(--row-h, 220px); flex: none; min-height: 0; }
+.home-row > * { min-height: 0; overflow: hidden; }
+.home-row .home-attention { overflow-y: auto; scrollbar-width: none; }
+/* The lines that resize: like the sidebar's edge, a thin bar that shows on hover and takes the accent while dragged. */
+.home-split { position: relative; flex: none; display: grid; place-items: center; touch-action: none; z-index: 2; }
+.home-split span { display: block; border-radius: 4px; background: transparent; transition: background 0.15s, width 0.15s, height 0.15s; }
+.home-split-row { height: 16px; cursor: row-resize; }
+.home-split-row span { width: 36px; height: 4px; }
+.home-split-panel { width: 0; cursor: col-resize; }
+.home-split-panel::before { content: ""; position: absolute; inset: 0 -6px; }
+.home-split-panel span { position: absolute; width: 4px; height: 36px; left: -2px; top: 50%; transform: translateY(-50%); }
+.home-split:hover span { background: var(--handle-open); }
+.home-split-row:hover span { width: 56px; }
+.home-split-panel:hover span { height: 56px; }
+.main.home.dragging-row .home-split-row span { width: 56px; background: var(--accent); }
+.main.home.dragging-panel .home-split-panel span { height: 56px; background: var(--accent); }
+.main.home.dragging-row, .main.home.dragging-panel { user-select: none; }
+.main.home.dragging-row { cursor: row-resize; }
+.main.home.dragging-panel { cursor: col-resize; }
+@media (max-width: 1100px) { .home-split { display: none; } .home-row { height: auto; } .home-stage { grid-template-columns: minmax(0, 1fr); } }
+/* In the row under the stage the Library's counts go on one line each, so the card fits a short row. */
+.home-row .home-library-grid { gap: 4px; grid-template-columns: minmax(0, 1fr); }
+.home-row .home-library-item { flex-direction: row; align-items: center; gap: 8px; padding: 8px 10px; }
+.home-row .home-library-item strong { font-size: 15px; }
+.home-row .home-library-item > span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+/* Home with no machines: the stage alone, full height, with the invitation in its panel. */
+.home-empty { flex: 1 1 auto; }
+.home-empty-panel { justify-content: center; }
+.home-empty-text h1 { font-size: 20px; font-weight: 600; margin: 0 0 6px; }
+.home-empty-text p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.home-empty-ready { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+.home-empty-ready .home-library-item { flex-direction: row; align-items: center; gap: 8px; padding: 8px 10px; }
+.home-empty-ready .home-library-item strong { font-size: 15px; }
+.home-empty-panel .home-panel-actions { margin-top: 4px; }
+
+/* The row's columns: machines take what is left; the Library and the notices have the width you leave them. The
+   16 px between them is the line that resizes. */
+.home-row { gap: 0; grid-template-columns: minmax(0, 1fr) 16px var(--lib-w, 280px); }
+.home-row.with-attention { grid-template-columns: minmax(0, 1fr) 16px var(--lib-w, 280px) 16px var(--att-w, 360px); }
+.home-split-col { cursor: col-resize; height: 100%; }
+.home-split-col span { width: 4px; height: 36px; }
+.home-split-col:hover span { height: 56px; }
+.main.home.dragging-lib, .main.home.dragging-att { cursor: col-resize; user-select: none; }
+.home-split-col:active span { height: 56px; background: var(--accent); }
+@media (max-width: 1300px) { .home-row.with-attention { grid-template-columns: minmax(0, 1fr) 16px var(--lib-w, 280px); } .home-row.with-attention > .home-split-col:nth-last-of-type(1) { display: none; } }
+
+/* Narrow notices: the button goes under its text, lined up with it, instead of squeezing the text into a column. */
+.home-attention { container-type: inline-size; }
+@container (max-width: 360px) {
+  .home-attention-row { flex-wrap: wrap; row-gap: 6px; align-items: flex-start; }
+  .home-attention-text { flex: 1 1 calc(100% - 44px); }
+  .home-attention-row .btn { margin-left: 44px; }
+}
+.triple-spark { display: block; }
+/* Narrow windows: Home stacks and scrolls; the resizing lines go away (after the rules above, so it wins). */
+@media (max-width: 1100px) {
+  .main.home { overflow-y: auto; gap: 16px; }
+  .home-stage { grid-template-columns: minmax(0, 1fr); flex: none; }
+  .home-space { height: 320px; }
+  .home-panel { border-left: 0; border-top: 1px solid var(--line); }
+  .home-split { display: none; }
+  .home-row, .home-row.with-attention { grid-template-columns: minmax(0, 1fr); height: auto; gap: 16px; }
+  .home-row > * { overflow: visible; }
+  .home-others { grid-auto-columns: minmax(280px, 1fr); }
+}

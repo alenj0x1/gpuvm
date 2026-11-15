@@ -200,9 +200,18 @@ export function Scene({ name, variant, style, state, activity }: Props) {
         }
         g.globalAlpha = 1;
       }
-      if (moving && !reduced) frame = requestAnimationFrame(draw);
+      if (moving && !reduced && seen) frame = requestAnimationFrame(draw);
     };
-    const restart = () => { cancelAnimationFrame(frame); last = performance.now(); frame = requestAnimationFrame(draw); };
+    // Only a scene on screen keeps moving: with many machines, the ones scrolled out of view cost nothing.
+    // Out of view it isn't drawn at all, not even once on a resize; it catches up when it comes into view.
+    let seen = true, stale = false;
+    const restart = () => {
+      cancelAnimationFrame(frame);
+      if (!seen) { stale = true; return; }
+      stale = false; last = performance.now(); frame = requestAnimationFrame(draw);
+    };
+    const io = new IntersectionObserver(([e]) => { const was = seen; seen = e.isIntersecting; if (seen && (!was || stale)) restart(); });
+    io.observe(canvas);
     restart();
     const resize = new ResizeObserver(restart);
     resize.observe(canvas);
@@ -214,6 +223,7 @@ export function Scene({ name, variant, style, state, activity }: Props) {
     window.addEventListener("gpuvm-palette", restart);
     return () => {
       cancelAnimationFrame(frame);
+      io.disconnect();
       resize.disconnect();
       theme.disconnect();
       document.removeEventListener("visibilitychange", visibility);

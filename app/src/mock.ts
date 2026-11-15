@@ -32,6 +32,15 @@ const vms: VmOverview[] = [
   },
 ];
 
+// Many machines, to see how every screen holds up: open http://localhost:1420/?vms=30 for thirty in all.
+for (let i = vms.length; i < Number(params.get("vms") ?? 0); i++) {
+  const from = vms[i % 3];
+  // About a third on, a few starting or paused, the rest off.
+  const on = i % 3 === 0;
+  vms.push({ ...from, id: `extra${i}`, name: `lab-${String(i - 2).padStart(2, "0")}`, state: on ? "Running" : i % 13 === 0 ? "Starting" : i % 17 === 0 ? "Paused" : "Off", cpuPercent: on ? 20 + (i * 7) % 60 : 0,
+    gpuPercent: on ? 10 + (i * 11) % 70 : 0, memoryAssignedGB: on ? 6 : 0, memoryDemandGB: on ? 3.5 : 0, uptimeSeconds: on ? 600 : 0, driverInSync: true, fits: true, missingGB: 0 });
+}
+
 // The card over Moonlight (PromptCard): open http://localhost:1420/?prompt to see it with a sample prompt.
 // The website's demo of the card turns it on with showSamplePrompt().
 let samplePrompt = params.has("prompt");
@@ -90,7 +99,7 @@ export async function ps(cmd: string, args: Record<string, unknown>): Promise<un
     case "Get-GpuVMHostInfo":
       return [{ logicalProcessors: 12, memoryGB: 15, gpuName: "NVIDIA GeForce RTX 4060", disk: { drive: "C:", freeGB: 232, promisedGB: 86, marginGB: 20, availableGB: 126, sizeGB: null, usedGB: null, maxGB: 126, others: [{ vm: "estudio", promisedGB: 86 }] } }];
     case "Get-GpuVMIsoList":
-      return isos;
+      return scenario === "empty" ? [] : isos;
     case "Add-GpuVMIso": {
       const path = String(args.Path);
       isos = [{ path, name: path.split("\\").pop()!, sizeGB: 5.8, modified: "", remembered: true, missing: false, lastUsed: null, usedBy: [] }, ...isos.filter((i) => i.path !== path)];
@@ -133,12 +142,12 @@ export async function ps(cmd: string, args: Record<string, unknown>): Promise<un
         attention,
       }];
     case "Get-GpuVMTemplate":
-      return templates;
+      return scenario === "empty" ? [] : templates;
     case "Remove-GpuVMTemplate":
       templates = templates.filter((t) => t.name !== args.Name);
       return [];
     case "Get-GpuVMSharedDisk":
-      return shared;
+      return scenario === "empty" ? [] : shared;
     case "New-GpuVMSharedDisk": {
       const disk = { name: String(args.Name), purpose: args.Purpose as "games" | "general", sizeGB: Number(args.SizeGB), fileGB: 0.1, vm: null, vmRunning: false, createdAt: new Date().toISOString() };
       shared = [...shared, disk];
@@ -149,10 +158,11 @@ export async function ps(cmd: string, args: Record<string, unknown>): Promise<un
       return [];
     case "Get-GpuVMCleanup":
       return CLEANUP_LEVELS;
+    // ?mock=empty: no machines and an empty Library (only the profiles GpuVM ships with).
     case "Get-GpuVMDisk":
-      return disks;
+      return scenario === "empty" ? [] : disks;
     case "Get-GpuVMBase":
-      return bases;
+      return scenario === "empty" ? [] : bases;
     case "Remove-GpuVMBase":
       bases = bases.filter((b) => b.key !== args.Key);
       return [];

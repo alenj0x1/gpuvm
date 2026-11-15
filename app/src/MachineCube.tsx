@@ -107,6 +107,10 @@ const TRACES: V2[][] = (() => {
 })();
 
 const START_YAW = Math.PI / 4 + 0.15, START_PITCH = 0.55;
+const MAX_NEIGHBORS = 8;
+/** The constellation's size grows with the machines in it, and the camera steps back to keep it all in view. */
+const ringRadius = (count: number) => 1.45 + count * 0.12;
+const restZoom = (count: number) => Math.min(0.6, 2.3 / (ringRadius(count) + 0.9));
 
 /** The space as the last cube left it, so opening another machine continues it: the one that was in front goes back
  *  among the others and the new one comes forward, from the same angle. */
@@ -149,8 +153,9 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
     plateName.current = name;
     if (performance.now() - born.current >= 1500) requests.current.push(["plate"]);
   }, [name]);
-  const space = useRef({ others, name });
-  space.current = { others, name };
+  // Up to eight neighbors share the space: more would only crowd it (the sidebar lists every machine).
+  const space = useRef({ others: others.slice(0, MAX_NEIGHBORS), name });
+  space.current = { others: others.slice(0, MAX_NEIGHBORS), name };
   const data = useRef(machine);
   data.current = machine;
   const colors = useRef(perPart);
@@ -657,7 +662,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
         // At rest the camera steps back so the whole constellation fits, and slowly turns around it.
         const b = 1 - Math.exp(-dt * 1.2);
         view.yaw += dt * 0.12 * rest; view.pitch += (0.5 - view.pitch) * b;
-        view.zoom += (1 - 0.4 * rest - view.zoom) * b; view.ox += -view.ox * b; view.oy += -view.oy * b;
+        view.zoom += (1 + (restZoom(space.current.others.length) - 1) * rest - view.zoom) * b; view.ox += -view.ox * b; view.oy += -view.oy * b;
       } else if (!cam.home && !drag && performance.now() - idleSince > 4000) {
         // Back to the first view: centered, its size, its angle (the nearest turn of it, so it never spins around).
         const b = 1 - Math.exp(-dt * 1.8);
@@ -687,7 +692,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
     // Where every machine is: this one in front and the others small behind it, or all of them as a constellation.
     const layout = (count: number): Spot[] => {
       const all: Spot[] = [];
-      const n = count + 1, R = 1.85, e = rest * rest * (3 - 2 * rest);
+      const n = count + 1, R = ringRadius(count), e = rest * rest * (3 - 2 * rest);
       const alive = Math.min(1, Math.max(0, (performance.now() - idleSince) / 1000 - 4));
       for (let i = 0; i < n; i++) {
         const a = (i / n) * Math.PI * 2 + 0.5, bob = Math.sin(T * 0.9 + i * 1.9) * 0.08;
@@ -700,7 +705,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
           let sx: number, sy: number;
           const j = i - 1;
           // A wide canvas (Home) has room at the sides: right and left of the cube, one under another.
-          if (HALFW > 2.7) { const row = Math.floor(j / 2); sx = (j % 2 ? -1 : 1) * Math.min(HALFW - 0.8, 2.5); sy = 0.75 - row * 1.05; }
+          if (HALFW > 2.7) { const row = Math.floor(j / 2); sx = (j % 2 ? -1 : 1) * Math.min(HALFW - 0.8, 2.5); sy = 0.95 - row * 1.0; }
           else if (HALF > 2.4) { const row = Math.floor(j / 3), inRow = Math.min(3, count - row * 3); sx = (j % 3 - (inRow - 1) / 2) * 0.95; sy = -1.95 - row * 0.85; }
           else [sx, sy] = SLOTS[(i - 1) % SLOTS.length];
           const w = fromView(sx, sy, -3);
@@ -805,7 +810,9 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       h.globalCompositeOperation = "source-over";
       h.clearRect(0, 0, W, H);
       h.globalCompositeOperation = light ? "source-over" : "lighter";
-      sp.others.forEach((o, i) => { setObj(i + 1); FADE = (o.machine.power === "off" ? 0.5 : 0.8) * (0.55 + 0.45 * rest); if (i === swap.from && swap.t < 1) FADE += (1 - FADE) * (1 - swap.t); lite(o.machine); });
+      // In front, only as many neighbors as the layout has room for; at rest, all of them join the constellation.
+      const room = HALFW > 2.7 ? 6 : HALF > 2.4 ? 6 : 4;
+      sp.others.forEach((o, i) => { if (i >= room && rest < 0.05) return; setObj(i + 1); FADE = (o.machine.power === "off" ? 0.5 : 0.8) * (0.55 + 0.45 * rest) * (i >= room ? rest : 1); if (i === swap.from && swap.t < 1) FADE += (1 - FADE) * (1 - swap.t); lite(o.machine); });
       setObj(0);
       FADE = 1;
       board(on, act);

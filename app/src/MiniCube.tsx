@@ -13,9 +13,16 @@ const rgba = (c: string, a: number) => {
 
 /** A small, still version of a machine's cube for lists (profiles in the Library): the same pieces as the hologram,
  *  sized by the recipe, drawn once. It turns slowly while the pointer is over it. Light enough for many at once. */
-export function MiniCube({ machine, className }: { machine: MiniMachine; className?: string }) {
+/** `ghost` draws it as a machine that is off: every piece there but faint, waiting to be made. `kind` draws a single
+ *  piece instead of a whole machine, for the Library's other cards: a disk (filled to `fill`), a Windows ISO disc, a
+ *  template (a cube with Windows installed and its apps) or a prepared Windows (a disk with the Windows logo). */
+export type PieceKind = "machine" | "disk" | "iso" | "template" | "windows";
+const NO_MACHINE: MiniMachine = { cores: 0, memoryGB: 0, gpuPercent: 0, diskGB: 0, apps: 0 };
+export function MiniCube({ machine = NO_MACHINE, className, ghost = false, kind = "machine", fill = 0 }: {
+  machine?: MiniMachine; className?: string; ghost?: boolean; kind?: PieceKind; fill?: number;
+}) {
   const ref = useRef<HTMLCanvasElement>(null);
-  const key = `${machine.cores}:${machine.memoryGB}:${machine.gpuPercent}:${machine.diskGB}:${machine.apps}`;
+  const key = `${machine.cores}:${machine.memoryGB}:${machine.gpuPercent}:${machine.diskGB}:${machine.apps}:${ghost}:${kind}:${fill.toFixed(3)}`;
 
   useEffect(() => {
     const cv = ref.current;
@@ -29,9 +36,10 @@ export function MiniCube({ machine, className }: { machine: MiniMachine; classNa
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       g.clearRect(0, 0, W, H);
       const css = getComputedStyle(cv);
-      const accent = css.getPropertyValue("--accent").trim() || "#7d9cf0";
+      const accent = ghost ? (css.getPropertyValue("--muted").trim() || "#8a8a8a") : css.getPropertyValue("--accent").trim() || "#7d9cf0";
       const light = document.documentElement.dataset.theme === "light";
       g.globalCompositeOperation = light ? "source-over" : "lighter";
+      g.globalAlpha = ghost ? 0.45 : 1;
       const S = Math.min(W / 3.1, H / 3.1), cs = Math.cos(yaw), sn = Math.sin(yaw), cp = Math.cos(0.55), sp = Math.sin(0.55);
       const P = (x: number, y: number, z: number): [number, number] => {
         const x1 = x * cs - z * sn, z1 = x * sn + z * cs, yy = y - 1;
@@ -47,8 +55,63 @@ export function MiniCube({ machine, className }: { machine: MiniMachine; classNa
         for (let i = 0; i < 4; i++) { const p = top[i], q = top[(i + 1) % 4]; line([p[0], y, p[2]], [q[0], y, q[2]], al * 0.5); }
       };
       g.lineWidth = 1;
+      const flat = (cx: number, y: number, cz: number, r: number, a0 = 0, a1 = Math.PI * 2, n = 40): V3[] =>
+        Array.from({ length: n + 1 }, (_, i) => { const a = a0 + ((a1 - a0) * i) / n; return [cx + Math.cos(a) * r, y, cz + Math.sin(a) * r] as V3; });
+      const stroke = (pts: V3[], al: number, lw = 1, fillA = 0) => {
+        g.beginPath(); pts.forEach((p, i) => { const q = P(...p); if (i) g.lineTo(q[0], q[1]); else g.moveTo(q[0], q[1]); });
+        if (fillA) { g.closePath(); g.fillStyle = rgba(accent, fillA); g.fill(); }
+        g.lineWidth = lw; g.strokeStyle = rgba(accent, al); g.stroke(); g.lineWidth = 1;
+      };
+      // The four squares of the Windows logo, flat at a height.
+      const windowsLogo = (cx: number, y: number, cz: number, size: number) => {
+        const q = size / 2, gap = size * 0.08;
+        for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+          const x0 = cx + (dx < 0 ? -q : gap / 2), z0 = cz + (dz < 0 ? -q : gap / 2), w = q - gap / 2;
+          stroke([[x0, y, z0], [x0 + w, y, z0], [x0 + w, y, z0 + w], [x0, y, z0 + w]], 0.9, 1, 0.55);
+        }
+      };
+      if (kind === "disk" || kind === "windows") {
+        // The disk on its own: case, screws, platter with tracks, how full it is as a ring, and the arm.
+        box(0, 0.75, 0, 1.25, 0.24, 1.6, 0.9, 0.08);
+        const y = 0.991;
+        for (const [a, b] of [[-0.52, -0.7], [0.52, -0.7], [-0.52, 0.7], [0.52, 0.7]]) stroke(flat(a, y, b, 0.04, 0, Math.PI * 2, 10), 0.8);
+        stroke(flat(0, y, 0.12, 0.5), 0.9, 1.2, 0.05);
+        for (let i = 1; i < 5; i++) stroke(flat(0, y, 0.12, 0.1 + i * 0.08), 0.25);
+        stroke(flat(0, y, 0.12, 0.1, 0, Math.PI * 2, 16), 0.9, 1, 0.25);
+        if (kind === "windows") windowsLogo(0, y + 0.002, 0.12, 0.42);
+        else if (fill > 0) stroke(flat(0, y + 0.002, 0.12, 0.56, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, fill), 48), 1, 2.4);
+        stroke([[0.42, y, -0.55], [0.42 + Math.cos(2.3) * 0.6, y, -0.55 + Math.sin(2.3) * 0.6]], 1, 2);
+        stroke(flat(0.42, y, -0.55, 0.07, 0, Math.PI * 2, 12), 0.9, 1, 0.2);
+        box(0, 0.75, -0.86, 0.5, 0.1, 0.1, 0.9, 0.2);
+      } else if (kind === "iso") {
+        // A Windows install disc: a flat disc with its hole, tracks and the Windows logo.
+        const y = 0.85;
+        stroke(flat(0, y, 0, 0.95, 0, Math.PI * 2, 64), 0.95, 1.3, 0.06);
+        stroke(flat(0, y, 0, 0.13, 0, Math.PI * 2, 20), 0.9, 1.2);
+        stroke(flat(0, y, 0, 0.3, 0, Math.PI * 2, 32), 0.45);
+        for (let i = 0; i < 4; i++) stroke(flat(0, y, 0, 0.45 + i * 0.12, 0.4 + i, 1.6 + i, 18), 0.35);
+        windowsLogo(0.42, y + 0.002, -0.05, 0.36);
+      } else if (kind === "template") {
+        // A Windows ready to copy: the glass cube with its board and a screen showing Windows, and its apps.
+        for (const [a, b] of EDGES) line(a, b, 0.35);
+        box(0, 0, 0, 1.78, 0.05, 1.78, 0.6, 0.06);
+        const sx = 0.8, sy0 = 0.45, sy1 = 1.45, sz = -0.2;
+        stroke([[-sx, sy0, sz], [sx, sy0, sz], [sx, sy1, sz], [-sx, sy1, sz], [-sx, sy0, sz]], 0.9, 1.2, 0.07);
+        stroke([[-sx, sy0 + 0.12, sz], [sx, sy0 + 0.12, sz]], 0.6);
+        // The logo stands on the screen: drawn on its plane.
+        const lx = 0, ly = 1.0, q = 0.16, gp = 0.025;
+        for (const [dx, dy] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) {
+          const x0 = lx + (dx < 0 ? -q : gp), y0 = ly + (dy < 0 ? -q : gp), w = q - gp;
+          stroke([[x0, y0, sz], [x0 + w, y0, sz], [x0 + w, y0 + w, sz], [x0, y0 + w, sz]], 0.9, 1, 0.55);
+        }
+        const spots: V3[] = [[-0.6, 1.6, 0.5], [0.6, 1.55, 0.45], [-0.55, 0.3, 0.55], [0.55, 0.35, 0.6], [0, 1.7, 0.6]];
+        for (let i = 0; i < Math.min(machine.apps, spots.length); i++) { const [x, y, z] = spots[i]; box(x, y, z, 0.12, 0.12, 0.12, 0.9, 0.25); }
+      }
+      if (kind !== "machine") { g.globalCompositeOperation = "source-over"; g.globalAlpha = 1; return; }
       // The glass cube.
       for (const [a, b] of EDGES) line(a, b, 0.35);
+      // An empty recipe (a profile still to make) is the glass cube alone.
+      if (!machine.cores && !machine.memoryGB) { g.globalCompositeOperation = "source-over"; return; }
       // Board, processor with a cell per thread, a module per 4 GB, the graphics card, the disk and the apps.
       box(0, 0, 0, 1.78, 0.05, 1.78, 0.6, 0.06);
       box(-0.38, 0.05, -0.32, 0.46, 0.08, 0.46, 0.9, 0.16);
@@ -71,6 +134,7 @@ export function MiniCube({ machine, className }: { machine: MiniMachine; classNa
       const spots: V3[] = [[-0.6, 1.1, -0.5], [0.6, 1.0, -0.2], [-0.65, 0.75, 0.3], [0.55, 1.5, 0.5], [-0.4, 1.6, 0.6], [0.15, 1.05, -0.7]];
       for (let i = 0; i < Math.min(machine.apps, spots.length); i++) { const [x, y, z] = spots[i]; box(x, y, z, 0.12, 0.12, 0.12, 0.9, 0.25); }
       g.globalCompositeOperation = "source-over";
+      g.globalAlpha = 1;
     };
     const loop = (t: number) => {
       if (last) yaw += Math.min(0.05, (t - last) / 1000) * 0.6;
