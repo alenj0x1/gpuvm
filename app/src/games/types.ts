@@ -27,6 +27,10 @@ export interface GameHost {
   color: string;
   figures: string[];
   light: boolean;
+  /** The world of the space it is played in ("studio", "board" or "blocks"): where the game starts. */
+  world?: string;
+  /** Plays by itself, never ends and leaves the keyboard alone (the gallery's cards). */
+  demo?: boolean;
   /** Called a few times per second, not every frame. */
   onHud: (h: GameHud) => void;
   onOver: (score: number) => void;
@@ -49,8 +53,6 @@ export interface GameDef {
   /** Ways to play it, picked on the start card; `team` modes bring your other machines along. */
   modes?: { id: string; name: string; description: string; team?: boolean }[];
   create: (canvas: HTMLCanvasElement, host: GameHost) => GameInstance;
-  /** The game's own art for its card in the gallery, drawn every frame while the gallery is open (no text). */
-  cover: (g: CanvasRenderingContext2D, w: number, h: number, t: number, light: boolean, accent: string) => void;
 }
 
 const BEST = "gpuvm.games.best.";

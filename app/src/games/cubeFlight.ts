@@ -8,12 +8,14 @@ import { MACHINE_COLORS } from "../decor/store";
 // around), a shield or a life. Taking things down fills the frenzy: everything speeds up, your figures come out huge
 // and go through everything for a few seconds. Shooting and taking things down charge the ability on the right button
 // (a pulse at first); cores that drift by swap it for another (laser, slow time, clones, magnet). Every 40 seconds the
-// flight crosses into another zone: the galaxy, a motherboard, a world of blocks. It never ends; it only gets fuller.
+// flight crosses into another zone, starting in the world of the space it is played in: the studio (hologram slabs),
+// a motherboard (chips, capacitors, resistors) or a world of blocks (bricks and brick figures); what comes at you is
+// made of that zone. It never ends; it only gets fuller. In a demo (the gallery's card) the machine plays by itself.
 
 type Kind = "brick" | "rival";
 type Weapon = "normal" | "rapid" | "triple" | "burst" | "ring";
 type PickKind = "heart" | "star" | Exclude<Weapon, "normal">;
-interface Thing { kind: Kind; x: number; y: number; vx: number; vy: number; r: number; rot: number; vr: number; color: string; hp: number; phase: number; cool: number }
+interface Thing { kind: Kind; x: number; y: number; vx: number; vy: number; r: number; rot: number; vr: number; color: string; hp: number; phase: number; cool: number; skin?: number; v?: number }
 interface Shot { x: number; y: number; vx: number; vy: number; img: HTMLCanvasElement; size: number; hits: Set<Thing> | null }
 interface Bolt { x: number; y: number; vx: number; vy: number }
 interface Pickup { x: number; y: number; kind: PickKind; t: number }
@@ -44,7 +46,10 @@ const ABILITIES: Record<AbilityId, { name: string; secs: number }> = {
 };
 const ABILITY_IDS = Object.keys(ABILITIES) as AbilityId[];
 /** The zones the flight crosses, one after another. */
-const ZONES = ["Galaxia", "Placa base", "Bloques"] as const;
+const ZONES = ["Estudio", "Placa base", "Bloques"] as const;
+const WORLD_ZONE: Record<string, number> = { studio: 0, board: 1, blocks: 2 };
+/** Brick figures of the app that come flying in the world of blocks. */
+const ZONE_FIGURES = ["lucky-cat", "duck", "robot", "penguin", "bear", "bunny", "cactus", "mushroom"];
 const ZONE_SECS = 40;
 const rgba = (hex: string, a: number) => { const h = hex.replace("#", ""); return `rgba(${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)},${a})`; };
 
@@ -69,6 +74,10 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     return c;
   });
   const figures = spritesFor(host.player.figures, host.player.color);
+  const zoneFigs = spritesFor(ZONE_FIGURES, host.color);
+  const demo = !!host.demo, zoneSecs = demo ? 7 : ZONE_SECS, firstZone = WORLD_ZONE[host.world ?? "studio"] ?? 0;
+  /** The zone at a moment of the flight: the space's own world first, then the others in turn. */
+  const zoneAt = (time: number) => (firstZone + Math.floor(time / zoneSecs)) % ZONES.length;
   const team = host.mode === "team";
   // Your other machines, flying beside you: each aims at the nearest thing and shoots its own figures.
   const SLOTS = [[-46, -58], [-46, 58], [-92, 0]];
@@ -107,10 +116,10 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     if (sparks.length > 600) sparks.splice(0, sparks.length - 600);
   };
   const hit = () => {
-    if (me.hurt > 0 || frenzy > 0) return;
+    if (demo || me.hurt > 0 || frenzy > 0) return;
     if (me.shield > 0) { me.shield = 0; me.hurt = 0.6; burst(me.x, me.y, host.color, 14); return; }
     me.lives--; me.hurt = 1.6; burst(me.x, me.y, "#ff6b6b", 22);
-    if (me.lives <= 0) { over = true; running = false; burst(me.x, me.y, host.color, 40); host.onHud({ score: Math.floor(score), lives: 0 }); host.onOver(Math.floor(score)); }
+    if (me.lives <= 0) { letGo(); over = true; running = false; burst(me.x, me.y, host.color, 40); host.onHud({ score: Math.floor(score), lives: 0 }); host.onOver(Math.floor(score)); }
   };
   const takeDown = (o: Thing) => {
     score += (o.kind === "rival" ? 100 : 30) * (frenzy > 0 ? 2 : 1) * (ab.id === "magnet" && ab.active > 0 ? 2 : 1);
@@ -152,6 +161,18 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     // The galaxy runs faster in the frenzy, easing in and out.
     warp += ((frenzy > 0 ? 2.6 : 1) - warp) * (1 - Math.exp(-dt * 3));
 
+    // In a demo the machine plays by itself: it weaves up and down, aims at what is nearest ahead and uses its ability.
+    if (demo) {
+      let target: Thing | null = null, best = 1e9;
+      for (const o of things) { const d = Math.hypot(o.x - me.x, o.y - me.y); if (o.hp > 0 && o.x > me.x && d < best) { best = d; target = o; } }
+      const ty = H / 2 + Math.sin(t * 0.8) * H * 0.3, tx = W * 0.22 + Math.sin(t * 0.45) * W * 0.06;
+      keys.clear();
+      if (me.y < ty - 12) keys.add("s"); else if (me.y > ty + 12) keys.add("w");
+      if (me.x < tx - 12) keys.add("d"); else if (me.x > tx + 12) keys.add("a");
+      if (target) { aim.x = target.x; aim.y = target.y; aim.set = true; }
+      firing = true;
+      if (ab.charge >= 1) useAbility();
+    }
     // Moving with the keys, with a little inertia.
     const ax = (keys.has("ArrowRight") || keys.has("d") ? 1 : 0) - (keys.has("ArrowLeft") || keys.has("a") ? 1 : 0);
     const ay = (keys.has("ArrowDown") || keys.has("s") ? 1 : 0) - (keys.has("ArrowUp") || keys.has("w") ? 1 : 0);
@@ -219,8 +240,9 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
       const r = 16 + Math.random() * 18, c = BRICKS[Math.floor(Math.random() * BRICKS.length)];
       // Most come from ahead; from the second level some fall in from above or below.
       const side = level > 1.4 && Math.random() < 0.3 ? (Math.random() < 0.5 ? -1 : 1) : 0;
-      if (side) things.push({ kind: "brick", x: W * (0.35 + Math.random() * 0.6), y: side < 0 ? -r : H + r, vx: -speed * 0.5, vy: -side * (90 + Math.random() * 90), r, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 2, color: c, hp: 3, phase: 0, cool: 0 });
-      else things.push({ kind: "brick", x: W + r, y: r + Math.random() * (H - r * 2), vx: -(speed + Math.random() * 80), vy: (Math.random() - 0.5) * 30, r, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 2, color: c, hp: 3, phase: 0, cool: 0 });
+      const skin = zoneAt(t), v = Math.random();
+      if (side) things.push({ kind: "brick", x: W * (0.35 + Math.random() * 0.6), y: side < 0 ? -r : H + r, vx: -speed * 0.5, vy: -side * (90 + Math.random() * 90), r, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 2, color: c, hp: 3, phase: 0, cool: 0, skin, v });
+      else things.push({ kind: "brick", x: W + r, y: r + Math.random() * (H - r * 2), vx: -(speed + Math.random() * 80), vy: (Math.random() - 0.5) * 30, r, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 2, color: c, hp: 3, phase: 0, cool: 0, skin, v });
     }
     spawnRival -= wdt * fill;
     if (spawnRival <= 0) {
@@ -308,6 +330,47 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     g.fillRect(x - s * 0.6, y + s * 0.45, s * 1.2, s * 0.18);
     g.fillRect(x - s * 0.35, y - s * 0.1, s * 0.5, s * 0.5);
   };
+  /** What comes at you, made of the zone it was born in. */
+  const part = (o: Thing) => {
+    const z = o.skin ?? 2, v = o.v ?? 0, s = o.r;
+    if (z === 2) {
+      // Among blocks: bricks, and now and then one of the app's brick figures tumbling.
+      if (v < 0.35) { const img = zoneFigs[Math.floor(v * 100) % zoneFigs.length]; g.save(); g.translate(o.x, o.y); g.rotate(o.rot * 0.5); g.drawImage(img, -s * 1.3, -s * 1.3, s * 2.6, s * 2.6); g.restore(); }
+      else brick(o);
+      return;
+    }
+    g.save(); g.translate(o.x, o.y); g.rotate(o.rot);
+    if (z === 1) {
+      if (v < 0.4) {
+        // A chip with its pins.
+        g.fillStyle = host.light ? "#26292b" : "#1c2123"; g.fillRect(-s, -s, s * 2, s * 2);
+        g.fillStyle = host.light ? "#9aa1a3" : "#a7aeb0";
+        for (let q = 0; q < 6; q++) { const u = -s + 4 + q * ((s * 2 - 8) / 5); g.fillRect(u - 1, -s - 4, 2, 4); g.fillRect(u - 1, s, 2, 4); g.fillRect(-s - 4, u - 1, 4, 2); g.fillRect(s, u - 1, 4, 2); }
+        g.fillStyle = "rgba(255,255,255,.12)"; g.beginPath(); g.arc(-s + 6, -s + 6, 2.5, 0, 7); g.fill();
+      } else if (v < 0.7) {
+        // An electrolytic capacitor: a can with its stripe and the cross on top.
+        g.fillStyle = host.light ? "#2f3438" : "#2a3036"; g.fillRect(-s * 0.6, -s, s * 1.2, s * 2);
+        g.fillStyle = host.light ? "#56616a" : "#4a545c"; g.fillRect(s * 0.15, -s, s * 0.25, s * 2);
+        g.fillStyle = host.light ? "#8a949a" : "#59646b"; g.beginPath(); g.ellipse(0, -s, s * 0.6, s * 0.22, 0, 0, 7); g.fill();
+        g.strokeStyle = "rgba(0,0,0,.4)"; g.beginPath(); g.moveTo(-s * 0.3, -s); g.lineTo(s * 0.3, -s); g.stroke();
+      } else {
+        // A resistor: a beige body with its color bands and its two leads.
+        g.strokeStyle = "#b9c0c2"; g.lineWidth = 2; g.beginPath(); g.moveTo(-s * 1.6, 0); g.lineTo(s * 1.6, 0); g.stroke();
+        g.fillStyle = "#d9c49a"; g.beginPath(); g.roundRect(-s * 0.9, -s * 0.38, s * 1.8, s * 0.76, s * 0.3); g.fill();
+        ["#7a4a2a", "#1c1c1c", "#cc4f43", "#c9a24f"].forEach((c, k) => { g.fillStyle = c; g.fillRect(-s * 0.6 + k * s * 0.36, -s * 0.38, s * 0.14, s * 0.76); });
+      }
+    } else {
+      // In the studio: slabs of hologram, lines in the ink of the app with scan lines across.
+      const w = s * 1.6, h = s * 1.1;
+      g.fillStyle = rgba(ink, 0.05); g.fillRect(-w, -h, w * 2, h * 2);
+      g.strokeStyle = rgba(ink, 0.7); g.lineWidth = 1.4; g.strokeRect(-w, -h, w * 2, h * 2);
+      g.strokeStyle = rgba(ink, 0.2); g.lineWidth = 1;
+      g.beginPath(); for (let y = -h + 4; y < h; y += 5) { g.moveTo(-w, y); g.lineTo(w, y); } g.stroke();
+      g.strokeStyle = rgba(ink, 0.9); g.lineWidth = 2; const L = 6;
+      for (const [cx, cy, sx, sy] of [[-w, -h, 1, 1], [w, -h, -1, 1], [-w, h, 1, -1], [w, h, -1, -1]]) { g.beginPath(); g.moveTo(cx, cy + sy * L); g.lineTo(cx, cy); g.lineTo(cx + sx * L, cy); g.stroke(); }
+    }
+    g.restore();
+  };
   const brick = (o: Thing) => {
     g.save(); g.translate(o.x, o.y); g.rotate(o.rot);
     const s = o.r;
@@ -319,12 +382,21 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     g.restore();
   };
 
-  /** The background of a zone, scrolling with the flight: the galaxy is the stars (drawn after), the motherboard has
-   *  traces, vias and chips going by, the world of blocks a baseplate of studs and brick trees. */
+  /** The background of a zone, scrolling with the flight: the studio is the app's own gray with a faint grid and dust
+   *  of light (the stars, drawn after), the motherboard has traces, vias and chips going by, the world of blocks a
+   *  baseplate of studs and brick trees. */
   const zoneBg = (z: number, alpha: number) => {
-    if (alpha <= 0 || z === 0) return;
+    if (alpha <= 0) return;
     g.globalAlpha = alpha;
-    if (z === 1) {
+    if (z === 0) {
+      g.fillStyle = host.light ? "#f2f1ee" : "#161616"; g.fillRect(0, 0, W, H);
+      g.strokeStyle = rgba(ink, host.light ? 0.06 : 0.05); g.lineWidth = 1;
+      const off = (scroll * 0.3) % 48;
+      g.beginPath();
+      for (let x = -off; x < W; x += 48) { g.moveTo(x, 0); g.lineTo(x, H); }
+      for (let y = 0; y < H; y += 48) { g.moveTo(0, y); g.lineTo(W, y); }
+      g.stroke();
+    } else if (z === 1) {
       g.fillStyle = host.light ? "#e4ebe6" : "#121814"; g.fillRect(0, 0, W, H);
       const off = scroll * 0.6;
       g.strokeStyle = host.light ? "#b9c9bf" : "#2c4a3d"; g.lineWidth = 2;
@@ -368,17 +440,18 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, W, H);
     // The zone: crossing into the next one fades it in over a second and a half.
-    const zt = t / ZONE_SECS, zi = Math.floor(zt) % ZONES.length, into = (zt % 1) * ZONE_SECS, prev = (zi + ZONES.length - 1) % ZONES.length;
-    if (t >= ZONE_SECS && into < 1.5) { zoneBg(prev, 1); zoneBg(zi, into / 1.5); } else zoneBg(zi, 1);
+    const zt = t / zoneSecs, zi = zoneAt(t), into = (zt % 1) * zoneSecs, prev = (zi + ZONES.length - 1) % ZONES.length;
+    if (t >= zoneSecs && into < 1.5) { zoneBg(prev, 1); zoneBg(zi, into / 1.5); } else zoneBg(zi, 1);
     if (zoneShown !== zi && running) { zoneShown = zi; zoneBanner = t < 1 ? 0 : 2.5; }
     zoneBanner = Math.max(0, zoneBanner - dt);
     // The galaxy: stars drifting by, nearer ones faster; in the frenzy they stretch into streaks in your color.
     const drift = (150 + 40 * (1 + t / 35)) * warp * (running ? 1 : 0);
     const streak = Math.max(0, warp - 1.1) * 0.05;
     g.lineCap = "round";
-    const starsAlpha = zi === 0 ? 1 : t >= ZONE_SECS && into < 1.5 && prev === 0 ? 1 - into / 1.5 : 0.35;
+    const starsAlpha = zi === 0 ? 1 : t >= zoneSecs && into < 1.5 && prev === 0 ? 1 - into / 1.5 : 0.3;
     g.globalAlpha = starsAlpha;
     for (const s of stars) {
+      if (starsAlpha <= 0.01) break;
       s.x -= (drift * s.z * dt) / Math.max(1, W);
       if (s.x < 0) { s.x += 1; s.y = Math.random(); }
       const x = s.x * W, y = s.y * H, a = 0.06 + s.z * 0.16;
@@ -400,7 +473,7 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
       if (img) g.drawImage(img, p.x - 22, p.y - 22 + Math.sin(p.t * 4) * 4, 44, 44);
     }
     for (const o of things) {
-      if (o.kind === "brick") brick(o);
+      if (o.kind === "brick") part(o);
       else {
         cube(o.x, o.y, o.r * 0.8, o.color, 1, -t * 1.2 + o.phase);
         g.fillStyle = "#ff6b6b"; g.beginPath(); g.arc(o.x + (o.vx > 0 ? 1 : -1) * o.r * 0.55, o.y - 2, 3, 0, Math.PI * 2); g.fill();
@@ -447,6 +520,7 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     // Crossing into a zone: its name on a small plate at the top, for a moment.
     if (zoneBanner > 0) {
       const a = Math.min(1, zoneBanner * 2, (2.5 - zoneBanner) * 4), label = `Zona ${ZONES[zi]}`;
+      if (demo) zoneBanner = 0;
       g.font = "600 14px 'Plus Jakarta Sans', sans-serif";
       const w = g.measureText(label).width + 28, x = W / 2 - w / 2, y = 56;
       g.globalAlpha = a; g.fillStyle = host.light ? "#ffffff" : "#1c1c1c"; g.beginPath(); g.roundRect(x, y, w, 30, 15); g.fill();
@@ -464,7 +538,7 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
       hudAt = now;
       const abHud = { name: ABILITIES[ab.id].name, charge: ab.charge, active: ab.active > 0 ? ab.active / ABILITIES[ab.id].secs : undefined };
       const power = frenzy > 0 ? `Frenesí ${Math.ceil(frenzy)} s` : me.weapon !== "normal" ? `${PICKS[me.weapon].label} ${Math.ceil(me.weaponT)} s` : me.shield > 0 ? `Escudo ${Math.ceil(me.shield)} s` : undefined;
-      host.onHud({ score: Math.floor(score), lives: me.lives, power, meter: frenzy > 0 ? frenzy / FRENZY_SECS : meter, frenzy: frenzy > 0, ability: abHud, zone: ZONES[Math.floor(t / ZONE_SECS) % ZONES.length] });
+      host.onHud({ score: Math.floor(score), lives: me.lives, power, meter: frenzy > 0 ? frenzy / FRENZY_SECS : meter, frenzy: frenzy > 0, ability: abHud, zone: ZONES[zoneAt(t)] });
     }
     if (running || sparks.length) frame = requestAnimationFrame(loop);
   };
@@ -472,8 +546,13 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
 
   const local = (e: PointerEvent) => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
   const onMove = (e: PointerEvent) => { const [x, y] = local(e); aim.x = x; aim.y = y; aim.set = true; };
-  const onDown = (e: PointerEvent) => { if (e.button === 2 && running) { e.preventDefault(); useAbility(); return; } if (e.button === 0 && running) { onMove(e); firing = true; try { canvas.setPointerCapture(e.pointerId); } catch { /* not a real pointer */ } } };
-  const onUp = () => { firing = false; };
+  // Shooting holds the pointer only while the button is down: it is let go on release, on leaving the window, on a
+  // pause and at the end, so the mouse is never left caught by the game.
+  let held: number | null = null;
+  const letGo = () => { firing = false; if (held !== null) { try { canvas.releasePointerCapture(held); } catch { /* already free */ } held = null; } };
+  const onDown = (e: PointerEvent) => { if (demo) return; if (e.button === 2 && running) { e.preventDefault(); useAbility(); return; } if (e.button === 0 && running) { onMove(e); firing = true; try { canvas.setPointerCapture(e.pointerId); held = e.pointerId; } catch { /* not a real pointer */ } } };
+  const onUp = () => letGo();
+  const onBlur = () => { letGo(); keys.clear(); };
   const onKey = (e: KeyboardEvent) => {
     const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
     if (k === "e" && e.type === "keydown") { e.preventDefault(); useAbility(); return; }
@@ -485,18 +564,21 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
   canvas.addEventListener("pointermove", onMove);
   canvas.addEventListener("pointerdown", onDown);
   window.addEventListener("pointerup", onUp);
-  window.addEventListener("keydown", onKey);
-  window.addEventListener("keyup", onKey);
+  window.addEventListener("pointercancel", onUp);
+  window.addEventListener("blur", onBlur);
+  canvas.addEventListener("lostpointercapture", () => { held = null; firing = false; });
+  // A demo plays by itself: the keyboard stays with the page.
+  if (!demo) { window.addEventListener("keydown", onKey); window.addEventListener("keyup", onKey); }
   document.addEventListener("visibilitychange", onHidden);
 
   return {
-    start: () => { reset(); running = true; host.onHud({ score: 0, lives: 3, meter: 0, ability: { name: ABILITIES.pulse.name, charge: 0 }, zone: ZONES[0] }); kick(); },
-    pause: () => { running = false; keys.clear(); firing = false; cancelAnimationFrame(frame); draw(0); },
+    start: () => { reset(); running = true; host.onHud({ score: 0, lives: 3, meter: 0, ability: { name: ABILITIES.pulse.name, charge: 0 }, zone: ZONES[firstZone] }); kick(); },
+    pause: () => { running = false; keys.clear(); letGo(); cancelAnimationFrame(frame); draw(0); },
     resume: () => { if (!over) { running = true; kick(); } },
     stop: () => {
       running = false; cancelAnimationFrame(frame); ro.disconnect();
       canvas.removeEventListener("pointermove", onMove); canvas.removeEventListener("pointerdown", onDown); canvas.removeEventListener("contextmenu", noMenu);
-      window.removeEventListener("pointerup", onUp); window.removeEventListener("keydown", onKey); window.removeEventListener("keyup", onKey);
+      letGo(); window.removeEventListener("pointerup", onUp); window.removeEventListener("pointercancel", onUp); window.removeEventListener("blur", onBlur); window.removeEventListener("keydown", onKey); window.removeEventListener("keyup", onKey);
       document.removeEventListener("visibilitychange", onHidden);
     },
   };
@@ -519,29 +601,4 @@ export const CUBE_FLIGHT: GameDef = {
     "Los núcleos de colores cambian tu habilidad",
   ],
   create,
-  cover: (g, w, h, t, light, accent) => {
-    // The machine flying among bricks over a galaxy, shooting, with a streak of the frenzy.
-    g.fillStyle = light ? "#eef0f3" : "#14161a"; g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 70; i++) {
-      const z = ((i * 0.618) % 1), x = ((i * 97.3 - t * (40 + z * 160)) % w + w) % w, y = (i * 53.7) % h;
-      g.fillStyle = light ? `rgba(40,40,50,${0.15 + z * 0.3})` : `rgba(235,232,225,${0.15 + z * 0.5})`;
-      g.fillRect(x, y, 2 + z * 10, 1.5);
-    }
-    for (let k = 0; k < 5; k++) {
-      const x = ((w * 1.2 - (t * 70 + k * 90)) % (w * 1.2) + w * 1.2) % (w * 1.2), y = h * (0.2 + ((k * 0.37) % 0.65)), s = 14 + (k % 3) * 5;
-      g.save(); g.translate(x, y); g.rotate(t * (k % 2 ? 1 : -1) * 0.8 + k);
-      g.fillStyle = BRICKS[k % BRICKS.length]; g.beginPath(); g.roundRect(-s, -s * 0.7, s * 2, s * 1.4, 3); g.fill();
-      g.fillStyle = "rgba(255,255,255,.25)"; for (const sx of [-0.5, 0.5]) { g.beginPath(); g.ellipse(sx * s, -s * 0.7, s * 0.3, s * 0.14, 0, 0, 7); g.fill(); }
-      g.restore();
-    }
-    const px = w * 0.24, py = h * 0.5 + Math.sin(t * 2) * h * 0.08, s = h * 0.1;
-    for (let k = 0; k < 4; k++) { const x = px + 30 + ((t * 260 + k * 70) % (w * 0.8)); g.fillStyle = accent; g.globalAlpha = 0.85; g.fillRect(x, py - 3, 10, 6); }
-    g.globalAlpha = 1;
-    g.strokeStyle = accent; g.lineWidth = 2;
-    g.strokeRect(px - s, py - s, s * 2, s * 2);
-    g.globalAlpha = 0.2; g.fillStyle = accent; g.fillRect(px - s, py - s, s * 2, s * 2); g.globalAlpha = 1;
-    g.beginPath(); g.moveTo(px - s, py - s); g.lineTo(px - s * 0.4, py - s * 1.5); g.lineTo(px + s * 1.6, py - s * 1.5); g.lineTo(px + s, py - s); g.moveTo(px + s * 1.6, py - s * 1.5); g.lineTo(px + s * 1.6, py + s * 0.5); g.lineTo(px + s, py + s); g.stroke();
-    g.strokeStyle = accent; g.globalAlpha = 0.5 + 0.5 * Math.sin(t * 3); g.lineWidth = 3;
-    g.beginPath(); g.arc(px, py, s * (2 + (t * 1.5) % 2), 0, 7); g.stroke(); g.globalAlpha = 1;
-  },
 };

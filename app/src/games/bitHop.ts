@@ -2,11 +2,12 @@ import type { GameDef, GameHost, GameInstance } from "./types";
 import { drawFigureThumb } from "../decor/figureGL";
 
 // "Bit a bit": your machine keeps going forward and falls unless you make it jump; it has to get through the gaps
-// between columns. The world is picked on the start card: a motherboard (towers of capacitors and chips), a world of
-// blocks (brick towers on a baseplate) or the galaxy (crystal pillars among the stars). Bits of data float in some
-// gaps and count double. The gaps narrow and the columns come faster as the score grows.
+// between columns. The world is picked on the start card: the studio (pillars of hologram on the app's gray), a
+// motherboard (towers of capacitors and chips) or a world of blocks (brick towers on a baseplate). Bits of data float
+// in some gaps and count double. The gaps narrow and the columns come faster as the score grows. In a demo (the
+// gallery's card) the machine plays by itself.
 
-type World = "board" | "blocks" | "galaxy";
+type World = "studio" | "board" | "blocks";
 interface Column { x: number; gapY: number; gap: number; passed: boolean; bit: boolean; seed: number }
 interface Spark { x: number; y: number; vx: number; vy: number; life: number; color: string; size: number }
 
@@ -45,12 +46,15 @@ function background(g: CanvasRenderingContext2D, w: number, h: number, world: Wo
     g.fillStyle = light ? "#9fc6a4" : "#5f8a6c";
     for (let x = -((scroll * 0.35) % 60); x < w; x += 60) g.fillRect(x, h - 70 - ((Math.floor((x + scroll * 0.35) / 60) * 37) % 3) * 14, 60, 80);
   } else {
-    g.fillStyle = light ? "#eef0f3" : "#111317"; g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 120; i++) {
-      const z = (i * 0.618) % 1, x = ((i * 97.3 - scroll * (0.1 + z * 0.4)) % w + w) % w, y = (i * 53.7) % h;
-      g.fillStyle = light ? `rgba(40,40,50,${0.15 + z * 0.4})` : `rgba(235,232,225,${0.2 + z * 0.6 * (0.7 + 0.3 * Math.sin(t * 2 + i))})`;
-      g.fillRect(x, y, 1 + z * 1.5, 1 + z * 1.5);
-    }
+    // The studio: the app's own gray with a faint grid going by.
+    g.fillStyle = light ? "#f2f1ee" : "#161616"; g.fillRect(0, 0, w, h);
+    g.strokeStyle = light ? "rgba(28,27,24,.06)" : "rgba(235,232,225,.05)"; g.lineWidth = 1;
+    const off = (scroll * 0.3) % 48;
+    g.beginPath();
+    for (let x = -off; x < w; x += 48) { g.moveTo(x, 0); g.lineTo(x, h); }
+    for (let y = 0; y < h; y += 48) { g.moveTo(0, y); g.lineTo(w, y); }
+    g.stroke();
+    void t;
   }
 }
 
@@ -77,20 +81,21 @@ function column(g: CanvasRenderingContext2D, x: number, cw: number, y0: number, 
     }
     if (capAt >= y1) for (let k = 0; k < 3; k++) { g.fillStyle = BRICK_COLORS[seed % BRICK_COLORS.length]; g.fillRect(x + 6 + k * ((cw - 12) / 3), y1, (cw - 12) / 3 - 6, 6); }
   } else {
-    // A crystal pillar: facets in two tones, sharp at the gap.
-    const tip = capAt < y1 ? y1 : y0;
-    g.fillStyle = light ? "#a796f2" : "#5b4fa0";
-    g.beginPath();
-    if (tip === y1) { g.moveTo(x, y0); g.lineTo(x + cw, y0); g.lineTo(x + cw, y1 - 20); g.lineTo(x + cw / 2, y1); g.lineTo(x, y1 - 20); }
-    else { g.moveTo(x, y1); g.lineTo(x + cw, y1); g.lineTo(x + cw, y0 + 20); g.lineTo(x + cw / 2, y0); g.lineTo(x, y0 + 20); }
-    g.closePath(); g.fill();
-    g.fillStyle = light ? "#c9bff7" : "#7d70c9"; g.fillRect(x + cw * 0.15, Math.min(y0, y1) + 22, cw * 0.18, Math.abs(y1 - y0) - 44);
+    // A pillar of hologram: outlined in the app's ink, with scan lines and corner marks at the gap.
+    const ink = light ? "28,27,24" : "235,232,225";
+    g.fillStyle = `rgba(${ink},.05)`; g.fillRect(x, y0, cw, y1 - y0);
+    g.strokeStyle = `rgba(${ink},.18)`; g.lineWidth = 1; g.beginPath();
+    for (let y = y0 + 3; y < y1; y += 5) { g.moveTo(x, y); g.lineTo(x + cw, y); }
+    g.stroke();
+    g.strokeStyle = `rgba(${ink},.7)`; g.lineWidth = 1.4; g.strokeRect(x + 0.5, y0, cw - 1, y1 - y0);
+    const e = capAt < y1 ? y1 : y0, d = capAt < y1 ? -1 : 1;
+    g.strokeStyle = `rgba(${ink},.95)`; g.lineWidth = 2.4; g.beginPath(); g.moveTo(x - 4, e + d * 8); g.lineTo(x - 4, e); g.lineTo(x + cw + 4, e); g.lineTo(x + cw + 4, e + d * 8); g.stroke();
   }
 }
 
 function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
   const g = canvas.getContext("2d")!;
-  const world = (["board", "blocks", "galaxy"].includes(host.mode) ? host.mode : "board") as World;
+  const world = (["studio", "board", "blocks"].includes(host.mode) ? host.mode : "studio") as World, demo = !!host.demo;
   let W = 0, H = 0, dpr = 1;
   const resize = () => { dpr = Math.min(2, window.devicePixelRatio || 1); W = canvas.clientWidth; H = canvas.clientHeight; canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); };
   resize();
@@ -110,6 +115,7 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
   };
   const flap = () => { if (!running || over) return; waiting = false; me.vy = -430 * unit(); for (let i = 0; i < 4; i++) sparks.push({ x: me.x - 14, y: me.y + 12, vx: -60 - Math.random() * 80, vy: 40 + Math.random() * 80, life: 0.4, color: host.player.color, size: 3 }); };
   const crash = () => {
+    if (demo) { reset(); return; }
     over = true; running = false;
     for (let i = 0; i < 40; i++) { const a = Math.random() * Math.PI * 2, v = 80 + Math.random() * 260; sparks.push({ x: me.x, y: me.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.6 + Math.random() * 0.5, color: i % 2 ? host.player.color : "#ff6b6b", size: 3 + Math.random() * 4 }); }
     host.onHud({ score, lives: 0 }); host.onOver(score);
@@ -117,6 +123,13 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
   const step = (dt: number) => {
     t += dt;
     const speed = Math.min(320, 170 + score * 3.5) * unit(), cw = 64 * unit();
+    // In a demo it jumps by itself, whenever it sinks below the middle of the next gap.
+    if (demo) {
+      if (waiting) flap();
+      const next = cols.find((c) => c.x + 64 * unit() > me.x - 10);
+      const aimY = next ? next.gapY + next.gap * 0.12 : H * 0.5;
+      if (me.y > aimY && me.vy > -40) flap();
+    }
     if (waiting) { me.y = H * 0.45 + Math.sin(t * 3) * 8; return; }
     me.vy += 1350 * unit() * dt; me.y += me.vy * dt;
     scroll += speed * dt;
@@ -166,8 +179,7 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
   const kick = () => { cancelAnimationFrame(frame); last = performance.now(); frame = requestAnimationFrame(loop); };
   const onKey = (e: KeyboardEvent) => { if (e.type === "keydown" && !e.repeat && [" ", "ArrowUp", "w", "W"].includes(e.key)) { e.preventDefault(); flap(); } };
   const onDown = (e: PointerEvent) => { if (e.button === 0) flap(); };
-  canvas.addEventListener("pointerdown", onDown);
-  window.addEventListener("keydown", onKey);
+  if (!demo) { canvas.addEventListener("pointerdown", onDown); window.addEventListener("keydown", onKey); }
   return {
     start: () => { reset(); running = true; host.onHud({ score: 0, lives: 1 }); kick(); },
     pause: () => { running = false; cancelAnimationFrame(frame); draw(0); },
@@ -181,21 +193,10 @@ export const BIT_HOP: GameDef = {
   name: "Bit a bit",
   description: "Haz saltar tu máquina entre las columnas sin tocarlas. Cada hueco suma, los bits valen doble.",
   modes: [
+    { id: "studio", name: "Estudio", description: "Pilares de holograma sobre el gris de la app." },
     { id: "board", name: "Placa base", description: "Torres de condensadores y chips sobre las pistas de la placa." },
     { id: "blocks", name: "Bloques", description: "Torres de bloques de colores bajo un cielo con nubes de bloques." },
-    { id: "galaxy", name: "Galaxia", description: "Pilares de cristal entre las estrellas." },
   ],
   controls: ["Salta con clic, la barra espaciadora o la flecha arriba", "Junta los bits de los huecos: valen doble"],
   create,
-  cover: (g, w, h, t, light, accent) => {
-    background(g, w, h, "blocks", t * 120, light, t);
-    const cw = 40, gap = h * 0.42;
-    for (let k = 0; k < 4; k++) {
-      const x = ((k * 150 - t * 90) % (600) + 600) % 600 - 60, gy = h * (0.45 + 0.2 * Math.sin(k * 1.9));
-      column(g, x, cw, -10, gy - gap / 2, gy - gap / 2, "blocks", light, k);
-      column(g, x, cw, gy + gap / 2, h + 10, -1, "blocks", light, k + 2);
-    }
-    const y = h * 0.45 + Math.sin(t * 3) * h * 0.12, tilt = Math.cos(t * 3) * -0.4;
-    cube(g, w * 0.3, y, h * 0.07, accent, tilt);
-  },
 };

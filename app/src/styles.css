@@ -1194,7 +1194,7 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .side-group + .side-group { transition: margin 0.24s cubic-bezier(0.3, 0.8, 0.3, 1); }
 
 /* The games gallery, over the space: a card per game with its own art and its record */
-.game-gallery { position: absolute; inset: 12px; z-index: 4; display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: var(--r-lg); background: var(--surface); box-shadow: 0 0 0 1px var(--line); overflow: auto; }
+.game-gallery { position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: var(--r-lg); background: var(--surface); box-shadow: 0 0 0 1px var(--line); overflow: auto; }
 .game-gallery-head { display: flex; align-items: center; gap: 8px; }
 .game-gallery-head .icon-btn { margin-left: auto; }
 .game-gallery-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px; align-content: start; }
@@ -1217,3 +1217,4 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .app.collapsed .side-label { margin-bottom: -2px; }
 .app.collapsed .side-add { margin-top: 0; }
 .home-space:has(.game-stage) .space-bar, .home-space:has(.game-gallery) .space-bar { display: none; }
+.game-tile-art canvas { cursor: pointer; pointer-events: none; }

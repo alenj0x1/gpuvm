@@ -15,15 +15,16 @@ function asPlayer(name: string, decor: Decor, light: boolean, accent: string): G
 
 /** A game running in the space: the canvas, its score and lives, and the start, pause and game-over cards. On the
  *  start card the player picks the machine to play with and, if the game has them, a mode. */
-function GameStage({ game, machines, first, fallback, onClose }: {
-  game: GameDef; machines: string[]; first?: string; fallback: Decor; onClose: () => void;
+function GameStage({ game, machines, first, fallback, world, onClose }: {
+  game: GameDef; machines: string[]; first?: string; fallback: Decor; world?: string; onClose: () => void;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const inst = useRef<GameInstance | null>(null);
   const [phase, setPhase] = useState<Phase>("ready");
   const [hud, setHud] = useState<GameHud>({ score: 0, lives: 3 });
   const [player, setPlayer] = useState(() => first ?? machines[0] ?? "");
-  const [mode, setMode] = useState(game.modes?.[0]?.id ?? "");
+  // A game whose modes are worlds starts in the space's own world.
+  const [mode, setMode] = useState(game.modes?.find((m) => m.id === world)?.id ?? game.modes?.[0]?.id ?? "");
   const modeInfo = game.modes?.find((m) => m.id === mode);
   const recordKey = mode ? `${game.id}.${mode}` : game.id;
   const [best, setBest] = useState(() => bestScore(recordKey));
@@ -61,7 +62,7 @@ function GameStage({ game, machines, first, fallback, onClose }: {
     const me = player ? asPlayer(player, readDecor(player), light, accent) : asPlayer("", fallback, light, accent);
     const team = modeInfo?.team ? machines.filter((n) => n !== player).slice(0, 3).map((n) => asPlayer(n, readDecor(n), light, accent)) : [];
     inst.current = game.create(cv, {
-      player: me, team, mode, light, color: me.color, figures: me.figures,
+      player: me, team, mode, light, color: me.color, figures: me.figures, world,
       onHud: setHud,
       onOver: (score) => { setFinal(score); setRecord(saveBest(recordKey, score)); setBest(bestScore(recordKey)); setPhase("over"); },
     });
@@ -155,56 +156,57 @@ function GameStage({ game, machines, first, fallback, onClose }: {
 
 /** The space of machines with its games: a Jugar button over it (on hover), and the game in its place while played.
  *  The cube stops drawing while a game runs. */
-export function SpaceWithGames({ decor: shown, decorOf, machines = [], children }: {
+export function SpaceWithGames({ decor: shown, decorOf, machines = [], world, children }: {
   /** The decoration to play with when there are no machines (Home's showcase). */
   decor?: Decor;
   /** The machine in front, picked first on the start card. */
   decorOf?: string;
   machines?: string[];
+  /** The space's world: games start in it. */
+  world?: string;
   children: React.ReactNode;
 }) {
   const own = useDecor(decorOf ?? "");
   const fallback = shown ?? own;
   const [game, setGame] = useState<GameDef | null>(null);
   const [gallery, setGallery] = useState(false);
-  if (game) return <GameStage game={game} machines={machines} first={decorOf} fallback={fallback} onClose={() => { setGame(null); setGallery(true); }} />;
+  if (game) return <GameStage game={game} machines={machines} first={decorOf} fallback={fallback} world={world} onClose={() => { setGame(null); setGallery(true); }} />;
+  // The gallery takes the place of the space while it is open: the cube stops drawing, so the games on the cards run
+  // smoothly.
+  if (gallery) return <GameGallery player={decorOf} fallback={fallback} world={world} onPick={(gd) => { setGallery(false); setGame(gd); }} onClose={() => setGallery(false)} />;
   return (
     <>
       {children}
-      {gallery && <GameGallery onPick={(gd) => { setGallery(false); setGame(gd); }} onClose={() => setGallery(false)} />}
-      {!gallery && (
-        <div className="space-games">
-          <button type="button" className="btn space-play" onClick={() => setGallery(true)}><IconDeviceGamepad2 size={16} />Jugar</button>
-        </div>
-      )}
+      <div className="space-games">
+        <button type="button" className="btn space-play" onClick={() => setGallery(true)}><IconDeviceGamepad2 size={16} />Jugar</button>
+      </div>
     </>
   );
 }
 
-/** The games, each on a card with its own art (moving) and its best score, to pick one. */
-function GameGallery({ onPick, onClose }: { onPick: (g: GameDef) => void; onClose: () => void }) {
-  const refs = useRef<(HTMLCanvasElement | null)[]>([]);
+/** One game playing by itself on its card: the real game, in a demo, with the machine in front. */
+function GameDemo({ game, player, fallback, world }: { game: GameDef; player?: string; fallback: Decor; world?: string }) {
+  const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
-    let frame = 0;
-    const t0 = performance.now();
+    const cv = ref.current;
+    if (!cv) return;
+    const light = document.documentElement.dataset.theme === "light";
+    const accent = getComputedStyle(cv).getPropertyValue("--accent").trim() || "#7d9cf0";
+    const me = player ? asPlayer(player, readDecor(player), light, accent) : asPlayer("", fallback, light, accent);
+    const mode = game.modes?.find((m) => m.id === world)?.id ?? (game.modes?.some((m) => m.team) ? "solo" : game.modes?.[0]?.id ?? "");
+    const inst = game.create(cv, { player: me, team: [], mode, light, color: me.color, figures: me.figures, world, demo: true, onHud: () => {}, onOver: () => {} });
+    inst.start();
+    return () => inst.stop();
+  }, [game, player, fallback, world]);
+  return <canvas ref={ref} />;
+}
+
+/** The games, each on a card showing the game itself playing, with its best score. */
+function GameGallery({ player, fallback, world, onPick, onClose }: { player?: string; fallback: Decor; world?: string; onPick: (g: GameDef) => void; onClose: () => void }) {
+  useEffect(() => {
     const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", key);
-    const loop = (now: number) => {
-      const light = document.documentElement.dataset.theme === "light";
-      refs.current.forEach((cv, i) => {
-        if (!cv) return;
-        const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
-        if (!w || !h) return;
-        if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
-        const g = cv.getContext("2d")!;
-        g.setTransform(dpr, 0, 0, dpr, 0, 0);
-        const accent = getComputedStyle(cv).getPropertyValue("--accent").trim() || "#7d9cf0";
-        GAMES[i].cover(g, w, h, (now - t0) / 1000, light, accent);
-      });
-      frame = requestAnimationFrame(loop);
-    };
-    frame = requestAnimationFrame(loop);
-    return () => { cancelAnimationFrame(frame); window.removeEventListener("keydown", key); };
+    return () => window.removeEventListener("keydown", key);
   }, [onClose]);
   return (
     <div className="game-gallery">
@@ -213,12 +215,12 @@ function GameGallery({ onPick, onClose }: { onPick: (g: GameDef) => void; onClos
         <button type="button" className="icon-btn" aria-label="Cerrar" title="Cerrar" onClick={onClose}><IconX size={16} /></button>
       </div>
       <div className="game-gallery-grid">
-        {GAMES.map((gd, i) => {
+        {GAMES.map((gd) => {
           const best = Math.max(bestScore(gd.id), ...(gd.modes ?? []).map((m) => bestScore(`${gd.id}.${m.id}`)));
           return (
             <div key={gd.id} className="game-tile">
               <button type="button" className="game-tile-art" aria-label={`Jugar ${gd.name}`} onClick={() => onPick(gd)}>
-                <canvas ref={(el) => { refs.current[i] = el; }} />
+                <GameDemo game={gd} player={player} fallback={fallback} world={world} />
               </button>
               <div className="game-tile-row">
                 <div className="game-tile-text">
