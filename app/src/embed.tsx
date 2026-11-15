@@ -113,7 +113,7 @@ function Demo({ view, vmName }: { view: View; vmName: string }) {
   const busyFor = (vm: string) => Object.values(jobs).find((j) => j.vm === vm) ?? null;
   const vm = vms.find((v) => v.name === vmName);
   if (!vms.length || (view !== "home" && !vm)) return null;
-  if (view === "home") return <Home vms={vms} busyFor={busyFor} startJob={start} onOpenVm={() => {}} onRoute={() => {}} />;
+  if (view === "home") return <Home vms={vms} busyFor={busyFor} startJob={start} onOpenVm={() => {}} onRoute={() => {}} onCreate={() => {}} />;
   const props = { vm: vm!, busy: busyFor(vm!.name), startJob: start };
   if (view === "stream") return <Stream vm={vm!} />;
   if (view === "cleanup") return <Cleanup {...props} />;

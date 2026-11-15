@@ -8,7 +8,26 @@ Changes waiting for the next version sit under **Unreleased** at the top (this s
 
 ## [Unreleased]
 
+### Added
+- **New logo.** A GPU chip split in four with one part in color: the share of the GPU each machine gets. It is the app icon, the installer's and the one in the sidebar.
+- **Accent color.** **Settings** lets you pick the accent (blue, violet, teal, green or amber), shown as half light, half dark; the light/dark switch moved there too.
+- **Choose the Windows user name** when creating a machine (it was always `gpuvm`), with the names Windows reserves rejected as you type.
+- **New template from the Library.** Pick the machine whose Windows it saves and name it, as from the machine's own menu.
+
 ### Changed
+- **A new interface.**
+  - Dark theme in neutral graphite grays, no blue tint; the sidebar and the title bar are one surface and the content sits on it with a rounded corner. Home, Library and Settings live in the sidebar; drag its edge to resize it, and click the line on the edge (or drag it narrow) to fold it.
+  - Each machine's icon shows the logo's four cells with its own part in its color. Its banner is a scene of chips that moves with the GPU, flickers with the processor and fills with memory; **Another banner** in its menu switches between three.
+  - A machine's page is one page with a bar that marks the section in view (machine, picture and control, Windows). Processor, memory, GPU and uptime sit in one strip with their last five minutes as small charts.
+  - Options are rows with an icon and a line that explains them. Sliders show their scale and what is left for the PC; lists and the monitor choice use the app's own drop-down.
+  - Frame rates are offered for the monitor the machine opens on (its own rate, the ones that keep even with it and the ones that may stutter), plus a custom value.
+  - **Use type** heads its group and sets the frame rate, V-Sync, frame pacing and mouse under it; changing one by hand switches it to **Custom**.
+  - Windows cleanup lists everything Windows comes with (tracking, ads, Bing, Copilot, preinstalled apps, OneDrive, widgets, background services) with what the chosen level removes checked, next to a scene where those pieces stop reaching Windows.
+  - Apps: the catalog by category as tiles or a list on the left, with installed apps marked; the search and this machine's apps on the right.
+  - Shared disks say what they are for.
+  - Home shows the machine in use, every other machine with its action, the free memory and what fits, the Library at a glance and what needs attention.
+  - The Library is one page with all its sections; profiles show their resources as pieces, each resource with its own color.
+  - Creating a machine is one large dialog: sections on the left, a summary always in view on the right. A profile fills everything in, and what you change can be saved as a new profile.
 - **Disk sizes count the room other machines are promised.** A dynamic disk grows up to its size as the machine writes, so the free space on the drive was not the real limit: several machines could be given more than the drive can hold. Creating a machine, a profile's **Disco** slider and **Opciones → Disco** now stop at what fits once every machine's disk on that drive is full, keeping 20 GB for Windows. **Opciones** shows a bar with this machine's disk, the room reserved for the others and what would be left. The module adds `Get-GpuVMDiskBudget`, `Get-GpuVMHostInfo` reports it as `disk` and `Get-GpuVMOverview` as `options.diskBudget`.
 
 ### Fixed

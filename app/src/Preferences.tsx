@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { IconAppWindow, IconBrandWindows, IconDeviceDesktop, IconHandStop, IconLayoutBottombarCollapse, IconMoon, IconPlayerPlay, IconPlayerStop, IconPlugConnected, IconPlugConnectedX, IconPower, IconSun } from "@tabler/icons-react";
+import { IconAppWindow, IconCheck, IconBrandWindows, IconDeviceDesktop, IconHandStop, IconLayoutBottombarCollapse, IconMoon, IconPlayerPlay, IconPlayerStop, IconPlugConnected, IconPlugConnectedX, IconPower, IconSun } from "@tabler/icons-react";
 import { service, type ServiceStatus } from "./api";
-import { savePrefs, usePrefs, type ClosePref, type ServicePref, type ThemePref, type VmsOnQuitPref } from "./prefs";
+import { ACCENTS, savePrefs, usePrefs, type ClosePref, type ServicePref, type ThemePref, type VmsOnQuitPref } from "./prefs";
 import { Segmented, humanError } from "./ui";
 import { MonitorPicker, useMonitors } from "./pickers";
 
@@ -98,7 +98,7 @@ export function Preferences() {
   return (
     <div className="main">
       <div className="card">
-        <h2 className="section-title">Preferencias</h2>
+        <h2 className="section-title">Ajustes</h2>
         <div className="pref-list">
           <div className="pref-row">
             <div className="pref-text"><strong>Tema</strong></div>
@@ -107,6 +107,22 @@ export function Preferences() {
               { value: "light", label: <><IconSun size={15} />Claro</> },
               { value: "dark", label: <><IconMoon size={15} />Oscuro</> },
             ]} />
+          </div>
+          <div className="pref-row">
+            <div className="pref-text"><strong>Color de énfasis</strong><span>Botones, selección y barras de uso.</span></div>
+            <div className="swatches" role="radiogroup" aria-label="Color de énfasis">
+              {ACCENTS.map((a) => (
+                <button type="button" key={a.id} role="radio" aria-checked={prefs.accent === a.id} title={a.name} aria-label={a.name}
+                  className={`swatch${prefs.accent === a.id ? " on" : ""}`} onClick={() => savePrefs({ accent: a.id })}>
+                  {/* Half as it looks in light, half in dark, split by a wavy diagonal. */}
+                  <svg viewBox="0 0 32 32" aria-hidden="true">
+                    <rect width="32" height="32" fill={a.dark} />
+                    <path d="M0 0H32C28 4 25 3 22 7S16 12 12 15 6 21 3 25 0 30 0 32Z" fill={a.light} />
+                  </svg>
+                  {prefs.accent === a.id && <IconCheck size={14} stroke={2.4} className="swatch-check" />}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="pref-row">
             <div className="pref-text"><strong>Al cerrar la ventana</strong><span>En la bandeja, GpuVM sigue abierta junto al reloj y los trabajos en curso continúan.</span></div>

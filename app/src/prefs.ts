@@ -8,6 +8,17 @@ export type ClosePref = "quit" | "tray";
 export type VmsOnQuitPref = "keep" | "stop";
 /** When the GpuVM service runs: while GpuVM is open, from Windows' start, or only when started by hand. */
 export type ServicePref = "app" | "windows" | "manual";
+/** The accent for actions, selection and focus. */
+export type AccentPref = "blue" | "violet" | "teal" | "green" | "amber";
+
+/** Each accent as it looks in light and in dark (the same values as styles.css). */
+export const ACCENTS: { id: AccentPref; name: string; light: string; dark: string }[] = [
+  { id: "blue", name: "Azul", light: "#2f5bd3", dark: "#7d9cf0" },
+  { id: "violet", name: "Violeta", light: "#6a4fd2", dark: "#a796f2" },
+  { id: "teal", name: "Turquesa", light: "#1d7f7c", dark: "#6ccfca" },
+  { id: "green", name: "Verde", light: "#2f8550", dark: "#7dd19c" },
+  { id: "amber", name: "Ámbar", light: "#a8650f", dark: "#e7b45e" },
+];
 
 export interface Prefs {
   theme: ThemePref;
@@ -16,10 +27,11 @@ export interface Prefs {
   service: ServicePref;
   /** The monitor VMs open on unless a VM has its own: a monitor's id or "primary". */
   monitor: string;
+  accent: AccentPref;
 }
 
 const KEY = "gpuvm.prefs";
-const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "keep", service: "app", monitor: "primary" };
+const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "keep", service: "app", monitor: "primary", accent: "blue" };
 const EVENT = "gpuvm-prefs";
 const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
 
@@ -33,6 +45,10 @@ export function resolvedTheme(pref: ThemePref): "light" | "dark" {
 
 function applyTheme(pref: ThemePref) {
   document.documentElement.dataset.theme = resolvedTheme(pref);
+}
+
+function applyAccent(accent: AccentPref) {
+  document.documentElement.dataset.accent = accent;
 }
 
 async function applyClose(close: ClosePref) {
@@ -57,6 +73,7 @@ export function savePrefs(change: Partial<Prefs>) {
   const next = { ...readPrefs(), ...change };
   try { localStorage.setItem(KEY, JSON.stringify(next)); } catch { /* no storage */ }
   applyTheme(next.theme);
+  applyAccent(next.accent);
   if (change.close) applyClose(next.close);
   if (change.vmsOnQuit) applyVmsOnQuit(next.vmsOnQuit);
   if (change.service) applyService(next.service);
@@ -67,6 +84,7 @@ export function savePrefs(change: Partial<Prefs>) {
 export function initPrefs() {
   const prefs = readPrefs();
   applyTheme(prefs.theme);
+  applyAccent(prefs.accent);
   applyClose(prefs.close);
   applyVmsOnQuit(prefs.vmsOnQuit);
   applyService(prefs.service);

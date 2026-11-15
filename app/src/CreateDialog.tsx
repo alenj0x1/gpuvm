@@ -1,24 +1,39 @@
 import { useEffect, useRef, useState } from "react";
-import { IconCheck, IconDisc, IconLoader2, IconPlus, IconTemplate, IconX } from "@tabler/icons-react";
-import type { AppInfo, CleanupLevelId, IsoFile, ProfileInfo, TemplateInfo, VmOverview } from "./types";
+import {
+  IconApps, IconBolt, IconBrandWindows, IconCheck, IconCpu, IconDatabase, IconDeviceFloppy, IconDisc, IconLayoutGrid, IconLoader2, IconPlus, IconPointFilled, IconSparkles, IconTag, IconTemplate, IconTopologyStar3, IconUser, IconX,
+} from "@tabler/icons-react";
+import type { AppInfo, CleanupLevelId, HostInfo, IsoFile, ProfileInfo, ProfileSettings, TemplateInfo, VmOverview } from "./types";
 import { api, pickIso } from "./api";
-import { PatternButton } from "./bauhaus";
-import { CheckMark, Segmented, useScrollFade } from "./ui";
-import { AppPicker, CleanupPicker, IsoPicker, useCleanupLevels, profileLabel, profileSummary } from "./pickers";
+import { PatternButton } from "./machineIcon";
+import { CheckMark, Segmented, Slider, humanError } from "./ui";
+import { AppPicker, IsoPicker, useCleanupLevels, profileLabel } from "./pickers";
+import { Chip, ResourceChips } from "./resources";
+import { CLEANUP_LOOK, CleanupFlow, LEVEL_LOOK } from "./CleanupFlow";
+
+export interface Resources { cpu: number; memoryGB: number; gpuPercent: number; diskGB: number }
 
 interface Props {
   existing: VmOverview[];
+  host: HostInfo | null;
   job: { message: string; log: string[] } | null;
   error: string | null;
   /** Opens with this template chosen (from the library). */
   template?: string | null;
-  onCreate: (args: { name: string; iso: string | null; template: string | null; profile: string; password: string; apps: string[]; cleanup: CleanupLevelId }) => void;
+  onCreate: (args: {
+    name: string; iso: string | null; template: string | null; profile: string; user: string; password: string;
+    apps: string[]; cleanup: CleanupLevelId; resources: Resources | null;
+  }) => void;
   onClose: () => void;
 }
 
 const MIN_PASSWORD = 6;
+// Windows local account names: up to 20 characters, none of these, and not one Windows keeps for itself.
+const RESERVED_USERS = ["administrator", "administrador", "guest", "invitado", "defaultaccount", "wdagutilityaccount", "system"];
+type Section = "name" | "start" | "resources" | "windows" | "apps" | "cleanup";
 
-export function CreateDialog({ existing, job, error, template: initialTemplate, onCreate, onClose }: Props) {
+/** Create a machine in one dialog: sections on the left, everything in the middle, and on the right a summary that is
+ *  always in view. A profile fills it all in; anything changed afterwards can be saved as a new profile. */
+export function CreateDialog({ existing, host, job, error, template: initialTemplate, onCreate, onClose }: Props) {
   const [name, setName] = useState(() => {
     for (let i = 1; ; i++) { const n = i === 1 ? "win-gpu" : `win-gpu-${i}`; if (!existing.some((v) => v.name === n)) return n; }
   });
@@ -30,42 +45,85 @@ export function CreateDialog({ existing, job, error, template: initialTemplate, 
   const [apps, setApps] = useState<string[]>([]);
   const cleanupLevels = useCleanupLevels();
   const [cleanup, setCleanup] = useState<CleanupLevelId>("none");
+  const [res, setRes] = useState<Resources | null>(null);
+  const [user, setUser] = useState("gpuvm");
   const [password, setPassword] = useState("");
   const [repeat, setRepeat] = useState("");
-  // From a template: Windows, its apps, cleanup level and password come from it, so only name and profile are asked.
+  // From a template: Windows, its apps, cleanup and account come from it, so only name, profile and resources are asked.
   const [templates, setTemplates] = useState<TemplateInfo[]>([]);
   const [source, setSource] = useState<"iso" | "template">(initialTemplate ? "template" : "iso");
   const [template, setTemplate] = useState<string | null>(initialTemplate ?? null);
   const fromTemplate = source === "template";
   const [dirty, setDirty] = useState(false);
   const [, repaint] = useState(0);
+  const [saving, setSaving] = useState<{ name: string; busy: boolean; error: string } | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const refs = useRef<Partial<Record<Section, HTMLElement | null>>>({});
+  const [active, setActive] = useState<Section>("name");
   const busy = !!job;
-  const [bodyRef, bodyFade] = useScrollFade<HTMLDivElement>();
+
+  const chosen = profiles.find((p) => p.Name === profile);
+  const applyProfile = (p: ProfileInfo) => {
+    setProfile(p.Name);
+    if (!p.Settings) return;
+    setRes({ cpu: p.Settings.cpu, memoryGB: p.Settings.memoryGB, gpuPercent: p.Settings.gpuPercent, diskGB: p.Settings.diskGB });
+    setApps(p.Settings.apps);
+    setCleanup(p.Settings.cleanup ?? "none");
+    const i = p.Settings.iso;
+    if (i && !isos?.find((f) => f.path === i)?.missing) setIso(i);
+  };
 
   useEffect(() => {
     api.isos().then((list) => { setIsos(list); if (list[0]) setIso((cur) => cur ?? list[0].path); }).catch(() => setIsos([]));
-    api.profiles().then((p) => setProfiles(p.filter((x) => x.Name !== "base"))).catch(() => {});
+    api.profiles().then((p) => {
+      const list = p.filter((x) => x.Name !== "base");
+      setProfiles(list);
+      const first = list.find((x) => x.Name === "max-performance") ?? list[0];
+      if (first) applyProfile(first);
+    }).catch(() => {});
     api.apps().then(setCatalog).catch(() => {});
     api.templates().then((list) => { setTemplates(list); if (list[0]) setTemplate((cur) => cur ?? list[0].name); }).catch(() => {});
   }, []);
-
-  // A profile brings its ISO and apps; what the user changes afterwards in the dialog wins.
-  const chooseProfile = (p: ProfileInfo) => {
-    setProfile(p.Name);
-    setDirty(true);
-    if (!p.Settings) return;
-    setApps(p.Settings.apps);
-    setCleanup(p.Settings.cleanup ?? "none");
-    const iso = p.Settings.iso;
-    if (iso && !isos?.find((f) => f.path === iso)?.missing) setIso(iso);
-  };
   useEffect(() => { if (!busy) nameRef.current?.focus(); }, [busy]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [onClose]);
+
+  const sections: { id: Section; label: string; icon: React.ReactNode }[] = [
+    { id: "name", label: "Nombre", icon: <IconTag size={16} /> },
+    { id: "start", label: "Punto de partida", icon: <IconLayoutGrid size={16} /> },
+    { id: "resources", label: "Recursos", icon: <IconCpu size={16} /> },
+    ...(fromTemplate ? [] : [
+      { id: "windows" as Section, label: "Windows y cuenta", icon: <IconBrandWindows size={16} /> },
+      { id: "apps" as Section, label: "Apps", icon: <IconApps size={16} /> },
+      { id: "cleanup" as Section, label: "Limpieza", icon: <IconSparkles size={16} /> },
+    ]),
+  ];
+  // The section in view is marked on the left as the body scrolls; a click there scrolls to it.
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (!body) return;
+    const spy = () => {
+      const line = body.getBoundingClientRect().top + 60;
+      let current: Section = "name";
+      for (const s of sections) { const el = refs.current[s.id]; if (el && el.getBoundingClientRect().top <= line) current = s.id; }
+      if (body.scrollHeight > body.clientHeight + 4 && body.scrollTop + body.clientHeight >= body.scrollHeight - 4) current = sections[sections.length - 1].id;
+      setActive(current);
+    };
+    spy();
+    body.addEventListener("scroll", spy, { passive: true });
+    // Profiles, apps and levels arrive after opening: the content grows, so look again.
+    const grow = new ResizeObserver(spy);
+    if (body.firstElementChild) Array.from(body.children).forEach((c) => grow.observe(c));
+    return () => { body.removeEventListener("scroll", spy); grow.disconnect(); };
+  }, [busy, fromTemplate]);
+  const goTo = (id: Section) => {
+    const body = bodyRef.current, el = refs.current[id];
+    if (body && el) body.scrollTo({ top: body.scrollTop + el.getBoundingClientRect().top - body.getBoundingClientRect().top - 8, behavior: "smooth" });
+  };
 
   const touch = () => setDirty(true);
   const [blurred, setBlurred] = useState<Record<string, boolean>>({});
@@ -74,17 +132,38 @@ export function CreateDialog({ existing, job, error, template: initialTemplate, 
   // Checked as you type; "Crear máquina" stays disabled until everything is valid.
   const nameError = !name ? "" : !/^[\w-]{1,40}$/.test(name) ? "Usa letras, números o guiones, sin espacios"
     : existing.some((v) => v.name.toLowerCase() === name.toLowerCase()) ? "Ya hay una máquina con ese nombre" : "";
+  const userError = !user ? "Escribe un usuario" : !/^[A-Za-z0-9._-]{1,20}$/.test(user) || user.endsWith(".") ? "Hasta 20 letras, números, puntos o guiones"
+    : RESERVED_USERS.includes(user.toLowerCase()) ? "Windows reserva ese nombre" : "";
   const passwordError = password.length >= MIN_PASSWORD || (!blurred.password && repeat.length === 0) || !password ? "" : `Usa al menos ${MIN_PASSWORD} caracteres`;
   const repeatError = repeat && password !== repeat && (blurred.repeat || repeat.length >= password.length) ? "Las contraseñas no coinciden" : "";
-  const complete = !!name && !nameError && (fromTemplate
+  const complete = !!name && !nameError && !!res && (fromTemplate
     ? !!template
-    : !!iso && password.length >= MIN_PASSWORD && password === repeat);
+    : !!iso && !userError && password.length >= MIN_PASSWORD && password === repeat);
+
+  const base = chosen?.Settings;
+  const changed = !!base && !!res && (res.cpu !== base.cpu || res.memoryGB !== base.memoryGB || res.gpuPercent !== base.gpuPercent || res.diskGB !== base.diskGB
+    || (!fromTemplate && (cleanup !== (base.cleanup ?? "none") || apps.join(",") !== (base.apps ?? []).join(","))));
+  const settings: ProfileSettings | null = base && res ? { ...base, ...res, apps, cleanup, iso: iso ?? base.iso } : null;
 
   const submit = (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!complete) return;
-    if (fromTemplate) onCreate({ name, iso: null, template, profile, password: "", apps: [], cleanup: "none" });
-    else onCreate({ name, iso, template: null, profile, password, apps, cleanup });
+    const resources = changed ? res : null;
+    if (fromTemplate) onCreate({ name, iso: null, template, profile, user: "", password: "", apps: [], cleanup: "none", resources });
+    else onCreate({ name, iso, template: null, profile, user, password, apps, cleanup, resources });
+  };
+  const saveProfile = async () => {
+    if (!saving || !settings) return;
+    const n = saving.name.trim();
+    if (!/^[\w-]{1,40}$/.test(n)) { setSaving({ ...saving, error: "Usa letras, números o guiones" }); return; }
+    setSaving({ ...saving, busy: true, error: "" });
+    try {
+      await api.saveProfile(n, "", profile, settings);
+      const list = (await api.profiles()).filter((x) => x.Name !== "base");
+      setProfiles(list);
+      setProfile(n);
+      setSaving(null);
+    } catch (err) { setSaving({ ...saving, busy: false, error: humanError(err) }); }
   };
 
   const browse = async () => {
@@ -96,12 +175,23 @@ export function CreateDialog({ existing, job, error, template: initialTemplate, 
     touch();
   };
 
-  const shownProfiles = profiles.length ? profiles : [{ Name: "balanced", Description: "", Extends: null }, { Name: "max-performance", Description: "", Extends: null }];
+  const maxCpu = Math.max(2, (host?.logicalProcessors ?? 12) - 1);
+  const maxMem = Math.max(4, Math.round(host?.memoryGB ?? 16) - 4);
+  const isoName = isos?.find((f) => f.path === iso)?.name;
+  const level = cleanupLevels.find((l) => l.id === cleanup)?.name;
+  const allItems = cleanupLevels.flatMap((l) => l.items);
+  const dropped = new Set(cleanupLevels.slice(0, Math.max(0, cleanupLevels.findIndex((l) => l.id === cleanup)) + 1).flatMap((l) => l.items.map((i) => i.id)));
+  const section = (id: Section, title: string, desc: string, children: React.ReactNode) => (
+    <section className="create-section" ref={(el) => { refs.current[id] = el; }}>
+      <div className="create-section-head"><strong>{title}</strong><span>{desc}</span></div>
+      {children}
+    </section>
+  );
 
   return (
     // Clicking outside only closes when nothing was typed; Esc always closes.
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && (busy || !dirty) && onClose()}>
-      <div className={`dialog ${busy || fromTemplate ? "" : "wide"}`} role="dialog" aria-modal="true" aria-label="Crear máquina">
+      <div className={`dialog ${busy ? "" : "create-dialog"}`} role="dialog" aria-modal="true" aria-label="Crear máquina">
         <div className="dialog-head">
           <PatternButton name={name || "nueva"} size={44} radius={12} onChange={() => repaint((n) => n + 1)} />
           <h2>{busy ? `Creando ${name}` : "Crear máquina"}</h2>
@@ -118,16 +208,23 @@ export function CreateDialog({ existing, job, error, template: initialTemplate, 
             <span className="log-hint">Puedes cerrar esta ventana: el avance sigue en la barra lateral.</span>
           </div>
         ) : (
-          <form className="dialog-form" onSubmit={submit}>
-            <div ref={bodyRef} className={`dialog-body ${bodyFade}`}>
-              <div className={`dialog-columns ${fromTemplate ? "single" : ""}`}>
-                <div className="dialog-column">
-                  <div className="field">
-                    <label className="field-top" htmlFor="vm-name"><span>Nombre</span></label>
-                    <input id="vm-name" ref={nameRef} className="text-input" value={name} onChange={(e) => { setName(e.target.value); touch(); }} />
-                    {nameError && <span className="error-text">{nameError}</span>}
-                  </div>
+          <form className="dialog-form create-form" onSubmit={submit}>
+            <nav className="create-nav">
+              {sections.map((s) => (
+                <button key={s.id} type="button" className={s.id === active ? "on" : ""} onClick={() => goTo(s.id)}>{s.icon}{s.label}</button>
+              ))}
+            </nav>
 
+            <div ref={bodyRef} className="create-body">
+              {section("name", "Nombre", "Cómo se llama en GpuVM y en Hyper-V.", (
+                <div className="field">
+                  <input id="vm-name" ref={nameRef} className="text-input" aria-label="Nombre" value={name} onChange={(e) => { setName(e.target.value); touch(); }} />
+                  {nameError && <span className="error-text">{nameError}</span>}
+                </div>
+              ))}
+
+              {section("start", "Punto de partida", "Un perfil llena todo lo de abajo; puedes cambiar lo que quieras.", (
+                <>
                   {templates.length > 0 && (
                     <div className="segment-row">
                       <Segmented value={source} onChange={(v) => { setSource(v); touch(); }} options={[
@@ -136,82 +233,148 @@ export function CreateDialog({ existing, job, error, template: initialTemplate, 
                       ]} />
                     </div>
                   )}
-
-                  {fromTemplate ? (
-                    <div className="field">
-                      <div className="field-top"><span>Plantilla</span></div>
-                      <div className="choice-list" role="radiogroup">
-                        {templates.map((t) => (
-                          <button type="button" role="radio" aria-checked={template === t.name} key={t.name} className={`choice ${template === t.name ? "on" : ""}`}
-                            onClick={() => { setTemplate(t.name); touch(); }}>
-                            <span className="check">{template === t.name && <CheckMark />}</span>
-                            <span className="grow">
-                              <span className="title">{t.name}</span>
-                              <span className="desc">{[`Desde ${t.fromVM}`, t.edition, `${t.sizeGB} GB`].filter(Boolean).join(" · ")}</span>
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="field">
-                      <div className="field-top"><span>Imagen de Windows</span></div>
-                      <IsoPicker isos={isos?.filter((f) => !f.missing) ?? null} value={iso} onChange={(v) => { setIso(v); touch(); }} onBrowse={browse} />
-                    </div>
-                  )}
-
-                  <div className="field">
-                    <div className="field-top"><span>Perfil</span></div>
-                    <div className="choice-list" role="radiogroup">
-                      {shownProfiles.map((p) => (
-                        <button type="button" role="radio" aria-checked={profile === p.Name} key={p.Name} className={`choice top ${profile === p.Name ? "on" : ""}`}
-                          onClick={() => chooseProfile(p)}>
-                          <span className="check">{profile === p.Name && <CheckMark />}</span>
+                  {fromTemplate && (
+                    <div className="choice-list" role="radiogroup" aria-label="Plantilla">
+                      {templates.map((t) => (
+                        <button type="button" role="radio" aria-checked={template === t.name} key={t.name} className={`choice ${template === t.name ? "on" : ""}`}
+                          onClick={() => { setTemplate(t.name); touch(); }}>
+                          <span className="check">{template === t.name && <CheckMark />}</span>
                           <span className="grow">
-                            <span className="title">{profileLabel(p.Name)}</span>
-                            <span className="desc">{fromTemplate && p.Settings ? profileSummary(p.Settings, catalog, true) : p.Description || (p.Settings ? profileSummary(p.Settings, catalog) : "")}</span>
+                            <span className="title">{t.name}</span>
+                            <span className="desc">{[`Desde ${t.fromVM}`, t.edition, `${t.sizeGB} GB`].filter(Boolean).join(" · ")}</span>
                           </span>
                         </button>
                       ))}
                     </div>
+                  )}
+                  <div className="create-profiles" role="radiogroup" aria-label="Perfil">
+                    {profiles.map((p) => (
+                      <button type="button" role="radio" aria-checked={profile === p.Name} key={p.Name} className={`create-profile${profile === p.Name ? " on" : ""}`}
+                        onClick={() => { applyProfile(p); touch(); }}>
+                        <span className="create-profile-name">{profileLabel(p.Name)}{profile === p.Name && changed && <span className="tag">Cambiado</span>}</span>
+                        {p.Settings && <ResourceChips s={p.Settings} apps={catalog} />}
+                      </button>
+                    ))}
                   </div>
+                </>
+              ))}
 
-                  {!fromTemplate && (
-                    <>
-                      <div className="field">
-                        <label className="field-top" htmlFor="vm-pass"><span>Contraseña de Windows</span><span className="hint">Usuario: gpuvm</span></label>
-                        <input id="vm-pass" className="text-input" type="password" value={password} onBlur={() => blur("password")} onChange={(e) => { setPassword(e.target.value); touch(); }} />
-                        {passwordError && <span className="error-text">{passwordError}</span>}
-                      </div>
-                      <div className="field">
-                        <label className="field-top" htmlFor="vm-pass2"><span>Repetir contraseña</span></label>
-                        <input id="vm-pass2" className="text-input" type="password" value={repeat} onBlur={() => blur("repeat")} onChange={(e) => { setRepeat(e.target.value); touch(); }} />
-                        {repeatError && <span className="error-text">{repeatError}</span>}
-                      </div>
-                    </>
-                  )}
+              {section("resources", "Recursos", "Lo que la máquina toma de tu PC al encenderse.", res && (
+                <div className="create-resources">
+                  <div className="field"><div className="field-top"><span className="res-cpu"><IconCpu size={15} /> Procesador</span><strong>{res.cpu} hilos</strong></div>
+                    <Slider label="Hilos" value={Math.min(res.cpu, maxCpu)} min={2} max={maxCpu} onChange={(cpu) => { setRes({ ...res, cpu }); touch(); }} /></div>
+                  <div className="field"><div className="field-top"><span className="res-mem"><IconTopologyStar3 size={15} /> Memoria</span><strong>{res.memoryGB} GB</strong></div>
+                    <Slider label="Memoria" value={Math.min(res.memoryGB, maxMem)} min={4} max={maxMem} onChange={(memoryGB) => { setRes({ ...res, memoryGB }); touch(); }} /></div>
+                  <div className="field"><div className="field-top"><span className="res-gpu"><IconBolt size={15} /> GPU</span><strong>{res.gpuPercent} %</strong></div>
+                    <Slider label="GPU" value={res.gpuPercent} min={10} max={100} step={10} onChange={(gpuPercent) => { setRes({ ...res, gpuPercent }); touch(); }} /></div>
+                  <div className="field"><div className="field-top"><span className="res-disk"><IconDatabase size={15} /> Disco</span><strong>{res.diskGB} GB</strong></div>
+                    <Slider label="Disco" value={res.diskGB} min={64} max={1024} step={16} onChange={(diskGB) => { setRes({ ...res, diskGB }); touch(); }} /></div>
                 </div>
+              ))}
 
-                {!fromTemplate && <div className="dialog-column">
-                  {cleanupLevels.length > 0 && (
+              {!fromTemplate && section("windows", "Windows y cuenta", "La imagen que se instala y la cuenta con la que entras.", (
+                <>
+                  <div className="field">
+                    <div className="field-top"><span>Imagen de Windows</span></div>
+                    <IsoPicker isos={isos?.filter((f) => !f.missing) ?? null} value={iso} onChange={(v) => { setIso(v); touch(); }} onBrowse={browse} />
+                  </div>
+                  <div className="create-account">
                     <div className="field">
-                      <div className="field-top"><span>Windows</span></div>
-                      <CleanupPicker levels={cleanupLevels} value={cleanup} onChange={(v) => { setCleanup(v); touch(); }} />
+                      <label className="field-top" htmlFor="vm-user"><span>Usuario</span></label>
+                      <input id="vm-user" className="text-input" value={user} onChange={(e) => { setUser(e.target.value); touch(); }} />
+                      {userError && <span className="error-text">{userError}</span>}
                     </div>
-                  )}
+                    <div className="field">
+                      <label className="field-top" htmlFor="vm-pass"><span>Contraseña</span></label>
+                      <input id="vm-pass" className="text-input" type="password" value={password} onBlur={() => blur("password")} onChange={(e) => { setPassword(e.target.value); touch(); }} />
+                      {passwordError && <span className="error-text">{passwordError}</span>}
+                    </div>
+                    <div className="field">
+                      <label className="field-top" htmlFor="vm-pass2"><span>Repetir contraseña</span></label>
+                      <input id="vm-pass2" className="text-input" type="password" value={repeat} onBlur={() => blur("repeat")} onChange={(e) => { setRepeat(e.target.value); touch(); }} />
+                      {repeatError && <span className="error-text">{repeatError}</span>}
+                    </div>
+                  </div>
+                </>
+              ))}
 
-                  {catalog.length > 0 && (
-                    <div className="field">
-                      <div className="field-top"><span>Apps que se instalan</span><span className="hint">Al abrirla por primera vez</span></div>
-                      <AppPicker apps={catalog} value={apps} onChange={(v) => { setApps(v); touch(); }} scroll={false} />
-                    </div>
-                  )}
-                </div>}
-              </div>
+              {!fromTemplate && catalog.length > 0 && section("apps", "Apps", "Se instalan desde su fuente oficial al abrirla por primera vez.", (
+                <AppPicker apps={catalog} value={apps} onChange={(v) => { setApps(v); touch(); }} scroll={false} />
+              ))}
+
+              {!fromTemplate && cleanupLevels.length > 0 && section("cleanup", "Limpieza de Windows", "Cada nivel incluye lo de los anteriores. La seguridad no se toca.", (
+                <>
+                <div className="level-list create-levels" role="radiogroup" aria-label="Limpieza">
+                  {cleanupLevels.map((l) => (
+                    <button key={l.id} type="button" role="radio" aria-checked={l.id === cleanup} className={`level-row${l.id === cleanup ? " on" : ""}`}
+                      onClick={() => { setCleanup(l.id); touch(); }}>
+                      <span className="level-icon">{LEVEL_LOOK[l.id]?.icon ?? <IconSparkles size={18} />}</span>
+                      <span className="level-text"><span className="level-name">{l.name}</span><span className="level-tagline">{LEVEL_LOOK[l.id]?.tagline ?? ""}</span></span>
+                    </button>
+                  ))}
+                </div>
+                {/* The same scene as on a machine, and beside it everything Windows comes with: what this level removes
+                    has a check, what stays a dot. */}
+                <div className="create-cleanup">
+                  <CleanupFlow items={allItems.map((i) => i.id)} removed={dropped} />
+                  <ul className="cleanup-items">
+                    {allItems.map((i) => {
+                      const drop = dropped.has(i.id);
+                      const look = CLEANUP_LOOK[i.id];
+                      return <li key={i.id} className={drop ? "drop" : "keep"} title={i.description}>
+                        {drop ? <IconCheck size={14} /> : <IconPointFilled size={14} />}
+                        <span><span className="ci-name">{look?.name ?? i.description}</span>{look && <span className="ci-line">{look.line}</span>}</span>
+                      </li>;
+                    })}
+                  </ul>
+                </div>
+                </>
+              ))}
             </div>
-            {error && <div className="notice error-notice"><span className="grow">{error}</span></div>}
 
-            <div className="dialog-foot">
+            <aside className="create-summary">
+              <span className="create-summary-title">Resumen</span>
+              <strong className="create-summary-name">{name || "Sin nombre"}</strong>
+              {res && (
+                <div className="create-summary-chips">
+                  <Chip kind="cpu">{res.cpu} hilos</Chip>
+                  <Chip kind="mem">{res.memoryGB} GB</Chip>
+                  <Chip kind="gpu">GPU {res.gpuPercent} %</Chip>
+                  <Chip kind="disk">{res.diskGB} GB</Chip>
+                </div>
+              )}
+              <span className="create-summary-line"><IconLayoutGrid size={14} /><span>{profileLabel(profile)}{changed ? ", con cambios" : ""}</span></span>
+              {fromTemplate ? (
+                <span className="create-summary-line"><IconTemplate size={14} /><span>Plantilla {template ?? "—"}</span></span>
+              ) : (
+                <>
+                  <span className="create-summary-line cut" title={isoName}><IconDisc size={14} /><span>{isoName ?? "Sin imagen de Windows"}</span></span>
+                  <span className="create-summary-line"><IconUser size={14} /><span>{user || "—"}</span></span>
+                  <span className="create-summary-line"><IconApps size={14} /><span>{apps.length ? apps.map((id) => catalog.find((a) => a.id === id)?.name ?? id).join(", ") : "Sin apps"}</span></span>
+                  <span className="create-summary-line"><IconSparkles size={14} /><span>{level ?? "Normal"}</span></span>
+                </>
+              )}
+              {changed && settings && (saving ? (
+                <div className="create-save">
+                  <input className="text-input" autoFocus placeholder="Nombre del perfil" value={saving.name} onChange={(e) => setSaving({ ...saving, name: e.target.value, error: "" })}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); saveProfile(); } }} />
+                  {saving.error && <span className="error-text">{saving.error}</span>}
+                  <div className="create-save-actions">
+                    <button type="button" className="btn ghost" onClick={() => setSaving(null)}>Cancelar</button>
+                    <button type="button" className="btn" disabled={saving.busy || !saving.name.trim()} onClick={saveProfile}>
+                      {saving.busy ? <IconLoader2 size={15} className="spin" /> : <IconDeviceFloppy size={15} />}Guardar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button type="button" className="btn ghost create-save-open" onClick={() => setSaving({ name: "", busy: false, error: "" })}>
+                  <IconDeviceFloppy size={15} />Guardar como perfil
+                </button>
+              ))}
+            </aside>
+
+            {error && <div className="notice error-notice create-error"><span className="grow">{error}</span></div>}
+            <div className="dialog-foot create-foot">
               <button type="button" className="btn ghost" onClick={onClose}>Cancelar</button>
               <button type="submit" className="primary compact" disabled={!complete}><IconPlus size={16} />Crear máquina</button>
             </div>

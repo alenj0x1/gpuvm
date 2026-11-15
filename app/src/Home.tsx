@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import {
-  IconAlertTriangle, IconApps, IconArrowRight, IconCheck, IconDeviceGamepad2, IconDownload, IconExternalLink, IconKey,
-  IconLink, IconLoader2, IconPlayerPlay, IconDatabase,
+  IconApps, IconArrowRight, IconDatabase, IconDeviceGamepad2, IconDisc, IconDownload, IconExternalLink, IconKey, IconLayoutGrid,
+  IconLink, IconLoader2, IconPlayerPlay, IconPlus, IconStack2, IconTemplate,
 } from "@tabler/icons-react";
 import type { HomeInfo, VmOverview } from "./types";
 import type { JobInfo } from "./VmView";
 import { api } from "./api";
-import { Bauhaus } from "./bauhaus";
-import { stateLabel } from "./ui";
+import { MachineIcon } from "./machineIcon";
+import { Scene, sceneStyle } from "./Scene";
+import { formatUptime, stateLabel } from "./ui";
 
 interface Props {
   vms: VmOverview[];
@@ -15,150 +16,183 @@ interface Props {
   startJob: (vm: string, cmd: string, args: Record<string, unknown>, after?: () => void) => void;
   onOpenVm: (name: string) => void;
   onRoute: (route: string) => void;
+  onCreate: () => void;
 }
 
 // What the home screen last showed, so coming back shows it at once while it refreshes.
 let cache: HomeInfo | null = null;
+let libraryCache: { profiles: number; templates: number; shared: number; isos: number } | null = null;
 
 const ISSUE_ICONS: Record<string, React.ReactNode> = {
-  driver: <IconDownload size={18} />,
-  password: <IconKey size={18} />,
-  pairing: <IconLink size={18} />,
-  apps: <IconApps size={18} />,
-  disk: <IconDatabase size={18} />,
+  driver: <IconDownload size={17} />,
+  password: <IconKey size={17} />,
+  pairing: <IconLink size={17} />,
+  apps: <IconApps size={17} />,
+  disk: <IconDatabase size={17} />,
 };
 
-function ago(iso: string) {
-  const minutes = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
-  if (minutes < 1) return "hace un momento";
-  if (minutes < 60) return `hace ${minutes} min`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `hace ${hours} h`;
-  const days = Math.round(hours / 24);
-  return days === 1 ? "ayer" : `hace ${days} días`;
-}
-
 const gb = (n: number) => `${n.toLocaleString("es", { maximumFractionDigits: 1 })} GB`;
+const usage = (vm: VmOverview) => ({ cpu: vm.cpuPercent, gpu: vm.gpuPercent, mem: (vm.memoryDemandGB / Math.max(vm.memoryAssignedGB, 0.1)) * 100 });
 
-/** Home: continue with the last machine, what fits in memory right now, and what needs attention. */
-export function Home({ vms, busyFor, startJob, onOpenVm, onRoute }: Props) {
+/** Home: the machine in use (or the last one opened) up front, every other machine below, and on the side what fits
+ *  in memory, the Library at a glance and what needs attention. */
+export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Props) {
   const [home, setHome] = useState<HomeInfo | null>(cache);
+  const [library, setLibrary] = useState(libraryCache);
   // Refreshed with the machines' state (the app polls it) and after any job.
   const states = vms.map((v) => `${v.name}:${v.state}`).join(",");
   const jobs = vms.map((v) => busyFor(v.name)?.cmd ?? "").join(",");
   useEffect(() => { api.home().then((h) => { cache = h; setHome(h); }).catch(() => {}); }, [states, jobs]);
+  useEffect(() => {
+    Promise.all([api.profiles(), api.templates(), api.sharedDisks(), api.isos()])
+      .then(([p, t, s, i]) => { libraryCache = { profiles: p.length, templates: t.length, shared: s.length, isos: i.length }; setLibrary(libraryCache); })
+      .catch(() => {});
+  }, [jobs]);
 
   if (!home) {
     return (
       <div className="main">
-        <div className="skeleton" style={{ height: 120 }} />
-        <div className="skeleton" style={{ height: 220 }} />
+        <div className="skeleton" style={{ height: 200 }} />
+        <div className="skeleton" style={{ height: 160 }} />
       </div>
     );
   }
 
-  const last = home.lastOpened ? vms.find((v) => v.name === home.lastOpened!.name) : null;
-  const lastBusy = last ? busyFor(last.name) : null;
+  // Up front: the machine that is on, or else the last one opened.
+  const hero = vms.find((v) => v.state === "Running") ?? (home.lastOpened ? vms.find((v) => v.name === home.lastOpened!.name) : null) ?? vms[0];
+  const others = vms.filter((v) => v !== hero);
+  const fits = home.machines.filter((m) => m.state === "Off" && m.fits).map((m) => m.name);
+  const short = home.machines.filter((m) => m.state === "Off" && !m.fits);
   const memUsed = home.host.memoryTotalGB - home.host.memoryFreeGB;
+
+  const action = (vm: VmOverview, compact = false) => {
+    const busy = busyFor(vm.name);
+    if (busy) return <span className={`primary busy${compact ? " compact" : ""}`} role="status"><IconLoader2 size={16} className="spin" /><span className="ellipsis">{busy.message}</span></span>;
+    const m = home.machines.find((x) => x.name === vm.name);
+    const off = vm.state === "Off";
+    if (off && m && !m.fits) {
+      return m.fitGB >= 4 && m.fitGB < m.memoryGB && vm.managed && vm.streaming
+        ? <button className="btn" onClick={() => startJob(vm.name, "Connect-GpuVM", { Name: vm.name, MemoryGB: m.fitGB })}><IconPlayerPlay size={15} />Abrir con {m.fitGB} GB</button>
+        : <span className="home-short">Faltan {gb(Math.max(0, m.needGB - home.host.memoryFreeGB))}</span>;
+    }
+    if (!vm.managed || !vm.streaming) return <button className="btn ghost" onClick={() => onOpenVm(vm.name)}>Ver<IconArrowRight size={15} /></button>;
+    return (
+      <button className={compact ? "btn" : "primary"} onClick={() => startJob(vm.name, "Connect-GpuVM", { Name: vm.name })}>
+        {vm.state === "Running" ? <IconExternalLink size={16} /> : <IconPlayerPlay size={16} />}
+        <span className="ellipsis">{vm.state === "Running" ? "Abrir" : compact ? "Encender" : "Encender y abrir"}</span>
+      </button>
+    );
+  };
 
   return (
     <div className="main home">
-      {last && (
-        <div className="card head home-continue">
-          <button type="button" className="pattern-btn" onClick={() => onOpenVm(last.name)} aria-label={`Ver ${last.name}`}>
-            <Bauhaus name={last.name} size={56} radius={14} />
-          </button>
-          <div className="grow">
-            <h1>{last.name}</h1>
-            <div className="meta">
-              <span className="state-pill"><span className={`dot ${last.state}`} />{stateLabel[last.state] ?? last.state}</span>
-              <span>· Abierta {ago(home.lastOpened!.at)}</span>
-            </div>
-          </div>
-          <div className="actions">
-            <button className="btn ghost" onClick={() => onOpenVm(last.name)}>Ver máquina<IconArrowRight size={16} /></button>
-            {lastBusy ? (
-              <span className="primary busy" role="status"><IconLoader2 size={17} className="spin" /><span className="ellipsis">{lastBusy.message}</span></span>
-            ) : (
-              <button className="primary" onClick={() => startJob(last.name, "Connect-GpuVM", { Name: last.name })}>
-                {last.state === "Running" ? <IconExternalLink size={17} /> : <IconPlayerPlay size={17} />}
-                <span className="ellipsis">{last.state === "Running" ? "Abrir" : "Encender y abrir"}</span>
+      <div className="home-grid">
+        <div className="home-main">
+          {hero && (
+            <div className="card home-hero">
+              <button type="button" className="home-hero-scene" onClick={() => onOpenVm(hero.name)} aria-label={`Ver ${hero.name}`}>
+                <Scene name={hero.name} style={sceneStyle(hero.name)} state={hero.state} activity={usage(hero)} />
               </button>
+              <div className="home-hero-info">
+                <div className="home-hero-name">
+                  <MachineIcon name={hero.name} size={40} radius={10} />
+                  <div style={{ minWidth: 0 }}>
+                    <h1>{hero.name}</h1>
+                    <div className="meta">
+                      <span className="state-pill"><span className={`dot ${hero.state}`} />{stateLabel[hero.state] ?? hero.state}</span>
+                      {hero.state === "Running" && hero.hasGpu && <span>· GPU {hero.gpuPercent} %</span>}
+                      {hero.state === "Running" && <span>· {formatUptime(hero.uptimeSeconds)}</span>}
+                    </div>
+                  </div>
+                </div>
+                <div className="home-hero-actions">
+                  {action(hero)}
+                  <button className="btn ghost" onClick={() => onOpenVm(hero.name)}>Ver máquina<IconArrowRight size={15} /></button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="home-machines">
+            {others.map((vm) => (
+              <div key={vm.id} className="card home-machine">
+                <button type="button" className="home-machine-scene" onClick={() => onOpenVm(vm.name)} aria-label={`Ver ${vm.name}`}>
+                  <Scene name={vm.name} style={sceneStyle(vm.name)} state={vm.state} activity={usage(vm)} />
+                </button>
+                <div className="home-machine-row">
+                  <MachineIcon name={vm.name} size={30} radius={8} />
+                  <button type="button" className="home-machine-text" onClick={() => onOpenVm(vm.name)}>
+                    <strong>{vm.name}</strong>
+                    <span><span className={`dot ${vm.state}`} />{stateLabel[vm.state] ?? vm.state} · {gb(vm.memoryStartupGB)}</span>
+                  </button>
+                  {action(vm, true)}
+                </div>
+              </div>
+            ))}
+            <button type="button" className="card home-machine home-create" onClick={onCreate}>
+              <IconPlus size={18} />Crear máquina
+            </button>
+          </div>
+        </div>
+
+        <aside className="home-side">
+          <div className="card home-memory">
+            <span className="home-side-title">Memoria libre para máquinas</span>
+            <strong>{gb(home.host.memoryFreeGB)} de {gb(home.host.memoryTotalGB)}</strong>
+            <div className="bar"><span style={{ width: `${Math.min(100, (memUsed / home.host.memoryTotalGB) * 100)}%` }} /></div>
+            <span className="hint">
+              {fits.length ? `Cabe ${fits.join(", ")}.` : short.length ? "" : "Todas están encendidas."}
+              {short.map((m) => ` ${m.name} necesita ${gb(Math.max(0, m.needGB - home.host.memoryFreeGB))} más.`).join("")}
+            </span>
+            {home.host.topProcesses.length > 0 && (
+              <span className="hint">Lo que más usa: {home.host.topProcesses.map((p) => `${p.name} ${gb(p.gb)}`).join(" · ")}</span>
             )}
           </div>
-        </div>
-      )}
 
-      <div className="card">
-        <div className="home-memory">
-          <div className="field-top"><span>Memoria</span><strong>{gb(home.host.memoryFreeGB)} libres de {gb(home.host.memoryTotalGB)}</strong></div>
-          <div className="bar"><span style={{ width: `${Math.min(100, (memUsed / home.host.memoryTotalGB) * 100)}%` }} /></div>
-          {home.host.topProcesses.length > 0 && (
-            <span className="hint">Lo que más usa: {home.host.topProcesses.map((p) => `${p.name} ${gb(p.gb)}`).join(" · ")}</span>
-          )}
-        </div>
-        <div className="rows">
-          {home.machines.map((m) => {
-            const running = m.state !== "Off";
-            const missing = Math.max(0, m.needGB - home.host.memoryFreeGB);
-            const vm = vms.find((v) => v.name === m.name);
-            const busy = busyFor(m.name);
-            // Opens with the memory that does fit, as on the machine's own page.
-            const smaller = !running && !m.fits && !!vm?.managed && !!vm.streaming && m.fitGB >= 4 && m.fitGB < m.memoryGB;
-            return (
-              <div className="row row-link" key={m.name} role="link" tabIndex={0} onClick={() => onOpenVm(m.name)}
-                onKeyDown={(e) => { if (e.key === "Enter") onOpenVm(m.name); }}>
-                <Bauhaus name={m.name} size={32} radius={9} />
-                <div className="row-text">
-                  <strong>{m.name}</strong>
-                  <span>{gb(m.memoryGB)} de memoria</span>
-                </div>
-                <span className={`fit ${running ? "on" : m.fits ? "ok" : "no"}`}>
-                  {busy ? <><IconLoader2 size={15} className="spin" />{busy.message}</>
-                    : running ? <><span className={`dot ${m.state}`} />{stateLabel[m.state] ?? m.state}</>
-                    : m.fits ? <><IconCheck size={15} />Puede encender</>
-                    : <><IconAlertTriangle size={15} />Faltan {gb(missing)}</>}
-                </span>
-                {smaller && !busy && (
-                  <button className="btn" onClick={(e) => { e.stopPropagation(); startJob(m.name, "Connect-GpuVM", { Name: m.name, MemoryGB: m.fitGB }); }}
-                    title={`Usa ${m.fitGB} GB de memoria en vez de ${gb(m.memoryGB)}; puedes volver a subirla en Opciones`}>
-                    <IconPlayerPlay size={16} />Abrir con {m.fitGB} GB
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {home.attention.length > 0 && (
-        <div className="card">
-          <div className="rows">
-            {home.attention.map((a, i) => {
-              const busy = a.vm ? busyFor(a.vm) : null;
-              const act = () => {
-                if (a.cmd && a.vm) startJob(a.vm, a.cmd, a.args ?? {}, () => api.home().then((h) => { cache = h; setHome(h); }).catch(() => {}));
-                else if (a.kind === "disk") onRoute(":biblioteca:discos");
-                else if (a.vm) onOpenVm(a.vm);
-              };
-              return (
-                <div className="row" key={`${a.vm}-${a.kind}-${i}`}>
-                  <span className="row-icon">{ISSUE_ICONS[a.kind] ?? <IconDeviceGamepad2 size={18} />}</span>
-                  <div className="row-text">
-                    <strong>{a.vm ?? "Equipo"}</strong>
-                    <span>{a.text}</span>
-                  </div>
-                  <div className="row-actions">
-                    <button className="btn" disabled={!!busy} onClick={act}>
-                      {busy ? <IconLoader2 size={16} className="spin" /> : null}{busy ? busy.message : a.label}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+          <div className="card home-library">
+            <span className="home-side-title">Biblioteca</span>
+            <div className="home-library-grid">
+              {[
+                { icon: <IconLayoutGrid size={16} />, n: library?.profiles, label: "Perfiles", route: ":biblioteca:perfiles" },
+                { icon: <IconTemplate size={16} />, n: library?.templates, label: "Plantillas", route: ":biblioteca:plantillas" },
+                { icon: <IconStack2 size={16} />, n: library?.shared, label: "Discos compartidos", route: ":biblioteca:compartidos" },
+                { icon: <IconDisc size={16} />, n: library?.isos, label: "ISOs", route: ":biblioteca:isos" },
+              ].map((x) => (
+                <button key={x.label} type="button" className="home-library-item" onClick={() => onRoute(x.route)}>
+                  <span className="home-library-icon">{x.icon}</span>
+                  <strong>{x.n ?? "—"}</strong>
+                  <span>{x.label}</span>
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+
+          {home.attention.length > 0 && (
+            <div className="card home-attention">
+              {home.attention.map((a, i) => {
+                const busy = a.vm ? busyFor(a.vm) : null;
+                const act = () => {
+                  if (a.cmd && a.vm) startJob(a.vm, a.cmd, a.args ?? {}, () => api.home().then((h) => { cache = h; setHome(h); }).catch(() => {}));
+                  else if (a.kind === "disk") onRoute(":biblioteca:discos");
+                  else if (a.vm) onOpenVm(a.vm);
+                };
+                return (
+                  <div className="home-attention-row" key={`${a.vm}-${a.kind}-${i}`}>
+                    <span className="opt-icon">{ISSUE_ICONS[a.kind] ?? <IconDeviceGamepad2 size={17} />}</span>
+                    <div className="opt-text">
+                      <span className="opt-title">{a.vm ?? "Equipo"}</span>
+                      <span className="opt-desc">{a.text}</span>
+                      <button className="btn" disabled={!!busy} onClick={act}>
+                        {busy ? <IconLoader2 size={16} className="spin" /> : null}{busy ? busy.message : a.label}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </aside>
+      </div>
     </div>
   );
 }

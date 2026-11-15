@@ -1,11 +1,11 @@
 import {
-  IconAdjustments, IconAlertTriangle, IconApps, IconDeviceDesktop, IconDeviceDesktopOff, IconDeviceDesktopStar, IconBriefcase, IconCheck, IconDeviceGamepad2, IconDisc, IconDots, IconFolderOpen, IconMovie, IconRefresh, IconSearch, IconTrash, IconX,
+  IconAdjustments, IconAlertTriangle, IconApps, IconDeviceDesktop, IconDeviceDesktopOff, IconDeviceDesktopStar, IconBriefcase, IconCheck, IconDeviceGamepad2, IconDisc, IconDots, IconFolderOpen, IconMovie, IconWaveSawTool, IconWaveSine, IconRefresh, IconSearch, IconTrash, IconX,
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api } from "./api";
 import type { AppInfo, CleanupLevel, CleanupLevelId, HostMonitor, IsoFile, MouseMode, ProfileSettings } from "./types";
-import { CheckMark, Segmented, useScrollFade } from "./ui";
+import { CheckMark, Dropdown, Segmented, useScrollFade, type DropdownOption } from "./ui";
 
 export const RESOLUTIONS = ["1280x720", "1920x1080", "2560x1440", "3840x2160"];
 export const FPS = [30, 60, 120, 144];
@@ -262,7 +262,6 @@ export function useMonitors() {
   return monitors;
 }
 
-const monitorText = (m: HostMonitor) => `${m.name} · ${m.width}×${m.height} · ${m.hz} Hz`;
 
 /** Where Moonlight opens: the primary monitor (follows Windows), a given one, or (per VM) what Preferences say. */
 export function MonitorPicker({ monitors, value, onChange, inherited }: {
@@ -271,26 +270,84 @@ export function MonitorPicker({ monitors, value, onChange, inherited }: {
   inherited?: string;
 }) {
   const primary = monitors.find((m) => m.primary) ?? monitors[0];
-  const describe = (id: string): string => {
-    if (id === "primary") return primary ? `El principal de Windows, ahora ${primary.name}.` : "El principal de Windows.";
-    const m = monitors.find((x) => x.id === id);
-    return m ? `${monitorText(m)}.` : "No está conectado, se abre en el principal.";
-  };
   const known = value === "default" || value === "primary" || monitors.some((m) => m.id === value);
-  const options = [
-    ...(inherited !== undefined ? [{ value: "default", label: <><IconAdjustments size={15} />Predeterminado</> }] : []),
-    { value: "primary", label: <><IconDeviceDesktopStar size={15} />Principal</> },
-    ...monitors.map((m) => ({ value: m.id, label: <><IconDeviceDesktop size={15} />{m.name}</> })),
+  const detail = (m: HostMonitor) => `${m.width}×${m.height} · ${m.hz} Hz`;
+  const inheritedName = inherited === undefined ? "" : inherited === "primary" ? primary?.name ?? "" : monitors.find((m) => m.id === inherited)?.name ?? "";
+  const options: DropdownOption<string>[] = [
+    ...(inherited !== undefined ? [{ value: "default", label: "Predeterminado", detail: `Como en Ajustes${inheritedName ? `, ${inheritedName}` : ""}`, icon: <IconAdjustments size={17} /> }] : []),
+    { value: "primary", label: "Principal", detail: primary ? `El de Windows, ahora ${primary.name}` : "El de Windows", icon: <IconDeviceDesktopStar size={17} /> },
+    ...monitors.map((m) => ({ value: m.id, label: m.name, detail: detail(m), icon: <IconDeviceDesktop size={17} /> })),
     // A saved monitor that is unplugged stays chosen until another is picked.
-    ...(known ? [] : [{ value, label: <><IconDeviceDesktopOff size={15} />Desconectado</> }]),
+    ...(known ? [] : [{ value, label: "Desconectado", detail: "Se abre en el principal", icon: <IconDeviceDesktopOff size={17} /> }]),
   ];
-  const hint = value === "default" && inherited !== undefined ? `Como en Preferencias. ${describe(inherited)}` : describe(value);
+  return <Dropdown label="Monitor" value={value} options={options} onChange={onChange} />;
+}
+
+/** The monitor a VM opens on: its own choice, or Preferences' when it says "default", or Windows' main one. */
+export function resolveMonitor(monitors: HostMonitor[], value: string, inherited: string): HostMonitor | undefined {
+  const id = value === "default" ? inherited : value;
+  return monitors.find((m) => m.id === id) ?? monitors.find((m) => m.primary) ?? monitors[0];
+}
+
+const COMMON_FPS = [240, 165, 144, 120, 90, 60, 30];
+
+/** Frames per second offered for the monitor the VM opens on: its own rate, the usual ones below it (each saying
+ *  whether it stays even on that monitor) and a custom value. */
+export function FpsPicker({ value, monitor, onChange }: { value: number; monitor: HostMonitor | undefined; onChange: (fps: number) => void }) {
+  const hz = monitor?.hz ?? 60;
+  const listed = COMMON_FPS.filter((f) => f < hz);
+  const inList = value === MONITOR_FPS || listed.includes(value);
+  const [custom, setCustom] = useState(!inList);
+  const [text, setText] = useState(inList ? "" : String(value));
+  // A value set from outside (a use, Descartar) decides the mode; the one this picker just sent while custom does not.
+  const sent = useRef<number | null>(null);
+  useEffect(() => {
+    if (sent.current === value) return;
+    sent.current = null;
+    setCustom(!inList);
+    if (!inList) setText(String(value));
+  }, [inList, value]);
+  const emit = (fps: number) => { sent.current = fps; onChange(fps); };
+
+  const options: DropdownOption<string>[] = [
+    { value: "monitor", label: `${hz} FPS, como el monitor`, detail: monitor ? `Lo más fluido en ${monitor.name}` : "Lo más fluido en tu monitor", icon: <IconDeviceDesktop size={17} />, tone: "accent" as const },
+    // Rates that divide the monitor's show every frame for the same time and come first; the others can't, and say so.
+    ...[...listed.filter((f) => hz % f === 0), ...listed.filter((f) => hz % f !== 0)].map((f) => hz % f === 0
+      ? { value: String(f), label: `${f} FPS`, detail: f === 60 ? "Parejo, para películas y video" : f <= 30 ? "Parejo, la menor carga para la GPU" : "Parejo, menos carga para la GPU",
+        icon: f === 60 ? <IconMovie size={17} /> : <IconWaveSine size={17} />, tone: "ok" as const }
+      : { value: String(f), label: `${f} FPS`, detail: "Puede dar tirones", icon: <IconWaveSawTool size={17} />, tone: "warn" as const }),
+    { value: "custom", label: "Personalizado", detail: "De 10 a 480, puede no verse parejo", icon: <IconAdjustments size={17} /> },
+  ];
+  const chosen = custom ? "custom" : value === MONITOR_FPS ? "monitor" : String(value);
+  const typed = Number(text);
+  const valid = /^\d+$/.test(text) && typed >= 10 && typed <= 480;
+
   return (
-    <>
-      <div className="segment-row">
-        <Segmented value={value} onChange={onChange} options={options} />
-      </div>
-      <span className="hint">{hint}</span>
-    </>
+    <div className="fps-picker">
+      <Dropdown label="Cuadros por segundo" value={chosen} options={options} onChange={(v) => {
+        if (v === "custom") {
+          // Starts from the rate in use, already saved as a fixed value, so the row never says one thing and shows another.
+          const start = value === MONITOR_FPS ? hz : value;
+          setCustom(true); setText(String(start)); emit(start); return;
+        }
+        setCustom(false);
+        onChange(v === "monitor" ? MONITOR_FPS : Number(v));
+      }} />
+      {custom && (
+        <div className="fps-custom">
+          <label className="fps-input">
+            <input className="text-input" inputMode="numeric" value={text} aria-label="FPS personalizados" autoFocus
+              onChange={(e) => {
+                const t = e.target.value.replace(/\D/g, "").slice(0, 3);
+                setText(t);
+                const n = Number(t);
+                if (t && n >= 10 && n <= 480) emit(n);
+              }} />
+            <span>FPS</span>
+          </label>
+          {!valid && <span className="error-text">Escribe un valor de 10 a 480</span>}
+        </div>
+      )}
+    </div>
   );
 }

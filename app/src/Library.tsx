@@ -1,14 +1,17 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   IconAdjustmentsHorizontal, IconBrandWindows, IconCopyPlus, IconDatabase, IconDeviceFloppy, IconDisc, IconFolderDown, IconLoader2, IconPencil, IconPlus,
   IconRestore, IconStack2, IconTemplate, IconTrash, IconX,
 } from "@tabler/icons-react";
-import type { AppInfo, BaseInfo, DiskInfo, HostInfo, IsoFile, ProfileInfo, ProfileSettings, SharedDiskInfo, TemplateInfo } from "./types";
+import type { VmOverview, AppInfo, BaseInfo, DiskInfo, HostInfo, IsoFile, ProfileInfo, ProfileSettings, SharedDiskInfo, TemplateInfo } from "./types";
 import { api, pickFolder, pickIso } from "./api";
-import { PatternButton } from "./bauhaus";
-import { AppPicker, CleanupPicker, FPS_OPTIONS, IsoPicker, useCleanupLevels, RESOLUTIONS, USES, isoDetail, profileLabel, profileSummary, streamUseOf } from "./pickers";
+import { PatternButton } from "./machineIcon";
+import { usePrefs } from "./prefs";
+import { AppPicker, CleanupPicker, FpsPicker, IsoPicker, resolveMonitor, useMonitors, useCleanupLevels, RESOLUTIONS, USES, isoDetail, profileLabel, streamUseOf } from "./pickers";
 import { Segmented, Slider, humanError, portalRoot, useScrollFade } from "./ui";
+import { ResourceChips } from "./resources";
+import { NewTemplate } from "./VmView";
 
 export type LibraryTab = "perfiles" | "plantillas" | "discos" | "compartidos" | "isos";
 
@@ -46,24 +49,68 @@ interface Props {
   onCreateFromTemplate: (template: string) => void;
 }
 
-export function Library({ tab, onTab, host, startJob, busy, progress, notify, onOpenVm, onCreateFromTemplate }: Props) {
-  // Each tab puts its own action (new profile, add ISO…) next to the tabs, so the card needs no title.
-  const tabs = (
-    <Segmented<LibraryTab> value={tab} onChange={onTab} options={[
-      { value: "perfiles", label: <><IconAdjustmentsHorizontal size={15} />Perfiles</> },
-      { value: "plantillas", label: <><IconTemplate size={15} />Plantillas</> },
-      { value: "discos", label: <><IconDatabase size={15} />Discos</> },
-      { value: "compartidos", label: <><IconStack2 size={15} />Compartidos</> },
-      { value: "isos", label: <><IconDisc size={15} />ISOs</> },
-    ]} />
-  );
+const SECTIONS: { tab: LibraryTab; label: string; icon: React.ReactNode; desc: string }[] = [
+  { tab: "perfiles", label: "Perfiles", icon: <IconAdjustmentsHorizontal size={17} />, desc: "Recetas de máquina: recursos, apps y limpieza listos para usar." },
+  { tab: "plantillas", label: "Plantillas", icon: <IconTemplate size={17} />, desc: "Un Windows ya instalado, con sus apps, para crear máquinas en segundos." },
+  { tab: "compartidos", label: "Discos compartidos", icon: <IconStack2 size={17} />, desc: "Se conectan a la máquina que los necesite: tus juegos o archivos, una sola vez." },
+  { tab: "discos", label: "Discos de máquinas", icon: <IconDatabase size={17} />, desc: "El disco de cada máquina y los que quedaron sin máquina." },
+  { tab: "isos", label: "ISOs", icon: <IconDisc size={17} />, desc: "Las imágenes de Windows para crear máquinas desde cero." },
+];
+
+/** A section's head: its icon, name and what it is for, with the section's own action at the right. */
+function SectionHead({ tab }: { tab: LibraryTab }) {
+  const x = SECTIONS.find((t) => t.tab === tab)!;
   return (
-    <div className="main">
-      {tab === "perfiles" && <Profiles tabs={tabs} host={host} notify={notify} />}
-      {tab === "discos" && <Disks tabs={tabs} startJob={startJob} busy={busy} notify={notify} onOpenVm={onOpenVm} />}
-      {tab === "plantillas" && <Templates tabs={tabs} notify={notify} onOpenVm={onOpenVm} onCreate={onCreateFromTemplate} />}
-      {tab === "compartidos" && <SharedDisks tabs={tabs} startJob={startJob} progress={progress} notify={notify} onOpenVm={onOpenVm} />}
-      {tab === "isos" && <Isos tabs={tabs} notify={notify} />}
+    <div className="lib-section-head">
+      <span className="opt-icon">{x.icon}</span>
+      <div className="opt-text"><span className="opt-title">{x.label}</span><span className="opt-desc">{x.desc}</span></div>
+    </div>
+  );
+}
+
+/** The Library on one page: every section one after the other, and a bar on top that marks the one in view and
+ *  takes you to the others (the route still names a section, so links from Inicio land on it). */
+export function Library({ tab, onTab, host, startJob, busy, progress, notify, onOpenVm, onCreateFromTemplate }: Props) {
+  const mainRef = useRef<HTMLDivElement>(null);
+  const refs = useRef<Partial<Record<LibraryTab, HTMLElement | null>>>({});
+  const [active, setActive] = useState<LibraryTab>(tab);
+  const goTo = (t: LibraryTab, smooth = true) => {
+    const main = mainRef.current, el = refs.current[t];
+    if (!main || !el) return;
+    const nav = main.querySelector<HTMLElement>(".section-nav")?.offsetHeight ?? 0;
+    main.scrollTo({ top: Math.max(0, main.scrollTop + el.getBoundingClientRect().top - main.getBoundingClientRect().top - nav - 12), behavior: smooth ? "smooth" : "auto" });
+  };
+  // Arriving with a section in the route (from Inicio) scrolls to it.
+  useEffect(() => { const id = setTimeout(() => goTo(tab, false), 60); return () => clearTimeout(id); }, [tab]);
+  useEffect(() => {
+    const main = mainRef.current;
+    if (!main) return;
+    const spy = () => {
+      const nav = main.querySelector<HTMLElement>(".section-nav")?.offsetHeight ?? 0;
+      const line = main.getBoundingClientRect().top + nav + 48;
+      let current = SECTIONS[0].tab;
+      for (const x of SECTIONS) { const el = refs.current[x.tab]; if (el && el.getBoundingClientRect().top <= line) current = x.tab; }
+      if (main.scrollHeight > main.clientHeight + 4 && main.scrollTop + main.clientHeight >= main.scrollHeight - 4) current = SECTIONS[SECTIONS.length - 1].tab;
+      setActive(current);
+    };
+    spy();
+    main.addEventListener("scroll", spy, { passive: true });
+    return () => main.removeEventListener("scroll", spy);
+  }, []);
+  const section = (t: LibraryTab, node: React.ReactNode) => <section className="vm-section lib-section" ref={(el) => { refs.current[t] = el; }}>{node}</section>;
+  return (
+    <div className="main" ref={mainRef}>
+      <nav className="section-nav" role="tablist">
+        {SECTIONS.map((x) => (
+          <button key={x.tab} type="button" role="tab" aria-selected={x.tab === active} className={x.tab === active ? "on" : ""}
+            onClick={() => { goTo(x.tab); onTab(x.tab); }}>{x.label}</button>
+        ))}
+      </nav>
+      {section("perfiles", <Profiles tabs={<SectionHead tab="perfiles" />} host={host} notify={notify} />)}
+      {section("plantillas", <Templates tabs={<SectionHead tab="plantillas" />} notify={notify} onOpenVm={onOpenVm} onCreate={onCreateFromTemplate} startJob={startJob} />)}
+      {section("compartidos", <SharedDisks tabs={<SectionHead tab="compartidos" />} startJob={startJob} progress={progress} notify={notify} onOpenVm={onOpenVm} />)}
+      {section("discos", <Disks tabs={<SectionHead tab="discos" />} startJob={startJob} busy={busy} notify={notify} onOpenVm={onOpenVm} />)}
+      {section("isos", <Isos tabs={<SectionHead tab="isos" />} notify={notify} />)}
     </div>
   );
 }
@@ -105,7 +152,7 @@ function Profiles({ tabs, host, notify }: { tabs: React.ReactNode; host: HostInf
             <PatternButton name={`perfil-${p.Name}`} size={36} radius={10} />
             <div className="row-text">
               <strong>{profileLabel(p.Name)}{p.BuiltIn && <span className="tag">Incluido</span>}</strong>
-              <span>{p.Settings ? profileSummary(p.Settings, apps) : p.Description}</span>
+              {p.Settings ? <ResourceChips s={p.Settings} apps={apps} /> : <span>{p.Description}</span>}
             </div>
             <div className="row-actions">
               {p.Settings && (
@@ -142,6 +189,8 @@ function ProfileEditor({ initial, host, apps, existing, onCancel, onSaved, notif
   initial: Editing; host: HostInfo | null; apps: AppInfo[]; existing: ProfileInfo[];
   onCancel: () => void; onSaved: (name: string) => void; notify: Props["notify"];
 }) {
+  const monitors = useMonitors();
+  const prefs = usePrefs();
   const [draft, setDraft] = useState(initial);
   const [isos, setIsos] = useState<IsoFile[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -250,11 +299,14 @@ function ProfileEditor({ initial, host, apps, existing, onCancel, onSaved, notif
               </div>
             </div>
             <div className="field">
+              <div className="field-top"><span>Cuadros por segundo</span></div>
+              <FpsPicker value={s.fps ?? 60} monitor={resolveMonitor(monitors, "default", prefs.monitor)} onChange={(fps) => set({ fps })} />
+            </div>
+            <div className="field">
               <div className="field-top"><span>Moonlight</span></div>
               <div className="segment-row">
                 <Segmented value={s.resolution ?? "1920x1080"} onChange={(resolution) => set({ resolution })}
                   options={RESOLUTIONS.map((r) => ({ value: r, label: r.split("x")[1] + "p" }))} />
-                <Segmented value={s.fps ?? 60} onChange={(fps) => set({ fps })} options={FPS_OPTIONS} />
                 <Segmented value={s.displayMode === "windowed" ? "windowed" : "fullscreen"} onChange={(displayMode) => set({ displayMode })} options={[
                   { value: "fullscreen", label: "Pantalla completa" }, { value: "windowed", label: "Ventana" },
                 ]} />
@@ -389,8 +441,11 @@ function Disks({ tabs, startJob, busy, notify, onOpenVm }: Pick<Props, "startJob
 
 /* ---------- Templates ---------- */
 
-function Templates({ tabs, notify, onOpenVm, onCreate }: { tabs: React.ReactNode; notify: Props["notify"]; onOpenVm: Props["onOpenVm"]; onCreate: (name: string) => void }) {
+function Templates({ tabs, notify, onOpenVm, onCreate, startJob }: { tabs: React.ReactNode; notify: Props["notify"]; onOpenVm: Props["onOpenVm"]; onCreate: (name: string) => void; startJob: Props["startJob"] }) {
   const [templates, setTemplates] = useState<TemplateInfo[] | null>(cache.templates ?? null);
+  // "Nueva plantilla": pick the machine whose Windows it saves.
+  const [newFrom, setNewFrom] = useState<VmOverview[] | null>(null);
+  const openNew = () => api.overview().then((list) => setNewFrom(list.filter((v) => v.managed))).catch((e) => notify("error", humanError(e)));
   const [confirm, setConfirm] = useState<string | null>(null);
   const cleanupLevels = useCleanupLevels();
   const load = useCallback(() => api.templates().then((t) => { cache.templates = t; setTemplates(t); }).catch((e) => { setTemplates([]); notify("error", humanError(e)); }), [notify]);
@@ -402,11 +457,15 @@ function Templates({ tabs, notify, onOpenVm, onCreate }: { tabs: React.ReactNode
 
   return (
     <>
-    <div className="library-head">{tabs}</div>
+    <div className="library-head">{tabs}<button className="btn" onClick={openNew}><IconPlus size={16} />Nueva plantilla</button></div>
+    {newFrom && (
+      <NewTemplate vms={newFrom} onClose={() => setNewFrom(null)}
+        onCreate={(name, from) => { setNewFrom(null); startJob(from, "New-GpuVMTemplate", { Name: name, VMName: from, ShutdownIfRunning: true, Confirm: false }, load); }} />
+    )}
     <div className="card">
       <div className="rows">
         {templates === null && <RowSkeletons />}
-        {templates?.length === 0 && <p className="muted-note">Crea una plantilla desde el menú «…» de una máquina: guarda su Windows con sus apps para crear otras en segundos.</p>}
+        {templates?.length === 0 && <div className="empty-small"><span className="empty-small-icon"><IconTemplate size={18} /></span><strong>Sin plantillas</strong></div>}
         {templates?.map((t) => {
           const level = t.cleanup !== "none" ? cleanupLevels.find((l) => l.id === t.cleanup)?.name : null;
           return (

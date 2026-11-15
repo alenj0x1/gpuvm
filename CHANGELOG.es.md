@@ -8,7 +8,26 @@ Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (es
 
 ## [Sin publicar]
 
+### Agregado
+- **Logo nuevo.** Un chip de GPU dividido en cuatro con una parte en color: la parte de la GPU que recibe cada máquina. Es el ícono de la app, del instalador y el de la barra lateral.
+- **Color de énfasis.** En **Ajustes** se elige el color (azul, violeta, turquesa, verde o ámbar), cada muestra mitad clara y mitad oscura; el cambio de tema claro u oscuro también está ahí.
+- **Elegir el usuario de Windows** al crear una máquina (antes siempre era `gpuvm`), con aviso al escribir si Windows reserva ese nombre.
+- **Nueva plantilla desde la Biblioteca.** Se elige la máquina de la que se guarda Windows y su nombre, igual que desde el menú de la máquina.
+
 ### Cambiado
+- **Interfaz nueva.**
+  - Tema oscuro en grises grafito neutros, sin tinte azul; la barra lateral y la barra de título son una sola superficie y el contenido va encima con una esquina redondeada. Inicio, Biblioteca y Ajustes están en la barra lateral; arrastrando su borde se cambia el ancho y con un clic en la línea del borde (o arrastrándola hasta angostarla) se contrae.
+  - El ícono de cada máquina muestra las cuatro celdas del logo con su parte en su color. Su banner es una escena de chips que se mueve con la GPU, parpadea con el procesador y se llena con la memoria; **Otro banner** en su menú cambia entre tres.
+  - La página de una máquina es una sola, con una barra que marca la sección a la vista (máquina, imagen y control, Windows). Procesador, memoria, GPU y tiempo encendida van en una franja con sus últimos cinco minutos en pequeñas gráficas.
+  - Las opciones son filas con ícono y una línea que las explica. Los controles deslizantes muestran su escala y lo que le queda al PC; las listas y el monitor usan la lista desplegable propia de la app.
+  - Los cuadros por segundo se ofrecen según el monitor donde se abre la máquina (su ritmo, los que van parejos con él y los que pueden dar tirones) y un valor personalizado.
+  - **Tipo de uso** encabeza su grupo y fija debajo los cuadros por segundo, la sincronización vertical, el ritmo de cuadros y el mouse; cambiar uno a mano lo pasa a **Personalizado**.
+  - La limpieza de Windows lista todo lo que Windows trae (rastreo, publicidad, Bing, Copilot, apps preinstaladas, OneDrive, widgets, servicios de fondo) con lo que quita el nivel elegido marcado, junto a una escena donde esas piezas dejan de llegar a Windows.
+  - Apps: el catálogo por categoría en mosaico o lista a la izquierda, con las instaladas marcadas; el buscador y las apps de esta máquina a la derecha.
+  - Los discos compartidos dicen para qué sirven.
+  - Inicio muestra la máquina en uso, las demás máquinas con su acción, la memoria libre y qué cabe, la Biblioteca de un vistazo y lo pendiente.
+  - La Biblioteca es una sola página con todas sus secciones; los perfiles muestran sus recursos como piezas, cada recurso con su propio color.
+  - Crear una máquina es un diálogo grande: secciones a la izquierda y un resumen siempre a la vista a la derecha. Un perfil llena todo, y lo que se cambie se puede guardar como perfil nuevo.
 - **El tamaño de los discos cuenta el espacio prometido a las demás máquinas.** Un disco dinámico crece hasta su tamaño a medida que la máquina escribe, así que el espacio libre de la unidad no era el límite real: se podía dar a varias máquinas más de lo que cabe. Crear una máquina, el control **Disco** de un perfil y **Opciones → Disco** ahora llegan hasta lo que cabe con todos los discos de esa unidad llenos, dejando 20 GB para Windows. **Opciones** muestra una barra con el disco de esta máquina, lo reservado para las demás y lo que quedaría libre. El módulo suma `Get-GpuVMDiskBudget`, `Get-GpuVMHostInfo` lo devuelve como `disk` y `Get-GpuVMOverview` como `options.diskBudget`.
 
 ### Corregido

@@ -1,21 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { IconHome,
-  IconAlertTriangle, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconLoader2, IconPlugConnected, IconPlus, IconRefresh, IconShieldLock,
-} from "@tabler/icons-react";
+import { IconAlertTriangle, IconHome, IconLoader2, IconPlugConnected, IconPlus, IconRefresh, IconSettings, IconShieldLock, IconStack2 } from "@tabler/icons-react";
 import { Preferences } from "./Preferences";
 import { Library, type LibraryTab } from "./Library";
 import { Home } from "./Home";
 // The app's own icon (the installer and the window use it), never a machine figure.
-import appIcon from "../src-tauri/icons/128x128.png";
+import appIcon from "./assets/logo.svg";
 import type { HostInfo, JobEvent, Sample, VmOverview } from "./types";
 import { readPrefs } from "./prefs";
 import { api, onJob, relaunchAsAdmin, repairService, service, startJob as runJob } from "./api";
-import { Bauhaus } from "./bauhaus";
+import { MachineIcon } from "./machineIcon";
 import { MAX_SAMPLES } from "./Chart";
 import { VmView, type JobInfo } from "./VmView";
 import { CreateDialog } from "./CreateDialog";
 import { TitleBar } from "./TitleBar";
-import { Toasts, humanError, stateLabel, useToasts } from "./ui";
+import { Toasts, humanError, stateLabel, useToasts, useScrollFade } from "./ui";
 
 const NEW_VM = "__new__";
 // Route of the preferences screen in the URL hash, shaped so it doesn't look like a VM name.
@@ -37,6 +35,8 @@ interface RunningJob extends JobInfo {
 
 /** `embedded`: the app runs inside another page (the website), so its route stays in memory and off the page's URL. */
 export function App({ embedded = false }: { embedded?: boolean } = {}) {
+  // The machine list fades only where it keeps going: never over "Crear máquina" when everything fits.
+  const [sideRef, sideFade] = useScrollFade<HTMLElement>();
   const [vms, setVms] = useState<VmOverview[] | null>(null);
   const [host, setHost] = useState<HostInfo | null>(null);
   // "stopped": the GpuVM service is stopped and set to start by hand; "missing": it isn't installed (installed app);
@@ -112,6 +112,26 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     return () => window.removeEventListener("hashchange", onHash);
   }, [embedded]);
   useEffect(() => { try { localStorage.setItem("gpuvm.collapsed", collapsed ? "1" : "0"); } catch { /* no storage */ } }, [collapsed]);
+  // The sidebar's width: dragged from its edge between 200 and 360 px; dragging it narrower than 150 px folds it.
+  const [sideWidth, setSideWidth] = useState(() => { try { return Math.min(360, Math.max(200, Number(localStorage.getItem("gpuvm.sideWidth")) || 248)); } catch { return 248; } });
+  const [resizing, setResizing] = useState(false);
+  // Where a press on the edge started: a press that doesn't move is a click on the line (fold or unfold).
+  const press = useRef<{ x: number; moved: boolean; onLine: boolean } | null>(null);
+  useEffect(() => { try { localStorage.setItem("gpuvm.sideWidth", String(sideWidth)); } catch { /* no storage */ } }, [sideWidth]);
+  const startResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    press.current = { x: e.clientX, moved: false, onLine: (e.target as HTMLElement).classList.contains("side-handle") };
+  };
+  const resize = (e: React.PointerEvent<HTMLDivElement>) => {
+    const p = press.current;
+    if (!p || !e.currentTarget.hasPointerCapture(e.pointerId)) return;
+    if (!p.moved && Math.abs(e.clientX - p.x) < 4) return;
+    if (!p.moved) { p.moved = true; setResizing(true); }
+    const x = e.clientX;
+    if (x < 150) setCollapsed(true);
+    else { setCollapsed(false); setSideWidth(Math.round(Math.min(360, Math.max(200, x)))); }
+  };
   useEffect(() => {
     if (selected !== PREFS && selected !== HOME && !libraryTab(selected) && vms && vms.length && !vms.some((v) => v.name === selected)) setSelected(HOME);
   }, [vms, selected]);
@@ -192,9 +212,9 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       <div className="app single">
         <TitleBar />
         <div className="empty">
-          <Bauhaus name="gpuvm-admin" size={96} radius={24} />
+          <img className="empty-logo" src={appIcon} alt="" width={96} height={96} draggable={false} />
           <h2>{stopped ? "El servicio de GpuVM está detenido" : "Falta el servicio de GpuVM"}</h2>
-          <p>{stopped ? "Es la parte de GpuVM que controla Hyper-V. En Preferencias está en modo manual." : "Es la parte de GpuVM que controla Hyper-V. Repararlo pide permiso de administrador una vez."}</p>
+          <p>{stopped ? "Es la parte de GpuVM que controla Hyper-V. En Ajustes está en modo manual." : "Es la parte de GpuVM que controla Hyper-V. Repararlo pide permiso de administrador una vez."}</p>
           <button className="primary" onClick={fix} disabled={repair.busy}>
             {stopped ? <><IconPlugConnected size={17} />{repair.busy ? "Iniciando…" : "Iniciar servicio"}</> : <><IconShieldLock size={17} />{repair.busy ? "Reparando…" : "Reparar"}</>}
           </button>
@@ -209,7 +229,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       <div className="app single">
         <TitleBar />
         <div className="empty">
-          <Bauhaus name="gpuvm-admin" size={96} radius={24} />
+          <img className="empty-logo" src={appIcon} alt="" width={96} height={96} draggable={false} />
           <h2>GpuVM necesita permisos de administrador</h2>
           <p>Hyper-V solo deja crear y controlar máquinas a un administrador.</p>
           <button className="primary" onClick={relaunchAsAdmin}><IconShieldLock size={17} />Abrir como administrador</button>
@@ -219,35 +239,39 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
   }
 
   return (
-    <div className={`app ${collapsed ? "collapsed" : ""}`}>
-      <TitleBar prefsOpen={selected === PREFS} onPrefs={() => setSelected(selected === PREFS ? HOME : PREFS)}
-        libraryOpen={!!libraryTab(selected)} onLibrary={() => setSelected(libraryTab(selected) ? HOME : LIBRARY)} />
+    <div className={`app ${collapsed ? "collapsed" : ""}${resizing ? " resizing" : ""}`} style={{ "--side-w": `${collapsed ? 64 : sideWidth}px` } as React.CSSProperties}>
+      <TitleBar />
       <aside className="side">
         <div className="side-head">
           <span className="side-logo"><img src={appIcon} alt="" width={28} height={28} draggable={false} /></span>
           <strong>GpuVM</strong>
-          <button className="icon-btn side-toggle" aria-label={collapsed ? "Expandir barra" : "Contraer barra"} onClick={() => setCollapsed((c) => !c)}>
-            {collapsed ? <IconLayoutSidebarLeftExpand size={18} /> : <IconLayoutSidebarLeftCollapse size={18} />}
-          </button>
         </div>
-        <nav className="side-list">
+        <nav ref={sideRef} className={`side-list ${sideFade}`}>
           {vms && vms.length > 0 && (
             <button className={`side-item side-home ${selected === HOME ? "active" : ""}`} onClick={() => setSelected(HOME)} title="Inicio">
               <span className="add-icon"><IconHome size={16} /></span><span className="name">Inicio</span>
             </button>
           )}
+          <button className={`side-item side-home ${libraryTab(selected) ? "active" : ""}`} onClick={() => setSelected(LIBRARY)} title="Perfiles, discos e ISOs">
+            <span className="add-icon"><IconStack2 size={16} /></span><span className="name">Biblioteca</span>
+          </button>
+          <span className="side-label">Máquinas</span>
           {vms === null && [0, 1, 2].map((i) => (
             <div key={i} className="side-item side-skeleton" aria-hidden="true">
               <span className="skeleton icon" />
-              <span className="name"><span className="skeleton line" /><span className="skeleton line short" /></span>
+              <span className="name"><span className="skeleton line" /></span>
             </div>
           ))}
           {vms?.map((vm) => {
             const busy = busyFor(vm.name);
             return (
-              <button key={vm.id} className={`side-item ${vm.name === selected ? "active" : ""}`} onClick={() => setSelected(vm.name)} title={vm.name}>
-                <span className="side-icon"><Bauhaus name={vm.name} size={28} radius={8} /><span className={`dot badge ${vm.state}`} /></span>
-                <span className="name">{vm.name}<span className="sub">{busy?.message ?? stateLabel[vm.state] ?? vm.state}</span></span>
+              // The dot already says on or off: the row only adds what it can't, the GPU in use or a job in progress.
+              <button key={vm.id} className={`side-item ${vm.name === selected ? "active" : ""}`} onClick={() => setSelected(vm.name)}
+                title={busy?.message ? `${vm.name}, ${busy.message}` : `${vm.name}, ${stateLabel[vm.state] ?? vm.state}`}>
+                <span className="side-icon"><MachineIcon name={vm.name} size={28} radius={8} /><span className={`dot badge ${vm.state}`} /></span>
+                <span className="name">{vm.name}</span>
+                {busy ? <IconLoader2 size={15} className="spin side-meta" />
+                  : vm.state === "Running" && vm.hasGpu ? <span className="side-meta">GPU {vm.gpuPercent} %</span> : null}
               </button>
             );
           })}
@@ -260,7 +284,21 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
           <button className="side-item side-add" onClick={() => { setCreateError(null); setCreating(true); }} title="Crear máquina">
             <span className="add-icon"><IconPlus size={16} /></span><span className="name">Crear máquina</span>
           </button>
-        </nav>      </aside>
+        </nav>
+        {/* Ajustes stays at the foot of the sidebar, however long the list of machines gets. */}
+        <button className={`side-item side-home side-foot ${selected === PREFS ? "active" : ""}`} onClick={() => setSelected(PREFS)} title="Ajustes">
+          <span className="add-icon"><IconSettings size={16} /></span><span className="name">Ajustes</span>
+        </button>
+      </aside>
+      {/* The sidebar's edge: drag it to resize (or fold) the sidebar; its tab, shown on hover, folds and unfolds it. */}
+      <div className="side-edge" role="separator" aria-orientation="vertical" aria-label="Ancho de la barra"
+        onPointerDown={startResize} onPointerMove={resize}
+        onPointerUp={() => { const p = press.current; press.current = null; setResizing(false); if (p && !p.moved && p.onLine) setCollapsed((c) => !c); }}
+        onPointerCancel={() => { press.current = null; setResizing(false); }}>
+        {/* The line itself: drag it to resize, click it to fold or unfold. */}
+        <button type="button" className="side-handle" aria-label={collapsed ? "Expandir barra" : "Contraer barra"} title={collapsed ? "Expandir barra" : "Contraer barra"}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setCollapsed((c) => !c); } }} />
+      </div>
 
       <div className="content">
         {readError && (
@@ -277,7 +315,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
             <div className="skeleton" style={{ height: 170 }} />
           </div>
         ) : selected === HOME && vms.length > 0 ? (
-          <Home vms={vms} busyFor={busyFor} startJob={startJob} onOpenVm={setSelected} onRoute={setSelected} />
+          <Home vms={vms} busyFor={busyFor} startJob={startJob} onOpenVm={setSelected} onRoute={setSelected} onCreate={() => { setCreateError(null); setCreating(true); }} />
         ) : selected === PREFS ? (
           <Preferences />
         ) : libraryTab(selected) ? (
@@ -290,7 +328,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
         ) : (
           <div className="main">
             <div className="empty">
-              <Bauhaus name="primera-maquina" size={112} radius={28} />
+              <img className="empty-logo" src={appIcon} alt="" width={112} height={112} draggable={false} />
               <h2>Crea tu primera máquina</h2>
               <p>Windows 10 u 11 con {host?.gpuName ? `tu ${host.gpuName.replace("NVIDIA GeForce ", "")}` : "tu GPU"}, lista para abrir con Moonlight en un clic.</p>
               <button className="primary" onClick={() => setCreating(true)}><IconPlus size={17} />Crear máquina</button>
@@ -300,13 +338,15 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       </div>
 
       {creating && (
-        <CreateDialog existing={vms ?? []} job={createJob} error={createError} template={createTemplate}
+        <CreateDialog host={host} existing={vms ?? []} job={createJob} error={createError} template={createTemplate}
           onClose={() => { setCreating(false); setCreateTemplate(null); }}
-          onCreate={({ name, iso, template, profile, password, apps, cleanup }) => {
+          onCreate={({ name, iso, template, profile, user, password, apps, cleanup, resources }) => {
             setCreateError(null);
+            // Resources changed in the dialog go as an override of the chosen profile, like Options does.
+            const hw = resources ? { vm: { cpu: { count: resources.cpu }, memoryGB: resources.memoryGB, disk: { sizeGB: resources.diskGB } }, gpu: { allocationPercent: resources.gpuPercent } } : {};
             const args = template
-              ? { Name: name, Template: template, Profile: profile, Start: true }
-              : { Name: name, IsoPath: iso, Profile: profile, Override: { guest: { apps, cleanup } }, Credential: { user: "gpuvm", password }, Start: true };
+              ? { Name: name, Template: template, Profile: profile, ...(resources ? { Override: hw } : {}), Start: true }
+              : { Name: name, IsoPath: iso, Profile: profile, Override: { ...hw, guest: { apps, cleanup } }, Credential: { user, password }, Start: true };
             startJob(NEW_VM, "New-GpuVM", args, () => {
               setCreating(false);
               setCreateTemplate(null);

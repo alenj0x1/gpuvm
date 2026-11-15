@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
-import { IconAlertTriangle, IconCircleCheck, IconCircleX, IconX } from "@tabler/icons-react";
+import { IconAlertTriangle, IconCheck, IconChevronDown, IconCircleCheck, IconCircleX, IconX } from "@tabler/icons-react";
+import { createPortal } from "react-dom";
 
 interface SliderProps {
   value: number;
@@ -8,37 +9,178 @@ interface SliderProps {
   step?: number;
   onChange: (v: number) => void;
   label: string;
+  /** How a scale number is written (e.g. 0 as "Auto"). */
+  format?: (v: number) => string;
 }
 
-/** Custom slider (no native input) with keyboard and drag support. */
-export function Slider({ value, min, max, step = 1, onChange, label }: SliderProps) {
+/** Scale numbers under a slider: about seven, on round values that are multiples of the step, always with both ends. */
+function scaleMarks(min: number, max: number, step: number) {
+  const range = max - min;
+  if (range <= 0) return [min];
+  const rough = range / 7;
+  const pow = 10 ** Math.floor(Math.log10(rough));
+  const nice = [1, 2, 2.5, 5, 10].map((f) => f * pow).find((n) => n >= rough) ?? rough;
+  const every = Math.max(step, Math.ceil(nice / step) * step);
+  const marks = [min];
+  for (let v = Math.ceil((min + 1e-9) / every) * every; v < max; v += every) {
+    // Keeps the numbers apart from the ends.
+    if (v - min > every * 0.75 && max - v > every * 0.75) marks.push(v);
+  }
+  marks.push(max);
+  return marks;
+}
+
+/** Custom slider (no native input): a bar with its scale written underneath, so it says how much each position is.
+ *  Drag or click anywhere, arrows and the mouse wheel move one step. */
+export function Slider({ value, min, max, step = 1, onChange, label, format = String }: SliderProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const pct = ((value - min) / (max - min)) * 100;
+  const clamp = (v: number) => Math.min(max, Math.max(min, v));
+  const pct = max > min ? ((clamp(value) - min) / (max - min)) * 100 : 100;
+  const [dragging, setDragging] = useState(false);
+  const latest = useRef({ value, onChange });
+  latest.current = { value, onChange };
+
   const setFromPointer = (clientX: number) => {
     const rect = ref.current!.getBoundingClientRect();
     const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-    onChange(Math.round((min + ratio * (max - min)) / step) * step);
+    onChange(clamp(min + Math.round((ratio * (max - min)) / step) * step));
   };
   const onDown = (e: PointerEvent<HTMLDivElement>) => {
     e.currentTarget.setPointerCapture(e.pointerId);
+    setDragging(true);
     setFromPointer(e.clientX);
   };
   const onMove = (e: PointerEvent<HTMLDivElement>) => {
     if (e.currentTarget.hasPointerCapture(e.pointerId)) setFromPointer(e.clientX);
   };
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "ArrowRight" || e.key === "ArrowUp") onChange(Math.min(max, value + step));
-    else if (e.key === "ArrowLeft" || e.key === "ArrowDown") onChange(Math.max(min, value - step));
+    if (e.key === "ArrowRight" || e.key === "ArrowUp") onChange(clamp(value + step));
+    else if (e.key === "ArrowLeft" || e.key === "ArrowDown") onChange(clamp(value - step));
+    else if (e.key === "Home") onChange(min);
+    else if (e.key === "End") onChange(max);
     else return;
     e.preventDefault();
   };
+  // The wheel moves one step at a time (fine adjustment); React's wheel handler is passive, so it is attached here.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const wheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const { value: v, onChange: change } = latest.current;
+      change(Math.min(max, Math.max(min, v + (e.deltaY < 0 ? step : -step))));
+    };
+    el.addEventListener("wheel", wheel, { passive: false });
+    return () => el.removeEventListener("wheel", wheel);
+  }, [min, max, step]);
+
   return (
-    <div ref={ref} className="slider" role="slider" tabIndex={0} aria-label={label} aria-valuemin={min}
-      aria-valuemax={max} aria-valuenow={value} onPointerDown={onDown} onPointerMove={onMove} onKeyDown={onKey}>
+    <div ref={ref} className={`slider${dragging ? " dragging" : ""}`} role="slider" tabIndex={0} aria-label={label} aria-valuemin={min}
+      aria-valuemax={max} aria-valuenow={value} onPointerDown={onDown} onPointerMove={onMove}
+      onPointerUp={() => setDragging(false)} onPointerCancel={() => setDragging(false)} onKeyDown={onKey}>
       <div className="track" />
       <div className="fill" style={{ width: `${pct}%` }} />
       <div className="thumb" style={{ left: `${pct}%` }} />
+      <div className="scale" aria-hidden="true">
+        {scaleMarks(min, max, step).map((m, i, all) => (
+          <span key={m} className={i === 0 ? "first" : i === all.length - 1 ? "last" : ""} style={{ left: `${((m - min) / (max - min || 1)) * 100}%` }}>{format(m)}</span>
+        ))}
+      </div>
     </div>
+  );
+}
+
+export interface DropdownOption<T extends string> {
+  value: T;
+  label: string;
+  detail?: string;
+  icon?: ReactNode;
+  /** Colors the icon to tell groups apart: recommended, fine, or with a drawback. */
+  tone?: "accent" | "ok" | "warn";
+}
+
+/** The app's own drop-down list (never the system one): the chosen option with its detail, and a floating list with
+ *  every option. Closes on any press outside it, Escape, or a choice; arrows move through the list. */
+export function Dropdown<T extends string>({ value, options, onChange, label }: {
+  value: T; options: DropdownOption<T>[]; onChange: (v: T) => void; label: string;
+}) {
+  const [open, setOpen] = useState<{ x: number; y: number; width: number; room: number } | null>(null);
+  const [active, setActive] = useState(0);
+  const button = useRef<HTMLButtonElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const chosen = options.find((o) => o.value === value) ?? options[0];
+  const withIcons = options.some((o) => o.icon);
+
+  const show = () => {
+    const r = button.current!.getBoundingClientRect();
+    // Opens upward when there is no room below.
+    const need = options.length * 48 + 12;
+    const roomBelow = window.innerHeight - r.bottom - 18, roomAbove = r.top - 18 - 32;
+    const below = roomBelow >= need || roomBelow >= roomAbove;
+    setOpen({ x: r.left, y: below ? r.bottom + 6 : -(window.innerHeight - r.top + 6), width: r.width, room: below ? roomBelow : roomAbove });
+    setActive(Math.max(0, options.findIndex((o) => o.value === value)));
+  };
+  useEffect(() => {
+    if (!open) return;
+    const outside = (e: Event) => {
+      const t = e.target as Node;
+      if (!list.current?.contains(t) && !button.current?.contains(t)) setOpen(null);
+    };
+    const close = () => setOpen(null);
+    window.addEventListener("pointerdown", outside, true);
+    window.addEventListener("resize", close);
+    window.addEventListener("scroll", close, true);
+    return () => {
+      window.removeEventListener("pointerdown", outside, true);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", close, true);
+    };
+  }, [open]);
+  const pick = (v: T) => { onChange(v); setOpen(null); button.current?.focus(); };
+  const onKey = (e: KeyboardEvent) => {
+    if (!open) {
+      if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") { e.preventDefault(); show(); }
+      return;
+    }
+    if (e.key === "Escape") setOpen(null);
+    else if (e.key === "ArrowDown") setActive((a) => Math.min(options.length - 1, a + 1));
+    else if (e.key === "ArrowUp") setActive((a) => Math.max(0, a - 1));
+    else if (e.key === "Enter" || e.key === " ") pick(options[active].value);
+    else return;
+    e.preventDefault();
+  };
+
+  return (
+    <>
+      <button ref={button} type="button" className={`dropdown${open ? " open" : ""}`} aria-haspopup="listbox" aria-expanded={!!open} aria-label={label}
+        onClick={() => (open ? setOpen(null) : show())} onKeyDown={onKey}>
+        {chosen?.icon && <span className={`dropdown-icon${chosen.tone ? ` tone-${chosen.tone}` : ""}`}>{chosen.icon}</span>}
+        <span className="dropdown-text">
+          <span className="dropdown-label">{chosen?.label}</span>
+          {chosen?.detail && <span className="dropdown-detail">{chosen.detail}</span>}
+        </span>
+        <IconChevronDown size={16} className="dropdown-chevron" />
+      </button>
+      {open && createPortal(
+        <div ref={list} className="dropdown-list" role="listbox" aria-label={label}
+          style={{ left: open.x, width: Math.max(open.width, 260), maxHeight: open.room, ...(open.y >= 0 ? { top: open.y } : { bottom: -open.y }) }}>
+          {options.map((o, i) => (
+            <button type="button" role="option" key={o.value} aria-selected={o.value === value}
+              className={`${o.value === value ? "on" : ""}${i === active ? " active" : ""}`}
+              onMouseEnter={() => setActive(i)} onClick={() => pick(o.value)}>
+              {/* Options without an icon keep its room, so every name starts at the same place. */}
+              {withIcons && <span className={`dropdown-icon${o.tone ? ` tone-${o.tone}` : ""}`}>{o.icon}</span>}
+              <span className="dropdown-text">
+                <span className="dropdown-label">{o.label}</span>
+                {o.detail && <span className="dropdown-detail">{o.detail}</span>}
+              </span>
+              {o.value === value && <IconCheck size={16} className="dropdown-check" />}
+            </button>
+          ))}
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }
 
@@ -48,9 +190,28 @@ interface SegmentedProps<T extends string | number | boolean> {
   onChange: (v: T) => void;
 }
 
+/** Options side by side. The chosen one is a darker pill that slides to the new choice (no jump); it only animates
+ *  when the choice changes, never on the first paint. */
 export function Segmented<T extends string | number | boolean>({ value, options, onChange }: SegmentedProps<T>) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pill, setPill] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const [animate, setAnimate] = useState(false);
+  const index = options.findIndex((o) => o.value === value);
+  useLayoutEffect(() => {
+    const place = () => {
+      const el = ref.current?.children[index + 1] as HTMLElement | undefined;
+      setPill(el ? { left: el.offsetLeft, top: el.offsetTop, width: el.offsetWidth, height: el.offsetHeight } : null);
+    };
+    place();
+    const resize = new ResizeObserver(place);
+    if (ref.current) resize.observe(ref.current);
+    return () => resize.disconnect();
+  }, [index, options.length]);
+  useEffect(() => { const t = requestAnimationFrame(() => setAnimate(true)); return () => cancelAnimationFrame(t); }, []);
   return (
-    <div className="segmented" role="radiogroup">
+    <div ref={ref} className="segmented" role="radiogroup">
+      <span className={`segmented-pill${animate ? " animate" : ""}`} aria-hidden="true"
+        style={pill ? { left: pill.left, top: pill.top, width: pill.width, height: pill.height } : { opacity: 0 }} />
       {options.map((o) => (
         // type="button": inside a form (Crear máquina, profiles) a plain button would submit it.
         <button type="button" key={String(o.value)} role="radio" aria-checked={o.value === value} className={o.value === value ? "on" : ""}
