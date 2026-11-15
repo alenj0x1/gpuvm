@@ -68,7 +68,7 @@ export interface VmOverview {
   guestCredential: boolean;
   address: string | null;
   client: ClientSettings | null;
-  options: { cpu: number; memoryGB: number; gpuPercent: number; diskGB: number; diskType: string; diskFreeGB: number; captureMode: "ddx" | "wgc"; networkIsolation: boolean; cleanup: CleanupLevelId } | null;
+  options: { cpu: number; memoryGB: number; gpuPercent: number; diskGB: number; diskType: string; diskFreeGB: number; captureMode: "ddx" | "wgc"; networkIsolation: boolean; cleanup: CleanupLevelId; diskBudget?: DiskBudget | null } | null;
 }
 
 export type DisplayMode = "fullscreen" | "windowed" | "borderless";
@@ -201,6 +201,25 @@ export interface HostInfo {
   logicalProcessors: number;
   memoryGB: number;
   gpuName: string | null;
+  /** Room for a new machine's disk where GpuVM keeps them. */
+  disk?: DiskBudget | null;
+}
+
+/** Get-GpuVMDiskBudget: what a disk on a drive can really take once every VM disk there is full. */
+export interface DiskBudget {
+  drive: string;
+  freeGB: number;
+  /** What the other VMs' dynamic disks can still grow into. */
+  promisedGB: number;
+  marginGB: number;
+  /** What a new (or a bigger) disk can still add. */
+  availableGB: number;
+  /** This VM's disk: its size and what its file takes today. */
+  sizeGB: number | null;
+  usedGB: number | null;
+  /** The most this VM's disk (or a new one) can measure. */
+  maxGB: number;
+  others: { vm: string; promisedGB: number }[];
 }
 
 export interface Sample {

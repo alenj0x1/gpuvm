@@ -55,6 +55,19 @@ function Get-HyperVGpuPChecks {
             'Si la VM recibe la integrada, desactívala en el Administrador de dispositivos antes de encender la VM (ver labs/001).')))
     }
 
+    # The new disk must fit once every VM disk on the drive is full (dynamic disks grow up to their size).
+    $sizeGB = [int]$Config['vm']['disk']['sizeGB']
+    if ($sizeGB -and $Config['vm']['root']) {
+        $budget = Get-GpuVMDiskBudget -Root $Config['vm']['root']
+        if ($sizeGB -gt $budget['availableGB']) {
+            $checks.Add((New-CheckResult 'Disco' Fail ("Un disco de $sizeGB GB no cabe en $($budget['drive']): quedan $([math]::Floor($budget['freeGB'])) GB libres y " +
+                "$([math]::Ceiling($budget['promisedGB'])) GB ya están reservados para los discos de otras máquinas. Elige como máximo $($budget['availableGB']) GB.")))
+        }
+        else {
+            $checks.Add((New-CheckResult 'Disco' Ok "$sizeGB GB en $($budget['drive']); quedan $($budget['availableGB'] - $sizeGB) GB para más máquinas"))
+        }
+    }
+
     $switch = $Config['vm']['network']['switch']
     if ($switch -and -not (Get-VMSwitch -Name $switch -ErrorAction SilentlyContinue)) {
         $checks.Add((New-CheckResult 'Red' Warn "No existe el switch '$switch'; la VM se creará sin red."))
@@ -137,6 +150,13 @@ function Expand-HyperVGpuPDisk {
     }
     if ($target -eq $vhd.Size) { return }
     if ($vhd.VhdType -eq 'Differencing') { throw 'El disco de una máquina creada desde una plantilla mide lo mismo que la plantilla y no se amplía.' }
+    # Never more than the drive can really hold once every VM disk on it is full (the app shows the same limit).
+    $script:DiskCache = $null
+    $owner = Get-VMDiskUsage | Where-Object { $_.Path -eq $Path } | Select-Object -First 1
+    $budget = Get-GpuVMDiskBudget -Root $Path -VMName $(if ($owner) { $owner.VM })
+    if ($SizeGB -gt $budget['maxGB']) {
+        throw "No hay espacio para un disco de $SizeGB GB: en $($budget['drive']) quedan $([math]::Floor($budget['freeGB'])) GB libres y $([math]::Ceiling($budget['promisedGB'])) GB ya están reservados para los discos de otras máquinas. Como máximo $($budget['maxGB']) GB."
+    }
     if ($vhd.VhdType -eq 'Fixed') {
         $free = (Get-Volume -DriveLetter (Split-Path $Path -Qualifier).TrimEnd(':')).SizeRemaining
         $needed = $target - $vhd.Size

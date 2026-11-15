@@ -6,6 +6,14 @@ Aquí se documentan los cambios importantes de GpuVM. El formato sigue [Keep a C
 
 Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (esa sección solo existe mientras haya alguno y el sitio de documentación no la muestra); `scripts/release.py` la convierte en la versión nueva.
 
+## [Sin publicar]
+
+### Cambiado
+- **El tamaño de los discos cuenta el espacio prometido a las demás máquinas.** Un disco dinámico crece hasta su tamaño a medida que la máquina escribe, así que el espacio libre de la unidad no era el límite real: se podía dar a varias máquinas más de lo que cabe. Crear una máquina, el control **Disco** de un perfil y **Opciones → Disco** ahora llegan hasta lo que cabe con todos los discos de esa unidad llenos, dejando 20 GB para Windows. **Opciones** muestra una barra con el disco de esta máquina, lo reservado para las demás y lo que quedaría libre. El módulo suma `Get-GpuVMDiskBudget`, `Get-GpuVMHostInfo` lo devuelve como `disk` y `Get-GpuVMOverview` como `options.diskBudget`.
+
+### Corregido
+- **Los menús abiertos dentro de un diálogo se ven encima de él.**
+
 ## [0.7.0] - 2026-11-09
 
 ### Añadido

@@ -12,6 +12,54 @@ function Get-DriveFreeGB {
     [math]::Floor(([IO.DriveInfo]::new((Split-Path $Path -Qualifier))).AvailableFreeSpace / 1GB)
 }
 
+# Space the host keeps for itself on a drive with VM disks (Windows, updates, the page file).
+$script:DiskMarginGB = 20
+$script:DiskCache = $null
+
+# Every VM disk on the host, by drive: its full size, what its file takes today and how much it can still grow
+# (a dynamic disk grows up to its size as the guest writes; a fixed one already takes it all). Read every 30 s at
+# most (Get-VHD costs ~0.1 s per disk and the overview is refreshed every few seconds).
+function Get-VMDiskUsage {
+    if ($script:DiskCache -and ((Get-Date) - $script:DiskCache.At).TotalSeconds -lt 30) { return $script:DiskCache.Disks }
+    $disks = foreach ($vm in @(Get-VM -ErrorAction SilentlyContinue)) {
+        foreach ($drive in @(Get-VMHardDiskDrive -VMName $vm.Name -ErrorAction SilentlyContinue)) {
+            if (-not $drive.Path) { continue }
+            $vhd = Get-VHD -Path $drive.Path -ErrorAction SilentlyContinue
+            if (-not $vhd) { continue }
+            [pscustomobject]@{
+                VM = $vm.Name; Path = $drive.Path; Drive = (Split-Path $drive.Path -Qualifier).ToUpperInvariant()
+                SizeGB = [math]::Round($vhd.Size / 1GB, 1); FileGB = [math]::Round($vhd.FileSize / 1GB, 1)
+                GrowthGB = [math]::Max(0, [math]::Round(($vhd.Size - $vhd.FileSize) / 1GB, 1)); Type = [string]$vhd.VhdType
+            }
+        }
+    }
+    $script:DiskCache = [pscustomobject]@{ At = Get-Date; Disks = @($disks) }
+    @($disks)
+}
+
+# What a disk on $Root's drive can really have: the drive's free space, minus what the other VMs' disks there can
+# still grow into (space they are promised), minus the host's margin. -VMName leaves that VM's own disk out of the
+# promised space and returns how far its disk can grow (its size + its own unwritten part + what is left).
+function Get-GpuVMDiskBudget {
+    param([Parameter(Mandatory)][string]$Root, [string]$VMName)
+    $drive = (Split-Path $Root -Qualifier).ToUpperInvariant()
+    $free = [math]::Round(([IO.DriveInfo]::new($drive)).AvailableFreeSpace / 1GB, 1)
+    $all = @(Get-VMDiskUsage | Where-Object Drive -eq $drive)
+    $others = @($all | Where-Object { $_.VM -ne $VMName })
+    $own = @($all | Where-Object { $VMName -and $_.VM -eq $VMName } | Select-Object -First 1)
+    $promised = [math]::Round(($others | Measure-Object GrowthGB -Sum).Sum, 1)
+    $ownGrowth = if ($own) { $own[0].GrowthGB } else { 0 }
+    # What a new or bigger disk can take without being able to fill the drive when every disk is full.
+    $available = [math]::Max(0, [math]::Floor($free - $promised - $ownGrowth - $script:DiskMarginGB))
+    [ordered]@{
+        drive = $drive; freeGB = $free; promisedGB = $promised; marginGB = $script:DiskMarginGB
+        availableGB = $available
+        sizeGB = if ($own) { $own[0].SizeGB } else { $null }; usedGB = if ($own) { $own[0].FileGB } else { $null }
+        maxGB = if ($own) { [math]::Floor($own[0].SizeGB + $available) } else { $available }
+        others = @($others | Group-Object VM | ForEach-Object { [ordered]@{ vm = $_.Name; promisedGB = [math]::Round(($_.Group | Measure-Object GrowthGB -Sum).Sum, 1) } } | Where-Object { $_.promisedGB -gt 0 })
+    }
+}
+
 # Grows the guest's C: into the free space at the end of its disk (after Resize-VHD), from inside the guest.
 function Expand-GuestSystemDisk {
     param(

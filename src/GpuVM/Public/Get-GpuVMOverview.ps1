@@ -73,6 +73,8 @@ function Get-GpuVMOverview {
                     diskGB     = $state['config']['vm']['disk']['sizeGB']
                     diskType   = $state['config']['vm']['disk']['type']
                     diskFreeGB = Get-DriveFreeGB $state['config']['vm']['root']
+                    # The real room for this VM's disk: free space minus what the other VMs' disks can still grow.
+                    diskBudget = $(try { Get-GpuVMDiskBudget -Root $state['config']['vm']['root'] -VMName $vm.Name } catch { $null })
                     captureMode = Get-GpuVMCaptureMode -State $state
                     networkIsolation = Get-GpuVMNetworkIsolation -State $state
                     cleanup    = if ($state['config']['guest'].Contains('cleanup') -and $state['config']['guest']['cleanup']) { $state['config']['guest']['cleanup'] } else { 'none' }

@@ -873,4 +873,22 @@ InModuleScope GpuVM {
 
         $script:DataRoot = $saved
     }
+
+    Describe 'Disk room' {
+        It 'counts what the other VMs disks can still grow into, its own unwritten part and the host margin' {
+            Mock Get-VMDiskUsage {
+                [pscustomobject]@{ VM = 'a'; Path = 'C:\vm\a.vhdx'; Drive = 'C:'; SizeGB = 128; FileGB = 40; GrowthGB = 88; Type = 'Dynamic' }
+                [pscustomobject]@{ VM = 'b'; Path = 'C:\vm\b.vhdx'; Drive = 'C:'; SizeGB = 200; FileGB = 200; GrowthGB = 0; Type = 'Fixed' }
+                [pscustomobject]@{ VM = 'c'; Path = 'D:\vm\c.vhdx'; Drive = 'D:'; SizeGB = 500; FileGB = 10; GrowthGB = 490; Type = 'Dynamic' }
+            }
+            $free = [math]::Round(([IO.DriveInfo]::new('C:')).AvailableFreeSpace / 1GB, 1)
+            $new = Get-GpuVMDiskBudget -Root 'C:\GpuVM'
+            $new['promisedGB'] | Should Be 88
+            $new['availableGB'] | Should Be ([math]::Max(0, [math]::Floor($free - 88 - $script:DiskMarginGB)))
+            $a = Get-GpuVMDiskBudget -Root 'C:\GpuVM' -VMName 'a'
+            $a['promisedGB'] | Should Be 0
+            $a['usedGB'] | Should Be 40
+            $a['maxGB'] | Should Be ([math]::Floor(128 + [math]::Max(0, [math]::Floor($free - 0 - 88 - $script:DiskMarginGB))))
+        }
+    }
 }

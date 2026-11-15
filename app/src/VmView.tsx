@@ -8,7 +8,7 @@ import {
   IconBolt, IconDeviceFloppy, IconLink, IconDownload, IconCheck, IconChartLine, IconArrowsMaximize, IconAppWindow, IconApps, IconClipboardText, IconScreenShare,
   IconWorld, IconNetwork, IconRectangle, IconWaveSine, IconPlayerTrackNext, IconChevronRight, IconDeviceGamepad2, IconPointer,
 } from "@tabler/icons-react";
-import type { AppInfo, CleanupLevelId, SharedDiskInfo, DisplayMode, HostInfo, MouseMode, Sample, StreamSettings, VmOverview } from "./types";
+import type { AppInfo, CleanupLevelId, DiskBudget, SharedDiskInfo, DisplayMode, HostInfo, MouseMode, Sample, StreamSettings, VmOverview } from "./types";
 import { usePrefs } from "./prefs";
 import { AppLogo, AppPicker, CleanupPicker, MonitorPicker, useMonitors, CODECS, FPS_OPTIONS, RESOLUTIONS, USES, streamUseOf, useCleanupLevels } from "./pickers";
 import { Bauhaus, patternClick, patternVariant, setPatternVariant } from "./bauhaus";
@@ -503,6 +503,33 @@ function GuestPassword({ vm, run }: { vm: VmOverview; run: Props["run"] }) {
   );
 }
 
+/** The drive as it would be with this disk at sizeGB and every VM disk full: this machine, what the other machines'
+ * disks can still take, and what would be left. Changes as the slider moves. */
+export function DiskRoom({ budget, sizeGB }: { budget: DiskBudget; sizeGB: number }) {
+  const used = budget.usedGB ?? 0;
+  const ownPromised = Math.max(0, sizeGB - used);
+  // What the drive has now, split: this VM's file, its unwritten part, the others' unwritten parts, what is left.
+  const total = used + budget.freeGB;
+  const left = Math.max(0, budget.freeGB - budget.promisedGB - ownPromised);
+  const pct = (gb: number) => `${Math.max(0, Math.min(100, (gb / Math.max(1, total)) * 100))}%`;
+  const others = budget.others.map((o) => o.vm).join(", ");
+  const gb = (n: number) => `${Math.round(n).toLocaleString("es")} GB`;
+  return (
+    <div className="disk-room">
+      <div className="disk-bar" role="img" aria-label={`En ${budget.drive} quedarían ${gb(left)} libres con todos los discos llenos`}>
+        <span className="seg own" style={{ width: pct(used) }} />
+        <span className="seg own-room" style={{ width: pct(ownPromised) }} />
+        <span className="seg others" style={{ width: pct(budget.promisedGB) }} />
+      </div>
+      <ul className="disk-legend">
+        <li><i className="own" />Esta máquina, {gb(used)} usados de {gb(sizeGB)}</li>
+        {budget.promisedGB > 0 && <li><i className="others" />Reservado para {others || "otras máquinas"}, {gb(budget.promisedGB)}</li>}
+        <li><i className="free" />Libre en {budget.drive} con todo lleno, {gb(left)}</li>
+      </ul>
+    </div>
+  );
+}
+
 function Options({ vm, host, busy, startJob, run }: Pick<Props, "vm" | "host" | "busy" | "startJob" | "run">) {
   const initial = {
     cpu: vm.options!.cpu, memoryGB: vm.options!.memoryGB, gpuPercent: vm.options!.gpuPercent, diskGB: vm.options!.diskGB,
@@ -527,8 +554,11 @@ function Options({ vm, host, busy, startJob, run }: Pick<Props, "vm" | "host" | 
 
   const maxCpu = Math.max(2, (host?.logicalProcessors ?? 12) - 1);
   const maxMem = Math.max(4, (host?.memoryGB ?? 16) - 4);
-  // A disk only grows; a fixed one needs that much free space on the host (keeping 10 GB for it).
-  const maxDisk = Math.max(initial.diskGB, Math.min(1024, initial.diskGB + (vm.options!.diskType === "Fixed" ? vm.options!.diskFreeGB - 10 : 1024)));
+  // A disk only grows, and never past what the drive can hold once every VM disk on it is full (the module checks
+  // the same limit). Without the budget (older module), the old rule.
+  const budget = vm.options!.diskBudget ?? null;
+  const maxDisk = budget ? Math.max(initial.diskGB, Math.floor(budget.maxGB / 8) * 8)
+    : Math.max(initial.diskGB, Math.min(1024, initial.diskGB + (vm.options!.diskType === "Fixed" ? vm.options!.diskFreeGB - 10 : 1024)));
   const vmDirty = draft.cpu !== initial.cpu || draft.memoryGB !== initial.memoryGB || draft.gpuPercent !== initial.gpuPercent || draft.diskGB !== initial.diskGB;
   const streamKeys = ["vsync", "framePacing", "mouse", "codec", "bitrateKbps"] as const;
   const streamChanges: StreamSettings = Object.fromEntries(streamKeys.filter((k) => draft[k] !== initial[k]).map((k) => [k, draft[k]]));
@@ -578,6 +608,7 @@ function Options({ vm, host, busy, startJob, run }: Pick<Props, "vm" | "host" | 
           {vm.options!.diskType === "Differencing" ? <span className="hint">Sobre una plantilla: mide lo mismo que ella</span> : maxDisk > initial.diskGB
             ? <Slider label="Disco" value={draft.diskGB} min={initial.diskGB} max={maxDisk} step={8} onChange={(diskGB) => setDraft({ ...draft, diskGB })} />
             : <span className="hint">Sin espacio libre en el equipo para ampliarlo</span>}
+          {budget && vm.options!.diskType !== "Differencing" && <DiskRoom budget={budget} sizeGB={draft.diskGB} />}
         </div>
         {vm.streaming && (
           <div className="field wide">

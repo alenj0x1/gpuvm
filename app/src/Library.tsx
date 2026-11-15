@@ -162,6 +162,7 @@ function ProfileEditor({ initial, host, apps, existing, onCancel, onSaved, notif
 
   const maxCpu = Math.max(2, (host?.logicalProcessors ?? 12) - 1);
   const maxMem = Math.max(4, Math.floor(host?.memoryGB ?? 16) - 4);
+  const diskMax = host?.disk ? Math.max(64, Math.floor(host.disk.availableGB / 16) * 16) : 1024;
   const bases = existing.filter((p) => p.BuiltIn);
 
   // Checked as you type; "Guardar perfil" stays disabled until the name is valid.
@@ -236,7 +237,9 @@ function ProfileEditor({ initial, host, apps, existing, onCancel, onSaved, notif
             </div>
             <div className="field">
               <div className="field-top"><span>Disco</span><strong>{s.diskGB} GB</strong></div>
-              <Slider label="Disco" value={s.diskGB} min={64} max={1024} step={16} onChange={(diskGB) => set({ diskGB })} />
+              {/* A new machine's disk can't be bigger than the room left once every VM disk is full. */}
+              <Slider label="Disco" value={Math.min(s.diskGB, diskMax)} min={64} max={diskMax} step={16} onChange={(diskGB) => set({ diskGB })} />
+              {host?.disk && <span className="hint">Para una máquina nueva quedan {host.disk.availableGB.toLocaleString("es")} GB en {host.disk.drive}, contando lo reservado para las demás</span>}
             </div>
             <div className="field">
               <div className="field-top"><span>Tipo de disco</span></div>
