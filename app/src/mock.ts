@@ -3,7 +3,8 @@ import catalog from "../../apps/catalog.json";
 
 // Sample data for designing in the browser (there is no Hyper-V outside the app).
 const params = new URLSearchParams(location.search);
-const scenario = params.get("mock") ?? "default";
+// ?vms=0 is the same as ?mock=empty: no machines and an empty Library.
+const scenario = params.get("vms") === "0" ? "empty" : params.get("mock") ?? "default";
 
 const vms: VmOverview[] = [
   {
