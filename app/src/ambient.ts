@@ -246,20 +246,26 @@ function figures(f: F, list: { id: string; x: number; z: number; rot: number; si
 const STUD = 0.25;
 /** A stud seen from above at this zoom and tilt: drawn once, then stamped all over the baseplate. */
 function studSprite(f: F, base: string, top: string, rim: string) {
-  const r = STUD * 0.29 * f.Sz, key = `${Math.round(r * 4)}|${Math.round(f.sp * 40)}|${base}|${f.dpr}`;
-  const st = f.st as { stud?: { key: string; c: HTMLCanvasElement; r: number } };
-  if (st.stud?.key === key) return st.stud;
-  const c = document.createElement("canvas"), pad = 2, h = r * f.cp * 0.8;
-  c.width = Math.ceil((r * 2 + pad * 2) * f.dpr); c.height = Math.ceil((r * 2 * f.sp + h + pad * 2) * f.dpr);
-  const x = c.getContext("2d")!;
-  x.scale(f.dpr, f.dpr);
-  const cx = r + pad, cyT = pad + r * f.sp, cyB = cyT + h;
-  // Side of the stud, then its top, then a small shine toward the light.
-  x.fillStyle = base; x.beginPath(); x.ellipse(cx, cyB, r, r * f.sp, 0, 0, TAU); x.fill(); x.fillRect(cx - r, cyT, r * 2, h);
-  x.fillStyle = top; x.beginPath(); x.ellipse(cx, cyT, r, r * f.sp, 0, 0, TAU); x.fill();
-  x.strokeStyle = rim; x.lineWidth = Math.max(0.6, r * 0.12); x.beginPath(); x.ellipse(cx, cyT, r * 0.98, r * f.sp * 0.98, 0, Math.PI * 1.05, Math.PI * 1.75); x.stroke();
-  st.stud = { key, c, r };
-  return st.stud;
+  // Drawn once at a fixed size for the camera's tilt (in coarse steps) and scaled to the zoom when stamped: a sprite
+  // rebuilt at every small change of zoom or tilt made the baseplate flicker while the camera moved.
+  const R0 = 24, tilt = Math.round(f.sp * 16) / 16, ct = Math.sqrt(Math.max(0, 1 - tilt * tilt));
+  const key = `${tilt}|${base}|${f.dpr}`, r = STUD * 0.29 * f.Sz, k = r / R0;
+  const st = f.st as { stud?: { key: string; c: HTMLCanvasElement; pad: number; cw: number; ch: number } };
+  if (st.stud?.key !== key) {
+    const c = document.createElement("canvas"), pad = 2, h = R0 * ct * 0.8, cw = R0 * 2 + pad * 2, ch = R0 * 2 * tilt + h + pad * 2;
+    c.width = Math.ceil(cw * f.dpr); c.height = Math.ceil(ch * f.dpr);
+    const x = c.getContext("2d")!;
+    x.scale(f.dpr, f.dpr);
+    const cx = R0 + pad, cyT = pad + R0 * tilt, cyB = cyT + h;
+    // Side of the stud, then its top, then a small shine toward the light.
+    x.fillStyle = base; x.beginPath(); x.ellipse(cx, cyB, R0, R0 * tilt, 0, 0, TAU); x.fill(); x.fillRect(cx - R0, cyT, R0 * 2, h);
+    x.fillStyle = top; x.beginPath(); x.ellipse(cx, cyT, R0, R0 * tilt, 0, 0, TAU); x.fill();
+    x.strokeStyle = rim; x.lineWidth = R0 * 0.12; x.beginPath(); x.ellipse(cx, cyT, R0 * 0.98, R0 * tilt * 0.98, 0, Math.PI * 1.05, Math.PI * 1.75); x.stroke();
+    st.stud = { key, c, pad, cw, ch };
+  }
+  const sd = st.stud!;
+  // Where to stamp it: its size at this zoom, and how far above the stud's center its top-left corner is.
+  return { key, c: sd.c, r, w: sd.cw * k, h: sd.ch * k, up: (sd.pad + R0 * tilt) * k };
 }
 
 /** The paths of smooth tiles: a ring around the machines and roads that leave it. */
@@ -373,14 +379,14 @@ function drawBlocks(f: F) {
   if (sp.r >= 1.2) {
     const s0 = Math.floor(box.x0 / STUD), s1 = Math.ceil(box.x1 / STUD), t0 = Math.floor(box.z0 / STUD), t1 = Math.ceil(box.z1 / STUD);
     if ((s1 - s0) * (t1 - t0) < 90000) {
-      const w = sp.c.width / f.dpr, h = sp.c.height / f.dpr;
+      const w = sp.w, h = sp.h;
       for (let i = s0; i <= s1; i++) for (let j = t0; j <= t1; j++) {
         const x = (i + 0.5) * STUD, z = (j + 0.5) * STUD;
         if (onPath(x, z) || onWater(x, z)) continue;
         const p = proj(f, x, FLOOR, z);
         if (p[1] < f.hz - 2 || p[1] > f.H + h || p[0] < -w || p[0] > f.W + w) continue;
         alphaOf(f, clear(f, p[1]));
-        g.drawImage(sp.c, p[0] - w / 2, p[1] - sp.r * f.sp - 2, w, h);
+        g.drawImage(sp.c, p[0] - w / 2, p[1] - sp.up, w, h);
       }
     }
   }
@@ -421,17 +427,17 @@ function drawBlocks(f: F) {
     if (!b.studs || sp.r < 1.6) return;
     const nx = Math.max(1, Math.round(b.w / STUD)), nz = Math.max(1, Math.round(b.d / STUD)), r = b.rot ?? 0, co = Math.cos(r), si = Math.sin(r);
     if (nx * nz > 30) return;
-    const top = b.y + b.h, w = sp.c.width / f.dpr, h = sp.c.height / f.dpr, sc = Math.min(1, b.w / STUD, b.d / STUD);
+    const top = b.y + b.h, w = sp.w, h = sp.h, sc = Math.min(1, b.w / STUD, b.d / STUD);
     for (let u = 0; u < nx; u++) for (let v = 0; v < nz; v++) {
       const lx = (u + 0.5) * (b.w / nx) - b.w / 2, lz = (v + 0.5) * (b.d / nz) - b.d / 2;
       const p = proj(f, b.x + lx * co - lz * si, top, b.z + lx * si + lz * co);
       alphaOf(f, k);
-      g.drawImage(studTint(b.color), p[0] - (w * sc) / 2, p[1] - sp.r * f.sp * sc - 2 * sc, w * sc, h * sc);
+      g.drawImage(studTint(b.color), p[0] - (w * sc) / 2, p[1] - sp.up * sc, w * sc, h * sc);
     }
   };
   // Studs on top of a brick take its color.
   const tints = (f.st._tints ??= new Map<string, HTMLCanvasElement>()) as Map<string, HTMLCanvasElement>;
-  if ((f.st._tintKey as string) !== sp.c.width + "|" + sp.c.height) { tints.clear(); f.st._tintKey = sp.c.width + "|" + sp.c.height; }
+  if ((f.st._tintKey as string) !== sp.key) { tints.clear(); f.st._tintKey = sp.key; }
   const studTint = (color: string) => {
     let c = tints.get(color);
     if (!c) {

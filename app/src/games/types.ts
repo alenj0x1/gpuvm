@@ -41,6 +41,8 @@ export interface GameInstance {
   pause: () => void;
   resume: () => void;
   stop: () => void;
+  /** Changes who plays (and the mode) without starting over: the ones leaving fly off and the new ones fly in. */
+  cast?: (c: { player: GameMachine; team: GameMachine[]; mode: string }) => void;
 }
 
 /** One action of a game and what does it: keys (as written on them) and/or a mouse button. */

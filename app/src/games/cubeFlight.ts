@@ -73,12 +73,14 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     drawFigureThumb(c.getContext("2d")!, id, s, 0.7, color, dpr);
     return c;
   });
-  const figures = spritesFor(host.player.figures, host.player.color);
+  let figures = spritesFor(host.player.figures, host.player.color);
+  // Machines leaving the scene (after a change of machine or mode): they fly off to the left and are gone.
+  let leaving: { x: number; y: number; vx: number; vy: number; color: string; img: HTMLCanvasElement; s: number }[] = [];
   const zoneFigs = spritesFor(ZONE_FIGURES, host.color);
   const demo = !!host.demo, zoneSecs = demo ? 7 : ZONE_SECS, firstZone = WORLD_ZONE[host.world ?? "studio"] ?? 0;
   /** The zone at a moment of the flight: the space's own world first, then the others in turn. */
   const zoneAt = (time: number) => (firstZone + Math.floor(time / zoneSecs)) % ZONES.length;
-  const team = host.mode === "team";
+  let team = host.mode === "team";
   // Your other machines, flying beside you: each aims at the nearest thing and shoots its own figures.
   const SLOTS = [[-46, -58], [-46, 58], [-92, 0]];
   const bots = host.team.slice(0, 3).map((m, i) => ({ ...m, sprites: spritesFor(m.figures, m.color), x: 0, y: 0, slot: SLOTS[i], cool: 0.3 * i, n: 0 }));
@@ -489,6 +491,12 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
       cube(b.x, b.y, 12, b.color, 0.9, 0.6 + Math.sin(t * 2 + b.slot[1]) * 0.15);
       g.drawImage(b.sprites[0], b.x - 11, b.y - 30, 22, 22);
     }
+    for (const l of leaving) {
+      l.x += l.vx * dt; l.y += l.vy * dt; l.vx *= 1.04;
+      cube(l.x, l.y, l.s, l.color, 0.9, 0.6);
+      g.drawImage(l.img, l.x - l.s * 0.9, l.y - l.s * 2.4, l.s * 1.8, l.s * 1.8);
+    }
+    leaving = leaving.filter((l) => l.x > -120);
     if (!over) {
       const flicker = me.hurt > 0 && Math.floor(t * 14) % 2 === 0;
       if (!flicker) {
@@ -572,6 +580,30 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
   document.addEventListener("visibilitychange", onHidden);
 
   return {
+    cast: ({ player, team: mates, mode }) => {
+      // The machine that was playing flies off to the left and the new one comes in from there.
+      if (player.name !== host.player.name || player.color !== host.color) {
+        leaving.push({ x: me.x, y: me.y, vx: -260, vy: -40, color: host.color, img: figures[0], s: 17 });
+        host.player = player; host.color = player.color; host.figures = player.figures;
+        figures = spritesFor(player.figures, player.color);
+        me.x = -40; me.vx = 0;
+      }
+      // Team mates who are no longer in the team leave; the new ones fly in to their place beside the machine.
+      const names = mates.slice(0, 3).map((m) => m.name);
+      for (let i = bots.length - 1; i >= 0; i--) {
+        const b = bots[i] as (typeof bots)[number] & { temp?: boolean };
+        if (b.temp || names.includes(b.name)) continue;
+        leaving.push({ x: b.x, y: b.y, vx: -260, vy: (b.slot[1] > 0 ? 1 : -1) * 60, color: b.color, img: b.sprites[0], s: 12 });
+        bots.splice(i, 1);
+      }
+      mates.slice(0, 3).forEach((m, i) => {
+        const had = bots.find((b) => b.name === m.name);
+        if (had) { had.slot = SLOTS[i]; return; }
+        bots.push({ ...m, sprites: spritesFor(m.figures, m.color), x: -60 - i * 30, y: me.y + SLOTS[i][1], slot: SLOTS[i], cool: 0.3 * i, n: 0 });
+      });
+      team = mode === "team";
+      host.mode = mode; host.team = mates;
+    },
     start: () => { reset(); running = true; host.onHud({ score: 0, lives: 3, meter: 0, ability: { name: ABILITIES.pulse.name, charge: 0 }, zone: ZONES[firstZone] }); kick(); },
     pause: () => { running = false; keys.clear(); letGo(); cancelAnimationFrame(frame); draw(0); },
     resume: () => { if (!over) { running = true; kick(); } },

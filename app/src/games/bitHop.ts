@@ -95,7 +95,11 @@ function column(g: CanvasRenderingContext2D, x: number, cw: number, y0: number, 
 
 function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
   const g = canvas.getContext("2d")!;
-  const world = (["studio", "board", "blocks"].includes(host.mode) ? host.mode : "studio") as World, demo = !!host.demo;
+  let world = (["studio", "board", "blocks"].includes(host.mode) ? host.mode : "studio") as World;
+  const demo = !!host.demo;
+  // A change of world fades the new one in over the last; a change of machine sends the old one up and away.
+  let prevWorld: World | null = null, fade = 1;
+  let leaving: { x: number; y: number; vx: number; vy: number; color: string }[] = [];
   let W = 0, H = 0, dpr = 1;
   const resize = () => { dpr = Math.min(2, window.devicePixelRatio || 1); W = canvas.clientWidth; H = canvas.clientHeight; canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); };
   resize();
@@ -103,8 +107,8 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
   ro.observe(canvas);
   // The machine's first figure rides on it.
   const sprite = document.createElement("canvas");
-  sprite.width = sprite.height = 64 * dpr;
-  drawFigureThumb(sprite.getContext("2d")!, host.player.figures[0] ?? "duck", 64, 0.7, host.player.color, dpr);
+  const paint = () => { sprite.width = sprite.height = 64 * dpr; drawFigureThumb(sprite.getContext("2d")!, host.player.figures[0] ?? "duck", 64, 0.7, host.player.color, dpr); };
+  paint();
 
   const me = { x: 0, y: 0, vy: 0 };
   let cols: Column[] = [], sparks: Spark[] = [], score = 0, scroll = 0, t = 0, waiting = true, running = false, over = false, frame = 0, last = 0, hudAt = 0, nextAt = 0;
@@ -152,7 +156,10 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
   };
   const draw = (dt: number) => {
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    fade = Math.min(1, fade + dt / 0.7);
+    if (prevWorld && fade < 1) { background(g, W, H, prevWorld, scroll, host.light, t); g.globalAlpha = fade * fade * (3 - 2 * fade); }
     background(g, W, H, world, scroll, host.light, t);
+    g.globalAlpha = 1;
     const cw = 64 * unit();
     for (const c of cols) {
       column(g, c.x, cw, -10, c.gapY - c.gap / 2, c.gapY - c.gap / 2, world, host.light, c.seed);
@@ -164,6 +171,8 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
       cube(g, me.x, me.y, 15 * unit(), host.player.color, tilt);
       g.save(); g.translate(me.x, me.y); g.rotate(tilt); g.drawImage(sprite, -14 * unit(), -46 * unit(), 28 * unit(), 28 * unit()); g.restore();
     }
+    for (const l of leaving) { l.x += l.vx * dt; l.y += l.vy * dt; l.vy -= 300 * dt; cube(g, l.x, l.y, 15 * unit(), l.color, -0.4); }
+    leaving = leaving.filter((l) => l.y > -60 && l.x < W + 60);
     for (const s of sparks) { s.x += s.vx * dt; s.y += s.vy * dt; s.vy += 400 * dt; s.life -= dt; g.globalAlpha = Math.max(0, Math.min(1, s.life * 2)); g.fillStyle = s.color; g.fillRect(s.x - s.size / 2, s.y - s.size / 2, s.size, s.size); }
     g.globalAlpha = 1;
     sparks = sparks.filter((s) => s.life > 0);
@@ -181,6 +190,16 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
   const onDown = (e: PointerEvent) => { if (e.button === 0) flap(); };
   if (!demo) { canvas.addEventListener("pointerdown", onDown); window.addEventListener("keydown", onKey); }
   return {
+    cast: ({ player, mode }) => {
+      if (player.name !== host.player.name || player.color !== host.player.color) {
+        leaving.push({ x: me.x, y: me.y, vx: 120, vy: -200, color: host.player.color });
+        host.player = player; host.color = player.color; host.figures = player.figures;
+        paint();
+        me.y = -20; me.vy = 0;
+      }
+      const w = (["studio", "board", "blocks"].includes(mode) ? mode : world) as World;
+      if (w !== world) { prevWorld = world; world = w; fade = 0; }
+    },
     start: () => { reset(); running = true; host.onHud({ score: 0, lives: 1 }); kick(); },
     pause: () => { running = false; cancelAnimationFrame(frame); draw(0); },
     resume: () => { if (!over) { running = true; kick(); } },

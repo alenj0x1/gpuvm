@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { IconDeviceGamepad2, IconHeart, IconPlayerPause, IconPlayerPlay, IconRefresh, IconTrophy, IconX } from "@tabler/icons-react";
 import { GAMES, bestScore, saveBest, type GameDef, type GameHud, type GameInstance, type GameMachine } from "./games";
-import { IconBolt, IconUser, IconUsersGroup } from "@tabler/icons-react";
+import { IconArrowLeft, IconBolt, IconUser, IconUsersGroup } from "@tabler/icons-react";
 import { ambientInfo } from "./ambient";
 import type { Control } from "./games/types";
 import { colorOfDecor, readDecor, useDecor, type Decor } from "./decor/store";
@@ -102,7 +102,7 @@ function GameStage({ game, machines, first, fallback, world, onClose }: {
         <div className="game-start">
           {/* The game itself, playing on its own with the machine and the mode picked beside it. */}
           <div className="game-start-preview">
-            <GameDemo key={`${player}|${mode}`} game={game} player={player} fallback={fallback} world={world} mode={mode}
+            <GameDemo game={game} player={player} fallback={fallback} world={world} mode={mode}
               team={modeInfo?.team ? machines.filter((n) => n !== player).slice(0, 3) : []} />
             {best > 0 && <span className="game-start-record"><IconTrophy size={14} />Récord {best.toLocaleString("es")}</span>}
           </div>
@@ -149,7 +149,7 @@ function GameStage({ game, machines, first, fallback, world, onClose }: {
             </div>
             {game.tips && <ul className="game-tips">{game.tips.map((t) => <li key={t}>{t}</li>)}</ul>}
             <div className="game-start-actions">
-              <button type="button" className="btn ghost" onClick={onClose}>Salir</button>
+              <button type="button" className="btn ghost" onClick={onClose}><IconArrowLeft size={16} />Atrás</button>
               <button type="button" className="primary" disabled={!!modeInfo?.team && !teamReady} onClick={play}><IconPlayerPlay size={16} />Jugar</button>
             </div>
           </div>
@@ -214,6 +214,22 @@ export function SpaceWithGames({ decor: shown, decorOf, machines = [], world, ch
 /** One game playing by itself on its card: the real game, in a demo, with the machine in front. */
 function GameDemo({ game, player, fallback, world, mode: pickedMode, team = [] }: { game: GameDef; player?: string; fallback: Decor; world?: string; mode?: string; team?: string[] }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const inst = useRef<GameInstance | null>(null);
+  const cast = () => {
+    const cv = ref.current;
+    if (!cv) return null;
+    const light = document.documentElement.dataset.theme === "light";
+    const accent = getComputedStyle(cv).getPropertyValue("--accent").trim() || "#7d9cf0";
+    const me = player ? asPlayer(player, readDecor(player), light, accent) : asPlayer("", fallback, light, accent);
+    const mode = pickedMode ?? game.modes?.find((m) => m.id === world)?.id ?? (game.modes?.some((m) => m.team) ? "solo" : game.modes?.[0]?.id ?? "");
+    return { me, mates: team.map((n) => asPlayer(n, readDecor(n), light, accent)), mode, light };
+  };
+  // Another machine or mode: the running demo changes who plays, with the ones leaving flying off (no restart).
+  const castKey = `${player}|${pickedMode}|${team.join("|")}`;
+  useEffect(() => {
+    const c = cast();
+    if (c && inst.current?.cast) inst.current.cast({ player: c.me, team: c.mates, mode: c.mode });
+  }, [castKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const cv = ref.current;
     if (!cv) return;
@@ -222,10 +238,11 @@ function GameDemo({ game, player, fallback, world, mode: pickedMode, team = [] }
     const me = player ? asPlayer(player, readDecor(player), light, accent) : asPlayer("", fallback, light, accent);
     const mode = pickedMode ?? game.modes?.find((m) => m.id === world)?.id ?? (game.modes?.some((m) => m.team) ? "solo" : game.modes?.[0]?.id ?? "");
     const mates = team.map((n) => asPlayer(n, readDecor(n), light, accent));
-    const inst = game.create(cv, { player: me, team: mates, mode, light, color: me.color, figures: me.figures, world, demo: true, onHud: () => {}, onOver: () => {} });
-    inst.start();
-    return () => inst.stop();
-  }, [game, player, fallback, world, pickedMode, team.join("|")]); // eslint-disable-line react-hooks/exhaustive-deps
+    const run = game.create(cv, { player: me, team: mates, mode, light, color: me.color, figures: me.figures, world, demo: true, onHud: () => {}, onOver: () => {} });
+    inst.current = run;
+    run.start();
+    return () => { run.stop(); inst.current = null; };
+  }, [game, world]); // eslint-disable-line react-hooks/exhaustive-deps
   return <canvas ref={ref} />;
 }
 
