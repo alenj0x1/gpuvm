@@ -8,6 +8,10 @@ export interface GameHud {
   power?: string;
   /** A meter that fills (0 to 1) and what happens when it is full, if the game has one. */
   meter?: number; frenzy?: boolean;
+  /** The ability on the right button: its name, how charged it is (0 to 1) and, while it runs, how much is left. */
+  ability?: { name: string; charge: number; active?: number };
+  /** The zone the game is in, when it has several (shown when it changes). */
+  zone?: string;
 }
 
 /** A machine as a game draws it: its color and the figures it carries. */
@@ -45,6 +49,8 @@ export interface GameDef {
   /** Ways to play it, picked on the start card; `team` modes bring your other machines along. */
   modes?: { id: string; name: string; description: string; team?: boolean }[];
   create: (canvas: HTMLCanvasElement, host: GameHost) => GameInstance;
+  /** The game's own art for its card in the gallery, drawn every frame while the gallery is open (no text). */
+  cover: (g: CanvasRenderingContext2D, w: number, h: number, t: number, light: boolean, accent: string) => void;
 }
 
 const BEST = "gpuvm.games.best.";

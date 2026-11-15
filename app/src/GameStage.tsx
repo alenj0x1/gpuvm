@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { IconDeviceGamepad2, IconHeart, IconPlayerPause, IconPlayerPlay, IconRefresh, IconTrophy, IconX } from "@tabler/icons-react";
 import { GAMES, bestScore, saveBest, type GameDef, type GameHud, type GameInstance, type GameMachine } from "./games";
+import { IconBolt } from "@tabler/icons-react";
 import { colorOfDecor, readDecor, useDecor, type Decor } from "./decor/store";
 import { MachineIcon } from "./machineIcon";
 import { Segmented } from "./ui";
@@ -83,6 +84,13 @@ function GameStage({ game, machines, first, fallback, onClose }: {
             <span className={`game-meter${hud.frenzy ? " on" : ""}`} title="Frenesí"><span style={{ width: `${Math.round(hud.meter * 100)}%` }} /></span>
           )}
           {hud.power && <span className="game-power">{hud.power}</span>}
+          {hud.ability && (
+            <span className={`game-ability${hud.ability.charge >= 1 && hud.ability.active === undefined ? " ready" : ""}${hud.ability.active !== undefined ? " on" : ""}`}
+              title={hud.ability.charge >= 1 ? "Clic derecho o E para usarla" : "Se carga al disparar y derribar"}>
+              <IconBolt size={13} />{hud.ability.name}
+              <span className="game-ability-bar"><span style={{ width: `${Math.round((hud.ability.active ?? hud.ability.charge) * 100)}%` }} /></span>
+            </span>
+          )}
           <span className="grow" />
           {phase === "playing" && <button type="button" className="icon-btn" title="Pausa" aria-label="Pausa" onClick={() => { inst.current?.pause(); setPhase("paused"); }}><IconPlayerPause size={16} /></button>}
           <button type="button" className="icon-btn" title="Salir" aria-label="Salir del juego" onClick={onClose}><IconX size={16} /></button>
@@ -158,23 +166,71 @@ export function SpaceWithGames({ decor: shown, decorOf, machines = [], children 
   const own = useDecor(decorOf ?? "");
   const fallback = shown ?? own;
   const [game, setGame] = useState<GameDef | null>(null);
-  const [menu, setMenu] = useState(false);
-  if (game) return <GameStage game={game} machines={machines} first={decorOf} fallback={fallback} onClose={() => setGame(null)} />;
+  const [gallery, setGallery] = useState(false);
+  if (game) return <GameStage game={game} machines={machines} first={decorOf} fallback={fallback} onClose={() => { setGame(null); setGallery(true); }} />;
   return (
     <>
       {children}
-      <div className="space-games">
-        <button type="button" className="btn space-play" onClick={() => (GAMES.length > 1 ? setMenu((m) => !m) : setGame(GAMES[0]))}>
-          <IconDeviceGamepad2 size={16} />Jugar
-        </button>
-        {menu && (
-          <div className="menu space-games-menu" role="menu">
-            {GAMES.map((gd) => (
-              <button key={gd.id} role="menuitem" onClick={() => { setMenu(false); setGame(gd); }}><IconDeviceGamepad2 size={16} />{gd.name}</button>
-            ))}
-          </div>
-        )}
-      </div>
+      {gallery && <GameGallery onPick={(gd) => { setGallery(false); setGame(gd); }} onClose={() => setGallery(false)} />}
+      {!gallery && (
+        <div className="space-games">
+          <button type="button" className="btn space-play" onClick={() => setGallery(true)}><IconDeviceGamepad2 size={16} />Jugar</button>
+        </div>
+      )}
     </>
+  );
+}
+
+/** The games, each on a card with its own art (moving) and its best score, to pick one. */
+function GameGallery({ onPick, onClose }: { onPick: (g: GameDef) => void; onClose: () => void }) {
+  const refs = useRef<(HTMLCanvasElement | null)[]>([]);
+  useEffect(() => {
+    let frame = 0;
+    const t0 = performance.now();
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", key);
+    const loop = (now: number) => {
+      const light = document.documentElement.dataset.theme === "light";
+      refs.current.forEach((cv, i) => {
+        if (!cv) return;
+        const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+        if (!w || !h) return;
+        if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+        const g = cv.getContext("2d")!;
+        g.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const accent = getComputedStyle(cv).getPropertyValue("--accent").trim() || "#7d9cf0";
+        GAMES[i].cover(g, w, h, (now - t0) / 1000, light, accent);
+      });
+      frame = requestAnimationFrame(loop);
+    };
+    frame = requestAnimationFrame(loop);
+    return () => { cancelAnimationFrame(frame); window.removeEventListener("keydown", key); };
+  }, [onClose]);
+  return (
+    <div className="game-gallery">
+      <div className="game-gallery-head">
+        <IconDeviceGamepad2 size={18} /><strong>Juegos</strong>
+        <button type="button" className="icon-btn" aria-label="Cerrar" title="Cerrar" onClick={onClose}><IconX size={16} /></button>
+      </div>
+      <div className="game-gallery-grid">
+        {GAMES.map((gd, i) => {
+          const best = Math.max(bestScore(gd.id), ...(gd.modes ?? []).map((m) => bestScore(`${gd.id}.${m.id}`)));
+          return (
+            <div key={gd.id} className="game-tile">
+              <button type="button" className="game-tile-art" aria-label={`Jugar ${gd.name}`} onClick={() => onPick(gd)}>
+                <canvas ref={(el) => { refs.current[i] = el; }} />
+              </button>
+              <div className="game-tile-row">
+                <div className="game-tile-text">
+                  <strong>{gd.name}</strong>
+                  <span>{best > 0 ? <><IconTrophy size={13} />Récord {best.toLocaleString("es")}</> : "Sin récord todavía"}</span>
+                </div>
+                <button type="button" className="primary compact" onClick={() => onPick(gd)}><IconPlayerPlay size={15} />Jugar</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }

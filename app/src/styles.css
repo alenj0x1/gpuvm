@@ -1185,3 +1185,35 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .space-bar[data-over="0"] .segmented button:nth-of-type(1), .space-bar[data-over="1"] .segmented button:nth-of-type(2), .space-bar[data-over="2"] .segmented button:nth-of-type(3),
 .space-bar[data-over="3"] .segmented button:nth-of-type(4), .space-bar[data-over="4"] .segmented button:nth-of-type(5), .space-bar[data-over="5"] .segmented button:nth-of-type(6),
 .space-bar[data-over="6"] .segmented button:nth-of-type(7), .space-bar[data-over="7"] .segmented button:nth-of-type(8) { background: var(--sel); color: var(--text); }
+/* A group of options measures what its options do, never the whole width of its field */
+.field > .segmented { align-self: flex-start; max-width: 100%; }
+/* Folding the sidebar closes the room of the group names too, so the machines slide up together */
+.side-label { max-height: 40px; overflow: hidden; transition: opacity 0.16s, max-height 0.24s cubic-bezier(0.3, 0.8, 0.3, 1), padding 0.24s cubic-bezier(0.3, 0.8, 0.3, 1); }
+.app.collapsed .side-label { max-height: 0; padding-top: 0; padding-bottom: 0; }
+.app.collapsed .side-group + .side-group { margin-top: 0; }
+.side-group + .side-group { transition: margin 0.24s cubic-bezier(0.3, 0.8, 0.3, 1); }
+
+/* The games gallery, over the space: a card per game with its own art and its record */
+.game-gallery { position: absolute; inset: 12px; z-index: 4; display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: var(--r-lg); background: var(--surface); box-shadow: 0 0 0 1px var(--line); overflow: auto; }
+.game-gallery-head { display: flex; align-items: center; gap: 8px; }
+.game-gallery-head .icon-btn { margin-left: auto; }
+.game-gallery-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px; align-content: start; }
+.game-tile { border-radius: var(--r); overflow: hidden; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); display: flex; flex-direction: column; }
+.game-tile-art { display: block; padding: 0; aspect-ratio: 16 / 9; width: 100%; }
+.game-tile-art canvas { display: block; width: 100%; height: 100%; }
+.game-tile-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+.game-tile-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.game-tile-text strong { font-weight: 600; }
+.game-tile-text span { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }
+/* The ability on the right button, in the game's bar: its name and its charge */
+.game-ability { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); padding: 3px 8px; border-radius: 999px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
+.game-ability-bar { width: 54px; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.game-ability-bar span { display: block; height: 100%; background: color-mix(in srgb, var(--accent) 70%, transparent); transition: width 0.12s linear; }
+.game-ability.ready { color: var(--text); }
+.game-ability.ready .game-ability-bar span { background: var(--accent); }
+.game-ability.on .game-ability-bar span { background: var(--accent); }
+/* Folded, the list keeps one even step between every row: empty spaces take no room and the hidden names none either */
+.app.collapsed .side-group:not(:has(.side-item)) { display: none; }
+.app.collapsed .side-label { margin-bottom: -2px; }
+.app.collapsed .side-add { margin-top: 0; }
+.home-space:has(.game-stage) .space-bar, .home-space:has(.game-gallery) .space-bar { display: none; }
