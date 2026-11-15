@@ -1,28 +1,28 @@
 import { useEffect, useRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
-  IconActivity, IconAd, IconBolt, IconBrandWindows, IconEyeOff, IconTrash, IconBrandBing, IconBrandOnedrive, IconBrandTeams, IconBug, IconCards, IconHistory, IconLayoutDashboard, IconMap,
+  IconActivity, IconAd, IconCheck, IconPointFilled, IconBolt, IconBrandWindows, IconEyeOff, IconTrash, IconBrandBing, IconBrandOnedrive, IconBrandTeams, IconBug, IconCards, IconHistory, IconLayoutDashboard, IconMap,
   IconMovie, IconNews, IconPlayerPlay, IconPuzzle, IconSparkles, IconSpeakerphone, type Icon,
 } from "@tabler/icons-react";
 
 /** How each cleanup item looks: an icon and a color, a short name and one line that says what it is. Several pieces
  *  can stand for one item (the preinstalled apps). Items the UI doesn't know yet get a neutral piece. */
-export const CLEANUP_LOOK: Record<string, { pieces: { icon: Icon; color: string }[]; name: string; line: string }> = {
-  "telemetry-minimum": { pieces: [{ icon: IconActivity, color: "#c2410c" }], name: "Datos de diagnóstico", line: "Lo que Windows envía a Microsoft" },
-  advertising: { pieces: [{ icon: IconAd, color: "#b45309" }], name: "ID de publicidad", line: "Anuncios hechos con tus datos" },
-  "activity-history": { pieces: [{ icon: IconHistory, color: "#c2410c" }], name: "Historial de actividad", line: "Lo que haces, enviado a la nube" },
-  suggestions: { pieces: [{ icon: IconSpeakerphone, color: "#be185d" }], name: "Apps promocionadas", line: "Sugerencias y apps que se instalan solas" },
-  "web-search": { pieces: [{ icon: IconBrandBing, color: "#0e7490" }], name: "Bing en Inicio", line: "Tus búsquedas del equipo, a la web" },
-  "copilot-recall": { pieces: [{ icon: IconSparkles, color: "#7c3aed" }], name: "Copilot y Recall", line: "Asistente y capturas de pantalla con IA" },
+export const CLEANUP_LOOK: Record<string, { pieces: { icon: Icon; color: string }[]; name: string; line: string; done: string }> = {
+  "telemetry-minimum": { pieces: [{ icon: IconActivity, color: "#c2410c" }], name: "Datos de diagnóstico", line: "Windows envía datos de uso a Microsoft", done: "Windows envía lo mínimo a Microsoft" },
+  advertising: { pieces: [{ icon: IconAd, color: "#b45309" }], name: "ID de publicidad", line: "Anuncios hechos con tus datos", done: "Sin anuncios hechos con tus datos" },
+  "activity-history": { pieces: [{ icon: IconHistory, color: "#c2410c" }], name: "Historial de actividad", line: "Tu actividad se envía a la nube", done: "Tu actividad se queda en la máquina" },
+  suggestions: { pieces: [{ icon: IconSpeakerphone, color: "#be185d" }], name: "Apps promocionadas", line: "Sugerencias y apps que se instalan solas", done: "Sin sugerencias ni apps que se instalen solas" },
+  "web-search": { pieces: [{ icon: IconBrandBing, color: "#0e7490" }], name: "Bing en Inicio", line: "Tus búsquedas del equipo van a la web", done: "Tus búsquedas se quedan en el equipo" },
+  "copilot-recall": { pieces: [{ icon: IconSparkles, color: "#7c3aed" }], name: "Copilot y Recall", line: "Asistente y capturas de pantalla con IA", done: "Sin asistente ni capturas de pantalla" },
   "store-apps": {
     pieces: [{ icon: IconNews, color: "#dc2626" }, { icon: IconCards, color: "#15803d" }, { icon: IconMovie, color: "#7e22ce" }, { icon: IconBrandTeams, color: "#4f46e5" }],
-    name: "Apps preinstaladas", line: "Noticias, Clima, Solitario, Clipchamp, Teams…",
+    name: "Apps preinstaladas", line: "Noticias, Clima, Solitario, Clipchamp, Teams…", done: "Windows llega sin apps preinstaladas",
   },
-  onedrive: { pieces: [{ icon: IconBrandOnedrive, color: "#1d4ed8" }], name: "OneDrive", line: "Se instala y se vuelve a instalar solo" },
-  widgets: { pieces: [{ icon: IconLayoutDashboard, color: "#0369a1" }], name: "Widgets", line: "Noticias e intereses en la barra de tareas" },
-  "telemetry-services": { pieces: [{ icon: IconBug, color: "#c2410c" }], name: "Envío de errores", line: "Servicios que reportan a Microsoft" },
-  "unneeded-services": { pieces: [{ icon: IconMap, color: "#475569" }], name: "Servicios sin uso", line: "Mapas, ubicación, fax, modo demo" },
-  "background-apps": { pieces: [{ icon: IconPlayerPlay, color: "#475569" }], name: "Apps de fondo", line: "Apps de la Store corriendo siempre" },
+  onedrive: { pieces: [{ icon: IconBrandOnedrive, color: "#1d4ed8" }], name: "OneDrive", line: "Se instala y se vuelve a instalar solo", done: "Quitado, no vuelve a instalarse" },
+  widgets: { pieces: [{ icon: IconLayoutDashboard, color: "#0369a1" }], name: "Widgets", line: "Noticias e intereses en la barra de tareas", done: "La barra de tareas queda limpia" },
+  "telemetry-services": { pieces: [{ icon: IconBug, color: "#c2410c" }], name: "Envío de errores", line: "Servicios que reportan a Microsoft", done: "Los errores no se reportan a Microsoft" },
+  "unneeded-services": { pieces: [{ icon: IconMap, color: "#475569" }], name: "Servicios sin uso", line: "Mapas, ubicación, fax, modo demo", done: "Mapas, ubicación, fax y modo demo apagados" },
+  "background-apps": { pieces: [{ icon: IconPlayerPlay, color: "#475569" }], name: "Apps de fondo", line: "Apps de la Store corriendo siempre", done: "Las apps de la Store solo corren al abrirlas" },
 };
 const UNKNOWN = { icon: IconPuzzle, color: "#525252" };
 
@@ -94,15 +94,19 @@ export function CleanupFlow({ items, removed }: { items: string[]; removed: Set<
         // Only the app's own colors: pieces in its dark gray, their icons in the accent.
         const accent = css.getPropertyValue("--accent").trim() || "#7d9cf0";
         const pieceBg = css.getPropertyValue("--pick-bg").trim() || "#262626";
-        const cx = w / 2, cy = h / 2, s = 22, gap = 3, core = 48;
+        // Three lanes per side, each lined up with a row or column of Windows in the middle, so no lane crosses another.
+        const cx = w / 2, cy = h / 2, s = 22, gap = 3, core = 3 * s + 2 * gap;
         const lanes: [string, number][] = [];
-        for (let i = -2; i <= 2; i++) { lanes.push(["L", cy + i * (s + gap) - s / 2]); lanes.push(["R", cy + i * (s + gap) - s / 2]); }
-        for (let i = -1; i <= 1; i++) { lanes.push(["T", cx + i * (s + gap) - s / 2]); lanes.push(["B", cx + i * (s + gap) - s / 2]); }
+        for (let i = -1; i <= 1; i++) for (const side of ["L", "R", "T", "B"]) lanes.push([side, (side === "L" || side === "R" ? cy : cx) + i * (s + gap) - s / 2]);
         lanes.forEach(([side, pos], li) => {
-          const len = (side === "L" || side === "R" ? cx : cy) - core / 2 - 4;
+          const len = (side === "L" || side === "R" ? cx : cy) - core / 2 - gap;
           const speed = 16 + (li % 4) * 4;
-          for (let k = 0; k < 14; k++) {
-            const travelled = (t * speed + k * (s + gap)) % (len + s);
+          // As many pieces as fit the lane, evenly spaced around one loop: a short lane (top and bottom) never
+          // wraps two pieces onto the same spot.
+          const count = Math.max(1, Math.floor((len + s) / (s + gap)));
+          const loop = count * (s + gap);
+          for (let k = 0; k < count; k++) {
+            const travelled = (t * speed + k * (s + gap)) % loop;
             const progress = travelled / len;
             if (progress > 1) continue;
             const v = noise(li, k);
@@ -130,7 +134,7 @@ export function CleanupFlow({ items, removed }: { items: string[]; removed: Set<
         // Windows in the middle: the four squares of its logo.
         g.globalAlpha = 1;
         g.beginPath();
-        g.roundRect(cx - core / 2, cy - core / 2, core, core, 11);
+        g.roundRect(cx - core / 2, cy - core / 2, core, core, 14);
         g.fillStyle = surface;
         g.fill();
         g.strokeStyle = ink;
@@ -138,7 +142,7 @@ export function CleanupFlow({ items, removed }: { items: string[]; removed: Set<
         g.stroke();
         g.globalAlpha = 1;
         g.fillStyle = accent;
-        for (const [a, b] of [[-12, -12], [2, -12], [-12, 2], [2, 2]]) { g.beginPath(); g.roundRect(cx + a, cy + b, 10, 10, 2); g.fill(); }
+        for (const [a, b] of [[-17, -17], [2, -17], [-17, 2], [2, 2]]) { g.beginPath(); g.roundRect(cx + a, cy + b, 15, 15, 3); g.fill(); }
       }
       if (!reduced) frame = requestAnimationFrame(draw);
     };
@@ -149,4 +153,24 @@ export function CleanupFlow({ items, removed }: { items: string[]; removed: Set<
   }, [key]);
 
   return <canvas ref={ref} className="cleanup-flow" aria-hidden="true" />;
+}
+
+/** Everything Windows comes with that a cleanup level can take away, the same list wherever a level is chosen.
+ *  What stays is marked in amber and says what it does now; what the level removes is marked in green and says how
+ *  Windows ends up without it. */
+export function CleanupItems({ items, removed }: { items: { id: string; description: string }[]; removed: Set<string> }) {
+  return (
+    <ul className="cleanup-items">
+      {items.map((i) => {
+        const drop = removed.has(i.id);
+        const look = CLEANUP_LOOK[i.id];
+        return (
+          <li key={i.id} className={drop ? "drop" : "keep"} title={i.description}>
+            {drop ? <IconCheck size={14} /> : <IconPointFilled size={14} />}
+            <span><span className="ci-name">{look?.name ?? i.description}</span>{look && <span className="ci-line">{drop ? look.done : look.line}</span>}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
 }

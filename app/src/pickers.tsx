@@ -308,6 +308,9 @@ export function FpsPicker({ value, monitor, onChange }: { value: number; monitor
     if (!inList) setText(String(value));
   }, [inList, value]);
   const emit = (fps: number) => { sent.current = fps; onChange(fps); };
+  // The field takes the focus only when the person picks Personalizado, never when a page opens with a custom rate
+  // (focusing it scrolled the machine's page down to it).
+  const [picked, setPicked] = useState(false);
 
   const options: DropdownOption<string>[] = [
     { value: "monitor", label: `${hz} FPS, como el monitor`, detail: monitor ? `Lo más fluido en ${monitor.name}` : "Lo más fluido en tu monitor", icon: <IconDeviceDesktop size={17} />, tone: "accent" as const },
@@ -328,7 +331,7 @@ export function FpsPicker({ value, monitor, onChange }: { value: number; monitor
         if (v === "custom") {
           // Starts from the rate in use, already saved as a fixed value, so the row never says one thing and shows another.
           const start = value === MONITOR_FPS ? hz : value;
-          setCustom(true); setText(String(start)); emit(start); return;
+          setCustom(true); setPicked(true); setText(String(start)); emit(start); return;
         }
         setCustom(false);
         onChange(v === "monitor" ? MONITOR_FPS : Number(v));
@@ -336,7 +339,7 @@ export function FpsPicker({ value, monitor, onChange }: { value: number; monitor
       {custom && (
         <div className="fps-custom">
           <label className="fps-input">
-            <input className="text-input" inputMode="numeric" value={text} aria-label="FPS personalizados" autoFocus
+            <input className="text-input" inputMode="numeric" value={text} aria-label="FPS personalizados" autoFocus={picked}
               onChange={(e) => {
                 const t = e.target.value.replace(/\D/g, "").slice(0, 3);
                 setText(t);

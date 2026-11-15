@@ -122,7 +122,7 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
 .side { background: var(--side); display: flex; flex-direction: column; padding: 4px 12px 16px; gap: 4px; min-width: 0; }
 .side-head { display: flex; align-items: center; gap: 10px; padding: 0 4px 16px; }
 .side-head strong { font-weight: 600; font-size: 15px; }
-.side-logo img { display: block; border-radius: 8px; }
+.side-logo svg { display: block; }
 .side-list { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
 .side-list.fade-end { mask-image: linear-gradient(#000 calc(100% - 24px), transparent); }
 .side-list.fade-start { mask-image: linear-gradient(to top, #000 calc(100% - 24px), transparent); }
@@ -382,7 +382,9 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
 .cleanup-items { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 6px 24px; font-size: 13px; line-height: 1.45; }
 .cleanup-picker > .hint { color: var(--faint); font-size: 13px; }
 .cleanup-items li { display: flex; gap: 8px; align-items: flex-start; }
-.cleanup-items svg { flex: none; display: block; margin-top: 3px; color: var(--ok); }
+.cleanup-items svg { flex: none; display: block; margin-top: 3px; }
+.cleanup-items li.keep svg { color: var(--warn); }
+.cleanup-items li.drop svg { color: var(--ok); }
 .app-logo { display: block; width: 20px; height: 20px; object-fit: contain; }
 /* Home */
 .home-continue .actions { gap: 8px; }
@@ -486,6 +488,8 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 :root[data-theme="dark"] { --scene-ink: #a3a3a3; }
 .card.scene-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: 0; gap: 0; }
 .scene-wrap { grid-column: 1 / -1; height: 112px; border-radius: var(--r-lg) var(--r-lg) 0 0; overflow: hidden; pointer-events: none; }
+.machine-cube { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+.machine-cube.dragging { cursor: grabbing; }
 .scene { display: block; width: 100%; height: 100%; }
 .scene-head .head-info { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 14px 16px 16px; }
 .scene-head .actions { padding: 14px 16px 16px; }
@@ -544,7 +548,7 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .swatch { position: relative; width: 32px; height: 32px; border-radius: 50%; overflow: hidden; display: grid; place-items: center; }
 .swatch svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .swatch:hover { filter: brightness(1.08); }
-.swatch-check { position: relative; color: #ffffff; }
+.swatch.on { outline: 1.5px solid var(--muted); outline-offset: 2px; }
 
 /* Shared disks, in the same rows as the options: icon, name with its state, size and how much it takes on the PC */
 .disk-row .machine-icon { align-self: start; }
@@ -676,8 +680,6 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 @media (max-width: 700px) { .cleanup-body { grid-template-columns: 1fr; margin-left: 0; } }
 
 .cleanup-body .cleanup-items li.keep { color: var(--faint); }
-.cleanup-body .cleanup-items li.keep svg { color: var(--warn); }
-.cleanup-body .cleanup-items li.drop svg { color: var(--ok); }
 
 /* Apps: catalog on the left, the search and this machine's apps on the right */
 .apps-layout { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 20px; align-items: start; }
@@ -766,7 +768,7 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 
 /* Create machine (C1): sections on the left, everything in the middle, the summary always in view on the right */
 .dialog.create-dialog { width: min(1120px, 100%); height: min(760px, calc(100vh - var(--titlebar) - 48px)); max-height: none; padding: 20px 20px 16px; }
-.create-form { display: grid; grid-template-columns: 180px minmax(0, 1fr) 250px; grid-template-rows: minmax(0, 1fr) auto auto; gap: 0 18px; min-height: 0; flex: 1; }
+.create-form { display: grid; grid-template-columns: 180px minmax(0, 1fr) 290px; grid-template-rows: minmax(0, 1fr) auto auto; gap: 0 18px; min-height: 0; flex: 1; }
 .create-nav { display: flex; flex-direction: column; gap: 2px; }
 .create-nav button { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: var(--r); color: var(--muted); text-align: left; }
 .create-nav button:hover { color: var(--text); background: var(--control-bg-hover); }
@@ -788,6 +790,7 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .create-levels .level-row { box-shadow: inset 0 0 0 1px var(--control-line); }
 .create-summary { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: var(--r-lg); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--control-line); align-self: start; }
 .create-summary-title { font-size: 12px; color: var(--muted); }
+.create-cube { height: 250px; margin: -14px -14px 4px; border-radius: var(--r-lg) var(--r-lg) 0 0; overflow: hidden; }
 .create-summary-name { font-size: 16px; font-weight: 600; word-break: break-all; }
 .create-summary-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
 .create-summary-line { display: flex; align-items: flex-start; gap: 7px; font-size: 13px; color: var(--muted); line-height: 1.4; }
@@ -835,3 +838,81 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .create-profile { padding: 12px 14px; gap: 6px; }
 .create-resources { gap: 20px 32px; }
 .create-account { gap: 16px; }
+
+/* The machine's page: its header and usage strip read as one panel. */
+.card.scene-head:has(+ .stats.joined) { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.card.stats.joined { margin-top: calc(-1 * var(--main-gap, 16px)); border-top-left-radius: 0; border-top-right-radius: 0; box-shadow: inset 0 1px 0 var(--line); }
+/* Options beside the machine's cube, which stays in view below the section bar. */
+.vm-body { display: grid; grid-template-columns: minmax(0, 1fr) clamp(320px, 30%, 440px); gap: 16px; align-items: start; }
+.vm-sections { display: flex; flex-direction: column; gap: 16px; min-width: 0; container-type: inline-size; }
+/* Beside the cube the options column is narrower than the window: its sections follow its own width. */
+@container (max-width: 1000px) { .cleanup-body { grid-template-columns: 210px minmax(0, 1fr); } .cleanup-body .cleanup-items, .cleanup-body .levels-none { grid-column: 1 / -1; } }
+@container (max-width: 860px) { .apps-layout { grid-template-columns: 1fr; } .apps-mine { order: -1; } }
+@container (max-width: 620px) { .cleanup-body { grid-template-columns: 1fr; margin-left: 0; } .apps-card > :not(.opt-rows) { margin-left: 0; } }
+/* Below the section bar: once the page scrolls it sits flush under the bar and reaches the bottom of the window,
+   so the column never shows empty space above or below it. */
+.vm-cube { position: sticky; top: 21px; height: max(340px, calc(100vh - 109px)); border-radius: var(--r-lg); background: var(--surface); overflow: hidden; }
+@media (max-width: 1100px) { .vm-body { grid-template-columns: minmax(0, 1fr); } .vm-cube { display: none; } }
+
+/* Settings: sections on the left, options in the middle, a live preview of the theme and accent on the right. */
+.main.prefs { display: grid; grid-template-columns: 180px minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+.pref-nav { position: sticky; top: 0; display: flex; flex-direction: column; gap: 2px; }
+.pref-nav-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--r); color: var(--muted); text-align: left; }
+.pref-nav-item:hover { background: var(--control-bg-hover); color: var(--text); }
+.pref-nav-item.on { background: var(--surface-2); color: var(--text); }
+.pref-sections { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.pref-section { scroll-margin-top: 24px; }
+.pref-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.pref-head h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.pref-preview { position: sticky; top: 0; padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.pref-preview-cube { height: 300px; }
+.pref-preview-ui { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px 16px; border-top: 1px solid var(--line); }
+.pref-preview-name { display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
+.pref-preview-meta { color: var(--muted); }
+.pref-preview-bars { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 12px; align-items: center; font-size: 12px; }
+.pref-preview-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.pref-preview-actions .primary { flex: 1; }
+@media (max-width: 1200px) { .main.prefs { grid-template-columns: 170px minmax(0, 1fr); } .pref-preview { display: none; } }
+@media (max-width: 800px) { .main.prefs { grid-template-columns: minmax(0, 1fr); } .pref-nav { display: none; } }
+.pref-preview-bars .bar { margin: 0; }
+
+/* Home: the space of machines with the one in front and its panel, then a row with the others and the rest. */
+.main.home { display: flex; flex-direction: column; gap: 16px; }
+.home-stage { display: grid; grid-template-columns: minmax(0, 1fr) 320px; padding: 0; min-height: max(380px, calc(100vh - 330px)); overflow: hidden; }
+.home-space { position: relative; min-height: 0; }
+.home-space .machine-cube { position: absolute; inset: 0; }
+.home-panel { display: flex; flex-direction: column; gap: 18px; padding: 18px; border-left: 1px solid var(--line); min-width: 0; }
+.home-meters { display: flex; flex-direction: column; gap: 12px; }
+.home-meter { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; }
+.home-meter-label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.home-meter strong { font-size: 13px; font-weight: 600; }
+.home-meter-bar { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--chart-grid); overflow: hidden; }
+.home-meter-bar span { display: block; height: 100%; border-radius: 3px; background: currentColor; transition: width 0.6s ease; }
+.home-panel .home-memory { margin: 0; }
+.home-panel-actions { display: flex; gap: 8px; margin-top: auto; flex-wrap: wrap; }
+.home-panel-actions .primary { flex: 1; width: auto; min-width: 150px; }
+.home-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; align-items: start; }
+.home-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.btn.compact { padding: 4px 10px; min-height: 0; height: 28px; font-size: 12px; }
+@media (max-width: 1000px) { .home-stage { grid-template-columns: minmax(0, 1fr); } .home-space { height: 320px; } .home-panel { border-left: 0; border-top: 1px solid var(--line); } }
+
+/* Library: where the space goes, and profiles as cards with their cube. */
+.storage { display: flex; flex-direction: column; gap: 10px; }
+.storage-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.storage-title { font-size: 13px; color: var(--muted); }
+.storage-free { font-weight: 600; }
+.storage-bar { display: flex; gap: 2px; height: 10px; border-radius: 5px; background: var(--chart-grid); overflow: hidden; }
+.storage-bar span { display: block; height: 100%; }
+.storage-legend { display: flex; flex-wrap: wrap; gap: 6px 20px; font-size: 12px; color: var(--muted); }
+.storage-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.storage-legend strong { color: var(--text); font-weight: 500; margin-left: 2px; }
+.storage-legend i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+.st-machines { background: var(--res-cpu); } .st-templates { background: var(--res-mem); } .st-shared { background: var(--res-disk); } .st-isos { background: var(--res-gpu); }
+.profile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.profile-card { display: flex; flex-direction: column; gap: 10px; padding: 0 0 12px; overflow: hidden; }
+.profile-cube { display: block; width: 100%; height: 150px; background: var(--surface-2); }
+.profile-text { display: flex; flex-direction: column; gap: 6px; padding: 0 14px; min-width: 0; }
+.profile-text strong { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.profile-desc { font-size: 12px; color: var(--muted); }
+.profile-actions { display: flex; gap: 6px; padding: 0 10px; margin-top: auto; flex-wrap: wrap; }
+.profile-skeleton { height: 250px; }

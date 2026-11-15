@@ -4,7 +4,7 @@ import { Preferences } from "./Preferences";
 import { Library, type LibraryTab } from "./Library";
 import { Home } from "./Home";
 // The app's own icon (the installer and the window use it), never a machine figure.
-import appIcon from "./assets/logo.svg";
+import { Logo } from "./Logo";
 import type { HostInfo, JobEvent, Sample, VmOverview } from "./types";
 import { readPrefs } from "./prefs";
 import { api, onJob, relaunchAsAdmin, repairService, service, startJob as runJob } from "./api";
@@ -212,7 +212,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       <div className="app single">
         <TitleBar />
         <div className="empty">
-          <img className="empty-logo" src={appIcon} alt="" width={96} height={96} draggable={false} />
+          <Logo className="empty-logo" size={96} />
           <h2>{stopped ? "El servicio de GpuVM está detenido" : "Falta el servicio de GpuVM"}</h2>
           <p>{stopped ? "Es la parte de GpuVM que controla Hyper-V. En Ajustes está en modo manual." : "Es la parte de GpuVM que controla Hyper-V. Repararlo pide permiso de administrador una vez."}</p>
           <button className="primary" onClick={fix} disabled={repair.busy}>
@@ -229,7 +229,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       <div className="app single">
         <TitleBar />
         <div className="empty">
-          <img className="empty-logo" src={appIcon} alt="" width={96} height={96} draggable={false} />
+          <Logo className="empty-logo" size={96} />
           <h2>GpuVM necesita permisos de administrador</h2>
           <p>Hyper-V solo deja crear y controlar máquinas a un administrador.</p>
           <button className="primary" onClick={relaunchAsAdmin}><IconShieldLock size={17} />Abrir como administrador</button>
@@ -243,7 +243,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       <TitleBar />
       <aside className="side">
         <div className="side-head">
-          <span className="side-logo"><img src={appIcon} alt="" width={28} height={28} draggable={false} /></span>
+          <span className="side-logo"><Logo size={28} /></span>
           <strong>GpuVM</strong>
         </div>
         <nav ref={sideRef} className={`side-list ${sideFade}`}>
@@ -323,12 +323,12 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
             busy={(name) => !!busyFor(name)} progress={(key) => busyFor(key)?.message ?? null} notify={push} onOpenVm={setSelected}
             onCreateFromTemplate={(template) => { setCreateTemplate(template); setCreating(true); }} />
         ) : current ? (
-          <VmView key={current.id} vm={current} host={host} samples={history.current[current.name] ?? []} busy={busyFor(current.name)}
+          <VmView key={current.id} vm={current} vms={vms ?? []} host={host} samples={history.current[current.name] ?? []} busy={busyFor(current.name)}
             startJob={startJob} run={run} onRemoved={() => setSelected("")} />
         ) : (
           <div className="main">
             <div className="empty">
-              <img className="empty-logo" src={appIcon} alt="" width={112} height={112} draggable={false} />
+              <Logo className="empty-logo" size={112} />
               <h2>Crea tu primera máquina</h2>
               <p>Windows 10 u 11 con {host?.gpuName ? `tu ${host.gpuName.replace("NVIDIA GeForce ", "")}` : "tu GPU"}, lista para abrir con Moonlight en un clic.</p>
               <button className="primary" onClick={() => setCreating(true)}><IconPlus size={17} />Crear máquina</button>

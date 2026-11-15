@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  IconAdjustments, IconAlertTriangle, IconAppWindow, IconApps, IconArrowsMaximize, IconBolt, IconCheck, IconChevronRight, IconClipboardText, IconClock, IconCpu, IconDeviceDesktop, IconDeviceFloppy, IconDeviceGamepad2, IconDots, IconDownload, IconExternalLink, IconFolders, IconGauge, IconKey, IconLayoutBoard, IconLayoutGrid, IconLink, IconList, IconLoader2, IconNetwork, IconPalette, IconPlayerPause, IconPlayerPlay, IconPlayerTrackNext, IconPlugConnected, IconPlugOff, IconPointFilled, IconPointer, IconPower, IconRectangle, IconRefresh, IconRefreshAlert, IconScreenShare, IconSearch, IconShieldCheck, IconSparkles, IconTemplate, IconTopologyStar3, IconTrash, IconWaveSine, IconWorld,
+  IconAdjustments, IconAlertTriangle, IconAppWindow, IconApps, IconArrowsMaximize, IconBolt, IconCheck, IconChevronRight, IconClipboardText, IconClock, IconCpu, IconDeviceDesktop, IconDeviceFloppy, IconDeviceGamepad2, IconDots, IconDownload, IconExternalLink, IconFolders, IconGauge, IconKey, IconLayoutBoard, IconLayoutGrid, IconLink, IconList, IconLoader2, IconNetwork, IconPalette, IconPlayerPause, IconPlayerPlay, IconPlayerTrackNext, IconPlugConnected, IconPlugOff, IconPointer, IconPower, IconRectangle, IconRefresh, IconRefreshAlert, IconScreenShare, IconSearch, IconShieldCheck, IconSparkles, IconTemplate, IconTopologyStar3, IconTrash, IconWaveSine, IconWorld,
 } from "@tabler/icons-react";
 import type { AppInfo, CleanupLevelId, DiskBudget, SharedDiskInfo, DisplayMode, HostInfo, MouseMode, Sample, StreamSettings, VmOverview } from "./types";
 import { usePrefs } from "./prefs";
 import { AppLogo, FpsPicker, MonitorPicker, resolveMonitor, useMonitors, CODECS, RESOLUTIONS, USES, streamUseOf, useCleanupLevels } from "./pickers";
 import { MachineIcon, patternClick, patternVariant, setPatternVariant } from "./machineIcon";
+import { CLEANUP_REMOVED, MachineCube, cubeOf } from "./MachineCube";
 import { Scene, nextSceneStyle, sceneStyle } from "./Scene";
-import { CLEANUP_LOOK, CleanupFlow, LEVEL_LOOK } from "./CleanupFlow";
+import { CleanupFlow, CleanupItems, LEVEL_LOOK } from "./CleanupFlow";
 import { Sparkline, series } from "./Chart";
 import { CheckMark, Dropdown, Segmented, Slider, formatUptime, stateLabel, useScrollFade } from "./ui";
 import { api, openConsole } from "./api";
@@ -21,6 +22,8 @@ export interface JobInfo {
 
 interface Props {
   vm: VmOverview;
+  /** Every machine, for the space around this one's cube. */
+  vms?: VmOverview[];
   host: HostInfo | null;
   samples: Sample[];
   /** Long job or power action in progress for this VM. */
@@ -35,8 +38,12 @@ const TRANSITION: Record<string, string> = { Starting: "Encendiendo", Stopping: 
 type VmTab = "machine" | "display" | "windows";
 const TAB_LABEL: Record<VmTab, string> = { machine: "Máquina", display: "Imagen y control", windows: "Windows" };
 
-export function VmView({ vm, host, samples, busy, startJob, run, onRemoved }: Props) {
+export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRemoved }: Props) {
   const [variant, setVariant] = useState(() => patternVariant(vm.name));
+  // What is being changed and not saved yet (resources, cleanup level, apps picked to install), for the cube.
+  const [preview, setPreview] = useState<{ cpu?: number; memoryGB?: number; gpuPercent?: number; diskGB?: number; cleanup?: CleanupLevelId }>({});
+  const [previewApps, setPreviewApps] = useState<string[]>([]);
+  useEffect(() => { setPreview({}); setPreviewApps([]); }, [vm.name]);
   const running = vm.state === "Running";
   const off = vm.state === "Off";
   const tabs: VmTab[] = [];
@@ -87,6 +94,19 @@ export function VmView({ vm, host, samples, busy, startJob, run, onRemoved }: Pr
           window.dispatchEvent(new Event("gpuvm-pattern"));
         }} />
 
+      <div className="card stats joined">
+        <Stat icon={<IconCpu size={15} />} label="Procesador" value={`${vm.processorCount} hilos`}
+          sub={running ? `${vm.cpuPercent} % en uso` : "Sin uso"} spark={running ? series(samples, (s) => s.cpu) : []} color="var(--chart-cpu)" />
+        <Stat icon={<IconTopologyStar3 size={15} />} label="Memoria" value={`${vm.memoryStartupGB} GB`}
+          sub={running ? `${vm.memoryDemandGB} GB en uso` : "Fija al encender"}
+          spark={running ? series(samples, (s) => (s.mem / Math.max(vm.memoryAssignedGB, 0.1)) * 100) : []} color="var(--chart-mem)" />
+        <Stat icon={<IconBolt size={15} />} label="GPU"
+          value={vm.hasGpu ? (running ? `${vm.gpuPercent} %` : `${vm.options?.gpuPercent ?? 100} % asignada`) : "Sin GPU"}
+          sub={vm.gpuName ?? "Solo gráficos básicos"} spark={running && vm.hasGpu ? series(samples, (s) => s.gpu) : []} color="var(--chart-gpu)" />
+        <Stat icon={<IconClock size={15} />} label="Tiempo encendida" value={running ? formatUptime(vm.uptimeSeconds) : "—"}
+          sub={running ? (vm.address ?? "Esperando red") : "Sin red"} />
+      </div>
+
       {vm.managed && !vm.guestCredential && <GuestPassword vm={vm} run={run} />}
       {vm.managed && vm.driverInSync === false && (
         <div className="notice">
@@ -100,18 +120,6 @@ export function VmView({ vm, host, samples, busy, startJob, run, onRemoved }: Pr
         </div>
       )}
 
-      <div className="card stats">
-        <Stat icon={<IconCpu size={15} />} label="Procesador" value={`${vm.processorCount} hilos`}
-          sub={running ? `${vm.cpuPercent} % en uso` : "Sin uso"} spark={running ? series(samples, (s) => s.cpu) : []} color="var(--chart-cpu)" />
-        <Stat icon={<IconTopologyStar3 size={15} />} label="Memoria" value={`${vm.memoryStartupGB} GB`}
-          sub={running ? `${vm.memoryDemandGB} GB en uso` : "Fija al encender"}
-          spark={running ? series(samples, (s) => (s.mem / Math.max(vm.memoryAssignedGB, 0.1)) * 100) : []} color="var(--chart-mem)" />
-        <Stat icon={<IconBolt size={15} />} label="GPU"
-          value={vm.hasGpu ? (running ? `${vm.gpuPercent} %` : `${vm.options?.gpuPercent ?? 100} % asignada`) : "Sin GPU"}
-          sub={vm.gpuName ?? "Solo gráficos básicos"} spark={running && vm.hasGpu ? series(samples, (s) => s.gpu) : []} color="var(--chart-gpu)" />
-        <Stat icon={<IconClock size={15} />} label="Tiempo encendida" value={running ? formatUptime(vm.uptimeSeconds) : "—"}
-          sub={running ? (vm.address ?? "Esperando red") : "Sin red"} />
-      </div>
 
       {tabs.length > 1 && (
         <nav className="section-nav" role="tablist">
@@ -120,9 +128,11 @@ export function VmView({ vm, host, samples, busy, startJob, run, onRemoved }: Pr
           ))}
         </nav>
       )}
+      <div className="vm-body">
+      <div className="vm-sections">
       {tabs.includes("machine") && (
         <section className="vm-section" ref={(el) => { sectionRefs.current.machine = el; }}>
-          <Options part="machine" vm={vm} host={host} busy={busy} startJob={startJob} run={run} />
+          <Options part="machine" vm={vm} host={host} busy={busy} startJob={startJob} run={run} onPreview={(r) => setPreview((p) => ({ ...p, ...r }))} />
           <SharedDisks vm={vm} busy={busy} startJob={startJob} />
         </section>
       )}
@@ -133,10 +143,27 @@ export function VmView({ vm, host, samples, busy, startJob, run, onRemoved }: Pr
       )}
       {tabs.includes("windows") && (
         <section className="vm-section" ref={(el) => { sectionRefs.current.windows = el; }}>
-          {vm.options && <Cleanup vm={vm} busy={busy} startJob={startJob} />}
-          <Apps vm={vm} busy={busy} startJob={startJob} />
+          {vm.options && <Cleanup vm={vm} busy={busy} startJob={startJob} onPreview={(cleanup) => setPreview((p) => ({ ...p, cleanup }))} />}
+          <Apps vm={vm} busy={busy} startJob={startJob} onPreview={setPreviewApps} />
         </section>
       )}
+      </div>
+      {/* The machine itself, always in view beside its options, following what is being changed before it is saved. */}
+      {vm.managed && vm.options && (
+        <aside className="vm-cube">
+          <MachineCube key={vm.name} machine={{
+            power: running ? "on" : vm.state === "Starting" || vm.state === "Stopping" ? "starting" : "off",
+            cores: preview.cpu ?? vm.options.cpu,
+            memoryGB: preview.memoryGB ?? vm.options.memoryGB,
+            gpuPercent: vm.hasGpu ? preview.gpuPercent ?? vm.options.gpuPercent : 0,
+            diskGB: preview.diskGB ?? vm.options.diskGB,
+            usage: { cpu: vm.cpuPercent, gpu: vm.gpuPercent, mem: (vm.memoryDemandGB / Math.max(vm.memoryAssignedGB, 0.1)) * 100, disk: 0 },
+            apps: previewApps,
+            removed: CLEANUP_REMOVED[preview.cleanup ?? vm.options.cleanup] ?? 0,
+          }} name={vm.name} others={vms.filter((v) => v.name !== vm.name).map((v) => ({ name: v.name, machine: cubeOf(v) }))} />
+        </aside>
+      )}
+      </div>
     </div>
   );
 }
@@ -197,11 +224,12 @@ export function SharedDisks({ vm, busy, startJob }: Pick<Props, "vm" | "busy" | 
 
 /** Windows cleanup: the levels as cards (each includes the ones before it), what the chosen one does, and Aplicar
  *  only when a different level is chosen. */
-export function Cleanup({ vm, busy, startJob }: Pick<Props, "vm" | "busy" | "startJob">) {
+export function Cleanup({ vm, busy, startJob, onPreview }: Pick<Props, "vm" | "busy" | "startJob"> & { onPreview?: (level: CleanupLevelId) => void }) {
   const levels = useCleanupLevels();
   const current = vm.options?.cleanup ?? "none";
   const [chosen, setChosen] = useState<CleanupLevelId>(current);
   useEffect(() => setChosen(current), [vm.name, current]);
+  useEffect(() => onPreview?.(chosen), [chosen]);
   if (!levels.length) return null;
   const applying = busy?.cmd === "Set-GpuVMCleanup";
   const rank = Math.max(0, levels.findIndex((l) => l.id === chosen));
@@ -232,18 +260,7 @@ export function Cleanup({ vm, busy, startJob }: Pick<Props, "vm" | "busy" | "sta
           ))}
         </div>
         <CleanupFlow items={all.map((i) => i.id)} removed={removedIds} />
-        {/* Everything Windows comes with that a level can take away: what the chosen level removes has a check, what
-            stays has a dot, so even Normal shows what is there. */}
-        <ul className="cleanup-items">
-          {all.map((i) => {
-            const drop = removedIds.has(i.id);
-            const look = CLEANUP_LOOK[i.id];
-            return <li key={i.id} className={drop ? "drop" : "keep"} title={i.description}>
-              {drop ? <IconCheck size={14} /> : <IconPointFilled size={14} />}
-              <span><span className="ci-name">{look?.name ?? i.description}</span>{look && <span className="ci-line">{look.line}</span>}</span>
-            </li>;
-          })}
-        </ul>
+        <CleanupItems items={all} removed={removedIds} />
       </div>
       <p className="levels-safe"><IconShieldCheck size={14} />Microsoft Defender, Windows Update, SmartScreen y el firewall nunca se tocan.</p>
     </div>
@@ -257,10 +274,12 @@ const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCas
 
 /** Apps of a machine: the installed ones on top (each with its menu), then the catalog as tiles to pick several
  *  and install them together, or as a list with each app's own action. The chosen view is remembered. */
-export function Apps({ vm, busy, startJob }: Pick<Props, "vm" | "busy" | "startJob">) {
+export function Apps({ vm, busy, startJob, onPreview }: Pick<Props, "vm" | "busy" | "startJob"> & { onPreview?: (apps: string[]) => void }) {
   const [catalog, setCatalog] = useState<AppInfo[]>([]);
   const [chosen, setChosen] = useState<string[]>([]);
   const [installed, setInstalled] = useState<string[]>([]);
+  // The cube shows what is installed and what is picked to install.
+  useEffect(() => onPreview?.([...installed, ...chosen.filter((id) => !installed.includes(id))]), [installed, chosen]);
   const [uninstalling, setUninstalling] = useState<AppInfo | null>(null);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
@@ -782,7 +801,10 @@ function OptionRow({ icon, title, value, desc, wide, section, sub, below, childr
 }
 
 /** The machine's settings, in two parts: "machine" (resources and network) and "display" (use, picture, connection). */
-function Options({ part, vm, host, busy, startJob, run }: Pick<Props, "vm" | "host" | "busy" | "startJob" | "run"> & { part: "machine" | "display" }) {
+function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props, "vm" | "host" | "busy" | "startJob" | "run"> & {
+  part: "machine" | "display";
+  onPreview?: (r: { cpu: number; memoryGB: number; gpuPercent: number; diskGB: number }) => void;
+}) {
   const initial = {
     cpu: vm.options!.cpu, memoryGB: vm.options!.memoryGB, gpuPercent: vm.options!.gpuPercent, diskGB: vm.options!.diskGB,
     resolution: vm.client?.resolution ?? "1920x1080", fps: vm.client?.fps ?? 60,
@@ -802,6 +824,7 @@ function Options({ part, vm, host, busy, startJob, run }: Pick<Props, "vm" | "ho
   const [saved, setSaved] = useState(false);
   const key = JSON.stringify(initial);
   useEffect(() => setDraft(JSON.parse(key)), [key]);
+  useEffect(() => onPreview?.({ cpu: draft.cpu, memoryGB: draft.memoryGB, gpuPercent: draft.gpuPercent, diskGB: draft.diskGB }), [draft.cpu, draft.memoryGB, draft.gpuPercent, draft.diskGB]);
   useEffect(() => { if (!saved) return; const t = setTimeout(() => setSaved(false), 2500); return () => clearTimeout(t); }, [saved]);
 
   const hostCpu = host?.logicalProcessors ?? 12;

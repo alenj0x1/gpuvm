@@ -1,3 +1,4 @@
+import { MiniCube } from "./MiniCube";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -106,11 +107,48 @@ export function Library({ tab, onTab, host, startJob, busy, progress, notify, on
             onClick={() => { goTo(x.tab); onTab(x.tab); }}>{x.label}</button>
         ))}
       </nav>
+      <StorageOverview />
       {section("perfiles", <Profiles tabs={<SectionHead tab="perfiles" />} host={host} notify={notify} />)}
       {section("plantillas", <Templates tabs={<SectionHead tab="plantillas" />} notify={notify} onOpenVm={onOpenVm} onCreate={onCreateFromTemplate} startJob={startJob} />)}
       {section("compartidos", <SharedDisks tabs={<SectionHead tab="compartidos" />} startJob={startJob} progress={progress} notify={notify} onOpenVm={onOpenVm} />)}
       {section("discos", <Disks tabs={<SectionHead tab="discos" />} startJob={startJob} busy={busy} notify={notify} onOpenVm={onOpenVm} />)}
       {section("isos", <Isos tabs={<SectionHead tab="isos" />} notify={notify} />)}
+    </div>
+  );
+}
+
+/* ---------- Storage ---------- */
+
+/** Where the drive's space goes: machine disks, templates, shared disks and ISOs, each with its color, and what is
+ *  left free. */
+function StorageOverview() {
+  const [data, setData] = useState<{ parts: { label: string; gb: number; cls: string }[]; free: number } | null>(null);
+  useEffect(() => {
+    Promise.all([api.disks(), api.templates(), api.sharedDisks(), api.isos()]).then(([d, t, sd, i]) => {
+      const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+      setData({
+        free: d[0]?.hostFreeGB ?? 0,
+        parts: [
+          { label: "Discos de máquinas", gb: sum(d.map((x) => x.fileGB)), cls: "st-machines" },
+          { label: "Plantillas", gb: sum(t.map((x) => x.fileGB)), cls: "st-templates" },
+          { label: "Discos compartidos", gb: sum(sd.map((x) => x.fileGB)), cls: "st-shared" },
+          { label: "ISOs", gb: sum(i.filter((x) => !x.missing && x.remembered !== false).map((x) => x.sizeGB)), cls: "st-isos" },
+        ],
+      });
+    }).catch(() => {});
+  }, []);
+  const fmt = (n: number) => `${Math.round(n).toLocaleString("es")} GB`;
+  if (!data) return <div className="card skeleton" style={{ height: 92 }} />;
+  const total = data.free + data.parts.reduce((a, b) => a + b.gb, 0) || 1;
+  return (
+    <div className="card storage">
+      <div className="storage-top"><span className="storage-title">Espacio de GpuVM en el disco</span><span className="storage-free">{fmt(data.free)} libres</span></div>
+      <div className="storage-bar">
+        {data.parts.filter((x) => x.gb > 0).map((x) => <span key={x.label} className={x.cls} style={{ width: `${(x.gb / total) * 100}%` }} title={`${x.label}: ${fmt(x.gb)}`} />)}
+      </div>
+      <div className="storage-legend">
+        {data.parts.map((x) => <span key={x.label}><i className={x.cls} />{x.label}<strong>{fmt(x.gb)}</strong></span>)}
+      </div>
     </div>
   );
 }
@@ -144,36 +182,36 @@ function Profiles({ tabs, host, notify }: { tabs: React.ReactNode; host: HostInf
       {tabs}
       <button className="btn" disabled={!fallback?.Settings} onClick={() => fallback && startNew(fallback)}><IconPlus size={16} />Nuevo perfil</button>
     </div>
-    <div className="card">
-      <div className="rows">
-        {profiles === null && <RowSkeletons />}
-        {profiles?.map((p) => (
-          <div className="row" key={p.Name}>
-            <PatternButton name={`perfil-${p.Name}`} size={36} radius={10} />
-            <div className="row-text">
-              <strong>{profileLabel(p.Name)}{p.BuiltIn && <span className="tag">Incluido</span>}</strong>
-              {p.Settings ? <ResourceChips s={p.Settings} apps={apps} /> : <span>{p.Description}</span>}
-            </div>
-            <div className="row-actions">
-              {p.Settings && (
-                <button className="btn ghost" onClick={() => startNew(p)} title="Crear un perfil a partir de este">
-                  <IconCopyPlus size={16} />Duplicar
-                </button>
-              )}
-              {!p.BuiltIn && p.Settings && (
-                <button className="btn ghost" onClick={() => setEditing({ previous: p.Name, name: p.Name, description: p.Description ?? "", extends: p.Extends ?? "max-performance", settings: { ...p.Settings! } })}>
-                  <IconPencil size={16} />Editar
-                </button>
-              )}
-              {!p.BuiltIn && (
-                <button className={`btn ${confirm === p.Name ? "danger-fill" : "ghost danger"}`} onClick={() => confirm === p.Name ? remove(p.Name) : setConfirm(p.Name)}>
-                  <IconTrash size={16} />{confirm === p.Name ? "Confirmar" : "Eliminar"}
-                </button>
-              )}
-            </div>
+    {/* One card per profile, with its cube built from what it gives; the grid grows with however many there are. */}
+    <div className="profile-grid">
+      {profiles === null && [0, 1, 2].map((i) => <div key={i} className="card skeleton profile-skeleton" />)}
+      {profiles?.map((p) => (
+        <div className="card profile-card" key={p.Name}>
+          {p.Settings && <MiniCube className="profile-cube" machine={{ cores: p.Settings.cpu, memoryGB: p.Settings.memoryGB, gpuPercent: p.Settings.gpuPercent, diskGB: p.Settings.diskGB, apps: p.Settings.apps?.length ?? 0 }} />}
+          <div className="profile-text">
+            <strong>{profileLabel(p.Name)}{p.BuiltIn && <span className="tag">Incluido</span>}</strong>
+            {p.Description && <span className="profile-desc">{p.Description}</span>}
+            {p.Settings && <ResourceChips s={p.Settings} apps={apps} />}
           </div>
-        ))}
-      </div>
+          <div className="profile-actions">
+            {p.Settings && (
+              <button className="btn ghost compact" onClick={() => startNew(p)} title="Crear un perfil a partir de este">
+                <IconCopyPlus size={15} />Duplicar
+              </button>
+            )}
+            {!p.BuiltIn && p.Settings && (
+              <button className="btn ghost compact" onClick={() => setEditing({ previous: p.Name, name: p.Name, description: p.Description ?? "", extends: p.Extends ?? "max-performance", settings: { ...p.Settings! } })}>
+                <IconPencil size={15} />Editar
+              </button>
+            )}
+            {!p.BuiltIn && (
+              <button className={`btn compact ${confirm === p.Name ? "danger-fill" : "ghost danger"}`} onClick={() => confirm === p.Name ? remove(p.Name) : setConfirm(p.Name)}>
+                <IconTrash size={15} />{confirm === p.Name ? "Confirmar" : "Eliminar"}
+              </button>
+            )}
+          </div>
+        </div>
+      ))}
     </div>
     {editing && (
       <ProfileEditor initial={editing} host={host} apps={apps} existing={profiles ?? []}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  IconApps, IconBolt, IconBrandWindows, IconCheck, IconCpu, IconDatabase, IconDeviceFloppy, IconDisc, IconLayoutGrid, IconLoader2, IconPlus, IconPointFilled, IconSparkles, IconTag, IconTemplate, IconTopologyStar3, IconUser, IconX,
+  IconApps, IconBolt, IconBrandWindows, IconCheck, IconCpu, IconDatabase, IconDeviceFloppy, IconDisc, IconLayoutGrid, IconLoader2, IconPlus, IconSparkles, IconTag, IconTemplate, IconTopologyStar3, IconUser, IconX,
 } from "@tabler/icons-react";
 import type { AppInfo, CleanupLevelId, HostInfo, IsoFile, ProfileInfo, ProfileSettings, TemplateInfo, VmOverview } from "./types";
 import { api, pickIso } from "./api";
@@ -8,7 +8,8 @@ import { PatternButton } from "./machineIcon";
 import { CheckMark, Segmented, Slider, humanError } from "./ui";
 import { AppPicker, IsoPicker, useCleanupLevels, profileLabel } from "./pickers";
 import { Chip, ResourceChips } from "./resources";
-import { CLEANUP_LOOK, CleanupFlow, LEVEL_LOOK } from "./CleanupFlow";
+import { CleanupFlow, CleanupItems, LEVEL_LOOK } from "./CleanupFlow";
+import { CLEANUP_REMOVED, MachineCube, cubeOf } from "./MachineCube";
 
 export interface Resources { cpu: number; memoryGB: number; gpuPercent: number; diskGB: number }
 
@@ -317,22 +318,22 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
                     has a check, what stays a dot. */}
                 <div className="create-cleanup">
                   <CleanupFlow items={allItems.map((i) => i.id)} removed={dropped} />
-                  <ul className="cleanup-items">
-                    {allItems.map((i) => {
-                      const drop = dropped.has(i.id);
-                      const look = CLEANUP_LOOK[i.id];
-                      return <li key={i.id} className={drop ? "drop" : "keep"} title={i.description}>
-                        {drop ? <IconCheck size={14} /> : <IconPointFilled size={14} />}
-                        <span><span className="ci-name">{look?.name ?? i.description}</span>{look && <span className="ci-line">{look.line}</span>}</span>
-                      </li>;
-                    })}
-                  </ul>
+                  <CleanupItems items={allItems} removed={dropped} />
                 </div>
                 </>
               ))}
             </div>
 
             <aside className="create-summary">
+              {/* The machine being put together: every change to its resources, apps and cleanup shows here. */}
+              {res && (
+                <div className="create-cube">
+                  <MachineCube machine={{
+                    power: "on", cores: res.cpu, memoryGB: res.memoryGB, gpuPercent: res.gpuPercent, diskGB: res.diskGB,
+                    usage: { cpu: 12, gpu: 18, mem: 30, disk: 8 }, apps, removed: CLEANUP_REMOVED[cleanup] ?? 0,
+                  }} name={name} others={existing.map((v) => ({ name: v.name, machine: cubeOf(v) }))} />
+                </div>
+              )}
               <span className="create-summary-title">Resumen</span>
               <strong className="create-summary-name">{name || "Sin nombre"}</strong>
               {res && (

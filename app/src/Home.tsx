@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import {
-  IconApps, IconArrowRight, IconDatabase, IconDeviceGamepad2, IconDisc, IconDownload, IconExternalLink, IconKey, IconLayoutGrid,
-  IconLink, IconLoader2, IconPlayerPlay, IconPlus, IconStack2, IconTemplate,
+  IconApps, IconArrowRight, IconBolt, IconCpu, IconDatabase, IconDeviceGamepad2, IconDisc, IconDownload, IconExternalLink, IconKey,
+  IconLayoutGrid, IconLink, IconLoader2, IconPlayerPlay, IconPlus, IconStack2, IconTemplate, IconTopologyStar3,
 } from "@tabler/icons-react";
 import type { HomeInfo, VmOverview } from "./types";
 import type { JobInfo } from "./VmView";
 import { api } from "./api";
 import { MachineIcon } from "./machineIcon";
+import { MachineCube, cubeOf } from "./MachineCube";
 import { Scene, sceneStyle } from "./Scene";
 import { formatUptime, stateLabel } from "./ui";
 
@@ -32,13 +33,13 @@ const ISSUE_ICONS: Record<string, React.ReactNode> = {
 };
 
 const gb = (n: number) => `${n.toLocaleString("es", { maximumFractionDigits: 1 })} GB`;
-const usage = (vm: VmOverview) => ({ cpu: vm.cpuPercent, gpu: vm.gpuPercent, mem: (vm.memoryDemandGB / Math.max(vm.memoryAssignedGB, 0.1)) * 100 });
 
-/** Home: the machine in use (or the last one opened) up front, every other machine below, and on the side what fits
- *  in memory, the Library at a glance and what needs attention. */
+/** Home: the space of machines up front, with the one in use (or the last one opened) in its cube and, beside it, how
+ *  much it is using and its actions; below, the other machines, what needs attention and the Library at a glance. */
 export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Props) {
   const [home, setHome] = useState<HomeInfo | null>(cache);
   const [library, setLibrary] = useState(libraryCache);
+  const [heroApps, setHeroApps] = useState<string[]>([]);
   // Refreshed with the machines' state (the app polls it) and after any job.
   const states = vms.map((v) => `${v.name}:${v.state}`).join(",");
   const jobs = vms.map((v) => busyFor(v.name)?.cmd ?? "").join(",");
@@ -49,21 +50,28 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
       .catch(() => {});
   }, [jobs]);
 
+  // Up front: the machine that is on, or else the last one opened.
+  const hero = vms.find((v) => v.state === "Running") ?? (home?.lastOpened ? vms.find((v) => v.name === home.lastOpened!.name) : null) ?? vms[0];
+  useEffect(() => {
+    if (!hero) return;
+    let live = true;
+    api.installedApps(hero.name).then((list) => { if (live) setHeroApps(list.map((a) => a.id)); }).catch(() => {});
+    return () => { live = false; };
+  }, [hero?.name, jobs]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!home) {
     return (
-      <div className="main">
-        <div className="skeleton" style={{ height: 200 }} />
-        <div className="skeleton" style={{ height: 160 }} />
+      <div className="main home">
+        <div className="skeleton" style={{ flex: 1, minHeight: 320 }} />
+        <div className="skeleton" style={{ height: 140 }} />
       </div>
     );
   }
 
-  // Up front: the machine that is on, or else the last one opened.
-  const hero = vms.find((v) => v.state === "Running") ?? (home.lastOpened ? vms.find((v) => v.name === home.lastOpened!.name) : null) ?? vms[0];
   const others = vms.filter((v) => v !== hero);
+  const memUsed = home.host.memoryTotalGB - home.host.memoryFreeGB;
   const fits = home.machines.filter((m) => m.state === "Off" && m.fits).map((m) => m.name);
   const short = home.machines.filter((m) => m.state === "Off" && !m.fits);
-  const memUsed = home.host.memoryTotalGB - home.host.memoryFreeGB;
 
   const action = (vm: VmOverview, compact = false) => {
     const busy = busyFor(vm.name);
@@ -84,114 +92,123 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
     );
   };
 
+  // How much the machine in front is using: processor, memory and GPU, each in its resource color.
+  const running = hero?.state === "Running";
+  const meters = hero ? [
+    { cls: "res-cpu", icon: <IconCpu size={15} />, label: "Procesador", value: running ? `${hero.cpuPercent} %` : `${hero.options?.cpu ?? hero.processorCount} hilos`, pct: running ? hero.cpuPercent : 0 },
+    { cls: "res-mem", icon: <IconTopologyStar3 size={15} />, label: "Memoria", value: running ? `${gb(hero.memoryDemandGB)} de ${gb(hero.memoryAssignedGB)}` : gb(hero.memoryStartupGB),
+      pct: running ? (hero.memoryDemandGB / Math.max(hero.memoryAssignedGB, 0.1)) * 100 : 0 },
+    { cls: "res-gpu", icon: <IconBolt size={15} />, label: "GPU", value: !hero.hasGpu ? "Sin GPU" : running ? `${hero.gpuPercent} %` : `${hero.options?.gpuPercent ?? 100} % asignada`, pct: running && hero.hasGpu ? hero.gpuPercent : 0 },
+  ] : [];
+
   return (
     <div className="main home">
-      <div className="home-grid">
-        <div className="home-main">
-          {hero && (
-            <div className="card home-hero">
-              <button type="button" className="home-hero-scene" onClick={() => onOpenVm(hero.name)} aria-label={`Ver ${hero.name}`}>
-                <Scene name={hero.name} style={sceneStyle(hero.name)} state={hero.state} activity={usage(hero)} />
-              </button>
-              <div className="home-hero-info">
-                <div className="home-hero-name">
-                  <MachineIcon name={hero.name} size={40} radius={10} />
-                  <div style={{ minWidth: 0 }}>
-                    <h1>{hero.name}</h1>
-                    <div className="meta">
-                      <span className="state-pill"><span className={`dot ${hero.state}`} />{stateLabel[hero.state] ?? hero.state}</span>
-                      {hero.state === "Running" && hero.hasGpu && <span>· GPU {hero.gpuPercent} %</span>}
-                      {hero.state === "Running" && <span>· {formatUptime(hero.uptimeSeconds)}</span>}
-                    </div>
-                  </div>
-                </div>
-                <div className="home-hero-actions">
-                  {action(hero)}
-                  <button className="btn ghost" onClick={() => onOpenVm(hero.name)}>Ver máquina<IconArrowRight size={15} /></button>
+      {hero && (
+        <div className="card home-stage">
+          <div className="home-space">
+            <MachineCube key="home" machine={cubeOf(hero, heroApps)} name={hero.name} others={others.map((v) => ({ name: v.name, machine: cubeOf(v) }))} />
+          </div>
+          <div className="home-panel">
+            <div className="home-hero-name">
+              <MachineIcon name={hero.name} size={40} radius={10} />
+              <div style={{ minWidth: 0 }}>
+                <h1>{hero.name}</h1>
+                <div className="meta">
+                  <span className="state-pill"><span className={`dot ${hero.state}`} />{stateLabel[hero.state] ?? hero.state}</span>
+                  {running && <span>· {formatUptime(hero.uptimeSeconds)}</span>}
                 </div>
               </div>
             </div>
-          )}
-
-          <div className="home-machines">
-            {others.map((vm) => (
-              <div key={vm.id} className="card home-machine">
-                <button type="button" className="home-machine-scene" onClick={() => onOpenVm(vm.name)} aria-label={`Ver ${vm.name}`}>
-                  <Scene name={vm.name} style={sceneStyle(vm.name)} state={vm.state} activity={usage(vm)} />
-                </button>
-                <div className="home-machine-row">
-                  <MachineIcon name={vm.name} size={30} radius={8} />
-                  <button type="button" className="home-machine-text" onClick={() => onOpenVm(vm.name)}>
-                    <strong>{vm.name}</strong>
-                    <span><span className={`dot ${vm.state}`} />{stateLabel[vm.state] ?? vm.state} · {gb(vm.memoryStartupGB)}</span>
-                  </button>
-                  {action(vm, true)}
+            <div className="home-meters">
+              {meters.map((x) => (
+                <div key={x.label} className="home-meter">
+                  <span className={`home-meter-label ${x.cls}`}>{x.icon}{x.label}</span>
+                  <strong>{x.value}</strong>
+                  <div className={`home-meter-bar ${x.cls}`}><span style={{ width: `${Math.min(100, x.pct)}%` }} /></div>
                 </div>
-              </div>
-            ))}
-            <button type="button" className="card home-machine home-create" onClick={onCreate}>
-              <IconPlus size={18} />Crear máquina
+              ))}
+            </div>
+            <div className="home-memory">
+              <span className="home-side-title">Memoria libre para máquinas</span>
+              <strong>{gb(home.host.memoryFreeGB)} de {gb(home.host.memoryTotalGB)}</strong>
+              <div className="bar"><span style={{ width: `${Math.min(100, (memUsed / home.host.memoryTotalGB) * 100)}%` }} /></div>
+              <span className="hint">
+                {fits.length ? `Cabe ${fits.join(", ")}.` : short.length ? "" : "Todas están encendidas."}
+                {short.map((m) => ` ${m.name} necesita ${gb(Math.max(0, m.needGB - home.host.memoryFreeGB))} más.`).join("")}
+              </span>
+            </div>
+            <div className="home-panel-actions">
+              {action(hero)}
+              <button className="btn ghost" onClick={() => onOpenVm(hero.name)}>Ver máquina<IconArrowRight size={15} /></button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="home-row">
+        {others.map((vm) => (
+          <div key={vm.id} className="card home-machine">
+            <button type="button" className="home-machine-scene" onClick={() => onOpenVm(vm.name)} aria-label={`Ver ${vm.name}`}>
+              <Scene name={vm.name} style={sceneStyle(vm.name)} state={vm.state}
+                activity={{ cpu: vm.cpuPercent, gpu: vm.gpuPercent, mem: (vm.memoryDemandGB / Math.max(vm.memoryAssignedGB, 0.1)) * 100 }} />
             </button>
+            <div className="home-machine-row">
+              <MachineIcon name={vm.name} size={30} radius={8} />
+              <button type="button" className="home-machine-text" onClick={() => onOpenVm(vm.name)}>
+                <strong>{vm.name}</strong>
+                <span><span className={`dot ${vm.state}`} />{stateLabel[vm.state] ?? vm.state} · {gb(vm.memoryStartupGB)}</span>
+              </button>
+              {action(vm, true)}
+            </div>
+          </div>
+        ))}
+
+        <div className="card home-library">
+          <div className="home-card-head">
+            <span className="home-side-title">Biblioteca</span>
+            {/* Creating a machine lives with what it is made from, as a quiet action, not a big tile. */}
+            <button type="button" className="btn ghost compact" onClick={onCreate}><IconPlus size={15} />Crear máquina</button>
+          </div>
+          <div className="home-library-grid">
+            {[
+              { icon: <IconLayoutGrid size={16} />, n: library?.profiles, label: "Perfiles", route: ":biblioteca:perfiles" },
+              { icon: <IconTemplate size={16} />, n: library?.templates, label: "Plantillas", route: ":biblioteca:plantillas" },
+              { icon: <IconStack2 size={16} />, n: library?.shared, label: "Discos compartidos", route: ":biblioteca:compartidos" },
+              { icon: <IconDisc size={16} />, n: library?.isos, label: "ISOs", route: ":biblioteca:isos" },
+            ].map((x) => (
+              <button key={x.label} type="button" className="home-library-item" onClick={() => onRoute(x.route)}>
+                <span className="home-library-icon">{x.icon}</span>
+                <strong>{x.n ?? "—"}</strong>
+                <span>{x.label}</span>
+              </button>
+            ))}
           </div>
         </div>
 
-        <aside className="home-side">
-          <div className="card home-memory">
-            <span className="home-side-title">Memoria libre para máquinas</span>
-            <strong>{gb(home.host.memoryFreeGB)} de {gb(home.host.memoryTotalGB)}</strong>
-            <div className="bar"><span style={{ width: `${Math.min(100, (memUsed / home.host.memoryTotalGB) * 100)}%` }} /></div>
-            <span className="hint">
-              {fits.length ? `Cabe ${fits.join(", ")}.` : short.length ? "" : "Todas están encendidas."}
-              {short.map((m) => ` ${m.name} necesita ${gb(Math.max(0, m.needGB - home.host.memoryFreeGB))} más.`).join("")}
-            </span>
-            {home.host.topProcesses.length > 0 && (
-              <span className="hint">Lo que más usa: {home.host.topProcesses.map((p) => `${p.name} ${gb(p.gb)}`).join(" · ")}</span>
-            )}
-          </div>
-
-          <div className="card home-library">
-            <span className="home-side-title">Biblioteca</span>
-            <div className="home-library-grid">
-              {[
-                { icon: <IconLayoutGrid size={16} />, n: library?.profiles, label: "Perfiles", route: ":biblioteca:perfiles" },
-                { icon: <IconTemplate size={16} />, n: library?.templates, label: "Plantillas", route: ":biblioteca:plantillas" },
-                { icon: <IconStack2 size={16} />, n: library?.shared, label: "Discos compartidos", route: ":biblioteca:compartidos" },
-                { icon: <IconDisc size={16} />, n: library?.isos, label: "ISOs", route: ":biblioteca:isos" },
-              ].map((x) => (
-                <button key={x.label} type="button" className="home-library-item" onClick={() => onRoute(x.route)}>
-                  <span className="home-library-icon">{x.icon}</span>
-                  <strong>{x.n ?? "—"}</strong>
-                  <span>{x.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {home.attention.length > 0 && (
-            <div className="card home-attention">
-              {home.attention.map((a, i) => {
-                const busy = a.vm ? busyFor(a.vm) : null;
-                const act = () => {
-                  if (a.cmd && a.vm) startJob(a.vm, a.cmd, a.args ?? {}, () => api.home().then((h) => { cache = h; setHome(h); }).catch(() => {}));
-                  else if (a.kind === "disk") onRoute(":biblioteca:discos");
-                  else if (a.vm) onOpenVm(a.vm);
-                };
-                return (
-                  <div className="home-attention-row" key={`${a.vm}-${a.kind}-${i}`}>
-                    <span className="opt-icon">{ISSUE_ICONS[a.kind] ?? <IconDeviceGamepad2 size={17} />}</span>
-                    <div className="opt-text">
-                      <span className="opt-title">{a.vm ?? "Equipo"}</span>
-                      <span className="opt-desc">{a.text}</span>
-                      <button className="btn" disabled={!!busy} onClick={act}>
-                        {busy ? <IconLoader2 size={16} className="spin" /> : null}{busy ? busy.message : a.label}
-                      </button>
-                    </div>
+        {home.attention.length > 0 && (
+          <div className="card home-attention">
+            {home.attention.map((a, i) => {
+              const busy = a.vm ? busyFor(a.vm) : null;
+              const act = () => {
+                if (a.cmd && a.vm) startJob(a.vm, a.cmd, a.args ?? {}, () => api.home().then((h) => { cache = h; setHome(h); }).catch(() => {}));
+                else if (a.kind === "disk") onRoute(":biblioteca:discos");
+                else if (a.vm) onOpenVm(a.vm);
+              };
+              return (
+                <div className="home-attention-row" key={`${a.vm}-${a.kind}-${i}`}>
+                  <span className="opt-icon">{ISSUE_ICONS[a.kind] ?? <IconDeviceGamepad2 size={17} />}</span>
+                  <div className="opt-text">
+                    <span className="opt-title">{a.vm ?? "Equipo"}</span>
+                    <span className="opt-desc">{a.text}</span>
+                    <button className="btn" disabled={!!busy} onClick={act}>
+                      {busy ? <IconLoader2 size={16} className="spin" /> : null}{busy ? busy.message : a.label}
+                    </button>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </aside>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { IconAppWindow, IconCheck, IconBrandWindows, IconDeviceDesktop, IconHandStop, IconLayoutBottombarCollapse, IconMoon, IconPlayerPlay, IconPlayerStop, IconPlugConnected, IconPlugConnectedX, IconPower, IconSun } from "@tabler/icons-react";
+import { useEffect, useRef, useState } from "react";
+import { MachineCube, type CubeMachine } from "./MachineCube";
+import { IconAppWindow, IconBrandWindows, IconDeviceDesktop, IconExternalLink, IconPalette, IconServer, IconHandStop, IconLayoutBottombarCollapse, IconMoon, IconPlayerPlay, IconPlayerStop, IconPlugConnected, IconPlugConnectedX, IconPower, IconSun } from "@tabler/icons-react";
 import { service, type ServiceStatus } from "./api";
 import { ACCENTS, savePrefs, usePrefs, type ClosePref, type ServicePref, type ThemePref, type VmsOnQuitPref } from "./prefs";
 import { Segmented, humanError } from "./ui";
@@ -92,63 +93,131 @@ function ServicePrefs() {
   );
 }
 
+type PrefSection = "look" | "window" | "machines" | "service";
+const PREF_SECTIONS: { id: PrefSection; label: string; icon: React.ReactNode }[] = [
+  { id: "look", label: "Apariencia", icon: <IconPalette size={17} /> },
+  { id: "window", label: "Ventana", icon: <IconAppWindow size={17} /> },
+  { id: "machines", label: "Máquinas", icon: <IconDeviceDesktop size={17} /> },
+  { id: "service", label: "Servicio", icon: <IconServer size={17} /> },
+];
+
+/** A machine to show the theme and accent on, the same cube as every machine's page. */
+const PREVIEW: CubeMachine = { power: "on", cores: 8, memoryGB: 16, gpuPercent: 60, diskGB: 256, usage: { cpu: 35, gpu: 55, mem: 45, disk: 10 }, apps: ["steam", "discord", "chrome"], removed: 0 };
+
+/** Settings: the sections on the left, their options in the middle and, beside them, a live preview of how the app
+ *  looks with the chosen theme and accent. */
 export function Preferences() {
   const prefs = usePrefs();
   const monitors = useMonitors();
+  const sections = PREF_SECTIONS.filter((x) => x.id !== "machines" || monitors.length > 1);
+  const mainRef = useRef<HTMLDivElement>(null);
+  const refs = useRef<Partial<Record<PrefSection, HTMLElement | null>>>({});
+  const [active, setActive] = useState<PrefSection>("look");
+  const key = sections.map((x) => x.id).join(",");
+  useEffect(() => {
+    const main = mainRef.current;
+    if (!main) return;
+    const list = key.split(",") as PrefSection[];
+    const spy = () => {
+      const line = main.getBoundingClientRect().top + 80;
+      let current = list[0];
+      for (const id of list) { const el = refs.current[id]; if (el && el.getBoundingClientRect().top <= line) current = id; }
+      if (main.scrollHeight > main.clientHeight + 4 && main.scrollTop + main.clientHeight >= main.scrollHeight - 4) current = list[list.length - 1];
+      setActive(current);
+    };
+    spy();
+    main.addEventListener("scroll", spy, { passive: true });
+    return () => main.removeEventListener("scroll", spy);
+  }, [key]);
+  const goTo = (id: PrefSection) => {
+    const main = mainRef.current, el = refs.current[id];
+    if (main && el) main.scrollTo({ top: Math.max(0, main.scrollTop + el.getBoundingClientRect().top - main.getBoundingClientRect().top - 24), behavior: "smooth" });
+  };
+  const section = (id: PrefSection, children: React.ReactNode) => {
+    const x = PREF_SECTIONS.find((y) => y.id === id)!;
+    return (
+      <section className="card pref-section" ref={(el) => { refs.current[id] = el; }}>
+        <div className="pref-head"><span className="opt-icon">{x.icon}</span><h2>{x.label}</h2></div>
+        <div className="pref-list">{children}</div>
+      </section>
+    );
+  };
+
   return (
-    <div className="main">
-      <div className="card">
-        <h2 className="section-title">Ajustes</h2>
-        <div className="pref-list">
-          <div className="pref-row">
-            <div className="pref-text"><strong>Tema</strong></div>
-            <Segmented<ThemePref> value={prefs.theme} onChange={(theme) => savePrefs({ theme })} options={[
-              { value: "system", label: <><IconDeviceDesktop size={15} />Sistema</> },
-              { value: "light", label: <><IconSun size={15} />Claro</> },
-              { value: "dark", label: <><IconMoon size={15} />Oscuro</> },
-            ]} />
-          </div>
-          <div className="pref-row">
-            <div className="pref-text"><strong>Color de énfasis</strong><span>Botones, selección y barras de uso.</span></div>
-            <div className="swatches" role="radiogroup" aria-label="Color de énfasis">
-              {ACCENTS.map((a) => (
-                <button type="button" key={a.id} role="radio" aria-checked={prefs.accent === a.id} title={a.name} aria-label={a.name}
-                  className={`swatch${prefs.accent === a.id ? " on" : ""}`} onClick={() => savePrefs({ accent: a.id })}>
-                  {/* Half as it looks in light, half in dark, split by a wavy diagonal. */}
-                  <svg viewBox="0 0 32 32" aria-hidden="true">
-                    <rect width="32" height="32" fill={a.dark} />
-                    <path d="M0 0H32C28 4 25 3 22 7S16 12 12 15 6 21 3 25 0 30 0 32Z" fill={a.light} />
-                  </svg>
-                  {prefs.accent === a.id && <IconCheck size={14} stroke={2.4} className="swatch-check" />}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="pref-row">
-            <div className="pref-text"><strong>Al cerrar la ventana</strong><span>En la bandeja, GpuVM sigue abierta junto al reloj y los trabajos en curso continúan.</span></div>
-            <Segmented<ClosePref> value={prefs.close} onChange={(close) => savePrefs({ close })} options={[
-              { value: "quit", label: <><IconPower size={15} />Salir por completo</> },
-              { value: "tray", label: <><IconLayoutBottombarCollapse size={15} />Quedarse en la bandeja</> },
-            ]} />
-          </div>
-          <div className="pref-row">
-            <div className="pref-text"><strong>Al salir de GpuVM</strong><span>Apagarlas cierra Windows en cada máquina y libera su memoria.</span></div>
-            <Segmented<VmsOnQuitPref> value={prefs.vmsOnQuit} onChange={(vmsOnQuit) => savePrefs({ vmsOnQuit })} options={[
-              { value: "keep", label: <><IconPlayerPlay size={15} />Dejarlas encendidas</> },
-              { value: "stop", label: <><IconPlayerStop size={15} />Apagarlas</> },
-            ]} />
-          </div>
-          {monitors.length > 1 && (
+    <div className="main prefs" ref={mainRef}>
+      <nav className="pref-nav" aria-label="Secciones de Ajustes">
+        {sections.map((x) => (
+          <button key={x.id} type="button" className={`pref-nav-item${x.id === active ? " on" : ""}`} onClick={() => goTo(x.id)}>{x.icon}{x.label}</button>
+        ))}
+      </nav>
+      <div className="pref-sections">
+        {section("look", (
+          <>
             <div className="pref-row">
-              <div className="pref-text"><strong>Abrir las máquinas en</strong><span>Cada máquina puede tener el suyo en sus opciones.</span></div>
-              <div className="pref-side pref-stack">
-                <MonitorPicker monitors={monitors} value={prefs.monitor} onChange={(monitor) => savePrefs({ monitor })} />
+              <div className="pref-text"><strong>Tema</strong><span>Sigue al de Windows o queda fijo.</span></div>
+              <Segmented<ThemePref> value={prefs.theme} onChange={(theme) => savePrefs({ theme })} options={[
+                { value: "system", label: <><IconDeviceDesktop size={15} />Sistema</> },
+                { value: "light", label: <><IconSun size={15} />Claro</> },
+                { value: "dark", label: <><IconMoon size={15} />Oscuro</> },
+              ]} />
+            </div>
+            <div className="pref-row">
+              <div className="pref-text"><strong>Color de énfasis</strong><span>Botones, selección, barras de uso y el holograma de las máquinas.</span></div>
+              <div className="swatches" role="radiogroup" aria-label="Color de énfasis">
+                {ACCENTS.map((a) => (
+                  <button type="button" key={a.id} role="radio" aria-checked={prefs.accent === a.id} title={a.name} aria-label={a.name}
+                    className={`swatch${prefs.accent === a.id ? " on" : ""}`} onClick={() => savePrefs({ accent: a.id })}>
+                    {/* Half as it looks in light, half in dark, split by a wavy diagonal. */}
+                    <svg viewBox="0 0 32 32" aria-hidden="true">
+                      <rect width="32" height="32" fill={a.dark} />
+                      <path d="M0 0H32C28 4 25 3 22 7S16 12 12 15 6 21 3 25 0 30 0 32Z" fill={a.light} />
+                    </svg>
+                  </button>
+                ))}
               </div>
             </div>
-          )}
-          <ServicePrefs />
-        </div>
+          </>
+        ))}
+        {section("window", (
+          <>
+            <div className="pref-row">
+              <div className="pref-text"><strong>Al cerrar la ventana</strong><span>En la bandeja, GpuVM sigue abierta junto al reloj y los trabajos en curso continúan.</span></div>
+              <Segmented<ClosePref> value={prefs.close} onChange={(close) => savePrefs({ close })} options={[
+                { value: "quit", label: <><IconPower size={15} />Salir por completo</> },
+                { value: "tray", label: <><IconLayoutBottombarCollapse size={15} />Quedarse en la bandeja</> },
+              ]} />
+            </div>
+            <div className="pref-row">
+              <div className="pref-text"><strong>Al salir de GpuVM</strong><span>Apagarlas cierra Windows en cada máquina y libera su memoria.</span></div>
+              <Segmented<VmsOnQuitPref> value={prefs.vmsOnQuit} onChange={(vmsOnQuit) => savePrefs({ vmsOnQuit })} options={[
+                { value: "keep", label: <><IconPlayerPlay size={15} />Dejarlas encendidas</> },
+                { value: "stop", label: <><IconPlayerStop size={15} />Apagarlas</> },
+              ]} />
+            </div>
+          </>
+        ))}
+        {monitors.length > 1 && section("machines", (
+          <div className="pref-row">
+            <div className="pref-text"><strong>Abrir las máquinas en</strong><span>Cada máquina puede tener el suyo en sus opciones.</span></div>
+            <div className="pref-side pref-stack">
+              <MonitorPicker monitors={monitors} value={prefs.monitor} onChange={(monitor) => savePrefs({ monitor })} />
+            </div>
+          </div>
+        ))}
+        {section("service", <ServicePrefs />)}
       </div>
+      {/* Always in view: the theme and accent applied to a machine and to the app's own controls. */}
+      <aside className="card pref-preview" aria-label="Vista previa">
+        <div className="pref-preview-cube"><MachineCube machine={PREVIEW} name="vista previa" /></div>
+        <div className="pref-preview-ui">
+          <div className="pref-preview-name"><span className="state-pill"><span className="dot Running" />Encendida</span><span className="pref-preview-meta">GPU 55 %</span></div>
+          <div className="pref-preview-bars">
+            <span className="res-cpu">Procesador</span><div className="bar"><span style={{ width: "35%" }} /></div>
+            <span className="res-mem">Memoria</span><div className="bar"><span style={{ width: "45%" }} /></div>
+          </div>
+          <div className="pref-preview-actions"><button type="button" className="btn ghost" tabIndex={-1}>Ver máquina</button><button type="button" className="primary" tabIndex={-1}><IconExternalLink size={16} />Abrir</button></div>
+        </div>
+      </aside>
     </div>
   );
 }
