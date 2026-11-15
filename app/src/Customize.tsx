@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   IconActivity, IconArrowsVertical, IconCat, IconCopy, IconDice5, IconX, IconLetterCase, IconPalette, IconPhotoPlus, IconRotate2, IconRotateClockwise2, IconSticker, IconTrash, IconTypography, IconZoomIn, IconZoomOut,
 } from "@tabler/icons-react";
 import { DND, type CubeEdit } from "./MachineCube";
 import { FIGURES, figureName } from "./decor/figures";
-import { drawFigureThumb } from "./decor/figureGL";
+import { drawFigureThumb, figureThumbImage } from "./decor/figureGL";
 import { STICKERS, addCustomSticker, customStickers, removeCustomSticker, stickerImage, stickerName } from "./decor/stickers";
 import { LED_COLORS, MACHINE_COLORS, newId, onDecorChange, useSource, type Decor, type DecorSource, type Face, type LedColor } from "./decor/store";
 import { randomDecor } from "./decor/random";
@@ -140,17 +140,20 @@ function Swatch({ light, dark, on, title, onClick }: { light: string; dark: stri
   );
 }
 
-function StickerThumb({ id, color, small }: { id: string; color: string; small?: boolean }) {
+const urls = new WeakMap<HTMLCanvasElement, string>();
+const urlOf = (img: HTMLCanvasElement) => { let u = urls.get(img); if (!u) { u = img.toDataURL(); urls.set(img, u); } return u; };
+const StickerThumb = memo(function StickerThumb({ id, color, small }: { id: string; color: string; small?: boolean }) {
   const [, tick] = useState(0);
-  useEffect(() => onDecorChange(() => tick((n) => n + 1)), []);
   const img = stickerImage(id, color);
-  const src = useMemo(() => img?.toDataURL() ?? "", [img]);
+  // Only a custom image still loading listens for when it is ready.
+  useEffect(() => (img ? undefined : onDecorChange(() => tick((n) => n + 1))), [img]);
+  const src = img ? urlOf(img) : "";
   const size = small ? { width: 24, height: 24 } : undefined;
   return src ? <img className="decor-thumb" style={size} src={src} alt="" draggable={false} /> : <span className="decor-thumb" style={size} />;
-}
+});
 
 /** The figure turning slowly while the pointer is over its tile. */
-function FigureThumb({ id, color, spin, size = 64 }: { id: string; color: string; spin: boolean; size?: number }) {
+const FigureThumb = memo(function FigureThumb({ id, color, spin, size = 64 }: { id: string; color: string; spin: boolean; size?: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const yaw = useRef(0.6);
   useEffect(() => {
@@ -165,14 +168,16 @@ function FigureThumb({ id, color, spin, size = 64 }: { id: string; color: string
       last = now;
       g.setTransform(1, 0, 0, 1, 0, 0);
       g.clearRect(0, 0, cv.width, cv.height);
-      drawFigureThumb(g, id, size, yaw.current, color, dpr);
+      // Still: the kept bitmap. Turning (pointer over the tile): drawn live.
+      if (spin) drawFigureThumb(g, id, size, yaw.current, color, dpr);
+      else g.drawImage(figureThumbImage(id, size, color, dpr), 0, 0);
       if (spin) frame = requestAnimationFrame(draw);
     };
     draw(last);
     return () => cancelAnimationFrame(frame);
   }, [id, color, spin, size]);
   return <canvas ref={ref} className="decor-thumb" style={{ width: size, height: size }} />;
-}
+});
 
 function Tile({ kind, id, label, onAdd, onContext, children }: {
   kind: "sticker" | "figure"; id: string; label: string; onAdd: () => void; onContext?: (e: React.MouseEvent) => void; children: React.ReactNode;
@@ -219,7 +224,7 @@ export function Customize({ source, ops, selected, setSelected, openMenu, bare }
   const [hover, setHover] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [customs, setCustoms] = useState(customStickers);
-  useEffect(() => onDecorChange(() => setCustoms(customStickers())), []);
+  useEffect(() => onDecorChange(() => setCustoms((c) => { const n = customStickers(); return n.join() === c.join() ? c : n; })), []);
   const fileRef = useRef<HTMLInputElement>(null);
   const save = (d: Partial<Decor>) => source.set({ ...source.get(), ...d });
   const accent = ACCENTS.find((a) => a.id === prefs.accent) ?? ACCENTS[0];

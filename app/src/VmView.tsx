@@ -40,6 +40,9 @@ interface Props {
 const TRANSITION: Record<string, string> = { Starting: "Encendiendo", Stopping: "Apagando", Saving: "Guardando", Pausing: "Pausando", Resuming: "Reanudando" };
 
 type VmTab = "machine" | "display" | "windows" | "custom";
+// The cube's column: dragged wider toward the options, never so wide the options get cramped, never closed.
+const CUBE_KEY = "gpuvm.cubeWidth", CUBE_DEFAULT = 380, CUBE_MIN = 320, CUBE_MAX = 760, OPTIONS_MIN = 640;
+const readCubeW = () => { try { return Number(localStorage.getItem(CUBE_KEY)) || CUBE_DEFAULT; } catch { return CUBE_DEFAULT; } };
 const TAB_LABEL: Record<VmTab, string> = { machine: "Máquina", display: "Imagen y control", windows: "Windows", custom: "Personalizar" };
 
 export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRemoved, onRenamed }: Props) {
@@ -59,6 +62,23 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
   if (vm.managed && vm.guestCredential) tabs.push("windows");
   if (vm.managed && vm.options) tabs.push("custom");
   const decorSource = useMemo(() => machineSource(vm.name), [vm.name]);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [cubeW, setCubeW] = useState(readCubeW);
+  const [resizing, setResizing] = useState(false);
+  const cubeMax = () => Math.max(CUBE_MIN, Math.min(CUBE_MAX, (bodyRef.current?.clientWidth ?? 1200) - OPTIONS_MIN - 16));
+  const resizeCube = (e: React.PointerEvent<HTMLDivElement>) => {
+    const el = e.currentTarget, startX = e.clientX, startW = cubeW;
+    el.setPointerCapture(e.pointerId);
+    setResizing(true);
+    let w = startW;
+    const move = (ev: PointerEvent) => { w = Math.round(Math.min(cubeMax(), Math.max(CUBE_MIN, startW - (ev.clientX - startX)))); setCubeW(w); };
+    const up = () => {
+      el.removeEventListener("pointermove", move); el.removeEventListener("pointerup", up); el.removeEventListener("pointercancel", up);
+      setResizing(false);
+      try { localStorage.setItem(CUBE_KEY, String(w)); } catch { /* no storage */ }
+    };
+    el.addEventListener("pointermove", move); el.addEventListener("pointerup", up); el.addEventListener("pointercancel", up);
+  };
   const decorEdit = useDecorEdit(decorSource);
   // Every section is on the same page; the bar above them marks the one in view and takes you to the others.
   const mainRef = useRef<HTMLDivElement>(null);
@@ -139,7 +159,7 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
           ))}
         </nav>
       )}
-      <div className="vm-body">
+      <div className={`vm-body${resizing ? " resizing" : ""}`} ref={bodyRef} style={{ "--cube-w": `${Math.min(cubeW, cubeMax())}px` } as React.CSSProperties}>
       <div className="vm-sections">
       {tabs.includes("machine") && (
         <section className="vm-section" ref={(el) => { sectionRefs.current.machine = el; }}>
@@ -168,6 +188,8 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
       {/* The machine itself, always in view beside its options, following what is being changed before it is saved. */}
       {vm.managed && vm.options && (
         <aside className={`vm-cube${renameOpen ? " lifted" : ""}`}>
+          <div className="vm-cube-split" role="separator" aria-orientation="vertical" aria-label="Ancho del cubo" title="Arrastra para cambiar el ancho"
+            onPointerDown={resizeCube} onDoubleClick={() => { setCubeW(CUBE_DEFAULT); try { localStorage.setItem(CUBE_KEY, String(CUBE_DEFAULT)); } catch { /* no storage */ } }}><span /></div>
           <MachineCube key={vm.name} machine={{
             power: running ? "on" : vm.state === "Starting" || vm.state === "Stopping" ? "starting" : "off",
             cores: preview.cpu ?? vm.options.cpu,

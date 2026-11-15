@@ -11,7 +11,7 @@ import { Chip, ResourceChips } from "./resources";
 import { CleanupFlow, CleanupItems, LEVEL_LOOK } from "./CleanupFlow";
 import { CLEANUP_REMOVED, MachineCube, cubeOf } from "./MachineCube";
 import { Customize, useDecorEdit } from "./Customize";
-import { draftSource, saveDecor, useSource } from "./decor/store";
+import { draftSource, saveDecor, useSource, type DecorSource } from "./decor/store";
 
 export interface Resources { cpu: number; memoryGB: number; gpuPercent: number; diskGB: number }
 
@@ -132,7 +132,6 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
   const draft = useMemo(() => draftSource(""), []);
   draft.rename(name);
   const decorEdit = useDecorEdit(draft);
-  const decor = useSource(draft);
 
   const touch = () => setDirty(true);
   const [blurred, setBlurred] = useState<Record<string, boolean>>({});
@@ -158,6 +157,7 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
     e?.preventDefault();
     if (!complete) return;
     const resources = changed ? res : null;
+    const decor = draft.get();
     if (decor.color || decor.led || decor.stickers.length || decor.figures.length) saveDecor(name, decor);
     if (fromTemplate) onCreate({ name, iso: null, template, profile, user: "", password: "", apps: [], cleanup: "none", resources });
     else onCreate({ name, iso, template: null, profile, user, password, apps, cleanup, resources });
@@ -342,10 +342,10 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
               {/* The machine being put together: every change to its resources, apps and cleanup shows here. */}
               {res && (
                 <div className="create-cube">
-                  <MachineCube machine={{
+                  <DraftCube draft={draft} machine={{
                     power: "on", cores: res.cpu, memoryGB: res.memoryGB, gpuPercent: res.gpuPercent, diskGB: res.diskGB,
                     usage: { cpu: 12, gpu: 18, mem: 30, disk: 8 }, apps, removed: CLEANUP_REMOVED[cleanup] ?? 0,
-                  }} name={name} decorShown={decor} spin={decorEdit.spins} edit={{ ...decorEdit.edit, holdStill: active === "custom" }}
+                  }} name={name} spin={decorEdit.spins} edit={{ ...decorEdit.edit, holdStill: active === "custom" }}
                     others={existing.map((v) => ({ name: v.name, machine: cubeOf(v) }))} />
                 </div>
               )}
@@ -399,4 +399,10 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
       </div>
     </div>
   );
+}
+
+/** The cube with the draft decoration: only it follows each change, not the whole dialog. */
+function DraftCube({ draft, ...props }: { draft: DecorSource } & Omit<React.ComponentProps<typeof MachineCube>, "decorShown">) {
+  const decor = useSource(draft);
+  return <MachineCube {...props} decorShown={decor} />;
 }

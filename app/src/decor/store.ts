@@ -90,10 +90,20 @@ export function readDecor(name: string): Decor {
   return d;
 }
 
+const pending = new Map<string, Decor>();
+let flushTimer = 0;
+function flush() {
+  flushTimer = 0;
+  for (const [n, d] of pending) { try { localStorage.setItem(KEY + n, JSON.stringify(d)); } catch { /* no storage */ } }
+  pending.clear();
+}
+window.addEventListener("beforeunload", flush);
+
 export function saveDecor(name: string, d: Decor) {
   if (!name) return;
   cache.set(name, d);
-  try { localStorage.setItem(KEY + name, JSON.stringify(d)); } catch { /* no storage */ }
+  pending.set(name, d);
+  if (!flushTimer) flushTimer = window.setTimeout(flush, 300);
   window.dispatchEvent(new Event(EVENT));
 }
 
@@ -105,6 +115,7 @@ export function updateDecor(name: string, change: (d: Decor) => Decor) {
 export function renameDecor(from: string, to: string) {
   const d = readDecor(from);
   cache.delete(from);
+  pending.delete(from);
   try { localStorage.removeItem(KEY + from); } catch { /* no storage */ }
   saveDecor(to, d);
 }

@@ -847,7 +847,12 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .card.scene-head:has(+ .stats.joined) { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .card.stats.joined { margin-top: calc(-1 * var(--main-gap, 16px)); border-top-left-radius: 0; border-top-right-radius: 0; box-shadow: inset 0 1px 0 var(--line); }
 /* Options beside the machine's cube, which stays in view below the section bar. */
-.vm-body { display: grid; grid-template-columns: minmax(0, 1fr) clamp(320px, 30%, 440px); gap: 16px; align-items: start; }
+.vm-body { display: grid; grid-template-columns: minmax(0, 1fr) var(--cube-w, 380px); gap: 16px; align-items: start; }
+.vm-body.resizing { user-select: none; cursor: col-resize; }
+.vm-cube-split { position: absolute; left: 0; top: 0; bottom: 0; width: 12px; z-index: 3; cursor: col-resize; touch-action: none; display: grid; place-items: center; }
+.vm-cube-split span { width: 4px; height: 36px; border-radius: 4px; background: transparent; transition: background 0.15s, height 0.15s; }
+.vm-cube-split:hover span { background: var(--handle-open); height: 56px; }
+.vm-body.resizing .vm-cube-split span { background: var(--accent); height: 56px; }
 .vm-sections { display: flex; flex-direction: column; gap: 16px; min-width: 0; container-type: inline-size; }
 /* Beside the cube the options column is narrower than the window: its sections follow its own width. */
 @container (max-width: 1000px) { .cleanup-body { grid-template-columns: 210px minmax(0, 1fr); } .cleanup-body .cleanup-items, .cleanup-body .levels-none { grid-column: 1 / -1; } }
@@ -1070,3 +1075,26 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .create-section .customize .opt-row { grid-template-columns: 32px minmax(0, 1fr); }
 .create-section .customize .opt-ctl { grid-column: 2 / -1; justify-content: flex-start; }
 .create-section .customize .opt-row.sub { padding-left: 0; }
+
+/* Games in the space of machines */
+.space-games { position: absolute; top: 12px; right: 12px; z-index: 2; opacity: 0; transition: opacity 0.15s; }
+.home-space:hover .space-games, .space-games:focus-within { opacity: 1; }
+.space-games-menu { top: calc(100% + 6px); right: 0; min-width: 220px; }
+.game-stage { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; }
+.game-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
+.game-canvas.live { cursor: crosshair; }
+.game-hud { position: absolute; top: 10px; left: 14px; right: 10px; display: flex; align-items: center; gap: 12px; pointer-events: none; }
+.game-hud .icon-btn { pointer-events: auto; }
+.game-hud .grow { flex: 1; }
+.game-score { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.game-lives { display: inline-flex; gap: 2px; color: var(--danger); }
+.game-power { font-size: 12px; color: var(--muted); padding: 2px 8px; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--line); }
+.game-card { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(360px, calc(100% - 32px)); background: var(--surface);
+  border-radius: var(--r-lg); box-shadow: 0 0 0 1px var(--line); padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.game-card strong { font-size: 17px; }
+.game-card-icon { width: 40px; height: 40px; border-radius: var(--r); display: grid; place-items: center; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.game-card-desc { color: var(--muted); font-size: 13px; }
+.game-card ul { margin: 4px 0 0; padding: 0; list-style: none; font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+.game-best { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.game-final { font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.game-card-actions { display: flex; gap: 8px; margin-top: 8px; }

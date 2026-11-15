@@ -52,11 +52,11 @@ function brickMesh(id: string): Mesh {
 
 const VS = `#version 300 es
 in vec3 aPos; in vec3 aNrm; in vec3 aCol; in float aMach;
-uniform mat3 uM; uniform vec3 uT; uniform mat3 uN; uniform vec2 uSize;
+uniform mat3 uM; uniform vec3 uT; uniform mat3 uN; uniform vec4 uRect;
 out vec3 vN; out vec3 vC; out float vMach;
 void main() {
   vec3 s = uM * aPos + uT;
-  gl_Position = vec4(s.x / uSize.x * 2.0 - 1.0, 1.0 - s.y / uSize.y * 2.0, clamp(-s.z * 0.04, -1.0, 1.0), 1.0);
+  gl_Position = vec4((s.x - uRect.x) / uRect.z * 2.0 - 1.0, 1.0 - (s.y - uRect.y) / uRect.w * 2.0, clamp(-s.z * 0.04, -1.0, 1.0), 1.0);
   vN = uN * aNrm; vC = aCol; vMach = aMach;
 }`;
 const FS = `#version 300 es
@@ -82,9 +82,10 @@ interface GLState {
   gl: WebGL2RenderingContext;
   prog: WebGLProgram;
   loc: Record<string, WebGLUniformLocation | null>;
-  meshes: Map<string, { vao: WebGLVertexArrayObject; count: number }>;
+  meshes: Map<string, { vao: WebGLVertexArrayObject; count: number; lo: V3; hi: V3 }>;
 }
 let state: GLState | null = null;
+let small = 0;
 let failed = false;
 
 function setup(): GLState | null {
@@ -100,7 +101,7 @@ function setup(): GLState | null {
   gl.linkProgram(prog);
   if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { failed = true; return null; }
   const loc: GLState["loc"] = {};
-  for (const u of ["uM", "uT", "uN", "uSize", "uMachine"]) loc[u] = gl.getUniformLocation(prog, u);
+  for (const u of ["uM", "uT", "uN", "uRect", "uMachine"]) loc[u] = gl.getUniformLocation(prog, u);
   canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); state = null; });
   state = { canvas, gl, prog, loc, meshes: new Map() };
   return state;
@@ -127,7 +128,9 @@ function mesh(s: GLState, id: string) {
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
   gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(m.idx), gl.STATIC_DRAW);
   gl.bindVertexArray(null);
-  const out = { vao, count: m.idx.length };
+  const lo: V3 = [Infinity, Infinity, Infinity], hi: V3 = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < m.pos.length; i++) { const a = i % 3; lo[a] = Math.min(lo[a], m.pos[i]); hi[a] = Math.max(hi[a], m.pos[i]); }
+  const out = { vao, count: m.idx.length, lo, hi };
   s.meshes.set(id, out);
   return out;
 }
@@ -147,9 +150,25 @@ export function drawFigures(target: CanvasRenderingContext2D, draws: FigureDraw[
   const s = setup();
   if (!s) return;
   const { gl, canvas, loc } = s;
-  const w = Math.max(1, Math.ceil(W * dpr)), h = Math.max(1, Math.ceil(H * dpr));
-  // The canvas only grows: switching sizes every frame (cube, then a thumbnail) would reallocate it each time.
-  if (canvas.width < w || canvas.height < h) { canvas.width = Math.max(canvas.width, w); canvas.height = Math.max(canvas.height, h); }
+  // Only the rectangle the figures cover is drawn and copied, not the whole target: their boxes' corners on screen.
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const ready: { d: FigureDraw; me: NonNullable<ReturnType<typeof mesh>> }[] = [];
+  for (const d of draws) {
+    const me = mesh(s, d.id);
+    if (!me) continue;
+    ready.push({ d, me });
+    for (let c = 0; c < 8; c++) {
+      const p = [c & 1 ? me.hi[0] : me.lo[0], c & 2 ? me.hi[1] : me.lo[1], c & 4 ? me.hi[2] : me.lo[2]];
+      const sx = d.m[0] * p[0] + d.m[3] * p[1] + d.m[6] * p[2] + d.t[0], sy = d.m[1] * p[0] + d.m[4] * p[1] + d.m[7] * p[2] + d.t[1];
+      x0 = Math.min(x0, sx); y0 = Math.min(y0, sy); x1 = Math.max(x1, sx); y1 = Math.max(y1, sy);
+    }
+  }
+  x0 = Math.max(0, Math.floor(x0 - 2)); y0 = Math.max(0, Math.floor(y0 - 2)); x1 = Math.min(W, Math.ceil(x1 + 2)); y1 = Math.min(H, Math.ceil(y1 + 2));
+  if (!ready.length || x1 <= x0 || y1 <= y0) return;
+  const rw = x1 - x0, rh = y1 - y0, w = Math.max(1, Math.ceil(rw * dpr)), h = Math.max(1, Math.ceil(rh * dpr));
+  // Grows when needed and shrinks back when far bigger than what has been drawn for a while.
+  if (canvas.width < w || canvas.height < h) { canvas.width = Math.max(canvas.width, w); canvas.height = Math.max(canvas.height, h); small = 0; }
+  else if (canvas.width * canvas.height > 4 * w * h && ++small > 240) { canvas.width = w; canvas.height = h; small = 0; }
   gl.viewport(0, canvas.height - h, w, h);
   gl.enable(gl.SCISSOR_TEST);
   gl.scissor(0, canvas.height - h, w, h);
@@ -159,11 +178,9 @@ export function drawFigures(target: CanvasRenderingContext2D, draws: FigureDraw[
   gl.depthFunc(gl.LESS);
   gl.disable(gl.CULL_FACE);
   gl.useProgram(s.prog);
-  gl.uniform2f(loc.uSize, W, H);
+  gl.uniform4f(loc.uRect, x0, y0, rw, rh);
   gl.uniform3fv(loc.uMachine, hex(machineColor));
-  for (const d of draws) {
-    const me = mesh(s, d.id);
-    if (!me) continue;
+  for (const { d, me } of ready) {
     gl.uniformMatrix3fv(loc.uM, false, d.m);
     gl.uniform3fv(loc.uT, d.t);
     gl.uniformMatrix3fv(loc.uN, false, d.n);
@@ -173,7 +190,7 @@ export function drawFigures(target: CanvasRenderingContext2D, draws: FigureDraw[
   gl.bindVertexArray(null);
   target.save();
   target.setTransform(1, 0, 0, 1, 0, 0);
-  target.drawImage(canvas, 0, 0, w, h, 0, 0, w, h);
+  target.drawImage(canvas, 0, 0, w, h, Math.round(x0 * dpr), Math.round(y0 * dpr), w, h);
   target.restore();
 }
 
@@ -189,6 +206,21 @@ export const viewRot = (yaw: number, pitch: number): Mat3 => {
   const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
   return [cy, -sy * sp, sy * cp, 0, cp, sp, -sy, -cy * sp, cy * cp];
 };
+
+const thumbs = new Map<string, HTMLCanvasElement>();
+/** A still thumbnail, rendered once and kept (tiles and chips draw it instead of rendering each time). */
+export function figureThumbImage(id: string, size: number, color: string, dpr: number): HTMLCanvasElement {
+  const key = `${id}|${size}|${color}|${dpr}`;
+  let c = thumbs.get(key);
+  if (!c) {
+    c = document.createElement("canvas");
+    c.width = c.height = Math.round(size * dpr);
+    drawFigureThumb(c.getContext("2d")!, id, size, 0.6, color, dpr);
+    if (thumbs.size > 200) thumbs.clear();
+    thumbs.set(key, c);
+  }
+  return c;
+}
 
 /** A thumbnail: the figure seen a little from above, turned `yaw`, filling a `size` px square. */
 export function drawFigureThumb(target: CanvasRenderingContext2D, id: string, size: number, yaw: number, color: string, dpr: number) {

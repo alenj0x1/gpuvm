@@ -46,7 +46,16 @@ const PART = { cpu: "--res-cpu", mem: "--res-mem", gpu: "--res-gpu", disk: "--re
 type V3 = [number, number, number];
 type V2 = [number, number];
 
+const parsed = new Map<string, number[]>();
 const hex = (c: string): number[] => {
+  const hit = parsed.get(c);
+  if (hit) return hit;
+  const out = parseHex(c);
+  if (parsed.size > 500) parsed.clear();
+  parsed.set(c, out);
+  return out;
+};
+const parseHex = (c: string): number[] => {
   const s = c.trim();
   if (s.startsWith("rgb")) return s.replace(/[^\d,.]/g, "").split(",").slice(0, 3).map(Number);
   const h = s.replace("#", "");
@@ -1192,10 +1201,13 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       const lit = new Path2D(), dark = new Path2D();
       (["front", "right", "back", "left"] as Face[]).forEach((f, fi) => {
         if (!vis(...FRAMES[f].n)) return;
+        // The face's origin and directions on screen, once: each dot is then two multiplications.
+        const o = P(...onFace(f, 0, 0)), a = P(...onFace(f, 1, 0)), b = P(...onFace(f, 0, 1));
+        const ux = a[0] - o[0], uy = a[1] - o[1], vx = b[0] - o[0], vy = b[1] - o[1];
         for (let i = 0; i < per; i++) {
           const col = ledCols[(((fi * per + i + shift) % n) + n) % n], u = -1 + step * (i + 0.5);
           for (let row = 0; row < 7; row++) {
-            const p = P(...onFace(f, u, top - row * step)), path = col[row] ? lit : dark;
+            const v = top - row * step, p = [o[0] + ux * u + vx * v, o[1] + uy * u + vy * v], path = col[row] ? lit : dark;
             // Tiny dots look the same as squares and cost far less than circles.
             if (r < 1.8) path.rect(p[0] - r, p[1] - r, r * 2, r * 2);
             else { path.moveTo(p[0] + r, p[1]); path.arc(p[0], p[1], r, 0, Math.PI * 2); }

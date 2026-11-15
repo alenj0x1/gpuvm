@@ -45,7 +45,8 @@ export function Slider({ value, min, max, step = 1, onChange, label, format = St
   const setFromPointer = (clientX: number) => {
     const rect = ref.current!.getBoundingClientRect();
     const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-    onChange(clamp(min + Math.round((ratio * (max - min)) / step) * step));
+    const v = clamp(min + Math.round((ratio * (max - min)) / step) * step);
+    if (v !== latest.current.value) onChange(v);
   };
   const onDown = (e: PointerEvent<HTMLDivElement>) => {
     e.currentTarget.setPointerCapture(e.pointerId);

@@ -278,15 +278,25 @@ export function figureBricks(id: string): Map<string, string> {
 }
 
 /** The figure's height in its own units (block layers plus the studs on top), to pick it and frame its thumbnail. */
+const heights = new Map<string, number>();
 export function figureHeight(id: string): number {
+  const hit = heights.get(id);
+  if (hit !== undefined) return hit;
   let top = 0;
   for (const k of figureBricks(id).keys()) top = Math.max(top, Number(k.split(",")[1]) + 1);
-  return top * BRICK + BRICK * 0.2;
+  const h = top * BRICK + BRICK * 0.2;
+  heights.set(id, h);
+  return h;
 }
 
 /** The figure's widest side (across, deep or tall) in its own units, to fit it in a thumbnail. */
+const extents = new Map<string, number>();
 export function figureExtent(id: string): number {
+  const hit = extents.get(id);
+  if (hit !== undefined) return hit;
   let w = 0;
   for (const k of figureBricks(id).keys()) { const [x, , z] = k.split(",").map(Number); w = Math.max(w, Math.abs(x) * 2 + 1, Math.abs(z) * 2 + 1); }
-  return Math.max(figureHeight(id), w * BRICK * 0.85);
+  const e = Math.max(figureHeight(id), w * BRICK * 0.85);
+  extents.set(id, e);
+  return e;
 }

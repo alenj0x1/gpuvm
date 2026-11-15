@@ -9,6 +9,7 @@ import { api } from "./api";
 import { MachineIcon } from "./machineIcon";
 import { MachineCube, cubeOf, type CubeMachine } from "./MachineCube";
 import { randomDecor, randomMachine } from "./decor/random";
+import { SpaceWithGames } from "./GameStage";
 import { Scene, sceneStyle } from "./Scene";
 import { formatUptime, stateLabel, useFlip, useScrollFade } from "./ui";
 
@@ -176,7 +177,9 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
       {hero && (
         <div className="card home-stage">
           <div className="home-space">
-            <MachineCube key="home" machine={cubeOf(hero, heroApps)} name={hero.name} others={others.map((v) => ({ name: v.name, machine: cubeOf(v) }))} />
+            <SpaceWithGames decorOf={hero.name}>
+              <MachineCube key="home" machine={cubeOf(hero, heroApps)} name={hero.name} others={others.map((v) => ({ name: v.name, machine: cubeOf(v) }))} />
+            </SpaceWithGames>
           </div>
           <div className="home-split home-split-panel" role="separator" aria-orientation="vertical" aria-label="Ancho del panel"
             onPointerDown={drag("panel")} onDoubleClick={() => setPanelW(PANEL_DEFAULT)}><span /></div>
@@ -312,8 +315,12 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
 function Showcase() {
   const [machine] = useState<CubeMachine>(randomMachine);
   const [shown, setShown] = useState(() => ({ decor: randomDecor(), n: 0 }));
-  useEffect(() => { const t = setInterval(() => setShown((s) => ({ decor: randomDecor(), n: s.n + 1 })), 7000); return () => clearInterval(t); }, []);
-  return <MachineCube machine={machine} name="" decorShown={shown.decor} spin={shown.n} />;
+  useEffect(() => { const t = setInterval(() => { if (!document.hidden) setShown((s) => ({ decor: randomDecor(), n: s.n + 1 })); }, 7000); return () => clearInterval(t); }, []);
+  return (
+    <SpaceWithGames decor={shown.decor}>
+      <MachineCube machine={machine} name="" decorShown={shown.decor} spin={shown.n} />
+    </SpaceWithGames>
+  );
 }
 
 /** Home with no machines: the same stage, with an empty machine in its cube, and beside it the invitation to create
