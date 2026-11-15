@@ -10,12 +10,19 @@ export interface GameHud {
   meter?: number; frenzy?: boolean;
 }
 
+/** A machine as a game draws it: its color and the figures it carries. */
+export interface GameMachine { name: string; color: string; figures: string[] }
+
 export interface GameHost {
-  /** The machine's color and its decoration: the player's machine looks like the one on Home. */
+  /** The machine you play with, and in a team mode the others flying with you. */
+  player: GameMachine;
+  team: GameMachine[];
+  /** The chosen mode's id ("" when the game has none). */
+  mode: string;
+  /** Same as the player's, kept for games that only need these. */
   color: string;
-  light: boolean;
   figures: string[];
-  stickers: string[];
+  light: boolean;
   /** Called a few times per second, not every frame. */
   onHud: (h: GameHud) => void;
   onOver: (score: number) => void;
@@ -35,6 +42,8 @@ export interface GameDef {
   description: string;
   /** How it is played, in words, for the start screen. */
   controls: string[];
+  /** Ways to play it, picked on the start card; `team` modes bring your other machines along. */
+  modes?: { id: string; name: string; description: string; team?: boolean }[];
   create: (canvas: HTMLCanvasElement, host: GameHost) => GameInstance;
 }
 

@@ -177,7 +177,7 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
       {hero && (
         <div className="card home-stage">
           <div className="home-space">
-            <SpaceWithGames decorOf={hero.name}>
+            <SpaceWithGames decorOf={hero.name} machines={vms.filter((v) => v.managed).map((v) => v.name)}>
               <MachineCube key="home" machine={cubeOf(hero, heroApps)} name={hero.name} others={others.map((v) => ({ name: v.name, machine: cubeOf(v) }))} />
             </SpaceWithGames>
           </div>

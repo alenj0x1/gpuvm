@@ -330,7 +330,7 @@ export function Customize({ source, ops, selected, setSelected, openMenu, bare }
           <span className="opt-icon"><IconSticker size={17} /></span>
           <div className="opt-text">
             <span className="opt-title">Stickers</span>
-            <span className="opt-desc">Arrástralos a cualquier cara del vidrio. Clic derecho en el cubo para girarlos o quitarlos.</span>
+            <span className="opt-desc">Arrástralos a cualquier cara del vidrio. Para girarlos, mantén el clic derecho y arrastra; un clic derecho abre su menú.</span>
           </div>
           <div className="opt-below">
             <Placed selected={selected} onPick={setSelected} onRemove={ops.remove} onMenu={openMenu}
@@ -362,7 +362,7 @@ export function Customize({ source, ops, selected, setSelected, openMenu, bare }
           <span className="opt-icon"><IconCat size={17} /></span>
           <div className="opt-text">
             <span className="opt-title">Figuras</span>
-            <span className="opt-desc">Se paran sobre el cubo. Arrástralas para moverlas.</span>
+            <span className="opt-desc">Se paran sobre el cubo. Arrástralas para moverlas y gíralas con el clic derecho sostenido.</span>
           </div>
           <div className="opt-below">
             <Placed selected={selected} onPick={setSelected} onRemove={ops.remove} onMenu={openMenu}

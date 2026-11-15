@@ -12,7 +12,7 @@ type Kind = "brick" | "rival";
 type Weapon = "normal" | "rapid" | "triple" | "burst" | "ring";
 type PickKind = "heart" | "star" | Exclude<Weapon, "normal">;
 interface Thing { kind: Kind; x: number; y: number; vx: number; vy: number; r: number; rot: number; vr: number; color: string; hp: number; phase: number; cool: number }
-interface Shot { x: number; y: number; vx: number; vy: number; img: number; size: number; hits: Set<Thing> | null }
+interface Shot { x: number; y: number; vx: number; vy: number; img: HTMLCanvasElement; size: number; hits: Set<Thing> | null }
 interface Bolt { x: number; y: number; vx: number; vy: number }
 interface Pickup { x: number; y: number; kind: PickKind; t: number }
 interface Spark { x: number; y: number; vx: number; vy: number; life: number; color: string; size: number }
@@ -45,13 +45,18 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
   ro.observe(canvas);
 
   // The figures to shoot, drawn once on the GPU into small images (big enough for the frenzy's giant ones).
-  const figures = (host.figures.length ? host.figures : DEFAULT_FIGURES).map((id) => {
+  const spritesFor = (ids: string[], color: string) => (ids.length ? ids : DEFAULT_FIGURES).map((id) => {
     const c = document.createElement("canvas");
     const s = 96;
     c.width = c.height = s * dpr;
-    drawFigureThumb(c.getContext("2d")!, id, s, 0.7, host.color, dpr);
+    drawFigureThumb(c.getContext("2d")!, id, s, 0.7, color, dpr);
     return c;
   });
+  const figures = spritesFor(host.player.figures, host.player.color);
+  const team = host.mode === "team";
+  // Your other machines, flying beside you: each aims at the nearest thing and shoots its own figures.
+  const SLOTS = [[-46, -58], [-46, 58], [-92, 0]];
+  const bots = host.team.slice(0, 3).map((m, i) => ({ ...m, sprites: spritesFor(m.figures, m.color), x: 0, y: 0, slot: SLOTS[i], cool: 0.3 * i, n: 0 }));
   const pickImg = Object.fromEntries(Object.entries(PICKS).map(([k, p]) => [k, stickerImage(p.sticker, host.color)])) as Record<PickKind, HTMLCanvasElement | null>;
 
   const ink = host.light ? "#1c1b18" : "#ebe8e1";
@@ -65,7 +70,8 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
   const keys = new Set<string>();
 
   const reset = () => {
-    Object.assign(me, { x: W * 0.2, y: H / 2, vx: 0, vy: 0, lives: 3, hurt: 0, shield: 0, weapon: "normal", weaponT: 0 });
+    Object.assign(me, { x: W * 0.25, y: H / 2, vx: 0, vy: 0, lives: 3, hurt: 0, shield: 0, weapon: "normal", weaponT: 0 });
+    for (const b of bots) { b.x = me.x + b.slot[0]; b.y = me.y + b.slot[1]; }
     things = []; shots = []; bolts = []; pickups = []; sparks = [];
     t = 0; score = 0; spawnBrick = 0.6; spawnRival = 3; spawnPick = 8; over = false; meter = 0; frenzy = 0; burstLeft = 0;
   };
@@ -100,7 +106,7 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     const big = frenzy > 0, size = big ? 78 : 38, v = big ? 760 : 660;
     for (const da of angles) {
       const a = me.weapon === "ring" ? da : base + da;
-      shots.push({ x: me.x + Math.cos(a) * 24, y: me.y + Math.sin(a) * 24, vx: Math.cos(a) * v, vy: Math.sin(a) * v, img: shotN++ % figures.length, size, hits: big ? new Set() : null });
+      shots.push({ x: me.x + Math.cos(a) * 24, y: me.y + Math.sin(a) * 24, vx: Math.cos(a) * v, vy: Math.sin(a) * v, img: figures[shotN++ % figures.length], size, hits: big ? new Set() : null });
     }
   };
 
@@ -131,10 +137,23 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
       if (me.weapon === "burst") { burstLeft = 3; burstCool = 0.06; }
     }
     if (burstLeft > 0 && burstCool <= 0) { fire(); burstLeft--; burstCool = 0.06; }
+    for (const b of bots) {
+      const kb = 1 - Math.exp(-dt * 6);
+      b.x += (me.x + b.slot[0] - b.x) * kb; b.y += (Math.max(20, Math.min(H - 20, me.y + b.slot[1])) - b.y) * kb;
+      b.cool -= dt;
+      if (b.cool > 0) continue;
+      let target: Thing | null = null, dist = 520;
+      for (const o of things) { const d = Math.hypot(o.x - b.x, o.y - b.y); if (o.hp > 0 && d < dist) { dist = d; target = o; } }
+      if (!target) continue;
+      b.cool = frenzy > 0 ? 0.25 : 0.6;
+      const a = Math.atan2(target.y - b.y, target.x - b.x), big = frenzy > 0;
+      shots.push({ x: b.x, y: b.y, vx: Math.cos(a) * 600, vy: Math.sin(a) * 600, img: b.sprites[b.n++ % b.sprites.length], size: big ? 60 : 30, hits: big ? new Set() : null });
+    }
 
     const speed = (150 + 40 * level) * warp;
     score += speed * dt * 0.05 * (frenzy > 0 ? 2 : 1);
-    const fill = frenzy > 0 ? 1.6 : 1;
+    // With a team the stream is thicker and the rivals tougher.
+    const fill = (frenzy > 0 ? 1.6 : 1) * (team ? 1.45 : 1);
 
     spawnBrick -= dt * fill;
     if (spawnBrick <= 0) {
@@ -150,7 +169,7 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
       spawnRival = Math.max(0.8, 3.4 / level) * (0.7 + Math.random() * 0.6);
       const c = MACHINE_COLORS[Math.floor(Math.random() * MACHINE_COLORS.length)];
       const behind = level > 1.8 && Math.random() < 0.2;
-      things.push({ kind: "rival", x: behind ? -30 : W + 30, y: 40 + Math.random() * (H - 80), vx: behind ? speed * 0.45 : -(speed * 0.7), vy: 0, r: 20, rot: 0, vr: 0, color: host.light ? c.light : c.dark, hp: level > 2.2 ? 2 : 1, phase: Math.random() * 6, cool: 1 + Math.random() * 2 });
+      things.push({ kind: "rival", x: behind ? -30 : W + 30, y: 40 + Math.random() * (H - 80), vx: behind ? speed * 0.45 : -(speed * 0.7), vy: 0, r: 20, rot: 0, vr: 0, color: host.light ? c.light : c.dark, hp: (level > 2.2 ? 2 : 1) + (team && level > 1.5 ? 1 : 0), phase: Math.random() * 6, cool: 1 + Math.random() * 2 });
     }
     spawnPick -= dt;
     if (spawnPick <= 0) {
@@ -268,12 +287,20 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     for (const b of bolts) { g.fillStyle = "#ff6b6b"; g.beginPath(); g.arc(b.x, b.y, 4.5, 0, Math.PI * 2); g.fill(); }
     for (const s of shots) {
       g.save(); g.translate(s.x, s.y); g.rotate(Math.atan2(s.vy, s.vx) * 0.25);
-      g.drawImage(figures[s.img], -s.size / 2, -s.size / 2, s.size, s.size);
+      g.drawImage(s.img, -s.size / 2, -s.size / 2, s.size, s.size);
       g.restore();
+    }
+    for (const b of bots) {
+      cube(b.x, b.y, 12, b.color, 0.9, 0.6 + Math.sin(t * 2 + b.slot[1]) * 0.15);
+      g.drawImage(b.sprites[0], b.x - 11, b.y - 30, 22, 22);
     }
     if (!over) {
       const flicker = me.hurt > 0 && Math.floor(t * 14) % 2 === 0;
-      if (!flicker) cube(me.x, me.y, frenzy > 0 ? 20 : 17, host.color, 1, 0.6 + Math.sin(t * 2) * 0.15);
+      if (!flicker) {
+        cube(me.x, me.y, frenzy > 0 ? 20 : 17, host.color, 1, 0.6 + Math.sin(t * 2) * 0.15);
+        // The machine's first figure rides on top of it.
+        g.drawImage(figures[0], me.x - 15, me.y - 42, 30, 30);
+      }
       if (me.shield > 0 || frenzy > 0) { g.strokeStyle = rgba(frenzy > 0 ? host.color : "#ffd34d", 0.45 + 0.3 * Math.sin(t * 8)); g.lineWidth = 2; g.beginPath(); g.arc(me.x, me.y, 32, 0, Math.PI * 2); g.stroke(); }
       // Where you aim: a small sight at the pointer.
       if (aim.set && running) {
@@ -337,6 +364,10 @@ export const CUBE_FLIGHT: GameDef = {
   id: "cube-flight",
   name: "Vuelo del cubo",
   description: "Esquiva los bloques y derriba a las otras máquinas con tus figuras.",
+  modes: [
+    { id: "solo", name: "Solo", description: "Tu máquina contra todo." },
+    { id: "team", name: "En equipo", description: "Tus otras máquinas vuelan contigo y disparan solas. Llegan más rivales y más duros.", team: true },
+  ],
   controls: [
     "Muévete con W A S D o las flechas",
     "Apunta con el mouse y dispara con clic (o la barra espaciadora)",

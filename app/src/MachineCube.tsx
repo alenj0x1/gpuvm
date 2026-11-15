@@ -272,6 +272,9 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
     // A sticker or figure being dragged: a working copy is drawn while it moves and saved when it is let go.
     const writeDecor = (d: Decor) => (editRef.current?.write ?? ((x: Decor) => saveDecor(decorRef.current.owner, x)))(d);
     let held: { kind: "sticker" | "figure" | "led"; id: string; du: number; dv: number } | null = null;
+    // Right button held on a sticker or figure and dragged sideways turns it, settling every 15°; a right click that
+    // does not move opens its menu instead.
+    let turning: { id: string; x: number; rot: number; moved: boolean; at: V2 } | null = null;
     let work: Decor | null = null;
     const local = (e: { clientX: number; clientY: number }): V2 => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
     const down = (e: PointerEvent) => {
@@ -280,7 +283,13 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
         const [x, y] = local(e), hit = pick(x, y);
         // The menu opens on the contextmenu event that follows, which is also the one the browser's own menu
         // would answer: opening it here let that event land on our menu and show the browser's on top.
-        if (e.button === 2 && hit) { if (hit.kind !== "led") { ed.onSelect(hit.id); menuFor = hit.id; } return; }
+        if (e.button === 2 && hit) {
+          if (hit.kind === "led") return;
+          ed.onSelect(hit.id); menuFor = hit.id;
+          const d = decorRef.current.decor, item = d.stickers.find((t) => t.id === hit.id) ?? d.figures.find((t) => t.id === hit.id);
+          if (item) { stopCam(); work = d; turning = { id: hit.id, x: e.clientX, rot: item.rot, moved: false, at: [x, y] }; cv.setPointerCapture(e.pointerId); cv.classList.add("turning"); }
+          return;
+        }
         if (e.button === 0 && hit) {
           stopCam();
           held = { ...hit, du: 0, dv: 0 };
@@ -299,6 +308,16 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       stopCam(); drag = { x: e.clientX, y: e.clientY, pan: e.button === 2 || e.shiftKey }; cv.setPointerCapture(e.pointerId); cv.classList.add("dragging");
     };
     const move = (e: PointerEvent) => {
+      if (turning && work) {
+        const dx = e.clientX - turning.x;
+        if (Math.abs(dx) > 4) { turning.moved = true; menuFor = null; }
+        if (!turning.moved) return;
+        const rot = ((Math.round((turning.rot + dx * 0.9) / 15) * 15) % 360 + 360) % 360, id = turning.id;
+        work = { ...work, stickers: work.stickers.map((t) => (t.id === id ? { ...t, rot } : t)), figures: work.figures.map((t) => (t.id === id ? { ...t, rot } : t)) };
+        turning.at = local(e);
+        idleSince = performance.now();
+        return;
+      }
       if (held) { moveHeld(...local(e)); idleSince = performance.now(); return; }
       if (!drag) { if (editRef.current) cv.classList.toggle("grab", !!pick(...local(e))); return; }
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
@@ -307,6 +326,8 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       idleSince = performance.now();
     };
     const up = () => {
+      if (turning && turning.moved && work) writeDecor(work);
+      if (turning) { turning = null; work = null; cv.classList.remove("turning"); return; }
       if (held && work) writeDecor(work);
       held = null; work = null; cv.classList.remove("holding");
       drag = null; cv.classList.remove("dragging");
@@ -1122,6 +1143,16 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       // The decoration, outside the glass: the LED sign, the stickers and the figures on top.
       drawLed(D, m, on);
       if (held) drawGrid(D);
+      if (turning?.moved) {
+        const it = D.stickers.find((t) => t.id === turning!.id) ?? D.figures.find((t) => t.id === turning!.id);
+        if (it) {
+          const label = `${it.rot > 180 ? it.rot - 360 : it.rot}°`, [lx, ly] = turning.at;
+          g.font = "600 12px 'Plus Jakarta Sans', sans-serif";
+          const w = g.measureText(label).width + 16;
+          g.fillStyle = rgba(accent, 0.9); g.beginPath(); g.roundRect(lx + 14, ly - 26, w, 22, 6); g.fill();
+          g.fillStyle = light ? "#ffffff" : "#161616"; g.textBaseline = "middle"; g.fillText(label, lx + 22, ly - 15);
+        }
+      }
       drawStickers(D, true);
       if (!under) drawFigures(D);
     };

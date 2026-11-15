@@ -1048,6 +1048,7 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 /* Personalizar: decoration of the machine's cube */
 .machine-cube.grab { cursor: move; }
 .machine-cube.holding { cursor: grabbing; }
+.machine-cube.turning { cursor: ew-resize; }
 .decor-tiles { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
 .decor-tile { padding: 10px 6px 10px; cursor: grab; }
 .decor-tile:active { cursor: grabbing; }
@@ -1102,3 +1103,8 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .game-meter span { display: block; height: 100%; border-radius: 3px; background: color-mix(in srgb, var(--accent) 70%, transparent); transition: width 0.12s linear; }
 .game-meter.on span { background: var(--accent); }
 .game-canvas.live { cursor: none; }
+.game-card.wide { width: min(440px, calc(100% - 32px)); max-height: calc(100% - 24px); overflow-y: auto; }
+.game-pick { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; max-height: 120px; overflow-y: auto; margin: 4px 0; }
+.game-pick-item { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px 0 6px; border-radius: var(--r); box-shadow: inset 0 0 0 1px var(--control-line); font-size: 13px; font-weight: 500; }
+.game-pick-item:hover { background: var(--control-bg-hover); }
+.game-pick-item.on { background: var(--pick-bg); box-shadow: inset 0 0 0 1px var(--pick-line); }
