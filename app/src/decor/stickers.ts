@@ -173,6 +173,120 @@ export const STICKERS: StickerDef[] = [
       poly(g, [[101, 116], [107, 116], [104, 123]], "#ffffff", 2);
     },
   },
+  {
+    id: "ghost", name: "Fantasma",
+    draw: (g) => {
+      const body = (dx: number, dy: number) => {
+        g.beginPath();
+        g.moveTo(42 + dx, 168 + dy);
+        g.lineTo(42 + dx, 92 + dy);
+        g.arc(100 + dx, 92 + dy, 58, Math.PI, 0);
+        g.lineTo(158 + dx, 168 + dy);
+        for (let i = 0; i < 4; i++) { const x = 158 - i * 29; g.quadraticCurveTo(x - 7 + dx, 186 + dy, x - 14.5 + dx, 170 + dy); g.quadraticCurveTo(x - 22 + dx, 154 + dy, x - 29 + dx, 168 + dy); }
+        g.closePath();
+      };
+      body(5, 5); g.fillStyle = "#cfc8e6"; g.fill();
+      body(0, 0); g.fillStyle = "#f6f4fc"; g.fill();
+      ell(g, 70, 66, 12, 7, "rgba(255,255,255,.9)", -0.6);
+      eye(g, 80, 104, 9, 13, "#2b2540");
+      eye(g, 120, 104, 9, 13, "#2b2540");
+      ell(g, 64, 124, 10, 6, "rgba(255,140,170,.45)");
+      ell(g, 136, 124, 10, 6, "rgba(255,140,170,.45)");
+      ell(g, 100, 128, 7, 9, "#2b2540");
+      ell(g, 100, 132, 4, 4, "#ff8fa8");
+    },
+  },
+  {
+    id: "rocket", name: "Cohete",
+    draw: (g) => {
+      g.save(); g.translate(100, 100); g.rotate(Math.PI / 4);
+      // Flame, fins, body, nose and window.
+      g.beginPath(); g.moveTo(-16, 58); g.quadraticCurveTo(0, 104, 16, 58); g.closePath(); g.fillStyle = "#ff8a2e"; g.fill();
+      g.beginPath(); g.moveTo(-8, 58); g.quadraticCurveTo(0, 86, 8, 58); g.closePath(); g.fillStyle = "#ffd23f"; g.fill();
+      for (const s of [1, -1]) poly(g, [[s * 22, 14], [s * 46, 52], [s * 22, 52]], "#e04848", 8);
+      g.beginPath(); g.moveTo(-24, 58); g.lineTo(-24, -30); g.quadraticCurveTo(-24, -76, 0, -96); g.quadraticCurveTo(24, -76, 24, -30); g.lineTo(24, 58); g.closePath();
+      g.fillStyle = "#eef0f4"; g.fill();
+      g.beginPath(); g.moveTo(8, 58); g.lineTo(8, -30); g.quadraticCurveTo(10, -70, 0, -96); g.quadraticCurveTo(24, -76, 24, -30); g.lineTo(24, 58); g.closePath(); g.fillStyle = "#d3d7df"; g.fill();
+      g.beginPath(); g.moveTo(-17, -56); g.quadraticCurveTo(0, -66, 17, -56); g.quadraticCurveTo(10, -82, 0, -96); g.quadraticCurveTo(-10, -82, -17, -56); g.closePath(); g.fillStyle = "#e04848"; g.fill();
+      ell(g, 0, -14, 16, 16, "#9aa3b2");
+      ell(g, 0, -14, 11, 11, "#5bb6f0");
+      ell(g, -4, -18, 4, 3, "rgba(255,255,255,.85)");
+      stroke(g, [[-24, 34], [24, 34]], "#c7ccd5", 4);
+      g.restore();
+    },
+  },
+  {
+    id: "fire", name: "Fuego",
+    draw: (g) => {
+      const flame = (k: number, dy: number, color: string) => {
+        g.save(); g.translate(100, 180 + dy); g.scale(k, k);
+        g.beginPath();
+        g.moveTo(0, 0);
+        g.bezierCurveTo(-62, 0, -70, -60, -40, -100);
+        g.bezierCurveTo(-34, -78, -22, -70, -14, -72);
+        g.bezierCurveTo(-26, -112, 0, -146, 14, -166);
+        g.bezierCurveTo(16, -128, 66, -108, 62, -56);
+        g.bezierCurveTo(60, -20, 40, 0, 0, 0);
+        g.closePath(); g.fillStyle = color; g.fill(); g.restore();
+      };
+      flame(1, 0, "#ff6a2e");
+      flame(0.72, -4, "#ff9a2e");
+      flame(0.46, -6, "#ffd23f");
+      eye(g, 88, 130, 6, 8, "#3b1d0e");
+      eye(g, 112, 130, 6, 8, "#3b1d0e");
+      g.beginPath(); g.arc(100, 140, 8, 0.15 * Math.PI, 0.85 * Math.PI); g.lineWidth = 3.5; g.lineCap = "round"; g.strokeStyle = "#3b1d0e"; g.stroke();
+    },
+  },
+  {
+    id: "gem", name: "Diamante",
+    draw: (g) => {
+      const top = [[52, 70], [76, 40], [124, 40], [148, 70]], tip = [100, 170];
+      poly(g, [top[0], top[1], top[2], top[3], tip], "#3fb8d6", 6);
+      poly(g, [[76, 40], [100, 70], [52, 70]], "#9ee9f5");
+      poly(g, [[76, 40], [124, 40], [100, 70]], "#c9f6fb");
+      poly(g, [[124, 40], [148, 70], [100, 70]], "#7fdcee");
+      poly(g, [[52, 70], [100, 70], tip], "#5fcde4");
+      poly(g, [[100, 70], [148, 70], tip], "#2ea3c4");
+      poly(g, [[78, 70], [100, 70], [100, 160]], "#8de3f2");
+      stroke(g, [[84, 48], [70, 64]], "#ffffff", 5, 0.8);
+    },
+  },
+  {
+    id: "moon", name: "Luna",
+    draw: (g) => {
+      g.beginPath(); g.arc(100, 104, 74, 0, Math.PI * 2); g.fillStyle = "#ffe08a"; g.fill();
+      g.globalCompositeOperation = "destination-out";
+      g.beginPath(); g.arc(138, 78, 62, 0, Math.PI * 2); g.fill();
+      g.globalCompositeOperation = "source-over";
+      for (const [x, y, r] of [[56, 112, 9], [80, 150, 6], [44, 80, 5]]) ell(g, x, y, r, r, "#f2c95e");
+      g.beginPath(); g.arc(70, 122, 7, 0.1 * Math.PI, 0.9 * Math.PI); g.lineWidth = 3.5; g.lineCap = "round"; g.strokeStyle = "#5a4320"; g.stroke();
+      ell(g, 58, 134, 8, 5, "rgba(255,140,140,.5)");
+      for (const [x, y, k] of [[150, 140, 1], [172, 106, 0.6], [128, 170, 0.5]]) poly(g, starPts(x, y, 14 * k, 6 * k), "#fff3c4", 3);
+    },
+  },
+  {
+    id: "gamepad", name: "Control",
+    draw: (g, color) => {
+      const body = (dy: number, color: string) => {
+        g.beginPath();
+        g.moveTo(52, 70 + dy); g.lineTo(148, 70 + dy);
+        g.bezierCurveTo(176, 70 + dy, 192, 132 + dy, 182, 150 + dy);
+        g.bezierCurveTo(172, 168 + dy, 150, 160 + dy, 138, 138 + dy);
+        g.lineTo(62, 138 + dy);
+        g.bezierCurveTo(50, 160 + dy, 28, 168 + dy, 18, 150 + dy);
+        g.bezierCurveTo(8, 132 + dy, 24, 70 + dy, 52, 70 + dy);
+        g.closePath(); g.fillStyle = color; g.fill();
+      };
+      body(5, "#24262b");
+      body(0, "#3b3e46");
+      stroke(g, [[44, 82], [70, 80]], "rgba(255,255,255,.18)", 5);
+      poly(g, [[50, 96], [62, 96], [62, 84], [74, 84], [74, 96], [86, 96], [86, 108], [74, 108], [74, 120], [62, 120], [62, 108], [50, 108]], "#25272c", 3);
+      for (const [x, y, c] of [[140, 86, "#ffd34d"], [154, 100, "#ff6b6b"], [126, 100, "#6aa8ff"], [140, 114, "#7bd88f"]] as [number, number, string][]) ell(g, x, y, 8, 8, c);
+      ell(g, 84, 128, 11, 11, "#25272c"); ell(g, 116, 128, 11, 11, "#25272c");
+      ell(g, 84, 126, 7, 7, "#555a64"); ell(g, 116, 126, 7, 7, "#555a64");
+      ell(g, 100, 92, 6, 6, color);
+    },
+  },
 ];
 
 /** Images the person added as stickers, shared by every machine. */
@@ -248,7 +362,7 @@ function dieCut(art: HTMLCanvasElement, ink = false): HTMLCanvasElement {
 const images = new Map<string, HTMLCanvasElement | null>();
 /** The sticker as an image ready to draw (256 px square, the art centered), or null while a custom one loads. */
 export function stickerImage(id: string, color: string): HTMLCanvasElement | null {
-  const key = `${id}|${id === "logo" ? color : ""}`;
+  const key = `${id}|${id === "logo" || id === "gamepad" ? color : ""}`;
   if (images.has(key)) return images.get(key)!;
   const art = document.createElement("canvas");
   art.width = art.height = SIZE;

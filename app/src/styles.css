@@ -1066,3 +1066,7 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .decor-tile-custom { position: relative; display: grid; }
 .decor-tile-x { position: absolute; top: 4px; right: 0; opacity: 0; }
 .decor-tile-custom:hover .decor-tile-x, .decor-tile-x:focus-visible { opacity: 1; }
+/* Inside Crear máquina the column is narrower: each control goes under its text. */
+.create-section .customize .opt-row { grid-template-columns: 32px minmax(0, 1fr); }
+.create-section .customize .opt-ctl { grid-column: 2 / -1; justify-content: flex-start; }
+.create-section .customize .opt-row.sub { padding-left: 0; }

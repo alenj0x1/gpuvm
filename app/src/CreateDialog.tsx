@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  IconApps, IconBolt, IconBrandWindows, IconCheck, IconCpu, IconDatabase, IconDeviceFloppy, IconDisc, IconLayoutGrid, IconLoader2, IconPlus, IconSparkles, IconTag, IconTemplate, IconTopologyStar3, IconUser, IconX,
+  IconApps, IconBolt, IconBrandWindows, IconCheck, IconCpu, IconDatabase, IconDeviceFloppy, IconDisc, IconLayoutGrid, IconLoader2, IconPalette, IconPlus, IconSparkles, IconTag, IconTemplate, IconTopologyStar3, IconUser, IconX,
 } from "@tabler/icons-react";
 import type { AppInfo, CleanupLevelId, HostInfo, IsoFile, ProfileInfo, ProfileSettings, TemplateInfo, VmOverview } from "./types";
 import { api, pickIso } from "./api";
@@ -10,6 +10,8 @@ import { AppPicker, IsoPicker, useCleanupLevels, profileLabel } from "./pickers"
 import { Chip, ResourceChips } from "./resources";
 import { CleanupFlow, CleanupItems, LEVEL_LOOK } from "./CleanupFlow";
 import { CLEANUP_REMOVED, MachineCube, cubeOf } from "./MachineCube";
+import { Customize, useDecorEdit } from "./Customize";
+import { draftSource, saveDecor, useSource } from "./decor/store";
 
 export interface Resources { cpu: number; memoryGB: number; gpuPercent: number; diskGB: number }
 
@@ -30,7 +32,7 @@ interface Props {
 const MIN_PASSWORD = 6;
 // Windows local account names: up to 20 characters, none of these, and not one Windows keeps for itself.
 const RESERVED_USERS = ["administrator", "administrador", "guest", "invitado", "defaultaccount", "wdagutilityaccount", "system"];
-type Section = "name" | "start" | "resources" | "windows" | "apps" | "cleanup";
+type Section = "name" | "start" | "resources" | "windows" | "apps" | "cleanup" | "custom";
 
 /** Create a machine in one dialog: sections on the left, everything in the middle, and on the right a summary that is
  *  always in view. A profile fills it all in; anything changed afterwards can be saved as a new profile. */
@@ -102,6 +104,7 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
       { id: "apps" as Section, label: "Apps", icon: <IconApps size={16} /> },
       { id: "cleanup" as Section, label: "Limpieza", icon: <IconSparkles size={16} /> },
     ]),
+    { id: "custom", label: "Personalizar", icon: <IconPalette size={16} /> },
   ];
   // The section in view is marked on the left as the body scrolls; a click there scrolls to it.
   useEffect(() => {
@@ -125,6 +128,11 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
     const body = bodyRef.current, el = refs.current[id];
     if (body && el) body.scrollTo({ top: body.scrollTop + el.getBoundingClientRect().top - body.getBoundingClientRect().top - 8, behavior: "smooth" });
   };
+
+  const draft = useMemo(() => draftSource(""), []);
+  draft.rename(name);
+  const decorEdit = useDecorEdit(draft);
+  const decor = useSource(draft);
 
   const touch = () => setDirty(true);
   const [blurred, setBlurred] = useState<Record<string, boolean>>({});
@@ -150,6 +158,7 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
     e?.preventDefault();
     if (!complete) return;
     const resources = changed ? res : null;
+    if (decor.color || decor.led || decor.stickers.length || decor.figures.length) saveDecor(name, decor);
     if (fromTemplate) onCreate({ name, iso: null, template, profile, user: "", password: "", apps: [], cleanup: "none", resources });
     else onCreate({ name, iso, template: null, profile, user, password, apps, cleanup, resources });
   };
@@ -322,6 +331,11 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
                 </div>
                 </>
               ))}
+
+              {section("custom", "Personalizar", "Su color, un letrero, stickers y figuras. Se arrastran al cubo de al lado.", (
+                <Customize bare source={decorEdit.source} ops={decorEdit.ops} selected={decorEdit.selected} setSelected={decorEdit.setSelected} openMenu={decorEdit.openMenu} />
+              ))}
+              {decorEdit.menu}
             </div>
 
             <aside className="create-summary">
@@ -331,7 +345,8 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
                   <MachineCube machine={{
                     power: "on", cores: res.cpu, memoryGB: res.memoryGB, gpuPercent: res.gpuPercent, diskGB: res.diskGB,
                     usage: { cpu: 12, gpu: 18, mem: 30, disk: 8 }, apps, removed: CLEANUP_REMOVED[cleanup] ?? 0,
-                  }} name={name} others={existing.map((v) => ({ name: v.name, machine: cubeOf(v) }))} />
+                  }} name={name} decorShown={decor} spin={decorEdit.spins} edit={{ ...decorEdit.edit, holdStill: active === "custom" }}
+                    others={existing.map((v) => ({ name: v.name, machine: cubeOf(v) }))} />
                 </div>
               )}
               <span className="create-summary-title">Resumen</span>

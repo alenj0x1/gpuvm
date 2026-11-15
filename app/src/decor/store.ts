@@ -33,7 +33,16 @@ export interface FigurePlacement {
 }
 
 export type LedColor = "amber" | "red" | "green" | "white" | "machine";
-export interface LedSign { text: string; color: LedColor; /** Adds the machine's state and use to the text. */ live: boolean }
+export interface LedSign {
+  text: string; color: LedColor;
+  /** Adds the machine's state and use to the text. */
+  live: boolean;
+  /** Height of the strip on the glass, 0 at the bottom to 1 at the top. */
+  y?: number;
+}
+/** Where the strip's top row sits on a side face (v from -1 to 1) for a height from 0 to 1. */
+export const ledTop = (y = 0) => -0.66 + Math.min(1, Math.max(0, y)) * 1.62;
+export const LED_STEP = 2 / 44;
 
 export interface Decor {
   /** A color from MACHINE_COLORS; none follows the accent. */
@@ -120,3 +129,28 @@ export function decorColor(name: string, light = document.documentElement.datase
 }
 
 export const newId = () => Math.random().toString(36).slice(2, 10);
+
+/** Where a decoration is read and written: a machine's saved one, or a draft (Crear máquina) kept until it exists. */
+export interface DecorSource {
+  /** The machine's name (for the sign's default text), "" while it has none. */
+  name: string;
+  get: () => Decor;
+  set: (d: Decor) => void;
+  subscribe: (onChange: () => void) => () => void;
+}
+export const machineSource = (name: string): DecorSource => ({ name, get: () => readDecor(name), set: (d) => saveDecor(name, d), subscribe });
+export function draftSource(name: string, initial: Decor = EMPTY): DecorSource & { rename: (n: string) => void } {
+  let value = initial;
+  const listeners = new Set<() => void>();
+  const src = {
+    name,
+    get: () => value,
+    set: (d: Decor) => { value = d; listeners.forEach((l) => l()); },
+    subscribe: (l: () => void) => { listeners.add(l); const off = subscribe(l); return () => { listeners.delete(l); off(); }; },
+    rename: (n: string) => { src.name = n; },
+  };
+  return src;
+}
+export function useSource(src: DecorSource): Decor {
+  return useSyncExternalStore(src.subscribe, src.get);
+}

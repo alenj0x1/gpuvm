@@ -1,19 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  IconActivity, IconCat, IconCopy, IconX, IconLetterCase, IconPalette, IconPhotoPlus, IconRotate2, IconRotateClockwise2, IconSticker, IconTrash, IconTypography, IconZoomIn, IconZoomOut,
+  IconActivity, IconArrowsVertical, IconCat, IconCopy, IconDice5, IconX, IconLetterCase, IconPalette, IconPhotoPlus, IconRotate2, IconRotateClockwise2, IconSticker, IconTrash, IconTypography, IconZoomIn, IconZoomOut,
 } from "@tabler/icons-react";
 import { DND, type CubeEdit } from "./MachineCube";
 import { FIGURES, figureName } from "./decor/figures";
 import { drawFigureThumb } from "./decor/figureGL";
 import { STICKERS, addCustomSticker, customStickers, removeCustomSticker, stickerImage, stickerName } from "./decor/stickers";
-import { LED_COLORS, MACHINE_COLORS, newId, readDecor, saveDecor, useDecor, onDecorChange, type Decor, type Face, type LedColor } from "./decor/store";
+import { LED_COLORS, MACHINE_COLORS, newId, onDecorChange, useSource, type Decor, type DecorSource, type Face, type LedColor } from "./decor/store";
+import { randomDecor } from "./decor/random";
 import { ACCENTS, usePrefs } from "./prefs";
 import { Segmented, Slider } from "./ui";
 
 /** The color the decoration is drawn with right now: the machine's own or the accent. */
-function useDecorColor(name: string) {
-  const decor = useDecor(name);
+function useDecorColor(decor: Decor) {
   const prefs = usePrefs();
   const light = document.documentElement.dataset.theme === "light";
   const own = MACHINE_COLORS.find((c) => c.id === decor.color);
@@ -28,13 +28,17 @@ const free = <T,>(spots: [number, number][], taken: T[], at: (t: T) => [number, 
   spots.find(([a, b]) => taken.every((t) => { const [x, y] = at(t); return Math.hypot(x - a, y - b) > 0.35; })) ?? spots[Math.floor(Math.random() * spots.length)];
 
 /** The selection and right-click menu shared by the cube and the panel. */
-export function useDecorEdit(name: string) {
+export function useDecorEdit(source: DecorSource) {
   const [selected, setSelected] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
-  useEffect(() => { setSelected(null); setMenu(null); }, [name]);
-  const edit: CubeEdit = { selected, onSelect: setSelected, onMenu: (id, x, y) => setMenu({ id, x, y }) };
-  const change = (f: (d: Decor) => Decor) => saveDecor(name, f(readDecor(name)));
-  const ops = useMemo(() => decorOps(change, setSelected), [name]);
+  // Each "Decorar al azar" turns the cube once, as Home's showcase does.
+  const [spins, setSpins] = useState(0);
+  useEffect(() => { setSelected(null); setMenu(null); }, [source]);
+  const edit: CubeEdit = { selected, onSelect: setSelected, onMenu: (id, x, y) => setMenu({ id, x, y }), write: source.set };
+  const ops = useMemo(() => {
+    const change = (f: (d: Decor) => Decor) => source.set(f(source.get()));
+    return { ...decorOps(change, setSelected), randomize: () => { source.set(randomDecor()); setSelected(null); setSpins((n) => n + 1); } };
+  }, [source]);
 
   // Delete removes what is picked, Escape lets it go (not while typing).
   useEffect(() => {
@@ -71,7 +75,7 @@ export function useDecorEdit(name: string) {
     </div>,
     document.body,
   );
-  return { edit, ops, selected, setSelected, menu: menuNode, openMenu: (id: string, x: number, y: number) => setMenu({ id, x, y }) };
+  return { source, edit, ops, selected, setSelected, spins, menu: menuNode, openMenu: (id: string, x: number, y: number) => setMenu({ id, x, y }) };
 }
 
 const STICKER_MIN = 0.28, STICKER_MAX = 1.4, FIGURE_MIN = 0.5, FIGURE_MAX = 1.8;
@@ -204,16 +208,20 @@ function Placed({ items, selected, onPick, onRemove, onMenu }: {
   );
 }
 
-export function Customize({ name, ops, selected, setSelected, openMenu }: Pick<ReturnType<typeof useDecorEdit>, "ops" | "selected" | "setSelected" | "openMenu"> & { name: string }) {
-  const decor = useDecor(name);
+export function Customize({ source, ops, selected, setSelected, openMenu, bare }: Pick<ReturnType<typeof useDecorEdit>, "source" | "ops" | "selected" | "setSelected" | "openMenu"> & {
+  /** Without its own card (inside Crear máquina, which already frames each section). */
+  bare?: boolean;
+}) {
+  const decor = useSource(source);
+  const name = source.name;
   const prefs = usePrefs();
-  const color = useDecorColor(name);
+  const color = useDecorColor(decor);
   const [hover, setHover] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [customs, setCustoms] = useState(customStickers);
   useEffect(() => onDecorChange(() => setCustoms(customStickers())), []);
   const fileRef = useRef<HTMLInputElement>(null);
-  const save = (d: Partial<Decor>) => saveDecor(name, { ...readDecor(name), ...d });
+  const save = (d: Partial<Decor>) => source.set({ ...source.get(), ...d });
   const accent = ACCENTS.find((a) => a.id === prefs.accent) ?? ACCENTS[0];
   const led = decor.led;
   const picked = decor.stickers.find((s) => s.id === selected) ?? decor.figures.find((f) => f.id === selected);
@@ -227,8 +235,18 @@ export function Customize({ name, ops, selected, setSelected, openMenu }: Pick<R
   };
 
   return (
-    <div className="card customize">
+    <div className={bare ? "customize" : "card customize"}>
       <div className="opt-rows">
+        <div className="opt-row">
+          <span className="opt-icon"><IconDice5 size={17} /></span>
+          <div className="opt-text">
+            <span className="opt-title">Al azar</span>
+            <span className="opt-desc">Color, letrero, stickers y figuras elegidos al azar. Puedes seguir cambiando lo que quieras.</span>
+          </div>
+          <div className="opt-ctl">
+            <button type="button" className="btn" onClick={ops.randomize}><IconDice5 size={16} />Decorar al azar</button>
+          </div>
+        </div>
         <div className="opt-row">
           <span className="opt-icon"><IconPalette size={17} /></span>
           <div className="opt-text">
@@ -260,7 +278,7 @@ export function Customize({ name, ops, selected, setSelected, openMenu }: Pick<R
               <span className="opt-icon"><IconLetterCase size={17} /></span>
               <div className="opt-text"><span className="opt-title">Texto</span><span className="opt-desc">Sin texto, muestra el nombre de la máquina.</span></div>
               <div className="opt-ctl">
-                <input className="text-input" value={led.text} maxLength={60} placeholder={name.toUpperCase()} aria-label="Texto del letrero"
+                <input className="text-input" value={led.text} maxLength={60} placeholder={(name || "GpuVM").toUpperCase()} aria-label="Texto del letrero"
                   onChange={(e) => save({ led: { ...led, text: e.target.value } })} />
               </div>
             </div>
@@ -282,6 +300,14 @@ export function Customize({ name, ops, selected, setSelected, openMenu }: Pick<R
                     );
                   })}
                 </div>
+              </div>
+            </div>
+            <div className="opt-row sub">
+              <span className="opt-icon"><IconArrowsVertical size={17} /></span>
+              <div className="opt-text"><span className="opt-title">Altura</span><span className="opt-desc">También se sube o se baja arrastrándolo en el cubo.</span></div>
+              <div className="opt-ctl">
+                <Slider label="Altura" value={Math.round((led.y ?? 0) * 100)} min={0} max={100} step={5} marks={[0, 50, 100]}
+                  format={(v) => (v === 0 ? "Abajo" : v === 100 ? "Arriba" : `${v} %`)} onChange={(v) => save({ led: { ...led, y: v / 100 } })} />
               </div>
             </div>
             <div className="opt-row sub">

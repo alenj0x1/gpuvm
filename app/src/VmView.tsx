@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   IconAdjustments, IconBrandWindows, IconAlertTriangle, IconAppWindow, IconApps, IconArrowsMaximize, IconBolt, IconCheck, IconChevronRight, IconClipboardText, IconClock, IconCpu, IconDeviceDesktop, IconDeviceFloppy, IconDeviceGamepad2, IconDots, IconDownload, IconExternalLink, IconFolders, IconGauge, IconKey, IconLayoutBoard, IconLayoutGrid, IconLink, IconList, IconLoader2, IconNetwork, IconPalette, IconPencil, IconPlayerPause, IconPlayerPlay, IconPlayerTrackNext, IconPlugConnected, IconPlugOff, IconPointer, IconPower, IconRectangle, IconRefresh, IconRefreshAlert, IconScreenShare, IconSearch, IconShieldCheck, IconSparkles, IconTemplate, IconTopologyStar3, IconTrash, IconWaveSine, IconWorld,
@@ -9,6 +9,7 @@ import { AppLogo, FpsPicker, MonitorPicker, resolveMonitor, useMonitors, CODECS,
 import { MachineIcon, patternClick, patternVariant, setPatternVariant } from "./machineIcon";
 import { CLEANUP_REMOVED, MachineCube, cubeOf } from "./MachineCube";
 import { Customize, useDecorEdit } from "./Customize";
+import { machineSource } from "./decor/store";
 import { Scene, nextSceneStyle, sceneStyle } from "./Scene";
 import { CleanupFlow, CleanupItems, LEVEL_LOOK } from "./CleanupFlow";
 import { Sparkline, series } from "./Chart";
@@ -57,7 +58,8 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
   if (vm.managed && vm.options && vm.streaming) tabs.push("display");
   if (vm.managed && vm.guestCredential) tabs.push("windows");
   if (vm.managed && vm.options) tabs.push("custom");
-  const decorEdit = useDecorEdit(vm.name);
+  const decorSource = useMemo(() => machineSource(vm.name), [vm.name]);
+  const decorEdit = useDecorEdit(decorSource);
   // Every section is on the same page; the bar above them marks the one in view and takes you to the others.
   const mainRef = useRef<HTMLDivElement>(null);
   const sectionRefs = useRef<Partial<Record<VmTab, HTMLElement | null>>>({});
@@ -158,7 +160,7 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
       )}
       {tabs.includes("custom") && (
         <section className="vm-section" ref={(el) => { sectionRefs.current.custom = el; }}>
-          <Customize name={vm.name} ops={decorEdit.ops} selected={decorEdit.selected} setSelected={decorEdit.setSelected} openMenu={decorEdit.openMenu} />
+          <Customize source={decorEdit.source} ops={decorEdit.ops} selected={decorEdit.selected} setSelected={decorEdit.setSelected} openMenu={decorEdit.openMenu} />
         </section>
       )}
       </div>
@@ -175,7 +177,7 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
             usage: { cpu: vm.cpuPercent, gpu: vm.gpuPercent, mem: (vm.memoryDemandGB / Math.max(vm.memoryAssignedGB, 0.1)) * 100, disk: 0 },
             apps: previewApps,
             removed: CLEANUP_REMOVED[preview.cleanup ?? vm.options.cleanup] ?? 0,
-          }} name={draftName || vm.name} decorOf={vm.name} edit={{ ...decorEdit.edit, holdStill: active === "custom" }} others={vms.filter((v) => v.name !== vm.name).map((v) => ({ name: v.name, machine: cubeOf(v) }))} />
+          }} name={draftName || vm.name} decorOf={vm.name} spin={decorEdit.spins} edit={{ ...decorEdit.edit, holdStill: active === "custom" }} others={vms.filter((v) => v.name !== vm.name).map((v) => ({ name: v.name, machine: cubeOf(v) }))} />
         </aside>
       )}
       </div>

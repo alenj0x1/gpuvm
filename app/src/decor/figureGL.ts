@@ -1,7 +1,7 @@
-import { FIGURES, type Piece, type V3 } from "./figures";
+import { BRICK, FIGURES, figureBricks, figureExtent, figureHeight, type V3 } from "./figures";
 
-// The figures drawn on the GPU: each one becomes a smooth mesh once (normals from each piece's real shape) and is
-// drawn with light per pixel and a depth buffer, into one shared WebGL canvas that the cube (or a thumbnail) then
+// The figures drawn on the GPU: each one becomes a mesh of its blocks once and is drawn with light per pixel and a
+// depth buffer, into one shared WebGL canvas that the cube (or a thumbnail) then
 // copies in. Drawing them as 2D polygons cost 18 to 70 ms per figure and frame; here a frame with several costs
 // well under a millisecond.
 
@@ -10,93 +10,44 @@ type Mat3 = number[]; // column-major
 interface Mesh { pos: number[]; nrm: number[]; col: number[]; mach: number[]; idx: number[] }
 
 const hex = (c: string): V3 => { const h = c.replace("#", ""); return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255) as V3; };
-const norm = (v: V3): V3 => { const l = Math.hypot(...v) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
-const rot = (v: V3, r: V3 = [0, 0, 0]): V3 => {
-  let [x, y, z] = v;
-  const [ax, az, ay] = r;
-  if (ax) { const c = Math.cos(ax), s = Math.sin(ax); [y, z] = [y * c - z * s, y * s + z * c]; }
-  if (az) { const c = Math.cos(az), s = Math.sin(az); [x, y] = [x * c - y * s, x * s + y * c]; }
-  if (ay) { const c = Math.cos(ay), s = Math.sin(ay); [x, z] = [x * c + z * s, -x * s + z * c]; }
-  return [x, y, z];
-};
 
-/** Adds one piece to the mesh: its points and normals in its own unit shape, then sized, turned and placed. */
-function addPiece(m: Mesh, p: Piece) {
-  let S: V3 = typeof p.s === "number" ? [p.s, p.s, p.s] : p.s ?? [1, 1, 1];
-  const at = p.p ?? [0, 0, 0];
-  const machine = p.c === "$" ? 1 : 0, color = machine ? [1, 1, 1] : hex(p.c);
-  const base = m.pos.length / 3;
-  const pts: V3[] = [], nrms: V3[] = [], tris: number[] = [];
-  const grid = (cols: number, rows: number, at0 = 0) => {
-    for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
-      const a = at0 + j * (cols + 1) + i, b = a + 1, c = a + cols + 1, d = c + 1;
-      tris.push(a, c, b, b, c, d);
-    }
+const DIRS: { n: V3; quad: V3[] }[] = [
+  { n: [1, 0, 0], quad: [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]] },
+  { n: [-1, 0, 0], quad: [[0, 0, 1], [0, 1, 1], [0, 1, 0], [0, 0, 0]] },
+  { n: [0, 1, 0], quad: [[0, 1, 0], [0, 1, 1], [1, 1, 1], [1, 1, 0]] },
+  { n: [0, -1, 0], quad: [[0, 0, 1], [0, 0, 0], [1, 0, 0], [1, 0, 1]] },
+  { n: [0, 0, 1], quad: [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]] },
+  { n: [0, 0, -1], quad: [[1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]] },
+];
+const STUD_SIDES = 12, STUD_R = 0.3, STUD_H = 0.18;
+
+/** The figure's blocks as one mesh: only the faces no other block covers, and a stud on every free top. */
+function brickMesh(id: string): Mesh {
+  const m: Mesh = { pos: [], nrm: [], col: [], mach: [], idx: [] };
+  const grid = figureBricks(id);
+  const add = (pts: V3[], n: V3, c: string) => {
+    const base = m.pos.length / 3, machine = c === "$" ? 1 : 0, color = machine ? [1, 1, 1] : hex(c);
+    for (const q of pts) { m.pos.push(q[0] * BRICK, q[1] * BRICK, q[2] * BRICK); m.nrm.push(...n); m.col.push(...color); m.mach.push(machine); }
+    for (let i = 1; i < pts.length - 1; i++) m.idx.push(base, base + i, base + i + 1);
   };
-  if (p.k === "sphere") {
-    const n = 28, rows = p.half ? 8 : 16;
-    for (let j = 0; j <= rows; j++) for (let i = 0; i <= n; i++) {
-      const t = (j / 16) * Math.PI, a = (i / n) * Math.PI * 2, v: V3 = [Math.sin(t) * Math.cos(a), Math.cos(t), Math.sin(t) * Math.sin(a)];
-      pts.push(v); nrms.push(v);
+  for (const [k, c] of grid) {
+    const [x, y, z] = k.split(",").map(Number);
+    // Blocks are centered on x and z, standing on y = 0.
+    const o: V3 = [x - 0.5, y, z - 0.5];
+    for (const d of DIRS) {
+      if (grid.has(`${x + d.n[0]},${y + d.n[1]},${z + d.n[2]}`)) continue;
+      add(d.quad.map((q) => [o[0] + q[0], o[1] + q[1], o[2] + q[2]] as V3), d.n, c);
     }
-    grid(n, rows);
-  } else if (p.k === "cyl") {
-    const n = 28, top = p.top ?? 1;
-    for (const [y, r] of [[0, 1], [1, top]]) for (let i = 0; i <= n; i++) {
-      const a = (i / n) * Math.PI * 2;
-      pts.push([Math.cos(a) * r, y, Math.sin(a) * r]);
-      nrms.push(norm([Math.cos(a), 1 - top, Math.sin(a)]));
+    if (grid.has(`${x},${y + 1},${z}`)) continue;
+    const ring = (h: number): V3[] => Array.from({ length: STUD_SIDES }, (_, i) => { const a = (i / STUD_SIDES) * Math.PI * 2; return [x + Math.cos(a) * STUD_R, y + 1 + h, z + Math.sin(a) * STUD_R]; });
+    const lo = ring(0), hi = ring(STUD_H);
+    for (let i = 0; i < STUD_SIDES; i++) {
+      const j = (i + 1) % STUD_SIDES, a = ((i + 0.5) / STUD_SIDES) * Math.PI * 2;
+      add([lo[i], hi[i], hi[j], lo[j]], [Math.cos(a), 0, Math.sin(a)], c);
     }
-    grid(n, 1);
-    for (const [y, r, ny] of [[0, 1, -1], [1, top, 1]]) {
-      if (r <= 0) continue;
-      const c = pts.length;
-      pts.push([0, y, 0]); nrms.push([0, ny, 0]);
-      for (let i = 0; i <= n; i++) { const a = (i / n) * Math.PI * 2; pts.push([Math.cos(a) * r, y, Math.sin(a) * r]); nrms.push([0, ny, 0]); }
-      for (let i = 0; i < n; i++) tris.push(c, c + 1 + i, c + 2 + i);
-    }
-  } else if (p.k === "box") {
-    // Built at its real size so the rounded edges stay round whatever its proportions.
-    const h: V3 = [S[0] / 2, S[1] / 2, S[2] / 2], r = Math.min(p.round ?? 0, ...h);
-    const inner: V3 = [h[0] - r, h[1] - r, h[2] - r], N = r > 0 ? 10 : 1;
-    for (const ax of [0, 1, 2]) for (const sd of [-1, 1]) {
-      const u = (ax + 1) % 3, w = (ax + 2) % 3, start = pts.length;
-      for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) {
-        const q: V3 = [0, 0, 0];
-        q[ax] = sd * h[ax];
-        // More points near the edges, where the rounding is.
-        const e = (k: number) => { const t = (k / N) * 2 - 1; return Math.sign(t) * Math.pow(Math.abs(t), 0.6); };
-        q[u] = e(i) * h[u]; q[w] = e(j) * h[w];
-        const c: V3 = [Math.max(-inner[0], Math.min(inner[0], q[0])), Math.max(-inner[1], Math.min(inner[1], q[1])), Math.max(-inner[2], Math.min(inner[2], q[2]))];
-        const d: V3 = [q[0] - c[0], q[1] - c[1], q[2] - c[2]], l = Math.hypot(...d);
-        const nn: V3 = l > 1e-6 ? [d[0] / l, d[1] / l, d[2] / l] : (() => { const f: V3 = [0, 0, 0]; f[ax] = sd; return f; })();
-        pts.push(r > 0 ? [c[0] + nn[0] * r, c[1] + nn[1] * r, c[2] + nn[2] * r] : q);
-        nrms.push(r > 0 ? nn : (() => { const f: V3 = [0, 0, 0]; f[ax] = sd; return f; })());
-      }
-      grid(N, N, start);
-    }
-    S = [1, 1, 1];
-  } else {
-    const arc = p.arc ?? Math.PI * 2, n = Math.max(8, Math.round((30 * arc) / (Math.PI * 2))), mm = 12, tube = p.tube ?? 0.2;
-    for (let i = 0; i <= n; i++) for (let j = 0; j <= mm; j++) {
-      const a = (i / n) * arc, b = (j / mm) * Math.PI * 2, r = 1 + Math.cos(b) * tube;
-      pts.push([Math.cos(a) * r, Math.sin(b) * tube, Math.sin(a) * r]);
-      nrms.push([Math.cos(b) * Math.cos(a), Math.sin(b), Math.cos(b) * Math.sin(a)]);
-    }
-    for (let i = 0; i < n; i++) for (let j = 0; j < mm; j++) {
-      const a = i * (mm + 1) + j, b = a + 1, c = a + mm + 1, d = c + 1;
-      tris.push(a, c, b, b, c, d);
-    }
+    add(hi, [0, 1, 0], c);
   }
-  for (let i = 0; i < pts.length; i++) {
-    const v = rot([pts[i][0] * S[0], pts[i][1] * S[1], pts[i][2] * S[2]], p.r);
-    const nn = rot(norm([nrms[i][0] / S[0], nrms[i][1] / S[1], nrms[i][2] / S[2]]), p.r);
-    m.pos.push(v[0] + at[0], v[1] + at[1], v[2] + at[2]);
-    m.nrm.push(...nn);
-    m.col.push(...color);
-    m.mach.push(machine);
-  }
-  for (const t of tris) m.idx.push(base + t);
+  return m;
 }
 
 const VS = `#version 300 es
@@ -158,10 +109,8 @@ function setup(): GLState | null {
 function mesh(s: GLState, id: string) {
   const hit = s.meshes.get(id);
   if (hit) return hit;
-  const def = FIGURES.find((f) => f.id === id);
-  if (!def) return null;
-  const m: Mesh = { pos: [], nrm: [], col: [], mach: [], idx: [] };
-  for (const p of def.pieces()) addPiece(m, p);
+  if (!FIGURES.some((f) => f.id === id)) return null;
+  const m = brickMesh(id);
   const { gl, prog } = s;
   const vao = gl.createVertexArray()!;
   gl.bindVertexArray(vao);
@@ -243,10 +192,10 @@ export const viewRot = (yaw: number, pitch: number): Mat3 => {
 
 /** A thumbnail: the figure seen a little from above, turned `yaw`, filling a `size` px square. */
 export function drawFigureThumb(target: CanvasRenderingContext2D, id: string, size: number, yaw: number, color: string, dpr: number) {
-  const def = FIGURES.find((f) => f.id === id);
-  if (!def) return;
-  const V = viewRot(yaw, 0.42), k = (size * 0.62) / Math.max(0.6, def.height);
+  if (!FIGURES.some((f) => f.id === id)) return;
+  const height = figureHeight(id);
+  const V = viewRot(yaw, 0.42), k = (size * 0.6) / Math.max(0.6, figureExtent(id));
   const m: Mat3 = [V[0] * k, -V[1] * k, V[2], V[3] * k, -V[4] * k, V[5], V[6] * k, -V[7] * k, V[8]];
-  const c = [m[3] * (-def.height / 2), m[4] * (-def.height / 2), m[5] * (-def.height / 2)];
+  const c = [m[3] * (-height / 2), m[4] * (-height / 2), m[5] * (-height / 2)];
   drawFigures(target, [{ id, m, t: [size / 2 + c[0], size * 0.54 + c[1], c[2]], n: V }], color, size, size, dpr);
 }

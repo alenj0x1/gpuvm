@@ -311,9 +311,9 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
  *  with a quick spin. The machine itself stays (changing its pieces would send the camera around them). */
 function Showcase() {
   const [machine] = useState<CubeMachine>(randomMachine);
-  const [decor, setDecor] = useState(randomDecor);
-  useEffect(() => { const t = setInterval(() => setDecor(randomDecor()), 7000); return () => clearInterval(t); }, []);
-  return <MachineCube machine={machine} name="" decorShown={decor} />;
+  const [shown, setShown] = useState(() => ({ decor: randomDecor(), n: 0 }));
+  useEffect(() => { const t = setInterval(() => setShown((s) => ({ decor: randomDecor(), n: s.n + 1 })), 7000); return () => clearInterval(t); }, []);
+  return <MachineCube machine={machine} name="" decorShown={shown.decor} spin={shown.n} />;
 }
 
 /** Home with no machines: the same stage, with an empty machine in its cube, and beside it the invitation to create
