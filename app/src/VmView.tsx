@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  IconAdjustments, IconAlertTriangle, IconAppWindow, IconApps, IconArrowsMaximize, IconBolt, IconCheck, IconChevronRight, IconClipboardText, IconClock, IconCpu, IconDeviceDesktop, IconDeviceFloppy, IconDeviceGamepad2, IconDots, IconDownload, IconExternalLink, IconFolders, IconGauge, IconKey, IconLayoutBoard, IconLayoutGrid, IconLink, IconList, IconLoader2, IconNetwork, IconPalette, IconPencil, IconPlayerPause, IconPlayerPlay, IconPlayerTrackNext, IconPlugConnected, IconPlugOff, IconPointer, IconPower, IconRectangle, IconRefresh, IconRefreshAlert, IconScreenShare, IconSearch, IconShieldCheck, IconSparkles, IconTemplate, IconTopologyStar3, IconTrash, IconWaveSine, IconWorld,
+  IconAdjustments, IconBrandWindows, IconAlertTriangle, IconAppWindow, IconApps, IconArrowsMaximize, IconBolt, IconCheck, IconChevronRight, IconClipboardText, IconClock, IconCpu, IconDeviceDesktop, IconDeviceFloppy, IconDeviceGamepad2, IconDots, IconDownload, IconExternalLink, IconFolders, IconGauge, IconKey, IconLayoutBoard, IconLayoutGrid, IconLink, IconList, IconLoader2, IconNetwork, IconPalette, IconPencil, IconPlayerPause, IconPlayerPlay, IconPlayerTrackNext, IconPlugConnected, IconPlugOff, IconPointer, IconPower, IconRectangle, IconRefresh, IconRefreshAlert, IconScreenShare, IconSearch, IconShieldCheck, IconSparkles, IconTemplate, IconTopologyStar3, IconTrash, IconWaveSine, IconWorld,
 } from "@tabler/icons-react";
 import type { AppInfo, CleanupLevelId, DiskBudget, SharedDiskInfo, DisplayMode, HostInfo, MouseMode, Sample, StreamSettings, VmOverview } from "./types";
 import { usePrefs } from "./prefs";
-import { AppLogo, FpsPicker, MonitorPicker, resolveMonitor, useMonitors, CODECS, RESOLUTIONS, USES, streamUseOf, useCleanupLevels } from "./pickers";
+import { AppLogo, FpsPicker, MonitorPicker, resolveMonitor, useMonitors, CODECS, RESOLUTIONS, USES, streamUseOf, useCleanupLevels, profileLabel } from "./pickers";
 import { MachineIcon, patternClick, patternVariant, setPatternVariant } from "./machineIcon";
 import { CLEANUP_REMOVED, MachineCube, cubeOf } from "./MachineCube";
 import { Scene, nextSceneStyle, sceneStyle } from "./Scene";
@@ -555,10 +555,11 @@ function Header({ vm, vms = [], busy, variant, startJob, run, onRemoved, onRenam
         <h1>{vm.name}</h1>
         <div className="meta">
           <span className="state-pill"><span className={`dot ${vm.state}`} />{stateLabel[vm.state] ?? vm.state}</span>
-          {[vm.edition, vm.gpuName && vm.hasGpu ? vm.gpuName.replace("NVIDIA GeForce ", "") : null, vm.profile].filter(Boolean).map((t) => (
-            <span key={t as string}>· {t}</span>
-          ))}
-          {short && <span className="warn-text">· Le faltan {vm.missingGB.toLocaleString("es")} GB de memoria libre</span>}
+          {/* What the machine is, as small labeled pieces: its Windows, its GPU and the profile it was made from. */}
+          {vm.edition && <span className="spec-chip" title="Windows"><IconBrandWindows size={13} />{vm.edition}</span>}
+          {vm.hasGpu && vm.gpuName && <span className="spec-chip" title="GPU"><IconBolt size={13} />{vm.gpuName.replace("NVIDIA GeForce ", "")}</span>}
+          {vm.profile && <span className="spec-chip" title="Perfil"><IconLayoutGrid size={13} />{profileLabel(vm.profile)}</span>}
+          {short && <span className="warn-text">Le faltan {vm.missingGB.toLocaleString("es")} GB de memoria libre</span>}
         </div>
       </div>
       </div>

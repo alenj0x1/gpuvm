@@ -1035,3 +1035,7 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
   .home-row > * { overflow: visible; }
   .home-others { grid-auto-columns: minmax(280px, 1fr); }
 }
+
+/* The machine's specs in its header: small labeled pieces, not a run of words after dots. */
+.spec-chip { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 6px; background: var(--surface-2); color: var(--muted); font-size: 12px; white-space: nowrap; }
+.spec-chip svg { flex: none; }
