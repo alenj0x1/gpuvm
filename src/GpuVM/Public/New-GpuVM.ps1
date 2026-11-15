@@ -21,7 +21,7 @@ function New-GpuVM {
         [switch]$Start
     )
     Assert-Admin
-    if (Get-VM -Name $Name -ErrorAction SilentlyContinue) { throw "Ya existe una VM llamada '$Name'." }
+    Assert-GpuVMNameFree -Name $Name
     if ($Template) {
         if ($IsoPath -or $Edition -or $Credential) { throw 'Con -Template, Windows, su edición y su contraseña vienen de la plantilla; quita -IsoPath, -Edition y -Credential.' }
         if (-not $PSCmdlet.ShouldProcess($Name, "Crear VM desde la plantilla $Template")) { return }

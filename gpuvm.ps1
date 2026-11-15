@@ -37,6 +37,7 @@ $commands = [ordered]@{
     'client-install' = 'Install-GpuVMClient'
     'components-update' = 'Update-GpuVMComponent'
     'remove'      = 'Remove-GpuVM'
+    'rename'      = 'Rename-GpuVM'
     'repair'      = 'Repair-GpuVMState'
     'profiles'    = 'Get-GpuVMProfile'
     'lab-new'     = 'New-GpuVMLab'

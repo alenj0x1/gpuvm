@@ -64,6 +64,14 @@ export function setPatternVariant(name: string, variant: number) {
   try { localStorage.setItem(VARIANT_KEY + name, String(variant)); } catch { /* no storage */ }
 }
 
+/** A renamed machine keeps the pattern picked for it. */
+export function renamePatternVariant(from: string, to: string) {
+  try {
+    const saved = localStorage.getItem(VARIANT_KEY + from);
+    if (saved !== null) { localStorage.setItem(VARIANT_KEY + to, saved); localStorage.removeItem(VARIANT_KEY + from); }
+  } catch { /* no storage */ }
+}
+
 export function machineColor(name: string, variant = patternVariant(name)) {
   const colors = palette();
   return colors[hash(`${name}#${variant}`) % colors.length];

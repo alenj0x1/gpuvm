@@ -892,3 +892,125 @@ InModuleScope GpuVM {
         }
     }
 }
+
+InModuleScope GpuVM {
+    Describe 'Rename' {
+        $global:RenameTestId = [guid]'6b0a8f1e-3c55-4c1e-9a7a-1f2d3e4c5b6a'
+
+        # A VM folder as Hyper-V and GpuVM leave it: configuration, disk named after the VM and gpuvm.json.
+        function New-RenameFixture {
+            $root = [IO.Path]::GetFullPath((Join-Path $TestDrive ([guid]::NewGuid().ToString('n'))))
+            $dir = Join-Path $root 'win10'
+            New-Item -ItemType Directory (Join-Path $dir 'Virtual Machines'), (Join-Path $dir 'Virtual Hard Disks') | Out-Null
+            'config' | Set-Content (Join-Path $dir "Virtual Machines\$global:RenameTestId.vmcx")
+            'disk' | Set-Content (Join-Path $dir 'Virtual Hard Disks\win10.vhdx')
+            $state = [ordered]@{
+                name         = 'win10'
+                backend      = 'hyperv-gpup'
+                vmDir        = $dir
+                vhdPath      = Join-Path $dir 'Virtual Hard Disks\win10.vhdx'
+                lastOpenedAt = '2026-11-01T10:00:00.0000000-05:00'
+                streaming    = [ordered]@{ user = 'gpuvm'; password = 'x'; pairedClient = 'HOST-PC' }
+                config       = [ordered]@{ streaming = [ordered]@{ client = [ordered]@{ fps = 120; monitor = 'primary' } } }
+                statePath    = Join-Path $dir 'gpuvm.json'
+            }
+            Save-GpuVMState $state
+            [pscustomobject]@{ Root = $root; Dir = $dir; State = $state }
+        }
+
+        function Set-HyperVMocks([string]$Dir) {
+            $global:RenameTestDir = $Dir
+            Mock Get-VM { [pscustomobject]@{ Name = 'win10'; Id = $global:RenameTestId; State = 'Off'; ConfigurationLocation = $global:RenameTestDir
+                    SnapshotFileLocation = $global:RenameTestDir; SmartPagingFilePath = $global:RenameTestDir } }
+            Mock Rename-VM { }
+            # Hyper-V moves the configuration folder itself.
+            Mock Move-VMStorage {
+                $from = @(Get-ChildItem (Split-Path $VirtualMachinePath -Parent) -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'Virtual Machines') })[0]
+                Move-Item (Join-Path $from.FullName 'Virtual Machines') (Join-Path $VirtualMachinePath 'Virtual Machines')
+            }
+            Mock Get-VMHardDiskDrive {
+                [pscustomobject]@{ Path = Join-Path $global:RenameTestDir 'Virtual Hard Disks\win10.vhdx'; ControllerType = 'SCSI'; ControllerNumber = 0; ControllerLocation = 0 }
+                [pscustomobject]@{ Path = 'C:\GpuVM\.shared\juegos.vhdx'; ControllerType = 'SCSI'; ControllerNumber = 0; ControllerLocation = 1 }
+            }
+            Mock Set-VMHardDiskDrive { }
+        }
+
+        It 'renames the VM, its folder, disk and state, keeping pairing, client settings and last opened' {
+            $f = New-RenameFixture
+            Set-HyperVMocks $f.Dir
+            $new = Rename-HyperVGpuPVM -Name 'win10' -NewName 'juegos' -State $f.State 6>$null
+            $newDir = Join-Path $f.Root 'juegos'
+            $new['vmDir'] | Should Be $newDir
+            $new['vhdPath'] | Should Be (Join-Path $newDir 'Virtual Hard Disks\juegos.vhdx')
+            Test-Path $f.Dir | Should Be $false
+            Test-Path $new['vhdPath'] | Should Be $true
+            Test-Path (Join-Path $newDir "Virtual Machines\$global:RenameTestId.vmcx") | Should Be $true
+            $saved = Read-JsonFile (Join-Path $newDir 'gpuvm.json')
+            $saved['name'] | Should Be 'juegos'
+            $saved['vhdPath'] | Should Be $new['vhdPath']
+            $saved['streaming']['pairedClient'] | Should Be 'HOST-PC'
+            $saved['config']['streaming']['client']['fps'] | Should Be 120
+            $saved['lastOpenedAt'] | Should Not BeNullOrEmpty
+            Assert-MockCalled Rename-VM -Times 1 -Exactly -Scope It -ParameterFilter { $NewName -eq 'juegos' }
+            Assert-MockCalled Move-VMStorage -Times 1 -Exactly -Scope It -ParameterFilter { $VirtualMachinePath -eq $newDir -and $SnapshotFilePath -eq $newDir }
+            # The shared disk lives outside the VM folder: it stays attached where it is.
+            Assert-MockCalled Set-VMHardDiskDrive -Times 1 -Exactly -Scope It -ParameterFilter { $VMName -eq 'juegos' -and $Path -eq $new['vhdPath'] }
+        }
+
+        It 'undoes every step when one fails, leaving the VM as it was' {
+            $f = New-RenameFixture
+            Set-HyperVMocks $f.Dir
+            $before = Get-Content -Raw $f.State['statePath']
+            Mock Set-VMHardDiskDrive { throw 'disco ocupado' } -ParameterFilter { $Path -like '*juegos.vhdx' }
+            $message = try { Rename-HyperVGpuPVM -Name 'win10' -NewName 'juegos' -State $f.State 6>$null; '' } catch { $_.Exception.Message }
+            $message | Should Match 'disco ocupado'
+            $message | Should Match 'quedó como estaba'
+            Test-Path (Join-Path $f.Root 'juegos') | Should Be $false
+            Test-Path (Join-Path $f.Dir 'Virtual Hard Disks\win10.vhdx') | Should Be $true
+            Get-Content -Raw $f.State['statePath'] | Should Be $before
+            Assert-MockCalled Rename-VM -Times 1 -Exactly -Scope It -ParameterFilter { $NewName -eq 'win10' }
+            Assert-MockCalled Move-VMStorage -Times 2 -Exactly -Scope It
+        }
+
+        It 'only changes the name when it differs in case, keeping the folder' {
+            $f = New-RenameFixture
+            Set-HyperVMocks $f.Dir
+            $new = Rename-HyperVGpuPVM -Name 'win10' -NewName 'Win10' -State $f.State 6>$null
+            $new['vmDir'] | Should Be $f.Dir
+            (Read-JsonFile $f.State['statePath'])['name'] | Should Be 'Win10'
+            Assert-MockCalled Move-VMStorage -Times 0 -Exactly -Scope It
+        }
+
+        It 'validates the new name as creating does and only renames a VM that is off' {
+            $f = New-RenameFixture
+            Mock Assert-Admin { }
+            Mock Get-GpuVMState { $f.State }
+            Mock Get-VMSnapshot { }
+            Mock Invoke-GpuVMBackend { }
+            Mock Get-VM { }
+            Mock Get-VM { [pscustomobject]@{ Name = 'win10'; Id = $global:RenameTestId; State = 'Off' } } -ParameterFilter { $Name -eq 'win10' }
+            Mock Get-VM { [pscustomobject]@{ Name = 'otra'; Id = [guid]::NewGuid(); State = 'Off' } } -ParameterFilter { $Name -eq 'otra' }
+            Test-Throws { Rename-GpuVM -Name 'win10' -NewName 'con espacio' } | Should Be $true
+            Test-Throws { Rename-GpuVM -Name 'win10' -NewName ('x' * 41) } | Should Be $true
+            Test-Throws { Rename-GpuVM -Name 'win10' -NewName 'otra' } | Should Be $true
+            New-Item -ItemType Directory (Join-Path $f.Root 'sobra') | Out-Null
+            Test-Throws { Rename-GpuVM -Name 'win10' -NewName 'sobra' } | Should Be $true
+            Mock Get-VM { [pscustomobject]@{ Name = 'win10'; Id = $global:RenameTestId; State = 'Running' } } -ParameterFilter { $Name -eq 'win10' }
+            Test-Throws { Rename-GpuVM -Name 'win10' -NewName 'juegos' } | Should Be $true
+            Assert-MockCalled Invoke-GpuVMBackend -Times 0 -Exactly -Scope It
+        }
+
+        It 'keeps the renamed VM in the ISO list' {
+            $saved = $script:DataRoot
+            $script:DataRoot = Join-Path $TestDrive 'iso-data'
+            New-Item -ItemType Directory $script:DataRoot | Out-Null
+            $iso = Join-Path $TestDrive 'Win11.iso'
+            'x' | Set-Content $iso
+            Register-GpuVMIsoUse -Path $iso -VMName 'win10'
+            Register-GpuVMIsoUse -Path $iso -VMName 'otra'
+            Rename-GpuVMIsoUse -Name 'win10' -NewName 'juegos'
+            @(Read-IsoLibrary)[0]['usedBy'] | Should Be @('juegos', 'otra')
+            $script:DataRoot = $saved
+        }
+    }
+}

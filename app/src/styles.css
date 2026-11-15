@@ -856,6 +856,10 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 /* Below the section bar: once the page scrolls it sits flush under the bar and reaches the bottom of the window,
    so the column never shows empty space above or below it. */
 .vm-cube { position: sticky; top: 21px; height: max(340px, calc(100vh - 109px)); border-radius: var(--r-lg); background: var(--surface); overflow: hidden; }
+/* While the machine is renamed, its cube stays above the dialog's scrim so the plate is seen taking the new name.
+   The page drops its fade meanwhile: a mask makes it a layer of its own, which would keep the cube under the scrim. */
+.main.renaming { mask-image: none; }
+.vm-cube.lifted { z-index: 41; }
 @media (max-width: 1100px) { .vm-body { grid-template-columns: minmax(0, 1fr); } .vm-cube { display: none; } }
 
 /* Settings: sections on the left, options in the middle, a live preview of the theme and accent on the right. */

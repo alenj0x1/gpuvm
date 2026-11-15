@@ -13,6 +13,7 @@ Changes waiting for the next version sit under **Unreleased** at the top (this s
 - **Accent color.** **Settings** lets you pick the accent (blue, violet, teal, green or amber), shown as half light, half dark; the light/dark switch moved there too.
 - **Choose the Windows user name** when creating a machine (it was always `gpuvm`), with the names Windows reserves rejected as you type.
 - **New template from the Library.** Pick the machine whose Windows it saves and name it, as from the machine's own menu.
+- **Rename a machine.** **Rename** in a machine's menu (when it is off) checks the new name as you type, while the cube beside engraves it on the board's serial plate. The machine is renamed in Hyper-V along with its folder and disk; its settings, Moonlight pairing, shared disks, last opened and the banner design picked for it stay with it. If a step fails, what was already renamed is undone. The module adds `Rename-GpuVM` (`./gpuvm.ps1 rename`).
 
 ### Changed
 - **A new interface.**

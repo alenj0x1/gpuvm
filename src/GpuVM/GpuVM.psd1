@@ -11,6 +11,7 @@
         'Set-GpuVM'
         'Get-GpuVM'
         'Remove-GpuVM'
+        'Rename-GpuVM'
         'Repair-GpuVMState'
         'Get-GpuVMOverview'
         'Invoke-GpuVMPower'

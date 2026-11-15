@@ -41,6 +41,7 @@ Un backend es la forma de darle la GPU a la VM. Cada uno llama a `Register-GpuVM
 | `New` | contexto | Crea la VM desde cero. |
 | `Apply` | nombre, configuración | Aplica CPU, memoria, GPU, etc. a una VM apagada. |
 | `SyncDriver` | nombre, estado | Vuelve a copiar el driver del host; devuelve la versión copiada. |
+| `Rename` | nombre, nombre nuevo, estado | Cambia el nombre de una VM apagada con sus archivos; deshace lo hecho si un paso falla. Devuelve el estado nuevo. |
 | `Remove` | nombre, estado, borrar disco | Elimina la VM. |
 
 Los cmdlets públicos solo hablan con esta interfaz. El backend actual es `hyperv-gpup` (`Backends/HyperVGpuP.ps1`): ajusta el procesador y la memoria fija, desactiva los puntos de control, define el espacio MMIO, Secure Boot y TPM, conecta el switch y agrega el adaptador de partición de GPU. GPU-P no admite puntos de control ni guardar estado, así que si el host se apaga, el invitado se apaga en orden.
@@ -92,7 +93,7 @@ Dos variables de entorno llevan los datos a otro lugar: `GPUVM_DATA` (todos los 
 
 ## Cómo extender
 
-- **Nuevo backend** (p. ej. `kvm-vfio`): un archivo en `src/GpuVM/Backends/` que llama a `Register-GpuVMBackend` con `Test`, `New`, `Apply`, `SyncDriver` y `Remove`. Los perfiles lo eligen con `"backend"`.
+- **Nuevo backend** (p. ej. `kvm-vfio`): un archivo en `src/GpuVM/Backends/` que llama a `Register-GpuVMBackend` con `Test`, `New`, `Apply`, `SyncDriver`, `Rename` y `Remove`. Los perfiles lo eligen con `"backend"`.
 - **Nueva optimización del invitado:** una entrada en `guest/optimizations.ps1`, probada en un laboratorio y agregada a un perfil.
 - **Nuevo perfil:** un JSON en `profiles/` que extienda uno existente.
 

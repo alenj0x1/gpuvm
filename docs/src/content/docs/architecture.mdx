@@ -41,6 +41,7 @@ A backend is how the GPU is given to the VM. Each one calls `Register-GpuVMBacke
 | `New` | context | Creates the VM from scratch. |
 | `Apply` | name, config | Applies CPU, memory, GPU, etc. to a VM that is off. |
 | `SyncDriver` | name, state | Copies the host driver again; returns the copied version. |
+| `Rename` | name, new name, state | Renames a VM that is off with its files; undoes what it did if a step fails. Returns the new state. |
 | `Remove` | name, state, delete disk | Removes the VM. |
 
 Public cmdlets only talk to this interface. The current backend is `hyperv-gpup` (`Backends/HyperVGpuP.ps1`): it sets the processor, fixed memory, disables checkpoints, sets MMIO space, Secure Boot and TPM, connects the switch and adds the GPU partition adapter. GPU-P doesn't support checkpoints or saved state, so if the host shuts down the guest shuts down in order.
@@ -92,7 +93,7 @@ Two environment variables move data elsewhere: `GPUVM_DATA` (all data) and `GPUV
 
 ## Extending
 
-- **New backend** (for example `kvm-vfio`): a file in `src/GpuVM/Backends/` that calls `Register-GpuVMBackend` with `Test`, `New`, `Apply`, `SyncDriver` and `Remove`. Profiles choose it with `"backend"`.
+- **New backend** (for example `kvm-vfio`): a file in `src/GpuVM/Backends/` that calls `Register-GpuVMBackend` with `Test`, `New`, `Apply`, `SyncDriver`, `Rename` and `Remove`. Profiles choose it with `"backend"`.
 - **New guest optimization:** an entry in `guest/optimizations.ps1`, tested in a lab and added to a profile.
 - **New profile:** a JSON file in `profiles/` that extends an existing one.
 

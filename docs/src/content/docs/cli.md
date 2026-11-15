@@ -27,6 +27,7 @@ description: The gpuvm.ps1 commands and the GpuVM PowerShell module cmdlets.
 | `client-install` | `Install-GpuVMClient` | Installs Moonlight on the host with winget. |
 | `components-update` | `Update-GpuVMComponent` | Looks for new versions of the streaming components. |
 | `remove` | `Remove-GpuVM` | Removes the VM from Hyper-V. |
+| `rename` | `Rename-GpuVM` | Renames the VM with its folder and disk. |
 | `repair` | `Repair-GpuVMState` | Rebuilds the state file of a VM created with GpuVM. |
 | `profiles` | `Get-GpuVMProfile` | Lists profiles, or shows one resolved. |
 | `lab-new` | `New-GpuVMLab` | Opens a lab. |
@@ -97,6 +98,10 @@ No parameters. Does nothing if Moonlight is already installed.
 
 `-Name` (required), `-DeleteDisk` (also deletes the VM folder and disk; can't be undone).
 
+### rename
+
+`-Name` and `-NewName` (required). The VM must be off. Renames it in Hyper-V, its folder and disk, and keeps its settings, Moonlight pairing and shared disks. The new name follows the same rules as `new`; if a step fails, what was already renamed is undone.
+
 ### repair
 
 `-Name` (required), `-Profile` (default `balanced`), `-Override`. Rebuilds `gpuvm.json` of a VM created with GpuVM whose state was lost. The VM must be off. If the guest hasn't booted yet, it also recovers the Sunshine password from its disk.
@@ -139,6 +144,7 @@ No parameters. Does nothing if Moonlight is already installed.
 ./gpuvm.ps1 list                                     # VMs and whether their driver matches the host's
 ./gpuvm.ps1 sync-driver -Name win11                  # after updating the NVIDIA driver (VM off)
 ./gpuvm.ps1 set -Name win11 -Profile balanced        # switch profile (VM off)
+./gpuvm.ps1 rename -Name win11 -NewName games        # rename (VM off)
 ./gpuvm.ps1 remove -Name win11                       # add -DeleteDisk to delete the disk too
 ```
 

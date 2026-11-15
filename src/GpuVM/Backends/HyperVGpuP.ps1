@@ -189,7 +189,170 @@ function Sync-HyperVGpuPDriver {
     $gpu
 }
 
-Register-GpuVMBackend -Name 'hyperv-gpup' -Description 'Hyper-V con GPU Partitioning; la GPU se comparte con el host.' -Operations @{
+# Where a path inside the VM's folder ends up once the folder takes the new name; $null for a path outside it
+# (a shared disk, a template's parent disk), which stays where it is. A disk named after the VM takes the new name.
+function Get-RenamedVMPath {
+    param(
+        [string]$Path,
+        [Parameter(Mandatory)][string]$From,
+        [Parameter(Mandatory)][string]$To,
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$NewName
+    )
+    if (-not $Path) { return $null }
+    $full = [IO.Path]::GetFullPath($Path).TrimEnd('\')
+    if ($full -ne $From -and -not $full.StartsWith("$From\", [StringComparison]::OrdinalIgnoreCase)) { return $null }
+    $moved = $To + $full.Substring($From.Length)
+    $extension = [IO.Path]::GetExtension($moved)
+    if ($extension -in '.vhdx', '.vhd' -and [IO.Path]::GetFileNameWithoutExtension($moved) -eq $Name) {
+        $moved = Join-Path (Split-Path $moved -Parent) "$NewName$extension"
+    }
+    $moved
+}
+
+# Moves a file or folder (same volume: a rename, nothing is copied), creating the destination's folder if needed.
+function Move-GpuVMItem {
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Destination)
+    $parent = Split-Path $Destination -Parent
+    if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+    if (Test-Path -LiteralPath $Path -PathType Container) { [IO.Directory]::Move($Path, $Destination) }
+    else { [IO.File]::Move($Path, $Destination) }
+}
+
+# Moves what is left in the old folder into the new one, merging folders Hyper-V already created there.
+# Each move is recorded in $Done so it can be undone; a file that already exists at the destination stops it.
+function Move-GpuVMFolderContent {
+    param(
+        [Parameter(Mandatory)][string]$From,
+        [Parameter(Mandatory)][string]$To,
+        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[hashtable]]$Done
+    )
+    foreach ($item in @(Get-ChildItem -LiteralPath $From -Force)) {
+        $target = Join-Path $To $item.Name
+        if (-not (Test-Path -LiteralPath $target)) {
+            Move-GpuVMItem -Path $item.FullName -Destination $target
+            $Done.Add(@{ step = 'item'; from = $item.FullName; to = $target })
+        }
+        elseif ($item.PSIsContainer -and (Test-Path -LiteralPath $target -PathType Container)) {
+            Move-GpuVMFolderContent -From $item.FullName -To $target -Done $Done
+        }
+        else { throw "Ya existe $target." }
+    }
+}
+
+# Undoes the recorded steps of a rename, newest first. Returns what could not be undone.
+function Undo-HyperVGpuPRename {
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[hashtable]]$Done,
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$NewName
+    )
+    $problems = [System.Collections.Generic.List[string]]::new()
+    for ($i = $Done.Count - 1; $i -ge 0; $i--) {
+        $step = $Done[$i]
+        try {
+            switch ($step['step']) {
+                'name' { Rename-VM -Name $NewName -NewName $Name -ErrorAction Stop }
+                'folder' {
+                    $files = @(Get-ChildItem -LiteralPath $step['path'] -Recurse -Force -File -ErrorAction SilentlyContinue)
+                    if (-not $files.Count) { Remove-Item -LiteralPath $step['path'] -Recurse -Force }
+                }
+                'storage' { $back = $step['back']; Move-VMStorage -VMName $NewName @back -ErrorAction Stop }
+                'item' { Move-GpuVMItem -Path $step['to'] -Destination $step['from'] }
+                'disk' {
+                    $d = $step['drive']
+                    Set-VMHardDiskDrive -VMName $NewName -ControllerType $d.ControllerType -ControllerNumber $d.ControllerNumber `
+                        -ControllerLocation $d.ControllerLocation -Path $step['path'] -ErrorAction Stop
+                }
+                'state' { Set-Content -LiteralPath $step['path'] -Value $step['text'] -NoNewline -Encoding utf8 }
+            }
+        }
+        catch { $problems.Add($_.Exception.Message) }
+    }
+    , $problems
+}
+
+# Renames a stopped VM and moves what lives in its folder (configuration, disk, gpuvm.json) to a folder with the new
+# name. The VM is never unregistered from Hyper-V: its configuration moves with Move-VMStorage and its disk is renamed
+# in place (same volume, nothing copied) and attached again at the new path. Each step is recorded; if one fails, the
+# ones before it are undone newest first and the error is thrown. A name that only changes case keeps the folder.
+function Rename-HyperVGpuPVM {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$NewName,
+        [Parameter(Mandatory)][System.Collections.IDictionary]$State
+    )
+    $oldDir = [IO.Path]::GetFullPath($State['vmDir']).TrimEnd('\')
+    # Only a folder named after the VM takes the new name; a VM kept in a folder of another name stays there.
+    $moveFolder = $NewName -ne $Name -and (Split-Path $oldDir -Leaf) -eq $Name
+    $newDir = if ($moveFolder) { Join-Path (Split-Path $oldDir -Parent) $NewName } else { $oldDir }
+    $paths = @{ From = $oldDir; To = $newDir; Name = $Name; NewName = $NewName }
+    $vm = Get-VM -Name $Name -ErrorAction Stop
+    $done = [System.Collections.Generic.List[hashtable]]::new()
+    try {
+        Write-Step "Cambiando el nombre en Hyper-V a '$NewName'"
+        Rename-VM -Name $Name -NewName $NewName -ErrorAction Stop
+        $done.Add(@{ step = 'name' })
+
+        if ($moveFolder) {
+            if (Test-Path -LiteralPath $newDir) { throw "Ya existe la carpeta $newDir. Elige otro nombre o bórrala." }
+            New-Item -ItemType Directory -Path $newDir -Force | Out-Null
+            $done.Add(@{ step = 'folder'; path = $newDir })
+
+            Write-Step 'Moviendo la configuración de la VM a su nueva carpeta'
+            $move = @{}
+            $back = @{}
+            foreach ($pair in @(('VirtualMachinePath', $vm.ConfigurationLocation), ('SnapshotFilePath', $vm.SnapshotFileLocation),
+                    ('SmartPagingFilePath', $vm.SmartPagingFilePath))) {
+                $target = Get-RenamedVMPath -Path $pair[1] @paths
+                if ($target) { $move[$pair[0]] = $target; $back[$pair[0]] = $pair[1] }
+            }
+            if ($move.Count) {
+                Move-VMStorage -VMName $NewName @move -ErrorAction Stop
+                $done.Add(@{ step = 'storage'; back = $back })
+            }
+
+            Write-Step 'Cambiando el nombre del disco'
+            foreach ($drive in @(Get-VMHardDiskDrive -VMName $NewName)) {
+                $target = Get-RenamedVMPath -Path $drive.Path @paths
+                if (-not $target) { continue }
+                Move-GpuVMItem -Path $drive.Path -Destination $target
+                $done.Add(@{ step = 'item'; from = $drive.Path; to = $target })
+                Set-VMHardDiskDrive -VMName $NewName -ControllerType $drive.ControllerType -ControllerNumber $drive.ControllerNumber `
+                    -ControllerLocation $drive.ControllerLocation -Path $target -ErrorAction Stop
+                $done.Add(@{ step = 'disk'; drive = $drive; path = $drive.Path })
+            }
+            Move-GpuVMFolderContent -From $oldDir -To $newDir -Done $done
+        }
+
+        $renamed = Merge-Hashtable -Base $State
+        $renamed['name'] = $NewName
+        $renamed['vmDir'] = $newDir
+        foreach ($key in 'vhdPath', 'statePath') {
+            $target = Get-RenamedVMPath -Path $State[$key] @paths
+            if ($target) { $renamed[$key] = $target }
+        }
+        $done.Add(@{ step = 'state'; path = $renamed['statePath']; text = (Get-Content -Raw -LiteralPath $renamed['statePath']) })
+        Save-GpuVMState $renamed
+    }
+    catch {
+        $failure = $_.Exception.Message
+        Write-Step 'No se pudo cambiar el nombre; dejando la VM como estaba'
+        $problems = Undo-HyperVGpuPRename -Done $done -Name $Name -NewName $NewName
+        if ($problems.Count) {
+            throw "No se pudo cambiar el nombre de '$Name': $failure Tampoco se pudo dejar todo como estaba: $($problems -join ' ') Revisa la VM en el Administrador de Hyper-V."
+        }
+        throw "No se pudo cambiar el nombre de '$Name': $failure La VM quedó como estaba."
+    }
+
+    # Only empty folders are left in the old one; a leftover never undoes a rename that worked.
+    if ($moveFolder -and -not @(Get-ChildItem -LiteralPath $oldDir -Recurse -Force -File -ErrorAction SilentlyContinue).Count) {
+        Remove-Item -LiteralPath $oldDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    $renamed
+}
+
+Register-GpuVMBackend -Name 'hyperv-gpup'-Description 'Hyper-V con GPU Partitioning; la GPU se comparte con el host.' -Operations @{
     Test       = { param($Config) Get-HyperVGpuPChecks -Config $Config }
 
     New        = {
@@ -346,6 +509,8 @@ Register-GpuVMBackend -Name 'hyperv-gpup' -Description 'Hyper-V con GPU Partitio
     Apply      = { param($Name, $Config) Set-HyperVGpuPVM -Name $Name -Config $Config }
 
     SyncDriver = { param($Name, $State) Sync-HyperVGpuPDriver -Name $Name -State $State }
+
+    Rename     = { param($Name, $NewName, $State) Rename-HyperVGpuPVM -Name $Name -NewName $NewName -State $State }
 
     Remove     = {
         param($Name, $State, $DeleteDisk)

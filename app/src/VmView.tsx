@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  IconAdjustments, IconAlertTriangle, IconAppWindow, IconApps, IconArrowsMaximize, IconBolt, IconCheck, IconChevronRight, IconClipboardText, IconClock, IconCpu, IconDeviceDesktop, IconDeviceFloppy, IconDeviceGamepad2, IconDots, IconDownload, IconExternalLink, IconFolders, IconGauge, IconKey, IconLayoutBoard, IconLayoutGrid, IconLink, IconList, IconLoader2, IconNetwork, IconPalette, IconPlayerPause, IconPlayerPlay, IconPlayerTrackNext, IconPlugConnected, IconPlugOff, IconPointer, IconPower, IconRectangle, IconRefresh, IconRefreshAlert, IconScreenShare, IconSearch, IconShieldCheck, IconSparkles, IconTemplate, IconTopologyStar3, IconTrash, IconWaveSine, IconWorld,
+  IconAdjustments, IconAlertTriangle, IconAppWindow, IconApps, IconArrowsMaximize, IconBolt, IconCheck, IconChevronRight, IconClipboardText, IconClock, IconCpu, IconDeviceDesktop, IconDeviceFloppy, IconDeviceGamepad2, IconDots, IconDownload, IconExternalLink, IconFolders, IconGauge, IconKey, IconLayoutBoard, IconLayoutGrid, IconLink, IconList, IconLoader2, IconNetwork, IconPalette, IconPencil, IconPlayerPause, IconPlayerPlay, IconPlayerTrackNext, IconPlugConnected, IconPlugOff, IconPointer, IconPower, IconRectangle, IconRefresh, IconRefreshAlert, IconScreenShare, IconSearch, IconShieldCheck, IconSparkles, IconTemplate, IconTopologyStar3, IconTrash, IconWaveSine, IconWorld,
 } from "@tabler/icons-react";
 import type { AppInfo, CleanupLevelId, DiskBudget, SharedDiskInfo, DisplayMode, HostInfo, MouseMode, Sample, StreamSettings, VmOverview } from "./types";
 import { usePrefs } from "./prefs";
@@ -11,8 +11,8 @@ import { CLEANUP_REMOVED, MachineCube, cubeOf } from "./MachineCube";
 import { Scene, nextSceneStyle, sceneStyle } from "./Scene";
 import { CleanupFlow, CleanupItems, LEVEL_LOOK } from "./CleanupFlow";
 import { Sparkline, series } from "./Chart";
-import { CheckMark, Dropdown, Segmented, Slider, formatUptime, stateLabel, useScrollFade } from "./ui";
-import { api, openConsole } from "./api";
+import { CheckMark, Dropdown, Segmented, Slider, formatUptime, portalRoot, stateLabel, useScrollFade } from "./ui";
+import { api, openConsole, vmNameError } from "./api";
 
 export interface JobInfo {
   cmd: string;
@@ -28,9 +28,11 @@ interface Props {
   samples: Sample[];
   /** Long job or power action in progress for this VM. */
   busy: JobInfo | null;
-  startJob: (vm: string, cmd: string, args: Record<string, unknown>, after?: () => void) => void;
+  startJob: (vm: string, cmd: string, args: Record<string, unknown>, after?: () => void, failed?: () => void) => void;
   run: (vm: string, label: string, task: () => Promise<unknown>) => Promise<boolean>;
   onRemoved: () => void;
+  /** The rename finished: the page, the sidebar and the route follow the new name. */
+  onRenamed?: (from: string, to: string) => void;
 }
 
 const TRANSITION: Record<string, string> = { Starting: "Encendiendo", Stopping: "Apagando", Saving: "Guardando", Pausing: "Pausando", Resuming: "Reanudando" };
@@ -38,12 +40,15 @@ const TRANSITION: Record<string, string> = { Starting: "Encendiendo", Stopping: 
 type VmTab = "machine" | "display" | "windows";
 const TAB_LABEL: Record<VmTab, string> = { machine: "Máquina", display: "Imagen y control", windows: "Windows" };
 
-export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRemoved }: Props) {
+export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRemoved, onRenamed }: Props) {
   const [variant, setVariant] = useState(() => patternVariant(vm.name));
   // What is being changed and not saved yet (resources, cleanup level, apps picked to install), for the cube.
   const [preview, setPreview] = useState<{ cpu?: number; memoryGB?: number; gpuPercent?: number; diskGB?: number; cleanup?: CleanupLevelId }>({});
   const [previewApps, setPreviewApps] = useState<string[]>([]);
-  useEffect(() => { setPreview({}); setPreviewApps([]); }, [vm.name]);
+  // The name being typed in "Cambiar nombre" (and then being applied), so the cube's plate engraves it as it is typed.
+  const [draftName, setDraftName] = useState<string | null>(null);
+  const [renameOpen, setRenameOpen] = useState(false);
+  useEffect(() => { setPreview({}); setPreviewApps([]); setDraftName(null); }, [vm.name]);
   const running = vm.state === "Running";
   const off = vm.state === "Off";
   const tabs: VmTab[] = [];
@@ -84,8 +89,9 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
   };
 
   return (
-    <div className="main" ref={mainRef}>
-      <Header vm={vm} busy={busy} variant={variant} startJob={startJob} run={run} onRemoved={onRemoved}
+    <div className={`main${renameOpen ? " renaming" : ""}`} ref={mainRef}>
+      <Header vm={vm} vms={vms} busy={busy} variant={variant} startJob={startJob} run={run} onRemoved={onRemoved}
+        onRenameDraft={setDraftName} onRenameOpen={setRenameOpen} onRenamed={onRenamed}
         onPattern={() => {
           // The third quick click switches every pattern's palette; the two before it are undone.
           const v = patternClick() ? Math.max(0, variant - 2) : variant + 1;
@@ -150,7 +156,7 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
       </div>
       {/* The machine itself, always in view beside its options, following what is being changed before it is saved. */}
       {vm.managed && vm.options && (
-        <aside className="vm-cube">
+        <aside className={`vm-cube${renameOpen ? " lifted" : ""}`}>
           <MachineCube key={vm.name} machine={{
             power: running ? "on" : vm.state === "Starting" || vm.state === "Stopping" ? "starting" : "off",
             cores: preview.cpu ?? vm.options.cpu,
@@ -160,7 +166,7 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
             usage: { cpu: vm.cpuPercent, gpu: vm.gpuPercent, mem: (vm.memoryDemandGB / Math.max(vm.memoryAssignedGB, 0.1)) * 100, disk: 0 },
             apps: previewApps,
             removed: CLEANUP_REMOVED[preview.cleanup ?? vm.options.cleanup] ?? 0,
-          }} name={vm.name} others={vms.filter((v) => v.name !== vm.name).map((v) => ({ name: v.name, machine: cubeOf(v) }))} />
+          }} name={draftName || vm.name} others={vms.filter((v) => v.name !== vm.name).map((v) => ({ name: v.name, machine: cubeOf(v) }))} />
         </aside>
       )}
       </div>
@@ -479,13 +485,17 @@ function Stat({ icon, label, value, sub, spark, color }: { icon: React.ReactNode
 interface HeaderProps extends Omit<Props, "samples" | "host"> {
   variant: number;
   onPattern: () => void;
+  onRenameDraft: (name: string | null) => void;
+  onRenameOpen: (open: boolean) => void;
 }
 
-function Header({ vm, busy, variant, startJob, run, onRemoved, onPattern }: HeaderProps) {
+function Header({ vm, vms = [], busy, variant, startJob, run, onRemoved, onRenamed, onPattern, onRenameDraft, onRenameOpen }: HeaderProps) {
   const [menu, setMenu] = useState(false);
   const [confirmOff, setConfirmOff] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [templating, setTemplating] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  useEffect(() => onRenameOpen(renaming), [renaming]);
   const [pasting, setPasting] = useState<"busy" | "done" | null>(null);
   const [banner, setBanner] = useState(() => sceneStyle(vm.name));
   useEffect(() => setBanner(sceneStyle(vm.name)), [vm.name]);
@@ -611,6 +621,9 @@ function Header({ vm, busy, variant, startJob, run, onRemoved, onPattern }: Head
                 <IconTemplate size={16} />{off ? "Crear plantilla" : "Apagar y crear plantilla"}
               </button>
             )}
+            {!locked && vm.managed && off && (
+              <button role="menuitem" onClick={() => { setMenu(false); setRenaming(true); onRenameDraft(vm.name); }}><IconPencil size={16} />Cambiar nombre</button>
+            )}
             <button role="menuitem" onClick={() => { setMenu(false); onPattern(); }}><IconPalette size={16} />Otro ícono</button>
             <button role="menuitem" onClick={() => { setMenu(false); setBanner(nextSceneStyle(vm.name)); }}><IconLayoutBoard size={16} />Otro banner</button>
             {!locked && vm.managed && (
@@ -623,6 +636,17 @@ function Header({ vm, busy, variant, startJob, run, onRemoved, onPattern }: Head
         )}
       </div>
       {confirm && <ConfirmRemove vm={vm} run={run} onClose={() => setConfirm(false)} onRemoved={onRemoved} />}
+      {renaming && (
+        <RenameMachine vm={vm} vms={vms} onDraft={onRenameDraft}
+          onClose={() => { setRenaming(false); onRenameDraft(null); }}
+          onRename={(to) => {
+            const from = vm.name;
+            setRenaming(false);
+            // The plate keeps the new name while the job runs; a failure engraves the old one back.
+            onRenameDraft(to);
+            startJob(from, "Rename-GpuVM", { Name: from, NewName: to, Confirm: false }, () => onRenamed?.(from, to), () => onRenameDraft(null));
+          }} />
+      )}
       {templating && (
         <NewTemplate vm={vm} onClose={() => setTemplating(false)}
           onCreate={(name, from) => { setTemplating(false); startJob(from, "New-GpuVMTemplate", { Name: name, VMName: from, ShutdownIfRunning: true, Confirm: false }); }} />
@@ -684,6 +708,45 @@ export function NewTemplate({ vm: fixed, vms, onClose, onCreate }: {
       </div>
     </div>
   );
+}
+
+/** Renames a machine that is off. The name is checked as it is typed, and the cube beside engraves it on its plate. */
+function RenameMachine({ vm, vms, onClose, onDraft, onRename }: {
+  vm: VmOverview; vms: VmOverview[]; onClose: () => void; onDraft: (name: string | null) => void; onRename: (name: string) => void;
+}) {
+  const [name, setName] = useState(vm.name);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [onClose]);
+  const trimmed = name.trim();
+  const nameError = vmNameError(trimmed, vms, vm.name);
+  const complete = !nameError && trimmed !== vm.name;
+  // In a portal: inside the page, its fade would clip the scrim and the dialog.
+  return createPortal(
+    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="dialog narrow" role="dialog" aria-modal="true" aria-label={`Cambiar el nombre de ${vm.name}`}>
+        <div className="dialog-head"><MachineIcon name={vm.name} size={40} radius={10} /><h2>Cambiar nombre</h2></div>
+        <form className="dialog-form" onSubmit={(e) => { e.preventDefault(); if (complete) onRename(trimmed); }}>
+          <div className="dialog-body">
+            <p className="dialog-text">Cambian también su carpeta y su disco. Moonlight sigue emparejado y los discos compartidos siguen conectados.</p>
+            <div className="field">
+              <label className="field-top" htmlFor="vm-rename"><span>Nombre</span></label>
+              <input id="vm-rename" className="text-input" value={name} autoFocus spellCheck={false} maxLength={60}
+                onFocus={(e) => e.currentTarget.select()}
+                onChange={(e) => { setName(e.target.value); onDraft(e.target.value.trim() || vm.name); }} />
+              {nameError && <span className="error-text">{nameError}</span>}
+            </div>
+          </div>
+          <div className="dialog-foot">
+            <button type="button" className="btn ghost" onClick={onClose}>Cancelar</button>
+            <button type="submit" className="primary compact" disabled={!complete}><IconPencil size={16} />Cambiar nombre</button>
+          </div>
+        </form>
+      </div>
+    </div>,
+    portalRoot());
 }
 
 function ConfirmRemove({ vm, run, onClose, onRemoved }: { vm: VmOverview; run: Props["run"]; onClose: () => void; onRemoved: () => void }) {

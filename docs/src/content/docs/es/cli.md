@@ -27,6 +27,7 @@ description: Los comandos de gpuvm.ps1 y los cmdlets del módulo de PowerShell G
 | `client-install` | `Install-GpuVMClient` | Instala Moonlight en el host con winget. |
 | `components-update` | `Update-GpuVMComponent` | Busca versiones nuevas de los componentes de streaming. |
 | `remove` | `Remove-GpuVM` | Quita la VM de Hyper-V. |
+| `rename` | `Rename-GpuVM` | Cambia el nombre de la VM con su carpeta y su disco. |
 | `repair` | `Repair-GpuVMState` | Reconstruye el archivo de estado de una VM creada con GpuVM. |
 | `profiles` | `Get-GpuVMProfile` | Lista los perfiles o muestra uno ya resuelto. |
 | `lab-new` | `New-GpuVMLab` | Abre un laboratorio. |
@@ -97,6 +98,10 @@ Sin parámetros. No hace nada si Moonlight ya está instalado.
 
 `-Name` (obligatorio), `-DeleteDisk` (borra también la carpeta y el disco de la VM; no se puede deshacer).
 
+### rename
+
+`-Name` y `-NewName` (obligatorios). La VM debe estar apagada. Le cambia el nombre en Hyper-V, en su carpeta y en su disco, y conserva su configuración, el emparejamiento con Moonlight y los discos compartidos. El nombre nuevo sigue las mismas reglas que en `new`; si un paso falla, se deshace lo que ya se había renombrado.
+
 ### repair
 
 `-Name` (obligatorio), `-Profile` (por defecto `balanced`), `-Override`. Reconstruye `gpuvm.json` de una VM creada con GpuVM cuyo estado se perdió. La VM debe estar apagada. Si el invitado todavía no arrancó, recupera también la contraseña de Sunshine desde su disco.
@@ -139,6 +144,7 @@ Sin parámetros. No hace nada si Moonlight ya está instalado.
 ./gpuvm.ps1 list                                     # VMs y si su driver coincide con el del host
 ./gpuvm.ps1 sync-driver -Name win11                  # después de actualizar el driver de NVIDIA (VM apagada)
 ./gpuvm.ps1 set -Name win11 -Profile balanced        # cambiar de perfil (VM apagada)
+./gpuvm.ps1 rename -Name win11 -NewName juegos       # cambiar el nombre (VM apagada)
 ./gpuvm.ps1 remove -Name win11                       # agrega -DeleteDisk para borrar también el disco
 ```
 

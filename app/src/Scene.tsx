@@ -21,6 +21,14 @@ export function nextSceneStyle(name: string): SceneStyle {
   return next;
 }
 
+/** A renamed machine keeps the banner picked for it. */
+export function renameSceneStyle(from: string, to: string) {
+  try {
+    const saved = localStorage.getItem(STYLE_KEY + from);
+    if (saved) { localStorage.setItem(STYLE_KEY + to, saved); localStorage.removeItem(STYLE_KEY + from); }
+  } catch { /* no storage */ }
+}
+
 /** What the machine is doing, 0-100 each. */
 export interface SceneActivity { cpu: number; gpu: number; mem: number }
 

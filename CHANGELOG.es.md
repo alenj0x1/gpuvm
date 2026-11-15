@@ -13,6 +13,7 @@ Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (es
 - **Color de énfasis.** En **Ajustes** se elige el color (azul, violeta, turquesa, verde o ámbar), cada muestra mitad clara y mitad oscura; el cambio de tema claro u oscuro también está ahí.
 - **Elegir el usuario de Windows** al crear una máquina (antes siempre era `gpuvm`), con aviso al escribir si Windows reserva ese nombre.
 - **Nueva plantilla desde la Biblioteca.** Se elige la máquina de la que se guarda Windows y su nombre, igual que desde el menú de la máquina.
+- **Cambiar el nombre de una máquina.** **Cambiar nombre** en el menú de la máquina (apagada) revisa el nombre nuevo mientras se escribe, y el cubo de al lado lo graba en la etiqueta de serie de la placa. La máquina cambia de nombre en Hyper-V junto con su carpeta y su disco; conserva su configuración, el emparejamiento con Moonlight, los discos compartidos, la última apertura y el diseño de banner elegido. Si un paso falla, se deshace lo que ya se había renombrado. El módulo suma `Rename-GpuVM` (`./gpuvm.ps1 rename`).
 
 ### Cambiado
 - **Interfaz nueva.**

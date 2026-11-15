@@ -6,6 +6,7 @@ $script:BackendOperations = @(
     'Clone'       # param($Context) → creates the VM on top of a template's disk (Context.Template)
     'Apply'       # param($Name, $Config) → applies CPU, memory, GPU, etc. to a stopped VM
     'SyncDriver'  # param($Name, $State) → copies the host driver again; returns the copied version
+    'Rename'      # param($Name, $NewName, $State) → renames a stopped VM with its files; returns the new state
     'Remove'      # param($Name, $State, $DeleteDisk)
 )
 

@@ -9,7 +9,8 @@ import { TripleSpark } from "./Chart";
 import type { HostInfo, JobEvent, Sample, VmOverview } from "./types";
 import { readPrefs } from "./prefs";
 import { api, onJob, relaunchAsAdmin, repairService, service, startJob as runJob } from "./api";
-import { MachineIcon } from "./machineIcon";
+import { MachineIcon, renamePatternVariant } from "./machineIcon";
+import { renameSceneStyle } from "./Scene";
 import { MAX_SAMPLES } from "./Chart";
 import { VmView, type JobInfo } from "./VmView";
 import { CreateDialog } from "./CreateDialog";
@@ -32,6 +33,7 @@ interface RunningJob extends JobInfo {
   vm: string;
   name: string;
   after?: () => void;
+  failed?: () => void;
 }
 
 /** `embedded`: the app runs inside another page (the website), so its route stays in memory and off the page's URL. */
@@ -55,6 +57,8 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
   // Short actions (start, shut down, save…) in progress per VM, to show their state instantly.
   const [pending, setPending] = useState<Record<string, string>>({});
   const history = useRef<Record<string, Sample[]>>({});
+  // The machine just renamed, until the refreshed list shows it under its new name.
+  const renamed = useRef<{ from: string; to: string } | null>(null);
   const lastJson = useRef("");
   const { toasts, push, dismiss } = useToasts();
   const creatingRef = useRef(creating);
@@ -134,6 +138,9 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     else { setCollapsed(false); setSideWidth(Math.round(Math.min(360, Math.max(200, x)))); }
   };
   useEffect(() => {
+    // A machine just renamed keeps its page until the list brings it under the new name.
+    if (renamed.current && vms?.some((v) => v.name === renamed.current!.to)) renamed.current = null;
+    if (renamed.current?.to === selected) return;
     if (selected !== PREFS && selected !== HOME && !libraryTab(selected) && vms && vms.length && !vms.some((v) => v.name === selected)) setSelected(HOME);
   }, [vms, selected]);
 
@@ -159,6 +166,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       }
       if (e.type === "warning") { push("warning", e.message!); return; }
       setJobs(({ [e.jobId]: _, ...rest }) => rest);
+      if (!e.ok) job.failed?.();
       if (e.ok) job.after?.();
       else if (job.vm === NEW_VM) {
         setCreateError(humanError(e.error));
@@ -170,19 +178,20 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     return () => { cancelled = true; off?.(); };
   }, [push, refresh]);
 
-  const startJob = useCallback((vm: string, cmd: string, args: Record<string, unknown>, after?: () => void) => {
+  const startJob = useCallback((vm: string, cmd: string, args: Record<string, unknown>, after?: () => void, failed?: () => void) => {
     // A VM without a monitor of its own opens on the one chosen in Preferences.
     if (cmd === "Connect-GpuVM" && !args.Monitor && !vmsRef.current?.find((v) => v.name === vm)?.client?.monitor) {
       args = { ...args, Monitor: readPrefs().monitor };
     }
     const jobId = `${cmd}-${Date.now()}`;
     const first = cmd === "Connect-GpuVM" ? "Preparando" : cmd === "New-GpuVM" ? "Revisando el equipo" : cmd === "Invoke-GpuVMPower" ? "Apagando" : "Trabajando";
-    const job = { vm, cmd, message: first, log: [first], after, name: String(args.Name ?? "") };
+    const job = { vm, cmd, message: first, log: [first], after, failed, name: String(args.Name ?? "") };
     // Also registered in the ref so events arriving before the next render are not lost.
     jobsRef.current = { ...jobsRef.current, [jobId]: job };
     setJobs((all) => ({ ...all, [jobId]: job }));
     runJob(jobId, cmd, args).catch((e) => {
       setJobs(({ [jobId]: _, ...rest }) => rest);
+      failed?.();
       push("error", humanError(e));
     });
   }, [push]);
@@ -200,7 +209,16 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     return pending[vm] ? { cmd: "", message: `${pending[vm]}…`, log: [] } : null;
   };
   const createJob = Object.values(jobs).find((j) => j.vm === NEW_VM) ?? null;
-  const current = vms?.find((v) => v.name === selected) ?? null;
+  const current = vms?.find((v) => v.name === selected)
+    ?? (renamed.current?.to === selected ? vms?.find((v) => v.name === renamed.current!.from) : undefined) ?? null;
+  const onRenamed = (from: string, to: string) => {
+    renamed.current = { from, to };
+    history.current[to] = history.current[from] ?? [];
+    delete history.current[from];
+    renameSceneStyle(from, to);
+    renamePatternVariant(from, to);
+    setSelected(to);
+  };
 
   if (blocked === "stopped" || blocked === "missing") {
     const stopped = blocked === "stopped";
@@ -323,7 +341,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
             onCreateFromTemplate={(template) => { setCreateTemplate(template); setCreating(true); }} />
         ) : current ? (
           <VmView key={current.id} vm={current} vms={vms ?? []} host={host} samples={history.current[current.name] ?? []} busy={busyFor(current.name)}
-            startJob={startJob} run={run} onRemoved={() => setSelected("")} />
+            startJob={startJob} run={run} onRemoved={() => setSelected("")} onRenamed={onRenamed} />
         ) : vms.length > 0 ? (
           <Home vms={vms} busyFor={busyFor} startJob={startJob} onOpenVm={setSelected} onRoute={setSelected} onCreate={() => { setCreateError(null); setCreating(true); }} />
         ) : (

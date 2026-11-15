@@ -37,6 +37,8 @@ export const api = {
   monitors: () => ps<HostMonitor>("Get-GpuVMMonitor"),
   /** A monitor's id, "primary", or "default" to follow Preferences. */
   setMonitor: (name: string, monitor: string) => ps("Set-GpuVMStreamingClient", { Name: name, Monitor: monitor }),
+  /** The machine must be off; the app runs it as a job (startJob) so its steps show on the button. */
+  rename: (name: string, newName: string) => ps("Rename-GpuVM", { Name: name, NewName: newName, Confirm: false }),
   remove: (name: string, deleteDisk: boolean) => ps("Remove-GpuVM", { Name: name, DeleteDisk: deleteDisk, Confirm: false }),
   apps: () => ps<AppInfo>("Get-GpuVMApp"),
   installedApps: (name: string) => ps<InstalledApp>("Get-GpuVMInstalledApp", { Name: name }),
@@ -59,6 +61,15 @@ export const api = {
   addIso: (path: string) => ps("Add-GpuVMIso", { Path: path }),
   removeIso: (path: string) => ps("Remove-GpuVMIso", { Path: path }),
 };
+
+/** What is wrong with a new machine name, as New-GpuVM and Rename-GpuVM check it, or "" when it can be used.
+ * `current` is the machine being renamed: its own name, even in another case, is not taken. */
+export function vmNameError(name: string, vms: { name: string }[], current?: string): string {
+  if (!name) return "Escribe un nombre";
+  if (!/^[\w-]{1,40}$/.test(name)) return name.length > 40 ? "Hasta 40 caracteres" : "Usa letras, números o guiones, sin espacios";
+  const taken = vms.some((v) => v.name.toLowerCase() === name.toLowerCase() && v.name.toLowerCase() !== current?.toLowerCase());
+  return taken ? "Ya hay una máquina con ese nombre" : "";
+}
 
 export async function startJob(jobId: string, cmd: string, args: Record<string, unknown>) {
   if (!inTauri) return mock.job(jobId, cmd, args);

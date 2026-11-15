@@ -91,6 +91,35 @@ function Save-IsoLibrary {
 }
 
 # Remembers an ISO (and which VM used it) so the "Create machine" wizard offers it again.
+# A renamed VM keeps its place in the "used by" of each ISO.
+function Rename-GpuVMIsoUse {
+    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$NewName)
+    $entries = @(Read-IsoLibrary)
+    $changed = $false
+    foreach ($entry in $entries) {
+        $used = @($entry['usedBy'] | Where-Object { $_ })
+        if ($used -notcontains $Name) { continue }
+        $entry['usedBy'] = @($used | ForEach-Object { if ($_ -eq $Name) { $NewName } else { $_ } } | Select-Object -Unique)
+        $changed = $true
+    }
+    if ($changed) { Save-IsoLibrary $entries }
+}
+
+# A VM name must be free in Hyper-V and, with -Root, as a folder there (one left by a failed attempt also takes it).
+# -Except skips the VM being renamed, so a name that only changes case is not taken by itself.
+function Assert-GpuVMNameFree {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [string]$Root,
+        [guid]$Except = [guid]::Empty
+    )
+    if (Get-VM -Name $Name -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne $Except }) { throw "Ya existe una VM llamada '$Name'." }
+    if ($Root) {
+        $dir = Join-Path $Root $Name
+        if (Test-Path -LiteralPath $dir) { throw "Ya existe la carpeta $dir. Elige otro nombre o bórrala." }
+    }
+}
+
 function Register-GpuVMIsoUse {
     param(
         [Parameter(Mandatory)][string]$Path,

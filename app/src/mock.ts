@@ -136,7 +136,7 @@ export async function ps(cmd: string, args: Record<string, unknown>): Promise<un
       return (installed[String(args.Name)] ?? []).map((id) => ({ id, name: APP_NAMES[id] ?? id }));
     case "Get-GpuVMHome":
       return [{
-        lastOpened: { name: "win10", at: new Date(Date.now() - 2 * 3600e3).toISOString() },
+        lastOpened: { name: lastOpened, at: new Date(Date.now() - 2 * 3600e3).toISOString() },
         host: { memoryTotalGB: 15.8, memoryFreeGB: 6.4, diskFreeGB: 212, topProcesses: [{ name: "Translay", gb: 2.7 }, { name: "brave", gb: 1.1 }, { name: "Code", gb: 0.8 }] },
         machines: vms.map((v) => ({ name: v.name, state: v.state, memoryGB: v.options?.memoryGB ?? 2, needGB: (v.options?.memoryGB ?? 2) + 0.3, fits: v.state !== "Off" || (v.options?.memoryGB ?? 2) + 0.3 <= 6.4, fitGB: 6 })),
         attention,
@@ -201,6 +201,9 @@ export async function ps(cmd: string, args: Record<string, unknown>): Promise<un
     case "Send-GpuVMClipboard":
       await wait(600);
       return [];
+    case "Rename-GpuVM":
+      renameVm(String(args.Name), String(args.NewName));
+      return [];
     case "Set-GpuVMGuestCredential":
       vms.find((v) => v.name === args.Name)!.guestCredential = true;
       return [];
@@ -213,6 +216,22 @@ const listeners = new Set<(e: JobEvent) => void>();
 export function onJob(handler: (e: JobEvent) => void) {
   listeners.add(handler);
   return () => listeners.delete(handler);
+}
+
+let lastOpened = "win10";
+
+// What Rename-GpuVM keeps under the new name: the machine, its apps, shared disks, templates and last opened.
+function renameVm(from: string, to: string) {
+  const vm = vms.find((v) => v.name === from);
+  if (!vm) throw new Error(`No existe la VM '${from}'.`);
+  if (vm.state !== "Off") throw new Error(`Apaga la VM '${from}' para cambiarle el nombre.`);
+  if (vms.some((v) => v !== vm && v.name.toLowerCase() === to.toLowerCase())) throw new Error(`Ya existe una VM llamada '${to}'.`);
+  vm.name = to;
+  if (installed[from]) { installed[to] = installed[from]; delete installed[from]; }
+  shared = shared.map((d) => d.vm === from ? { ...d, vm: to } : d);
+  templates = templates.map((t) => ({ ...t, usedBy: t.usedBy.map((n) => n === from ? to : n) }));
+  attention = attention.map((a) => a.vm === from ? { ...a, vm: to } : a);
+  if (lastOpened === from) lastOpened = to;
 }
 
 let attention = [
@@ -264,6 +283,7 @@ export async function job(jobId: string, cmd: string, args: Record<string, unkno
       `Instalando ${APP_NAMES[id] ?? id}`, `${APP_NAMES[id] ?? id} instalado`])]
     : cmd === "Uninstall-GpuVMApp" ? ["Esperando a Windows", ...((args.App as string[]) ?? []).flatMap((id) => [`Desinstalando ${APP_NAMES[id] ?? id}`, `${APP_NAMES[id] ?? id} desinstalado`])]
     : cmd === "Invoke-GpuVMPower" ? ["Instalando actualizaciones"]
+    : cmd === "Rename-GpuVM" ? [`Cambiando el nombre en Hyper-V a '${args.NewName}'`, "Moviendo la configuración de la VM a su nueva carpeta", "Cambiando el nombre del disco", `La VM ahora se llama '${args.NewName}'.`]
     : cmd === "Connect-GpuVM" && args.MemoryGB ? [`Memoria: ${args.MemoryGB} GB`, "Encendiendo", "Esperando a Windows", "Esperando a Sunshine", "Abriendo a 1920x1080 y 60 FPS"]
     : cmd === "New-GpuVM" && args.Template ? [`Copia diferencial de ${args.Template}`, "Identidad propia: nombre de equipo y Sunshine", "Encendiendo", "Esperando a Windows"]
     : cmd === "New-GpuVM"
@@ -273,7 +293,10 @@ export async function job(jobId: string, cmd: string, args: Record<string, unkno
     emit({ type: "progress", message });
     await wait(900);
   }
-  if (cmd === "New-GpuVM") {
+  if (cmd === "Rename-GpuVM") {
+    try { renameVm(String(args.Name), String(args.NewName)); }
+    catch (err) { emit({ type: "result", ok: false, error: (err as Error).message }); return; }
+  } else if (cmd === "New-GpuVM") {
     vms.push({ ...vms[1], id: String(Date.now()), name: String(args.Name), state: "Running", paired: false });
   } else {
     const vm = vms.find((v) => v.name === args.Name);
