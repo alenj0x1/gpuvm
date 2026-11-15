@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  IconActivity, IconArrowsVertical, IconCat, IconCopy, IconDice5, IconX, IconLetterCase, IconPalette, IconPhotoPlus, IconRotate2, IconRotateClockwise2, IconSticker, IconTrash, IconTypography, IconZoomIn, IconZoomOut,
+  IconActivity, IconArrowsVertical, IconCat, IconClipboard, IconCopy, IconCut, IconDice5, IconX, IconLetterCase, IconPalette, IconPhotoPlus, IconRotate2, IconRotateClockwise2, IconSticker, IconTrash, IconTypography, IconZoomIn, IconZoomOut,
 } from "@tabler/icons-react";
 import { DND, type CubeEdit } from "./MachineCube";
 import { FIGURES, figureName } from "./decor/figures";
@@ -27,6 +27,12 @@ const FIGURE_SPOTS: [number, number][] = [[0.42, -0.3], [-0.42, -0.3], [0.42, 0.
 const free = <T,>(spots: [number, number][], taken: T[], at: (t: T) => [number, number]) =>
   spots.find(([a, b]) => taken.every((t) => { const [x, y] = at(t); return Math.hypot(x - a, y - b) > 0.35; })) ?? spots[Math.floor(Math.random() * spots.length)];
 
+/** Copied stickers and figures, kept between machines: copy on one, paste on another. `pastes` counts the pastes since
+ *  the copy, so each one lands a cell further aside instead of on top of the last. */
+let clipboard: { stickers: Decor["stickers"]; figures: Decor["figures"]; from: DecorSource | null; pastes: number } | null = null;
+/** The editors open, the last one on top (Crear máquina over a machine's page): only the top one pastes. */
+const editors: DecorSource[] = [];
+
 /** The selection and right-click menu shared by the cube and the panel. */
 export function useDecorEdit(source: DecorSource) {
   const [selected, setSelected] = useState<string[]>([]);
@@ -37,8 +43,42 @@ export function useDecorEdit(source: DecorSource) {
   const edit: CubeEdit = { selected, onSelect: setSelected, onMenu: (id, x, y) => setMenu({ id, x, y }), write: source.set };
   const ops = useMemo(() => {
     const change = (f: (d: Decor) => Decor) => source.set(f(source.get()));
-    return { ...decorOps(change, setSelected), randomize: () => { source.set(randomDecor()); setSelected([]); setSpins((n) => n + 1); } };
+    const base = decorOps(change, setSelected);
+    const copy = (ids: string[]) => {
+      const d = source.get();
+      clipboard = { stickers: d.stickers.filter((t) => ids.includes(t.id)), figures: d.figures.filter((t) => ids.includes(t.id)), from: source, pastes: 0 };
+    };
+    return {
+      ...base,
+      randomize: () => { source.set(randomDecor()); setSelected([]); setSpins((n) => n + 1); },
+      copy,
+      cut: (ids: string[]) => { copy(ids); if (clipboard) clipboard.from = null; base.remove(ids); },
+      /** Pastes what was copied, on any machine; on the same one, a cell aside from the originals. */
+      paste: () => {
+        const c = clipboard;
+        if (!c || (!c.stickers.length && !c.figures.length)) return;
+        const step = c.from === source ? (c.pastes + 1) * 0.25 : c.pastes * 0.25;
+        c.pastes++;
+        const made: string[] = [];
+        change((d) => ({
+          ...d,
+          stickers: [...d.stickers, ...c.stickers.map((t) => { const m = 1 - t.size / 2, id = newId(); made.push(id); return { ...t, id, u: Math.min(m, t.u + step), v: Math.max(-m, t.v - step) }; })],
+          figures: [...d.figures, ...c.figures.map((t) => { const id = newId(); made.push(id); return { ...t, id, x: Math.min(0.875, t.x + step), z: Math.min(0.875, t.z + step) }; })],
+        }));
+        setSelected(made);
+      },
+    };
   }, [source]);
+  useEffect(() => { editors.push(source); return () => { const i = editors.lastIndexOf(source); if (i >= 0) editors.splice(i, 1); }; }, [source]);
+  // Ctrl+V pastes even with nothing picked, in the editor on top.
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (editors[editors.length - 1] !== source || (e.target as HTMLElement)?.closest("input, textarea, [contenteditable]")) return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v" && clipboard) { e.preventDefault(); ops.paste(); }
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [ops, source]);
 
   // With something picked (not while typing): Delete removes it, Ctrl+D duplicates, Ctrl+A picks everything, the
   // arrows move it one cell (with Shift, four), Escape lets go.
@@ -50,6 +90,8 @@ export function useDecorEdit(source: DecorSource) {
       const arrows: Record<string, [number, number]> = { arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, 1], arrowdown: [0, -1] };
       if (e.key === "Delete" || e.key === "Backspace") ops.remove(selected);
       else if (mod && k === "d") ops.duplicate(selected);
+      else if (mod && k === "c") ops.copy(selected);
+      else if (mod && k === "x") ops.cut(selected);
       else if (mod && k === "a") { const d = source.get(); setSelected([...d.stickers.map((t) => t.id), ...d.figures.map((t) => t.id)]); }
       else if (arrows[k]) { const [dx, dy] = arrows[k], step = e.shiftKey ? 0.5 : 0.125; ops.nudge(selected, dx * step, dy * step); }
       else if (e.key === "Escape") setSelected([]);
@@ -79,9 +121,12 @@ export function useDecorEdit(source: DecorSource) {
       <button role="menuitem" onClick={act(() => ops.turn(targets, 15))}><IconRotateClockwise2 size={16} />Girar a la derecha</button>
       <button role="menuitem" onClick={act(() => ops.grow(targets, 1.15))}><IconZoomIn size={16} />Más grande</button>
       <button role="menuitem" onClick={act(() => ops.grow(targets, 1 / 1.15))}><IconZoomOut size={16} />Más pequeño</button>
-      <button role="menuitem" onClick={act(() => ops.duplicate(targets))}><IconCopy size={16} />Duplicar</button>
+      <button role="menuitem" onClick={act(() => ops.duplicate(targets))}><IconCopy size={16} />Duplicar<kbd>Ctrl+D</kbd></button>
+      <button role="menuitem" onClick={act(() => ops.copy(targets))}><IconClipboard size={16} />Copiar<kbd>Ctrl+C</kbd></button>
+      <button role="menuitem" onClick={act(() => ops.cut(targets))}><IconCut size={16} />Cortar<kbd>Ctrl+X</kbd></button>
+      {clipboard && <button role="menuitem" onClick={act(() => ops.paste())}><IconClipboard size={16} />Pegar<kbd>Ctrl+V</kbd></button>}
       <hr />
-      <button role="menuitem" className="danger" onClick={act(() => ops.remove(targets))}><IconTrash size={16} />Quitar</button>
+      <button role="menuitem" className="danger" onClick={act(() => ops.remove(targets))}><IconTrash size={16} />Quitar<kbd>Supr</kbd></button>
     </div>,
     document.body,
   );
@@ -232,9 +277,11 @@ function Placed({ items, selected, onPick, onRemove, onMenu }: {
   );
 }
 
-export function Customize({ source, ops, selected, setSelected, openMenu, bare }: Pick<ReturnType<typeof useDecorEdit>, "source" | "ops" | "selected" | "setSelected" | "openMenu"> & {
+export function Customize({ source, ops, selected, setSelected, openMenu, bare, first }: Pick<ReturnType<typeof useDecorEdit>, "source" | "ops" | "selected" | "setSelected" | "openMenu"> & {
   /** Without its own card (inside Crear máquina, which already frames each section). */
   bare?: boolean;
+  /** Rows that go before the decoration (the machine's space, on its page). */
+  first?: React.ReactNode;
 }) {
   const decor = useSource(source);
   const name = source.name;
@@ -264,6 +311,7 @@ export function Customize({ source, ops, selected, setSelected, openMenu, bare }
   return (
     <div className={bare ? "customize" : "card customize"}>
       <div className="opt-rows">
+        {first}
         <div className="opt-row">
           <span className="opt-icon"><IconDice5 size={17} /></span>
           <div className="opt-text">
@@ -433,7 +481,7 @@ export function Customize({ source, ops, selected, setSelected, openMenu, bare }
             <span className="opt-icon"><IconSticker size={17} /></span>
             <div className="opt-text">
               <span className="opt-title">{selected.length} elegidos</span>
-              <span className="opt-desc">Se mueven juntos arrastrando cualquiera de ellos, o con las flechas de a una celda.</span>
+              <span className="opt-desc">Se mueven juntos arrastrando cualquiera de ellos, o con las flechas de a una celda. Ctrl+C y Ctrl+V los copian a esta u otra máquina.</span>
             </div>
             <div className="opt-ctl decor-picked-ctl">
               <div className="decor-picked-actions">

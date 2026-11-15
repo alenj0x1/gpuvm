@@ -1,15 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  IconAdjustments, IconBrandWindows, IconAlertTriangle, IconAppWindow, IconApps, IconArrowsMaximize, IconBolt, IconCheck, IconChevronRight, IconClipboardText, IconClock, IconCpu, IconDeviceDesktop, IconDeviceFloppy, IconDeviceGamepad2, IconDots, IconDownload, IconExternalLink, IconFolders, IconGauge, IconKey, IconLayoutBoard, IconLayoutGrid, IconLink, IconList, IconLoader2, IconNetwork, IconPalette, IconPencil, IconPlayerPause, IconPlayerPlay, IconPlayerTrackNext, IconPlugConnected, IconPlugOff, IconPointer, IconPower, IconRectangle, IconRefresh, IconRefreshAlert, IconScreenShare, IconSearch, IconShieldCheck, IconSparkles, IconTemplate, IconTopologyStar3, IconTrash, IconWaveSine, IconWorld,
+  IconAdjustments, IconBrandWindows, IconAlertTriangle, IconAppWindow, IconApps, IconArrowsMaximize, IconBolt, IconCheck, IconChevronRight, IconClipboardText, IconClock, IconCpu, IconDeviceDesktop, IconDeviceFloppy, IconDeviceGamepad2, IconDots, IconDownload, IconExternalLink, IconFolders, IconGauge, IconKey, IconLayoutBoard, IconLayoutGrid, IconLink, IconList, IconLoader2, IconNetwork, IconPalette, IconPencil, IconPlayerPause, IconPlayerPlay, IconPlayerTrackNext, IconPlugConnected, IconPlugOff, IconPlus, IconPointer, IconPower, IconRectangle, IconRefresh, IconRotate360, IconRefreshAlert, IconScreenShare, IconSearch, IconShieldCheck, IconSparkles, IconTemplate, IconTopologyStar3, IconTrash, IconWaveSine, IconWorld,
 } from "@tabler/icons-react";
 import type { AppInfo, CleanupLevelId, DiskBudget, SharedDiskInfo, DisplayMode, HostInfo, MouseMode, Sample, StreamSettings, VmOverview } from "./types";
 import { usePrefs } from "./prefs";
 import { AppLogo, FpsPicker, MonitorPicker, resolveMonitor, useMonitors, CODECS, RESOLUTIONS, USES, streamUseOf, useCleanupLevels, profileLabel } from "./pickers";
 import { MachineIcon, patternClick, patternVariant, setPatternVariant } from "./machineIcon";
-import { CLEANUP_REMOVED, MachineCube, cubeOf } from "./MachineCube";
+import { CLEANUP_REMOVED, MachineCube, cubeOf, type CubeView } from "./MachineCube";
 import { Customize, useDecorEdit } from "./Customize";
 import { machineSource } from "./decor/store";
+import { moveToSpace, showSpace, spaceOf, useSpaceOf, useSpaces } from "./spaces";
+import { ambientInfo } from "./ambient";
+import { SpaceDialog } from "./SpaceDialog";
 import { Scene, nextSceneStyle, sceneStyle } from "./Scene";
 import { CleanupFlow, CleanupItems, LEVEL_LOOK } from "./CleanupFlow";
 import { Sparkline, series } from "./Chart";
@@ -43,6 +46,9 @@ type VmTab = "machine" | "display" | "windows" | "custom";
 // The cube's column: dragged wider toward the options, never so wide the options get cramped, never closed.
 const CUBE_KEY = "gpuvm.cubeWidth", CUBE_DEFAULT = 380, CUBE_MIN = 320, CUBE_MAX = 760, OPTIONS_MIN = 640;
 const readCubeW = () => { try { return Number(localStorage.getItem(CUBE_KEY)) || CUBE_DEFAULT; } catch { return CUBE_DEFAULT; } };
+/** Where the last machine page was left, to open the next one at the same place. */
+let lastPlace: { section: VmTab; offset: number; at: number } | null = null;
+const NEW_SPACE = "__new__";
 const TAB_LABEL: Record<VmTab, string> = { machine: "Máquina", display: "Imagen y control", windows: "Windows", custom: "Personalizar" };
 
 export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRemoved, onRenamed }: Props) {
@@ -62,6 +68,7 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
   if (vm.managed && vm.guestCredential) tabs.push("windows");
   if (vm.managed && vm.options) tabs.push("custom");
   const decorSource = useMemo(() => machineSource(vm.name), [vm.name]);
+  const space = useSpaceOf(vm.name);
   const bodyRef = useRef<HTMLDivElement>(null);
   const [cubeW, setCubeW] = useState(readCubeW);
   const [resizing, setResizing] = useState(false);
@@ -80,6 +87,8 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
     el.addEventListener("pointermove", move); el.addEventListener("pointerup", up); el.addEventListener("pointercancel", up);
   };
   const decorEdit = useDecorEdit(decorSource);
+  // While decorating, a fixed view of the cube (front, a side, the top) that stays still.
+  const [cubeView, setCubeView] = useState<CubeView | null>(null);
   // Every section is on the same page; the bar above them marks the one in view and takes you to the others.
   const mainRef = useRef<HTMLDivElement>(null);
   const sectionRefs = useRef<Partial<Record<VmTab, HTMLElement | null>>>({});
@@ -105,6 +114,42 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
     main.addEventListener("scroll", spy, { passive: true });
     return () => main.removeEventListener("scroll", spy);
   }, [tabKey, vm.name]);
+  // Switching to another machine keeps the place on the page: the same section, as far into it as before, so a
+  // section (Personalizar, Windows) can be compared machine after machine. Coming from elsewhere starts at the top.
+  useLayoutEffect(() => {
+    const main = mainRef.current;
+    if (!main) return;
+    const from = lastPlace;
+    let mine = true;
+    if (from && performance.now() - from.at < 1500) {
+      const place = () => {
+        const el = sectionRefs.current[from.section];
+        if (!el || !mine) return;
+        main.scrollTop += el.getBoundingClientRect().top - main.getBoundingClientRect().top + from.offset;
+      };
+      place();
+      // What loads after opening (apps, disks) changes heights: follow it until the person scrolls.
+      const ro = new ResizeObserver(place);
+      const body = main.querySelector(".vm-sections");
+      if (body) ro.observe(body);
+      const stop = () => { mine = false; ro.disconnect(); };
+      main.addEventListener("wheel", stop, { once: true, passive: true });
+      main.addEventListener("pointerdown", stop, { once: true });
+      const t = setTimeout(stop, 1500);
+      return () => { clearTimeout(t); stop(); keep(); };
+    }
+    return keep;
+    function keep() {
+      const list = tabKey.split(",").filter(Boolean) as VmTab[];
+      let section = list[0], offset = main!.scrollTop;
+      for (const t of list) {
+        const el = sectionRefs.current[t];
+        const top = el ? el.getBoundingClientRect().top - main!.getBoundingClientRect().top : Infinity;
+        if (top <= 1) { section = t; offset = -top; }
+      }
+      lastPlace = section ? { section, offset, at: performance.now() } : null;
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const goTo = (t: VmTab) => {
     const main = mainRef.current, el = sectionRefs.current[t];
     if (!main || !el) return;
@@ -180,7 +225,8 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
       )}
       {tabs.includes("custom") && (
         <section className="vm-section" ref={(el) => { sectionRefs.current.custom = el; }}>
-          <Customize source={decorEdit.source} ops={decorEdit.ops} selected={decorEdit.selected} setSelected={decorEdit.setSelected} openMenu={decorEdit.openMenu} />
+          <Customize source={decorEdit.source} ops={decorEdit.ops} selected={decorEdit.selected} setSelected={decorEdit.setSelected} openMenu={decorEdit.openMenu}
+            first={<SpaceRow name={vm.name} vms={vms} />} />
         </section>
       )}
       </div>
@@ -190,6 +236,15 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
         <aside className={`vm-cube${renameOpen ? " lifted" : ""}`}>
           <div className="vm-cube-split" role="separator" aria-orientation="vertical" aria-label="Ancho del cubo" title="Arrastra para cambiar el ancho"
             onPointerDown={resizeCube} onDoubleClick={() => { setCubeW(CUBE_DEFAULT); try { localStorage.setItem(CUBE_KEY, String(CUBE_DEFAULT)); } catch { /* no storage */ } }}><span /></div>
+          {active === "custom" && (
+            <div className="cube-views" role="radiogroup" aria-label="Vista del cubo">
+              {([[null, "Libre", <IconRotate360 size={15} key="i" />], ["front", "Frente", null], ["right", "Derecha", null], ["back", "Atrás", null], ["left", "Izquierda", null], ["top", "Arriba", null]] as const).map(([v, label, icon]) => (
+                <button key={label} type="button" role="radio" aria-checked={cubeView === v} className={cubeView === v ? "on" : ""} title={v ? `Ver desde ${label.toLowerCase()}` : "Girar libremente"} onClick={() => setCubeView(v)}>
+                  {icon ?? <FaceGlyph face={v!} />}<span>{label}</span>
+                </button>
+              ))}
+            </div>
+          )}
           <MachineCube key={vm.name} machine={{
             power: running ? "on" : vm.state === "Starting" || vm.state === "Stopping" ? "starting" : "off",
             cores: preview.cpu ?? vm.options.cpu,
@@ -199,7 +254,7 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
             usage: { cpu: vm.cpuPercent, gpu: vm.gpuPercent, mem: (vm.memoryDemandGB / Math.max(vm.memoryAssignedGB, 0.1)) * 100, disk: 0 },
             apps: previewApps,
             removed: CLEANUP_REMOVED[preview.cleanup ?? vm.options.cleanup] ?? 0,
-          }} name={draftName || vm.name} decorOf={vm.name} spin={decorEdit.spins} edit={{ ...decorEdit.edit, holdStill: active === "custom" }} others={vms.filter((v) => v.name !== vm.name).map((v) => ({ name: v.name, machine: cubeOf(v) }))} />
+          }} ambient={space.ambient} spaceName={space.name} time={space.time} name={draftName || vm.name} decorOf={vm.name} spin={decorEdit.spins} edit={{ ...decorEdit.edit, holdStill: active === "custom", view: active === "custom" ? cubeView : null }} others={vms.filter((v) => v.name !== vm.name && spaceOf(v.name).id === space.id).map((v) => ({ name: v.name, machine: cubeOf(v) }))} />
         </aside>
       )}
       </div>
@@ -1112,5 +1167,42 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
         </div>
       )}
     </div>
+  );
+}
+
+/** The space the machine is in: changing it moves the machine there, and the cube takes that space's ambient. */
+function SpaceRow({ name, vms }: { name: string; vms: VmOverview[] }) {
+  const spaces = useSpaces();
+  const space = useSpaceOf(name);
+  const Icon = ambientInfo(space.ambient).icon;
+  const [creating, setCreating] = useState(false);
+  return (
+    <div className="opt-row">
+      <span className="opt-icon"><Icon size={17} /></span>
+      <div className="opt-text">
+        <span className="opt-title">Espacio</span>
+        <span className="opt-desc">Dónde está con otras máquinas, y su ambiente. En Inicio se ven juntas.</span>
+      </div>
+      <div className="opt-ctl space-row-ctl">
+        <Dropdown label="Espacio" value={space.id} onChange={(id) => (id === NEW_SPACE ? setCreating(true) : moveToSpace(name, id))}
+          options={[...spaces.map((x) => { const I = ambientInfo(x.ambient).icon; return { value: x.id, label: x.name, detail: ambientInfo(x.ambient).name, icon: <I size={16} /> }; }),
+            { value: NEW_SPACE, label: "Nuevo espacio", detail: `Con ${name} y un ambiente propio`, icon: <IconPlus size={16} /> }]} />
+        <button type="button" className="btn ghost" onClick={() => { showSpace(space.id); location.hash = encodeURIComponent(":inicio"); }}>Ver espacio</button>
+      </div>
+      {creating && createPortal(<SpaceDialog vms={vms} initialMachines={[name]} onClose={() => setCreating(false)} />, portalRoot())}
+    </div>
+  );
+}
+
+/** A tiny cube with the face it shows filled, so each fixed view says which side it is. */
+function FaceGlyph({ face }: { face: CubeView }) {
+  const faces: Record<CubeView, string> = {
+    front: "M3 6h7v7H3z", right: "M10 6l3-3v7l-3 3z", top: "M3 6l3-3h7l-3 3z", back: "M6 3h7v7H6z", left: "M3 6l3-3v7l-3 3z",
+  };
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M3 6h7v7H3zM3 6l3-3h7l-3 3M10 6l3-3v7l-3 3" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" opacity=".55" />
+      <path d={faces[face]} fill="currentColor" opacity=".9" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
+    </svg>
   );
 }

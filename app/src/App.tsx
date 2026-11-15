@@ -12,6 +12,9 @@ import { api, onJob, relaunchAsAdmin, repairService, service, startJob as runJob
 import { MachineIcon, renamePatternVariant } from "./machineIcon";
 import { renameSceneStyle } from "./Scene";
 import { renameDecor } from "./decor/store";
+import { machinesIn, moveToSpace, renameInSpaces, showSpace, useShownSpace, useSpaces } from "./spaces";
+import { ambientInfo } from "./ambient";
+import { carriesMachine, dragMachine, moveMachine, MACHINE_DND } from "./dragMachine";
 import { MAX_SAMPLES } from "./Chart";
 import { VmView, type JobInfo } from "./VmView";
 import { CreateDialog } from "./CreateDialog";
@@ -53,6 +56,12 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
   const [creating, setCreating] = useState(false);
   // Template preselected when "Crear máquina" is opened from a template in the library.
   const [createTemplate, setCreateTemplate] = useState<string | null>(null);
+  // The space a new machine goes into (the one Home shows, or the one it was created from).
+  const [createSpace, setCreateSpace] = useState<string | null>(null);
+  const spaces = useSpaces();
+  const shownSpaceId = useShownSpace();
+  // The space a dragged machine is over, to mark where it would land.
+  const [dropOn, setDropOn] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   const [jobs, setJobs] = useState<Record<string, RunningJob>>({});
   // Short actions (start, shut down, save…) in progress per VM, to show their state instantly.
@@ -219,6 +228,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     renameSceneStyle(from, to);
     renamePatternVariant(from, to);
     renameDecor(from, to);
+    renameInSpaces(from, to);
     setSelected(to);
   };
 
@@ -276,25 +286,43 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
           <button className={`side-item side-home ${libraryTab(selected) ? "active" : ""}`} onClick={() => setSelected(LIBRARY)} title="Perfiles, discos e ISOs">
             <span className="add-icon"><IconStack2 size={16} /></span><span className="name">Biblioteca</span>
           </button>
-          <span className="side-label">Máquinas</span>
-          {vms === null && [0, 1, 2].map((i) => (
-            <div key={i} className="side-item side-skeleton" aria-hidden="true">
-              <span className="skeleton icon" />
-              <span className="name"><span className="skeleton line" /></span>
-            </div>
-          ))}
-          {vms?.map((vm) => {
-            const busy = busyFor(vm.name);
+          {/* With one space the list is just "Máquinas"; with several, each space heads its own machines and opens it in Home. */}
+          {(spaces.length > 1 && vms ? spaces : [null]).map((sp) => {
+            const list = sp && vms ? machinesIn(sp, vms, spaces) : vms;
+            const Icon = sp ? ambientInfo(sp.ambient).icon : null;
             return (
-              // The dot already says on or off: the row only adds what it can't, the GPU in use or a job in progress.
-              <button key={vm.id} className={`side-item ${vm.name === selected ? "active" : ""}`} onClick={() => setSelected(vm.name)}
-                title={busy?.message ? `${vm.name}, ${busy.message}` : `${vm.name}, ${stateLabel[vm.state] ?? vm.state}`}>
-                <span className="side-icon"><MachineIcon name={vm.name} size={28} radius={8} /><span className={`dot badge ${vm.state}`} /></span>
-                <span className="name">{vm.name}</span>
-                {busy ? <IconLoader2 size={15} className="spin side-meta" />
-                  : vm.state === "Running" ? <span className="side-meta" title={`Procesador ${vm.cpuPercent} %, memoria ${vm.memoryDemandGB} GB, GPU ${vm.gpuPercent} %`}>
-                    <TripleSpark samples={history.current[vm.name] ?? []} memGB={vm.memoryAssignedGB} /></span> : null}
-              </button>
+              <div key={sp?.id ?? "all"} className={`side-group${sp && dropOn === sp.id ? " drop" : ""}`}
+                onDragOver={(e) => { if (!sp || !carriesMachine(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (dropOn !== sp.id) setDropOn(sp.id); }}
+                onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropOn((d) => (d === sp?.id ? null : d)); }}
+                onDrop={(e) => { if (!sp) return; const name = e.dataTransfer.getData(MACHINE_DND); setDropOn(null); if (name) { e.preventDefault(); moveMachine(name, sp.id); } }}>
+                {sp ? (
+                  <button type="button" className={`side-label side-space${selected === HOME && shownSpaceId === sp.id ? " on" : ""}`} title={`Ver ${sp.name}`}
+                    onClick={() => { showSpace(sp.id); setSelected(HOME); }}>
+                    {Icon && <Icon size={13} />}<span className="ellipsis">{sp.name}</span>
+                  </button>
+                ) : <span className="side-label">Máquinas</span>}
+                {vms === null && [0, 1, 2].map((i) => (
+                  <div key={i} className="side-item side-skeleton" aria-hidden="true">
+                    <span className="skeleton icon" />
+                    <span className="name"><span className="skeleton line" /></span>
+                  </div>
+                ))}
+                {list?.map((vm) => {
+                  const busy = busyFor(vm.name);
+                  return (
+                    // The dot already says on or off: the row only adds what it can't, the GPU in use or a job in progress.
+                    <button key={vm.id} data-vm={vm.name} draggable={spaces.length > 1} onDragStart={(e) => dragMachine(e, vm.name)} onDragEnd={() => setDropOn(null)}
+                      className={`side-item ${vm.name === selected ? "active" : ""}`} onClick={() => setSelected(vm.name)}
+                      title={busy?.message ? `${vm.name}, ${busy.message}` : `${vm.name}, ${stateLabel[vm.state] ?? vm.state}`}>
+                      <span className="side-icon"><MachineIcon name={vm.name} size={28} radius={8} /><span className={`dot badge ${vm.state}`} /></span>
+                      <span className="name">{vm.name}</span>
+                      {busy ? <IconLoader2 size={15} className="spin side-meta" />
+                        : vm.state === "Running" ? <span className="side-meta" title={`Procesador ${vm.cpuPercent} %, memoria ${vm.memoryDemandGB} GB, GPU ${vm.gpuPercent} %`}>
+                          <TripleSpark samples={history.current[vm.name] ?? []} memGB={vm.memoryAssignedGB} /></span> : null}
+                    </button>
+                  );
+                })}
+              </div>
             );
           })}
           {createJob && (
@@ -303,7 +331,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
               <span className="name">{createJob.name}<span className="sub">{createJob.message}</span></span>
             </button>
           )}
-          <button className="side-item side-add" onClick={() => { setCreateError(null); setCreating(true); }} title="Crear máquina">
+          <button className="side-item side-add" onClick={() => { setCreateError(null); setCreateSpace(null); setCreating(true); }} title="Crear máquina">
             <span className="add-icon"><IconPlus size={16} /></span><span className="name">Crear máquina</span>
           </button>
         </nav>
@@ -334,7 +362,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
           // While the machines load: the shape of Home, where the app opens.
           <HomeSkeleton />
         ) : selected === HOME && vms.length > 0 ? (
-          <Home vms={vms} busyFor={busyFor} startJob={startJob} onOpenVm={setSelected} onRoute={setSelected} onCreate={() => { setCreateError(null); setCreating(true); }} />
+          <Home vms={vms} busyFor={busyFor} startJob={startJob} onOpenVm={setSelected} onRoute={setSelected} onCreate={(space) => { setCreateError(null); setCreateSpace(space ?? null); setCreating(true); }} />
         ) : selected === PREFS ? (
           <Preferences />
         ) : libraryTab(selected) ? (
@@ -345,17 +373,20 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
           <VmView key={current.id} vm={current} vms={vms ?? []} host={host} samples={history.current[current.name] ?? []} busy={busyFor(current.name)}
             startJob={startJob} run={run} onRemoved={() => setSelected("")} onRenamed={onRenamed} />
         ) : vms.length > 0 ? (
-          <Home vms={vms} busyFor={busyFor} startJob={startJob} onOpenVm={setSelected} onRoute={setSelected} onCreate={() => { setCreateError(null); setCreating(true); }} />
+          <Home vms={vms} busyFor={busyFor} startJob={startJob} onOpenVm={setSelected} onRoute={setSelected} onCreate={(space) => { setCreateError(null); setCreateSpace(space ?? null); setCreating(true); }} />
         ) : (
-          <EmptyHome gpuName={host?.gpuName ?? null} onRoute={setSelected} onCreate={() => { setCreateError(null); setCreating(true); }} />
+          <EmptyHome gpuName={host?.gpuName ?? null} onRoute={setSelected} onCreate={(space) => { setCreateError(null); setCreateSpace(space ?? null); setCreating(true); }} />
         )}
       </div>
 
       {creating && (
         <CreateDialog host={host} existing={vms ?? []} job={createJob} error={createError} template={createTemplate}
+          space={createSpace ?? (selected === HOME ? shownSpaceId : current ? null : shownSpaceId)}
           onClose={() => { setCreating(false); setCreateTemplate(null); }}
-          onCreate={({ name, iso, template, profile, user, password, apps, cleanup, resources }) => {
+          onCreate={({ name, iso, template, profile, user, password, apps, cleanup, resources, space }) => {
             setCreateError(null);
+            // The new machine goes into the space picked for it, even before it exists in the list.
+            if (space) moveToSpace(name, space);
             // Resources changed in the dialog go as an override of the chosen profile, like Options does.
             const hw = resources ? { vm: { cpu: { count: resources.cpu }, memoryGB: resources.memoryGB, disk: { sizeGB: resources.diskGB } }, gpu: { allocationPercent: resources.gpuPercent } } : {};
             const args = template

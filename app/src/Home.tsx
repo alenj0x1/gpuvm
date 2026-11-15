@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState } from "react";
 import {
   IconApps, IconArrowRight, IconBolt, IconCpu, IconDatabase, IconDeviceGamepad2, IconDisc, IconDownload, IconExternalLink, IconKey,
-  IconLayoutGrid, IconLink, IconLoader2, IconPlayerPlay, IconPlus, IconStack2, IconTemplate, IconTopologyStar3,
+  IconLayoutGrid, IconLink, IconLoader2, IconPencil, IconPlayerPlay, IconPlus, IconStack2, IconTemplate, IconTopologyStar3, IconArrowsExchange,
 } from "@tabler/icons-react";
 import type { HomeInfo, VmOverview } from "./types";
 import type { JobInfo } from "./VmView";
@@ -9,9 +9,15 @@ import { api } from "./api";
 import { MachineIcon } from "./machineIcon";
 import { MachineCube, cubeOf, type CubeMachine } from "./MachineCube";
 import { randomDecor, randomMachine } from "./decor/random";
+import { EMPTY as EMPTY_DECOR } from "./decor/store";
 import { SpaceWithGames } from "./GameStage";
-import { Scene, sceneStyle } from "./Scene";
-import { formatUptime, stateLabel, useFlip, useScrollFade } from "./ui";
+import { SCENE_STYLES, Scene, sceneStyle } from "./Scene";
+import { Segmented, formatUptime, stateLabel, useFlip, useScrollFade } from "./ui";
+import { machinesIn, moveToSpace, showSpace, spaceOf, useShownSpace, useSpaces, type Space } from "./spaces";
+import { ambientInfo } from "./ambient";
+import { SpaceDialog } from "./SpaceDialog";
+import { useDragScroll } from "./dragScroll";
+import { carriesMachine, dragMachine, moveMachine, MACHINE_DND } from "./dragMachine";
 
 interface Props {
   vms: VmOverview[];
@@ -19,7 +25,7 @@ interface Props {
   startJob: (vm: string, cmd: string, args: Record<string, unknown>, after?: () => void) => void;
   onOpenVm: (name: string) => void;
   onRoute: (route: string) => void;
-  onCreate: () => void;
+  onCreate: (space?: string) => void;
 }
 
 // What the home screen last showed, so coming back shows it at once while it refreshes.
@@ -100,6 +106,8 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
   };
   useEffect(() => { if (!dragging) { saveSize(ROW_KEY, rowH); saveSize(PANEL_KEY, panelW); saveSize(LIB_KEY, libW); saveSize(ATT_KEY, attW); } }, [dragging, rowH, panelW, libW, attW]);
   const [othersRef, othersFade] = useScrollFade<HTMLDivElement>("x");
+  // The row of machines also moves by dragging it, like a list on a phone.
+  const dragRef = useDragScroll();
   const [othersEl, setOthersEl] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
     const el = othersEl;
@@ -122,8 +130,17 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
       .catch(() => {});
   }, [jobs]);
 
-  // Up front: the machine that is on, or else the last one opened.
-  const hero = vms.find((v) => v.state === "Running") ?? (home?.lastOpened ? vms.find((v) => v.name === home.lastOpened!.name) : null) ?? vms[0];
+  // The space shown: only its machines, in its ambient.
+  const spaces = useSpaces();
+  const shownId = useShownSpace();
+  const space = spaces.find((x) => x.id === shownId) ?? spaces[0];
+  const inSpace = machinesIn(space, vms, spaces);
+  const [editing, setEditing] = useState<Space | "new" | null>(null);
+  // Changing spaces turns the cube once quickly while the new ambient fades in.
+  const spins = useRef({ id: space.id, n: 0 });
+  if (spins.current.id !== space.id) spins.current = { id: space.id, n: spins.current.n + 1 };
+  // Up front: the machine that is on, or else the last one opened, within the space.
+  const hero = inSpace.find((v) => v.state === "Running") ?? (home?.lastOpened ? inSpace.find((v) => v.name === home.lastOpened!.name) : null) ?? inSpace[0];
   useEffect(() => {
     if (!hero) return;
     let live = true;
@@ -133,7 +150,7 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
 
   if (!home) return <HomeSkeleton />;
 
-  const others = vms.filter((v) => v !== hero);
+  const others = inSpace.filter((v) => v !== hero);
   const memUsed = home.host.memoryTotalGB - home.host.memoryFreeGB;
   const fits = home.machines.filter((m) => m.state === "Off" && m.fits).map((m) => m.name);
   const short = home.machines.filter((m) => m.state === "Off" && !m.fits);
@@ -174,12 +191,32 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
   return (
     <div ref={mainRef} className={`main home${dragging ? ` dragging-${dragging}` : ""}`}
       style={{ "--row-h": `${rowH}px`, "--panel-w": `${panelW}px`, "--lib-w": `${libW}px`, "--att-w": `${attW}px` } as React.CSSProperties}>
+      {!hero && (
+        <div className="card home-stage">
+          <div className="home-space">
+            <EmptySpace space={space} spin={spins.current.n} />
+            <SpaceBar spaces={spaces} space={space} onEdit={setEditing} />
+          </div>
+          <div className="home-split home-split-panel" aria-hidden="true" />
+          <div className="home-panel home-empty-panel">
+            <div className="home-empty-text">
+              <h1>{space.name}</h1>
+              <p>Un espacio sin máquinas todavía. Mueve aquí las que ya tienes o crea una nueva para {space.name}.</p>
+            </div>
+            <div className="home-panel-actions">
+              <button className="btn ghost" onClick={() => setEditing(space)}><IconArrowsExchange size={16} />Mover máquinas</button>
+              <button className="primary" onClick={() => onCreate(space.id)}><IconPlus size={17} />Crear máquina</button>
+            </div>
+          </div>
+        </div>
+      )}
       {hero && (
         <div className="card home-stage">
           <div className="home-space">
             <SpaceWithGames decorOf={hero.name} machines={vms.filter((v) => v.managed).map((v) => v.name)}>
-              <MachineCube key="home" machine={cubeOf(hero, heroApps)} name={hero.name} others={others.map((v) => ({ name: v.name, machine: cubeOf(v) }))} />
+              <MachineCube key="home" ambient={space.ambient} time={space.time} spaceName={space.name} spin={spins.current.n} machine={cubeOf(hero, heroApps)} name={hero.name} others={others.map((v) => ({ name: v.name, machine: cubeOf(v) }))} />
             </SpaceWithGames>
+            <SpaceBar spaces={spaces} space={space} onEdit={setEditing} />
           </div>
           <div className="home-split home-split-panel" role="separator" aria-orientation="vertical" aria-label="Ancho del panel"
             onPointerDown={drag("panel")} onDoubleClick={() => setPanelW(PANEL_DEFAULT)}><span /></div>
@@ -224,7 +261,26 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
 
       <div ref={rowRef} className={`home-row${home.attention.length ? " with-attention" : ""}`}>
         {/* Every other machine in one row: they share its width and, when they don't fit, it scrolls sideways. */}
-        <div ref={(el) => { othersRef(el); setOthersEl(el); }} className={`home-others ${othersFade}`} style={{ "--count": Math.max(1, others.length) } as React.CSSProperties}>
+        <div ref={(el) => { othersRef(el); setOthersEl(el); dragRef(el); }} className={`home-others ${othersFade}`} style={{ "--count": Math.max(1, others.length || Math.min(4, vms.filter((v) => !inSpace.includes(v)).length + 1)) } as React.CSSProperties}>
+        {/* First the card to create one right here, then the machines of other spaces to bring in. */}
+        {others.length === 0 && <NewMachineCard space={space} onCreate={() => onCreate(space.id)} />}
+        {/* With no other machine here, the row offers the ones from other spaces (brought in one click) and the
+            card to create one right in this space, in the same shape as a machine card. */}
+        {others.length === 0 && vms.filter((v) => !inSpace.includes(v)).slice(0, 6).map((vm) => (
+          <div key={vm.id} className="card home-machine home-bring">
+            <div className="home-machine-scene" aria-hidden="true">
+              <Scene name={vm.name} style={sceneStyle(vm.name)} state={vm.state} activity={{ cpu: vm.cpuPercent, gpu: vm.gpuPercent, mem: 0 }} />
+            </div>
+            <div className="home-machine-row">
+              <MachineIcon name={vm.name} size={30} radius={8} />
+              <div className="home-machine-text">
+                <strong>{vm.name}</strong>
+                <span>En {spaceOf(vm.name, spaces).name}</span>
+              </div>
+              <button className="btn compact" onClick={() => moveToSpace(vm.name, space.id)}><IconArrowsExchange size={15} />Traer aquí</button>
+            </div>
+          </div>
+        ))}
         {others.map((vm) => {
           // Each card is drawn again only when something it shows changes: with many machines, a refresh that
           // touches one doesn't redraw them all.
@@ -232,7 +288,7 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
           const sig = [vm.name, vm.state, vm.memoryStartupGB, Math.round(vm.cpuPercent / 10), Math.round(vm.gpuPercent / 10), vm.managed, vm.streaming, busyFor(vm.name)?.message ?? "",
             m?.fits, m?.fitGB, m?.needGB, home.host.memoryFreeGB].join("|");
           return <Memo key={vm.id} sig={sig} render={() => (
-          <div className="card home-machine">
+          <div className="card home-machine" data-vm={vm.name} draggable onDragStart={(e) => dragMachine(e, vm.name)}>
             <button type="button" className="home-machine-scene" onClick={() => onOpenVm(vm.name)} aria-label={`Ver ${vm.name}`}>
               <Scene name={vm.name} style={sceneStyle(vm.name)} state={vm.state}
                 activity={{ cpu: vm.cpuPercent, gpu: vm.gpuPercent, mem: (vm.memoryDemandGB / Math.max(vm.memoryAssignedGB, 0.1)) * 100 }} />
@@ -256,7 +312,7 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
           <div className="home-card-head">
             <span className="home-side-title">Biblioteca</span>
             {/* Creating a machine lives with what it is made from, as a quiet action, not a big tile. */}
-            <button type="button" className="btn ghost compact" onClick={onCreate}><IconPlus size={15} />Crear máquina</button>
+            <button type="button" className="btn ghost compact" onClick={() => onCreate(space.id)}><IconPlus size={15} />Crear máquina</button>
           </div>
           <div className="home-library-grid">
             {[
@@ -305,27 +361,90 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
           </div>
         )}
       </div>
+      {editing && <SpaceDialog space={editing === "new" ? undefined : editing} vms={vms} onClose={() => setEditing(null)} onSaved={(x) => showSpace(x.id)} />}
     </div>
   );
+}
+
+/** The spaces, over the stage: each one with its ambient's icon, and the actions to edit this one or make another. */
+function SpaceBar({ spaces, space, onEdit }: { spaces: Space[]; space: Space; onEdit: (s: Space | "new") => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  // Many spaces scroll sideways: the wheel alone does it (not only with Shift), and the one shown stays in view.
+  useEffect(() => {
+    const list = ref.current?.querySelector<HTMLElement>(".segmented");
+    if (!list) return;
+    const wheel = (e: WheelEvent) => {
+      if (list.scrollWidth <= list.clientWidth) return;
+      e.preventDefault();
+      list.scrollBy({ left: Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY });
+    };
+    list.addEventListener("wheel", wheel, { passive: false });
+    return () => list.removeEventListener("wheel", wheel);
+  }, []);
+  useEffect(() => { ref.current?.querySelector(".segmented button.on")?.scrollIntoView({ block: "nearest", inline: "nearest" }); }, [space.id]);
+  // A machine dragged over a tab lands in that space.
+  const [over, setOver] = useState<number | null>(null);
+  const tabAt = (e: React.DragEvent) => { const b = (e.target as HTMLElement).closest(".segmented button"); return b ? [...b.parentElement!.querySelectorAll("button")].indexOf(b as HTMLButtonElement) : -1; };
+  return (
+    <div className="space-bar" ref={ref} data-over={over ?? undefined}
+      onDragOver={(e) => { const i = tabAt(e); if (i < 0 || !carriesMachine(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (over !== i) setOver(i); }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver(null); }}
+      onDrop={(e) => { const i = tabAt(e), name = e.dataTransfer.getData(MACHINE_DND); setOver(null); if (i >= 0 && name && spaces[i]) { e.preventDefault(); moveMachine(name, spaces[i].id); } }}>
+      <Segmented value={space.id} onChange={showSpace} options={spaces.map((x) => {
+        const I = ambientInfo(x.ambient).icon;
+        return { value: x.id, label: <><I size={15} /><span className="ellipsis">{x.name}</span></> };
+      })} />
+      <button type="button" className="icon-btn" title={`Editar ${space.name}`} aria-label={`Editar ${space.name}`} onClick={() => onEdit(space)}><IconPencil size={16} /></button>
+      <button type="button" className="icon-btn" title="Nuevo espacio" aria-label="Nuevo espacio" onClick={() => onEdit("new")}><IconPlus size={16} /></button>
+    </div>
+  );
+}
+
+/** The card to create a machine in this space, shaped like a machine's card: a banner and an icon made up at random
+ *  each time Home opens, like a machine that is about to exist. */
+function NewMachineCard({ space, onCreate }: { space: Space; onCreate: () => void }) {
+  const [look] = useState(() => ({ name: `nueva-${Math.random().toString(36).slice(2, 8)}`, style: SCENE_STYLES[Math.floor(Math.random() * SCENE_STYLES.length)] }));
+  return (
+    <div className="card home-machine">
+      <button type="button" className="home-machine-scene" onClick={onCreate} aria-label="Crear máquina">
+        <Scene name={look.name} style={look.style} state="Off" activity={{ cpu: 0, gpu: 0, mem: 0 }} />
+      </button>
+      <div className="home-machine-row">
+        <MachineIcon name={look.name} size={30} radius={8} />
+        <button type="button" className="home-machine-text" onClick={onCreate}>
+          <strong>Nueva máquina</strong>
+          <span>En {space.name}</span>
+        </button>
+        <button className="btn compact" onClick={onCreate}><IconPlus size={15} />Crear máquina</button>
+      </div>
+    </div>
+  );
+}
+
+/** A space with no machines: its ambient with a machine made up, waiting. */
+function EmptySpace({ space, spin }: { space: Space; spin: number }) {
+  const [machine] = useState<CubeMachine>(() => ({ ...randomMachine(), power: "off" }));
+  return <MachineCube key="home" ambient={space.ambient} time={space.time} spaceName={space.name} spin={spin} machine={machine} name="" decorShown={EMPTY_DECOR} />;
 }
 
 /** A machine that doesn't exist yet: the cube with its pieces off, waiting. */
 /** With no machines yet, the space shows machines made up at random: a new decoration every few seconds, arriving
  *  with a quick spin. The machine itself stays (changing its pieces would send the camera around them). */
-function Showcase() {
+function Showcase({ space }: { space?: Space }) {
   const [machine] = useState<CubeMachine>(randomMachine);
   const [shown, setShown] = useState(() => ({ decor: randomDecor(), n: 0 }));
   useEffect(() => { const t = setInterval(() => { if (!document.hidden) setShown((s) => ({ decor: randomDecor(), n: s.n + 1 })); }, 7000); return () => clearInterval(t); }, []);
   return (
     <SpaceWithGames decor={shown.decor}>
-      <MachineCube machine={machine} name="" decorShown={shown.decor} spin={shown.n} />
+      <MachineCube machine={machine} name="" decorShown={shown.decor} spin={shown.n} ambient={space?.ambient} />
     </SpaceWithGames>
   );
 }
 
 /** Home with no machines: the same stage, with an empty machine in its cube, and beside it the invitation to create
  *  the first one and what the Library already has ready for it. */
-export function EmptyHome({ gpuName, onCreate, onRoute }: { gpuName: string | null; onCreate: () => void; onRoute: (route: string) => void }) {
+export function EmptyHome({ gpuName, onCreate, onRoute }: { gpuName: string | null; onCreate: (space?: string) => void; onRoute: (route: string) => void }) {
+  const spaces = useSpaces();
   const [library, setLibrary] = useState(libraryCache);
   useEffect(() => {
     Promise.all([api.profiles(), api.templates(), api.sharedDisks(), api.isos()])
@@ -340,7 +459,7 @@ export function EmptyHome({ gpuName, onCreate, onRoute }: { gpuName: string | nu
   return (
     <div className="main home">
       <div className="card home-stage home-empty">
-        <div className="home-space"><Showcase /></div>
+        <div className="home-space"><Showcase space={spaces[0]} /></div>
         <div className="home-split home-split-panel" aria-hidden="true" />
         <div className="home-panel home-empty-panel">
           <div className="home-empty-text">
@@ -357,7 +476,7 @@ export function EmptyHome({ gpuName, onCreate, onRoute }: { gpuName: string | nu
             </div>
           )}
           <div className="home-panel-actions">
-            <button className="primary" onClick={onCreate}><IconPlus size={17} />Crear máquina</button>
+            <button className="primary" onClick={() => onCreate()}><IconPlus size={17} />Crear máquina</button>
           </div>
         </div>
       </div>

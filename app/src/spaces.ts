@@ -1,0 +1,107 @@
+import { useSyncExternalStore } from "react";
+import { normalizeAmbient, type AmbientId, type AmbientTime } from "./ambient";
+
+// Spaces group machines by what they are for (work, games, AI tests…), and each one has its own ambient: the place
+// where its machines float (a constellation, a neon city, the ocean, Mars…). Kept in localStorage like a machine's
+// decoration. Every machine is in exactly one space: the ones nobody moved are in the first space, which always exists.
+
+export interface Space {
+  id: string;
+  name: string;
+  ambient: AmbientId;
+  /** The time of day of the world of blocks. */
+  time?: AmbientTime;
+  /** Machine names in this space, in the order they were added. */
+  machines: string[];
+}
+
+/** The first space: it can be renamed and given another ambient, never deleted. */
+export const MAIN_SPACE = "main";
+const KEY = "gpuvm.spaces";
+const EVENT = "gpuvm-spaces";
+const DEFAULT: Space[] = [{ id: MAIN_SPACE, name: "Mis máquinas", ambient: "studio", machines: [] }];
+
+let cache: Space[] | null = null;
+export function readSpaces(): Space[] {
+  if (cache) return cache;
+  let list = DEFAULT;
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) {
+      const p = JSON.parse(raw);
+      if (Array.isArray(p) && p.length) list = p.filter((s) => s && typeof s.id === "string").map((s) => ({ id: s.id, name: s.name, ambient: normalizeAmbient(s.ambient), time: ["day", "evening", "night", "auto"].includes(s.time) ? s.time : undefined, machines: Array.isArray(s.machines) ? s.machines : [] }));
+    }
+  } catch { /* no storage or bad data */ }
+  if (!list.some((s) => s.id === MAIN_SPACE)) list = [DEFAULT[0], ...list];
+  cache = list;
+  return list;
+}
+
+function write(list: Space[]) {
+  cache = list;
+  try { localStorage.setItem(KEY, JSON.stringify(list)); } catch { /* no storage */ }
+  window.dispatchEvent(new Event(EVENT));
+}
+
+function subscribe(onChange: () => void) {
+  const storage = (e: StorageEvent) => { if (e.key === KEY) { cache = null; onChange(); } };
+  window.addEventListener(EVENT, onChange);
+  window.addEventListener("storage", storage);
+  return () => { window.removeEventListener(EVENT, onChange); window.removeEventListener("storage", storage); };
+}
+export const useSpaces = () => useSyncExternalStore(subscribe, readSpaces);
+
+/** The space a machine is in: the one that lists it, or the first one. */
+export function spaceOf(name: string, list = readSpaces()): Space {
+  return list.find((s) => s.machines.includes(name)) ?? list.find((s) => s.id === MAIN_SPACE)!;
+}
+/** The machines of a space, in the space's order, from the machines that exist (the first space also takes the rest). */
+export function machinesIn<T extends { name: string }>(space: Space, all: T[], list = readSpaces()): T[] {
+  return all.filter((v) => spaceOf(v.name, list).id === space.id);
+}
+export const useSpaceOf = (name: string) => spaceOf(name, useSpaces());
+
+const newId = () => Math.random().toString(36).slice(2, 9);
+
+/** Creates or changes a space; the machines listed leave whatever space they were in. */
+export function saveSpace(s: Omit<Space, "id"> & { id?: string }): Space {
+  const id = s.id ?? newId();
+  const next: Space = { id, name: s.name.trim() || "Espacio", ambient: s.ambient, time: s.time, machines: [...new Set(s.machines)] };
+  const others = readSpaces().filter((x) => x.id !== id).map((x) => ({ ...x, machines: x.machines.filter((m) => !next.machines.includes(m)) }));
+  const old = readSpaces().findIndex((x) => x.id === id);
+  const list = [...others];
+  list.splice(old >= 0 ? old : list.length, 0, next);
+  write(list);
+  return next;
+}
+
+/** Moves one machine into a space. */
+export function moveToSpace(machine: string, spaceId: string) {
+  write(readSpaces().map((s) => ({ ...s, machines: s.id === spaceId ? [...s.machines.filter((m) => m !== machine), machine] : s.machines.filter((m) => m !== machine) })));
+}
+
+/** Deletes a space; its machines go back to the first one. */
+export function deleteSpace(id: string) {
+  if (id === MAIN_SPACE) return;
+  write(readSpaces().filter((s) => s.id !== id));
+}
+
+/** A renamed machine stays in its space. */
+export function renameInSpaces(from: string, to: string) {
+  write(readSpaces().map((s) => ({ ...s, machines: s.machines.map((m) => (m === from ? to : m)) })));
+}
+
+/** Which space Home shows, remembered between visits. */
+const SHOWN = "gpuvm.space.shown";
+let shown: string | null = null;
+export const shownSpace = () => {
+  if (shown === null) { try { shown = localStorage.getItem(SHOWN) ?? MAIN_SPACE; } catch { shown = MAIN_SPACE; } }
+  return readSpaces().some((s) => s.id === shown) ? shown : MAIN_SPACE;
+};
+export const showSpace = (id: string) => {
+  shown = id;
+  try { localStorage.setItem(SHOWN, id); } catch { /* no storage */ }
+  window.dispatchEvent(new Event(EVENT));
+};
+export const useShownSpace = () => { useSpaces(); return useSyncExternalStore(subscribe, shownSpace); };
+

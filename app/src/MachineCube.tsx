@@ -4,6 +4,7 @@ import { useDecor, decorColor, colorOfDecor, saveDecor, ledTop, LED_STEP, newId,
 import { ledColumns } from "./decor/ledFont";
 import { stickerImage } from "./decor/stickers";
 import { figureHeight } from "./decor/figures";
+import { FLOOR, ambientLight, ambientTint, drawAmbient, drawAmbientGlow, hasScene, normalizeAmbient, resolveTime, type AmbientId, type AmbientState, type AmbientTime } from "./ambient";
 import { drawFigures as drawFiguresGL, mul3, turnY, viewRot, type FigureDraw } from "./decor/figureGL";
 
 /** What the cube shows: the machine's pieces, how much each one is working, and what it has installed. */
@@ -65,6 +66,14 @@ const parseHex = (c: string): number[] => {
 const mixHex = (a: string, b: string, t: number) => {
   const x = hex(a), y = hex(b);
   return "#" + x.map((c, i) => Math.round(c + (y[i] - c) * t).toString(16).padStart(2, "0")).join("");
+};
+/** A color lit by `k`: darker below 1, toward white above it (cached, a frame asks for the same few many times). */
+const shades = new Map<string, string>();
+const shadeHex = (c: string, k: number) => {
+  const q = Math.round(k * 40) / 40, key = c + "|" + q;
+  let s = shades.get(key);
+  if (!s) { s = q <= 1 ? mixHex(c, "#000000", 1 - q) : mixHex(c, "#ffffff", Math.min(1, q - 1)); if (shades.size > 2000) shades.clear(); shades.set(key, s); }
+  return s;
 };
 const rgba = (c: string, a: number) => `rgba(${hex(c).join(",")},${Math.max(0, Math.min(1, a))})`;
 
@@ -191,6 +200,12 @@ let lastSpace: { name: string; yaw: number; pitch: number; at: number } | null =
 /** Another machine in the same space, drawn small under this one and as a star of the constellation at rest. */
 export interface CubeNeighbor { name: string; machine: CubeMachine }
 
+/** The fixed views of the cube, for decorating each face straight on. */
+export type CubeView = "front" | "right" | "back" | "left" | "top";
+const VIEWS: Record<CubeView, { yaw: number; pitch: number }> = {
+  front: { yaw: 0, pitch: 0.12 }, right: { yaw: Math.PI / 2, pitch: 0.12 }, back: { yaw: Math.PI, pitch: 0.12 }, left: { yaw: -Math.PI / 2, pitch: 0.12 }, top: { yaw: 0, pitch: Math.PI / 2 - 0.02 },
+};
+
 /** Editing the decoration on the cube: stickers and figures are picked, dragged and dropped right on it. */
 export interface CubeEdit {
   /** What is picked: one or several stickers and figures. */
@@ -200,11 +215,20 @@ export interface CubeEdit {
   onMenu: (id: string, x: number, y: number) => void;
   /** While decorating, the machine stays in front instead of drifting off into the constellation. */
   holdStill?: boolean;
+  /** A fixed view to decorate from (front, a side, the top): the cube goes there and stays still until it is cleared. */
+  view?: CubeView | null;
   /** Where moved stickers and figures are saved (the machine's decoration by default). */
   write?: (d: Decor) => void;
 }
 
-export function MachineCube({ machine, name = "", others = [], className, perPart = false, decorOf, edit, decorShown, spin = 0 }: {
+export function MachineCube({ machine, name = "", others = [], className, perPart = false, decorOf, edit, decorShown, spin = 0, ambient: ambientIn = "studio", spaceName, time }: {
+  /** The time of day of the world (blocks). */
+  time?: AmbientTime;
+  /** The place where the machines float (the space's ambient); changing it fades from one to the other. */
+  ambient?: AmbientId;
+  /** The ambient's style and time of day. */
+  /** The space's name, printed on the board. */
+  spaceName?: string;
   machine: CubeMachine; name?: string; others?: CubeNeighbor[]; className?: string; perPart?: boolean;
   /** Whose decoration to show (the machine's name; `name` can be a name still being typed). */
   decorOf?: string;
@@ -227,9 +251,14 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
   const prev = useRef<CubeMachine | null>(null);
   const requests = useRef<string[][]>([]);
   const born = useRef(performance.now());
+  const prevOwner = useRef(decorOf ?? name);
   useEffect(() => {
     const p = prev.current;
     prev.current = machine;
+    // Another machine in front (a space changed) is not a change of pieces.
+    const who = decorOf ?? name, other = prevOwner.current !== who;
+    prevOwner.current = who;
+    if (other) { born.current = performance.now(); return; }
     // What arrives while the page is still loading (the installed apps, the saved level) is not a change.
     if (!p || performance.now() - born.current < 1500) return;
     const parts: string[] = [];
@@ -255,6 +284,13 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
   data.current = machine;
   const colors = useRef(perPart);
   colors.current = perPart;
+  const ambient = normalizeAmbient(ambientIn);
+  const place = useRef(ambient);
+  place.current = ambient;
+  const labels = useRef({ space: spaceName, machine: name });
+  labels.current = { space: spaceName, machine: decorOf ?? name };
+  const timeRef = useRef(time);
+  timeRef.current = time;
 
   useEffect(() => {
     const cv = ref.current;
@@ -275,6 +311,9 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       swap.from = space.current.others.findIndex((o) => o.name === before.name);
       if (swap.from >= 0) { swap.t = 0; swap.yaw = before.yaw; view.yaw = before.yaw; view.pitch = before.pitch; }
     }
+    // The ambient being shown, and the one it is fading from.
+    const scene = { cur: place.current, prev: null as AmbientId | null, k: 1, states: new Map<AmbientId, AmbientState>() };
+    const stateOf = (id: AmbientId) => { let s = scene.states.get(id); if (!s) { s = {}; scene.states.set(id, s); } return s; };
     let drag: { x: number; y: number; pan: boolean } | null = null;
     const reset = () => Object.assign(view, { yaw: START_YAW, pitch: START_PITCH, vy: 0, vp: 0, zoom: 1, ox: 0, oy: 0 });
     // The camera's close-ups: a list of shots, then back to where the person left the view.
@@ -298,7 +337,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
     const local = (e: { clientX: number; clientY: number }): V2 => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
     const down = (e: PointerEvent) => {
       const ed = editRef.current;
-      if (ed) {
+      if (ed && e.button !== 1) {
         const [x, y] = local(e), hit = pick(x, y);
         // The menu opens on the contextmenu event that follows, which is also the one the browser's own menu
         // would answer: opening it here let that event land on our menu and show the browser's on top.
@@ -348,7 +387,9 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
         }
         if (e.button === 0) ed.onSelect([]);
       }
-      stopCam(); drag = { x: e.clientX, y: e.clientY, pan: e.button === 2 }; cv.setPointerCapture(e.pointerId); cv.classList.add("dragging");
+      // The left button turns it; the right one (outside decorating) and the wheel pressed move it around.
+      if (e.button === 1) e.preventDefault();
+      stopCam(); drag = { x: e.clientX, y: e.clientY, pan: e.button === 2 || e.button === 1 }; cv.setPointerCapture(e.pointerId); cv.classList.add(drag.pan ? "panning" : "dragging");
     };
     const move = (e: PointerEvent) => {
       if (turning && work) {
@@ -366,7 +407,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       if (held) { moveHeld(...local(e)); idleSince = performance.now(); return; }
       if (!drag) { if (editRef.current) cv.classList.toggle("grab", !!pick(...local(e))); return; }
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-      if (drag.pan) { view.ox += dx; view.oy += dy; } else { view.vy = dx * 0.01; view.vp = dy * 0.01; view.yaw += view.vy; view.pitch += view.vp; }
+      if (drag.pan) { view.ox += dx; view.oy += dy; } else if (editRef.current?.view) { /* a fixed view does not turn */ } else { view.vy = dx * 0.01; view.vp = dy * 0.01; view.yaw += view.vy; view.pitch += view.vp; }
       drag.x = e.clientX; drag.y = e.clientY;
       idleSince = performance.now();
     };
@@ -385,7 +426,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       if (turning) { turning = null; work = null; cv.classList.remove("turning"); return; }
       if (held && work) writeDecor(work);
       held = null; work = null; cv.classList.remove("holding");
-      drag = null; cv.classList.remove("dragging");
+      drag = null; cv.classList.remove("dragging", "panning");
     };
     // Stickers and figures dragged from the Personalizar panel land where they are dropped.
     const over = (e: DragEvent) => { if (editRef.current && e.dataTransfer?.types.includes(DND)) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } };
@@ -429,6 +470,10 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
     cv.addEventListener("wheel", wheel, { passive: false });
     cv.addEventListener("contextmenu", menu);
     cv.addEventListener("dblclick", reset);
+    // The pressed wheel moves the cube instead of the browser's scrolling arrows.
+    const noAutoScroll = (e: MouseEvent) => { if (e.button === 1) e.preventDefault(); };
+    cv.addEventListener("mousedown", noAutoScroll);
+    cv.addEventListener("auxclick", noAutoScroll);
 
     // Projection state for the current frame.
     let W = 0, H = 0, Sz = 1, CX = 0, CY = 0, cyw = 1, syw = 0, cpt = 1, spt = 0, T = 0, fan = 0, HA = 1, bootY = 9, scanY = -9, under = false;
@@ -862,6 +907,113 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       for (const [a, b] of EDGES) seg(a, b, on ? col : light ? "#9a978f" : "#8a8a8a", 0.9, 1.2);
     };
 
+    // In the world of blocks the machine is built of bricks too: solid pieces lit by the world's sun, with studs on top,
+    // instead of the hologram. Each piece keeps its place and size, so the cube reads the same.
+    type Brick = { x: number; y: number; z: number; w: number; h: number; d: number; c: string; studs?: boolean; fan?: number };
+    let SUN = ambientLight("blocks", false)!.dir;
+    const brickFace = (col: string, n: V3, k: number) => shadeHex(col, (0.62 + 0.48 * Math.max(0, n[0] * SUN[0] + n[1] * SUN[1] + n[2] * SUN[2])) * k);
+    const studDisc = (x: number, y: number, z: number, r: number, col: string) => {
+      const top: V2[] = [], bot: V2[] = [];
+      for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2, p = P(x + Math.cos(a) * r, y + r * 0.7, z + Math.sin(a) * r), q = P(x + Math.cos(a) * r, y, z + Math.sin(a) * r); top.push([p[0], p[1]]); bot.push([q[0], q[1]]); }
+      const g2 = ctx;
+      g2.beginPath(); bot.forEach((p, i) => (i ? g2.lineTo(p[0], p[1]) : g2.moveTo(p[0], p[1]))); g2.closePath(); g2.fillStyle = shadeHex(col, 0.7); g2.fill();
+      // The side between: the two outlines joined at their widest points.
+      g2.beginPath(); g2.moveTo(top[0][0], top[0][1]); g2.lineTo(bot[0][0], bot[0][1]); g2.lineTo(bot[6][0], bot[6][1]); g2.lineTo(top[6][0], top[6][1]); g2.fillStyle = shadeHex(col, 0.78); g2.fill();
+      g2.beginPath(); top.forEach((p, i) => (i ? g2.lineTo(p[0], p[1]) : g2.moveTo(p[0], p[1]))); g2.closePath(); g2.fillStyle = shadeHex(col, 1.12); g2.fill();
+    };
+    const drawBricks = (listIn: Brick[], k: number, studs: boolean) => {
+      // (the first brick in the list is the board)
+      let list = listIn.slice();
+      const g2 = ctx;
+      // The board goes first (last when seen from below); the pieces on it, farthest first.
+      const depth = (b: Brick) => P(b.x, b.y + b.h / 2, b.z)[2];
+      const base = list.shift()!, rest2 = list.sort((a, b) => depth(a) - depth(b));
+      list = under ? [...rest2, base] : [base, ...rest2];
+      for (const b of list) {
+        if (b.y > bootY) continue;
+        const a = b.w / 2, c = b.d / 2, y0 = b.y, y1 = b.y + b.h;
+        const faces: [V3, V3[]][] = [
+          [[0, 1, 0], [[b.x - a, y1, b.z - c], [b.x + a, y1, b.z - c], [b.x + a, y1, b.z + c], [b.x - a, y1, b.z + c]]],
+          [[1, 0, 0], [[b.x + a, y0, b.z - c], [b.x + a, y0, b.z + c], [b.x + a, y1, b.z + c], [b.x + a, y1, b.z - c]]],
+          [[-1, 0, 0], [[b.x - a, y0, b.z - c], [b.x - a, y0, b.z + c], [b.x - a, y1, b.z + c], [b.x - a, y1, b.z - c]]],
+          [[0, 0, 1], [[b.x - a, y0, b.z + c], [b.x + a, y0, b.z + c], [b.x + a, y1, b.z + c], [b.x - a, y1, b.z + c]]],
+          [[0, 0, -1], [[b.x - a, y0, b.z - c], [b.x + a, y0, b.z - c], [b.x + a, y1, b.z - c], [b.x - a, y1, b.z - c]]],
+          [[0, -1, 0], [[b.x - a, y0, b.z - c], [b.x + a, y0, b.z - c], [b.x + a, y0, b.z + c], [b.x - a, y0, b.z + c]]],
+        ];
+        g2.globalAlpha = FADE;
+        for (const [n, q] of faces) {
+          if (!vis(...n)) continue;
+          g2.beginPath(); q.forEach((p, i) => { const s = P(...p); if (i) g2.lineTo(s[0], s[1]); else g2.moveTo(s[0], s[1]); }); g2.closePath();
+          g2.fillStyle = brickFace(b.c, n, k); g2.fill();
+          g2.strokeStyle = "rgba(0,0,0,.18)"; g2.lineWidth = 0.8; g2.stroke();
+        }
+        // A fan on the card's face: a round tile with blades that turn with the GPU's use.
+        if (b.fan !== undefined && vis(0, 0, 1)) for (const fx of [-0.3, 0, 0.3]) {
+          const cx = b.x + fx, cy = b.y + b.h / 2, cz = b.z + c + 0.004, r = Math.min(0.13, b.h * 0.4);
+          const ring = circ([cx, cy, cz], [1, 0, 0], [0, 1, 0], r, 0, Math.PI * 2, 18).map((p) => P(...p));
+          g2.beginPath(); ring.forEach((p, i) => (i ? g2.lineTo(p[0], p[1]) : g2.moveTo(p[0], p[1]))); g2.closePath(); g2.fillStyle = shadeHex("#1d2023", k); g2.fill();
+          g2.strokeStyle = shadeHex("#5a6168", k); g2.lineWidth = 1.2;
+          for (let q = 0; q < 4; q++) { const an = fan * (1 + b.fan * 6) + q * (Math.PI / 2) + fx, e = P(cx + Math.cos(an) * r * 0.85, cy + Math.sin(an) * r * 0.85, cz), o = P(cx, cy, cz); g2.beginPath(); g2.moveTo(o[0], o[1]); g2.lineTo(e[0], e[1]); g2.stroke(); }
+        }
+        if (studs && b.studs && vis(0, 1, 0) && Sz * OBJ.s > 60) {
+          const step = 0.1, nx = Math.max(1, Math.round(b.w / step)), nz = Math.max(1, Math.round(b.d / step));
+          if (nx * nz <= 400) for (let i = 0; i < nx; i++) for (let j = 0; j < nz; j++)
+            studDisc(b.x - a + (i + 0.5) * (b.w / nx), y1, b.z - c + (j + 0.5) * (b.d / nz), 0.03, brickFace(b.c, [0, 1, 0], k));
+        }
+        g2.globalAlpha = 1;
+      }
+    };
+    /** The machine as bricks: board, processor with its cooler, memory sticks, the graphics card with its fans, the disk
+     *  and the apps as small bricks in their colors. `full` adds the studs (the one in front). */
+    const brickMachine = (m: CubeMachine, on: number, act: number, full: boolean) => {
+      const k = on ? 1 : 0.62, col = accent, list: Brick[] = [];
+      // Real computer colors: a dark green board, silver and black parts; the machine's color only in small lights.
+      list.push({ x: 0, y: 0, z: 0, w: 1.8, h: 0.06, d: 1.8, c: light ? "#3f7a4a" : "#2f5d3a", studs: true });
+      list.push({ x: -0.38, y: 0.06, z: -0.32, w: 0.5, h: 0.04, d: 0.5, c: "#8f969c" });
+      list.push({ x: -0.38, y: 0.1, z: -0.32, w: 0.4, h: 0.16, d: 0.4, c: "#c9ced2", studs: true });
+      list.push({ x: -0.38, y: 0.26, z: -0.32, w: 0.1, h: 0.03, d: 0.1, c: on ? mixHex("#5a6168", col, 0.3 + act * 0.7) : "#5a6168" });
+      const sticks = Math.max(1, Math.min(6, Math.round(m.memoryGB / 4)));
+      for (let i = 0; i < sticks; i++) {
+        list.push({ x: 0.2 + i * 0.088, y: 0.06, z: -0.36, w: 0.05, h: 0.44, d: 0.6, c: "#2b2f33" });
+        list.push({ x: 0.2 + i * 0.088, y: 0.5, z: -0.36, w: 0.05, h: 0.06, d: 0.6, c: "#6b7278", studs: true });
+      }
+      if (m.gpuPercent > 0) {
+        list.push({ x: 0.05, y: 0.06, z: 0.32, w: 0.12, h: 0.06, d: 0.16, c: "#2b2f33" }, { x: 0.65, y: 0.06, z: 0.32, w: 0.12, h: 0.06, d: 0.16, c: "#2b2f33" });
+        list.push({ x: 0.35, y: 0.12, z: 0.32, w: 1.0, h: 0.42, d: 0.16, c: "#3a3f45", studs: true, fan: m.usage.gpu / 100 });
+        list.push({ x: 0.35, y: 0.54, z: 0.32, w: 1.0, h: 0.04, d: 0.16, c: "#5a6168" });
+        list.push({ x: -0.1, y: 0.58, z: 0.32, w: 0.06, h: 0.02, d: 0.06, c: on ? col : "#5a6168" });
+      }
+      list.push({ x: -0.55, y: 0.06, z: 0.6, w: 0.42, h: 0.12, d: 0.5, c: "#c9ced2", studs: true });
+      const n = m.apps.length, size = Math.max(0.08, appSize(n) * 1.1);
+      m.apps.forEach((id, i) => {
+        const p = appSpot(i, n), y = p[1] + Math.sin(T * 1.1 + i * 1.7) * 0.035 * on;
+        list.push({ x: p[0], y: y - size / 2, z: p[2], w: size, h: size, d: size, c: appColor(id), studs: true });
+      });
+      drawBricks(list, k, full);
+    };
+    /** The machine's screen as a mosaic of square tiles, in a frame of dark bricks. */
+    const mosaic = document.createElement("canvas");
+    mosaic.width = 32; mosaic.height = 18;
+    const brickScreen = (x0: number, y0: number, sw: number, sh: number, alpha: number) => {
+      const mg = mosaic.getContext("2d")!;
+      mg.clearRect(0, 0, 32, 18);
+      mg.fillStyle = light ? "#e9ecef" : "#15181b"; mg.fillRect(0, 0, 32, 18);
+      mg.drawImage(screen, 0, 0, 32, 18);
+      const g2 = ctx, f = Math.max(4, sw * 0.03);
+      g2.globalAlpha = alpha;
+      g2.fillStyle = "#24282c"; g2.fillRect(x0 - f, y0 - f, sw + f * 2, sh + f * 2);
+      g2.save(); g2.imageSmoothingEnabled = false; g2.drawImage(mosaic, x0, y0, sw, sh); g2.restore();
+      // The seams between tiles, and a shine on each so it reads as plastic.
+      g2.strokeStyle = "rgba(0,0,0,.35)"; g2.lineWidth = 1;
+      g2.beginPath();
+      for (let i = 1; i < 32; i++) { const x = x0 + (i * sw) / 32; g2.moveTo(x, y0); g2.lineTo(x, y0 + sh); }
+      for (let j = 1; j < 18; j++) { const y = y0 + (j * sh) / 18; g2.moveTo(x0, y); g2.lineTo(x0 + sw, y); }
+      g2.stroke();
+      g2.fillStyle = "rgba(255,255,255,.08)";
+      for (let i = 0; i < 32; i++) for (let j = 0; j < 18; j++) g2.fillRect(x0 + (i * sw) / 32 + 1, y0 + (j * sh) / 18 + 1, Math.max(1, sw / 32 * 0.4), 1);
+      g2.globalAlpha = 1;
+    };
+
     const apps = (m: CubeMachine, on: number) => {
       const n = m.apps.length, size = appSize(n);
       m.apps.forEach((id, i) => {
@@ -871,10 +1023,33 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
     };
 
     // The machine's screen: a Windows desktop with its apps on the taskbar, or the Windows logo while it starts.
-    const drawScreen = (m: CubeMachine, bootF: number) => {
+    const drawScreen = (m: CubeMachine, bootF: number, landscape: false | "day" | "evening" | "night" = false) => {
       const w = 480, hh = 270, col = (x: number) => rgba(accent, x);
       s2.clearRect(0, 0, w, hh);
       s2.fillStyle = col(0.07); s2.fillRect(0, 0, w, hh);
+      if (landscape && bootF >= 1) {
+        // A wallpaper with a landscape: sky, sun, mountains, hills and a lake, made for the tiles of the mosaic.
+        // The same time of day as the world around: blue noon, orange evening, a night with stars and the moon.
+        const L2 = landscape, night = L2 === "night", eve = L2 === "evening";
+        const sky = s2.createLinearGradient(0, 0, 0, hh * 0.6);
+        sky.addColorStop(0, night ? "#141c38" : eve ? "#5d5aa0" : "#5f9fd6"); sky.addColorStop(1, night ? "#33406a" : eve ? "#f4a462" : "#cfe4ef");
+        s2.fillStyle = sky; s2.fillRect(0, 0, w, hh);
+        if (night) { s2.fillStyle = "#ffffff"; for (let i = 0; i < 40; i++) s2.fillRect((i * 97) % w, (i * 53) % (hh * 0.5), 2, 2); }
+        s2.fillStyle = night ? "#f1efe6" : eve ? "#ffcf7a" : "#ffe7a8"; s2.beginPath(); s2.arc(w * 0.74, eve ? hh * 0.5 : hh * 0.24, eve ? 30 : 22, 0, 7); s2.fill();
+        s2.fillStyle = night ? "#3c4770" : eve ? "#ffd9c0" : "#ffffff"; for (const [cx, cy, cw] of [[90, 50, 70], [300, 36, 54], [400, 80, 40]]) { s2.fillRect(cx - cw / 2, cy, cw, 12); s2.fillRect(cx - cw / 4, cy - 8, cw / 2, 10); }
+        const range = (base: number, amp: number, fr: number, ph: number, c: string) => { s2.beginPath(); s2.moveTo(0, hh); for (let x = 0; x <= w; x += 6) s2.lineTo(x, base - Math.abs(Math.sin(x * fr + ph)) * amp - Math.sin(x * fr * 2.3) * amp * 0.25); s2.lineTo(w, hh); s2.closePath(); s2.fillStyle = c; s2.fill(); };
+        range(hh * 0.62, 70, 0.012, 0.4, night ? "#2a3352" : eve ? "#8a6f9a" : "#8aa6bf");
+        s2.fillStyle = "#f1f5f8"; for (const px of [w * 0.18, w * 0.47]) { s2.beginPath(); s2.moveTo(px - 16, hh * 0.62 - 50); s2.lineTo(px, hh * 0.62 - 68); s2.lineTo(px + 16, hh * 0.62 - 50); s2.fill(); }
+        range(hh * 0.7, 34, 0.02, 1.7, night ? "#22402c" : eve ? "#6a7a3e" : "#5f9a55");
+        s2.fillStyle = night ? "#22345a" : eve ? "#d8895a" : "#4f93c4"; s2.fillRect(0, hh * 0.72, w, hh * 0.1);
+        s2.fillStyle = night ? "#1d3424" : eve ? "#5a6a34" : "#4a8a44"; s2.fillRect(0, hh * 0.82, w, hh * 0.18);
+        s2.fillStyle = "rgba(20,24,28,.75)"; s2.fillRect(0, hh - 28, w, 28);
+        const icons = Math.min(m.apps.length, 10), startX = w / 2 - ((icons + 1) * 24) / 2;
+        for (const [dx, dy] of [[-11, -11], [1, -11], [-11, 1], [1, 1]]) { s2.fillStyle = "#7db7f0"; s2.fillRect(startX + 12 + dx, hh - 14 + dy, 10, 10); }
+        m.apps.slice(0, icons).forEach((id, i) => { s2.fillStyle = appColor(id); s2.fillRect(startX + 34 + i * 24, hh - 21, 14, 14); });
+        s2.fillStyle = "#e9edf0"; s2.fillRect(w - 46, hh - 18, 32, 3); s2.fillRect(w - 40, hh - 12, 20, 3);
+        return;
+      }
       if (bootF < 1) {
         const k = Math.max(0, bootF * 1.5 - 0.2);
         for (const [dx, dy] of [[-22, -22], [2, -22], [-22, 2], [2, 2]]) { s2.fillStyle = col(0.9 * Math.min(1, k)); s2.fillRect(w / 2 + dx, hh / 2 - 20 + dy, 20, 20); }
@@ -942,6 +1117,16 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
     // How far into the constellation the space is: 0 with this machine in front, 1 at rest among the others.
     let rest = 0;
     const stepCamera = (dt: number) => {
+      // A fixed view: straight to it and stay there (zoom and moving it around still work).
+      const fixed = editRef.current?.view;
+      if (fixed) {
+        const v = VIEWS[fixed], b = reduced ? 1 : 1 - Math.exp(-dt * 7);
+        cam.shots = []; cam.home = null; cam.back = 0; rest += (0 - rest) * b;
+        view.vy = 0; view.vp = 0;
+        view.yaw += (near(v.yaw, view.yaw) - view.yaw) * b; view.pitch += (v.pitch - view.pitch) * b;
+        idleSince = performance.now();
+        return;
+      }
       if (reduced) { requests.current.length = 0; return; }
       const idleFor = (performance.now() - idleSince) / 1000;
       const wantRest = !drag && !held && !editRef.current?.selected.length && !editRef.current?.holdStill && !cam.shots.length && !(cam.home && cam.back > 0) && idleFor > 8 && space.current.others.length > 0 ? 1 : 0;
@@ -1075,8 +1260,53 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       HALFW = W / 2 / (Sz / view.zoom); CX = W / 2 + view.ox; CY = mid + view.oy;
       cyw = Math.cos(view.yaw); syw = Math.sin(view.yaw); cpt = Math.cos(view.pitch); spt = Math.sin(view.pitch);
       under = vis(0, -1, 0);
+      // The place around the machines, drawn with the same camera; a new one fades in over the last.
+      if (place.current !== scene.cur) { scene.prev = scene.cur; scene.cur = place.current; scene.k = 0; }
+      scene.k = Math.min(1, scene.k + (reduced ? 1 : dt / 0.7));
+      if (scene.k >= 1) scene.prev = null;
+      const av = { g, W, H, T, dt, yaw: view.yaw, pitch: view.pitch, Sz, CX, CY, light, accent: uiAccent, reduced, space: labels.current.space, machine: labels.current.machine, time: timeRef.current };
+      if (scene.prev && hasScene(scene.prev)) drawAmbient(scene.prev, av, stateOf(scene.prev), 1);
+      const fadeIn = scene.prev && hasScene(scene.prev) ? scene.k * scene.k * (3 - 2 * scene.k) : scene.k;
+      drawAmbient(scene.cur, av, stateOf(scene.cur), fadeIn);
+      const plain = !hasScene(scene.cur);
       const sp = space.current, spots = layout(sp.others.length);
       const setObj = (i: number) => Object.assign(OBJ, spots[i]);
+      // In a world, each machine lights the ground under it with its hologram and casts its shadow away from the light.
+      const lit = ambientLight(scene.cur, light, timeRef.current);
+      if (scene.cur === "blocks" && lit) SUN = lit.dir;
+      if (lit) {
+        const keep = { ...OBJ };
+        Object.assign(OBJ, { x: 0, y: 0, z: 0, s: 1 });
+        const L = lit.dir, count = Math.min(sp.others.length, MAX_NEIGHBORS);
+        for (let i = 0; i <= count; i++) {
+          const S = spots[i];
+          if (!S) continue;
+          const pw = i === 0 ? m.power : sp.others[i - 1].machine.power, col = i === 0 ? accent : decorColor(sp.others[i - 1].name, light) ?? uiAccent;
+          // The shadow: the glass lets light through, so what darkens the floor is what is inside, the board and its
+          // pieces (the lower part of the cube), pushed down along the light.
+          const pts: V2[] = [];
+          for (const cx of [-0.9, 0.9]) for (const cy of [0, 0.6]) for (const cz of [-0.9, 0.9]) {
+            const wx = S.x + cx * S.s, wy = 1 + S.y + (cy - 1) * S.s, wz = S.z + cz * S.s, t = (wy - FLOOR) / L[1];
+            const q = P(wx - L[0] * t, FLOOR, wz - L[2] * t);
+            pts.push([q[0], q[1]]);
+          }
+          const hp2 = hull(pts);
+          g.beginPath(); hp2.forEach((q, k) => (k ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]))); g.closePath();
+          g.globalAlpha = lit.alpha * 0.75 * fadeIn * (i === 0 ? 1 : 0.7); g.fillStyle = lit.color; g.fill();
+          // The hologram's light on the floor, a soft pool in the machine's color while it is on.
+          if (pw !== "off") {
+            const o = P(S.x, FLOOR, S.z), ex = P(S.x + 1, FLOOR, S.z), ez = P(S.x, FLOOR, S.z + 1);
+            g.save();
+            g.transform(ex[0] - o[0], ex[1] - o[1], ez[0] - o[0], ez[1] - o[1], o[0], o[1]);
+            const rr = 2.2 * S.s, gr = g.createRadialGradient(0, 0, 0, 0, 0, rr);
+            gr.addColorStop(0, rgba(col, light ? 0.22 : 0.3)); gr.addColorStop(0.5, rgba(col, light ? 0.08 : 0.12)); gr.addColorStop(1, rgba(col, 0));
+            g.globalAlpha = fadeIn; g.fillStyle = gr; g.fillRect(-rr, -rr, rr * 2, rr * 2);
+            g.restore();
+          }
+        }
+        g.globalAlpha = 1;
+        Object.assign(OBJ, keep);
+      }
       setObj(0);
       bootY = on ? (m.power === "starting" ? bootF * 2.6 - 0.1 : 9) : 9;
       // A profile rebuilds the hologram from the bottom up while the camera runs through its pieces.
@@ -1120,9 +1350,28 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       h.globalCompositeOperation = light ? "source-over" : "lighter";
       // In front, only as many neighbors as the layout has room for; at rest, all of them join the constellation.
       const room = HALFW > 2.7 ? 6 : HALF > 2.4 ? 6 : 4;
-      sp.others.forEach((o, i) => { if (i >= room && rest < 0.05) return; setObj(i + 1); FADE = (o.machine.power === "off" ? 0.5 : 0.8) * (0.55 + 0.45 * rest) * (i >= room ? rest : 1); if (i === swap.from && swap.t < 1) FADE += (1 - FADE) * (1 - swap.t); const keep = accent; accent = decorColor(o.name, light) ?? keep; lite(o.machine); accent = keep; });
+      // In the world of blocks the machines are built of bricks, drawn solid under the glass instead of as a hologram.
+      const bricks = scene.cur === "blocks";
+      if (bricks) ctx = g;
+      sp.others.forEach((o, i) => { if (i >= room && rest < 0.05) return; setObj(i + 1); FADE = (o.machine.power === "off" ? 0.5 : 0.8) * (0.55 + 0.45 * rest) * (i >= room ? rest : 1); if (i === swap.from && swap.t < 1) FADE += (1 - FADE) * (1 - swap.t); const keep = accent; accent = decorColor(o.name, light) ?? keep; if (bricks) { FADE = Math.min(1, FADE + 0.2); brickMachine(o.machine, o.machine.power === "off" ? 0 : 1, 0, false); } else lite(o.machine); accent = keep; });
       setObj(0);
       FADE = 1;
+      if (bricks) {
+        brickMachine(m, on, act, true);
+        // The time of day colors the whole world, the machine included; then what shines by itself is drawn over it.
+        const tint = ambientTint(scene.cur, timeRef.current);
+        if (tint) {
+          g.save(); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.globalCompositeOperation = "multiply"; g.globalAlpha = fadeIn; g.fillStyle = tint; g.fillRect(0, 0, W, H); g.restore();
+          drawAmbientGlow(scene.cur, av, stateOf(scene.cur), fadeIn);
+        }
+        const sk2 = amp(1.45);
+        if (on && sk2 > 0.01) {
+          drawScreen(m, m.power === "starting" ? Math.max(0, (bootF - 0.55) / 0.45) : 1, resolveTime(timeRef.current));
+          const c = P(0, 1.45, 0), sw = 1.55 * Sz * OBJ.s, sh = (sw * 9) / 16;
+          brickScreen(c[0] - sw / 2, c[1] - sh / 2, sw, sh, Math.min(1, sk2));
+        }
+        ctx = h;
+      } else {
       board(on, act);
       plate(m);
       cpu(m, on, U.cpu);
@@ -1151,6 +1400,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
         h.strokeStyle = rgba(accent, 0.25 * sk); h.strokeRect(x0, y0, sw, sh);
       }
       if (on && scanY > 0.1 && scanY < 1.95) quad([[-0.98, scanY, -0.98], [0.98, scanY, -0.98], [0.98, scanY, 0.98], [-0.98, scanY, 0.98]], accent, 0.03, 0.22);
+      }
       h.globalCompositeOperation = "destination-out";
       h.fillStyle = "rgba(0,0,0,.22)";
       for (let y = (T * 12) % 3; y < H; y += 3) h.fillRect(0, y, W, 1);
@@ -1159,7 +1409,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
 
       // At rest, a few faint stars around the machines.
       ctx = g;
-      if (rest > 0.02) for (let i = 0; i < 46; i++) {
+      if (plain && rest > 0.02) for (let i = 0; i < 46; i++) {
         const x = (Math.sin(i * 91.3) * 0.5 + 0.5) * W, y = (Math.sin(i * 47.7) * 0.5 + 0.5) * H;
         g.fillStyle = glass(0.18 * rest * (0.5 + 0.5 * Math.sin(T * 1.5 + i))); g.fillRect(x, y, 1.5, 1.5);
       }
@@ -1200,10 +1450,27 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
         });
         g.globalAlpha = 1;
       };
+      // Among blocks, a bolt is a chain of small square blocks snapped to a grid, bright at its core.
+      const blockBolt = (p: V2[], al: number, wd: number) => {
+        const s = Math.max(3, Math.round(2.4 + wd * 1.8)), seen = new Set<string>();
+        g.globalAlpha = Math.max(0, Math.min(1, al));
+        for (let i = 1; i < p.length; i++) {
+          const [x0, y0] = p[i - 1], [x1, y1] = p[i], n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / s));
+          for (let k = 0; k <= n; k++) {
+            const gx = Math.round((x0 + ((x1 - x0) * k) / n) / s) * s, gy = Math.round((y0 + ((y1 - y0) * k) / n) / s) * s, key = gx + "," + gy;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            g.fillStyle = shadeHex(accent, 0.8); g.fillRect(gx - s / 2, gy - s / 2, s, s);
+            g.fillStyle = shadeHex(accent, 1.35); g.fillRect(gx - s / 2 + 1, gy - s / 2 + 1, s - 2, Math.max(1, s / 3));
+          }
+        }
+        g.globalAlpha = 1;
+      };
       for (const c of arcs) {
         c.life -= dt; c.j -= dt;
         const a = P(...c.a), b = P(...c.b);
-        if (c.j <= 0 || !c.p) { c.p = bolt(a[0], a[1], b[0], b[1], Math.hypot(b[0] - a[0], b[1] - a[1]) * (c.local ? 0.5 : 0.35)); c.j = 0.05; }
+        if (c.j <= 0 || !c.p) { c.p = bolt(a[0], a[1], b[0], b[1], Math.hypot(b[0] - a[0], b[1] - a[1]) * (c.local ? 0.5 : 0.35)); c.j = scene.cur === "blocks" ? 0.09 : 0.05; }
+        if (scene.cur === "blocks") { blockBolt(c.p, Math.min(1, c.life / 0.08) * c.i, c.w); continue; }
         drawBolt(c.p, Math.min(1, c.life / 0.08) * c.i, c.w);
         if (!c.local && Math.random() < 0.3) { const mid = c.p[Math.floor(c.p.length / 2)]; drawBolt(bolt(mid[0], mid[1], mid[0] + (Math.random() - 0.5) * 40, mid[1] + (Math.random() - 0.5) * 40, 16), c.life * 2 * c.i, 0.7); }
       }
@@ -1374,6 +1641,8 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       cv.removeEventListener("wheel", redraw);
       cv.removeEventListener("contextmenu", menu);
       cv.removeEventListener("dblclick", reset);
+      cv.removeEventListener("mousedown", noAutoScroll);
+      cv.removeEventListener("auxclick", noAutoScroll);
       cv.removeEventListener("dragover", over);
       cv.removeEventListener("drop", dropped);
     };

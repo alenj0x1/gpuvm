@@ -12,6 +12,9 @@ import { CleanupFlow, CleanupItems, LEVEL_LOOK } from "./CleanupFlow";
 import { CLEANUP_REMOVED, MachineCube, cubeOf } from "./MachineCube";
 import { Customize, useDecorEdit } from "./Customize";
 import { draftSource, saveDecor, useSource, type DecorSource } from "./decor/store";
+import { useSpaces } from "./spaces";
+import { ambientInfo } from "./ambient";
+import { Dropdown as SpaceDropdown } from "./ui";
 
 export interface Resources { cpu: number; memoryGB: number; gpuPercent: number; diskGB: number }
 
@@ -22,9 +25,11 @@ interface Props {
   error: string | null;
   /** Opens with this template chosen (from the library). */
   template?: string | null;
+  /** The space it goes into at first (the one Home shows). */
+  space?: string | null;
   onCreate: (args: {
     name: string; iso: string | null; template: string | null; profile: string; user: string; password: string;
-    apps: string[]; cleanup: CleanupLevelId; resources: Resources | null;
+    apps: string[]; cleanup: CleanupLevelId; resources: Resources | null; space: string;
   }) => void;
   onClose: () => void;
 }
@@ -36,7 +41,10 @@ type Section = "name" | "start" | "resources" | "windows" | "apps" | "cleanup" |
 
 /** Create a machine in one dialog: sections on the left, everything in the middle, and on the right a summary that is
  *  always in view. A profile fills it all in; anything changed afterwards can be saved as a new profile. */
-export function CreateDialog({ existing, host, job, error, template: initialTemplate, onCreate, onClose }: Props) {
+export function CreateDialog({ existing, host, job, error, template: initialTemplate, space: initialSpace, onCreate, onClose }: Props) {
+  const spaces = useSpaces();
+  const [spaceId, setSpaceId] = useState(() => (spaces.some((x) => x.id === initialSpace) ? initialSpace! : spaces[0].id));
+  const space = spaces.find((x) => x.id === spaceId) ?? spaces[0];
   const [name, setName] = useState(() => {
     for (let i = 1; ; i++) { const n = i === 1 ? "win-gpu" : `win-gpu-${i}`; if (!existing.some((v) => v.name === n)) return n; }
   });
@@ -96,7 +104,7 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
   }, [onClose]);
 
   const sections: { id: Section; label: string; icon: React.ReactNode }[] = [
-    { id: "name", label: "Nombre", icon: <IconTag size={16} /> },
+    { id: "name", label: "Nombre y espacio", icon: <IconTag size={16} /> },
     { id: "start", label: "Punto de partida", icon: <IconLayoutGrid size={16} /> },
     { id: "resources", label: "Recursos", icon: <IconCpu size={16} /> },
     ...(fromTemplate ? [] : [
@@ -159,8 +167,8 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
     const resources = changed ? res : null;
     const decor = draft.get();
     if (decor.color || decor.led || decor.stickers.length || decor.figures.length) saveDecor(name, decor);
-    if (fromTemplate) onCreate({ name, iso: null, template, profile, user: "", password: "", apps: [], cleanup: "none", resources });
-    else onCreate({ name, iso, template: null, profile, user, password, apps, cleanup, resources });
+    if (fromTemplate) onCreate({ name, iso: null, template, profile, user: "", password: "", apps: [], cleanup: "none", resources, space: space.id });
+    else onCreate({ name, iso, template: null, profile, user, password, apps, cleanup, resources, space: space.id });
   };
   const saveProfile = async () => {
     if (!saving || !settings) return;
@@ -226,10 +234,18 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
             </nav>
 
             <div ref={bodyRef} className="create-body">
-              {section("name", "Nombre", "Cómo se llama en GpuVM y en Hyper-V.", (
-                <div className="field">
-                  <input id="vm-name" ref={nameRef} className="text-input" aria-label="Nombre" value={name} onChange={(e) => { setName(e.target.value); touch(); }} />
-                  {nameError && <span className="error-text">{nameError}</span>}
+              {section("name", "Nombre y espacio", "Cómo se llama en GpuVM y en Hyper-V, y el espacio donde va a estar.", (
+                <div className="create-account">
+                  <div className="field">
+                    <label className="field-top" htmlFor="vm-name"><span>Nombre</span></label>
+                    <input id="vm-name" ref={nameRef} className="text-input" aria-label="Nombre" value={name} onChange={(e) => { setName(e.target.value); touch(); }} />
+                    {nameError && <span className="error-text">{nameError}</span>}
+                  </div>
+                  <div className="field">
+                    <div className="field-top"><span>Espacio</span></div>
+                    <SpaceDropdown label="Espacio" value={space.id} onChange={(v) => { setSpaceId(v); touch(); }}
+                      options={spaces.map((x) => { const I = ambientInfo(x.ambient).icon; return { value: x.id, label: x.name, detail: ambientInfo(x.ambient).name, icon: <I size={16} /> }; })} />
+                  </div>
                 </div>
               ))}
 
@@ -342,7 +358,7 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
               {/* The machine being put together: every change to its resources, apps and cleanup shows here. */}
               {res && (
                 <div className="create-cube">
-                  <DraftCube draft={draft} machine={{
+                  <DraftCube draft={draft} ambient={space.ambient} spaceName={space.name} time={space.time} machine={{
                     power: "on", cores: res.cpu, memoryGB: res.memoryGB, gpuPercent: res.gpuPercent, diskGB: res.diskGB,
                     usage: { cpu: 12, gpu: 18, mem: 30, disk: 8 }, apps, removed: CLEANUP_REMOVED[cleanup] ?? 0,
                   }} name={name} spin={decorEdit.spins} edit={{ ...decorEdit.edit, holdStill: active === "custom" }}
