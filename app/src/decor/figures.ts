@@ -244,6 +244,93 @@ export const FIGURES: FigureDef[] = [
       }
     },
   },
+  // Pastel animals, sitting or standing, with dark eyes and a little blush.
+  {
+    id: "bunny", name: "Conejo",
+    build: (b) => {
+      const c = "#ebe5f6", inner = "#f6bfd2", belly = "#fbf8ff";
+      b.box(-2, -1, 0, 0, 0, 2, belly); b.box(1, 2, 0, 0, 0, 2, belly);
+      b.box(-2, 2, 1, 4, -2, 1, c);
+      b.box(-1, 1, 1, 3, 1, 1, belly);
+      b.set(0, 2, -3, "#ffffff");
+      b.box(-2, 2, 5, 8, -1, 2, c);
+      b.set(-1, 7, 2, INK); b.set(1, 7, 2, INK); b.set(0, 6, 2, PINK);
+      b.set(-2, 6, 2, "#f8c6d4"); b.set(2, 6, 2, "#f8c6d4");
+      b.box(-2, -1, 9, 12, 0, 0, c); b.box(-2, -1, 9, 11, 1, 1, inner);
+      b.box(1, 2, 9, 11, 0, 0, c); b.box(1, 2, 9, 10, 1, 1, inner); b.box(2, 3, 12, 12, 0, 0, c);
+      b.set(0, 4, 2, "$");
+    },
+  },
+  {
+    id: "bear", name: "Oso",
+    build: (b) => {
+      const c = "#e9b9a3", light = "#f8e4d6";
+      b.box(-2, -1, 0, 1, 0, 1, c); b.box(1, 2, 0, 1, 0, 1, c);
+      b.box(-3, 3, 1, 5, -2, 1, c);
+      b.box(-1, 1, 2, 4, 1, 1, light);
+      b.box(-4, -4, 3, 4, -1, 0, c); b.box(4, 4, 3, 4, -1, 0, c);
+      b.box(-3, 3, 6, 10, -2, 2, c);
+      b.box(-3, -2, 11, 11, -1, 0, c); b.box(2, 3, 11, 11, -1, 0, c);
+      b.set(-2, 11, 1, "#f2c3c9"); b.set(2, 11, 1, "#f2c3c9");
+      b.box(-1, 1, 6, 7, 3, 3, light); b.set(0, 7, 3, INK);
+      b.set(-2, 8, 2, INK); b.set(2, 8, 2, INK);
+      b.set(-3, 7, 2, "#f6b8c0"); b.set(3, 7, 2, "#f6b8c0");
+      b.box(-1, 1, 5, 5, 2, 2, "$");
+    },
+  },
+  {
+    id: "unicorn", name: "Unicornio",
+    build: (b) => {
+      const c = "#fbf8ff", lilac = "#c9b5f0", pink = "#f6b9d3", mint = "#b5e8d5", hoof = "#c9b5f0";
+      for (const [x, z] of [[-2, -3], [2, -3], [-2, 1], [2, 1]]) { b.box(x, x, 1, 2, z, z, c); b.set(x, 0, z, hoof); }
+      b.box(-2, 2, 3, 5, -3, 1, c);
+      b.box(-1, 1, 6, 7, 0, 2, c);
+      b.box(-1, 1, 8, 10, 1, 4, c);
+      b.box(-1, 1, 8, 8, 5, 5, "#f4dfe9");
+      b.set(-1, 9, 4, INK); b.set(1, 9, 4, INK);
+      b.set(-1, 8, 4, "#f8c6d4"); b.set(1, 8, 4, "#f8c6d4");
+      b.set(0, 11, 3, "#f2d27a"); b.set(0, 12, 3, "#f2d27a"); b.set(0, 13, 3, "#f8e3a6");
+      b.set(-1, 11, 1, c); b.set(1, 11, 1, c);
+      [lilac, pink, mint, lilac, pink].forEach((m, i) => b.set(0, 10 - i, 1 - (i > 2 ? 1 : 0), m));
+      b.set(0, 11, 2, mint);
+      [pink, mint, lilac].forEach((m, i) => b.set(0, 5 - i, -4, m));
+    },
+  },
+  {
+    id: "tiger", name: "Tigre",
+    build: (b) => {
+      const o = "#f4b37a", d = "#c9824a", w = "#fff4e6";
+      b.box(-2, 2, 0, 4, -2, 1, o);
+      b.box(-1, 1, 1, 3, 1, 1, w);
+      b.box(-2, -1, 0, 0, 2, 2, w); b.box(1, 2, 0, 0, 2, 2, w);
+      for (const y of [1, 3]) { b.box(-2, -2, y, y, -2, 0, d); b.box(2, 2, y, y, -2, 0, d); }
+      b.box(-2, 2, 2, 2, -2, -2, d);
+      b.box(-2, 2, 5, 8, -1, 2, o);
+      b.set(-1, 8, 2, d); b.set(1, 8, 2, d); b.set(0, 8, 1, d);
+      b.box(-1, 1, 5, 5, 2, 2, w); b.set(0, 6, 2, PINK);
+      b.set(-1, 7, 2, INK); b.set(1, 7, 2, INK);
+      b.set(-2, 6, 2, "#f6b8c0"); b.set(2, 6, 2, "#f6b8c0");
+      b.set(-2, 9, 0, o); b.set(2, 9, 0, o); b.set(-2, 9, 1, w); b.set(2, 9, 1, w);
+      b.box(3, 3, 0, 0, -2, 1, o); b.set(3, 1, -2, d); b.set(3, 2, -2, o); b.set(3, 3, -2, d);
+    },
+  },
+  {
+    id: "fawn", name: "Cervatillo",
+    build: (b) => {
+      const c = "#dcab82", spot = "#fbf3e8", hoof = "#7a5233";
+      for (const [x, z] of [[-2, -3], [2, -3], [-2, 1], [2, 1]]) { b.box(x, x, 1, 2, z, z, c); b.set(x, 0, z, hoof); }
+      b.box(-2, 2, 3, 4, -3, 1, c);
+      for (const [x, z] of [[-1, -2], [1, -1], [0, 0], [-1, 1]]) b.set(x, 4, z, spot);
+      b.set(0, 4, -4, spot);
+      b.box(-1, 1, 5, 6, 0, 1, c);
+      b.box(-2, 2, 7, 9, 0, 3, c);
+      b.box(-1, 1, 7, 8, 4, 4, "#f6e6d2"); b.set(0, 8, 4, INK);
+      b.set(-2, 8, 3, INK); b.set(2, 8, 3, INK);
+      b.set(-2, 7, 3, "#f6b8c0"); b.set(2, 7, 3, "#f6b8c0");
+      b.box(-3, -3, 9, 10, 1, 1, c); b.box(3, 3, 9, 10, 1, 1, c);
+      b.set(-3, 9, 2, "#f6c9b8"); b.set(3, 9, 2, "#f6c9b8");
+    },
+  },
   {
     id: "bonsai", name: "Bonsái",
     build: (b) => {

@@ -1098,3 +1098,7 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .game-best { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
 .game-final { font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .game-card-actions { display: flex; gap: 8px; margin-top: 8px; }
+.game-meter { width: 96px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.game-meter span { display: block; height: 100%; border-radius: 3px; background: color-mix(in srgb, var(--accent) 70%, transparent); transition: width 0.12s linear; }
+.game-meter.on span { background: var(--accent); }
+.game-canvas.live { cursor: none; }

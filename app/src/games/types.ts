@@ -2,7 +2,13 @@
 // that runs on a canvas; the stage around it (start, pause, game over, record) is shared, so a new game only
 // brings its own play.
 
-export interface GameHud { score: number; lives: number; /** A power-up in effect, in words ("Escudo"). */ power?: string }
+export interface GameHud {
+  score: number; lives: number;
+  /** A power-up in effect, in words ("Escudo 6 s"). */
+  power?: string;
+  /** A meter that fills (0 to 1) and what happens when it is full, if the game has one. */
+  meter?: number; frenzy?: boolean;
+}
 
 export interface GameHost {
   /** The machine's color and its decoration: the player's machine looks like the one on Home. */

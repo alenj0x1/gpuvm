@@ -56,6 +56,9 @@ function GameStage({ game, decor, onClose }: { game: GameDef; decor: Decor; onCl
           <span className="game-lives" aria-label={`${hud.lives} vidas`}>
             {Array.from({ length: Math.max(0, hud.lives) }, (_, i) => <IconHeart key={i} size={15} />)}
           </span>
+          {hud.meter !== undefined && (
+            <span className={`game-meter${hud.frenzy ? " on" : ""}`} title="Frenesí"><span style={{ width: `${Math.round(hud.meter * 100)}%` }} /></span>
+          )}
           {hud.power && <span className="game-power">{hud.power}</span>}
           <span className="grow" />
           {phase === "playing" && <button type="button" className="icon-btn" title="Pausa" aria-label="Pausa" onClick={() => { inst.current?.pause(); setPhase("paused"); }}><IconPlayerPause size={16} /></button>}
