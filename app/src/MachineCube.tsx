@@ -143,6 +143,20 @@ const segDist = (x: number, y: number, a: V3, b: V3) => {
 };
 /** A figure's size on the cube at size 1. */
 const FIG = 0.62;
+/** A picked sticker: the same image under a soft layer of the selection color. */
+const tints = new WeakMap<HTMLCanvasElement, { color: string; c: HTMLCanvasElement }>();
+function stickerTinted(img: HTMLCanvasElement, color: string) {
+  const hit = tints.get(img);
+  if (hit && hit.color === color) return hit.c;
+  const c = document.createElement("canvas");
+  c.width = img.width; c.height = img.height;
+  const x = c.getContext("2d")!;
+  x.drawImage(img, 0, 0);
+  x.globalCompositeOperation = "source-atop";
+  x.globalAlpha = 0.3; x.fillStyle = color; x.fillRect(0, 0, c.width, c.height);
+  tints.set(img, { color, c });
+  return c;
+}
 /** The back of a sticker, seen through the glass from the other side: its paper, without the art. */
 const backs = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
 function stickerBack(img: HTMLCanvasElement) {
@@ -179,8 +193,9 @@ export interface CubeNeighbor { name: string; machine: CubeMachine }
 
 /** Editing the decoration on the cube: stickers and figures are picked, dragged and dropped right on it. */
 export interface CubeEdit {
-  selected: string | null;
-  onSelect: (id: string | null) => void;
+  /** What is picked: one or several stickers and figures. */
+  selected: string[];
+  onSelect: (ids: string[]) => void;
   /** Right click on a sticker or figure, at a point of the window. */
   onMenu: (id: string, x: number, y: number) => void;
   /** While decorating, the machine stays in front instead of drifting off into the constellation. */
@@ -271,10 +286,14 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
     let idleSince = performance.now();
     // A sticker or figure being dragged: a working copy is drawn while it moves and saved when it is let go.
     const writeDecor = (d: Decor) => (editRef.current?.write ?? ((x: Decor) => saveDecor(decorRef.current.owner, x)))(d);
-    let held: { kind: "sticker" | "figure" | "led"; id: string; du: number; dv: number } | null = null;
+    let held: { kind: "sticker" | "figure" | "led"; id: string; du: number; dv: number; group?: Group } | null = null;
+    // Several picked and one of them dragged: all of them keep their places relative to it.
+    type Group = { st: Map<string, { u: number; v: number }>; fg: Map<string, { x: number; z: number }>; face: Face | null; u0: number; v0: number; x0: number; z0: number };
+    // Shift and drag on empty space draws a marquee that picks what is inside.
+    let marquee: { x0: number; y0: number; x1: number; y1: number; add: string[] } | null = null;
     // Right button held on a sticker or figure and dragged sideways turns it, settling every 15°; a right click that
     // does not move opens its menu instead.
-    let turning: { id: string; x: number; rot: number; moved: boolean; at: V2 } | null = null;
+    let turning: { id: string; ids: Map<string, number>; x: number; moved: boolean; at: V2 } | null = null;
     let work: Decor | null = null;
     const local = (e: { clientX: number; clientY: number }): V2 => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
     const down = (e: PointerEvent) => {
@@ -285,9 +304,22 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
         // would answer: opening it here let that event land on our menu and show the browser's on top.
         if (e.button === 2 && hit) {
           if (hit.kind === "led") return;
-          ed.onSelect(hit.id); menuFor = hit.id;
-          const d = decorRef.current.decor, item = d.stickers.find((t) => t.id === hit.id) ?? d.figures.find((t) => t.id === hit.id);
-          if (item) { stopCam(); work = d; turning = { id: hit.id, x: e.clientX, rot: item.rot, moved: false, at: [x, y] }; cv.setPointerCapture(e.pointerId); cv.classList.add("turning"); }
+          const ids = ed.selected.includes(hit.id) ? ed.selected : [hit.id];
+          ed.onSelect(ids); menuFor = hit.id;
+          const d = decorRef.current.decor, rots = new Map<string, number>();
+          for (const t of [...d.stickers, ...d.figures]) if (ids.includes(t.id)) rots.set(t.id, t.rot);
+          stopCam(); work = d; turning = { id: hit.id, ids: rots, x: e.clientX, moved: false, at: [x, y] };
+          try { cv.setPointerCapture(e.pointerId); } catch { /* not a real pointer */ }
+          cv.classList.add("turning");
+          return;
+        }
+        if (e.button === 0 && hit && hit.kind !== "led" && (e.shiftKey || e.ctrlKey || e.metaKey)) {
+          ed.onSelect(ed.selected.includes(hit.id) ? ed.selected.filter((i) => i !== hit.id) : [...ed.selected, hit.id]);
+          return;
+        }
+        if (e.button === 0 && !hit && e.shiftKey) {
+          marquee = { x0: x, y0: y, x1: x, y1: y, add: e.ctrlKey ? ed.selected : [] };
+          try { cv.setPointerCapture(e.pointerId); } catch { /* not a real pointer */ }
           return;
         }
         if (e.button === 0 && hit) {
@@ -299,25 +331,38 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
           if (hit.kind === "led") { const f = sideAt(x, y); if (f) held.dv = ledTop(work.led?.y) - faceUV(f, x, y)[1]; }
           const fg = work.figures.find((t) => t.id === hit.id);
           if (fg) { const [X, Z] = planeXZ(x, y); held.du = fg.x - X; held.dv = fg.z - Z; }
-          ed.onSelect(hit.id);
+          if (hit.kind !== "led") {
+            const ids = ed.selected.includes(hit.id) && ed.selected.length > 1 ? ed.selected : [hit.id];
+            ed.onSelect(ids);
+            if (ids.length > 1) {
+              const [u0, v0] = st ? faceUV(st.face, x, y) : [0, 0], [x0, z0] = planeXZ(x, y);
+              held.group = {
+                st: new Map(work.stickers.filter((t) => ids.includes(t.id)).map((t) => [t.id, { u: t.u, v: t.v }])),
+                fg: new Map(work.figures.filter((t) => ids.includes(t.id)).map((t) => [t.id, { x: t.x, z: t.z }])),
+                face: st ? st.face : null, u0, v0, x0, z0,
+              };
+            }
+          }
           cv.setPointerCapture(e.pointerId); cv.classList.add("holding");
           return;
         }
-        if (e.button === 0) ed.onSelect(null);
+        if (e.button === 0) ed.onSelect([]);
       }
-      stopCam(); drag = { x: e.clientX, y: e.clientY, pan: e.button === 2 || e.shiftKey }; cv.setPointerCapture(e.pointerId); cv.classList.add("dragging");
+      stopCam(); drag = { x: e.clientX, y: e.clientY, pan: e.button === 2 }; cv.setPointerCapture(e.pointerId); cv.classList.add("dragging");
     };
     const move = (e: PointerEvent) => {
       if (turning && work) {
         const dx = e.clientX - turning.x;
         if (Math.abs(dx) > 4) { turning.moved = true; menuFor = null; }
         if (!turning.moved) return;
-        const rot = ((Math.round((turning.rot + dx * 0.9) / 15) * 15) % 360 + 360) % 360, id = turning.id;
-        work = { ...work, stickers: work.stickers.map((t) => (t.id === id ? { ...t, rot } : t)), figures: work.figures.map((t) => (t.id === id ? { ...t, rot } : t)) };
+        // Every picked one turns by the same steps of 15°.
+        const turnBy = Math.round((dx * 0.9) / 15) * 15, rots = turning.ids, at = (r: number) => (((r + turnBy) % 360) + 360) % 360;
+        work = { ...work, stickers: work.stickers.map((t) => (rots.has(t.id) ? { ...t, rot: at(rots.get(t.id)!) } : t)), figures: work.figures.map((t) => (rots.has(t.id) ? { ...t, rot: at(rots.get(t.id)!) } : t)) };
         turning.at = local(e);
         idleSince = performance.now();
         return;
       }
+      if (marquee) { [marquee.x1, marquee.y1] = local(e); return; }
       if (held) { moveHeld(...local(e)); idleSince = performance.now(); return; }
       if (!drag) { if (editRef.current) cv.classList.toggle("grab", !!pick(...local(e))); return; }
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
@@ -326,6 +371,16 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       idleSince = performance.now();
     };
     const up = () => {
+      if (marquee) {
+        // What has its center inside the marquee gets picked.
+        const b = marquee, x0 = Math.min(b.x0, b.x1), x1 = Math.max(b.x0, b.x1), y0 = Math.min(b.y0, b.y1), y1 = Math.max(b.y0, b.y1);
+        const d = decorRef.current.decor, inside = (p: V3) => p[0] >= x0 && p[0] <= x1 && p[1] >= y0 && p[1] <= y1;
+        const ids = [...d.stickers.filter((s) => vis(...FRAMES[s.face].n) && inside(P(...onFace(s.face, s.u, s.v)))).map((s) => s.id),
+          ...d.figures.filter((f) => inside(P(f.x, 2 + figureHeight(f.figure) * f.size * FIG * 0.4, f.z))).map((f) => f.id)];
+        if (Math.abs(x1 - x0) > 4 || Math.abs(y1 - y0) > 4) editRef.current?.onSelect([...new Set([...b.add, ...ids])]);
+        marquee = null;
+        return;
+      }
       if (turning && turning.moved && work) writeDecor(work);
       if (turning) { turning = null; work = null; cv.classList.remove("turning"); return; }
       if (held && work) writeDecor(work);
@@ -347,7 +402,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
         const [X, Z] = planeXZ(x, y);
         writeDecor({ ...d, figures: [...d.figures, { id: nid, figure: id, x: clamp(X, -0.8, 0.8), z: clamp(Z, -0.8, 0.8), rot: 0, size: 1 }] });
       }
-      ed.onSelect(nid);
+      ed.onSelect([nid]);
     };
     cv.addEventListener("dragover", over);
     cv.addEventListener("drop", dropped);
@@ -380,7 +435,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
     let ctx: CanvasRenderingContext2D = h;
     // Half the visible height of the canvas, in cube units at the normal zoom.
     let HALF = 2, HALFW = 1.55;
-    let accent = "#7d9cf0", light = false;
+    let accent = "#7d9cf0", light = false, uiAccent = "#7d9cf0";
     const part = { cpu: accent, mem: accent, gpu: accent, disk: accent, board: accent };
 
     // Where the machine being drawn sits in the space and its size (the cube's own center is y = 1).
@@ -442,6 +497,19 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
     function moveHeld(x: number, y: number) {
       if (!held || !work) return;
       const id = held.id;
+      if (held.group) {
+        // The group moves by the dragged one's step, snapped to the cells; each keeps inside its face or the top.
+        const G = held.group;
+        let du = 0, dv = 0;
+        if (G.face) { const [u, v] = faceUV(G.face, x, y); du = snap(u - G.u0); dv = snap(v - G.v0); }
+        const [X, Z] = planeXZ(x, y), dx = snap(X - G.x0), dz = snap(Z - G.z0);
+        work = {
+          ...work,
+          stickers: work.stickers.map((t) => { const s0 = G.st.get(t.id); if (!s0) return t; const m = 1 - t.size / 2; return { ...t, u: clamp(s0.u + du, -m, m), v: clamp(s0.v + dv, -m, m) }; }),
+          figures: work.figures.map((f) => { const f0 = G.fg.get(f.id); if (!f0) return f; return { ...f, x: clamp(f0.x + dx, -0.875, 0.875), z: clamp(f0.z + dz, -0.875, 0.875) }; }),
+        };
+        return;
+      }
       if (held.kind === "led") {
         // Up and down the glass: the strip follows the pointer on whichever side it is over.
         const f = sideAt(x, y);
@@ -876,7 +944,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
     const stepCamera = (dt: number) => {
       if (reduced) { requests.current.length = 0; return; }
       const idleFor = (performance.now() - idleSince) / 1000;
-      const wantRest = !drag && !held && !editRef.current?.selected && !editRef.current?.holdStill && !cam.shots.length && !(cam.home && cam.back > 0) && idleFor > 8 && space.current.others.length > 0 ? 1 : 0;
+      const wantRest = !drag && !held && !editRef.current?.selected.length && !editRef.current?.holdStill && !cam.shots.length && !(cam.home && cam.back > 0) && idleFor > 8 && space.current.others.length > 0 ? 1 : 0;
       rest += (wantRest - rest) * (1 - Math.exp(-dt * (wantRest ? 0.8 : 2.2)));
       takeRequests();
       const a = 1 - Math.exp(-dt * cam.k);
@@ -970,7 +1038,8 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       if (holo.width !== pw || holo.height !== ph) { holo.width = pw; holo.height = ph; }
       light = document.documentElement.dataset.theme === "light";
       // The machine's own color, when it has one, instead of the accent.
-      accent = colorOfDecor(decorRef.current.decor, light) ?? (css.getPropertyValue("--accent").trim() || "#7d9cf0");
+      uiAccent = css.getPropertyValue("--accent").trim() || "#7d9cf0";
+      accent = colorOfDecor(decorRef.current.decor, light) ?? uiAccent;
       const per = (v: string) => css.getPropertyValue(v).trim() || accent;
       // The whole hologram in the accent color; `perPart` paints each piece in its resource color instead.
       part.cpu = perPart ? per(PART.cpu) : accent; part.mem = perPart ? per(PART.mem) : accent;
@@ -1143,6 +1212,11 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       // The decoration, outside the glass: the LED sign, the stickers and the figures on top.
       drawLed(D, m, on);
       if (held) drawGrid(D);
+      if (marquee) {
+        const bx = Math.min(marquee.x0, marquee.x1), by = Math.min(marquee.y0, marquee.y1), bw = Math.abs(marquee.x1 - marquee.x0), bh = Math.abs(marquee.y1 - marquee.y0);
+        g.fillStyle = rgba(uiAccent, 0.1); g.fillRect(bx, by, bw, bh);
+        g.strokeStyle = rgba(uiAccent, 0.8); g.lineWidth = 1; g.strokeRect(bx + 0.5, by + 0.5, bw, bh);
+      }
       if (turning?.moved) {
         const it = D.stickers.find((t) => t.id === turning!.id) ?? D.figures.find((t) => t.id === turning!.id);
         if (it) {
@@ -1203,8 +1277,9 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
         g.setTransform(dpr * (a[0] - o[0]), dpr * (a[1] - o[1]), -dpr * (b[0] - o[0]), -dpr * (b[1] - o[1]), dpr * o[0], dpr * o[1]);
         g.rotate((s.rot * Math.PI) / 180);
         g.globalAlpha = front ? 1 : 0.16;
-        g.drawImage(front ? img : stickerBack(img), -s.size / 2, -s.size / 2, s.size, s.size);
-        if (front && editRef.current?.selected === s.id) {
+        const picked = front && !!editRef.current?.selected.includes(s.id);
+        g.drawImage(!front ? stickerBack(img) : picked ? stickerTinted(img, uiAccent) : img, -s.size / 2, -s.size / 2, s.size, s.size);
+        if (picked) {
           const h = s.size / 2 + 0.025;
           g.globalAlpha = 0.85; g.setLineDash([0.035, 0.025]); g.lineWidth = 0.01;
           g.strokeStyle = light ? "#1c1b18" : "#ebe8e1"; g.strokeRect(-h, -h, h * 2, h * 2);
@@ -1258,16 +1333,16 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       const draws: FigureDraw[] = D.figures.map((f) => {
         const turn = (f.rot * Math.PI) / 180;
         const t: V3 = [o[0] + A[0] * f.x + A[3] * 2 + A[6] * f.z, o[1] + A[1] * f.x + A[4] * 2 + A[7] * f.z, o[2] + A[2] * f.x + A[5] * 2 + A[8] * f.z];
-        return { id: f.figure, m: mul3(A, turnY(turn, f.size * FIG)), t, n: mul3(V, turnY(turn)) };
+        return { id: f.figure, m: mul3(A, turnY(turn, f.size * FIG)), t, n: mul3(V, turnY(turn)), tint: editRef.current?.selected.includes(f.id) ? 0.28 : 0 };
       });
       for (const f of D.figures) {
-        if (editRef.current?.selected !== f.id) continue;
+        if (!editRef.current?.selected.includes(f.id)) continue;
         const sc = f.size * FIG, ring: V3[] = [];
         for (let i = 0; i <= 40; i++) { const a = (i / 40) * Math.PI * 2; ring.push([f.x + Math.cos(a) * 0.36 * sc, 2.004, f.z + Math.sin(a) * 0.36 * sc]); }
         g.beginPath(); ring.forEach((p, i) => { const q = P(...p); if (i) g.lineTo(q[0], q[1]); else g.moveTo(q[0], q[1]); });
         g.setLineDash([4, 4]); g.lineWidth = 1.2; g.strokeStyle = light ? "rgba(28,27,24,.7)" : "rgba(235,232,225,.75)"; g.stroke(); g.setLineDash([]);
       }
-      drawFiguresGL(g, draws, accent, W, H, window.devicePixelRatio || 1);
+      drawFiguresGL(g, draws, accent, W, H, window.devicePixelRatio || 1, uiAccent);
     }
 
     const loop = (now: number) => {

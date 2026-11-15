@@ -29,28 +29,36 @@ const free = <T,>(spots: [number, number][], taken: T[], at: (t: T) => [number, 
 
 /** The selection and right-click menu shared by the cube and the panel. */
 export function useDecorEdit(source: DecorSource) {
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   // Each "Decorar al azar" turns the cube once, as Home's showcase does.
   const [spins, setSpins] = useState(0);
-  useEffect(() => { setSelected(null); setMenu(null); }, [source]);
+  useEffect(() => { setSelected([]); setMenu(null); }, [source]);
   const edit: CubeEdit = { selected, onSelect: setSelected, onMenu: (id, x, y) => setMenu({ id, x, y }), write: source.set };
   const ops = useMemo(() => {
     const change = (f: (d: Decor) => Decor) => source.set(f(source.get()));
-    return { ...decorOps(change, setSelected), randomize: () => { source.set(randomDecor()); setSelected(null); setSpins((n) => n + 1); } };
+    return { ...decorOps(change, setSelected), randomize: () => { source.set(randomDecor()); setSelected([]); setSpins((n) => n + 1); } };
   }, [source]);
 
-  // Delete removes what is picked, Escape lets it go (not while typing).
+  // With something picked (not while typing): Delete removes it, Ctrl+D duplicates, Ctrl+A picks everything, the
+  // arrows move it one cell (with Shift, four), Escape lets go.
   useEffect(() => {
-    if (!selected) return;
+    if (!selected.length) return;
     const key = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.closest("input, textarea, [contenteditable]")) return;
-      if (e.key === "Delete" || e.key === "Backspace") { ops.remove(selected); e.preventDefault(); }
-      else if (e.key === "Escape") setSelected(null);
+      const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
+      const arrows: Record<string, [number, number]> = { arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, 1], arrowdown: [0, -1] };
+      if (e.key === "Delete" || e.key === "Backspace") ops.remove(selected);
+      else if (mod && k === "d") ops.duplicate(selected);
+      else if (mod && k === "a") { const d = source.get(); setSelected([...d.stickers.map((t) => t.id), ...d.figures.map((t) => t.id)]); }
+      else if (arrows[k]) { const [dx, dy] = arrows[k], step = e.shiftKey ? 0.5 : 0.125; ops.nudge(selected, dx * step, dy * step); }
+      else if (e.key === "Escape") setSelected([]);
+      else return;
+      e.preventDefault();
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [selected, ops]);
+  }, [selected, ops, source]);
 
   const menuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -62,16 +70,18 @@ export function useDecorEdit(source: DecorSource) {
     return () => { window.removeEventListener("pointerdown", close, true); window.removeEventListener("keydown", key); };
   }, [menu]);
   const act = (f: () => void) => () => { f(); setMenu(null); };
+  // The menu acts on everything picked when it was opened on one of them.
+  const targets = menu ? (selected.includes(menu.id) ? selected : [menu.id]) : [];
   const menuNode = menu && createPortal(
     <div ref={menuRef} className="menu floating decor-menu" role="menu"
       style={{ left: Math.min(menu.x, window.innerWidth - 228), top: Math.min(menu.y, window.innerHeight - 260) }}>
-      <button role="menuitem" onClick={act(() => ops.turn(menu.id, -15))}><IconRotate2 size={16} />Girar a la izquierda</button>
-      <button role="menuitem" onClick={act(() => ops.turn(menu.id, 15))}><IconRotateClockwise2 size={16} />Girar a la derecha</button>
-      <button role="menuitem" onClick={act(() => ops.grow(menu.id, 1.15))}><IconZoomIn size={16} />Más grande</button>
-      <button role="menuitem" onClick={act(() => ops.grow(menu.id, 1 / 1.15))}><IconZoomOut size={16} />Más pequeño</button>
-      <button role="menuitem" onClick={act(() => ops.duplicate(menu.id))}><IconCopy size={16} />Duplicar</button>
+      <button role="menuitem" onClick={act(() => ops.turn(targets, -15))}><IconRotate2 size={16} />Girar a la izquierda</button>
+      <button role="menuitem" onClick={act(() => ops.turn(targets, 15))}><IconRotateClockwise2 size={16} />Girar a la derecha</button>
+      <button role="menuitem" onClick={act(() => ops.grow(targets, 1.15))}><IconZoomIn size={16} />Más grande</button>
+      <button role="menuitem" onClick={act(() => ops.grow(targets, 1 / 1.15))}><IconZoomOut size={16} />Más pequeño</button>
+      <button role="menuitem" onClick={act(() => ops.duplicate(targets))}><IconCopy size={16} />Duplicar</button>
       <hr />
-      <button role="menuitem" className="danger" onClick={act(() => ops.remove(menu.id))}><IconTrash size={16} />Quitar</button>
+      <button role="menuitem" className="danger" onClick={act(() => ops.remove(targets))}><IconTrash size={16} />Quitar</button>
     </div>,
     document.body,
   );
@@ -82,9 +92,10 @@ const STICKER_MIN = 0.28, STICKER_MAX = 1.4, FIGURE_MIN = 0.5, FIGURE_MAX = 1.8;
 /** How big a sticker is placed (cube units; a face is 2): its 100 %. */
 export const STICKER_SIZE = 0.7;
 
-function decorOps(change: (f: (d: Decor) => Decor) => void, select: (id: string | null) => void) {
-  const both = (id: string, st: (s: Decor["stickers"][number]) => Decor["stickers"][number], fg: (f: Decor["figures"][number]) => Decor["figures"][number]) =>
-    change((d) => ({ ...d, stickers: d.stickers.map((s) => (s.id === id ? st(s) : s)), figures: d.figures.map((f) => (f.id === id ? fg(f) : f)) }));
+function decorOps(change: (f: (d: Decor) => Decor) => void, select: (ids: string[]) => void) {
+  const each = (ids: string[], st: (s: Decor["stickers"][number]) => Decor["stickers"][number], fg: (f: Decor["figures"][number]) => Decor["figures"][number]) =>
+    change((d) => ({ ...d, stickers: d.stickers.map((s) => (ids.includes(s.id) ? st(s) : s)), figures: d.figures.map((f) => (ids.includes(f.id) ? fg(f) : f)) }));
+  const both = (id: string, st: (s: Decor["stickers"][number]) => Decor["stickers"][number], fg: (f: Decor["figures"][number]) => Decor["figures"][number]) => each([id], st, fg);
   const clampSize = (v: number, a: number, b: number) => Math.round(Math.min(b, Math.max(a, v)) * 100) / 100;
   return {
     addSticker(sticker: string) {
@@ -94,7 +105,7 @@ function decorOps(change: (f: (d: Decor) => Decor) => void, select: (id: string 
         const [u, v] = free(STICKER_SPOTS, d.stickers.filter((s) => s.face === face), (s) => [s.u, s.v]);
         return { ...d, stickers: [...d.stickers, { id, sticker, face, u, v, rot: 0, size: STICKER_SIZE }] };
       });
-      select(id);
+      select([id]);
     },
     addFigure(figure: string) {
       const id = newId();
@@ -102,28 +113,34 @@ function decorOps(change: (f: (d: Decor) => Decor) => void, select: (id: string 
         const [x, z] = free(FIGURE_SPOTS, d.figures, (f) => [f.x, f.z]);
         return { ...d, figures: [...d.figures, { id, figure, x, z, rot: 0, size: 1 }] };
       });
-      select(id);
+      select([id]);
     },
-    turn: (id: string, deg: number) => both(id, (s) => ({ ...s, rot: (s.rot + deg + 360) % 360 }), (f) => ({ ...f, rot: (f.rot + deg + 360) % 360 })),
-    grow: (id: string, k: number) => both(id,
+    turn: (ids: string[], deg: number) => each(ids, (s) => ({ ...s, rot: (s.rot + deg + 360) % 360 }), (f) => ({ ...f, rot: (f.rot + deg + 360) % 360 })),
+    grow: (ids: string[], k: number) => each(ids,
       (s) => { const size = clampSize(s.size * k, STICKER_MIN, STICKER_MAX), m = 1 - size / 2; return { ...s, size, u: Math.max(-m, Math.min(m, s.u)), v: Math.max(-m, Math.min(m, s.v)) }; },
       (f) => ({ ...f, size: clampSize(f.size * k, FIGURE_MIN, FIGURE_MAX) })),
     set: (id: string, rot: number, size: number) => both(id,
       (s) => { const m = 1 - size / 2; return { ...s, rot, size, u: Math.max(-m, Math.min(m, s.u)), v: Math.max(-m, Math.min(m, s.v)) }; },
       (f) => ({ ...f, rot, size })),
-    duplicate(id: string) {
-      const nid = newId();
+    /** Copies, a cell aside, and the copies become what is picked. */
+    duplicate(ids: string[]) {
+      const made: string[] = [];
       change((d) => {
-        const s = d.stickers.find((t) => t.id === id), f = d.figures.find((t) => t.id === id);
-        if (s) { const m = 1 - s.size / 2; return { ...d, stickers: [...d.stickers, { ...s, id: nid, u: Math.min(m, s.u + 0.2), v: Math.max(-m, s.v - 0.2) }] }; }
-        if (f) return { ...d, figures: [...d.figures, { ...f, id: nid, x: Math.min(0.85, f.x + 0.3) }] };
-        return d;
+        const st = d.stickers.filter((t) => ids.includes(t.id)).map((t) => { const m = 1 - t.size / 2, id = newId(); made.push(id); return { ...t, id, u: Math.min(m, t.u + 0.25), v: Math.max(-m, t.v - 0.25) }; });
+        const fg = d.figures.filter((t) => ids.includes(t.id)).map((t) => { const id = newId(); made.push(id); return { ...t, id, x: Math.min(0.875, t.x + 0.25) }; });
+        return { ...d, stickers: [...d.stickers, ...st], figures: [...d.figures, ...fg] };
       });
-      select(nid);
+      select(made);
     },
-    remove(id: string) {
-      change((d) => ({ ...d, stickers: d.stickers.filter((s) => s.id !== id), figures: d.figures.filter((f) => f.id !== id) }));
-      select(null);
+    remove(ids: string[]) {
+      change((d) => ({ ...d, stickers: d.stickers.filter((s) => !ids.includes(s.id)), figures: d.figures.filter((f) => !ids.includes(f.id)) }));
+      select([]);
+    },
+    /** Moves what is picked on its face (stickers) or on the top (figures); right and up are positive. */
+    nudge(ids: string[], dx: number, dy: number) {
+      each(ids,
+        (s) => { const m = 1 - s.size / 2; return { ...s, u: Math.max(-m, Math.min(m, s.u + dx)), v: Math.max(-m, Math.min(m, s.v + dy)) }; },
+        (f) => ({ ...f, x: Math.max(-0.875, Math.min(0.875, f.x + dx)), z: Math.max(-0.875, Math.min(0.875, f.z - dy)) }));
     },
   };
 }
@@ -197,15 +214,17 @@ function Tile({ kind, id, label, onAdd, onContext, children }: {
 /** What is already on the machine, as chips: a click picks it on the cube, the cross takes it off, a right click
  *  opens the same menu as on the cube. */
 function Placed({ items, selected, onPick, onRemove, onMenu }: {
-  items: { id: string; label: string; thumb: React.ReactNode }[]; selected: string | null;
-  onPick: (id: string) => void; onRemove: (id: string) => void; onMenu: (id: string, x: number, y: number) => void;
+  items: { id: string; label: string; thumb: React.ReactNode }[]; selected: string[];
+  /** `add`: Shift or Ctrl held, the chip joins or leaves the picked ones. */
+  onPick: (id: string, add: boolean) => void; onRemove: (id: string) => void; onMenu: (id: string, x: number, y: number) => void;
 }) {
   if (!items.length) return null;
   return (
     <div className="decor-placed">
       {items.map((it) => (
-        <div key={it.id} className={`decor-chip${selected === it.id ? " on" : ""}`} onContextMenu={(e) => { e.preventDefault(); onPick(it.id); onMenu(it.id, e.clientX, e.clientY); }}>
-          <button type="button" className="decor-chip-main" onClick={() => onPick(it.id)}>{it.thumb}<span>{it.label}</span></button>
+        <div key={it.id} className={`decor-chip${selected.includes(it.id) ? " on" : ""}`}
+          onContextMenu={(e) => { e.preventDefault(); if (!selected.includes(it.id)) onPick(it.id, false); onMenu(it.id, e.clientX, e.clientY); }}>
+          <button type="button" className="decor-chip-main" onClick={(e) => onPick(it.id, e.shiftKey || e.ctrlKey || e.metaKey)}>{it.thumb}<span>{it.label}</span></button>
           <button type="button" className="decor-chip-x" title="Quitar" aria-label={`Quitar ${it.label}`} onClick={() => onRemove(it.id)}><IconX size={13} /></button>
         </div>
       ))}
@@ -229,8 +248,11 @@ export function Customize({ source, ops, selected, setSelected, openMenu, bare }
   const save = (d: Partial<Decor>) => source.set({ ...source.get(), ...d });
   const accent = ACCENTS.find((a) => a.id === prefs.accent) ?? ACCENTS[0];
   const led = decor.led;
-  const picked = decor.stickers.find((s) => s.id === selected) ?? decor.figures.find((f) => f.id === selected);
-  const pickedSticker = decor.stickers.find((s) => s.id === selected);
+  const one = selected.length === 1 ? selected[0] : null;
+  const picked = decor.stickers.find((s) => s.id === one) ?? decor.figures.find((f) => f.id === one);
+  const pickedSticker = decor.stickers.find((s) => s.id === one);
+  const pick = (id: string, add: boolean) => setSelected(add ? (selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]) : [id]);
+  const removeOne = (id: string) => ops.remove([id]);
   const pickedName = pickedSticker ? stickerName(pickedSticker.sticker) : picked && "figure" in picked ? figureName(picked.figure) : "";
 
   const upload = async (file: File | undefined) => {
@@ -333,7 +355,7 @@ export function Customize({ source, ops, selected, setSelected, openMenu, bare }
             <span className="opt-desc">Arrástralos a cualquier cara del vidrio. Para girarlos, mantén el clic derecho y arrastra; un clic derecho abre su menú.</span>
           </div>
           <div className="opt-below">
-            <Placed selected={selected} onPick={setSelected} onRemove={ops.remove} onMenu={openMenu}
+            <Placed selected={selected} onPick={pick} onRemove={removeOne} onMenu={openMenu}
               items={decor.stickers.map((st) => ({ id: st.id, label: stickerName(st.sticker), thumb: <StickerThumb id={st.sticker} color={color} small /> }))} />
             <div className="app-tiles decor-tiles">
               {STICKERS.map((s) => (
@@ -365,7 +387,7 @@ export function Customize({ source, ops, selected, setSelected, openMenu, bare }
             <span className="opt-desc">Se paran sobre el cubo. Arrástralas para moverlas y gíralas con el clic derecho sostenido.</span>
           </div>
           <div className="opt-below">
-            <Placed selected={selected} onPick={setSelected} onRemove={ops.remove} onMenu={openMenu}
+            <Placed selected={selected} onPick={pick} onRemove={removeOne} onMenu={openMenu}
               items={decor.figures.map((f) => ({ id: f.id, label: figureName(f.figure), thumb: <FigureThumb id={f.figure} color={color} spin={false} size={24} /> }))} />
             <div className="app-tiles decor-tiles">
               {FIGURES.map((f) => (
@@ -399,9 +421,25 @@ export function Customize({ source, ops, selected, setSelected, openMenu, bare }
                   format={(v) => `${v}°`} onChange={(v) => ops.set(picked.id, (v + 360) % 360, picked.size)} />
               </div>
               <div className="decor-picked-actions">
-                <button className="btn" onClick={() => ops.duplicate(picked.id)}><IconCopy size={16} />Duplicar</button>
-                <button className="btn" onClick={() => ops.remove(picked.id)}><IconTrash size={16} />Quitar</button>
-                <button className="btn ghost" onClick={() => setSelected(null)}>Listo</button>
+                <button className="btn" onClick={() => ops.duplicate([picked.id])}><IconCopy size={16} />Duplicar</button>
+                <button className="btn" onClick={() => ops.remove([picked.id])}><IconTrash size={16} />Quitar</button>
+                <button className="btn ghost" onClick={() => setSelected([])}>Listo</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {selected.length > 1 && (
+          <div className="opt-row decor-picked">
+            <span className="opt-icon"><IconSticker size={17} /></span>
+            <div className="opt-text">
+              <span className="opt-title">{selected.length} elegidos</span>
+              <span className="opt-desc">Se mueven juntos arrastrando cualquiera de ellos, o con las flechas de a una celda.</span>
+            </div>
+            <div className="opt-ctl decor-picked-ctl">
+              <div className="decor-picked-actions">
+                <button className="btn" onClick={() => ops.duplicate(selected)}><IconCopy size={16} />Duplicar</button>
+                <button className="btn" onClick={() => ops.remove(selected)}><IconTrash size={16} />Quitar</button>
+                <button className="btn ghost" onClick={() => setSelected([])}>Listo</button>
               </div>
             </div>
           </div>

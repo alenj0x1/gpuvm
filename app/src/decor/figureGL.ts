@@ -63,6 +63,7 @@ const FS = `#version 300 es
 precision highp float;
 in vec3 vN; in vec3 vC; in float vMach;
 uniform vec3 uMachine;
+uniform vec4 uTint;
 out vec4 o;
 void main() {
   vec3 n = normalize(vN);
@@ -74,6 +75,7 @@ void main() {
   vec3 H = normalize(L + vec3(0.0, 0.0, 1.0));
   col += vec3(0.3) * pow(max(dot(n, H), 0.0), 40.0);
   col += base * 0.14 * pow(1.0 - max(n.z, 0.0), 3.0);
+  col = mix(col, uTint.rgb, uTint.a);
   o = vec4(min(col, vec3(1.0)), 1.0);
 }`;
 
@@ -101,7 +103,7 @@ function setup(): GLState | null {
   gl.linkProgram(prog);
   if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { failed = true; return null; }
   const loc: GLState["loc"] = {};
-  for (const u of ["uM", "uT", "uN", "uRect", "uMachine"]) loc[u] = gl.getUniformLocation(prog, u);
+  for (const u of ["uM", "uT", "uN", "uRect", "uMachine", "uTint"]) loc[u] = gl.getUniformLocation(prog, u);
   canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); state = null; });
   state = { canvas, gl, prog, loc, meshes: new Map() };
   return state;
@@ -142,10 +144,12 @@ export interface FigureDraw {
   t: V3;
   /** Model direction to view space (x right, y up, z toward the viewer). Column-major. */
   n: Mat3;
+  /** How much of the selection color lies over it (0 for none). */
+  tint?: number;
 }
 
 /** Draws the figures into `target` (a 2D context the size of W × H CSS pixels), over what it already has. */
-export function drawFigures(target: CanvasRenderingContext2D, draws: FigureDraw[], machineColor: string, W: number, H: number, dpr: number) {
+export function drawFigures(target: CanvasRenderingContext2D, draws: FigureDraw[], machineColor: string, W: number, H: number, dpr: number, tintColor = "#7d9cf0") {
   if (!draws.length) return;
   const s = setup();
   if (!s) return;
@@ -180,7 +184,9 @@ export function drawFigures(target: CanvasRenderingContext2D, draws: FigureDraw[
   gl.useProgram(s.prog);
   gl.uniform4f(loc.uRect, x0, y0, rw, rh);
   gl.uniform3fv(loc.uMachine, hex(machineColor));
+  const tc = hex(tintColor);
   for (const { d, me } of ready) {
+    gl.uniform4f(loc.uTint, tc[0], tc[1], tc[2], d.tint ?? 0);
     gl.uniformMatrix3fv(loc.uM, false, d.m);
     gl.uniform3fv(loc.uT, d.t);
     gl.uniformMatrix3fv(loc.uN, false, d.n);
