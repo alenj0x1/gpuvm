@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const SECTIONS = {
   en: { Added: "added", Changed: "changed", Fixed: "fixed", Security: "security" },
-  es: { "Añadido": "added", "Cambiado": "changed", "Corregido": "fixed", "Seguridad": "security" },
+  es: { "Añadido": "added", "Agregado": "added", "Cambiado": "changed", "Corregido": "fixed", "Seguridad": "security" },
 };
 
 /** Released versions (newest first) of a Keep a Changelog file: { version, date, sections: { added: [...] } }. */
