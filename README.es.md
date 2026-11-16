@@ -19,6 +19,10 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/alenj0x1/gpuvm/releases/latest"><b>Descargar para Windows</b></a> · <a href="https://gpuvm.alenj.dev/">Sitio web</a> · <a href="https://gpuvm.alenj.dev/docs/es/">Documentación</a>
+</p>
+
+<p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/home-es-dark.webp">
     <img src=".github/assets/home-es-light.webp" alt="Inicio de GpuVM: la máquina en uso como un cubo holograma en su espacio, con su uso al lado">

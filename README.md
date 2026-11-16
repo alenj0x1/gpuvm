@@ -19,6 +19,10 @@ English | [Español](README.es.md)
 </p>
 
 <p align="center">
+  <a href="https://github.com/alenj0x1/gpuvm/releases/latest"><b>Download for Windows</b></a> · <a href="https://gpuvm.alenj.dev/">Website</a> · <a href="https://gpuvm.alenj.dev/docs/">Documentation</a>
+</p>
+
+<p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/home-en-dark.webp">
     <img src=".github/assets/home-en-light.webp" alt="GpuVM's Home: the machine in use as a hologram cube in its space, with its usage beside it">
