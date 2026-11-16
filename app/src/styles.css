@@ -1286,3 +1286,17 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .game-tile { min-height: 0; }
 .game-tile-art { aspect-ratio: auto; flex: 1; min-height: 0; }
 .game-tile-row { flex: none; }
+/* A narrow options column (the cube's panel dragged wide): each option keeps its text at full width and its control
+   goes under it, using the whole row, instead of squeezing the text into a strip. */
+@container (max-width: 640px) {
+  .opt-row, .opt-row.section { grid-template-columns: 32px minmax(0, 1fr); }
+  .opt-row > .opt-ctl { grid-column: 1 / -1; justify-content: flex-start; max-width: none; }
+  .opt-row > .opt-ctl > .segmented, .opt-row > .opt-ctl > .dropdown, .opt-row > .opt-ctl > .slider { width: 100%; max-width: none; }
+}
+/* The cube's column folded into a rail at the right edge (its handle stays to open it again), or taking the whole
+   width with the options folded away. */
+.vm-body.cube-folded .vm-cube { background: transparent; }
+.vm-body.cube-folded .vm-cube > :not(.vm-cube-split) { visibility: hidden; }
+.vm-body.options-folded { grid-template-columns: 0 minmax(0, 1fr); column-gap: 0; }
+.vm-body.options-folded .vm-sections { visibility: hidden; height: 0; overflow: hidden; }
+.vm-body.options-folded .vm-cube { width: 100%; }

@@ -44,8 +44,10 @@ interface Props {
 const transitionText = (state: string): string | undefined => ({ Starting: t("Encendiendo"), Stopping: t("Apagando"), Saving: t("Guardando"), Pausing: t("Pausando"), Resuming: t("Reanudando") } as Record<string, string>)[state];
 
 type VmTab = "machine" | "display" | "windows" | "custom";
-// The cube's column: dragged wider toward the options, never so wide the options get cramped, never closed.
-const CUBE_KEY = "gpuvm.cubeWidth", CUBE_DEFAULT = 380, CUBE_MIN = 320, CUBE_MAX = 760, OPTIONS_MIN = 640;
+// The cube's column: dragged anywhere between the two edges. Near the right edge the cube folds into a thin rail
+// (0 is stored); near the left one it takes the whole width and the options fold (FULL is stored). In between, both
+// keep a usable width.
+const CUBE_KEY = "gpuvm.cubeWidth", CUBE_DEFAULT = 380, CUBE_MIN = 220, OPTIONS_MIN = 300, FOLD = 140, FULL = 99999, RAIL = 14;
 const readCubeW = () => { try { return Number(localStorage.getItem(CUBE_KEY)) || CUBE_DEFAULT; } catch { return CUBE_DEFAULT; } };
 /** Where the last machine page was left, to open the next one at the same place. */
 let lastPlace: { section: VmTab; offset: number; at: number } | null = null;
@@ -73,13 +75,21 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
   const bodyRef = useRef<HTMLDivElement>(null);
   const [cubeW, setCubeW] = useState(readCubeW);
   const [resizing, setResizing] = useState(false);
-  const cubeMax = () => Math.max(CUBE_MIN, Math.min(CUBE_MAX, (bodyRef.current?.clientWidth ?? 1200) - OPTIONS_MIN - 16));
+  const span = () => bodyRef.current?.clientWidth ?? 1200;
+  /** A width as the person left it, fitted to the page now: folded, full or in between. */
+  const fitCube = (w: number) => (w <= 0 ? 0 : w >= FULL || span() - w - 16 < OPTIONS_MIN ? FULL : Math.max(CUBE_MIN, w));
   const resizeCube = (e: React.PointerEvent<HTMLDivElement>) => {
     const el = e.currentTarget, startX = e.clientX, startW = cubeW;
     el.setPointerCapture(e.pointerId);
     setResizing(true);
     let w = startW;
-    const move = (ev: PointerEvent) => { w = Math.round(Math.min(cubeMax(), Math.max(CUBE_MIN, startW - (ev.clientX - startX)))); setCubeW(w); };
+    const from = startW >= FULL ? span() : startW <= 0 ? RAIL : startW;
+    const move = (ev: PointerEvent) => {
+      const raw = from - (ev.clientX - startX);
+      // Past the folding points it snaps to the edge; in between it follows the pointer.
+      w = raw < FOLD ? 0 : span() - raw - 16 < OPTIONS_MIN * 0.6 ? FULL : Math.round(Math.min(span() - OPTIONS_MIN - 16, Math.max(CUBE_MIN, raw)));
+      setCubeW(w);
+    };
     const up = () => {
       el.removeEventListener("pointermove", move); el.removeEventListener("pointerup", up); el.removeEventListener("pointercancel", up);
       setResizing(false);
@@ -204,7 +214,8 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
           ))}
         </nav>
       )}
-      <div className={`vm-body${resizing ? " resizing" : ""}`} ref={bodyRef} style={{ "--cube-w": `${Math.min(cubeW, cubeMax())}px` } as React.CSSProperties}>
+      <div className={`vm-body${resizing ? " resizing" : ""}${fitCube(cubeW) === 0 ? " cube-folded" : fitCube(cubeW) === FULL ? " options-folded" : ""}`} ref={bodyRef}
+        style={{ "--cube-w": `${fitCube(cubeW) === 0 ? RAIL : fitCube(cubeW) === FULL ? 0 : fitCube(cubeW)}px` } as React.CSSProperties}>
       <div className="vm-sections">
       {tabs.includes("machine") && (
         <section className="vm-section" ref={(el) => { sectionRefs.current.machine = el; }}>
