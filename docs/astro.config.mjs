@@ -62,12 +62,17 @@ export default defineConfig({
         {
           label: 'Guides',
           translations: { es: 'Guías' },
-          items: ['using-the-app', 'streaming', 'profiles', 'labs'],
+          items: ['using-the-app', 'streaming', 'profiles'],
         },
         {
           label: 'Reference',
           translations: { es: 'Referencia' },
           items: ['cli', 'architecture', 'troubleshooting', 'changelog'],
+        },
+        {
+          label: 'Development',
+          translations: { es: 'Desarrollo' },
+          items: ['labs'],
         },
       ],
     }),
