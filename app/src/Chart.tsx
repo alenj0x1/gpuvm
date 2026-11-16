@@ -13,7 +13,6 @@ export function Sparkline({ values, color }: { values: number[]; color: string }
   const points = values.map((v, i) => `${((offset + i) * step).toFixed(1)},${(HEIGHT - (Math.min(100, Math.max(0, v)) / 100) * (HEIGHT - 4) - 2).toFixed(1)}`).join(" ");
   return (
     <svg className="sparkline" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} preserveAspectRatio="none" aria-hidden="true">
-      <line x1="0" x2={WIDTH} y1={HEIGHT - 1} y2={HEIGHT - 1} stroke="var(--chart-grid)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
       {values.length > 1 && <polyline points={points} fill="none" stroke={color} strokeWidth="1.6" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />}
     </svg>
   );
