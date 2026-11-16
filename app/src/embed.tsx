@@ -366,7 +366,7 @@ const scopedCss = appCss
   .prompt-demo .prompt-card { height: auto; min-height: 158px; }
   /* Narrow (a phone): option groups that don't fit in one row become a grid of equal cells. */
   .demo-root { container-type: inline-size; }
-  @container (max-width: 560px) {
+  @container (max-width: 720px) {
     .opt-row .segmented { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
     .opt-row .segmented button { justify-content: center; }
     .opt-row .opt-ctl { width: 100%; }

@@ -182,7 +182,7 @@ export function Dropdown<T extends string>({ value, options, onChange, label }: 
             </button>
           ))}
         </div>,
-        document.body,
+        portalRoot(button.current),
       )}
     </>
   );
@@ -324,7 +324,13 @@ export function useScrollFade<T extends HTMLElement>(axis: "x" | "y" = "y") {
 // whose app lives in a shadow root the document can't query).
 let portalHost: Element | null = null;
 export const setPortalRoot = (el: Element | null) => { portalHost = el; };
-export const portalRoot = () => portalHost ?? document.querySelector(".app") ?? document.body;
+/** Where floating pieces (menus, lists) open: inside the shadow root of a website demo when `near` is in one (so they keep
+ *  the app's styles), otherwise in the app. */
+export const portalRoot = (near?: Element | null): Element => {
+  const root = near?.getRootNode();
+  if (root instanceof ShadowRoot) return root.querySelector(".demo-root") ?? (root as unknown as Element);
+  return portalHost ?? document.querySelector(".app") ?? document.body;
+};
 
 /** Children of the returned element glide to their new places instead of jumping, when the window or the container
  *  changes size or a child comes or goes (a notice that disappears, a card added). New children fade in. Positions are
