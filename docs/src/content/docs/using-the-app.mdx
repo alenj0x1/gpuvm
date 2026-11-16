@@ -66,7 +66,7 @@ Each game and mode keeps its best score.
 
 1. **Name and space:** letters, numbers, `_` or hyphens, up to 40 characters, no spaces (it suggests `win-gpu`), and the space it goes into. While you type the name, the camera goes to the board's serial plate and engraves it letter by letter.
 
-2. **Starting point:** **Install Windows** or **From template** (when you have [templates](#templates)), and a profile: **Balanced** (`balanced`), **Maximum performance** (`max-performance`, the default) or one of your own. The profile fills in everything below, including its ISO, apps and use; see [Profiles](/gpuvm/docs/profiles/). From a template the machine is ready in seconds and only needs the name; Windows, its apps, cleanup level and password come from the template.
+2. **Starting point:** **Install Windows** or **From template** (when you have [templates](#templates)), and a profile: **Balanced** (`balanced`), **Maximum performance** (`max-performance`, the default) or one of your own. The profile fills in everything below, including its ISO, apps and use; see [Profiles](/docs/profiles/). From a template the machine is ready in seconds and only needs the name; Windows, its apps, cleanup level and password come from the template.
 
 3. **Resources:** threads, memory, GPU share and disk. The disk stops at what fits on the drive once every machine's disk there is full, keeping 20 GB for Windows.
 
@@ -140,7 +140,7 @@ With the **Fast** capture (the default), Windows' administrator prompts (UAC) in
 - Only this PC can answer: a program inside the machine can't approve itself.
 - If a different prompt opened in the meantime, nothing is pressed and the card shows the new one.
 - It needs the machine's [Windows password](#windows-password).
-- With the **Classic** capture the prompts show in Moonlight as usual and the card doesn't appear. See [Capture modes](/gpuvm/docs/streaming/#capture-modes).
+- With the **Classic** capture the prompts show in Moonlight as usual and the card doesn't appear. See [Capture modes](/docs/streaming/#capture-modes).
 
 ## Paste in the VM
 
@@ -184,7 +184,7 @@ How Moonlight shows the machine and how you control it:
 - **Open on** (with more than one monitor): **As in Settings** follows the choice in [Settings](#settings); Windows' main monitor, whichever it is at the time; or a monitor by its name. A chosen monitor that isn't connected falls back to the main one.
 - **Capture:** how Sunshine captures the screen.
   - **Fast** (the default): the picture shows about 2.6 s after connecting, and games in exclusive full screen show too. Windows' administrator prompts are answered from GpuVM ([Administrator prompts](#administrator-prompts)).
-  - **Classic**: administrator prompts show in Moonlight, but the picture can stay black for a while after connecting and games in exclusive full screen look black. See [Streaming](/gpuvm/docs/streaming/#capture-modes).
+  - **Classic**: administrator prompts show in Moonlight, but the picture can stay black for a while after connecting and games in exclusive full screen look black. See [Streaming](/docs/streaming/#capture-modes).
 - **Advanced** (click to show):
   - **Codec:** **Automatic** (Moonlight picks the best one this PC can show), H.264, HEVC or AV1. If the picture doesn't show, go back to **Automatic**.
   - **Picture quality:** the bitrate in Mbps, up to 150. Higher uses more network; at the minimum (**Automatic**), Moonlight picks it from the resolution and frame rate.
@@ -267,7 +267,7 @@ The **Library** is one page with all its sections, and a bar at the top that mar
 
 <Shot name="library" alt="The Library: GpuVM's space on the drive and the profiles as cards with a small cube" />
 
-- **Profiles:** the built-in profiles (marked **Built-in**) and your own, as cards with a small cube of what they give. **Duplicate** starts one from another; yours can also be edited (**Edit**, with the machine it makes beside the form) and deleted. The last card, **New profile**, creates one. Each keeps processor, memory, GPU share, disk size and type (**Fixed** / **Dynamic**), Windows image, apps to install, cleanup, the use and how Moonlight opens (resolution, frame rate, full screen or window), on top of the built-in profile it is **Based on**. See [Profiles](/gpuvm/docs/profiles/).
+- **Profiles:** the built-in profiles (marked **Built-in**) and your own, as cards with a small cube of what they give. **Duplicate** starts one from another; yours can also be edited (**Edit**, with the machine it makes beside the form) and deleted. The last card, **New profile**, creates one. Each keeps processor, memory, GPU share, disk size and type (**Fixed** / **Dynamic**), Windows image, apps to install, cleanup, the use and how Moonlight opens (resolution, frame rate, full screen or window), on top of the built-in profile it is **Based on**. See [Profiles](/docs/profiles/).
 - **Templates:** see [Templates](#templates).
 - **Shared disks:** see [Shared disks](#shared-disks).
 - **Machine disks:** each machine's disk and the ones left without a machine (**In use** or **Free**). **Create a machine with this disk** creates a machine again from a disk kept when its machine was deleted, with Windows and its apps as they were; free disks can be deleted (click again to confirm, then a UAC prompt; it can't be undone). Each **Prepared Windows** is Windows applied once from an ISO and edition (about 12 GB): new machines with that Windows are created by copying it, in about a minute. Deleting it frees that space; the next machine with that Windows prepares it again.

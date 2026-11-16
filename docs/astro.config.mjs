@@ -4,8 +4,8 @@ import starlight from '@astrojs/starlight';
 import starlightLinksValidator from 'starlight-links-validator';
 
 export default defineConfig({
-  site: 'https://alenj0x1.github.io',
-  base: '/gpuvm/docs',
+  site: 'https://gpuvm.alenj.dev',
+  base: '/docs',
   integrations: [
     starlight({
       title: 'GpuVM',

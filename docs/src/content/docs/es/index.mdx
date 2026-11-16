@@ -27,7 +27,7 @@ Una VM normal de Hyper-V solo tiene un adaptador de pantalla básico, así que l
 
 3. **Encender y abrir.** Un clic enciende la VM, sincroniza el driver de la GPU si el del host cambió, espera a Windows y a Sunshine, corrige la sesión y la pantalla, empareja Moonlight solo y abre la transmisión, por defecto a la frecuencia de tu monitor. Una VM ya encendida muestra su imagen en unos 7 a 10 segundos.
 
-4. **Usar y medir.** Usas la VM en Moonlight en el host, con la imagen que dibuja la GPU, tu teclado, mouse y mandos, unos 11 ms detrás de jugar en el equipo a 120 FPS o más. Los avisos de administrador de Windows en la VM se responden desde una tarjeta en el equipo. La app muestra el uso de CPU, memoria y GPU en vivo, y los [laboratorios](/gpuvm/docs/es/labs/) te permiten probar cambios con mediciones reales.
+4. **Usar y medir.** Usas la VM en Moonlight en el host, con la imagen que dibuja la GPU, tu teclado, mouse y mandos, unos 11 ms detrás de jugar en el equipo a 120 FPS o más. Los avisos de administrador de Windows en la VM se responden desde una tarjeta en el equipo. La app muestra el uso de CPU, memoria y GPU en vivo, y los [laboratorios](/docs/es/labs/) te permiten probar cambios con mediciones reales.
 
 </Steps>
 
@@ -37,7 +37,7 @@ Una VM normal de Hyper-V solo tiene un adaptador de pantalla básico, así que l
 
 <CardGrid>
   <Card title="App de escritorio" icon="laptop">
-    Tauri 2 + React, en español e inglés, sin permisos de administrador; un servicio de Windows hace el trabajo de Hyper-V. Todas las VMs de Hyper-V agrupadas en espacios, encender y abrir en un clic, cada máquina como un holograma en un cubo de vidrio que puedes decorar, un tipo de uso por máquina (juegos, películas, trabajo), uso en vivo, opciones y una Biblioteca de perfiles, plantillas, discos compartidos e ISOs. Consulta [Uso de la app](/gpuvm/docs/es/using-the-app/).
+    Tauri 2 + React, en español e inglés, sin permisos de administrador; un servicio de Windows hace el trabajo de Hyper-V. Todas las VMs de Hyper-V agrupadas en espacios, encender y abrir en un clic, cada máquina como un holograma en un cubo de vidrio que puedes decorar, un tipo de uso por máquina (juegos, películas, trabajo), uso en vivo, opciones y una Biblioteca de perfiles, plantillas, discos compartidos e ISOs. Consulta [Uso de la app](/docs/es/using-the-app/).
   </Card>
   <Card title="Módulo de PowerShell y CLI" icon="seti:powershell">
     El módulo `GpuVM` (PowerShell 7) hace el trabajo; `gpuvm.ps1` lo expone como comandos cortos.
@@ -50,9 +50,9 @@ Una VM normal de Hyper-V solo tiene un adaptador de pantalla básico, así que l
   </Card>
 </CardGrid>
 
-El backend actual es **Hyper-V GPU-P**: la GPU se comparte entre el host y la VM, y el invitado usa el mismo driver que el host. Se pueden agregar backends nuevos; consulta [Arquitectura](/gpuvm/docs/es/architecture/).
+El backend actual es **Hyper-V GPU-P**: la GPU se comparte entre el host y la VM, y el invitado usa el mismo driver que el host. Se pueden agregar backends nuevos; consulta [Arquitectura](/docs/es/architecture/).
 
 <CardGrid>
-  <LinkCard title="Requisitos" href="/gpuvm/docs/es/requirements/" />
-  <LinkCard title="Instalación" href="/gpuvm/docs/es/install/" />
+  <LinkCard title="Requisitos" href="/docs/es/requirements/" />
+  <LinkCard title="Instalación" href="/docs/es/install/" />
 </CardGrid>

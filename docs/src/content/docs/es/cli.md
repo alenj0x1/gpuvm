@@ -92,7 +92,7 @@ Sin parámetros. No hace nada si Moonlight ya está instalado.
 
 ### components-update
 
-`-Name` (uno o más componentes: `sunshine`, `vdd`, `nefcon`, `usbip`, `vigembus`; todos por defecto, salvo los retenidos). Admite `-WhatIf`. Consulta [Streaming](/gpuvm/docs/es/streaming/#actualizar-componentes).
+`-Name` (uno o más componentes: `sunshine`, `vdd`, `nefcon`, `usbip`, `vigembus`; todos por defecto, salvo los retenidos). Admite `-WhatIf`. Consulta [Streaming](/docs/es/streaming/#actualizar-componentes).
 
 ### remove
 
@@ -164,9 +164,9 @@ Además de los cmdlets anteriores, el módulo exporta estos, que usa sobre todo 
 | `Invoke-GpuVMPower` | `-Action` `Start`, `Shutdown`, `TurnOff`, `Restart`, `Pause` o `Resume` sobre cualquier VM. |
 | `Set-GpuVMGuestCredential` | Guarda la cuenta del invitado (DPAPI) para que GpuVM corrija cosas dentro de la VM por PowerShell Direct. |
 | `Set-GpuVMStreamingClient` | Cambia cómo abre Moonlight la VM. No requiere apagarla. Consulta [más abajo](#set-gpuvmstreamingclient). |
-| `Set-GpuVMCapture` | `-Name`, `-Mode` `wgc` (la predeterminada: Windows.Graphics.Capture, la imagen aparece apenas te conectas y captura la pantalla completa exclusiva) o `ddx` (desktop duplication: muestra los avisos de administrador de Windows en el stream). Se aplica en el momento si la VM está encendida (reinicia Sunshine); si no, la próxima vez que se abra. Consulta [Modos de captura](/gpuvm/docs/es/streaming/#modos-de-captura). |
+| `Set-GpuVMCapture` | `-Name`, `-Mode` `wgc` (la predeterminada: Windows.Graphics.Capture, la imagen aparece apenas te conectas y captura la pantalla completa exclusiva) o `ddx` (desktop duplication: muestra los avisos de administrador de Windows en el stream). Se aplica en el momento si la VM está encendida (reinicia Sunshine); si no, la próxima vez que se abra. Consulta [Modos de captura](/docs/es/streaming/#modos-de-captura). |
 | `Get-GpuVMAdminPrompt` | Los avisos de administrador de Windows abiertos en las máquinas de GpuVM encendidas que capturan con `wgc`: `name`, `id`, `app`, `publisher`. Solo lee el intercambio de datos de Hyper-V (unos 100 ms, sin PowerShell Direct); la app lo consulta cada 2 s. |
-| `Resolve-GpuVMAdminPrompt` | `-Name`, `-Answer` `Allow` o `Deny`, `-PromptId` (el `id` de `Get-GpuVMAdminPrompt`). Presiona Sí o No en la VM, solo si ese aviso sigue siendo el que está abierto; si no, falla sin presionar nada. Necesita la contraseña del invitado. Consulta [Avisos de administrador](/gpuvm/docs/es/streaming/#avisos-de-administrador). |
+| `Resolve-GpuVMAdminPrompt` | `-Name`, `-Answer` `Allow` o `Deny`, `-PromptId` (el `id` de `Get-GpuVMAdminPrompt`). Presiona Sí o No en la VM, solo si ese aviso sigue siendo el que está abierto; si no, falla sin presionar nada. Necesita la contraseña del invitado. Consulta [Avisos de administrador](/docs/es/streaming/#avisos-de-administrador). |
 | `Update-GpuVMSettings` | Aplica procesador, memoria o GPU aunque la VM esté encendida: valida, la apaga, aplica y la vuelve a encender; si no puede encenderla, restaura la configuración anterior. |
 | `Get-GpuVMHome` | Lo que muestra el Inicio de la app: la última máquina abierta, qué máquinas caben en memoria y lo que necesita atención. |
 | `Stop-GpuVMAll` | Apaga de forma ordenada todas las máquinas de GpuVM encendidas, a la vez. |
@@ -184,7 +184,7 @@ Además de los cmdlets anteriores, el módulo exporta estos, que usa sobre todo 
 | `New-GpuVMTemplate` / `Get-GpuVMTemplate` / `Remove-GpuVMTemplate` | Guarda una VM apagada como plantilla / lista las plantillas / borra una sobre la que no hay VMs. |
 | `New-GpuVMSharedDisk` / `Get-GpuVMSharedDisk` / `Connect-GpuVMSharedDisk` / `Disconnect-GpuVMSharedDisk` / `Import-GpuVMSharedDisk` / `Remove-GpuVMSharedDisk` | Discos compartidos: crear, listar, conectar, desconectar, copiar a uno una carpeta de este equipo, borrar. |
 
-Desde la app, `Remove-GpuVM`, `Remove-GpuVMDisk`, `Remove-GpuVMBase`, `Remove-GpuVMSharedDisk` y `Remove-GpuVMTemplate` además piden confirmación en UAC ([Arquitectura](/gpuvm/docs/es/architecture/#puente-entre-la-app-y-powershell)).
+Desde la app, `Remove-GpuVM`, `Remove-GpuVMDisk`, `Remove-GpuVMBase`, `Remove-GpuVMSharedDisk` y `Remove-GpuVMTemplate` además piden confirmación en UAC ([Arquitectura](/docs/es/architecture/#puente-entre-la-app-y-powershell)).
 
 ### Set-GpuVMStreamingClient
 

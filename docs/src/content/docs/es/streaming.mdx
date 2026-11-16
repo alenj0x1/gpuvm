@@ -26,7 +26,7 @@ nefcon está fijado en v1.14.0, la versión que usa el script oficial de instala
 
 Sunshine corre dentro de la VM. Su usuario y contraseña se generan al crear la VM; en el host quedan cifrados con DPAPI. La contraseña viaja en texto plano al invitado solo para la instalación y después se borra.
 
-Cada vez que haces **Encender y abrir**, GpuVM lee la lista de pantallas de Sunshine por su API, pone `output_name` en la pantalla virtual y reinicia Sunshine si eso cambió, para que nunca capture por error la pantalla de Hyper-V. Si GpuVM ya apagó la pantalla de Hyper-V, además pone `dd_configuration_option` en `disabled`: si Sunshine cambia la pantalla en cada sesión, vuelve a probar todos sus codificadores y el primer cuadro tarda 22 a 27 s en vez de unos 2 s ([laboratorio 008](/gpuvm/docs/es/labs/#lo-que-encontraron-los-laboratorios-hasta-ahora)). Cambiar la resolución o los FPS todavía cuesta 10 a 15 s, porque Sunshine ve que la pantalla cambió; GpuVM ajusta la pantalla antes que el resto del trabajo y reinicia Sunshine en ese momento, así ese tiempo se superpone con lo demás. Si no, usa `ensure_only_display`.
+Cada vez que haces **Encender y abrir**, GpuVM lee la lista de pantallas de Sunshine por su API, pone `output_name` en la pantalla virtual y reinicia Sunshine si eso cambió, para que nunca capture por error la pantalla de Hyper-V. Si GpuVM ya apagó la pantalla de Hyper-V, además pone `dd_configuration_option` en `disabled`: si Sunshine cambia la pantalla en cada sesión, vuelve a probar todos sus codificadores y el primer cuadro tarda 22 a 27 s en vez de unos 2 s ([laboratorio 008](/docs/es/labs/#lo-que-encontraron-los-laboratorios-hasta-ahora)). Cambiar la resolución o los FPS todavía cuesta 10 a 15 s, porque Sunshine ve que la pantalla cambió; GpuVM ajusta la pantalla antes que el resto del trabajo y reinicia Sunshine en ese momento, así ese tiempo se superpone con lo demás. Si no, usa `ensure_only_display`.
 
 Lo que dura dentro de la VM hasta que Windows se reinicia (modo de pantalla, modo de captura, audio) se hace una vez por arranque y por una sola sesión de PowerShell Direct, y Windows se da por listo según el latido de Hyper-V. Abrir una VM ya encendida tarda unos 7 a 10 s hasta el primer cuadro; apagada, unos 55 s hasta la imagen, casi todo en que arranquen Windows y Sunshine (que prueba sus codificadores antes de que responda su API). `connect` termina solo cuando Moonlight muestra el primer cuadro, y si la VM ya está abierta en Moonlight trae esa ventana al frente en vez de abrir otra.
 
@@ -94,11 +94,11 @@ Las VMs de generación 2 de Hyper-V no tienen tarjeta de sonido. GpuVM le da a l
 - Nada sale de la VM: el servidor solo escucha en `127.0.0.1`, corre como `LOCAL SERVICE` y su programa vive en `C:\Program Files\GpuVM\Audio`, donde solo los administradores pueden escribir.
 - usbip-win2 instala solo su cliente, en silencio. Sus drivers están firmados por Microsoft: sin modo de prueba ni certificados propios. GpuVM comprueba ambas cosas y lo desinstala si alguna falla.
 - El altavoz es persistente: usbip-win2 lo vuelve a conectar cada vez que Windows arranca, sin reinicios ni inicio de sesión. **Encender y abrir** lo revisa en segundo plano la primera vez que se abre después de cada arranque, lo reconecta si se perdió y actualiza el servidor cuando GpuVM trae uno nuevo.
-- Las VMs creadas con VB-CABLE pasan al altavoz la próxima vez que se abren. Dentro de una VM, la salida de VB-CABLE le llega muda a Sunshine; el sonido de antes venía de Steam Streaming Speakers ([laboratorios 011 y 012](/gpuvm/docs/es/labs/)).
+- Las VMs creadas con VB-CABLE pasan al altavoz la próxima vez que se abren. Dentro de una VM, la salida de VB-CABLE le llega muda a Sunshine; el sonido de antes venía de Steam Streaming Speakers ([laboratorios 011 y 012](/docs/es/labs/)).
 
 ## Ajustes del perfil
 
-La sección `streaming` del [perfil](/gpuvm/docs/es/profiles/) define los valores por defecto:
+La sección `streaming` del [perfil](/docs/es/profiles/) define los valores por defecto:
 
 ```jsonc
 "streaming": {
@@ -121,4 +121,4 @@ Moonlight se abre como el usuario que inició sesión, sin permisos de administr
 ./gpuvm.ps1 components-update -WhatIf   # ver si hay versiones nuevas
 ```
 
-Busca la última versión publicada en GitHub de cada componente y actualiza versión, URL y SHA-256 en `streaming/components.json`. usbip-win2 se mantiene en 0.9.8.0 y ViGEmBus en su última versión, 1.22.0 (`hold` en el archivo). Una versión nueva no está probada: valídala en un [laboratorio](/gpuvm/docs/es/labs/) antes de crear VMs con ella. La app no puede ejecutar este comando.
+Busca la última versión publicada en GitHub de cada componente y actualiza versión, URL y SHA-256 en `streaming/components.json`. usbip-win2 se mantiene en 0.9.8.0 y ViGEmBus en su última versión, 1.22.0 (`hold` en el archivo). Una versión nueva no está probada: valídala en un [laboratorio](/docs/es/labs/) antes de crear VMs con ella. La app no puede ejecutar este comando.

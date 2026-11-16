@@ -92,7 +92,7 @@ No parameters. Does nothing if Moonlight is already installed.
 
 ### components-update
 
-`-Name` (one or more components: `sunshine`, `vdd`, `nefcon`, `usbip`, `vigembus`; all by default, except those on hold). Supports `-WhatIf`. See [Streaming](/gpuvm/docs/streaming/#updating-components).
+`-Name` (one or more components: `sunshine`, `vdd`, `nefcon`, `usbip`, `vigembus`; all by default, except those on hold). Supports `-WhatIf`. See [Streaming](/docs/streaming/#updating-components).
 
 ### remove
 
@@ -164,9 +164,9 @@ Besides the cmdlets above, the module exports these, used mainly by the app:
 | `Invoke-GpuVMPower` | `-Action` `Start`, `Shutdown`, `TurnOff`, `Restart`, `Pause` or `Resume` on any VM. |
 | `Set-GpuVMGuestCredential` | Saves the guest account (DPAPI) so GpuVM can fix things inside the VM through PowerShell Direct. |
 | `Set-GpuVMStreamingClient` | Changes how Moonlight opens the VM. Doesn't need the VM off. See [below](#set-gpuvmstreamingclient). |
-| `Set-GpuVMCapture` | `-Name`, `-Mode` `wgc` (the default: Windows.Graphics.Capture, the picture shows right after connecting and exclusive fullscreen is captured) or `ddx` (desktop duplication: shows Windows' administrator prompts in the stream). Applied right away if the VM is running (restarts Sunshine), otherwise on the next open. See [Capture modes](/gpuvm/docs/streaming/#capture-modes). |
+| `Set-GpuVMCapture` | `-Name`, `-Mode` `wgc` (the default: Windows.Graphics.Capture, the picture shows right after connecting and exclusive fullscreen is captured) or `ddx` (desktop duplication: shows Windows' administrator prompts in the stream). Applied right away if the VM is running (restarts Sunshine), otherwise on the next open. See [Capture modes](/docs/streaming/#capture-modes). |
 | `Get-GpuVMAdminPrompt` | The Windows administrator prompts open in running GpuVM machines captured with `wgc`: `name`, `id`, `app`, `publisher`. Reads Hyper-V's data exchange only (about 100 ms, no PowerShell Direct); the app polls it every 2 s. |
-| `Resolve-GpuVMAdminPrompt` | `-Name`, `-Answer` `Allow` or `Deny`, `-PromptId` (the `id` from `Get-GpuVMAdminPrompt`). Presses Yes or No in the VM, only if that prompt is still the one open; otherwise it fails and presses nothing. Needs the guest password. See [Administrator prompts](/gpuvm/docs/streaming/#administrator-prompts). |
+| `Resolve-GpuVMAdminPrompt` | `-Name`, `-Answer` `Allow` or `Deny`, `-PromptId` (the `id` from `Get-GpuVMAdminPrompt`). Presses Yes or No in the VM, only if that prompt is still the one open; otherwise it fails and presses nothing. Needs the guest password. See [Administrator prompts](/docs/streaming/#administrator-prompts). |
 | `Update-GpuVMSettings` | Applies processor, memory or GPU even if the VM is running: validates, shuts it down, applies and starts it again; restores the previous settings if it can't start. |
 | `Get-GpuVMHome` | What the app's Home shows: the last machine opened, which machines fit in memory and what needs attention. |
 | `Stop-GpuVMAll` | Shuts down every running GpuVM machine cleanly, all at once. |
@@ -184,7 +184,7 @@ Besides the cmdlets above, the module exports these, used mainly by the app:
 | `New-GpuVMTemplate` / `Get-GpuVMTemplate` / `Remove-GpuVMTemplate` | Saves a stopped VM as a template / lists templates / deletes one no VM is built on. |
 | `New-GpuVMSharedDisk` / `Get-GpuVMSharedDisk` / `Connect-GpuVMSharedDisk` / `Disconnect-GpuVMSharedDisk` / `Import-GpuVMSharedDisk` / `Remove-GpuVMSharedDisk` | Shared disks: create, list, attach, detach, copy a folder of this PC into one, delete. |
 
-Through the app, `Remove-GpuVM`, `Remove-GpuVMDisk`, `Remove-GpuVMBase`, `Remove-GpuVMSharedDisk` and `Remove-GpuVMTemplate` also need a UAC confirmation ([Architecture](/gpuvm/docs/architecture/#bridge-between-the-app-and-powershell)).
+Through the app, `Remove-GpuVM`, `Remove-GpuVMDisk`, `Remove-GpuVMBase`, `Remove-GpuVMSharedDisk` and `Remove-GpuVMTemplate` also need a UAC confirmation ([Architecture](/docs/architecture/#bridge-between-the-app-and-powershell)).
 
 ### Set-GpuVMStreamingClient
 

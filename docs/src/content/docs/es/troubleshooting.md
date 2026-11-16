@@ -15,15 +15,15 @@ Si la imagen tarda en aparecer al conectar, revisa que **Imagen y control → Ca
 
 Para ver la pantalla de la VM sin la GPU, abre la consola de Hyper-V (**Ver consola de Hyper-V** en el menú **⋯** de la máquina, o `vmconnect.exe localhost <vm>`). Mientras la pantalla virtual funciona, la de Hyper-V está desactivada; Escritorio remoto sigue disponible como respaldo.
 
-Problema abierto ([laboratorio 002](/gpuvm/docs/es/labs/#lo-que-encontraron-los-laboratorios-hasta-ahora)): Sunshine puede decir "Display device configuration API is temporarily unavailable" y no cambiar la resolución.
+Problema abierto ([laboratorio 002](/docs/es/labs/#lo-que-encontraron-los-laboratorios-hasta-ahora)): Sunshine puede decir "Display device configuration API is temporarily unavailable" y no cambiar la resolución.
 
 ## Un programa en pantalla completa se ve en negro
 
-El escritorio se ve bien, pero un juego o programa en **pantalla completa exclusiva** se ve en negro (puede aparecer cuando pierde el foco). Pasa con la captura **Clásica**, que no ve la pantalla completa exclusiva en una pantalla virtual. En **Imagen y control → Captura** elige **Rápida** (la predeterminada en las máquinas nuevas) y guarda. Consulta [Modos de captura](/gpuvm/docs/es/streaming/#modos-de-captura).
+El escritorio se ve bien, pero un juego o programa en **pantalla completa exclusiva** se ve en negro (puede aparecer cuando pierde el foco). Pasa con la captura **Clásica**, que no ve la pantalla completa exclusiva en una pantalla virtual. En **Imagen y control → Captura** elige **Rápida** (la predeterminada en las máquinas nuevas) y guarda. Consulta [Modos de captura](/docs/es/streaming/#modos-de-captura).
 
 ## Un programa espera permiso de administrador
 
-Con la captura **Rápida**, los avisos de administrador de Windows no se dibujan en Moonlight; GpuVM los muestra en una tarjeta encima de todo, con **Permitir** y **Rechazar** ([Avisos de administrador](/gpuvm/docs/es/using-the-app/#avisos-de-administrador)). Si no aparece la tarjeta:
+Con la captura **Rápida**, los avisos de administrador de Windows no se dibujan en Moonlight; GpuVM los muestra en una tarjeta encima de todo, con **Permitir** y **Rechazar** ([Avisos de administrador](/docs/es/using-the-app/#avisos-de-administrador)). Si no aparece la tarjeta:
 
 - GpuVM tiene que estar abierto (en la ventana o en la bandeja): la tarjeta sale de la app.
 - GpuVM necesita la contraseña de Windows de la VM; sin ella, la VM muestra un aviso que la pide.
@@ -56,15 +56,15 @@ El primer inicio instala Windows y el streaming, y después reinicia una vez. **
 
 ## La app dice que el servicio de GpuVM está detenido o falta
 
-La app corre sin permisos de administrador y le pide al servicio **GpuVM** el trabajo de Hyper-V. Con el servicio en **Manual**, inícialo con **Iniciar servicio**, o cámbialo a **Con GpuVM** en **Ajustes → Servicio** ([Ajustes](/gpuvm/docs/es/using-the-app/#ajustes)). Si falta (por ejemplo, tras una actualización fallida), **Reparar** lo vuelve a registrar después de un aviso de UAC; reinstalar GpuVM hace lo mismo.
+La app corre sin permisos de administrador y le pide al servicio **GpuVM** el trabajo de Hyper-V. Con el servicio en **Manual**, inícialo con **Iniciar servicio**, o cámbialo a **Con GpuVM** en **Ajustes → Servicio** ([Ajustes](/docs/es/using-the-app/#ajustes)). Si falta (por ejemplo, tras una actualización fallida), **Reparar** lo vuelve a registrar después de un aviso de UAC; reinstalar GpuVM hace lo mismo.
 
 ## No hay audio
 
-El sonido de la VM sale del altavoz USB de GpuVM, **Altavoces (GpuVM Audio)** ([Streaming](/gpuvm/docs/es/streaming/#audio)). **Encender y abrir** lo instala, lo reconecta y apunta Sunshine a él (`virtual_sink`) cuando falta, siempre que la contraseña de Windows de la VM esté guardada en GpuVM. Dentro de la VM, el estado del servidor está en `C:\ProgramData\GpuVM\Audio\status.json`. Sin la contraseña, al abrir la VM aparece un aviso. Si el perfil tiene `"audio": "none"`, no se instala ningún dispositivo de audio.
+El sonido de la VM sale del altavoz USB de GpuVM, **Altavoces (GpuVM Audio)** ([Streaming](/docs/es/streaming/#audio)). **Encender y abrir** lo instala, lo reconecta y apunta Sunshine a él (`virtual_sink`) cuando falta, siempre que la contraseña de Windows de la VM esté guardada en GpuVM. Dentro de la VM, el estado del servidor está en `C:\ProgramData\GpuVM\Audio\status.json`. Sin la contraseña, al abrir la VM aparece un aviso. Si el perfil tiene `"audio": "none"`, no se instala ningún dispositivo de audio.
 
 ## Falla el emparejamiento
 
-Usa **Volver a emparejar Moonlight** en el menú **⋯**, o `./gpuvm.ps1 connect -Name <vm> -Pair`. Si Moonlight no está instalado, instálalo ([Instalación](/gpuvm/docs/es/install/#instalar-moonlight)).
+Usa **Volver a emparejar Moonlight** en el menú **⋯**, o `./gpuvm.ps1 connect -Name <vm> -Pair`. Si Moonlight no está instalado, instálalo ([Instalación](/docs/es/install/#instalar-moonlight)).
 
 ## La VM no enciende por falta de memoria
 
@@ -73,8 +73,8 @@ La memoria fija de Hyper-V tiene que estar libre al encender la VM. Cierra progr
 ## Límites conocidos de GPU-P
 
 - **Pantalla:** la consola de Hyper-V no muestra la GPU; se ve con el streaming.
-- **Audio:** la VM no tiene tarjeta de sonido; el altavoz USB propio de GpuVM se la da, comprobado en una VM real a través de Moonlight ([laboratorio 012](/gpuvm/docs/es/labs/)).
+- **Audio:** la VM no tiene tarjeta de sonido; el altavoz USB propio de GpuVM se la da, comprobado en una VM real a través de Moonlight ([laboratorio 012](/docs/es/labs/)).
 - **Driver:** el invitado tiene que usar la misma versión que el host (ver arriba).
-- **Selección de GPU en Windows 10:** no se puede elegir cuál GPU recibe la VM. Si la integrada también es particionable, puede tocarle la equivocada. `check` lo advierte; desactiva la integrada en el Administrador de dispositivos antes de encender la VM ([laboratorio 001](/gpuvm/docs/es/labs/)).
+- **Selección de GPU en Windows 10:** no se puede elegir cuál GPU recibe la VM. Si la integrada también es particionable, puede tocarle la equivocada. `check` lo advierte; desactiva la integrada en el Administrador de dispositivos antes de encender la VM ([laboratorio 001](/docs/es/labs/)).
 - **Sin puntos de control ni estado guardado:** la VM se apaga directamente.
 - **Anti-cheat:** algunos sistemas anti-cheat bloquean las máquinas virtuales.

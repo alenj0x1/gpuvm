@@ -12,8 +12,8 @@
 
 <p align="center">
   <a href="https://github.com/alenj0x1/gpuvm/releases"><img src="https://img.shields.io/github/v/release/alenj0x1/gpuvm?include_prereleases&label=versi%C3%B3n" alt="Versión"></a>
-  <a href="https://alenj0x1.github.io/gpuvm/"><img src="https://img.shields.io/badge/sitio-alenj0x1.github.io%2Fgpuvm-2f5bd3" alt="Sitio web"></a>
-  <a href="https://alenj0x1.github.io/gpuvm/docs/es/"><img src="https://img.shields.io/badge/docs-Espa%C3%B1ol%20%7C%20English-2f5bd3" alt="Documentación"></a>
+  <a href="https://gpuvm.alenj.dev/"><img src="https://img.shields.io/badge/sitio-gpuvm.alenj.dev-2f5bd3" alt="Sitio web"></a>
+  <a href="https://gpuvm.alenj.dev/docs/es/"><img src="https://img.shields.io/badge/docs-Espa%C3%B1ol%20%7C%20English-2f5bd3" alt="Documentación"></a>
   <a href="CHANGELOG.es.md"><img src="https://img.shields.io/badge/cambios-%C3%BAltima%20versi%C3%B3n-6b6e75" alt="Registro de cambios"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/licencia-MIT-2f9e6a" alt="Licencia MIT"></a>
 </p>
@@ -89,7 +89,7 @@ GpuVM habla español e inglés: sigue el idioma de Windows, y **Ajustes → Apar
 
 ## Documentación
 
-Guía completa, referencia de la CLI, arquitectura y solución de problemas: **[alenj0x1.github.io/gpuvm/docs/es](https://alenj0x1.github.io/gpuvm/docs/es/)** (español e inglés).
+Guía completa, referencia de la CLI, arquitectura y solución de problemas: **[gpuvm.alenj.dev/docs/es](https://gpuvm.alenj.dev/docs/es/)** (español e inglés).
 
 ## Cómo funciona
 

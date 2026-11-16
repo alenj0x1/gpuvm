@@ -27,7 +27,7 @@ A regular Hyper-V VM only gets a basic display adapter, so games and GPU apps do
 
 3. **Start and open.** One click starts the VM, syncs the GPU driver if the host's changed, waits for Windows and Sunshine, fixes the session and the display, pairs Moonlight automatically and opens the stream, by default at your monitor's refresh rate. A VM that is already on shows its picture in about 7 to 10 seconds.
 
-4. **Use and measure.** You use the VM in Moonlight on the host, with the image the GPU renders, your keyboard, mouse and gamepads, about 11 ms behind playing locally at 120 FPS or more. Windows' administrator prompts in the VM are answered from a card on the host. The app shows live CPU, memory and GPU usage, and [labs](/gpuvm/docs/labs/) let you test changes with real measurements.
+4. **Use and measure.** You use the VM in Moonlight on the host, with the image the GPU renders, your keyboard, mouse and gamepads, about 11 ms behind playing locally at 120 FPS or more. Windows' administrator prompts in the VM are answered from a card on the host. The app shows live CPU, memory and GPU usage, and [labs](/docs/labs/) let you test changes with real measurements.
 
 </Steps>
 
@@ -37,7 +37,7 @@ A regular Hyper-V VM only gets a basic display adapter, so games and GPU apps do
 
 <CardGrid>
   <Card title="Desktop app" icon="laptop">
-    Tauri 2 + React, in English and Spanish, without administrator rights; a Windows service does the Hyper-V work. Every Hyper-V VM grouped in spaces, one-click start and open, each machine as a hologram in a glass cube you can decorate, a use per machine (games, movies, work), live usage, options, and a Library of profiles, templates, shared disks and ISOs. See [Using the app](/gpuvm/docs/using-the-app/).
+    Tauri 2 + React, in English and Spanish, without administrator rights; a Windows service does the Hyper-V work. Every Hyper-V VM grouped in spaces, one-click start and open, each machine as a hologram in a glass cube you can decorate, a use per machine (games, movies, work), live usage, options, and a Library of profiles, templates, shared disks and ISOs. See [Using the app](/docs/using-the-app/).
   </Card>
   <Card title="PowerShell module and CLI" icon="seti:powershell">
     The `GpuVM` module (PowerShell 7) does the work; `gpuvm.ps1` exposes it as short commands.
@@ -50,9 +50,9 @@ A regular Hyper-V VM only gets a basic display adapter, so games and GPU apps do
   </Card>
 </CardGrid>
 
-The current backend is **Hyper-V GPU-P**: the GPU is shared between the host and the VM, and the guest uses the same driver as the host. New backends can be added; see [Architecture](/gpuvm/docs/architecture/).
+The current backend is **Hyper-V GPU-P**: the GPU is shared between the host and the VM, and the guest uses the same driver as the host. New backends can be added; see [Architecture](/docs/architecture/).
 
 <CardGrid>
-  <LinkCard title="Requirements" href="/gpuvm/docs/requirements/" />
-  <LinkCard title="Install" href="/gpuvm/docs/install/" />
+  <LinkCard title="Requirements" href="/docs/requirements/" />
+  <LinkCard title="Install" href="/docs/install/" />
 </CardGrid>

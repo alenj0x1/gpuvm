@@ -66,7 +66,7 @@ Cada juego y modo guarda su mejor marca.
 
 1. **Nombre y espacio:** letras, números, `_` o guiones, hasta 40 caracteres, sin espacios (sugiere `win-gpu`), y el espacio donde va a estar. Mientras escribes el nombre, la cámara va a la etiqueta de serie de la placa y lo graba letra por letra.
 
-2. **Punto de partida:** **Instalar Windows** o **Desde plantilla** (si tienes [plantillas](#plantillas)), y un perfil: **Equilibrado** (`balanced`), **Máximo rendimiento** (`max-performance`, el predeterminado) o uno tuyo. El perfil llena todo lo de abajo, incluidos su ISO, sus apps y su tipo de uso; consulta [Perfiles](/gpuvm/docs/es/profiles/). Desde una plantilla la máquina queda lista en segundos y solo necesita el nombre; Windows, sus apps, el nivel de limpieza y la contraseña vienen de la plantilla.
+2. **Punto de partida:** **Instalar Windows** o **Desde plantilla** (si tienes [plantillas](#plantillas)), y un perfil: **Equilibrado** (`balanced`), **Máximo rendimiento** (`max-performance`, el predeterminado) o uno tuyo. El perfil llena todo lo de abajo, incluidos su ISO, sus apps y su tipo de uso; consulta [Perfiles](/docs/es/profiles/). Desde una plantilla la máquina queda lista en segundos y solo necesita el nombre; Windows, sus apps, el nivel de limpieza y la contraseña vienen de la plantilla.
 
 3. **Recursos:** hilos, memoria, parte de la GPU y disco. El disco llega hasta lo que cabe en la unidad con todos los discos de las máquinas llenos, dejando 20 GB para Windows.
 
@@ -140,7 +140,7 @@ Con la captura **Rápida** (la predeterminada), los avisos de administrador de W
 - Solo este equipo puede responder: un programa dentro de la máquina no puede aprobarse a sí mismo.
 - Si mientras tanto se abrió otro aviso, no se presiona nada y la tarjeta muestra el nuevo.
 - Necesita la [contraseña de Windows](#contraseña-de-windows) de la máquina.
-- Con la captura **Clásica** los avisos se ven en Moonlight como siempre y la tarjeta no aparece. Consulta [Modos de captura](/gpuvm/docs/es/streaming/#modos-de-captura).
+- Con la captura **Clásica** los avisos se ven en Moonlight como siempre y la tarjeta no aparece. Consulta [Modos de captura](/docs/es/streaming/#modos-de-captura).
 
 ## Pegar en la VM
 
@@ -184,7 +184,7 @@ Cómo muestra Moonlight la máquina y cómo la controlas:
 - **Abrir en** (con más de un monitor): **Como en Ajustes** sigue lo elegido en [Ajustes](#ajustes); el monitor principal de Windows, el que sea en ese momento; o un monitor por su nombre. Si el monitor elegido no está conectado, se abre en el principal.
 - **Captura:** cómo captura Sunshine la pantalla.
   - **Rápida** (la predeterminada): la imagen aparece unos 2,6 s después de conectar y también se ven los juegos en pantalla completa exclusiva. Los avisos de administrador de Windows se responden desde GpuVM ([Avisos de administrador](#avisos-de-administrador)).
-  - **Clásica:** los avisos de administrador se ven en Moonlight, pero la imagen puede tardar en aparecer al conectar y los juegos en pantalla completa exclusiva se ven en negro. Consulta [Streaming](/gpuvm/docs/es/streaming/#modos-de-captura).
+  - **Clásica:** los avisos de administrador se ven en Moonlight, pero la imagen puede tardar en aparecer al conectar y los juegos en pantalla completa exclusiva se ven en negro. Consulta [Streaming](/docs/es/streaming/#modos-de-captura).
 - **Avanzado** (haz clic para verlo):
   - **Códec:** **Automático** (Moonlight elige el mejor que tu equipo puede mostrar), H.264, HEVC o AV1. Si la imagen no aparece, vuelve a **Automático**.
   - **Calidad de imagen:** la tasa de bits en Mbps, hasta 150. Más calidad usa más red; al mínimo (**Automática**), Moonlight la ajusta a la resolución y los FPS.
@@ -267,7 +267,7 @@ La **Biblioteca** es una sola página con todas sus secciones y una barra arriba
 
 <Shot name="library" alt="La Biblioteca: el espacio de GpuVM en el disco y los perfiles como tarjetas con un cubo pequeño" />
 
-- **Perfiles:** los perfiles incluidos (marcados **Incluido**) y los tuyos, como tarjetas con un cubo pequeño de lo que dan. **Duplicar** crea uno a partir de otro; los tuyos también se pueden editar (**Editar**, con la máquina que crea al lado del formulario) y borrar. La última tarjeta, **Nuevo perfil**, crea uno. Cada uno guarda procesador, memoria, parte de la GPU, tamaño y tipo de disco (**Fijo** / **Dinámico**), imagen de Windows, apps por instalar, limpieza, el tipo de uso y cómo abre Moonlight (resolución, FPS, pantalla completa o ventana), sobre el perfil incluido en el que está **Basado en**. Consulta [Perfiles](/gpuvm/docs/es/profiles/).
+- **Perfiles:** los perfiles incluidos (marcados **Incluido**) y los tuyos, como tarjetas con un cubo pequeño de lo que dan. **Duplicar** crea uno a partir de otro; los tuyos también se pueden editar (**Editar**, con la máquina que crea al lado del formulario) y borrar. La última tarjeta, **Nuevo perfil**, crea uno. Cada uno guarda procesador, memoria, parte de la GPU, tamaño y tipo de disco (**Fijo** / **Dinámico**), imagen de Windows, apps por instalar, limpieza, el tipo de uso y cómo abre Moonlight (resolución, FPS, pantalla completa o ventana), sobre el perfil incluido en el que está **Basado en**. Consulta [Perfiles](/docs/es/profiles/).
 - **Plantillas:** consulta [Plantillas](#plantillas).
 - **Discos compartidos:** consulta [Discos compartidos](#discos-compartidos).
 - **Discos de máquinas:** el disco de cada máquina y los que quedaron sin máquina (**En uso** o **Libre**). **Crear una máquina con este disco** vuelve a crear una máquina con un disco que se conservó al eliminarla, con Windows y sus apps como estaban; los discos libres se pueden borrar (haz clic otra vez para confirmar y luego en el aviso de UAC; no se puede deshacer). Cada **Windows preparado** es Windows aplicado una vez desde un ISO y una edición (unos 12 GB): las máquinas nuevas con ese Windows se crean copiándolo, en más o menos un minuto. Borrarlo libera ese espacio; la próxima máquina con ese Windows lo vuelve a preparar.
