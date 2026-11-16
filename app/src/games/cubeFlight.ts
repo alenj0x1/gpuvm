@@ -1,4 +1,5 @@
 import type { GameDef, GameHost, GameInstance } from "./types";
+import { settledResize } from "./types";
 import { drawFigureThumb } from "../decor/figureGL";
 import { stickerImage } from "../decor/stickers";
 import { MACHINE_COLORS } from "../decor/store";
@@ -68,7 +69,8 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
   };
   resize();
-  const ro = new ResizeObserver(resize);
+  // Refit once the size settles, and draw again right away if nothing is running to do it.
+  const ro = settledResize(() => { resize(); if (!running) draw(0); });
   ro.observe(canvas);
 
   // The figures to shoot, drawn once on the GPU into small images (big enough for the frenzy's giant ones).

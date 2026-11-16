@@ -71,3 +71,11 @@ export function saveBest(id: string, score: number): boolean {
   try { localStorage.setItem(BEST + id, String(score)); } catch { /* no storage */ }
   return true;
 }
+
+/** Watches a game's canvas size and calls `fit` once it has settled. Resizing the canvas's bitmap clears it, so doing
+ *  it on every step of a drag (Home's panels) left the games gray and stuttering; meanwhile the last picture just
+ *  stretches with the box. */
+export function settledResize(fit: () => void, ms = 140) {
+  let timer = 0;
+  return new ResizeObserver(() => { clearTimeout(timer); timer = window.setTimeout(fit, ms); });
+}

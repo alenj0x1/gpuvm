@@ -1,4 +1,5 @@
 import type { GameDef, GameHost, GameInstance } from "./types";
+import { settledResize } from "./types";
 import { drawFigureThumb } from "../decor/figureGL";
 import { FIGURES } from "../decor/figures";
 import { stickerImage } from "../decor/stickers";
@@ -35,7 +36,8 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
   let W = 0, H = 0, dpr = 1;
   const resize = () => { dpr = Math.min(2, window.devicePixelRatio || 1); W = canvas.clientWidth; H = canvas.clientHeight; canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); };
   resize();
-  const ro = new ResizeObserver(resize);
+  // Refit once the size settles, and draw again right away if nothing is running to do it.
+  const ro = settledResize(() => { resize(); if (!running) draw(0); });
   ro.observe(canvas);
   const unit = () => Math.max(0.75, Math.min(1.3, H / 520));
 
