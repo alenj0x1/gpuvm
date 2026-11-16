@@ -355,3 +355,10 @@ html:not([data-world="blocks"]) [data-seg="time"] { display: none; }
 :root { --rot-1: #2f5bd3; --rot-2: #6a4fd2; --rot-3: #1d7f7c; --rot-4: #a8650f; --rot-5: #2f8550; }
 :root[data-mode="dark"] { --rot-1: #7d9cf0; --rot-2: #a796f2; --rot-3: #6ccfca; --rot-4: #e7b45e; --rot-5: #7dd19c; }
 @media (prefers-reduced-motion: reduce) { .rotor, .rotor > span { transition: none; } }
+/* On a phone each point puts its icon above its text, which then takes the whole width. */
+@media (max-width: 600px) {
+  .points li { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .points li > span { padding-top: 0; }
+}
+/* On a phone what's new is one column, whatever the number of cards. */
+@media (max-width: 640px) { .bento[data-cols] { grid-template-columns: minmax(0, 1fr); } }

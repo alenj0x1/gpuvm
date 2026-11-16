@@ -353,7 +353,16 @@ const scopedCss = appCss
   + `:host { display: block; background: none; color: var(--text); font-family: "Plus Jakarta Sans", system-ui, sans-serif; font-size: 14px; }
   .demo-root, .demo-lang { display: flex; flex-direction: column; gap: 16px; height: 100%; }
   .demo-root > .demo-lang > .main { padding: 0; overflow: visible; mask-image: none; }
-  .prompt-demo { height: 158px; }
+  .prompt-demo { min-height: 158px; }
+  /* In the demos, a group of options spans its row: each option takes an equal share of the width. */
+  .segment-row > .segmented { display: flex; width: 100%; }
+  .segment-row > .segmented > button { flex: 1 1 0; justify-content: center; min-width: 0; }
+  /* On a phone the cleanup's closing line (what is never touched) sits centered under the list. */
+  @media (max-width: 600px) { .levels-safe { flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 6px; }
+    .prompt-head strong, .prompt-name { white-space: normal; overflow: visible; text-overflow: clip; }
+    .opt-ctl { width: 100%; } .opt-ctl > .segmented { display: flex; width: 100%; } .opt-ctl > .segmented > button { flex: 1 1 0; justify-content: center; min-width: 0; } }
+  /* Narrow (a phone): the card grows with its text instead of letting it run out of the box. */
+  .prompt-demo .prompt-card { height: auto; min-height: 158px; }
   /* Narrow (a phone): option groups that don't fit in one row become a grid of equal cells. */
   .demo-root { container-type: inline-size; }
   @container (max-width: 560px) {
