@@ -44,7 +44,10 @@ function background(g: CanvasRenderingContext2D, w: number, h: number, world: Wo
     g.fillStyle = light ? "#ffffff" : "#e3e9ec";
     for (let k = 0; k < 5; k++) { const x = ((k * 260 - scroll * 0.2) % (w + 260) + w + 260) % (w + 260) - 130, y = 30 + (k * 47) % (h * 0.4), u = 14; g.fillRect(x, y, u * 6, u); g.fillRect(x + u, y - u, u * 3, u); }
     g.fillStyle = light ? "#9fc6a4" : "#5f8a6c";
-    for (let x = -((scroll * 0.35) % 60); x < w; x += 60) g.fillRect(x, h - 70 - ((Math.floor((x + scroll * 0.35) / 60) * 37) % 3) * 14, 60, 80);
+    // Each hill keeps its height by its place in the world (its index), never by where it is on screen: deriving it
+    // from the screen position made a hill switch heights from one frame to the next as it scrolled.
+    const hs = scroll * 0.35, first = Math.floor(hs / 60);
+    for (let k = 0; (k - 1) * 60 < w; k++) { const i = first + k, x = i * 60 - hs; g.fillRect(Math.round(x), h - 70 - (((i * 37) % 3) + 3) % 3 * 14, 61, 80); }
   } else {
     // The studio: the app's own gray with a faint grid going by.
     g.fillStyle = light ? "#f2f1ee" : "#161616"; g.fillRect(0, 0, w, h);

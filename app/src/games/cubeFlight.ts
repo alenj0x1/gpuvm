@@ -403,9 +403,10 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
       const off = scroll * 0.6;
       g.strokeStyle = host.light ? "#b9c9bf" : "#2c4a3d"; g.lineWidth = 2;
       for (let row = 0; row < H / 22 + 1; row++) {
-        const y = 11 + row * 22, seed = Math.floor((off + row * 997) / 400);
+        // Each trace keeps its length by its place in the world, so none jumps as it scrolls by.
+        const y = 11 + row * 22, sh = off + row * 137, first = Math.floor(sh / 400);
         g.beginPath();
-        for (let x = -((off + row * 137) % 400); x < W; x += 400) { const len = 180 + ((seed * 37 + row * 11) % 160); g.moveTo(x, y); g.lineTo(x + len, y); g.lineTo(x + len + 16, y + (row % 2 ? 16 : -16)); }
+        for (let k = 0; (k - 1) * 400 < W; k++) { const i = first + k, x = i * 400 - sh, len = 180 + ((((i * 37 + row * 11) % 160) + 160) % 160); g.moveTo(x, y); g.lineTo(x + len, y); g.lineTo(x + len + 16, y + (row % 2 ? 16 : -16)); }
         g.stroke();
       }
       g.fillStyle = host.light ? "#26292b" : "#1c2123";
