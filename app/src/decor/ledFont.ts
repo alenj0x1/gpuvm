@@ -14,7 +14,7 @@ const G: Record<string, string> = {
   U: "10001 10001 10001 10001 10001 10001 01110", V: "10001 10001 10001 10001 10001 01010 00100",
   W: "10001 10001 10001 10101 10101 10101 01010", X: "10001 10001 01010 00100 01010 10001 10001",
   Y: "10001 10001 01010 00100 00100 00100 00100", Z: "11111 00001 00010 00100 01000 10000 11111",
-  Ñ: "01010 00000 10001 11001 10101 10011 10001",
+  "\u00d1": "01010 00000 10001 11001 10101 10011 10001",
   0: "01110 10001 10011 10101 11001 10001 01110", 1: "00100 01100 00100 00100 00100 00100 01110",
   2: "01110 10001 00001 00010 00100 01000 11111", 3: "11111 00010 00100 00010 00001 10001 01110",
   4: "00010 00110 01010 10010 11111 00010 00010", 5: "11111 10000 11110 00001 00001 10001 01110",
@@ -37,7 +37,7 @@ const GLYPHS = new Map(Object.entries(G).map(([k, v]) => [k, v.split(" ").map((r
 export function ledColumns(text: string): boolean[][] {
   const cols: boolean[][] = [];
   for (const ch of text.toUpperCase()) {
-    const base = ch === "Ñ" ? ch : ch.normalize("NFD").replace(/\p{M}/gu, "");
+    const base = ch === "\u00d1" ? ch : ch.normalize("NFD").replace(/\p{M}/gu, "");
     const g = GLYPHS.get(base) ?? GLYPHS.get(" ")!;
     for (let c = 0; c < 5; c++) cols.push(g.map((row) => row[c]));
     cols.push([false, false, false, false, false, false, false]);

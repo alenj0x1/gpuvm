@@ -4,34 +4,35 @@ import {
   IconActivity, IconAd, IconCheck, IconPointFilled, IconBolt, IconBrandWindows, IconEyeOff, IconTrash, IconBrandBing, IconBrandOnedrive, IconBrandTeams, IconBug, IconCards, IconHistory, IconLayoutDashboard, IconMap,
   IconMovie, IconNews, IconPlayerPlay, IconPuzzle, IconSparkles, IconSpeakerphone, type Icon,
 } from "@tabler/icons-react";
+import { t } from "./i18n";
 
 /** How each cleanup item looks: an icon and a color, a short name and one line that says what it is. Several pieces
  *  can stand for one item (the preinstalled apps). Items the UI doesn't know yet get a neutral piece. */
-export const CLEANUP_LOOK: Record<string, { pieces: { icon: Icon; color: string }[]; name: string; line: string; done: string }> = {
-  "telemetry-minimum": { pieces: [{ icon: IconActivity, color: "#c2410c" }], name: "Datos de diagnóstico", line: "Windows envía datos de uso a Microsoft", done: "Windows envía lo mínimo a Microsoft" },
-  advertising: { pieces: [{ icon: IconAd, color: "#b45309" }], name: "ID de publicidad", line: "Anuncios hechos con tus datos", done: "Sin anuncios hechos con tus datos" },
-  "activity-history": { pieces: [{ icon: IconHistory, color: "#c2410c" }], name: "Historial de actividad", line: "Tu actividad se envía a la nube", done: "Tu actividad se queda en la máquina" },
-  suggestions: { pieces: [{ icon: IconSpeakerphone, color: "#be185d" }], name: "Apps promocionadas", line: "Sugerencias y apps que se instalan solas", done: "Sin sugerencias ni apps que se instalen solas" },
-  "web-search": { pieces: [{ icon: IconBrandBing, color: "#0e7490" }], name: "Bing en Inicio", line: "Tus búsquedas del equipo van a la web", done: "Tus búsquedas se quedan en el equipo" },
-  "copilot-recall": { pieces: [{ icon: IconSparkles, color: "#7c3aed" }], name: "Copilot y Recall", line: "Asistente y capturas de pantalla con IA", done: "Sin asistente ni capturas de pantalla" },
+export const CLEANUP_LOOK: Record<string, { pieces: { icon: Icon; color: string }[]; readonly name: string; readonly line: string; readonly done: string }> = {
+  "telemetry-minimum": { pieces: [{ icon: IconActivity, color: "#c2410c" }], get name() { return t("Datos de diagnóstico"); }, get line() { return t("Windows envía datos de uso a Microsoft"); }, get done() { return t("Windows envía lo mínimo a Microsoft"); } },
+  advertising: { pieces: [{ icon: IconAd, color: "#b45309" }], get name() { return t("ID de publicidad"); }, get line() { return t("Anuncios hechos con tus datos"); }, get done() { return t("Sin anuncios hechos con tus datos"); } },
+  "activity-history": { pieces: [{ icon: IconHistory, color: "#c2410c" }], get name() { return t("Historial de actividad"); }, get line() { return t("Tu actividad se envía a la nube"); }, get done() { return t("Tu actividad se queda en la máquina"); } },
+  suggestions: { pieces: [{ icon: IconSpeakerphone, color: "#be185d" }], get name() { return t("Apps promocionadas"); }, get line() { return t("Sugerencias y apps que se instalan solas"); }, get done() { return t("Sin sugerencias ni apps que se instalen solas"); } },
+  "web-search": { pieces: [{ icon: IconBrandBing, color: "#0e7490" }], get name() { return t("Bing en Inicio"); }, get line() { return t("Tus búsquedas del equipo van a la web"); }, get done() { return t("Tus búsquedas se quedan en el equipo"); } },
+  "copilot-recall": { pieces: [{ icon: IconSparkles, color: "#7c3aed" }], get name() { return t("Copilot y Recall"); }, get line() { return t("Asistente y capturas de pantalla con IA"); }, get done() { return t("Sin asistente ni capturas de pantalla"); } },
   "store-apps": {
     pieces: [{ icon: IconNews, color: "#dc2626" }, { icon: IconCards, color: "#15803d" }, { icon: IconMovie, color: "#7e22ce" }, { icon: IconBrandTeams, color: "#4f46e5" }],
-    name: "Apps preinstaladas", line: "Noticias, Clima, Solitario, Clipchamp, Teams…", done: "Windows llega sin apps preinstaladas",
+    get name() { return t("Apps preinstaladas"); }, get line() { return t("Noticias, Clima, Solitario, Clipchamp, Teams…"); }, get done() { return t("Windows llega sin apps preinstaladas"); },
   },
-  onedrive: { pieces: [{ icon: IconBrandOnedrive, color: "#1d4ed8" }], name: "OneDrive", line: "Se instala y se vuelve a instalar solo", done: "Quitado, no vuelve a instalarse" },
-  widgets: { pieces: [{ icon: IconLayoutDashboard, color: "#0369a1" }], name: "Widgets", line: "Noticias e intereses en la barra de tareas", done: "La barra de tareas queda limpia" },
-  "telemetry-services": { pieces: [{ icon: IconBug, color: "#c2410c" }], name: "Envío de errores", line: "Servicios que reportan a Microsoft", done: "Los errores no se reportan a Microsoft" },
-  "unneeded-services": { pieces: [{ icon: IconMap, color: "#475569" }], name: "Servicios sin uso", line: "Mapas, ubicación, fax, modo demo", done: "Mapas, ubicación, fax y modo demo apagados" },
-  "background-apps": { pieces: [{ icon: IconPlayerPlay, color: "#475569" }], name: "Apps de fondo", line: "Apps de la Store corriendo siempre", done: "Las apps de la Store solo corren al abrirlas" },
+  onedrive: { pieces: [{ icon: IconBrandOnedrive, color: "#1d4ed8" }], get name() { return t("OneDrive"); }, get line() { return t("Se instala y se vuelve a instalar solo"); }, get done() { return t("Quitado, no vuelve a instalarse"); } },
+  widgets: { pieces: [{ icon: IconLayoutDashboard, color: "#0369a1" }], get name() { return t("Widgets"); }, get line() { return t("Noticias e intereses en la barra de tareas"); }, get done() { return t("La barra de tareas queda limpia"); } },
+  "telemetry-services": { pieces: [{ icon: IconBug, color: "#c2410c" }], get name() { return t("Envío de errores"); }, get line() { return t("Servicios que reportan a Microsoft"); }, get done() { return t("Los errores no se reportan a Microsoft"); } },
+  "unneeded-services": { pieces: [{ icon: IconMap, color: "#475569" }], get name() { return t("Servicios sin uso"); }, get line() { return t("Mapas, ubicación, fax, modo demo"); }, get done() { return t("Mapas, ubicación, fax y modo demo apagados"); } },
+  "background-apps": { pieces: [{ icon: IconPlayerPlay, color: "#475569" }], get name() { return t("Apps de fondo"); }, get line() { return t("Apps de la Store corriendo siempre"); }, get done() { return t("Las apps de la Store solo corren al abrirlas"); } },
 };
 const UNKNOWN = { icon: IconPuzzle, color: "#525252" };
 
 /** Each cleanup level's icon and what it is about, in a few words. */
-export const LEVEL_LOOK: Record<string, { icon: React.ReactNode; tagline: string }> = {
-  none: { icon: <IconBrandWindows size={18} />, tagline: "Como viene" },
-  privacy: { icon: <IconEyeOff size={18} />, tagline: "Menos datos a Microsoft" },
-  apps: { icon: <IconTrash size={18} />, tagline: "Quita lo preinstalado" },
-  minimal: { icon: <IconBolt size={18} />, tagline: "Solo lo necesario" },
+export const LEVEL_LOOK: Record<string, { icon: React.ReactNode; readonly tagline: string }> = {
+  none: { icon: <IconBrandWindows size={18} />, get tagline() { return t("Como viene"); } },
+  privacy: { icon: <IconEyeOff size={18} />, get tagline() { return t("Menos datos a Microsoft"); } },
+  apps: { icon: <IconTrash size={18} />, get tagline() { return t("Quita lo preinstalado"); } },
+  minimal: { icon: <IconBolt size={18} />, get tagline() { return t("Solo lo necesario"); } },
 };
 
 interface Piece { item: string; color: string; image: HTMLImageElement }

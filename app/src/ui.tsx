@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import { IconAlertTriangle, IconCheck, IconChevronDown, IconCircleCheck, IconCircleX, IconX } from "@tabler/icons-react";
 import { createPortal } from "react-dom";
+import { t, translateModule } from "./i18n";
 
 interface SliderProps {
   value: number;
@@ -246,11 +247,11 @@ export function useToasts() {
 export function Toasts({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: number) => void }) {
   return (
     <div className="toasts" aria-live="polite">
-      {toasts.map((t) => (
-        <div key={t.id} className={`toast ${t.kind}`}>
-          {t.kind === "error" ? <IconCircleX size={18} /> : t.kind === "warning" ? <IconAlertTriangle size={18} /> : <IconCircleCheck size={18} />}
-          <span style={{ flex: 1, lineHeight: 1.45 }}>{t.text}</span>
-          <button className="icon-btn" style={{ width: 24, height: 24 }} aria-label="Cerrar" onClick={() => dismiss(t.id)}><IconX size={14} /></button>
+      {toasts.map((toast) => (
+        <div key={toast.id} className={`toast ${toast.kind}`}>
+          {toast.kind === "error" ? <IconCircleX size={18} /> : toast.kind === "warning" ? <IconAlertTriangle size={18} /> : <IconCircleCheck size={18} />}
+          <span style={{ flex: 1, lineHeight: 1.45 }}>{toast.text}</span>
+          <button className="icon-btn" style={{ width: 24, height: 24 }} aria-label={t("Cerrar")} onClick={() => dismiss(toast.id)}><IconX size={14} /></button>
         </div>
       ))}
     </div>
@@ -264,16 +265,16 @@ export function CheckMark() {
 
 /** Strips technical prefixes from PowerShell/Tauri errors. */
 export function humanError(e: unknown) {
-  return String(e).replace(/^(Error|Exception|RuntimeException):\s*/i, "").trim();
+  return translateModule(String(e).replace(/^(Error|Exception|RuntimeException):\s*/i, "").trim());
 }
 
 export function formatUptime(seconds: number) {
   if (seconds <= 0) return "—";
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
-  if (h === 0) return `${m} min`;
-  if (h < 24) return `${h} h ${m} min`;
-  return `${Math.floor(h / 24)} d ${h % 24} h`;
+  if (h === 0) return t("{m} min", { m });
+  if (h < 24) return t("{h} h {m} min", { h, m });
+  return t("{d} d {h} h", { d: Math.floor(h / 24), h: h % 24 });
 }
 
 export const stateLabel: Record<string, string> = {
@@ -287,6 +288,13 @@ export const stateLabel: Record<string, string> = {
   Pausing: "Pausando",
   Resuming: "Reanudando",
 };
+
+/** The machine state in the current language: stateText("Running") is "Encendida" or "On". Prefer it to stateLabel,
+ *  which stays in Spanish (it is read once, at import). */
+export const stateText = (state: string) => ({
+  Running: t("Encendida"), Off: t("Apagada"), Paused: t("En pausa"), Saved: t("Guardada"), Starting: t("Encendiendo"),
+  Stopping: t("Apagando"), Saving: t("Guardando estado"), Pausing: t("Pausando"), Resuming: t("Reanudando"),
+} as Record<string, string>)[state] ?? state;
 
 /** For a box that scrolls: "fade-start" / "fade-end" while there is hidden content on that side, so the edge fades. */
 export function useScrollFade<T extends HTMLElement>(axis: "x" | "y" = "y") {

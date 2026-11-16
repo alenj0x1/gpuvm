@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 // The figures that stand on top of the cube, built from toy bricks: each one is a set of colored blocks on a grid,
 // with a stud on every block whose top is free, like building toys. A new figure is a few calls on the builder
 // (fill a box, set a block), so adding more is quick. figureGL.ts turns them into meshes and draws them on the GPU.
@@ -25,7 +26,7 @@ const WHITE = "#f6f2ea", INK = "#2a2522", PINK = "#f29aa8", RED = "#d8443c", GOL
 
 export const FIGURES: FigureDef[] = [
   {
-    id: "lucky-cat", name: "Gato de la suerte",
+    id: "lucky-cat", get name() { return t("Gato de la suerte"); },
     build: (b) => {
       b.box(-4, 4, 0, 0, -3, 3, RED);
       for (const [x, z] of [[-4, -3], [4, -3], [-4, 3], [4, 3]]) b.set(x, 0, z, GOLD);
@@ -46,7 +47,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "succulent", name: "Planta",
+    id: "succulent", get name() { return t("Planta"); },
     build: (b) => {
       b.box(-3, 3, 0, 3, -3, 3, "#c2714a");
       b.box(-4, 4, 4, 4, -4, 4, "#d27f56");
@@ -61,7 +62,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "duck", name: "Patito",
+    id: "duck", get name() { return t("Patito"); },
     build: (b) => {
       const y = "#ffd23f";
       b.box(-3, 3, 0, 3, -3, 3, y);
@@ -76,7 +77,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "robot", name: "Robot",
+    id: "robot", get name() { return t("Robot"); },
     build: (b) => {
       const shell = "#e3e6eb", joint = "#9aa0a8", dark = "#2c3442";
       b.box(-3, -1, 0, 0, -1, 2, "#8c939e"); b.box(1, 3, 0, 0, -1, 2, "#8c939e");
@@ -96,7 +97,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "cactus", name: "Cactus",
+    id: "cactus", get name() { return t("Cactus"); },
     build: (b) => {
       const g = "#5f9e6e", dg = "#4b8559";
       b.box(-2, 2, 0, 2, -2, 2, "#ece6da");
@@ -110,7 +111,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "mushroom", name: "Hongos",
+    id: "mushroom", get name() { return t("Hongos"); },
     build: (b) => {
       const red = "#d9473f", spot = "#fbf6ec";
       b.box(-4, 4, 0, 0, -3, 3, "#7cb36a");
@@ -126,7 +127,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "gamepad", name: "Control",
+    id: "gamepad", get name() { return t("Control"); },
     build: (b) => {
       const body = "#3a3d44";
       b.box(-4, 4, 0, 1, -1, 1, body);
@@ -139,7 +140,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "mug", name: "Taza",
+    id: "mug", get name() { return t("Taza"); },
     build: (b) => {
       b.box(-3, 3, 0, 0, -3, 3, "#ece6da");
       b.box(-2, 2, 1, 5, -2, 2, "$");
@@ -150,7 +151,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "penguin", name: "Pingüino",
+    id: "penguin", get name() { return t("Pingüino"); },
     build: (b) => {
       const k = "#2c2f36";
       b.set(-1, 0, 3, ORANGE); b.set(1, 0, 3, ORANGE);
@@ -164,7 +165,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "rocket", name: "Cohete",
+    id: "rocket", get name() { return t("Cohete"); },
     build: (b) => {
       b.set(0, 0, 0, "#ffd34d"); b.set(0, 1, 0, ORANGE);
       b.box(-1, 1, 2, 9, -1, 1, WHITE);
@@ -177,7 +178,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "dog", name: "Perro",
+    id: "dog", get name() { return t("Perro"); },
     build: (b) => {
       const brown = "#b07b4b", cream = "#f3d9b1", ear = "#7a5233";
       b.box(-2, 2, 0, 2, -3, 1, brown);
@@ -195,7 +196,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "cat", name: "Gato",
+    id: "cat", get name() { return t("Gato"); },
     build: (b) => {
       const gray = "#8d9098", dark = "#666971";
       b.box(-2, 2, 0, 4, -2, 1, gray);
@@ -212,7 +213,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "spider", name: "Araña",
+    id: "spider", get name() { return t("Araña"); },
     build: (b) => {
       const body = "#3f3752", leg = "#2e2840";
       b.box(-2, 2, 1, 3, -3, -1, body);
@@ -227,7 +228,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "magic-cube", name: "Cubo mágico",
+    id: "magic-cube", get name() { return t("Cubo mágico"); },
     build: (b) => {
       // Ten blocks a side: a black frame and lines, and three by three tiles of two by two blocks on each face,
       // mixed as if it were half solved.
@@ -246,7 +247,7 @@ export const FIGURES: FigureDef[] = [
   },
   // Pastel animals, sitting or standing, with dark eyes and a little blush.
   {
-    id: "bunny", name: "Conejo",
+    id: "bunny", get name() { return t("Conejo"); },
     build: (b) => {
       const c = "#ebe5f6", inner = "#f6bfd2", belly = "#fbf8ff";
       b.box(-2, -1, 0, 0, 0, 2, belly); b.box(1, 2, 0, 0, 0, 2, belly);
@@ -262,7 +263,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "bear", name: "Oso",
+    id: "bear", get name() { return t("Oso"); },
     build: (b) => {
       const c = "#e9b9a3", light = "#f8e4d6";
       b.box(-2, -1, 0, 1, 0, 1, c); b.box(1, 2, 0, 1, 0, 1, c);
@@ -279,7 +280,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "unicorn", name: "Unicornio",
+    id: "unicorn", get name() { return t("Unicornio"); },
     build: (b) => {
       const c = "#fbf8ff", lilac = "#c9b5f0", pink = "#f6b9d3", mint = "#b5e8d5", hoof = "#c9b5f0";
       for (const [x, z] of [[-2, -3], [2, -3], [-2, 1], [2, 1]]) { b.box(x, x, 1, 2, z, z, c); b.set(x, 0, z, hoof); }
@@ -297,7 +298,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "tiger", name: "Tigre",
+    id: "tiger", get name() { return t("Tigre"); },
     build: (b) => {
       const o = "#f4b37a", d = "#c9824a", w = "#fff4e6";
       b.box(-2, 2, 0, 4, -2, 1, o);
@@ -315,7 +316,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "fawn", name: "Cervatillo",
+    id: "fawn", get name() { return t("Cervatillo"); },
     build: (b) => {
       const c = "#dcab82", spot = "#fbf3e8", hoof = "#7a5233";
       for (const [x, z] of [[-2, -3], [2, -3], [-2, 1], [2, 1]]) { b.box(x, x, 1, 2, z, z, c); b.set(x, 0, z, hoof); }
@@ -332,7 +333,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "bonsai", name: "Bonsái",
+    id: "bonsai", get name() { return t("Bonsái"); },
     build: (b) => {
       b.box(-4, 4, 0, 1, -2, 2, "#3f4a5c");
       b.box(-3, 3, 2, 2, -1, 1, "#5a3d2b");

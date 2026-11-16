@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { inTauri } from "./api";
+import { resolveLang, setLang, t, type LangPref } from "./i18n";
 
 // App preferences, kept in localStorage. The close, quit and service behaviors are also handed to the Rust side,
 // which decides what the window's close button and quitting do.
@@ -11,13 +12,14 @@ export type ServicePref = "app" | "windows" | "manual";
 /** The accent for actions, selection and focus. */
 export type AccentPref = "blue" | "violet" | "teal" | "green" | "amber";
 
-/** Each accent as it looks in light and in dark (the same values as styles.css). */
+/** Each accent as it looks in light and in dark (the same values as styles.css). `name` is a getter, so it comes out in
+ *  the current language wherever it is read. */
 export const ACCENTS: { id: AccentPref; name: string; light: string; dark: string }[] = [
-  { id: "blue", name: "Azul", light: "#2f5bd3", dark: "#7d9cf0" },
-  { id: "violet", name: "Violeta", light: "#6a4fd2", dark: "#a796f2" },
-  { id: "teal", name: "Turquesa", light: "#1d7f7c", dark: "#6ccfca" },
-  { id: "green", name: "Verde", light: "#2f8550", dark: "#7dd19c" },
-  { id: "amber", name: "Ámbar", light: "#a8650f", dark: "#e7b45e" },
+  { id: "blue", get name() { return t("Azul"); }, light: "#2f5bd3", dark: "#7d9cf0" },
+  { id: "violet", get name() { return t("Violeta"); }, light: "#6a4fd2", dark: "#a796f2" },
+  { id: "teal", get name() { return t("Turquesa"); }, light: "#1d7f7c", dark: "#6ccfca" },
+  { id: "green", get name() { return t("Verde"); }, light: "#2f8550", dark: "#7dd19c" },
+  { id: "amber", get name() { return t("Ámbar"); }, light: "#a8650f", dark: "#e7b45e" },
 ];
 
 export interface Prefs {
@@ -28,10 +30,12 @@ export interface Prefs {
   /** The monitor VMs open on unless a VM has its own: a monitor's id or "primary". */
   monitor: string;
   accent: AccentPref;
+  /** The app's language: Windows' (Spanish if Windows is in Spanish, English otherwise), Spanish or English. */
+  lang: LangPref;
 }
 
 const KEY = "gpuvm.prefs";
-const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "keep", service: "app", monitor: "primary", accent: "blue" };
+const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "keep", service: "app", monitor: "primary", accent: "blue", lang: "system" };
 const EVENT = "gpuvm-prefs";
 const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
 
@@ -57,6 +61,14 @@ async function applyClose(close: ClosePref) {
   await invoke("set_close_to_tray", { enabled: close === "tray" }).catch(() => {});
 }
 
+async function applyLang(pref: LangPref) {
+  const lang = resolveLang(pref);
+  setLang(lang);
+  if (!inTauri) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("set_language", { lang }).catch(() => {});
+}
+
 async function applyVmsOnQuit(pref: VmsOnQuitPref) {
   if (!inTauri) return;
   const { invoke } = await import("@tauri-apps/api/core");
@@ -77,6 +89,7 @@ export function savePrefs(change: Partial<Prefs>) {
   if (change.close) applyClose(next.close);
   if (change.vmsOnQuit) applyVmsOnQuit(next.vmsOnQuit);
   if (change.service) applyService(next.service);
+  if (change.lang) applyLang(next.lang);
   window.dispatchEvent(new Event(EVENT));
 }
 
@@ -88,6 +101,7 @@ export function initPrefs() {
   applyClose(prefs.close);
   applyVmsOnQuit(prefs.vmsOnQuit);
   applyService(prefs.service);
+  applyLang(prefs.lang);
   systemDark.addEventListener("change", () => {
     if (readPrefs().theme === "system") { applyTheme("system"); window.dispatchEvent(new Event(EVENT)); }
   });

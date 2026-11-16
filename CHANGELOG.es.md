@@ -9,6 +9,8 @@ Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (es
 ## [Sin publicar]
 
 ### Agregado
+- **Inglés.** GpuVM habla inglés además de español. **Ajustes → Apariencia → Idioma** sigue al de Windows (español si Windows está en español, inglés si no) o queda fijo; todas las pantallas, el menú de la bandeja y lo que informa el módulo (pasos, avisos y errores) cambian a la vez.
+- **Reordenar arrastrando.** Arrastra una máquina en la barra lateral a otro lugar, en su espacio o en otro: las demás le hacen lugar mientras pasa y se ve atenuada donde caería. Los espacios se reordenan igual, arrastrando su nombre.
 - **Logo nuevo.** Un chip de GPU dividido en cuatro con una parte en color: la parte de la GPU que recibe cada máquina. Es el ícono de la app, del instalador y el de la barra lateral.
 - **Color de énfasis.** En **Ajustes** se elige el color (azul, violeta, turquesa, verde o ámbar), cada muestra mitad clara y mitad oscura; el cambio de tema claro u oscuro también está ahí.
 - **Elegir el usuario de Windows** al crear una máquina (antes siempre era `gpuvm`), con aviso al escribir si Windows reserva ese nombre.
@@ -50,9 +52,12 @@ Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (es
   - Sin máquinas, Inicio muestra una máquina vacía en el cubo con lo que la Biblioteca ya tiene listo y **Crear máquina**; una Biblioteca vacía muestra en cada sección la tarjeta para agregar el primero.
   - Crear una máquina es un diálogo grande: secciones a la izquierda y un resumen siempre a la vista a la derecha. Un perfil llena todo, y lo que se cambie se puede guardar como perfil nuevo.
 - **El tamaño de los discos cuenta el espacio prometido a las demás máquinas.** Un disco dinámico crece hasta su tamaño a medida que la máquina escribe, así que el espacio libre de la unidad no era el límite real: se podía dar a varias máquinas más de lo que cabe. Crear una máquina, el control **Disco** de un perfil y **Opciones → Disco** ahora llegan hasta lo que cabe con todos los discos de esa unidad llenos, dejando 20 GB para Windows. **Opciones** muestra una barra con el disco de esta máquina, lo reservado para las demás y lo que quedaría libre. El módulo suma `Get-GpuVMDiskBudget`, `Get-GpuVMHostInfo` lo devuelve como `disk` y `Get-GpuVMOverview` como `options.diskBudget`.
+- **El mundo de bloques sigue fluido con la cámara baja.** Las tachuelas de la base se dibujan en la GPU de una vez (miles cerca del suelo), así que girar la cámara a ras del piso ya no da tirones.
+- **Un modo claro más limpio.** El texto secundario se lee mejor sobre blanco, los banners se notan más, el hover y la selección en listas son un blanco apenas gris, las opciones van sin líneas entre ellas, lo que va debajo de una opción usa todo el ancho de la tarjeta, los íconos de máquina son tonos de su propio color, los mosaicos y los stickers van sin borde gris y las esquinas del cubo son cuadradas.
 
 ### Corregido
 - **Los menús abiertos dentro de un diálogo se ven encima de él.**
+- **El nombre vuelve a grabarse en la placa** mientras lo escribes al crear una máquina, y el diálogo de cambiar nombre queda al lado del cubo en vez de debajo.
 
 ## [0.7.0] - 2026-11-09
 

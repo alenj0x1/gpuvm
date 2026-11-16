@@ -234,15 +234,30 @@ fn show_main(app: &AppHandle) {
     }
 }
 
-/// Tray icon with "Abrir GpuVM" and "Salir"; a left click opens the window.
+/// The app's language for the few texts drawn by Rust (the tray menu): false Spanish, true English.
+static ENGLISH: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The app's language changed: the tray menu follows it.
+#[tauri::command]
+fn set_language(app: AppHandle, lang: String) -> Result<(), String> {
+    ENGLISH.store(lang == "en", Ordering::Relaxed);
+    if app.tray_by_id(TRAY_ID).is_some() {
+        app.remove_tray_by_id(TRAY_ID);
+        ensure_tray(&app).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Tray icon with "Abrir GpuVM" and "Salir" (or their English); a left click opens the window.
 fn ensure_tray(app: &AppHandle) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
     if app.tray_by_id(TRAY_ID).is_some() {
         return Ok(());
     }
-    let show = MenuItem::with_id(app, "show", "Abrir GpuVM", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Salir", true, None::<&str>)?;
+    let en = ENGLISH.load(Ordering::Relaxed);
+    let show = MenuItem::with_id(app, "show", if en { "Open GpuVM" } else { "Abrir GpuVM" }, true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", if en { "Quit" } else { "Salir" }, true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
     let mut tray = TrayIconBuilder::with_id(TRAY_ID)
         .tooltip("GpuVM")
@@ -332,7 +347,7 @@ pub fn run() {
             prompt::start(app.handle().clone());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![ps, job, prompt::admin_prompts, prompt::admin_prompt_answered, open_console, repair_service, relaunch_as_admin, service_status, start_service, stop_service, set_service_mode, set_service_startup, set_close_to_tray, set_stop_vms_on_quit])
+        .invoke_handler(tauri::generate_handler![ps, job, prompt::admin_prompts, prompt::admin_prompt_answered, open_console, repair_service, relaunch_as_admin, service_status, start_service, stop_service, set_service_mode, set_service_startup, set_close_to_tray, set_stop_vms_on_quit, set_language])
         .build(tauri::generate_context!())
         .expect("failed to start GpuVM")
         .run(|app, event| {

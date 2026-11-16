@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { normalizeAmbient, type AmbientId, type AmbientTime } from "./ambient";
+import { getLang, t } from "./i18n";
 
 // Spaces group machines by what they are for (work, games, AI tests…), and each one has its own ambient: the place
 // where its machines float (a constellation, a neon city, the ocean, Mars…). Kept in localStorage like a machine's
@@ -19,11 +20,16 @@ export interface Space {
 export const MAIN_SPACE = "main";
 const KEY = "gpuvm.spaces";
 const EVENT = "gpuvm-spaces";
-const DEFAULT: Space[] = [{ id: MAIN_SPACE, name: "Mis máquinas", ambient: "studio", machines: [] }];
+// The first space's name until someone renames it: shown in the language of the app (whichever one it was saved in).
+const DEFAULT_NAMES = ["Mis m\u00e1quinas", "My machines"];
+const defaults = (): Space[] => [{ id: MAIN_SPACE, name: t("Mis máquinas"), ambient: "studio", machines: [] }];
 
 let cache: Space[] | null = null;
+let cacheLang = getLang();
 export function readSpaces(): Space[] {
-  if (cache) return cache;
+  if (cache && cacheLang === getLang()) return cache;
+  cacheLang = getLang();
+  const DEFAULT = defaults();
   let list = DEFAULT;
   try {
     const raw = localStorage.getItem(KEY);
@@ -33,6 +39,7 @@ export function readSpaces(): Space[] {
     }
   } catch { /* no storage or bad data */ }
   if (!list.some((s) => s.id === MAIN_SPACE)) list = [DEFAULT[0], ...list];
+  list = list.map((s) => (s.id === MAIN_SPACE && DEFAULT_NAMES.includes(s.name) ? { ...s, name: DEFAULT[0].name } : s));
   cache = list;
   return list;
 }
@@ -68,7 +75,7 @@ const newId = () => Math.random().toString(36).slice(2, 9);
 /** Creates or changes a space; the machines listed leave whatever space they were in. */
 export function saveSpace(s: Omit<Space, "id"> & { id?: string }): Space {
   const id = s.id ?? newId();
-  const next: Space = { id, name: s.name.trim() || "Espacio", ambient: s.ambient, time: s.time, machines: [...new Set(s.machines)] };
+  const next: Space = { id, name: s.name.trim() || t("Espacio"), ambient: s.ambient, time: s.time, machines: [...new Set(s.machines)] };
   const others = readSpaces().filter((x) => x.id !== id).map((x) => ({ ...x, machines: x.machines.filter((m) => !next.machines.includes(m)) }));
   const old = readSpaces().findIndex((x) => x.id === id);
   const list = [...others];

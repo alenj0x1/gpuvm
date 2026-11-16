@@ -6,7 +6,8 @@ import { MAIN_SPACE, deleteSpace, readSpaces, saveSpace, spaceOf, type Space } f
 import { MachineCube, cubeOf } from "./MachineCube";
 import { MachineIcon } from "./machineIcon";
 import { randomMachine } from "./decor/random";
-import { CheckMark, Segmented, stateLabel, useScrollFade } from "./ui";
+import { CheckMark, Segmented, stateText, useScrollFade } from "./ui";
+import { t, tn } from "./i18n";
 
 /** Creating or editing a space: its name, its ambient and which machines are in it, with the real space beside it,
  *  already in the chosen ambient, so it is seen before it is saved. */
@@ -28,7 +29,7 @@ export function SpaceDialog({ space, vms, onClose, onSaved, initialMachines = []
   const [bodyRef, bodyFade] = useScrollFade<HTMLDivElement>();
   const trimmed = name.trim();
   const taken = readSpaces().some((s) => s.id !== space?.id && s.name.trim().toLowerCase() === trimmed.toLowerCase());
-  const nameError = taken ? "Ya hay un espacio con ese nombre." : trimmed.length > 32 ? "Hasta 32 caracteres." : "";
+  const nameError = taken ? t("Ya hay un espacio con ese nombre.") : trimmed.length > 32 ? t("Hasta {n} caracteres.", { n: 32 }) : "";
   const valid = !!trimmed && !nameError;
   const dirty = trimmed !== (space?.name ?? "") || ambient !== normalizeAmbient(space?.ambient ?? "board") || time !== (space?.time ?? "day") || picked.join() !== (space ? picked.join() : initialMachines.join());
   const toggle = (n: string) => setPicked((p) => (p.includes(n) ? p.filter((x) => x !== n) : [...p, n]));
@@ -48,27 +49,28 @@ export function SpaceDialog({ space, vms, onClose, onSaved, initialMachines = []
   const shown = vms.filter((v) => picked.includes(v.name));
   const sample = useMemo(randomMachine, []);
   const hero = shown[0];
+  const mainName = readSpaces().find((s) => s.id === MAIN_SPACE)?.name ?? "";
 
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && !dirty && onClose()}>
-      <div className="dialog wide space-dialog" role="dialog" aria-modal="true" aria-label={editing ? `Editar ${space!.name}` : "Nuevo espacio"}>
+      <div className="dialog wide space-dialog" role="dialog" aria-modal="true" aria-label={editing ? t("Editar {name}", { name: space!.name }) : t("Nuevo espacio")}>
         <div className="dialog-head">
           <span className="space-dialog-icon">{(() => { const I = ambientInfo(ambient).icon; return <I size={22} />; })()}</span>
-          <h2>{editing ? `Editar ${space!.name}` : "Nuevo espacio"}</h2>
-          <button type="button" className="icon-btn" aria-label="Cerrar" onClick={onClose}><IconX size={18} /></button>
+          <h2>{editing ? t("Editar {name}", { name: space!.name }) : t("Nuevo espacio")}</h2>
+          <button type="button" className="icon-btn" aria-label={t("Cerrar")} onClick={onClose}><IconX size={18} /></button>
         </div>
         <form className="dialog-form" onSubmit={save}>
           <div className="space-editor">
             <div ref={bodyRef} className={`dialog-body ${bodyFade}`}>
               <div className="field">
-                <label className="field-top" htmlFor="space-name"><span>Nombre</span></label>
-                <input id="space-name" className="text-input" value={name} maxLength={40} placeholder="Trabajo, Juegos, Pruebas con IA…"
+                <label className="field-top" htmlFor="space-name"><span>{t("Nombre")}</span></label>
+                <input id="space-name" className="text-input" value={name} maxLength={40} placeholder={t("Trabajo, Juegos, Pruebas con IA…")}
                   onChange={(e) => setName(e.target.value)} />
                 {nameError && <span className="error-text">{nameError}</span>}
               </div>
               <div className="field">
-                <div className="field-top"><span>Ambiente</span></div>
-                <div className="space-ambients" role="radiogroup" aria-label="Ambiente">
+                <div className="field-top"><span>{t("Ambiente")}</span></div>
+                <div className="space-ambients" role="radiogroup" aria-label={t("Ambiente")}>
                   {AMBIENTS.map((a) => (
                     <button type="button" key={a.id} role="radio" aria-checked={ambient === a.id} className={`space-ambient${ambient === a.id ? " on" : ""}`} onClick={() => setAmbient(a.id)}>
                       <span className="space-ambient-icon"><a.icon size={17} /></span>
@@ -79,14 +81,14 @@ export function SpaceDialog({ space, vms, onClose, onSaved, initialMachines = []
               </div>
               {ambientInfo(ambient).times && (
                 <div className="field">
-                  <div className="field-top"><span>Momento del día</span></div>
+                  <div className="field-top"><span>{t("Momento del día")}</span></div>
                   <Segmented value={time} onChange={setTime} options={AMBIENT_TIMES.map((x) => ({ value: x.id, label: x.name }))} />
                 </div>
               )}
               <div className="field">
-                <div className="field-top"><span>Máquinas</span>{picked.length > 0 && <span className="hint">{picked.length === 1 ? "1 elegida" : `${picked.length} elegidas`}</span>}</div>
+                <div className="field-top"><span>{t("Máquinas")}</span>{picked.length > 0 && <span className="hint">{tn(picked.length, "{n} elegida", "{n} elegidas")}</span>}</div>
                 {vms.length === 0 ? (
-                  <span className="hint">Aún no hay máquinas. Las que crees después puedes moverlas aquí.</span>
+                  <span className="hint">{t("Aún no hay máquinas. Las que crees después puedes moverlas aquí.")}</span>
                 ) : (
                   <div className="space-machines">
                     {vms.map((v) => {
@@ -98,7 +100,7 @@ export function SpaceDialog({ space, vms, onClose, onSaved, initialMachines = []
                           <MachineIcon name={v.name} size={26} radius={7} />
                           <span className="grow">
                             <span className="title">{v.name}</span>
-                            <span className="desc">{stateLabel[v.state] ?? v.state}{elsewhere ? ` · ${on ? "Se mueve desde" : "En"} ${from.name}` : ""}</span>
+                            <span className="desc">{stateText(v.state)}{elsewhere ? ` · ${on ? t("Se mueve desde {space}", { space: from.name }) : t("En {space}", { space: from.name })}` : ""}</span>
                           </span>
                         </button>
                       );
@@ -108,7 +110,7 @@ export function SpaceDialog({ space, vms, onClose, onSaved, initialMachines = []
               </div>
             </div>
             <div className="space-editor-cube">
-              <MachineCube key="space-preview" ambient={ambient} time={time} spaceName={trimmed || "Nuevo espacio"} machine={hero ? cubeOf(hero) : sample} name={hero?.name ?? ""} decorOf={hero?.name ?? ""}
+              <MachineCube key="space-preview" ambient={ambient} time={time} spaceName={trimmed || t("Nuevo espacio")} machine={hero ? cubeOf(hero) : sample} name={hero?.name ?? ""} decorOf={hero?.name ?? ""}
                 others={shown.slice(1).map((v) => ({ name: v.name, machine: cubeOf(v) }))} />
             </div>
           </div>
@@ -116,15 +118,15 @@ export function SpaceDialog({ space, vms, onClose, onSaved, initialMachines = []
             {editing && space!.id !== MAIN_SPACE && (
               confirmDelete ? (
                 <span className="space-delete-confirm">
-                  <span>Sus máquinas vuelven a {readSpaces().find((s) => s.id === MAIN_SPACE)!.name}.</span>
-                  <button type="button" className="btn danger-fill" onClick={() => { deleteSpace(space!.id); onClose(); }}><IconTrash size={16} />Eliminar</button>
+                  <span>{t("Sus máquinas vuelven a {space}.", { space: mainName })}</span>
+                  <button type="button" className="btn danger-fill" onClick={() => { deleteSpace(space!.id); onClose(); }}><IconTrash size={16} />{t("Eliminar")}</button>
                 </span>
               ) : (
-                <button type="button" className="btn ghost danger space-delete" onClick={() => setConfirmDelete(true)}><IconTrash size={16} />Eliminar espacio</button>
+                <button type="button" className="btn ghost danger space-delete" onClick={() => setConfirmDelete(true)}><IconTrash size={16} />{t("Eliminar espacio")}</button>
               )
             )}
-            <button type="button" className="btn ghost" onClick={onClose}>Cancelar</button>
-            <button type="submit" className="primary compact" disabled={!valid}>{editing ? "Guardar" : "Crear espacio"}</button>
+            <button type="button" className="btn ghost" onClick={onClose}>{t("Cancelar")}</button>
+            <button type="submit" className="primary compact" disabled={!valid}>{editing ? t("Guardar") : t("Crear espacio")}</button>
           </div>
         </form>
       </div>

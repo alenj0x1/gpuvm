@@ -1,5 +1,6 @@
 import type { GameDef, GameHost, GameInstance } from "./types";
 import { drawFigureThumb } from "../decor/figureGL";
+import { t } from "../i18n";
 
 // "Bit a bit": your machine keeps going forward and falls unless you make it jump; it has to get through the gaps
 // between columns. The world is picked on the start card: the studio (pillars of hologram on the app's gray), a
@@ -212,17 +213,22 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
 
 export const BIT_HOP: GameDef = {
   id: "bit-hop",
-  name: "Bit a bit",
-  description: "Haz saltar tu máquina entre las columnas sin tocarlas. Cada hueco suma, los bits valen doble.",
-  modes: [
-    { id: "studio", name: "Estudio", description: "Pilares de holograma sobre el gris de la app." },
-    { id: "board", name: "Placa base", description: "Torres de condensadores y chips sobre las pistas de la placa." },
-    { id: "blocks", name: "Bloques", description: "Torres de bloques de colores bajo un cielo con nubes de bloques." },
-  ],
-  controls: [
-    { label: "Saltar", mouse: "left", keys: ["Espacio", "↑"] },
-    { label: "Pausa", keys: ["P"] },
-  ],
-  tips: ["Cada hueco que cruzas suma un punto", "Los bits de los huecos valen doble", "Los huecos se angostan con el puntaje"],
+  // Getters: the texts come out in the language in use.
+  get name() { return t("Bit a bit"); },
+  get description() { return t("Haz saltar tu máquina entre las columnas sin tocarlas. Cada hueco suma, los bits valen doble."); },
+  get modes() {
+    return [
+      { id: "studio", name: t("Estudio"), description: t("Pilares de holograma sobre el gris de la app.") },
+      { id: "board", name: t("Placa base"), description: t("Torres de condensadores y chips sobre las pistas de la placa.") },
+      { id: "blocks", name: t("Bloques"), description: t("Torres de bloques de colores bajo un cielo con nubes de bloques.") },
+    ];
+  },
+  get controls() {
+    return [
+      { label: t("Saltar"), mouse: "left" as const, keys: [t("Espacio"), "↑"] },
+      { label: t("Pausa"), keys: ["P"] },
+    ];
+  },
+  get tips() { return [t("Cada hueco que cruzas suma un punto"), t("Los bits de los huecos valen doble"), t("Los huecos se angostan con el puntaje")]; },
   create,
 };

@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import type { VmOverview } from "./types";
 import { useDecor, decorColor, colorOfDecor, saveDecor, ledTop, LED_STEP, newId, LED_COLORS, type Decor, type Face } from "./decor/store";
 import { ledColumns } from "./decor/ledFont";
+import { t } from "./i18n";
 import { stickerImage } from "./decor/stickers";
 import { figureHeight } from "./decor/figures";
 import { FLOOR, ambientLight, ambientTint, drawAmbient, drawAmbientGlow, hasScene, normalizeAmbient, resolveTime, type AmbientId, type AmbientState, type AmbientTime } from "./ambient";
@@ -879,7 +880,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       ctx.fillText("S/N " + (shown || "—") + caret, 14, 56, w * 1000 - 28);
       ctx.fillStyle = rgba(col, 0.6 * k);
       ctx.font = "500 11px ui-monospace, monospace";
-      ctx.fillText(m.cores + " HILOS · " + m.memoryGB + " GB · GPU " + m.gpuPercent + " % · " + m.diskGB + " GB", 14, 74);
+      ctx.fillText(t("{cores} HILOS · {ram} GB · GPU {gpu} % · {disk} GB", { cores: m.cores, ram: m.memoryGB, gpu: m.gpuPercent, disk: m.diskGB }), 14, 74);
       // A barcode made from the name, so every machine's is its own.
       const code = [...(shown || "X")].map((c) => c.charCodeAt(0));
       let bx = 14;
@@ -1422,11 +1423,12 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
         g.strokeStyle = on ? mixHex(front ? edge : edgeBack, accent, (front ? 0.2 : 0.08) + 0.4 * act) : front ? edge : edgeBack;
         g.lineWidth = front ? 1.8 : 1; g.stroke();
       }
-      for (const c of CORNERS) { const p = P(...c); g.beginPath(); g.roundRect(p[0] - 3.5, p[1] - 3.5, 7, 7, 2); g.fillStyle = edge; g.fill(); }
+      for (const c of CORNERS) { const p = P(...c); g.beginPath(); g.rect(p[0] - 3.5, p[1] - 3.5, 7, 7); g.fillStyle = edge; g.fill(); }
       for (const s of ELECTRODES) {
         const p = P(...s), q = P(s[0], 2, s[2]);
         g.beginPath(); g.moveTo(q[0], q[1]); g.lineTo(p[0], p[1]); g.strokeStyle = edge; g.lineWidth = 2; g.stroke();
-        g.beginPath(); g.arc(p[0], p[1], 4.5, 0, 7); g.fillStyle = on ? mixHex(edge, accent, 0.35 + 0.65 * act) : edge; g.fill();
+        // Square, like the corners: the cube is all straight lines.
+        g.beginPath(); g.rect(p[0] - 4.5, p[1] - 4.5, 9, 9); g.fillStyle = on ? mixHex(edge, accent, 0.35 + 0.65 * act) : edge; g.fill();
       }
 
       // Lightning to each piece as often as it works, thicker and brighter the busier it is; over 55 % it also
@@ -1560,7 +1562,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       const led = D.led;
       if (!led) return;
       let text = led.text.trim() || decorRef.current.owner || "GpuVM";
-      if (led.live) text += on ? `  ·  GPU ${Math.round(m.usage.gpu)} %  ·  CPU ${Math.round(m.usage.cpu)} %` : "  ·  APAGADA";
+      if (led.live) text += on ? `  ·  GPU ${Math.round(m.usage.gpu)} %  ·  CPU ${Math.round(m.usage.cpu)} %` : "  ·  " + t("APAGADA");
       text += "      ";
       if (text !== ledText) { ledText = text; ledCols = ledColumns(text); }
       const n = ledCols.length;

@@ -2,6 +2,7 @@ import type { GameDef, GameHost, GameInstance } from "./types";
 import { drawFigureThumb } from "../decor/figureGL";
 import { stickerImage } from "../decor/stickers";
 import { MACHINE_COLORS } from "../decor/store";
+import { t } from "../i18n";
 
 // "Overclock": your machine flies through bricks and rival machines. Move with the keys and aim with the mouse
 // anywhere, shooting your own figures. Stickers drift by with new weapons (faster, three at a time, in bursts, all
@@ -26,27 +27,32 @@ const BRICKS = ["#c2714a", "#8c939e", "#5f9e6e", "#d8443c", "#ecbc4c", "#6aa8ff"
 const DEFAULT_FIGURES = ["lucky-cat", "duck", "robot", "rocket"];
 /** Each pickup is a sticker: what it gives and for how long. */
 const PICKS: Record<PickKind, { sticker: string; label: string; secs: number }> = {
-  heart: { sticker: "heart", label: "Vida", secs: 0 },
-  star: { sticker: "star", label: "Escudo", secs: 8 },
-  rapid: { sticker: "bolt", label: "Disparo rápido", secs: 10 },
-  triple: { sticker: "gem", label: "Disparo triple", secs: 10 },
-  burst: { sticker: "fire", label: "Ráfaga", secs: 10 },
-  ring: { sticker: "rocket", label: "Todas direcciones", secs: 8 },
+  heart: { sticker: "heart", get label() { return t("Vida"); }, secs: 0 },
+  star: { sticker: "star", get label() { return t("Escudo"); }, secs: 8 },
+  rapid: { sticker: "bolt", get label() { return t("Disparo rápido"); }, secs: 10 },
+  triple: { sticker: "gem", get label() { return t("Disparo triple"); }, secs: 10 },
+  burst: { sticker: "fire", get label() { return t("Ráfaga"); }, secs: 10 },
+  ring: { sticker: "rocket", get label() { return t("Todas direcciones"); }, secs: 8 },
 };
 const FRENZY_SECS = 8;
 
 /** The abilities on the right button: what each is called, how long it lasts and its glyph on the cores. */
 type AbilityId = "pulse" | "laser" | "slow" | "clones" | "magnet";
 const ABILITIES: Record<AbilityId, { name: string; secs: number }> = {
-  pulse: { name: "Pulso", secs: 0.6 },
-  laser: { name: "Láser", secs: 1.8 },
-  slow: { name: "Tiempo lento", secs: 5 },
-  clones: { name: "Clones", secs: 8 },
-  magnet: { name: "Imán", secs: 8 },
+  pulse: { get name() { return t("Pulso"); }, secs: 0.6 },
+  laser: { get name() { return t("Láser"); }, secs: 1.8 },
+  slow: { get name() { return t("Tiempo lento"); }, secs: 5 },
+  clones: { get name() { return t("Clones"); }, secs: 8 },
+  magnet: { get name() { return t("Imán"); }, secs: 8 },
 };
 const ABILITY_IDS = Object.keys(ABILITIES) as AbilityId[];
 /** The zones the flight crosses, one after another. */
-const ZONES = ["Estudio", "Placa base", "Bloques"] as const;
+// Names are getters (and the texts below functions at this level, where t is not the game clock) so they come out in
+// the language in use.
+const ZONES = [{ get name() { return t("Estudio"); } }, { get name() { return t("Placa base"); } }, { get name() { return t("Bloques"); } }];
+const zoneLabel = (i: number) => t("Zona {name}", { name: ZONES[i].name });
+const frenzyText = (s: number) => t("Frenesí {s} s", { s });
+const shieldText = (s: number) => t("Escudo {s} s", { s });
 const WORLD_ZONE: Record<string, number> = { studio: 0, board: 1, blocks: 2 };
 /** Brick figures of the app that come flying in the world of blocks. */
 const ZONE_FIGURES = ["lucky-cat", "duck", "robot", "penguin", "bear", "bunny", "cactus", "mushroom"];
@@ -528,7 +534,7 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     if (flash > 0) { g.fillStyle = rgba(host.color, flash * 0.25); g.fillRect(0, 0, W, H); }
     // Crossing into a zone: its name on a small plate at the top, for a moment.
     if (zoneBanner > 0) {
-      const a = Math.min(1, zoneBanner * 2, (2.5 - zoneBanner) * 4), label = `Zona ${ZONES[zi]}`;
+      const a = Math.min(1, zoneBanner * 2, (2.5 - zoneBanner) * 4), label = zoneLabel(zi);
       if (demo) zoneBanner = 0;
       g.font = "600 14px 'Plus Jakarta Sans', sans-serif";
       const w = g.measureText(label).width + 28, x = W / 2 - w / 2, y = 56;
@@ -546,8 +552,8 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     if (running && now - hudAt > 120) {
       hudAt = now;
       const abHud = { name: ABILITIES[ab.id].name, charge: ab.charge, active: ab.active > 0 ? ab.active / ABILITIES[ab.id].secs : undefined };
-      const power = frenzy > 0 ? `Frenesí ${Math.ceil(frenzy)} s` : me.weapon !== "normal" ? `${PICKS[me.weapon].label} ${Math.ceil(me.weaponT)} s` : me.shield > 0 ? `Escudo ${Math.ceil(me.shield)} s` : undefined;
-      host.onHud({ score: Math.floor(score), lives: me.lives, power, meter: frenzy > 0 ? frenzy / FRENZY_SECS : meter, frenzy: frenzy > 0, ability: abHud, zone: ZONES[zoneAt(t)] });
+      const power = frenzy > 0 ? frenzyText(Math.ceil(frenzy)) : me.weapon !== "normal" ? `${PICKS[me.weapon].label} ${Math.ceil(me.weaponT)} s` : me.shield > 0 ? shieldText(Math.ceil(me.shield)) : undefined;
+      host.onHud({ score: Math.floor(score), lives: me.lives, power, meter: frenzy > 0 ? frenzy / FRENZY_SECS : meter, frenzy: frenzy > 0, ability: abHud, zone: ZONES[zoneAt(t)].name });
     }
     if (running || sparks.length) frame = requestAnimationFrame(loop);
   };
@@ -605,7 +611,7 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
       team = mode === "team";
       host.mode = mode; host.team = mates;
     },
-    start: () => { reset(); running = true; host.onHud({ score: 0, lives: 3, meter: 0, ability: { name: ABILITIES.pulse.name, charge: 0 }, zone: ZONES[firstZone] }); kick(); },
+    start: () => { reset(); running = true; host.onHud({ score: 0, lives: 3, meter: 0, ability: { name: ABILITIES.pulse.name, charge: 0 }, zone: ZONES[firstZone].name }); kick(); },
     pause: () => { running = false; keys.clear(); letGo(); cancelAnimationFrame(frame); draw(0); },
     resume: () => { if (!over) { running = true; kick(); } },
     stop: () => {
@@ -620,23 +626,30 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
 export const CUBE_FLIGHT: GameDef = {
   id: "cube-flight",
   name: "Overclock",
-  description: "Vuela entre bloques y máquinas rivales, junta habilidades y cruza de zona en zona.",
-  modes: [
-    { id: "solo", name: "Solo", description: "Tu máquina contra todo." },
-    { id: "team", name: "En equipo", description: "Tus otras máquinas vuelan contigo y disparan solas. Llegan más rivales y más duros.", team: true },
-  ],
-  controls: [
-    { label: "Moverte", keys: ["W", "A", "S", "D"] },
-    { label: "Apuntar", mouse: "move" },
-    { label: "Disparar", mouse: "left", keys: ["Espacio"] },
-    { label: "Habilidad", mouse: "right", keys: ["E"] },
-    { label: "Pausa", keys: ["P"] },
-  ],
-  tips: [
-    "Los stickers traen armas, escudo o una vida",
-    "Derribar llena el frenesí: figuras gigantes por unos segundos",
-    "Disparar carga tu habilidad; los núcleos de colores la cambian",
-    "Cada 40 segundos cruzas a otra zona",
-  ],
+  // Getters: the texts come out in the language in use.
+  get description() { return t("Vuela entre bloques y máquinas rivales, junta habilidades y cruza de zona en zona."); },
+  get modes() {
+    return [
+      { id: "solo", name: t("Solo"), description: t("Tu máquina contra todo.") },
+      { id: "team", name: t("En equipo"), description: t("Tus otras máquinas vuelan contigo y disparan solas. Llegan más rivales y más duros."), team: true },
+    ];
+  },
+  get controls() {
+    return [
+      { label: t("Moverte"), keys: ["W", "A", "S", "D"] },
+      { label: t("Apuntar"), mouse: "move" as const },
+      { label: t("Disparar"), mouse: "left" as const, keys: [t("Espacio")] },
+      { label: t("Habilidad"), mouse: "right" as const, keys: ["E"] },
+      { label: t("Pausa"), keys: ["P"] },
+    ];
+  },
+  get tips() {
+    return [
+      t("Los stickers traen armas, escudo o una vida"),
+      t("Derribar llena el frenesí: figuras gigantes por unos segundos"),
+      t("Disparar carga tu habilidad; los núcleos de colores la cambian"),
+      t("Cada 40 segundos cruzas a otra zona"),
+    ];
+  },
   create,
 };

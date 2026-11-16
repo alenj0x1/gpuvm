@@ -20,7 +20,8 @@ import { MAX_SAMPLES } from "./Chart";
 import { VmView, type JobInfo } from "./VmView";
 import { CreateDialog } from "./CreateDialog";
 import { TitleBar } from "./TitleBar";
-import { Toasts, humanError, stateLabel, useToasts, useScrollFade } from "./ui";
+import { Toasts, humanError, stateText, useToasts, useScrollFade } from "./ui";
+import { t, translateModule } from "./i18n";
 
 const NEW_VM = "__new__";
 // Route of the preferences screen in the URL hash, shaped so it doesn't look like a VM name.
@@ -98,10 +99,11 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       setBlocked(null);
       setReadError(null);
     } catch (e) {
-      const msg = humanError(e);
-      if (msg.includes("servicio de GpuVM está detenido")) setBlocked("stopped");
-      else if (msg.includes("servicio de GpuVM no está instalado")) setBlocked("missing");
-      else if (msg.includes("administrador")) setBlocked("admin");
+      // Recognized in the module's own (Spanish) words, before they are translated.
+      const raw = String(e), msg = humanError(e);
+      if (/servicio de GpuVM est. detenido/.test(raw)) setBlocked("stopped");
+      else if (/servicio de GpuVM no est. instalado/.test(raw)) setBlocked("missing");
+      else if (raw.includes("administrador")) setBlocked("admin");
       else setReadError(msg);
       setVms((v) => v ?? []);
     }
@@ -182,14 +184,14 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
         setJobs((all) => all[e.jobId] ? { ...all, [e.jobId]: { ...all[e.jobId], message: e.message!, log: [...all[e.jobId].log, e.message!] } } : all);
         return;
       }
-      if (e.type === "warning") { push("warning", e.message!); return; }
+      if (e.type === "warning") { push("warning", translateModule(e.message!)); return; }
       setJobs(({ [e.jobId]: _, ...rest }) => rest);
       if (!e.ok) job.failed?.();
       if (e.ok) job.after?.();
       else if (job.vm === NEW_VM) {
         setCreateError(humanError(e.error));
         // If the dialog was closed, reopen it to show what failed.
-        if (!creatingRef.current) { push("error", `No se pudo crear ${job.name}.`); setCreating(true); }
+        if (!creatingRef.current) { push("error", t("No se pudo crear {name}.", { name: job.name })); setCreating(true); }
       } else push("error", humanError(e.error));
       refresh();
     }).then((fn) => { if (cancelled) fn(); else off = fn; });
@@ -202,7 +204,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       args = { ...args, Monitor: readPrefs().monitor };
     }
     const jobId = `${cmd}-${Date.now()}`;
-    const first = cmd === "Connect-GpuVM" ? "Preparando" : cmd === "New-GpuVM" ? "Revisando el equipo" : cmd === "Invoke-GpuVMPower" ? "Apagando" : "Trabajando";
+    const first = cmd === "Connect-GpuVM" ? t("Preparando") : cmd === "New-GpuVM" ? t("Revisando el equipo") : cmd === "Invoke-GpuVMPower" ? t("Apagando") : t("Trabajando");
     const job = { vm, cmd, message: first, log: [first], after, failed, name: String(args.Name ?? "") };
     // Also registered in the ref so events arriving before the next render are not lost.
     jobsRef.current = { ...jobsRef.current, [jobId]: job };
@@ -224,7 +226,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
   const busyFor = (vm: string): JobInfo | null => {
     const job = Object.values(jobs).find((j) => j.vm === vm);
     if (job) return job;
-    return pending[vm] ? { cmd: "", message: `${pending[vm]}…`, log: [] } : null;
+    return pending[vm] ? { cmd: "", message: `${translateModule(pending[vm])}…`, log: [] } : null;
   };
   const createJob = Object.values(jobs).find((j) => j.vm === NEW_VM) ?? null;
   const current = vms?.find((v) => v.name === selected)
@@ -252,10 +254,10 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
         <TitleBar />
         <div className="empty">
           <Logo className="empty-logo" size={96} />
-          <h2>{stopped ? "El servicio de GpuVM está detenido" : "Falta el servicio de GpuVM"}</h2>
-          <p>{stopped ? "Es la parte de GpuVM que controla Hyper-V. En Ajustes está en modo manual." : "Es la parte de GpuVM que controla Hyper-V. Repararlo pide permiso de administrador una vez."}</p>
+          <h2>{stopped ? t("El servicio de GpuVM está detenido") : t("Falta el servicio de GpuVM")}</h2>
+          <p>{stopped ? t("Es la parte de GpuVM que controla Hyper-V. En Ajustes está en modo manual.") : t("Es la parte de GpuVM que controla Hyper-V. Repararlo pide permiso de administrador una vez.")}</p>
           <button className="primary" onClick={fix} disabled={repair.busy}>
-            {stopped ? <><IconPlugConnected size={17} />{repair.busy ? "Iniciando…" : "Iniciar servicio"}</> : <><IconShieldLock size={17} />{repair.busy ? "Reparando…" : "Reparar"}</>}
+            {stopped ? <><IconPlugConnected size={17} />{repair.busy ? t("Iniciando…") : t("Iniciar servicio")}</> : <><IconShieldLock size={17} />{repair.busy ? t("Reparando…") : t("Reparar")}</>}
           </button>
           {repair.error && <span className="error-text">{repair.error}</span>}
         </div>
@@ -269,9 +271,9 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
         <TitleBar />
         <div className="empty">
           <Logo className="empty-logo" size={96} />
-          <h2>GpuVM necesita permisos de administrador</h2>
-          <p>Hyper-V solo deja crear y controlar máquinas a un administrador.</p>
-          <button className="primary" onClick={relaunchAsAdmin}><IconShieldLock size={17} />Abrir como administrador</button>
+          <h2>{t("GpuVM necesita permisos de administrador")}</h2>
+          <p>{t("Hyper-V solo deja crear y controlar máquinas a un administrador.")}</p>
+          <button className="primary" onClick={relaunchAsAdmin}><IconShieldLock size={17} />{t("Abrir como administrador")}</button>
         </div>
       </div>
     );
@@ -285,14 +287,33 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
           <span className="side-logo"><Logo size={28} /></span>
           <strong>GpuVM</strong>
         </div>
-        <nav ref={sideRef} className={`side-list ${sideFade}`}>
+        {/* The whole list takes a dragged machine or space, gaps between groups included (or the cursor flickers to
+            "not allowed" as it crosses them); the drop keeps the order shown. */}
+        <nav ref={sideRef} className={`side-list ${sideFade}`}
+          onDragOver={(e) => { if (carriesMachine(e) || carriesSpace(e)) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; } }}
+          onDrop={(e) => {
+            if (!carriesMachine(e) && !carriesSpace(e)) return;
+            e.preventDefault();
+            const order = spaceOrderRef.current, p = previewRef.current;
+            // Saved as shown: nothing moves on the drop, the preview just stays.
+            flushSync(() => {
+              if (order && carriesSpace(e)) reorderSpaces(order);
+              if (p && carriesMachine(e)) {
+                const group = (e.currentTarget as HTMLElement).querySelector<HTMLElement>(`[data-space="${CSS.escape(p.space)}"]`);
+                const shown = [...(group?.querySelectorAll<HTMLElement>("[data-vm]") ?? [])].map((el) => el.dataset.vm!).filter((n) => n !== p.name);
+                moveToSpace(p.name, p.space, p.before, shown);
+              }
+              setPreview(null); setSpaceOrder(null);
+            });
+            if (p) flashMachine(p.name);
+          }}>
           {(
-            <button className={`side-item side-home ${selected === HOME ? "active" : ""}`} onClick={() => setSelected(HOME)} title="Inicio">
-              <span className="add-icon"><IconHome size={16} /></span><span className="name">Inicio</span>
+            <button className={`side-item side-home ${selected === HOME ? "active" : ""}`} onClick={() => setSelected(HOME)} title={t("Inicio")}>
+              <span className="add-icon"><IconHome size={16} /></span><span className="name">{t("Inicio")}</span>
             </button>
           )}
-          <button className={`side-item side-home ${libraryTab(selected) ? "active" : ""}`} onClick={() => setSelected(LIBRARY)} title="Perfiles, discos e ISOs">
-            <span className="add-icon"><IconStack2 size={16} /></span><span className="name">Biblioteca</span>
+          <button className={`side-item side-home ${libraryTab(selected) ? "active" : ""}`} onClick={() => setSelected(LIBRARY)} title={t("Perfiles, discos e ISOs")}>
+            <span className="add-icon"><IconStack2 size={16} /></span><span className="name">{t("Biblioteca")}</span>
           </button>
           {/* With one space the list is just "Máquinas"; with several, each space heads its own machines and opens it in Home. */}
           {(() => {
@@ -316,7 +337,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
             const names = list?.map((v) => v.name) ?? [];
             const Icon = sp ? ambientInfo(sp.ambient).icon : null;
             return (
-              <div key={sp?.id ?? "all"} className="side-group"
+              <div key={sp?.id ?? "all"} className="side-group" data-space={spaceId}
                 onDragOver={(e) => {
                   if (carriesSpace(e) && sp && dragging.space) {
                     // A space passes over another: it goes before it or after it, by which half the pointer is on.
@@ -349,27 +370,14 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
                   if (cur && cur.name === name && cur.space === spaceId && cur.before === before) return;
                   glide(() => setPreview({ name, space: spaceId, before }), name);
                 }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  const order = spaceOrderRef.current, p = previewRef.current;
-                  // Saved as shown: nothing moves on the drop, the preview just stays.
-                  flushSync(() => {
-                    if (order && carriesSpace(e)) reorderSpaces(order);
-                    if (p && carriesMachine(e)) {
-                      const shown = groups.find((g) => g.spaceId === p.space)?.list?.map((v) => v.name) ?? [];
-                      moveToSpace(p.name, p.space, p.before, shown.filter((n) => n !== p.name));
-                    }
-                    setPreview(null); setSpaceOrder(null);
-                  });
-                  if (p) flashMachine(p.name);
-                }}>
+>
                 {sp ? (
                   <button type="button" data-space-row={sp.id} draggable onDragStart={(e) => dragSpace(e, sp.id)}
-                    className={`side-label side-space${spaceOrder && dragging.space === sp.id ? " dragged" : ""}${selected === HOME && shownSpaceId === sp.id ? " on" : ""}`} title={`Ver ${sp.name}`}
+                    className={`side-label side-space${spaceOrder && dragging.space === sp.id ? " dragged" : ""}${selected === HOME && shownSpaceId === sp.id ? " on" : ""}`} title={t("Ver {name}", { name: sp.name })}
                     onClick={() => { showSpace(sp.id); setSelected(HOME); }}>
                     {Icon && <Icon size={13} />}<span className="ellipsis">{sp.name}</span>
                   </button>
-                ) : <span className="side-label">Máquinas</span>}
+                ) : <span className="side-label">{t("Máquinas")}</span>}
                 {vms === null && [0, 1, 2].map((i) => (
                   <div key={i} className="side-item side-skeleton" aria-hidden="true">
                     <span className="skeleton icon" />
@@ -382,11 +390,11 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
                     // The dot already says on or off: the row only adds what it can't, the GPU in use or a job in progress.
                     <button key={vm.id} data-vm={vm.name} draggable onDragStart={(e) => dragMachine(e, vm.name)}
                       className={`side-item ${vm.name === selected ? "active" : ""}${preview?.name === vm.name ? " dragged" : ""}`} onClick={() => setSelected(vm.name)}
-                      title={busy?.message ? `${vm.name}, ${busy.message}` : `${vm.name}, ${stateLabel[vm.state] ?? vm.state}`}>
+                      title={`${vm.name}, ${busy?.message ? translateModule(busy.message) : stateText(vm.state)}`}>
                       <span className="side-icon"><MachineIcon name={vm.name} size={28} radius={8} /><span className={`dot badge ${vm.state}`} /></span>
                       <span className="name">{vm.name}</span>
                       {busy ? <IconLoader2 size={15} className="spin side-meta" />
-                        : vm.state === "Running" ? <span className="side-meta" title={`Procesador ${vm.cpuPercent} %, memoria ${vm.memoryDemandGB} GB, GPU ${vm.gpuPercent} %`}>
+                        : vm.state === "Running" ? <span className="side-meta" title={t("Procesador {cpu} %, memoria {mem} GB, GPU {gpu} %", { cpu: vm.cpuPercent, mem: vm.memoryDemandGB, gpu: vm.gpuPercent })}>
                           <TripleSpark samples={history.current[vm.name] ?? []} memGB={vm.memoryAssignedGB} /></span> : null}
                     </button>
                   );
@@ -396,27 +404,27 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
           });
           })()}
           {createJob && (
-            <button className="side-item" onClick={() => setCreating(true)} title="Ver avance">
+            <button className="side-item" onClick={() => setCreating(true)} title={t("Ver avance")}>
               <span className="add-icon"><IconLoader2 size={16} className="spin" /></span>
-              <span className="name">{createJob.name}<span className="sub">{createJob.message}</span></span>
+              <span className="name">{createJob.name}<span className="sub">{translateModule(createJob.message)}</span></span>
             </button>
           )}
-          <button className="side-item side-add" onClick={() => { setCreateError(null); setCreateSpace(null); setCreating(true); }} title="Crear máquina">
-            <span className="add-icon"><IconPlus size={16} /></span><span className="name">Crear máquina</span>
+          <button className="side-item side-add" onClick={() => { setCreateError(null); setCreateSpace(null); setCreating(true); }} title={t("Crear máquina")}>
+            <span className="add-icon"><IconPlus size={16} /></span><span className="name">{t("Crear máquina")}</span>
           </button>
         </nav>
         {/* Ajustes stays at the foot of the sidebar, however long the list of machines gets. */}
-        <button className={`side-item side-home side-foot ${selected === PREFS ? "active" : ""}`} onClick={() => setSelected(PREFS)} title="Ajustes">
-          <span className="add-icon"><IconSettings size={16} /></span><span className="name">Ajustes</span>
+        <button className={`side-item side-home side-foot ${selected === PREFS ? "active" : ""}`} onClick={() => setSelected(PREFS)} title={t("Ajustes")}>
+          <span className="add-icon"><IconSettings size={16} /></span><span className="name">{t("Ajustes")}</span>
         </button>
       </aside>
       {/* The sidebar's edge: drag it to resize (or fold) the sidebar; its tab, shown on hover, folds and unfolds it. */}
-      <div className="side-edge" role="separator" aria-orientation="vertical" aria-label="Ancho de la barra"
+      <div className="side-edge" role="separator" aria-orientation="vertical" aria-label={t("Ancho de la barra")}
         onPointerDown={startResize} onPointerMove={resize}
         onPointerUp={() => { const p = press.current; press.current = null; setResizing(false); if (p && !p.moved && p.onLine) setCollapsed((c) => !c); }}
         onPointerCancel={() => { press.current = null; setResizing(false); }}>
         {/* The line itself: drag it to resize, click it to fold or unfold. */}
-        <button type="button" className="side-handle" aria-label={collapsed ? "Expandir barra" : "Contraer barra"} title={collapsed ? "Expandir barra" : "Contraer barra"}
+        <button type="button" className="side-handle" aria-label={collapsed ? t("Expandir barra") : t("Contraer barra")} title={collapsed ? t("Expandir barra") : t("Contraer barra")}
           onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setCollapsed((c) => !c); } }} />
       </div>
 
@@ -424,8 +432,8 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
         {readError && (
           <div className="notice error-notice">
             <IconAlertTriangle size={20} />
-            <div className="grow">No se pudo leer Hyper-V: {readError}</div>
-            <button className="btn" onClick={refresh}><IconRefresh size={16} />Reintentar</button>
+            <div className="grow">{t("No se pudo leer Hyper-V: {error}", { error: readError })}</div>
+            <button className="btn" onClick={refresh}><IconRefresh size={16} />{t("Reintentar")}</button>
           </div>
         )}
         {vms === null ? (
@@ -436,7 +444,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
         ) : selected === PREFS ? (
           <Preferences />
         ) : libraryTab(selected) ? (
-          <Library tab={libraryTab(selected)!} onTab={(t) => setSelected(`${LIBRARY}:${t}`)} host={host} startJob={startJob}
+          <Library tab={libraryTab(selected)!} onTab={(tab) => setSelected(`${LIBRARY}:${tab}`)} host={host} startJob={startJob}
             busy={(name) => !!busyFor(name)} progress={(key) => busyFor(key)?.message ?? null} notify={push} onOpenVm={setSelected}
             onCreateFromTemplate={(template) => { setCreateTemplate(template); setCreating(true); }} />
         ) : current ? (
@@ -467,7 +475,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
               setCreateTemplate(null);
               // Open the new machine once the list has it; before that, the route would fall back to Home.
               refresh().then(() => setSelected(name));
-              push("ok", template ? `${name} está lista.` : `${name} está lista. Windows termina de configurarse solo en unos minutos.`);
+              push("ok", template ? t("{name} está lista.", { name }) : t("{name} está lista. Windows termina de configurarse solo en unos minutos.", { name }));
             });
           }} />
       )}

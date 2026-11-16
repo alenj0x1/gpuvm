@@ -4,21 +4,23 @@ import { IconAppWindow, IconBrandWindows, IconDeviceDesktop, IconExternalLink, I
 import { service, type ServiceStatus } from "./api";
 import { ACCENTS, savePrefs, usePrefs, type ClosePref, type ServicePref, type ThemePref, type VmsOnQuitPref } from "./prefs";
 import { Segmented, humanError } from "./ui";
+import { t, type LangPref } from "./i18n";
 import { MonitorPicker, useMonitors } from "./pickers";
 
-const SERVICE_TEXT: Record<ServicePref, string> = {
-  app: "Se enciende al abrir GpuVM y se apaga al salir, cuando termina lo que estaba haciendo.",
-  windows: "Se enciende con Windows y queda listo antes de abrir GpuVM.",
-  manual: "Solo se enciende y se apaga desde aquí.",
-};
+// Functions, so each text is read in the language of the moment.
+const serviceText = (): Record<ServicePref, string> => ({
+  app: t("Se enciende al abrir GpuVM y se apaga al salir, cuando termina lo que estaba haciendo."),
+  windows: t("Se enciende con Windows y queda listo antes de abrir GpuVM."),
+  manual: t("Solo se enciende y se apaga desde aquí."),
+});
 
-const STATE_TEXT: Record<ServiceStatus["state"], string> = {
-  running: "En marcha",
-  starting: "Iniciando…",
-  stopping: "Deteniéndose…",
-  stopped: "Detenido",
-  missing: "No instalado",
-};
+const stateText = (): Record<ServiceStatus["state"], string> => ({
+  running: t("En marcha"),
+  starting: t("Iniciando…"),
+  stopping: t("Deteniéndose…"),
+  stopped: t("Detenido"),
+  missing: t("No instalado"),
+});
 
 const DOT: Record<ServiceStatus["state"], string> = { running: "Running", starting: "Paused", stopping: "Paused", stopped: "Off", missing: "Off" };
 
@@ -68,23 +70,23 @@ function ServicePrefs() {
   return (
     <>
       <div className="pref-row">
-        <div className="pref-text"><strong>Servicio de GpuVM</strong><span>{SERVICE_TEXT[prefs.service]}</span></div>
+        <div className="pref-text"><strong>{t("Servicio de GpuVM")}</strong><span>{serviceText()[prefs.service]}</span></div>
         <Segmented<ServicePref> value={prefs.service} onChange={(mode) => { if (!busy) choose(mode); }} options={[
-          { value: "app", label: <><IconAppWindow size={15} />Con GpuVM</> },
-          { value: "windows", label: <><IconBrandWindows size={15} />Con Windows</> },
-          { value: "manual", label: <><IconHandStop size={15} />Manual</> },
+          { value: "app", label: <><IconAppWindow size={15} />{t("Con GpuVM")}</> },
+          { value: "windows", label: <><IconBrandWindows size={15} />{t("Con Windows")}</> },
+          { value: "manual", label: <><IconHandStop size={15} />{t("Manual")}</> },
         ]} />
       </div>
       <div className="pref-row">
         <div className="pref-text">
-          <strong>Estado</strong>
-          {error ? <span className="error-text">{error}</span> : <span>El servicio hace el trabajo de Hyper-V para GpuVM.</span>}
+          <strong>{t("Estado")}</strong>
+          {error ? <span className="error-text">{error}</span> : <span>{t("El servicio hace el trabajo de Hyper-V para GpuVM.")}</span>}
         </div>
         <div className="pref-side">
-          {status && <span className="pref-state"><span className={`dot ${DOT[status.state]}`} />{STATE_TEXT[status.state]}</span>}
+          {status && <span className="pref-state"><span className={`dot ${DOT[status.state]}`} />{stateText()[status.state]}</span>}
           {prefs.service === "manual" && status && (status.state === "running" || status.state === "stopped") && (
             <button className="btn" onClick={toggle} disabled={busy}>
-              {running ? <><IconPlugConnectedX size={16} />Detener</> : <><IconPlugConnected size={16} />Iniciar</>}
+              {running ? <><IconPlugConnectedX size={16} />{t("Detener")}</> : <><IconPlugConnected size={16} />{t("Iniciar")}</>}
             </button>
           )}
         </div>
@@ -94,11 +96,11 @@ function ServicePrefs() {
 }
 
 type PrefSection = "look" | "window" | "machines" | "service";
-const PREF_SECTIONS: { id: PrefSection; label: string; icon: React.ReactNode }[] = [
-  { id: "look", label: "Apariencia", icon: <IconPalette size={17} /> },
-  { id: "window", label: "Ventana", icon: <IconAppWindow size={17} /> },
-  { id: "machines", label: "Máquinas", icon: <IconDeviceDesktop size={17} /> },
-  { id: "service", label: "Servicio", icon: <IconServer size={17} /> },
+const prefSections = (): { id: PrefSection; label: string; icon: React.ReactNode }[] => [
+  { id: "look", label: t("Apariencia"), icon: <IconPalette size={17} /> },
+  { id: "window", label: t("Ventana"), icon: <IconAppWindow size={17} /> },
+  { id: "machines", label: t("Máquinas"), icon: <IconDeviceDesktop size={17} /> },
+  { id: "service", label: t("Servicio"), icon: <IconServer size={17} /> },
 ];
 
 /** A machine to show the theme and accent on, the same cube as every machine's page. */
@@ -109,13 +111,14 @@ const PREVIEW: CubeMachine = { power: "on", cores: 8, memoryGB: 16, gpuPercent: 
 export function Preferences() {
   const prefs = usePrefs();
   const monitors = useMonitors();
-  const sections = PREF_SECTIONS.filter((x) => x.id !== "machines" || monitors.length > 1);
+  const all = prefSections();
+  const sections = all.filter((x) => x.id !== "machines" || monitors.length > 1);
   // The list on the left switches which section is shown: everything fits on screen, so scrolling to it did nothing.
   const [active, setActive] = useState<PrefSection>("look");
   const shown = sections.some((x) => x.id === active) ? active : sections[0].id;
   const section = (id: PrefSection, children: React.ReactNode) => {
     if (id !== shown) return null;
-    const x = PREF_SECTIONS.find((y) => y.id === id)!;
+    const x = all.find((y) => y.id === id)!;
     return (
       <section className="card pref-section" key={id}>
         <div className="pref-head"><span className="opt-icon">{x.icon}</span><h2>{x.label}</h2></div>
@@ -126,7 +129,7 @@ export function Preferences() {
 
   return (
     <div className="main prefs">
-      <nav className="pref-nav" role="tablist" aria-label="Secciones de Ajustes">
+      <nav className="pref-nav" role="tablist" aria-label={t("Secciones de Ajustes")}>
         {sections.map((x) => (
           <button key={x.id} type="button" role="tab" aria-selected={x.id === shown} className={`pref-nav-item${x.id === shown ? " on" : ""}`} onClick={() => setActive(x.id)}>{x.icon}{x.label}</button>
         ))}
@@ -135,16 +138,25 @@ export function Preferences() {
         {section("look", (
           <>
             <div className="pref-row">
-              <div className="pref-text"><strong>Tema</strong><span>Sigue al de Windows o queda fijo.</span></div>
+              <div className="pref-text"><strong>{t("Tema")}</strong><span>{t("Sigue al de Windows o queda fijo.")}</span></div>
               <Segmented<ThemePref> value={prefs.theme} onChange={(theme) => savePrefs({ theme })} options={[
-                { value: "system", label: <><IconDeviceDesktop size={15} />Sistema</> },
-                { value: "light", label: <><IconSun size={15} />Claro</> },
-                { value: "dark", label: <><IconMoon size={15} />Oscuro</> },
+                { value: "system", label: <><IconDeviceDesktop size={15} />{t("Sistema")}</> },
+                { value: "light", label: <><IconSun size={15} />{t("Claro")}</> },
+                { value: "dark", label: <><IconMoon size={15} />{t("Oscuro")}</> },
               ]} />
             </div>
             <div className="pref-row">
-              <div className="pref-text"><strong>Color de énfasis</strong><span>Botones, selección, barras de uso y el holograma de las máquinas.</span></div>
-              <div className="swatches" role="radiogroup" aria-label="Color de énfasis">
+              <div className="pref-text"><strong>{t("Idioma")}</strong><span>{t("Sigue al de Windows o queda fijo.")}</span></div>
+              {/* Each language is named in itself, so it can be found whatever language the app is in. */}
+              <Segmented<LangPref> value={prefs.lang} onChange={(lang) => savePrefs({ lang })} options={[
+                { value: "system", label: <><IconDeviceDesktop size={15} />Windows</> },
+                { value: "es", label: "Español" }, // i18n-ignore: each language is named in itself
+                { value: "en", label: "English" },
+              ]} />
+            </div>
+            <div className="pref-row">
+              <div className="pref-text"><strong>{t("Color de énfasis")}</strong><span>{t("Botones, selección, barras de uso y el holograma de las máquinas.")}</span></div>
+              <div className="swatches" role="radiogroup" aria-label={t("Color de énfasis")}>
                 {ACCENTS.map((a) => (
                   <button type="button" key={a.id} role="radio" aria-checked={prefs.accent === a.id} title={a.name} aria-label={a.name}
                     className={`swatch${prefs.accent === a.id ? " on" : ""}`} onClick={() => savePrefs({ accent: a.id })}>
@@ -162,24 +174,24 @@ export function Preferences() {
         {section("window", (
           <>
             <div className="pref-row">
-              <div className="pref-text"><strong>Al cerrar la ventana</strong><span>En la bandeja, GpuVM sigue abierta junto al reloj y los trabajos en curso continúan.</span></div>
+              <div className="pref-text"><strong>{t("Al cerrar la ventana")}</strong><span>{t("En la bandeja, GpuVM sigue abierta junto al reloj y los trabajos en curso continúan.")}</span></div>
               <Segmented<ClosePref> value={prefs.close} onChange={(close) => savePrefs({ close })} options={[
-                { value: "quit", label: <><IconPower size={15} />Salir por completo</> },
-                { value: "tray", label: <><IconLayoutBottombarCollapse size={15} />Quedarse en la bandeja</> },
+                { value: "quit", label: <><IconPower size={15} />{t("Salir por completo")}</> },
+                { value: "tray", label: <><IconLayoutBottombarCollapse size={15} />{t("Quedarse en la bandeja")}</> },
               ]} />
             </div>
             <div className="pref-row">
-              <div className="pref-text"><strong>Al salir de GpuVM</strong><span>Apagarlas cierra Windows en cada máquina y libera su memoria.</span></div>
+              <div className="pref-text"><strong>{t("Al salir de GpuVM")}</strong><span>{t("Apagarlas cierra Windows en cada máquina y libera su memoria.")}</span></div>
               <Segmented<VmsOnQuitPref> value={prefs.vmsOnQuit} onChange={(vmsOnQuit) => savePrefs({ vmsOnQuit })} options={[
-                { value: "keep", label: <><IconPlayerPlay size={15} />Dejarlas encendidas</> },
-                { value: "stop", label: <><IconPlayerStop size={15} />Apagarlas</> },
+                { value: "keep", label: <><IconPlayerPlay size={15} />{t("Dejarlas encendidas")}</> },
+                { value: "stop", label: <><IconPlayerStop size={15} />{t("Apagarlas")}</> },
               ]} />
             </div>
           </>
         ))}
         {monitors.length > 1 && section("machines", (
           <div className="pref-row">
-            <div className="pref-text"><strong>Abrir las máquinas en</strong><span>Cada máquina puede tener el suyo en sus opciones.</span></div>
+            <div className="pref-text"><strong>{t("Abrir las máquinas en")}</strong><span>{t("Cada máquina puede tener el suyo en sus opciones.")}</span></div>
             <div className="pref-side pref-stack">
               <MonitorPicker monitors={monitors} value={prefs.monitor} onChange={(monitor) => savePrefs({ monitor })} />
             </div>
@@ -188,15 +200,15 @@ export function Preferences() {
         {section("service", <ServicePrefs />)}
       </div>
       {/* Always in view: the theme and accent applied to a machine and to the app's own controls. */}
-      <aside className="card pref-preview" aria-label="Vista previa">
-        <div className="pref-preview-cube"><MachineCube machine={PREVIEW} name="vista previa" /></div>
+      <aside className="card pref-preview" aria-label={t("Vista previa")}>
+        <div className="pref-preview-cube"><MachineCube machine={PREVIEW} name={t("vista previa")} /></div>
         <div className="pref-preview-ui">
-          <div className="pref-preview-name"><span className="state-pill"><span className="dot Running" />Encendida</span><span className="pref-preview-meta">GPU 55 %</span></div>
+          <div className="pref-preview-name"><span className="state-pill"><span className="dot Running" />{t("Encendida")}</span><span className="pref-preview-meta">GPU 55 %</span></div>
           <div className="pref-preview-bars">
-            <span className="res-cpu">Procesador</span><div className="bar"><span style={{ width: "35%" }} /></div>
-            <span className="res-mem">Memoria</span><div className="bar"><span style={{ width: "45%" }} /></div>
+            <span className="res-cpu">{t("Procesador")}</span><div className="bar"><span style={{ width: "35%" }} /></div>
+            <span className="res-mem">{t("Memoria")}</span><div className="bar"><span style={{ width: "45%" }} /></div>
           </div>
-          <div className="pref-preview-actions"><button type="button" className="btn ghost" tabIndex={-1}>Ver máquina</button><button type="button" className="primary" tabIndex={-1}><IconExternalLink size={16} />Abrir</button></div>
+          <div className="pref-preview-actions"><button type="button" className="btn ghost" tabIndex={-1}>{t("Ver máquina")}</button><button type="button" className="primary" tabIndex={-1}><IconExternalLink size={16} />{t("Abrir")}</button></div>
         </div>
       </aside>
     </div>

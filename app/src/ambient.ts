@@ -1,5 +1,6 @@
 import { IconCircuitResistor, IconCube, IconLego, type Icon } from "@tabler/icons-react";
 import { drawFigures, mul3, turnY, viewRot, type FigureDraw } from "./decor/figureGL";
+import { t } from "./i18n";
 
 // Ambients: the place where a space's machines are. Each one is a world drawn behind the cube with the cube's own
 // camera, so turning or zooming the cube turns and zooms the world around it. The ground covers everything in view and
@@ -15,8 +16,10 @@ export type AmbientId = "studio" | "board" | "blocks";
 /** The time of day of the world of blocks; "auto" follows the clock. */
 export type AmbientTime = "day" | "evening" | "night" | "auto";
 type Tod = Exclude<AmbientTime, "auto">;
-export const AMBIENT_TIMES: { id: AmbientTime; name: string }[] = [
-  { id: "day", name: "Día" }, { id: "evening", name: "Tarde" }, { id: "night", name: "Noche" }, { id: "auto", name: "Según la hora" },
+// Names are getters so they are read in the language shown.
+export const AMBIENT_TIMES: { id: AmbientTime; readonly name: string }[] = [
+  { id: "day", get name() { return t("Día"); } }, { id: "evening", get name() { return t("Tarde"); } },
+  { id: "night", get name() { return t("Noche"); } }, { id: "auto", get name() { return t("Según la hora"); } },
 ];
 /** The time of day for "auto": day from 6:30, evening from 17:00, night from 19:30. */
 export function resolveTime(t: AmbientTime = "day"): Tod {
@@ -25,11 +28,11 @@ export function resolveTime(t: AmbientTime = "day"): Tod {
   return h >= 6.5 && h < 17 ? "day" : h >= 17 && h < 19.5 ? "evening" : "night";
 }
 
-export interface AmbientInfo { id: AmbientId; name: string; desc: string; icon: Icon; times?: boolean }
+export interface AmbientInfo { id: AmbientId; readonly name: string; readonly desc: string; icon: Icon; times?: boolean }
 export const AMBIENTS: AmbientInfo[] = [
-  { id: "board", name: "Placa base", desc: "Sobre su propio circuito, con chips, pistas y datos que corren.", icon: IconCircuitResistor },
-  { id: "blocks", name: "Bloques", desc: "Un mundo de bloques, con árboles, casas y figuras, de día, de tarde o de noche.", icon: IconLego, times: true },
-  { id: "studio", name: "Estudio", desc: "El fondo gris de la app, sin escenario.", icon: IconCube },
+  { id: "board", get name() { return t("Placa base"); }, get desc() { return t("Sobre su propio circuito, con chips, pistas y datos que corren."); }, icon: IconCircuitResistor },
+  { id: "blocks", get name() { return t("Bloques"); }, get desc() { return t("Un mundo de bloques, con árboles, casas y figuras, de día, de tarde o de noche."); }, icon: IconLego, times: true },
+  { id: "studio", get name() { return t("Estudio"); }, get desc() { return t("El fondo gris de la app, sin escenario."); }, icon: IconCube },
 ];
 export const ambientInfo = (id: string) => AMBIENTS.find((a) => a.id === normalizeAmbient(id)) ?? AMBIENTS[2];
 /** Ambients from earlier versions become the closest one that exists now. */

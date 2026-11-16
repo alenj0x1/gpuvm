@@ -1,5 +1,6 @@
 import type { AppInfo, InstalledApp, BaseInfo, CleanupLevel, HomeInfo, SharedDiskInfo, TemplateInfo, DiskInfo, DisplayMode, HostInfo, IsoFile, JobEvent, ProfileInfo, ProfileSettings, StreamSettings, VmOverview, AdminPrompt, HostMonitor } from "./types";
 import * as mock from "./mock";
+import { t } from "./i18n";
 
 // Outside Tauri (browser) the UI runs on sample data so it can be designed.
 export const inTauri = "__TAURI_INTERNALS__" in window;
@@ -65,10 +66,10 @@ export const api = {
 /** What is wrong with a new machine name, as New-GpuVM and Rename-GpuVM check it, or "" when it can be used.
  * `current` is the machine being renamed: its own name, even in another case, is not taken. */
 export function vmNameError(name: string, vms: { name: string }[], current?: string): string {
-  if (!name) return "Escribe un nombre";
-  if (!/^[\w-]{1,40}$/.test(name)) return name.length > 40 ? "Hasta 40 caracteres" : "Usa letras, números o guiones, sin espacios";
+  if (!name) return t("Escribe un nombre");
+  if (!/^[\w-]{1,40}$/.test(name)) return name.length > 40 ? t("Hasta 40 caracteres") : t("Usa letras, números o guiones, sin espacios");
   const taken = vms.some((v) => v.name.toLowerCase() === name.toLowerCase() && v.name.toLowerCase() !== current?.toLowerCase());
-  return taken ? "Ya hay una máquina con ese nombre" : "";
+  return taken ? t("Ya hay una máquina con ese nombre") : "";
 }
 
 export async function startJob(jobId: string, cmd: string, args: Record<string, unknown>) {
@@ -145,7 +146,7 @@ export async function relaunchAsAdmin() {
 export async function pickIso(): Promise<string | null> {
   if (!inTauri) return "D:\\ISOs\\Win11_24H2_Spanish_x64.iso";
   const { open } = await import("@tauri-apps/plugin-dialog");
-  const file = await open({ multiple: false, filters: [{ name: "Imagen de Windows", extensions: ["iso"] }] });
+  const file = await open({ multiple: false, filters: [{ name: t("Imagen de Windows"), extensions: ["iso"] }] });
   return typeof file === "string" ? file : null;
 }
 

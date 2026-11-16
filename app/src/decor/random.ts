@@ -2,6 +2,7 @@ import { FACES, LED_COLORS, MACHINE_COLORS, newId, type Decor, type Face, type S
 import { STICKERS } from "./stickers";
 import { FIGURES } from "./figures";
 import type { CubeMachine } from "../MachineCube";
+import { t } from "../i18n";
 
 // Machines made up at random for an empty Home: a color, a sign, a few stickers and a figure or two, so the space
 // shows what a machine can look like before there is one.
@@ -10,7 +11,8 @@ const pick = <T,>(list: T[]) => list[Math.floor(Math.random() * list.length)];
 const between = (a: number, b: number) => a + Math.random() * (b - a);
 const shuffle = <T,>(list: T[]) => list.map((v) => [Math.random(), v] as const).sort((a, b) => a[0] - b[0]).map(([, v]) => v);
 
-const SIGNS = ["GPUVM", "PLAYER ONE", "NIGHT CITY", "MODO JUEGO", "144 FPS", "READY", "HOLA MUNDO", "LEVEL UP", "RTX ON", "PRESS START"];
+// A function, so the Spanish ones come out in the language in use.
+const signs = () => ["GPUVM", "PLAYER ONE", "NIGHT CITY", t("MODO JUEGO"), "144 FPS", "READY", t("HOLA MUNDO"), "LEVEL UP", "RTX ON", "PRESS START"];
 const APPS = ["steam", "discord", "chrome", "spotify", "obs", "epic", "vscode", "vlc"];
 
 export function randomDecor(): Decor {
@@ -30,7 +32,7 @@ export function randomDecor(): Decor {
     .map((figure, i) => ({ id: newId(), figure, x: spots[i][0], z: spots[i][1], rot: between(-40, 40), size: between(0.9, 1.15) }));
   return {
     color: Math.random() < 0.15 ? null : pick(MACHINE_COLORS).id,
-    led: Math.random() < 0.8 ? { text: pick(SIGNS), color: pick(LED_COLORS).id, live: false } : null,
+    led: Math.random() < 0.8 ? { text: pick(signs()), color: pick(LED_COLORS).id, live: false } : null,
     stickers,
     figures,
   };

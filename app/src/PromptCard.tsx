@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { IconCheck, IconLoader2, IconShieldLock, IconX } from "@tabler/icons-react";
 import { adminPromptAnswered, api, inTauri } from "./api";
 import { humanError } from "./ui";
+import { t } from "./i18n";
 import type { AdminPrompt } from "./types";
 
 /**
@@ -42,19 +43,19 @@ export function PromptCard() {
     <div className="prompt-card" role="alertdialog" aria-labelledby="prompt-title">
       <div className="prompt-head">
         <span className="prompt-icon"><IconShieldLock size={18} /></span>
-        <strong id="prompt-title">{prompt.name} pide permiso de administrador</strong>
+        <strong id="prompt-title">{t("{name} pide permiso de administrador", { name: prompt.name })}</strong>
       </div>
       <div className="prompt-app">
-        <span className="prompt-name">{prompt.app || "Un programa"}</span>
-        <span className={unknown ? "prompt-publisher unknown" : "prompt-publisher"}>{unknown ? "Editor desconocido" : prompt.publisher}</span>
+        <span className="prompt-name">{prompt.app || t("Un programa")}</span>
+        <span className={unknown ? "prompt-publisher unknown" : "prompt-publisher"}>{unknown ? t("Editor desconocido") : prompt.publisher}</span>
       </div>
       {error && <span className="error-text">{error}</span>}
       <div className="prompt-actions">
         <button type="button" className="btn ghost" disabled={!!busy} onClick={() => answer("Deny")}>
-          {busy === "Deny" ? <IconLoader2 size={16} className="spin" /> : <IconX size={16} />}Rechazar
+          {busy === "Deny" ? <IconLoader2 size={16} className="spin" /> : <IconX size={16} />}{t("Rechazar")}
         </button>
         <button type="button" className="primary compact" disabled={!!busy} onClick={() => answer("Allow")}>
-          {busy === "Allow" ? <IconLoader2 size={16} className="spin" /> : <IconCheck size={16} />}Permitir
+          {busy === "Allow" ? <IconLoader2 size={16} className="spin" /> : <IconCheck size={16} />}{t("Permitir")}
         </button>
       </div>
     </div>

@@ -12,6 +12,7 @@ import { Apps, Cleanup, SharedDisks, type JobInfo } from "./VmView";
 import { PromptCard } from "./PromptCard";
 import { FPS_OPTIONS, USES, streamUseOf } from "./pickers";
 import { Segmented } from "./ui";
+import { t } from "./i18n";
 import { showSamplePrompt } from "./mock";
 import { IconBolt, IconPlayerTrackNext, IconRectangle, IconWaveSine } from "@tabler/icons-react";
 import type { MouseMode, VmOverview } from "./types";
@@ -38,7 +39,7 @@ onJob((e) => {
 });
 function start(vm: string, cmd: string, args: Record<string, unknown>, after?: () => void) {
   const id = `${cmd}-${Date.now()}`;
-  jobs = { ...jobs, [id]: { vm, cmd, message: "Trabajando", log: [], after } };
+  jobs = { ...jobs, [id]: { vm, cmd, message: t("Trabajando"), log: [], after } };
   changed();
   runJob(id, cmd, args);
 }
@@ -52,12 +53,12 @@ function Stream({ vm }: { vm: VmOverview }) {
     <div className="card">
       <div className="options">
         <div className="field wide">
-          <div className="field-top"><span>Tipo de uso</span></div>
+          <div className="field-top"><span>{t("Tipo de uso")}</span></div>
           <div className="segment-row">
             <Segmented value={use ?? ""} onChange={(id) => setDraft({ ...draft, ...USES.find((u) => u.id === id)!.client })}
               options={USES.map((u) => ({ value: u.id, label: <><u.icon size={15} />{u.label}</> }))} />
           </div>
-          <span className="hint">{use ? USES.find((u) => u.id === use)!.description : "Personalizado. Los ajustes de abajo se cambiaron a mano."}</span>
+          <span className="hint">{use ? USES.find((u) => u.id === use)!.description : t("Personalizado. Los ajustes de abajo se cambiaron a mano.")}</span>
         </div>
         <div className="field wide">
           <div className="field-top"><span>FPS</span></div>
@@ -66,20 +67,20 @@ function Stream({ vm }: { vm: VmOverview }) {
           </div>
         </div>
         <div className="field">
-          <div className="field-top"><span>Sincronización vertical</span></div>
+          <div className="field-top"><span>{t("Sincronización vertical")}</span></div>
           <div className="segment-row">
             <Segmented value={draft.vsync} onChange={(vsync) => setDraft({ ...draft, vsync, framePacing: vsync && draft.framePacing })} options={[
-              { value: true, label: <><IconRectangle size={15} />Imagen entera</> },
-              { value: false, label: <><IconBolt size={15} />Más rápida</> },
+              { value: true, label: <><IconRectangle size={15} />{t("Imagen entera")}</> },
+              { value: false, label: <><IconBolt size={15} />{t("Más rápida")}</> },
             ]} />
           </div>
         </div>
         <div className="field">
-          <div className="field-top"><span>Ritmo de cuadros</span></div>
+          <div className="field-top"><span>{t("Ritmo de cuadros")}</span></div>
           <div className={`segment-row${draft.vsync ? "" : " disabled"}`}>
             <Segmented value={draft.framePacing} onChange={(framePacing) => draft.vsync && setDraft({ ...draft, framePacing })} options={[
-              { value: true, label: <><IconWaveSine size={15} />Parejo</> },
-              { value: false, label: <><IconPlayerTrackNext size={15} />Al instante</> },
+              { value: true, label: <><IconWaveSine size={15} />{t("Parejo")}</> },
+              { value: false, label: <><IconPlayerTrackNext size={15} />{t("Al instante")}</> },
             ]} />
           </div>
         </div>

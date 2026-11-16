@@ -3,7 +3,7 @@ import {
   IconApps, IconBolt, IconBrandWindows, IconCheck, IconCpu, IconDatabase, IconDeviceFloppy, IconDisc, IconLayoutGrid, IconLoader2, IconPalette, IconPlus, IconSparkles, IconTag, IconTemplate, IconTopologyStar3, IconUser, IconX,
 } from "@tabler/icons-react";
 import type { AppInfo, CleanupLevelId, HostInfo, IsoFile, ProfileInfo, ProfileSettings, TemplateInfo, VmOverview } from "./types";
-import { api, pickIso } from "./api";
+import { api, pickIso, vmNameError } from "./api";
 import { PatternButton } from "./machineIcon";
 import { CheckMark, Segmented, Slider, humanError } from "./ui";
 import { AppPicker, IsoPicker, useCleanupLevels, profileLabel } from "./pickers";
@@ -15,6 +15,7 @@ import { draftSource, saveDecor, useSource, type DecorSource } from "./decor/sto
 import { useSpaces } from "./spaces";
 import { ambientInfo } from "./ambient";
 import { Dropdown as SpaceDropdown } from "./ui";
+import { t, tn } from "./i18n";
 
 export interface Resources { cpu: number; memoryGB: number; gpuPercent: number; diskGB: number }
 
@@ -104,15 +105,15 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
   }, [onClose]);
 
   const sections: { id: Section; label: string; icon: React.ReactNode }[] = [
-    { id: "name", label: "Nombre y espacio", icon: <IconTag size={16} /> },
-    { id: "start", label: "Punto de partida", icon: <IconLayoutGrid size={16} /> },
-    { id: "resources", label: "Recursos", icon: <IconCpu size={16} /> },
+    { id: "name", label: t("Nombre y espacio"), icon: <IconTag size={16} /> },
+    { id: "start", label: t("Punto de partida"), icon: <IconLayoutGrid size={16} /> },
+    { id: "resources", label: t("Recursos"), icon: <IconCpu size={16} /> },
     ...(fromTemplate ? [] : [
-      { id: "windows" as Section, label: "Windows y cuenta", icon: <IconBrandWindows size={16} /> },
-      { id: "apps" as Section, label: "Apps", icon: <IconApps size={16} /> },
-      { id: "cleanup" as Section, label: "Limpieza", icon: <IconSparkles size={16} /> },
+      { id: "windows" as Section, label: t("Windows y cuenta"), icon: <IconBrandWindows size={16} /> },
+      { id: "apps" as Section, label: t("Apps"), icon: <IconApps size={16} /> },
+      { id: "cleanup" as Section, label: t("Limpieza"), icon: <IconSparkles size={16} /> },
     ]),
-    { id: "custom", label: "Personalizar", icon: <IconPalette size={16} /> },
+    { id: "custom", label: t("Personalizar"), icon: <IconPalette size={16} /> },
   ];
   // The section in view is marked on the left as the body scrolls; a click there scrolls to it.
   useEffect(() => {
@@ -146,12 +147,11 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
   const blur = (field: string) => setBlurred((b) => ({ ...b, [field]: true }));
 
   // Checked as you type; "Crear máquina" stays disabled until everything is valid.
-  const nameError = !name ? "" : !/^[\w-]{1,40}$/.test(name) ? "Usa letras, números o guiones, sin espacios"
-    : existing.some((v) => v.name.toLowerCase() === name.toLowerCase()) ? "Ya hay una máquina con ese nombre" : "";
-  const userError = !user ? "Escribe un usuario" : !/^[A-Za-z0-9._-]{1,20}$/.test(user) || user.endsWith(".") ? "Hasta 20 letras, números, puntos o guiones"
-    : RESERVED_USERS.includes(user.toLowerCase()) ? "Windows reserva ese nombre" : "";
-  const passwordError = password.length >= MIN_PASSWORD || (!blurred.password && repeat.length === 0) || !password ? "" : `Usa al menos ${MIN_PASSWORD} caracteres`;
-  const repeatError = repeat && password !== repeat && (blurred.repeat || repeat.length >= password.length) ? "Las contraseñas no coinciden" : "";
+  const nameError = !name ? "" : vmNameError(name, existing);
+  const userError = !user ? t("Escribe un usuario") : !/^[A-Za-z0-9._-]{1,20}$/.test(user) || user.endsWith(".") ? t("Hasta 20 letras, números, puntos o guiones")
+    : RESERVED_USERS.includes(user.toLowerCase()) ? t("Windows reserva ese nombre") : "";
+  const passwordError = password.length >= MIN_PASSWORD || (!blurred.password && repeat.length === 0) || !password ? "" : t("Usa al menos {n} caracteres", { n: MIN_PASSWORD });
+  const repeatError = repeat && password !== repeat && (blurred.repeat || repeat.length >= password.length) ? t("Las contraseñas no coinciden") : "";
   const complete = !!name && !nameError && !!res && (fromTemplate
     ? !!template
     : !!iso && !userError && password.length >= MIN_PASSWORD && password === repeat);
@@ -173,7 +173,7 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
   const saveProfile = async () => {
     if (!saving || !settings) return;
     const n = saving.name.trim();
-    if (!/^[\w-]{1,40}$/.test(n)) { setSaving({ ...saving, error: "Usa letras, números o guiones" }); return; }
+    if (!/^[\w-]{1,40}$/.test(n)) { setSaving({ ...saving, error: t("Usa letras, números o guiones") }); return; }
     setSaving({ ...saving, busy: true, error: "" });
     try {
       await api.saveProfile(n, "", profile, settings);
@@ -209,11 +209,11 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
   return (
     // Clicking outside only closes when nothing was typed; Esc always closes.
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && (busy || !dirty) && onClose()}>
-      <div className={`dialog ${busy ? "" : "create-dialog"}`} role="dialog" aria-modal="true" aria-label="Crear máquina">
+      <div className={`dialog ${busy ? "" : "create-dialog"}`} role="dialog" aria-modal="true" aria-label={t("Crear máquina")}>
         <div className="dialog-head">
           <PatternButton name={name || "nueva"} size={44} radius={12} onChange={() => repaint((n) => n + 1)} />
-          <h2>{busy ? `Creando ${name}` : "Crear máquina"}</h2>
-          <button className="icon-btn" aria-label="Cerrar" onClick={onClose}><IconX size={18} /></button>
+          <h2>{busy ? t("Creando {name}", { name }) : t("Crear máquina")}</h2>
+          <button className="icon-btn" aria-label={t("Cerrar")} onClick={onClose}><IconX size={18} /></button>
         </div>
 
         {busy ? (
@@ -223,7 +223,7 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
                 {i === job!.log.length - 1 ? <IconLoader2 size={14} className="spin" /> : <IconCheck size={14} />}{line}
               </span>
             ))}
-            <span className="log-hint">Puedes cerrar esta ventana: el avance sigue en la barra lateral.</span>
+            <span className="log-hint">{t("Puedes cerrar esta ventana: el avance sigue en la barra lateral.")}</span>
           </div>
         ) : (
           <form className="dialog-form create-form" onSubmit={submit}>
@@ -234,50 +234,50 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
             </nav>
 
             <div ref={bodyRef} className="create-body">
-              {section("name", "Nombre y espacio", "Cómo se llama en GpuVM y en Hyper-V, y el espacio donde va a estar.", (
+              {section("name", t("Nombre y espacio"), t("Cómo se llama en GpuVM y en Hyper-V, y el espacio donde va a estar."), (
                 <div className="create-account">
                   <div className="field">
-                    <label className="field-top" htmlFor="vm-name"><span>Nombre</span></label>
-                    <input id="vm-name" ref={nameRef} className="text-input" aria-label="Nombre" value={name} onChange={(e) => { setName(e.target.value); touch(); }} />
+                    <label className="field-top" htmlFor="vm-name"><span>{t("Nombre")}</span></label>
+                    <input id="vm-name" ref={nameRef} className="text-input" aria-label={t("Nombre")} value={name} onChange={(e) => { setName(e.target.value); touch(); }} />
                     {nameError && <span className="error-text">{nameError}</span>}
                   </div>
                   <div className="field">
-                    <div className="field-top"><span>Espacio</span></div>
-                    <SpaceDropdown label="Espacio" value={space.id} onChange={(v) => { setSpaceId(v); touch(); }}
+                    <div className="field-top"><span>{t("Espacio")}</span></div>
+                    <SpaceDropdown label={t("Espacio")} value={space.id} onChange={(v) => { setSpaceId(v); touch(); }}
                       options={spaces.map((x) => { const I = ambientInfo(x.ambient).icon; return { value: x.id, label: x.name, detail: ambientInfo(x.ambient).name, icon: <I size={16} /> }; })} />
                   </div>
                 </div>
               ))}
 
-              {section("start", "Punto de partida", "Un perfil llena todo lo de abajo; puedes cambiar lo que quieras.", (
+              {section("start", t("Punto de partida"), t("Un perfil llena todo lo de abajo; puedes cambiar lo que quieras."), (
                 <>
                   {templates.length > 0 && (
                     <div className="segment-row">
                       <Segmented value={source} onChange={(v) => { setSource(v); touch(); }} options={[
-                        { value: "iso", label: <><IconDisc size={15} />Instalar Windows</> },
-                        { value: "template", label: <><IconTemplate size={15} />Desde plantilla</> },
+                        { value: "iso", label: <><IconDisc size={15} />{t("Instalar Windows")}</> },
+                        { value: "template", label: <><IconTemplate size={15} />{t("Desde plantilla")}</> },
                       ]} />
                     </div>
                   )}
                   {fromTemplate && (
-                    <div className="choice-list" role="radiogroup" aria-label="Plantilla">
-                      {templates.map((t) => (
-                        <button type="button" role="radio" aria-checked={template === t.name} key={t.name} className={`choice ${template === t.name ? "on" : ""}`}
-                          onClick={() => { setTemplate(t.name); touch(); }}>
-                          <span className="check">{template === t.name && <CheckMark />}</span>
+                    <div className="choice-list" role="radiogroup" aria-label={t("Plantilla")}>
+                      {templates.map((tpl) => (
+                        <button type="button" role="radio" aria-checked={template === tpl.name} key={tpl.name} className={`choice ${template === tpl.name ? "on" : ""}`}
+                          onClick={() => { setTemplate(tpl.name); touch(); }}>
+                          <span className="check">{template === tpl.name && <CheckMark />}</span>
                           <span className="grow">
-                            <span className="title">{t.name}</span>
-                            <span className="desc">{[`Desde ${t.fromVM}`, t.edition, `${t.sizeGB} GB`].filter(Boolean).join(" · ")}</span>
+                            <span className="title">{tpl.name}</span>
+                            <span className="desc">{[t("Desde {vm}", { vm: tpl.fromVM }), tpl.edition, `${tpl.sizeGB} GB`].filter(Boolean).join(" · ")}</span>
                           </span>
                         </button>
                       ))}
                     </div>
                   )}
-                  <div className="create-profiles" role="radiogroup" aria-label="Perfil">
+                  <div className="create-profiles" role="radiogroup" aria-label={t("Perfil")}>
                     {profiles.map((p) => (
                       <button type="button" role="radio" aria-checked={profile === p.Name} key={p.Name} className={`create-profile${profile === p.Name ? " on" : ""}`}
                         onClick={() => { applyProfile(p); touch(); }}>
-                        <span className="create-profile-name">{profileLabel(p.Name)}{profile === p.Name && changed && <span className="tag">Cambiado</span>}</span>
+                        <span className="create-profile-name">{profileLabel(p.Name)}{profile === p.Name && changed && <span className="tag">{t("Cambiado")}</span>}</span>
                         {p.Settings && <ResourceChips s={p.Settings} apps={catalog} />}
                       </button>
                     ))}
@@ -285,38 +285,38 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
                 </>
               ))}
 
-              {section("resources", "Recursos", "Lo que la máquina toma de tu PC al encenderse.", res && (
+              {section("resources", t("Recursos"), t("Lo que la máquina toma de tu PC al encenderse."), res && (
                 <div className="create-resources">
-                  <div className="field"><div className="field-top"><span className="res-cpu"><IconCpu size={15} /> Procesador</span><strong>{res.cpu} hilos</strong></div>
-                    <Slider label="Hilos" value={Math.min(res.cpu, maxCpu)} min={2} max={maxCpu} onChange={(cpu) => { setRes({ ...res, cpu }); touch(); }} /></div>
-                  <div className="field"><div className="field-top"><span className="res-mem"><IconTopologyStar3 size={15} /> Memoria</span><strong>{res.memoryGB} GB</strong></div>
-                    <Slider label="Memoria" value={Math.min(res.memoryGB, maxMem)} min={4} max={maxMem} onChange={(memoryGB) => { setRes({ ...res, memoryGB }); touch(); }} /></div>
+                  <div className="field"><div className="field-top"><span className="res-cpu"><IconCpu size={15} /> {t("Procesador")}</span><strong>{tn(res.cpu, "{n} hilo", "{n} hilos")}</strong></div>
+                    <Slider label={t("Hilos")} value={Math.min(res.cpu, maxCpu)} min={2} max={maxCpu} onChange={(cpu) => { setRes({ ...res, cpu }); touch(); }} /></div>
+                  <div className="field"><div className="field-top"><span className="res-mem"><IconTopologyStar3 size={15} /> {t("Memoria")}</span><strong>{res.memoryGB} GB</strong></div>
+                    <Slider label={t("Memoria")} value={Math.min(res.memoryGB, maxMem)} min={4} max={maxMem} onChange={(memoryGB) => { setRes({ ...res, memoryGB }); touch(); }} /></div>
                   <div className="field"><div className="field-top"><span className="res-gpu"><IconBolt size={15} /> GPU</span><strong>{res.gpuPercent} %</strong></div>
                     <Slider label="GPU" value={res.gpuPercent} min={10} max={100} step={10} onChange={(gpuPercent) => { setRes({ ...res, gpuPercent }); touch(); }} /></div>
-                  <div className="field"><div className="field-top"><span className="res-disk"><IconDatabase size={15} /> Disco</span><strong>{res.diskGB} GB</strong></div>
-                    <Slider label="Disco" value={res.diskGB} min={64} max={1024} step={16} onChange={(diskGB) => { setRes({ ...res, diskGB }); touch(); }} /></div>
+                  <div className="field"><div className="field-top"><span className="res-disk"><IconDatabase size={15} /> {t("Disco")}</span><strong>{res.diskGB} GB</strong></div>
+                    <Slider label={t("Disco")} value={res.diskGB} min={64} max={1024} step={16} onChange={(diskGB) => { setRes({ ...res, diskGB }); touch(); }} /></div>
                 </div>
               ))}
 
-              {!fromTemplate && section("windows", "Windows y cuenta", "La imagen que se instala y la cuenta con la que entras.", (
+              {!fromTemplate && section("windows", t("Windows y cuenta"), t("La imagen que se instala y la cuenta con la que entras."), (
                 <>
                   <div className="field">
-                    <div className="field-top"><span>Imagen de Windows</span></div>
+                    <div className="field-top"><span>{t("Imagen de Windows")}</span></div>
                     <IsoPicker isos={isos?.filter((f) => !f.missing) ?? null} value={iso} onChange={(v) => { setIso(v); touch(); }} onBrowse={browse} />
                   </div>
                   <div className="create-account">
                     <div className="field">
-                      <label className="field-top" htmlFor="vm-user"><span>Usuario</span></label>
+                      <label className="field-top" htmlFor="vm-user"><span>{t("Usuario")}</span></label>
                       <input id="vm-user" className="text-input" value={user} onChange={(e) => { setUser(e.target.value); touch(); }} />
                       {userError && <span className="error-text">{userError}</span>}
                     </div>
                     <div className="field">
-                      <label className="field-top" htmlFor="vm-pass"><span>Contraseña</span></label>
+                      <label className="field-top" htmlFor="vm-pass"><span>{t("Contraseña")}</span></label>
                       <input id="vm-pass" className="text-input" type="password" value={password} onBlur={() => blur("password")} onChange={(e) => { setPassword(e.target.value); touch(); }} />
                       {passwordError && <span className="error-text">{passwordError}</span>}
                     </div>
                     <div className="field">
-                      <label className="field-top" htmlFor="vm-pass2"><span>Repetir contraseña</span></label>
+                      <label className="field-top" htmlFor="vm-pass2"><span>{t("Repetir contraseña")}</span></label>
                       <input id="vm-pass2" className="text-input" type="password" value={repeat} onBlur={() => blur("repeat")} onChange={(e) => { setRepeat(e.target.value); touch(); }} />
                       {repeatError && <span className="error-text">{repeatError}</span>}
                     </div>
@@ -324,13 +324,13 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
                 </>
               ))}
 
-              {!fromTemplate && catalog.length > 0 && section("apps", "Apps", "Se instalan desde su fuente oficial al abrirla por primera vez.", (
+              {!fromTemplate && catalog.length > 0 && section("apps", t("Apps"), t("Se instalan desde su fuente oficial al abrirla por primera vez."), (
                 <AppPicker apps={catalog} value={apps} onChange={(v) => { setApps(v); touch(); }} scroll={false} />
               ))}
 
-              {!fromTemplate && cleanupLevels.length > 0 && section("cleanup", "Limpieza de Windows", "Cada nivel incluye lo de los anteriores. La seguridad no se toca.", (
+              {!fromTemplate && cleanupLevels.length > 0 && section("cleanup", t("Limpieza de Windows"), t("Cada nivel incluye lo de los anteriores. La seguridad no se toca."), (
                 <>
-                <div className="level-list create-levels" role="radiogroup" aria-label="Limpieza">
+                <div className="level-list create-levels" role="radiogroup" aria-label={t("Limpieza")}>
                   {cleanupLevels.map((l) => (
                     <button key={l.id} type="button" role="radio" aria-checked={l.id === cleanup} className={`level-row${l.id === cleanup ? " on" : ""}`}
                       onClick={() => { setCleanup(l.id); touch(); }}>
@@ -348,7 +348,7 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
                 </>
               ))}
 
-              {section("custom", "Personalizar", "Su color, un letrero, stickers y figuras. Se arrastran al cubo de al lado.", (
+              {section("custom", t("Personalizar"), t("Su color, un letrero, stickers y figuras. Se arrastran al cubo de al lado."), (
                 <Customize bare source={decorEdit.source} ops={decorEdit.ops} selected={decorEdit.selected} setSelected={decorEdit.setSelected} openMenu={decorEdit.openMenu} />
               ))}
               {decorEdit.menu}
@@ -361,54 +361,54 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
                   <DraftCube draft={draft} ambient={space.ambient} spaceName={space.name} time={space.time} machine={{
                     power: "on", cores: res.cpu, memoryGB: res.memoryGB, gpuPercent: res.gpuPercent, diskGB: res.diskGB,
                     usage: { cpu: 12, gpu: 18, mem: 30, disk: 8 }, apps, removed: CLEANUP_REMOVED[cleanup] ?? 0,
-                  }} name={name} spin={decorEdit.spins} edit={{ ...decorEdit.edit, holdStill: active === "custom" }}
+                  }} name={name} decorOf="" spin={decorEdit.spins} edit={{ ...decorEdit.edit, holdStill: active === "custom" }}
                     others={existing.map((v) => ({ name: v.name, machine: cubeOf(v) }))} />
                 </div>
               )}
-              <span className="create-summary-title">Resumen</span>
-              <strong className="create-summary-name">{name || "Sin nombre"}</strong>
+              <span className="create-summary-title">{t("Resumen")}</span>
+              <strong className="create-summary-name">{name || t("Sin nombre")}</strong>
               {res && (
                 <div className="create-summary-chips">
-                  <Chip kind="cpu">{res.cpu} hilos</Chip>
+                  <Chip kind="cpu">{tn(res.cpu, "{n} hilo", "{n} hilos")}</Chip>
                   <Chip kind="mem">{res.memoryGB} GB</Chip>
                   <Chip kind="gpu">GPU {res.gpuPercent} %</Chip>
                   <Chip kind="disk">{res.diskGB} GB</Chip>
                 </div>
               )}
-              <span className="create-summary-line"><IconLayoutGrid size={14} /><span>{profileLabel(profile)}{changed ? ", con cambios" : ""}</span></span>
+              <span className="create-summary-line"><IconLayoutGrid size={14} /><span>{changed ? t("{profile}, con cambios", { profile: profileLabel(profile) }) : profileLabel(profile)}</span></span>
               {fromTemplate ? (
-                <span className="create-summary-line"><IconTemplate size={14} /><span>Plantilla {template ?? "—"}</span></span>
+                <span className="create-summary-line"><IconTemplate size={14} /><span>{t("Plantilla {name}", { name: template ?? "—" })}</span></span>
               ) : (
                 <>
-                  <span className="create-summary-line cut" title={isoName}><IconDisc size={14} /><span>{isoName ?? "Sin imagen de Windows"}</span></span>
+                  <span className="create-summary-line cut" title={isoName}><IconDisc size={14} /><span>{isoName ?? t("Sin imagen de Windows")}</span></span>
                   <span className="create-summary-line"><IconUser size={14} /><span>{user || "—"}</span></span>
-                  <span className="create-summary-line"><IconApps size={14} /><span>{apps.length ? apps.map((id) => catalog.find((a) => a.id === id)?.name ?? id).join(", ") : "Sin apps"}</span></span>
-                  <span className="create-summary-line"><IconSparkles size={14} /><span>{level ?? "Normal"}</span></span>
+                  <span className="create-summary-line"><IconApps size={14} /><span>{apps.length ? apps.map((id) => catalog.find((a) => a.id === id)?.name ?? id).join(", ") : t("Sin apps")}</span></span>
+                  <span className="create-summary-line"><IconSparkles size={14} /><span>{level ?? t("Normal")}</span></span>
                 </>
               )}
               {changed && settings && (saving ? (
                 <div className="create-save">
-                  <input className="text-input" autoFocus placeholder="Nombre del perfil" value={saving.name} onChange={(e) => setSaving({ ...saving, name: e.target.value, error: "" })}
+                  <input className="text-input" autoFocus placeholder={t("Nombre del perfil")} value={saving.name} onChange={(e) => setSaving({ ...saving, name: e.target.value, error: "" })}
                     onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); saveProfile(); } }} />
                   {saving.error && <span className="error-text">{saving.error}</span>}
                   <div className="create-save-actions">
-                    <button type="button" className="btn ghost" onClick={() => setSaving(null)}>Cancelar</button>
+                    <button type="button" className="btn ghost" onClick={() => setSaving(null)}>{t("Cancelar")}</button>
                     <button type="button" className="btn" disabled={saving.busy || !saving.name.trim()} onClick={saveProfile}>
-                      {saving.busy ? <IconLoader2 size={15} className="spin" /> : <IconDeviceFloppy size={15} />}Guardar
+                      {saving.busy ? <IconLoader2 size={15} className="spin" /> : <IconDeviceFloppy size={15} />}{t("Guardar")}
                     </button>
                   </div>
                 </div>
               ) : (
                 <button type="button" className="btn ghost create-save-open" onClick={() => setSaving({ name: "", busy: false, error: "" })}>
-                  <IconDeviceFloppy size={15} />Guardar como perfil
+                  <IconDeviceFloppy size={15} />{t("Guardar como perfil")}
                 </button>
               ))}
             </aside>
 
             {error && <div className="notice error-notice create-error"><span className="grow">{error}</span></div>}
             <div className="dialog-foot create-foot">
-              <button type="button" className="btn ghost" onClick={onClose}>Cancelar</button>
-              <button type="submit" className="primary compact" disabled={!complete}><IconPlus size={16} />Crear máquina</button>
+              <button type="button" className="btn ghost" onClick={onClose}>{t("Cancelar")}</button>
+              <button type="submit" className="primary compact" disabled={!complete}><IconPlus size={16} />{t("Crear máquina")}</button>
             </div>
           </form>
         )}
