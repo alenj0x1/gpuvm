@@ -356,3 +356,30 @@ export function useFlip<T extends HTMLElement>() {
   }, []);
   return ref;
 }
+
+/** Scrolls a page so a section lands just under its sticky section bar, with the page's own gap above it (where the
+ *  first section sits), gliding there with an ease-out; the wheel or a drag stops the glide. */
+export function scrollToSection(main: HTMLElement, el: HTMLElement, smooth = true) {
+  const nav = main.querySelector<HTMLElement>(".section-nav");
+  // The bar sticks at its own top, measured from the page's padding (a negative top tucks it into that padding);
+  // under it goes the page's own gap.
+  const pad = parseFloat(getComputedStyle(main).paddingTop) || 0;
+  const stuck = nav ? nav.offsetHeight + pad + (parseFloat(getComputedStyle(nav).top) || 0) : 0;
+  const gap = parseFloat(getComputedStyle(main).rowGap) || 16;
+  const target = Math.max(0, Math.min(main.scrollHeight - main.clientHeight,
+    main.scrollTop + el.getBoundingClientRect().top - main.getBoundingClientRect().top - stuck - gap));
+  const glides = main as HTMLElement & { _glide?: number };
+  if (glides._glide) cancelAnimationFrame(glides._glide);
+  if (!smooth || window.matchMedia("(prefers-reduced-motion: reduce)").matches) { main.scrollTop = target; return; }
+  const from = main.scrollTop, dist = target - from, start = performance.now();
+  const ms = Math.min(650, 300 + Math.abs(dist) * 0.25);
+  const stop = () => { if (glides._glide) cancelAnimationFrame(glides._glide); glides._glide = 0; main.removeEventListener("wheel", stop); main.removeEventListener("pointerdown", stop); };
+  main.addEventListener("wheel", stop, { passive: true, once: true });
+  main.addEventListener("pointerdown", stop, { passive: true, once: true });
+  const step = (now: number) => {
+    const k = Math.min(1, (now - start) / ms), e = 1 - Math.pow(1 - k, 3);
+    main.scrollTop = from + dist * e;
+    if (k < 1) glides._glide = requestAnimationFrame(step); else stop();
+  };
+  glides._glide = requestAnimationFrame(step);
+}

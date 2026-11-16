@@ -11,7 +11,7 @@ import { api, pickFolder, pickIso } from "./api";
 import { PatternButton } from "./machineIcon";
 import { usePrefs } from "./prefs";
 import { AppPicker, CleanupPicker, FpsPicker, IsoPicker, resolveMonitor, useMonitors, useCleanupLevels, RESOLUTIONS, USES, isoDetail, profileLabel, streamUseOf } from "./pickers";
-import { Segmented, Slider, humanError, portalRoot, useFlip, useScrollFade } from "./ui";
+import { Segmented, Slider, humanError, portalRoot, scrollToSection, useFlip, useScrollFade } from "./ui";
 import { ResourceChips } from "./resources";
 import { NewTemplate } from "./VmView";
 import { locale, t, tn } from "./i18n";
@@ -67,15 +67,17 @@ export function Library({ tab, onTab, host, startJob, busy, progress, notify, on
   const mainRef = useRef<HTMLDivElement>(null);
   const refs = useRef<Partial<Record<LibraryTab, HTMLElement | null>>>({});
   const [active, setActive] = useState<LibraryTab>(tab);
+  // A tab clicked here already scrolls; the route it changes must not scroll again (it cut the glide short).
+  const clicked = useRef<LibraryTab | null>(null);
   const goTo = (t: LibraryTab, smooth = true) => {
-    const main = mainRef.current, el = refs.current[t];
-    if (!main || !el) return;
-    const nav = main.querySelector<HTMLElement>(".section-nav")?.offsetHeight ?? 0;
-    main.scrollTo({ top: Math.max(0, main.scrollTop + el.getBoundingClientRect().top - main.getBoundingClientRect().top - nav - 12), behavior: smooth ? "smooth" : "auto" });
+    // The first section goes back to the very top, with the space overview above it in view.
+    const main = mainRef.current, el = t === SECTIONS[0].tab ? main?.querySelector<HTMLElement>(".section-nav + *") : refs.current[t];
+    if (main && el) scrollToSection(main, el, smooth);
   };
   // Arriving with a section in the route (from Inicio) scrolls to it.
   // The first section opens at the very top, with the storage overview above it in view.
   useEffect(() => {
+    if (clicked.current === tab) { clicked.current = null; return; }
     const id = setTimeout(() => { if (tab === SECTIONS[0].tab) mainRef.current?.scrollTo({ top: 0 }); else goTo(tab, false); }, 60);
     return () => clearTimeout(id);
   }, [tab]);
@@ -100,7 +102,7 @@ export function Library({ tab, onTab, host, startJob, busy, progress, notify, on
       <nav className="section-nav" role="tablist">
         {SECTIONS.map((x) => (
           <button key={x.tab} type="button" role="tab" aria-selected={x.tab === active} className={x.tab === active ? "on" : ""}
-            onClick={() => { goTo(x.tab); onTab(x.tab); }}>{x.label}</button>
+            onClick={() => { clicked.current = x.tab; goTo(x.tab); onTab(x.tab); }}>{x.label}</button>
         ))}
       </nav>
       <StorageOverview hostFreeGB={host?.disk?.freeGB ?? null} />

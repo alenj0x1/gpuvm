@@ -16,7 +16,7 @@ import { SpaceDialog } from "./SpaceDialog";
 import { Scene, nextSceneStyle, sceneStyle } from "./Scene";
 import { CleanupFlow, CleanupItems, LEVEL_LOOK } from "./CleanupFlow";
 import { Sparkline, series } from "./Chart";
-import { CheckMark, Dropdown, Segmented, Slider, formatUptime, portalRoot, stateText, useScrollFade } from "./ui";
+import { CheckMark, Dropdown, Segmented, Slider, formatUptime, portalRoot, scrollToSection, stateText, useScrollFade } from "./ui";
 import { api, openConsole, vmNameError } from "./api";
 import { locale, t, tn, translateModule } from "./i18n";
 
@@ -153,10 +153,7 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const goTo = (t: VmTab) => {
     const main = mainRef.current, el = sectionRefs.current[t];
-    if (!main || !el) return;
-    const nav = main.querySelector<HTMLElement>(".section-nav")?.offsetHeight ?? 0;
-    const top = main.scrollTop + el.getBoundingClientRect().top - main.getBoundingClientRect().top - nav - 12;
-    main.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+    if (main && el) scrollToSection(main, el);
   };
 
   return (
