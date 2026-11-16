@@ -351,7 +351,7 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     if (z === 1) {
       if (v < 0.4) {
         // A chip with its pins.
-        g.fillStyle = host.light ? "#26292b" : "#1c2123"; g.fillRect(-s, -s, s * 2, s * 2);
+        g.fillStyle = host.light ? "#26292b" : "#3a4449"; g.fillRect(-s, -s, s * 2, s * 2);
         g.fillStyle = host.light ? "#9aa1a3" : "#a7aeb0";
         for (let q = 0; q < 6; q++) { const u = -s + 4 + q * ((s * 2 - 8) / 5); g.fillRect(u - 1, -s - 4, 2, 4); g.fillRect(u - 1, s, 2, 4); g.fillRect(-s - 4, u - 1, 4, 2); g.fillRect(s, u - 1, 4, 2); }
         g.fillStyle = "rgba(255,255,255,.12)"; g.beginPath(); g.arc(-s + 6, -s + 6, 2.5, 0, 7); g.fill();
@@ -407,7 +407,9 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     } else if (z === 1) {
       g.fillStyle = host.light ? "#e4ebe6" : "#121814"; g.fillRect(0, 0, W, H);
       const off = scroll * 0.6;
-      g.strokeStyle = host.light ? "#b9c9bf" : "#2c4a3d"; g.lineWidth = 2;
+      // The board is only a backdrop: its traces and chips sit close to its own tone, far from the chips that come
+      // at you (dark, with bright pins), so nothing in it reads as an obstacle.
+      g.strokeStyle = host.light ? "#d2ddd5" : "#1b2a23"; g.lineWidth = 1.5;
       for (let row = 0; row < H / 22 + 1; row++) {
         // Each trace keeps its length by its place in the world, so none jumps as it scrolls by.
         const y = 11 + row * 22, sh = off + row * 137, first = Math.floor(sh / 400);
@@ -415,13 +417,13 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
         for (let k = 0; (k - 1) * 400 < W; k++) { const i = first + k, x = i * 400 - sh, len = 180 + ((((i * 37 + row * 11) % 160) + 160) % 160); g.moveTo(x, y); g.lineTo(x + len, y); g.lineTo(x + len + 16, y + (row % 2 ? 16 : -16)); }
         g.stroke();
       }
-      g.fillStyle = host.light ? "#26292b" : "#1c2123";
+      g.fillStyle = host.light ? "#d8e2db" : "#18201c";
       for (let k = 0; k < 6; k++) {
         const x = ((k * 330 - scroll * 0.35) % (W + 330) + W + 330) % (W + 330) - 160, y = 40 + ((k * 151) % Math.max(60, H - 140)), s = 70 + (k % 3) * 30;
         g.fillRect(x, y, s, s);
-        g.fillStyle = host.light ? "#9aa1a3" : "#5c666a";
+        g.fillStyle = host.light ? "#c9d5cd" : "#202b25";
         for (let q = 0; q < 8; q++) { g.fillRect(x + 6 + q * (s - 12) / 8, y - 5, 3, 5); g.fillRect(x + 6 + q * (s - 12) / 8, y + s, 3, 5); }
-        g.fillStyle = host.light ? "#26292b" : "#1c2123";
+        g.fillStyle = host.light ? "#d8e2db" : "#18201c";
       }
     } else {
       g.fillStyle = host.light ? "#8fc282" : "#264a24"; g.fillRect(0, 0, W, H);
