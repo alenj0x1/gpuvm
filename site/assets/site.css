@@ -369,3 +369,8 @@ html:not([data-world="blocks"]) [data-seg="time"] { display: none; }
   .chapter-text { text-align: center; }
   .points li { justify-items: center; text-align: center; }
 }
+/* Wider than a phone: each icon sits centered against its text, one line or two. */
+@media (min-width: 601px) {
+  .points li { align-items: center; }
+  .points li > span { padding-top: 0; }
+}
