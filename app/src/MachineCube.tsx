@@ -1631,8 +1631,12 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       drawFiguresGL(g, draws, accent, W, H, window.devicePixelRatio || 1, uiAccent);
     }
 
+    // A page can cap the frame rate (the website shows several cubes at once, as decoration): frames in between
+    // are skipped. The app itself draws every frame.
+    let drawnAt = 0;
     const loop = (now: number) => {
-      draw(now);
+      const cap = (window as { __gpuvmFps?: number }).__gpuvmFps;
+      if (!cap || now - drawnAt >= 1000 / cap - 2) { drawnAt = now; draw(now); }
       if (visible && !document.hidden && !reduced) frame = requestAnimationFrame(loop);
     };
     const restart = () => { cancelAnimationFrame(frame); last = performance.now(); if (visible && !document.hidden) frame = requestAnimationFrame(loop); };

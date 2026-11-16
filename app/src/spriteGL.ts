@@ -16,7 +16,7 @@ precision mediump float;
 in vec2 vUV; in float vA; uniform sampler2D uTex; out vec4 o;
 void main() { o = texture(uTex, vUV) * vA; }`;
 
-interface GL { c: HTMLCanvasElement; gl: WebGL2RenderingContext; prog: WebGLProgram; inst: WebGLBuffer; tex: WebGLTexture; texOf: HTMLCanvasElement | null; u: Record<string, WebGLUniformLocation | null> }
+interface GL { c: HTMLCanvasElement; gl: WebGL2RenderingContext; prog: WebGLProgram; inst: WebGLBuffer; tex: WebGLTexture; texOf: HTMLCanvasElement | null; texs: Map<HTMLCanvasElement, WebGLTexture>; u: Record<string, WebGLUniformLocation | null> }
 let ctx: GL | null | undefined;
 
 function setup(): GL | null {
@@ -41,7 +41,7 @@ function setup(): GL | null {
   gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
   gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   const u = Object.fromEntries(["uSize", "uView", "uUp", "uTex"].map((n) => [n, gl.getUniformLocation(prog, n)]));
-  return { c, gl, prog, inst, tex, texOf: null, u };
+  return { c, gl, prog, inst, tex, texOf: null, texs: new Map(), u };
 }
 
 let buf = new Float32Array(3 * 4096);
@@ -61,22 +61,32 @@ export function draw(g: CanvasRenderingContext2D, image: HTMLCanvasElement, w: n
   if (!ctx) return false;
   if (!count) return true;
   const { c, gl, u } = ctx;
+  // Several scenes share this canvas (the website shows a few cubes at once): it only grows, each draws in its
+  // top-left corner, and each sprite keeps its own texture, so nothing is reallocated or uploaded again per call.
   const pw = Math.round(W * dpr), ph = Math.round(H * dpr);
-  if (c.width !== pw || c.height !== ph) { c.width = pw; c.height = ph; }
-  gl.viewport(0, 0, pw, ph);
+  if (c.width < pw || c.height < ph) { c.width = Math.max(c.width, pw); c.height = Math.max(c.height, ph); }
+  gl.viewport(0, c.height - ph, pw, ph);
+  gl.enable(gl.SCISSOR_TEST); gl.scissor(0, c.height - ph, pw, ph);
   gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
-  if (ctx.texOf !== image) {
-    gl.bindTexture(gl.TEXTURE_2D, ctx.tex);
+  let tex = ctx.texs.get(image);
+  if (!tex) {
+    // A handful are kept (one per tilt step and color); the oldest goes when there are more.
+    if (ctx.texs.size >= 12) { const [old, t] = ctx.texs.entries().next().value!; gl.deleteTexture(t); ctx.texs.delete(old); }
+    tex = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
-    ctx.texOf = image;
+    ctx.texs.set(image, tex);
   }
+  gl.bindTexture(gl.TEXTURE_2D, tex);
   gl.uniform2f(u.uSize, w, h); gl.uniform2f(u.uView, W, H); gl.uniform1f(u.uUp, up); gl.uniform1i(u.uTex, 0);
   gl.bindBuffer(gl.ARRAY_BUFFER, ctx.inst);
   gl.bufferData(gl.ARRAY_BUFFER, buf.subarray(0, count * 3), gl.DYNAMIC_DRAW);
   gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
   g.save();
   g.globalAlpha = 1;
-  g.drawImage(c, 0, 0, W, H);
+  g.drawImage(c, 0, 0, pw, ph, 0, 0, W, H);
   g.restore();
   return true;
 }

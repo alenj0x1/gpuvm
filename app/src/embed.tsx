@@ -386,6 +386,10 @@ const scopedCss = appCss
   .demo-root.full .dialog { max-height: calc(100% - var(--titlebar) - 48px); }
   .demo-root.full .overlay { inset: var(--titlebar) 0 0; }`;
 
+// On the website the cubes are decoration beside the text, several at once: 30 frames a second is plenty and
+// halves their cost.
+(window as { __gpuvmFps?: number }).__gpuvmFps = 30;
+
 function mount(el: HTMLElement, options: { view: View; vm?: string }) {
   seed();
   const shadow = el.shadowRoot ?? el.attachShadow({ mode: "open" });
