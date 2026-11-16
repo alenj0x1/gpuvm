@@ -364,3 +364,8 @@ html:not([data-world="blocks"]) [data-seg="time"] { display: none; }
 @media (max-width: 640px) { .bento[data-cols] { grid-template-columns: minmax(0, 1fr); } }
 /* Narrow phones: the stage around the admin-prompt card gives it more room. */
 @media (max-width: 400px) { .prompt-stage { padding: 12px; } }
+/* On a phone a chapter's text is centered, its points too, each icon above its line. */
+@media (max-width: 600px) {
+  .chapter-text { text-align: center; }
+  .points li { justify-items: center; text-align: center; }
+}
