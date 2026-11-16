@@ -1279,3 +1279,9 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 /* While a machine or a space is dragged, its row stays in the list where it would land, faded; the others make room. */
 .side-item.dragged, .side-space.dragged { opacity: 0.35; }
 .side-space[draggable="true"] { cursor: grab; }
+/* The gallery's cards fill the stage at any height: the game in each one takes what is left, and its name, record
+   and Play stay in view however short the stage is dragged. */
+.game-gallery-grid { flex: 1; min-height: 0; grid-auto-rows: minmax(0, 1fr); }
+.game-tile { min-height: 0; }
+.game-tile-art { aspect-ratio: auto; flex: 1; min-height: 0; }
+.game-tile-row { flex: none; }

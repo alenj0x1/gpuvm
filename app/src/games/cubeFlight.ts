@@ -50,7 +50,7 @@ const ABILITY_IDS = Object.keys(ABILITIES) as AbilityId[];
 // Names are getters (and the texts below functions at this level, where t is not the game clock) so they come out in
 // the language in use.
 const ZONES = [{ get name() { return t("Estudio"); } }, { get name() { return t("Placa base"); } }, { get name() { return t("Bloques"); } }];
-const zoneLabel = (i: number) => t("Zona {name}", { name: ZONES[i].name });
+const zoneLabel = (i: number) => t("Zona {name}", { name: ZONES[i]?.name ?? "" });
 const frenzyText = (s: number) => t("Frenesí {s} s", { s });
 const shieldText = (s: number) => t("Escudo {s} s", { s });
 const WORLD_ZONE: Record<string, number> = { studio: 0, board: 1, blocks: 2 };
@@ -534,7 +534,7 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     if (flash > 0) { g.fillStyle = rgba(host.color, flash * 0.25); g.fillRect(0, 0, W, H); }
     // Crossing into a zone: its name on a small plate at the top, for a moment.
     if (zoneBanner > 0) {
-      const a = Math.min(1, zoneBanner * 2, (2.5 - zoneBanner) * 4), label = zoneLabel(zi);
+      const a = Math.min(1, zoneBanner * 2, (2.5 - zoneBanner) * 4), label = zoneLabel(Math.max(0, zoneShown));
       if (demo) zoneBanner = 0;
       g.font = "600 14px 'Plus Jakarta Sans', sans-serif";
       const w = g.measureText(label).width + 28, x = W / 2 - w / 2, y = 56;
@@ -553,7 +553,7 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
       hudAt = now;
       const abHud = { name: ABILITIES[ab.id].name, charge: ab.charge, active: ab.active > 0 ? ab.active / ABILITIES[ab.id].secs : undefined };
       const power = frenzy > 0 ? frenzyText(Math.ceil(frenzy)) : me.weapon !== "normal" ? `${PICKS[me.weapon].label} ${Math.ceil(me.weaponT)} s` : me.shield > 0 ? shieldText(Math.ceil(me.shield)) : undefined;
-      host.onHud({ score: Math.floor(score), lives: me.lives, power, meter: frenzy > 0 ? frenzy / FRENZY_SECS : meter, frenzy: frenzy > 0, ability: abHud, zone: ZONES[zoneAt(t)].name });
+      host.onHud({ score: Math.floor(score), lives: me.lives, power, meter: frenzy > 0 ? frenzy / FRENZY_SECS : meter, frenzy: frenzy > 0, ability: abHud, zone: ZONES[zoneAt(t)]?.name ?? "" });
     }
     if (running || sparks.length) frame = requestAnimationFrame(loop);
   };
@@ -611,7 +611,7 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
       team = mode === "team";
       host.mode = mode; host.team = mates;
     },
-    start: () => { reset(); running = true; host.onHud({ score: 0, lives: 3, meter: 0, ability: { name: ABILITIES.pulse.name, charge: 0 }, zone: ZONES[firstZone].name }); kick(); },
+    start: () => { reset(); running = true; host.onHud({ score: 0, lives: 3, meter: 0, ability: { name: ABILITIES.pulse.name, charge: 0 }, zone: ZONES[firstZone]?.name ?? "" }); kick(); },
     pause: () => { running = false; keys.clear(); letGo(); cancelAnimationFrame(frame); draw(0); },
     resume: () => { if (!over) { running = true; kick(); } },
     stop: () => {
