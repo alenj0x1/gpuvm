@@ -1,7 +1,7 @@
 [English](README.md) | Español
 
 <p align="center">
-  <img src="docs/src/assets/logo.svg" width="72" alt="Logo de GpuVM">
+  <img src=".github/assets/logo.svg" width="72" alt="Logo de GpuVM">
 </p>
 
 <h1 align="center">GpuVM</h1>
@@ -23,10 +23,7 @@
 </p>
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/home-es-dark.webp">
-    <img src=".github/assets/home-es-light.webp" alt="Inicio de GpuVM: la máquina en uso como un cubo holograma en su espacio, con su uso al lado">
-  </picture>
+  <img src=".github/assets/home-es-dark.webp" alt="Inicio de GpuVM: la máquina en uso como un cubo holograma en su espacio, con su uso al lado">
 </p>
 
 ## Qué hace
@@ -52,18 +49,18 @@
 - **Laboratorios.** Cada idea de rendimiento se mide (base contra candidata) antes de volverse un valor por defecto.
 
 <p align="center">
-  <img src=".github/assets/personalize-es-light.webp" width="49%" alt="Personalizar una máquina: color, letrero LED, stickers y figuras">
-  <img src=".github/assets/options-es-light.webp" width="49%" alt="Imagen y control: tipo de uso, FPS y lo demás">
+  <img src=".github/assets/personalize-es-dark.webp" width="49%" alt="Personalizar una máquina: color, letrero LED, stickers y figuras">
+  <img src=".github/assets/options-es-dark.webp" width="49%" alt="Imagen y control: tipo de uso, FPS y lo demás">
 </p>
 
 <p align="center">
-  <img src=".github/assets/create-es-light.webp" width="49%" alt="Crear máquina: secciones a la izquierda, resumen a la derecha">
+  <img src=".github/assets/create-es-dark.webp" width="49%" alt="Crear máquina: secciones a la izquierda, resumen a la derecha">
   <img src=".github/assets/games-es-dark.webp" width="49%" alt="Juegos en el espacio de las máquinas">
 </p>
 
 <p align="center">
-  <img src=".github/assets/library-es-light.webp" width="49%" alt="La Biblioteca: perfiles, plantillas, discos e ISOs en tarjetas">
-  <img src=".github/assets/settings-es-light.webp" width="49%" alt="Ajustes con vista previa del tema y el énfasis">
+  <img src=".github/assets/library-es-dark.webp" width="49%" alt="La Biblioteca: perfiles, plantillas, discos e ISOs en tarjetas">
+  <img src=".github/assets/settings-es-dark.webp" width="49%" alt="Ajustes con vista previa del tema y el énfasis">
 </p>
 
 ## Requisitos

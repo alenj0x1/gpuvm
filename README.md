@@ -1,7 +1,7 @@
 English | [Español](README.es.md)
 
 <p align="center">
-  <img src="docs/src/assets/logo.svg" width="72" alt="GpuVM logo">
+  <img src=".github/assets/logo.svg" width="72" alt="GpuVM logo">
 </p>
 
 <h1 align="center">GpuVM</h1>
@@ -23,10 +23,7 @@ English | [Español](README.es.md)
 </p>
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/home-en-dark.webp">
-    <img src=".github/assets/home-en-light.webp" alt="GpuVM's Home: the machine in use as a hologram cube in its space, with its usage beside it">
-  </picture>
+  <img src=".github/assets/home-en-dark.webp" alt="GpuVM's Home: the machine in use as a hologram cube in its space, with its usage beside it">
 </p>
 
 ## What it does
@@ -52,18 +49,18 @@ English | [Español](README.es.md)
 - **Labs.** Every performance idea is measured (baseline vs candidate) before it becomes a default.
 
 <p align="center">
-  <img src=".github/assets/personalize-en-light.webp" width="49%" alt="Customize a machine: color, LED sign, stickers and figures">
-  <img src=".github/assets/options-en-light.webp" width="49%" alt="Picture and control: use type, frame rate and the rest">
+  <img src=".github/assets/personalize-en-dark.webp" width="49%" alt="Customize a machine: color, LED sign, stickers and figures">
+  <img src=".github/assets/options-en-dark.webp" width="49%" alt="Picture and control: use type, frame rate and the rest">
 </p>
 
 <p align="center">
-  <img src=".github/assets/create-en-light.webp" width="49%" alt="Create a machine: sections on the left, summary on the right">
+  <img src=".github/assets/create-en-dark.webp" width="49%" alt="Create a machine: sections on the left, summary on the right">
   <img src=".github/assets/games-en-dark.webp" width="49%" alt="Games in the space of machines">
 </p>
 
 <p align="center">
-  <img src=".github/assets/library-en-light.webp" width="49%" alt="The Library: profiles, templates, disks and ISOs as cards">
-  <img src=".github/assets/settings-en-light.webp" width="49%" alt="Settings with a live preview of theme and accent">
+  <img src=".github/assets/library-en-dark.webp" width="49%" alt="The Library: profiles, templates, disks and ISOs as cards">
+  <img src=".github/assets/settings-en-dark.webp" width="49%" alt="Settings with a live preview of theme and accent">
 </p>
 
 ## Requirements
