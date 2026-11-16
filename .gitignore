@@ -31,3 +31,4 @@ _site/
 # Built by app/scripts/prepare.mjs
 app/.cache/
 app/host/target/
+tools/screenshots/out/

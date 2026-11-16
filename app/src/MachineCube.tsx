@@ -333,7 +333,9 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
     let marquee: { x0: number; y0: number; x1: number; y1: number; add: string[] } | null = null;
     // Right button held on a sticker or figure and dragged sideways turns it, settling every 15°; a right click that
     // does not move opens its menu instead.
-    let turning: { id: string; ids: Map<string, number>; x: number; moved: boolean; at: V2 } | null = null;
+    // The turn follows the pointer around the piece like a dial (any number of turns, either way); right on the
+    // piece, where the angle means nothing, a sideways move turns it instead.
+    let turning: { id: string; ids: Map<string, number>; x: number; moved: boolean; at: V2; c: V2; last: V2; deg: number } | null = null;
     let work: Decor | null = null;
     const local = (e: { clientX: number; clientY: number }): V2 => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
     const down = (e: PointerEvent) => {
@@ -348,7 +350,9 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
           ed.onSelect(ids); menuFor = hit.id;
           const d = decorRef.current.decor, rots = new Map<string, number>();
           for (const t of [...d.stickers, ...d.figures]) if (ids.includes(t.id)) rots.set(t.id, t.rot);
-          stopCam(); work = d; turning = { id: hit.id, ids: rots, x: e.clientX, moved: false, at: [x, y] };
+          const st = d.stickers.find((s) => s.id === hit.id), fg = d.figures.find((f) => f.id === hit.id);
+          const cp = st ? P(...onFace(st.face, st.u, st.v)) : fg ? P(fg.x, 2 + figureHeight(fg.figure) * fg.size * FIG * 0.4, fg.z) : [x, y];
+          stopCam(); work = d; turning = { id: hit.id, ids: rots, x: e.clientX, moved: false, at: [x, y], c: [cp[0], cp[1]], last: [x, y], deg: 0 };
           try { cv.setPointerCapture(e.pointerId); } catch { /* not a real pointer */ }
           cv.classList.add("turning");
           return;
@@ -400,8 +404,16 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
         const dx = e.clientX - turning.x;
         if (Math.abs(dx) > 4) { turning.moved = true; menuFor = null; }
         if (!turning.moved) return;
+        // Far enough from the piece, the change of angle around it; on it, the sideways move.
+        const [px, py] = local(e), [lx, ly] = turning.last, [cx, cy] = turning.c;
+        if (Math.hypot(px - cx, py - cy) > 26 && Math.hypot(lx - cx, ly - cy) > 26) {
+          let d = Math.atan2(py - cy, px - cx) - Math.atan2(ly - cy, lx - cx);
+          if (d > Math.PI) d -= Math.PI * 2; else if (d < -Math.PI) d += Math.PI * 2;
+          turning.deg += (d * 180) / Math.PI;
+        } else turning.deg += (px - lx) * 0.9;
+        turning.last = [px, py];
         // Every picked one turns by the same steps of 15°.
-        const turnBy = Math.round((dx * 0.9) / 15) * 15, rots = turning.ids, at = (r: number) => (((r + turnBy) % 360) + 360) % 360;
+        const turnBy = Math.round(turning.deg / 15) * 15, rots = turning.ids, at = (r: number) => (((r + turnBy) % 360) + 360) % 360;
         work = { ...work, stickers: work.stickers.map((t) => (rots.has(t.id) ? { ...t, rot: at(rots.get(t.id)!) } : t)), figures: work.figures.map((t) => (rots.has(t.id) ? { ...t, rot: at(rots.get(t.id)!) } : t)) };
         turning.at = local(e);
         idleSince = performance.now();
@@ -1155,7 +1167,8 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
         const b = 1 - Math.exp(-dt * 1.2);
         view.yaw += dt * 0.12 * rest; view.pitch += (0.5 - view.pitch) * b;
         view.zoom += (1 + (restZoom(space.current.others.length) - 1) * rest - view.zoom) * b; view.ox += -view.ox * b; view.oy += -view.oy * b;
-      } else if (!cam.home && !drag && performance.now() - idleSince > 4000) {
+      } else if (!cam.home && !drag && !editRef.current?.selected.length && !editRef.current?.holdStill && performance.now() - idleSince > 4000) {
+        // (Never while something is picked or being decorated: the cube stays where the person left it.)
         // Back to the first view: centered, its size, its angle (the nearest turn of it, so it never spins around).
         const b = 1 - Math.exp(-dt * 1.8);
         view.yaw += (near(START_YAW, view.yaw) - view.yaw) * b; view.pitch += (near(START_PITCH, view.pitch) - view.pitch) * b;
