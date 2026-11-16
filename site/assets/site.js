@@ -156,7 +156,7 @@
     if (!box) return;
     const handle = $(".compare-handle", box);
     const put = (k) => {
-      k = Math.max(0.04, Math.min(0.96, k));
+      k = Math.max(0, Math.min(1, k));
       box.style.setProperty("--split", `${k * 100}%`);
       box.style.setProperty("--split-n", k);
       handle.setAttribute("aria-valuenow", String(Math.round(k * 100)));
