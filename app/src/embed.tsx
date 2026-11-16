@@ -334,10 +334,10 @@ function GamesDemo() {
 
 /* ---------- Mounting ---------- */
 
-/** Everything inside a demo is drawn again from the top when the language changes, as the app does. */
+/** Everything inside a demo is drawn again when the language changes, as the app does (without starting it over). */
 function Root({ children }: { children: () => ReactNode }) {
-  const s = useSite();
-  return <div key={s.lang} className="demo-lang">{children()}</div>;
+  useSite();
+  return <div className="demo-lang">{children()}</div>;
 }
 
 // The size the whole app is drawn at before it is scaled to the page: a desktop window, or on a phone a narrow

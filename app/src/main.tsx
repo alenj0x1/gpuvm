@@ -20,9 +20,10 @@ const isPrompt = "__TAURI_INTERNALS__" in window
   ? (window as unknown as { __TAURI_INTERNALS__: { metadata: { currentWindow: { label: string } } } }).__TAURI_INTERNALS__.metadata.currentWindow.label === "prompt"
   : new URLSearchParams(location.search).has("prompt");
 if (isPrompt) document.documentElement.classList.add("prompt-window");
-// A change of language draws the app again from the top, so every text (memoized ones too) comes out in the new one.
+// A change of language draws the app again (the root re-renders everything under it) without starting it over: a
+// remount reset the panels' sizes and left the scenes and cards gray until their data came back.
 function Root() {
-  const lang = resolveLang(usePrefs().lang);
-  return isPrompt ? <PromptCard key={lang} /> : <App key={lang} />;
+  resolveLang(usePrefs().lang);
+  return isPrompt ? <PromptCard /> : <App />;
 }
 createRoot(document.getElementById("root")!).render(<Root />);

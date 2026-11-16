@@ -18,7 +18,7 @@ import { ambientInfo } from "./ambient";
 import { SpaceDialog } from "./SpaceDialog";
 import { useDragScroll } from "./dragScroll";
 import { carriesMachine, dragMachine, moveMachine, MACHINE_DND } from "./dragMachine";
-import { locale, t, tn, translateModule } from "./i18n";
+import { getLang, locale, t, tn, translateModule } from "./i18n";
 
 interface Props {
   vms: VmOverview[];
@@ -286,7 +286,7 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
           // Each card is drawn again only when something it shows changes: with many machines, a refresh that
           // touches one doesn't redraw them all.
           const m = home.machines.find((x) => x.name === vm.name);
-          const sig = [vm.name, vm.state, vm.memoryStartupGB, Math.round(vm.cpuPercent / 10), Math.round(vm.gpuPercent / 10), vm.managed, vm.streaming, busyFor(vm.name)?.message ?? "",
+          const sig = [getLang(), vm.name, vm.state, vm.memoryStartupGB, Math.round(vm.cpuPercent / 10), Math.round(vm.gpuPercent / 10), vm.managed, vm.streaming, busyFor(vm.name)?.message ?? "",
             m?.fits, m?.fitGB, m?.needGB, home.host.memoryFreeGB].join("|");
           return <Memo key={vm.id} sig={sig} render={() => (
           <div className="card home-machine" data-vm={vm.name} draggable onDragStart={(e) => dragMachine(e, vm.name)}>
