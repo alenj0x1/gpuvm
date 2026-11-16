@@ -1,6 +1,5 @@
-// English for the Brick tower game.
+// English for the games Stack and Cache (their names are the same in every language).
 export default {
-  "Torre de bloques": "Brick tower",
   "Suelta cada bloque justo sobre el anterior. Lo que sobresale se cae y la torre se angosta.": "Drop each block right on the one below. What hangs over falls off and the tower narrows.",
   "Empieza entre bloques de juguete de colores.": "Starts among colorful toy bricks.",
   "Empieza con placas de holograma sobre el gris de la app.": "Starts with hologram slabs on the app's gray.",
@@ -10,7 +9,6 @@ export default {
   "Tres perfectos seguidos hacen crecer el bloque": "Three Perfects in a row grow the block back",
   "Cada 8 pisos subes a otro mundo y se pone más difícil": "Every 8 floors you climb into another world, and it gets harder",
   "{n} perfectos seguidos": "{n} Perfects in a row",
-  "Atrapa": "Catch",
   "Atrapa las figuras que caen antes de que toquen el suelo. Cada una que se cae cuesta un corazón.": "Catch the falling figures before they hit the floor. Each one that falls costs a heart.",
   "Sobre el gris de la app.": "On the app's gray.",
   "Sobre las pistas de la placa.": "Over the board's traces.",

@@ -6,7 +6,7 @@ import { stickerImage } from "../decor/stickers";
 import { background, cube, type World } from "./bitHop";
 import { t } from "../i18n";
 
-// "Atrapa": brick figures rain down and your machine catches them, moving along the floor with the mouse (or A/D,
+// "Cache": brick figures rain down and your machine catches them, moving along the floor with the mouse (or A/D,
 // the arrows). Every figure that reaches the floor costs a heart; with none left the game is over. Now and then a
 // spider (a bug) falls too: catching it costs a heart, letting it go costs nothing. Stickers bring help for a while:
 // a second machine that catches beside you (Clone), a wider catcher, slow time, a magnet that pulls figures in, a
@@ -212,7 +212,8 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
 export const CATCH: GameDef = {
   id: "catch",
   // Getters: the texts come out in the language in use.
-  get name() { return t("Atrapa"); },
+  // One name in every language, like Overclock: it catches, and a cache keeps.
+  name: "Cache",
   get description() { return t("Atrapa las figuras que caen antes de que toquen el suelo. Cada una que se cae cuesta un corazón."); },
   get modes() {
     return [

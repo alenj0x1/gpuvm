@@ -3,7 +3,7 @@ import { settledResize } from "./types";
 import { drawFigureThumb } from "../decor/figureGL";
 import { t } from "../i18n";
 
-// "Torre de bloques": your machine is the base, and a block slides from side to side above the top of the tower.
+// "Stack": your machine is the base, and a block slides from side to side above the top of the tower.
 // One click drops it: what hangs past the block below falls off and what is left is the new top, so a miss makes the
 // tower narrower. Landing it right on top is a Perfect: it keeps its width, and three in a row make the block grow
 // back a little. The machine's first figure rides on the top block. The tower climbs and the camera follows. Every
@@ -307,7 +307,8 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
 export const BRICK_TOWER: GameDef = {
   id: "brick-tower",
   // Getters: the texts come out in the language in use.
-  get name() { return t("Torre de bloques"); },
+  // One name in every language, like Overclock.
+  name: "Stack",
   get description() { return t("Suelta cada bloque justo sobre el anterior. Lo que sobresale se cae y la torre se angosta."); },
   get modes() {
     return [

@@ -29,7 +29,7 @@ English | [Español](README.es.md)
 
 - **Every machine, a hologram.** Each machine is drawn as a hologram inside a glass cube: motherboard, processor, memory, graphics card and disk, lit by lightning as each piece works, and following what you change before you save. Turn it, zoom it, and decorate it: its own color, an LED sign running around the glass, stickers and toy-brick figures.
 - **Spaces with their own world.** Group machines by what they are for; each space is a world of its own (a studio, a motherboard or a world of blocks by day, evening or night), with Home showing one space at a time. Drag machines between spaces and into the order you like.
-- **Games while you wait.** Four small games play in the space of machines (*Overclock*, *Bit by bit*, *Brick tower* and *Catch*), with your machines as the ships, solo or as a team.
+- **Games while you wait.** Four small games play in the space of machines (*Overclock*, *Bit by bit*, *Stack* and *Cache*), with your machines as the ships, solo or as a team.
 - **English and Spanish.** The whole app, the tray and what the module reports follow Windows' language or the one you pick in Settings.
 - **Your GPU inside the VM.** Hyper-V GPU partitioning (GPU-P) shares the host GPU with the VM, which runs the same driver as the host. No passthrough, no second GPU.
 - **Open it in one click.** "Start and open" starts the VM, waits for Windows, fixes the session and the display, pairs Moonlight and opens the stream, drawn and encoded by the GPU (Sunshine + NVENC), with sound. A VM that is already on shows its picture in about 7–10 s; a second click brings Moonlight to the front.
