@@ -89,6 +89,13 @@ export function moveToSpace(machine: string, spaceId: string, before?: string | 
   }));
 }
 
+/** Puts the spaces in this order (ids); any left out keep their place at the end. */
+export function reorderSpaces(ids: string[]) {
+  const list = readSpaces();
+  const at = (s: Space) => { const i = ids.indexOf(s.id); return i < 0 ? Infinity : i; };
+  write([...list].sort((a, b) => at(a) - at(b)));
+}
+
 /** Deletes a space; its machines go back to the first one. */
 export function deleteSpace(id: string) {
   if (id === MAIN_SPACE) return;

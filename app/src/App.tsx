@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { IconAlertTriangle, IconHome, IconLoader2, IconPlugConnected, IconPlus, IconRefresh, IconSettings, IconShieldLock, IconStack2 } from "@tabler/icons-react";
 import { Preferences } from "./Preferences";
 import { Library, type LibraryTab } from "./Library";
@@ -12,9 +13,9 @@ import { api, onJob, relaunchAsAdmin, repairService, service, startJob as runJob
 import { MachineIcon, renamePatternVariant } from "./machineIcon";
 import { renameSceneStyle } from "./Scene";
 import { renameDecor } from "./decor/store";
-import { machinesIn, moveToSpace, renameInSpaces, showSpace, useShownSpace, useSpaces } from "./spaces";
+import { machinesIn, moveToSpace, renameInSpaces, reorderSpaces, showSpace, useShownSpace, useSpaces } from "./spaces";
 import { ambientInfo } from "./ambient";
-import { carriesMachine, dragMachine, moveMachine, MACHINE_DND } from "./dragMachine";
+import { carriesMachine, carriesSpace, dragging, dragMachine, dragSpace, flashMachine, glide, onDragFinish } from "./dragMachine";
 import { MAX_SAMPLES } from "./Chart";
 import { VmView, type JobInfo } from "./VmView";
 import { CreateDialog } from "./CreateDialog";
@@ -60,11 +61,15 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
   const [createSpace, setCreateSpace] = useState<string | null>(null);
   const spaces = useSpaces();
   const shownSpaceId = useShownSpace();
-  // Where a dragged machine would land: the space it is over and the machine it would go before (null: at the end).
-  const [dropOn, setDropOn] = useState<string | null>(null);
-  // undefined: over the group but not over a machine (another space takes it at the end; its own space leaves it).
-  const [dropBefore, setDropBefore] = useState<string | null | undefined>(undefined);
-  const dragFrom = useRef<string | null>(null);
+  // While a machine or a space is dragged in the sidebar, the others make room for it as it passes: the order shown is
+  // a preview, kept until the drop (which saves it) or the drag is cancelled (which glides everything back).
+  const [preview, setPreview] = useState<{ name: string; space: string; before: string | null } | null>(null);
+  const [spaceOrder, setSpaceOrder] = useState<string[] | null>(null);
+  const previewRef = useRef(preview); previewRef.current = preview;
+  const spaceOrderRef = useRef(spaceOrder); spaceOrderRef.current = spaceOrder;
+  useEffect(() => onDragFinish(() => {
+    if (previewRef.current || spaceOrderRef.current) glide(() => { setPreview(null); setSpaceOrder(null); });
+  }), []);
   const [createError, setCreateError] = useState<string | null>(null);
   const [jobs, setJobs] = useState<Record<string, RunningJob>>({});
   // Short actions (start, shut down, save…) in progress per VM, to show their state instantly.
@@ -290,35 +295,77 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
             <span className="add-icon"><IconStack2 size={16} /></span><span className="name">Biblioteca</span>
           </button>
           {/* With one space the list is just "Máquinas"; with several, each space heads its own machines and opens it in Home. */}
-          {(spaces.length > 1 && vms ? spaces : [null]).map((sp) => {
-            const list = sp && vms ? machinesIn(sp, vms, spaces) : vms ? machinesIn(spaces[0], vms, spaces) : vms;
-            const spaceId = sp?.id ?? spaces[0].id;
+          {(() => {
+            // The groups as shown: the spaces in their (previewed) order, each with its machines, and the dragged
+            // machine where it would land.
+            const order = spaceOrder ? [...spaces].sort((a, b) => spaceOrder.indexOf(a.id) - spaceOrder.indexOf(b.id)) : spaces;
+            const groups = (spaces.length > 1 && vms ? order : [null]).map((sp) => {
+              const space = sp ?? spaces[0];
+              let list = vms ? (sp ? machinesIn(sp, vms, spaces) : machinesIn(spaces[0], vms, spaces)) : null;
+              if (list && preview && vms) {
+                const moving = vms.find((v) => v.name === preview.name);
+                list = list.filter((v) => v.name !== preview.name);
+                if (moving && preview.space === space.id) {
+                  const k = preview.before ? list.findIndex((v) => v.name === preview.before) : -1;
+                  list.splice(k < 0 ? list.length : k, 0, moving);
+                }
+              }
+              return { sp, spaceId: space.id, list };
+            });
+            return groups.map(({ sp, spaceId, list }) => {
             const names = list?.map((v) => v.name) ?? [];
             const Icon = sp ? ambientInfo(sp.ambient).icon : null;
             return (
-              <div key={sp?.id ?? "all"} className={`side-group${dropOn === spaceId && dropBefore === undefined && dragFrom.current !== spaceId ? " drop" : ""}`}
+              <div key={sp?.id ?? "all"} className="side-group"
                 onDragOver={(e) => {
-                  if (!carriesMachine(e)) return;
+                  if (carriesSpace(e) && sp && dragging.space) {
+                    // A space passes over another: it goes before it or after it, by which half the pointer is on.
+                    e.preventDefault(); e.dataTransfer.dropEffect = "move";
+                    if (dragging.space === sp.id) return;
+                    const r = e.currentTarget.getBoundingClientRect();
+                    const ids = groups.map((g) => g.spaceId).filter((id) => id !== dragging.space);
+                    const k = ids.indexOf(sp.id) + (e.clientY < r.top + r.height / 2 ? 0 : 1);
+                    ids.splice(k, 0, dragging.space);
+                    if (ids.join() !== groups.map((g) => g.spaceId).join()) glide(() => setSpaceOrder(ids));
+                    return;
+                  }
+                  const name = dragging.machine;
+                  if (!carriesMachine(e) || !name) return;
                   e.preventDefault(); e.dataTransfer.dropEffect = "move";
-                  // Over a machine: before it or after it, by which half the pointer is on. Elsewhere in the group: at the end.
+                  // Over another machine: it takes that machine's place (before it from below, after it from above),
+                  // and the others make room. Over the space's name or its empty room: at the end of the space.
                   const row = (e.target as HTMLElement).closest<HTMLElement>("[data-vm]");
-                  let before: string | null | undefined;
+                  if (row?.dataset.vm === name) return;
+                  let before: string | null;
                   if (row) {
                     const r = row.getBoundingClientRect();
-                    const i = names.indexOf(row.dataset.vm!);
-                    before = e.clientY < r.top + r.height / 2 ? row.dataset.vm! : names[i + 1] ?? null;
+                    const rest = names.filter((n) => n !== name);
+                    before = e.clientY < r.top + r.height / 2 ? row.dataset.vm! : rest[rest.indexOf(row.dataset.vm!) + 1] ?? null;
+                  } else {
+                    if (names.includes(name)) return;
+                    before = null;
                   }
-                  if (dropOn !== spaceId) setDropOn(spaceId);
-                  if (dropBefore !== before) setDropBefore(before);
+                  const cur = previewRef.current;
+                  if (cur && cur.name === name && cur.space === spaceId && cur.before === before) return;
+                  glide(() => setPreview({ name, space: spaceId, before }), name);
                 }}
-                onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropOn((d) => (d === spaceId ? null : d)); }}
                 onDrop={(e) => {
-                  const name = e.dataTransfer.getData(MACHINE_DND), before = dropBefore;
-                  setDropOn(null); setDropBefore(undefined);
-                  if (name) { e.preventDefault(); moveMachine(name, spaceId, before === undefined && dragFrom.current !== spaceId ? null : before, names); }
+                  e.preventDefault();
+                  const order = spaceOrderRef.current, p = previewRef.current;
+                  // Saved as shown: nothing moves on the drop, the preview just stays.
+                  flushSync(() => {
+                    if (order && carriesSpace(e)) reorderSpaces(order);
+                    if (p && carriesMachine(e)) {
+                      const shown = groups.find((g) => g.spaceId === p.space)?.list?.map((v) => v.name) ?? [];
+                      moveToSpace(p.name, p.space, p.before, shown.filter((n) => n !== p.name));
+                    }
+                    setPreview(null); setSpaceOrder(null);
+                  });
+                  if (p) flashMachine(p.name);
                 }}>
                 {sp ? (
-                  <button type="button" className={`side-label side-space${selected === HOME && shownSpaceId === sp.id ? " on" : ""}`} title={`Ver ${sp.name}`}
+                  <button type="button" data-space-row={sp.id} draggable onDragStart={(e) => dragSpace(e, sp.id)}
+                    className={`side-label side-space${spaceOrder && dragging.space === sp.id ? " dragged" : ""}${selected === HOME && shownSpaceId === sp.id ? " on" : ""}`} title={`Ver ${sp.name}`}
                     onClick={() => { showSpace(sp.id); setSelected(HOME); }}>
                     {Icon && <Icon size={13} />}<span className="ellipsis">{sp.name}</span>
                   </button>
@@ -333,8 +380,8 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
                   const busy = busyFor(vm.name);
                   return (
                     // The dot already says on or off: the row only adds what it can't, the GPU in use or a job in progress.
-                    <button key={vm.id} data-vm={vm.name} draggable onDragStart={(e) => { dragFrom.current = spaceId; dragMachine(e, vm.name); }} onDragEnd={() => { dragFrom.current = null; setDropOn(null); setDropBefore(undefined); }}
-                      className={`side-item ${vm.name === selected ? "active" : ""}${dropOn === spaceId && dropBefore === vm.name ? " drop-before" : ""}${dropOn === spaceId && dropBefore === null && vm.name === names[names.length - 1] ? " drop-after" : ""}`} onClick={() => setSelected(vm.name)}
+                    <button key={vm.id} data-vm={vm.name} draggable onDragStart={(e) => dragMachine(e, vm.name)}
+                      className={`side-item ${vm.name === selected ? "active" : ""}${preview?.name === vm.name ? " dragged" : ""}`} onClick={() => setSelected(vm.name)}
                       title={busy?.message ? `${vm.name}, ${busy.message}` : `${vm.name}, ${stateLabel[vm.state] ?? vm.state}`}>
                       <span className="side-icon"><MachineIcon name={vm.name} size={28} radius={8} /><span className={`dot badge ${vm.state}`} /></span>
                       <span className="name">{vm.name}</span>
@@ -346,7 +393,8 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
                 })}
               </div>
             );
-          })}
+          });
+          })()}
           {createJob && (
             <button className="side-item" onClick={() => setCreating(true)} title="Ver avance">
               <span className="add-icon"><IconLoader2 size={16} className="spin" /></span>
