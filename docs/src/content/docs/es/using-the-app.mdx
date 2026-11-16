@@ -1,179 +1,248 @@
 ---
 title: Uso de la app
-description: Crea una VM, enciéndela y ábrela en Moonlight, elige su tipo de uso, responde sus avisos de administrador, revisa sus estadísticas en vivo, cambia sus opciones, instala apps, usa las acciones de energía y administra tus perfiles, discos e ISOs.
+description: Inicio y sus espacios, la página de la máquina con su cubo, crear y personalizar máquinas, los juegos, la Biblioteca y los Ajustes.
 ---
 
-import { Image } from 'astro:assets';
 import { Aside, Steps } from '@astrojs/starlight/components';
-import appLight from '../../../assets/screenshots/app-light.png';
-import appDark from '../../../assets/screenshots/app-dark.png';
-import createLight from '../../../assets/screenshots/create-light.png';
-import emptyLight from '../../../assets/screenshots/empty-light.png';
-import preferencesDark from '../../../assets/screenshots/preferences-dark.png';
+import Shot from '../../../components/Shot.astro';
 
-<Image src={appLight} alt="Ventana principal de GpuVM con la lista de VMs a la izquierda y la VM elegida a la derecha, tema claro" class="dark:sl-hidden" />
-<Image src={appDark} alt="Ventana principal de GpuVM con la lista de VMs a la izquierda y la VM elegida a la derecha, tema oscuro" class="light:sl-hidden" />
+<Shot name="home" alt="Inicio de GpuVM: la máquina en uso dentro de su cubo sobre un mundo de bloques, su uso al lado y abajo las demás máquinas, la Biblioteca y los avisos" />
 
 ## La ventana
 
-- **Barra lateral:** todas las VMs de Hyper-V del equipo, creadas o no con GpuVM, con su estado (o el paso actual de un trabajo en curso). Se puede contraer. Al final de la lista está **Crear máquina**.
-- **Área principal:** la VM elegida: encabezado con su estado, edición, GPU y perfil; avisos; estadísticas en vivo; gráfica de uso y opciones.
-- **Biblioteca** es el ícono de capas en la barra de título: tus perfiles, plantillas, discos, discos compartidos e ISOs. Consulta [Biblioteca](#biblioteca).
-- **Preferencias** es el ícono de engrane en la barra de título, junto al botón de claro/oscuro. Consulta [Preferencias](#preferencias).
+- **Barra lateral:** arriba **Inicio** y **Biblioteca**, luego todas las VMs de Hyper-V del equipo (creadas o no con GpuVM) bajo el [espacio](#espacios) al que pertenecen, y al final **Crear máquina**. **Ajustes** queda al pie. Cada máquina muestra su estado con un punto en su ícono y, a la derecha, lo que el punto no dice: una gráfica pequeña de su último minuto (procesador, memoria y GPU en sus colores) mientras está encendida, o el paso de un trabajo en curso.
+- **Cambiar su ancho o contraerla:** arrastra la línea de su borde para cambiar el ancho; haz clic en la línea, o arrástrala hasta angostarla, para contraerla.
+- **Reordenar arrastrando:** arrastra una máquina a otro lugar, en su espacio o en otro. Las demás se apartan mientras pasa y se ve atenuada donde caería. Los espacios se reordenan igual, arrastrando su nombre.
 
-GpuVM se abre sin permisos de administrador; el servicio de Windows **GpuVM** hace por él el trabajo de Hyper-V. Si el servicio de GpuVM está detenido y en modo **Manual**, la app muestra **El servicio de GpuVM está detenido** con el botón **Iniciar servicio**. Si falta el servicio, muestra **Falta el servicio de GpuVM** con el botón **Reparar**, que lo vuelve a registrar tras un aviso de UAC. Borrar una máquina, un disco, un disco compartido o una plantilla pide confirmarlo antes en un aviso de UAC; si dices que no, no se borra nada. Si no puede leer Hyper-V, un aviso muestra el error con **Reintentar**.
+GpuVM se abre sin permisos de administrador; el servicio de Windows **GpuVM** hace por él el trabajo de Hyper-V. Si el servicio está detenido y en modo **Manual**, la app lo dice con **Iniciar servicio**. Si falta el servicio, lo dice con **Reparar**, que lo vuelve a registrar tras un aviso de UAC. Borrar una máquina, un disco, un disco compartido o una plantilla pide confirmarlo antes en un aviso de UAC; si dices que no, no se borra nada. Si no puede leer Hyper-V, un aviso muestra el error con **Reintentar**.
+
+La interfaz está en español e inglés: sigue el idioma de Windows, o el elegido en [Ajustes](#ajustes).
 
 ## Inicio
 
-La app abre en **Inicio**, lo primero de la barra lateral:
+La app abre en **Inicio**, que cabe en la ventana sin desplazarse:
 
-- **La última máquina que abriste**, con **Abrir** o **Encender y abrir**.
-- **Memoria:** cuánta tiene libre el equipo, qué la usa más y cada máquina con **Encendida**, **Puede encender** o cuánta memoria le falta. Una máquina que no cabe ofrece abrirla con la memoria que sí cabe, por ejemplo **Abrir con 6 GB**: baja su memoria a lo que cabe (queda guardado, como al cambiarla en Opciones) y la abre. La página de la máquina muestra lo mismo.
-- **Lo que necesita atención**, solo cuando hay algo: un driver de la GPU desactualizado, Moonlight sin emparejar, apps por instalar, la contraseña de Windows sin guardar o poco espacio en el disco, cada cosa con el botón que la arregla.
+- **El escenario:** la máquina en uso (o la última que abriste) dentro de su cubo, con las demás máquinas del [espacio](#espacios) al lado, sobre el mundo del espacio. Arrastra para girarlo y usa la rueda para acercarte.
+- **Junto al escenario:** el uso de procesador, memoria y GPU de esa máquina, **Memoria libre para máquinas** (cuánta tiene libre el equipo y qué máquinas caben), **Ver máquina** y su acción principal (**Abrir**, **Encender y abrir**…). Una máquina que no cabe ofrece abrirla con la memoria que sí cabe, por ejemplo **Abrir con 6 GB**: baja su memoria a lo que cabe (queda guardado, como al cambiarla en su página) y la abre.
+- **Abajo:** las demás máquinas del espacio con su acción (la fila se desplaza de lado, también arrastrándola), la **Biblioteca** de un vistazo (cuántos perfiles, plantillas, discos compartidos e ISOs) con **Crear máquina**, y lo que necesita atención, solo cuando hay algo: un driver de la GPU desactualizado, Moonlight sin emparejar, apps por instalar, la contraseña de Windows sin guardar o poco espacio en el disco, cada cosa con el botón que la arregla.
 
-## Crear una VM
+Arrastra las líneas entre estas partes para cambiar su tamaño (doble clic en una la devuelve a su tamaño); los tamaños se recuerdan.
 
-Si todavía no hay VMs, la app te invita a crear la primera.
+Sin máquinas todavía, Inicio muestra una máquina vacía en el cubo con lo que la Biblioteca ya tiene listo y **Crear máquina**.
 
-<Image src={emptyLight} alt="Pantalla vacía que invita a crear la primera máquina" />
+<Shot name="empty" alt="Inicio sin máquinas: una máquina decorada al azar en su cubo y Crea tu primera máquina" />
+
+## Espacios
+
+Un espacio agrupa máquinas según para qué son (trabajo, juegos, pruebas con IA…). Inicio muestra un espacio a la vez, elegido en las pestañas sobre el escenario (se desplazan con la rueda); la barra lateral muestra las máquinas bajo su espacio. El primer espacio es **Mis máquinas**.
+
+- **Nuevo espacio** (el **+** después de las pestañas) y el lápiz junto a ellas (para editar el espacio que se ve) abren el mismo diálogo: **Nombre**, **Ambiente**, **Momento del día** y las **Máquinas** que tiene. **Eliminar espacio** devuelve sus máquinas a otro espacio.
+- **Ambiente** es el mundo dibujado alrededor de los cubos: **Placa base** (chips, condensadores, conectores y pistas con datos que corren en el color de énfasis, con el nombre del espacio y de la máquina impresos en la placa), **Bloques** (una placa de bloques con caminos, un estanque, árboles, casas y figuras de bloques, de **Día**, de **Tarde**, de **Noche** o **Según la hora**) o **Estudio** (el gris de la app). El mundo gira y se acerca con el cubo, tiene una luz que sombrea cada pieza y proyecta sombras, y el holograma ilumina el suelo bajo cada máquina.
+- Una máquina nueva va al espacio desde el que se crea. Una máquina pasa a otro espacio desde su sección **Personalizar**, o arrastrándola desde la barra lateral o desde las tarjetas de Inicio hasta otro espacio.
+- Un espacio sin máquinas ofrece una tarjeta **Nueva máquina** y las máquinas de otros espacios, con **Traer aquí**.
+
+<Shot name="home-board" alt="Inicio en un espacio con el mundo Placa base: chips y pistas alrededor del cubo de la máquina" />
+
+## Juegos
+
+**Jugar**, sobre el escenario de Inicio al pasar el mouse, abre una galería de juegos. Cada tarjeta muestra el juego jugándose solo, con tu mejor marca. Antes de jugar, una pantalla muestra el juego con la máquina y el modo que elijas, sus controles dibujados como teclas y botones del mouse, algunos consejos y tu récord.
+
+- **Overclock:** tu máquina vuela entre bloques y máquinas rivales. Muévete con **W A S D**, apunta con el mouse, dispara con el botón izquierdo o **Espacio** y usa la habilidad con el botón derecho o **E**; **P** pausa. Los stickers traen armas, escudo o una vida; derribar llena el frenesí, donde tus figuras salen gigantes. Cada 40 segundos cruzas a otra zona (el estudio, una placa base, un mundo de bloques). Modos: **Solo**, o **En equipo**, donde tus otras máquinas vuelan contigo y disparan solas contra más rivales y más duros (necesita al menos dos máquinas).
+- **Bit a bit:** tu máquina salta entre los huecos de las columnas (botón izquierdo, **Espacio** o **↑**), en el **Estudio**, sobre una **Placa base** o entre **Bloques**. Cada hueco suma, los bits valen doble y los huecos se angostan con el puntaje.
+- **Torre de bloques:** un bloque se desliza sobre la torre y un clic (o **Espacio** o **↓**) lo suelta; lo que sobresale se cae y la torre se angosta. Justo encima es un Perfecto, que vale doble, y tres seguidos hacen crecer el bloque. Tu máquina es la base y su figura va en la cima. Cada 8 pisos la torre sube a otro mundo (bloques, una placa base, el estudio y luego el espacio) y se pone más difícil.
+
+Cada juego y modo guarda su mejor marca.
+
+<Shot name="games" alt="La galería de juegos sobre el escenario de Inicio, con Overclock, Bit a bit y Torre de bloques jugándose en sus tarjetas" />
+
+## Crear una máquina
+
+**Crear máquina** (en la barra lateral, en Inicio o desde un perfil de la Biblioteca) abre un diálogo grande: sus secciones a la izquierda, un resumen siempre a la vista a la derecha y el cubo al lado, que se arma mientras eliges.
+
+<Shot name="create" alt="Diálogo Crear máquina con sus secciones a la izquierda, los perfiles y un resumen con el cubo de la máquina" />
 
 <Steps>
 
-1. Haz clic en **Crear máquina**.
+1. **Nombre y espacio:** letras, números, `_` o guiones, hasta 40 caracteres, sin espacios (sugiere `win-gpu`), y el espacio donde va a estar. Mientras escribes el nombre, la cámara va a la etiqueta de serie de la placa y lo graba letra por letra.
 
-2. Completa el formulario:
-   - **Nombre:** letras, números, `_` o guiones, hasta 40 caracteres, sin espacios. Sugiere `win-gpu`.
-   - **Instalar Windows** / **Desde plantilla**, si tienes [plantillas](#plantillas): desde una plantilla la VM queda lista en segundos y solo pide el nombre y el perfil; Windows, sus apps, el nivel de limpieza y la contraseña vienen de la plantilla.
-   - **Imagen de Windows:** primero los ISOs que ya usaste o agregaste, después los que encuentra en tus carpetas Descargas y Escritorio, o **Buscar otro ISO** para elegir uno.
-   - **Perfil:** **Equilibrado** (`balanced`), **Máximo rendimiento** (`max-performance`, el predeterminado) o uno tuyo de la [Biblioteca](#biblioteca). El perfil llena lo demás, incluidos su ISO, sus apps y su tipo de uso. Consulta [Perfiles](/gpuvm/docs/es/profiles/).
-   - **Windows:** qué tan limpio queda Windows. Consulta [Windows](#windows).
-   - **Apps que se instalan:** se instalan la primera vez que se abre la VM. Consulta [Apps](#apps).
-   - **Contraseña de Windows** del usuario local `gpuvm`, de al menos 6 caracteres, escrita dos veces.
+2. **Punto de partida:** **Instalar Windows** o **Desde plantilla** (si tienes [plantillas](#plantillas)), y un perfil: **Equilibrado** (`balanced`), **Máximo rendimiento** (`max-performance`, el predeterminado) o uno tuyo. El perfil llena todo lo de abajo, incluidos su ISO, sus apps y su tipo de uso; consulta [Perfiles](/gpuvm/docs/es/profiles/). Desde una plantilla la máquina queda lista en segundos y solo necesita el nombre; Windows, sus apps, el nivel de limpieza y la contraseña vienen de la plantilla.
 
-   **Crear máquina** queda deshabilitado hasta que el formulario esté completo; cada problema aparece junto a su campo mientras escribes.
+3. **Recursos:** hilos, memoria, parte de la GPU y disco. El disco llega hasta lo que cabe en la unidad con todos los discos de las máquinas llenos, dejando 20 GB para Windows.
 
-3. Haz clic en **Crear máquina**. El diálogo muestra cada paso a medida que avanza. Puedes cerrarlo: el avance sigue en la barra lateral, y si la creación falla el diálogo se vuelve a abrir con el error.
+4. **Windows y cuenta:** la **Imagen de Windows** (primero los ISOs que ya usaste o agregaste, después los de tus carpetas Descargas y Escritorio, o **Buscar otro ISO**), el **Usuario** (`gpuvm` por defecto; hasta 20 letras, números, puntos o guiones; se rechazan los nombres que Windows reserva) y la **Contraseña**, de al menos 6 caracteres, escrita dos veces.
 
-4. Al terminar, la app abre la VM nueva y la enciende. Windows termina de configurarse solo en unos minutos.
+5. **Apps**, que se instalan la primera vez que se abre la máquina ([Apps](#apps)); **Limpieza**, qué tan limpio queda Windows ([Limpieza de Windows](#limpieza-de-windows)); y **Personalizar**, su decoración ([Personalizar](#personalizar)), con **Decorar al azar** para llenarla en un clic.
+
+6. Haz clic en **Crear máquina**. Queda deshabilitado hasta que el formulario esté completo; cada problema aparece junto a su campo mientras escribes. Si cambiaste algo de lo que llenó el perfil, **Guardar como perfil** lo guarda como un perfil nuevo.
 
 </Steps>
 
-<Image src={createLight} alt="Diálogo Crear máquina con nombre, imagen de Windows, perfil y contraseña" />
+Después, el diálogo muestra cada paso a medida que avanza. Puedes cerrarlo: el avance sigue en la barra lateral, y si la creación falla el diálogo se vuelve a abrir con el error. Al terminar, la máquina nueva se abre y se enciende; Windows termina de configurarse solo en unos minutos.
+
+## La página de la máquina
+
+Haz clic en una máquina de la barra lateral (o en **Ver máquina** en Inicio) para abrir su página:
+
+- **Encabezado:** un banner que se mueve con la GPU, parpadea con el procesador y se llena con la memoria; el ícono, el nombre y el estado de la máquina; su edición de Windows, su GPU y su perfil como piezas pequeñas con ícono; el botón del portapapeles ([Pegar en la VM](#pegar-en-la-vm)), el menú **⋯** ([Más opciones](#más-opciones)) y el botón principal ([Encender y abrir](#encender-y-abrir)).
+- **Franja de uso:** **Procesador** (hilos y % en uso), **Memoria** (memoria fija y cuánta está en uso), **GPU** (% en uso con la máquina encendida, o la parte asignada si está apagada, y el nombre de la GPU) y **Tiempo encendida** (y la dirección IP de la máquina), cada uno con una gráfica pequeña de los últimos cinco minutos.
+- **Secciones:** **Máquina**, **Imagen y control**, **Windows** y **Personalizar**, en una sola página. La barra de arriba marca la sección a la vista y lleva a las demás. Al cambiar de máquina se conserva la misma sección y el mismo lugar.
+
+<Shot name="machine" alt="Página de una máquina: el banner y el encabezado, la franja de uso, la barra de secciones, las opciones de Máquina y el cubo al lado" />
+
+### El cubo
+
+Junto a las opciones, siempre a la vista, la máquina es un holograma dentro de un cubo de vidrio: placa madre, procesador (una celda por hilo), memoria (un módulo por cada 4 GB), tarjeta gráfica (su parte de la GPU como una tira de luces) y disco, con las apps flotando alrededor y su pantalla proyectada arriba. Los rayos llegan a cada pieza tan seguido como trabaja; lo que la limpieza deja fuera rebota en el vidrio.
+
+- Arrástralo para girarlo hacia cualquier lado, usa la rueda para acercarte a donde está el mouse, arrastra con la rueda presionada para moverlo y haz doble clic para volver.
+- Sigue lo que cambias antes de guardar: la cámara se acerca a la pieza que cambias y luego vuelve, y un perfil que cambia varias a la vez las recorre mientras el holograma se rearma.
+- Las demás máquinas de su espacio se ven pequeñas debajo; si lo dejas quieto un rato, la máquina flota y se va con ellas.
+- Arrastra el borde del panel del cubo para hacerlo más ancho (nunca aprieta las opciones, y se recuerda).
 
 ## Encender y abrir
 
-El botón principal cambia según el estado de la VM:
+El botón principal cambia según el estado de la máquina:
 
 | Estado | Botón | Qué hace |
 |---|---|---|
-| Apagada | **Encender y abrir** | Enciende la VM y la abre en Moonlight. |
+| Apagada | **Encender y abrir** | Enciende la máquina y la abre en Moonlight. |
 | Encendida | **Abrir** | La abre en Moonlight. |
-| En pausa | **Reanudar** | Reanuda la VM. |
+| En pausa | **Reanudar** | Reanuda la máquina. |
+| Apagada, sin memoria libre suficiente | **Abrir con N GB** / **Falta memoria** | La abre con la memoria que cabe / dice qué falta. |
 | No creada con GpuVM | **Encender** / **Ver consola** | La enciende / abre la consola de Hyper-V. |
 
 **Encender y abrir** deja todo listo solo, y el botón muestra cada paso mientras trabaja:
 
-1. Si la VM está apagada y el driver de la GPU del host cambió, primero copia el driver nuevo a la VM (evita la pantalla negra o el código 43).
-2. Enciende la VM y espera a que Windows arranque (la primera vez, termina de configurarse) e inicie sesión solo. Si Windows está terminando actualizaciones, o se reinicia para terminarlas, el botón lo dice.
+1. Si la máquina está apagada y el driver de la GPU del host cambió, primero copia el driver nuevo a la máquina (evita la pantalla negra o el código 43).
+2. Enciende la máquina y espera a que Windows arranque (la primera vez, termina de configurarse) e inicie sesión solo. Si Windows está terminando actualizaciones, o se reinicia para terminarlas, el botón lo dice.
 3. Devuelve la sesión de Windows a la pantalla de la GPU si se la había llevado otra.
-4. Ajusta la pantalla de la VM a la resolución y los FPS de Moonlight, y hace que Sunshine la capture.
+4. Ajusta la pantalla de la máquina a la resolución y los FPS de Moonlight, y hace que Sunshine la capture.
 5. La primera vez, instala el soporte de mandos y el vigilante de avisos de administrador.
 6. Empareja Moonlight con Sunshine si este equipo todavía no está emparejado.
 7. Abre Moonlight y espera a que aparezca la imagen.
 
-Lo que dura hasta que Windows se reinicia (la pantalla, el modo de captura, el sonido) se hace una vez por arranque y por una sola conexión con la VM. Abrir una VM ya encendida tarda unos 7 a 10 segundos hasta ver la imagen; apagada, cerca de un minuto, casi todo en que arranquen Windows y Sunshine. El botón sigue ocupado hasta que aparece la imagen, así la VM no se abre dos veces: volver a hacer clic en **Abrir** con Moonlight ya mostrándola trae esa ventana de Moonlight al frente. Si la VM está apagada, guardada o en pausa mientras GpuVM espera su dirección de red, lo dice al instante en vez de seguir esperando.
+Lo que dura hasta que Windows se reinicia (la pantalla, el modo de captura, el sonido) se hace una vez por arranque y por una sola conexión con la máquina. Abrir una máquina ya encendida tarda unos 7 a 10 segundos hasta ver la imagen; apagada, cerca de un minuto, casi todo en que arranquen Windows y Sunshine. Volver a hacer clic en **Abrir** con Moonlight ya mostrándola trae esa ventana de Moonlight al frente. Si la máquina está apagada, guardada o en pausa mientras GpuVM espera su dirección de red, lo dice al instante en vez de seguir esperando.
 
 Los avisos que surjan en el camino (por ejemplo, que el audio todavía no está configurado) aparecen como notificaciones.
 
 ## Teclado, mouse y mandos
 
-Con Moonlight en pantalla completa, **Alt+F4**, **Alt+Tab** y la **tecla Windows** van a la VM en vez de cerrar Moonlight o regresarte a este equipo. Para salir del stream, presiona **Ctrl+Alt+Shift+Q**.
+Con Moonlight en pantalla completa, **Alt+F4**, **Alt+Tab** y la **tecla Windows** van a la máquina en vez de cerrar Moonlight o regresarte a este equipo. Para salir del stream, presiona **Ctrl+Alt+Shift+Q**. Con el mouse **Para juegos**, **Ctrl+Alt+Shift+Z** lo libera sin cerrar.
 
-Los mandos también funcionan: GpuVM instala en la VM el controlador de mando virtual (ViGEmBus), y un control conectado a este equipo llega a Windows en la VM como un control de Xbox 360.
+Los mandos también funcionan: GpuVM instala en la máquina el controlador de mando virtual (ViGEmBus), y un control conectado a este equipo llega a Windows en la máquina como un control de Xbox 360.
 
 De una tecla, un clic, un movimiento del mouse o un botón del mando en este equipo hasta el cambio en la imagen de Moonlight pasan unos 17 ms (mediana) a 120 FPS o más, unos 11 ms más que el mismo equipo sin streaming. A 60 FPS se suma un cuadro más.
 
 ## Avisos de administrador
 
-Con la captura **Rápida** (la predeterminada), los avisos de administrador de Windows (UAC) dentro de la VM no se pueden transmitir: Windows los dibuja en un escritorio aparte y protegido. GpuVM los muestra en su lugar: mientras hay uno abierto, aparece una tarjeta pequeña encima de todo, Moonlight incluido, con la máquina, el programa que pide permiso y su editor (**Editor desconocido** si no está firmado). **Permitir** y **Rechazar** lo responden en la VM.
+Con la captura **Rápida** (la predeterminada), los avisos de administrador de Windows (UAC) dentro de la máquina no se pueden transmitir: Windows los dibuja en un escritorio aparte y protegido. GpuVM los muestra en su lugar: mientras hay uno abierto, aparece una tarjeta pequeña encima de todo, Moonlight incluido, con la máquina, el programa que pide permiso y su editor (**Editor desconocido** si no está firmado). **Permitir** y **Rechazar** lo responden en la máquina.
 
-- Solo este equipo puede responder: un programa dentro de la VM no puede aprobarse a sí mismo.
+- Solo este equipo puede responder: un programa dentro de la máquina no puede aprobarse a sí mismo.
 - Si mientras tanto se abrió otro aviso, no se presiona nada y la tarjeta muestra el nuevo.
-- Necesita la [contraseña del invitado](#aviso-de-la-contraseña-del-invitado).
+- Necesita la [contraseña de Windows](#contraseña-de-windows) de la máquina.
 - Con la captura **Clásica** los avisos se ven en Moonlight como siempre y la tarjeta no aparece. Consulta [Modos de captura](/gpuvm/docs/es/streaming/#modos-de-captura).
 
 ## Pegar en la VM
 
-Con la VM encendida, el botón del portapapeles junto al menú **⋯**, **Pegar en la VM**, pasa el texto copiado en este equipo al portapapeles de la VM, listo para Ctrl+V. Solo va del PC a la VM: la VM nunca lee el portapapeles de este equipo. Necesita la [contraseña del invitado](#aviso-de-la-contraseña-del-invitado).
+Con la máquina encendida, el botón del portapapeles junto al menú **⋯**, **Pegar en la VM**, pasa el texto copiado en este equipo al portapapeles de la máquina, listo para Ctrl+V. Solo va del equipo a la máquina: la máquina nunca lee el portapapeles de este equipo. Necesita la [contraseña de Windows](#contraseña-de-windows).
 
-## Estadísticas en vivo
+## Máquina
 
-Cuatro tarjetas que se actualizan cada 2 segundos mientras haya una VM encendida (cada 6 segundos si no):
+La sección **Máquina**, para las máquinas creadas con GpuVM:
 
-- **Procesador:** hilos y % en uso.
-- **Memoria:** memoria fija y cuánta está en uso.
-- **GPU:** % en uso con la VM encendida, o la parte asignada a la VM si está apagada; debajo, el nombre de la GPU.
-- **Tiempo encendida:** tiempo desde que se encendió y la dirección IP de la VM.
-
-La gráfica **Uso** muestra CPU y GPU de los últimos 5 minutos.
-
-## Windows
-
-La tarjeta **Windows** define qué tan limpio queda Windows dentro de la VM. Cada nivel incluye los anteriores:
-
-- **Normal:** Windows tal como viene.
-- **Privacidad:** datos de diagnóstico al mínimo que permite la edición (en Pro, Windows no baja de «Requerido»), sin identificador de publicidad, historial de actividad, sugerencias, Spotlight, Bing en Inicio, Copilot ni Recall.
-- **Sin apps de más:** además quita apps preinstaladas (Noticias, El tiempo, Solitario, Clipchamp, Teams personal, el Outlook nuevo...), también para usuarios nuevos, OneDrive y los widgets. Se pueden volver a instalar desde Microsoft Store.
-- **Mínimo:** además apaga los servicios de telemetría e informe de errores y los que una VM no usa (mapas, ubicación, fax, modo demo), y las apps de la Store no corren en segundo plano.
-
-Elige un nivel y haz clic en **Aplicar**, o en **Encender y aplicar** si la VM está apagada. Un nivel más bajo deshace los ajustes de los más altos. Nunca se tocan Microsoft Defender, Windows Update, SmartScreen, UAC, el firewall, Microsoft Store ni Xbox. También puedes elegir el nivel al crear la máquina o en un perfil; se aplica al primer inicio de sesión de Windows.
-
-## Apps
-
-La tarjeta **Apps** instala en la VM tiendas de juegos (Steam, Epic Games, Battle.net, EA app, GOG Galaxy, Ubisoft Connect), navegadores (Chrome, Brave, Firefox), multimedia (VLC, OBS Studio, Spotify), Discord, 7-Zip, WinRAR y Proton VPN. Búscalas con **Buscar** o filtra por categoría, elígelas y haz clic en **Instalar**, o en **Encender e instalar** si la VM está apagada. También puedes elegirlas al crear la máquina; se instalan la primera vez que se abre. Cada instalador se descarga dentro de la VM y solo se ejecuta si Windows confirma que lo firma su empresa; las versiones fijas también se comprueban por SHA-256. Las apps que ya están en la VM muestran una marca en lugar de la casilla, así no se instalan dos veces; haz clic en una, o clic derecho, para **Reinstalar** o **Desinstalar**. Desinstalar usa el desinstalador de la propia app y pide confirmación; el de Battle.net se abre en el escritorio de la VM para terminarlo ahí. La tarjeta revisa qué está instalado cada vez que se abre con la VM encendida y lo recuerda mientras está apagada. Necesita la [contraseña del invitado](#aviso-de-la-contraseña-del-invitado).
-
-## Opciones
-
-Para las VMs creadas con GpuVM:
-
-- **Procesador:** hilos, de 2 hasta los hilos del host menos uno.
-- **Memoria:** GB, de 4 hasta la memoria del host menos 4 GB.
+- **Procesador:** hilos, de 2 hasta los hilos del host menos uno; dice cuántos quedan para tu PC.
+- **Memoria:** GB, de 4 hasta la memoria del host menos 4 GB, que se reserva entera al encender.
 - **GPU para la VM:** de 10 a 100 %, de 10 en 10.
-- **Disco:** amplía el disco (no se puede achicar). Un disco fijo necesita ese espacio libre en el equipo. El disco C: de la VM crece solo la próxima vez que se abre.
-- **Tipo de uso:** para qué es la máquina. Cada uso ajusta los FPS, la sincronización vertical, el ritmo de cuadros y el mouse de abajo; si cambias alguno a mano, la opción indica que es **Personalizado**.
+- **Disco:** amplía el disco (no se puede achicar). Un disco dinámico crece a medida que la máquina escribe, así que el deslizador llega hasta lo que cabe con todos los discos de las máquinas de esa unidad llenos, dejando 20 GB para Windows; la barra de abajo muestra el disco de esta máquina, lo reservado para las demás y lo que quedaría libre. Una máquina sobre una plantilla mide lo mismo que ella. El disco C: de Windows crece solo la próxima vez que se abre.
+- **Red:**
+  - **Solo internet** (la predeterminada): la máquina no llega a este equipo ni a tu red local, salvo a lo que necesita el stream. Las reglas viven en el puerto del switch virtual de la máquina, fuera de ella, así que una máquina infectada no puede quitarlas.
+  - **Internet y red local:** la máquina llega a este equipo y al resto de tu red. Úsala solo si la necesitas, por ejemplo para un NAS.
+- **Discos compartidos** (si tienes alguno): cada disco con para qué es, cuánto ocupa y dónde está conectado. Consulta [Discos compartidos](#discos-compartidos).
 
-  | Uso | FPS | Sincronización vertical | Ritmo de cuadros | Mouse |
+Procesador, memoria, GPU y disco necesitan la máquina apagada: si está encendida, el botón dice **Apagar y aplicar**, que valida, la apaga, aplica y la vuelve a encender. Si no puede volver a encenderla (por ejemplo, por falta de memoria libre), restaura la configuración anterior. **Descartar** deshace lo que cambiaste.
+
+## Imagen y control
+
+Cómo muestra Moonlight la máquina y cómo la controlas:
+
+<Shot name="options" alt="La sección Imagen y control: tipo de uso, cuadros por segundo, sincronización vertical, ritmo de cuadros, mouse, resolución y ventana" />
+
+- **Tipo de uso:** para qué es la máquina. Encabeza su grupo y ajusta las cuatro opciones de abajo; si cambias una a mano, pasa a **Personalizado**.
+
+  | Uso | Cuadros por segundo | Sincronización vertical | Ritmo de cuadros | Mouse |
   |---|---|---|---|---|
   | **Juegos** | Monitor | Imagen entera | Al instante | Para juegos |
   | **Películas y video** | 60 FPS | Imagen entera | Parejo | Libre |
   | **Trabajo** | Monitor | Imagen entera | Al instante | Libre |
 
-- **Moonlight:** resolución (720p, 1080p, 1440p, 2160p), FPS (30, 60, 120, 144 o **Monitor**) y **Pantalla completa** o **Ventana** (del tamaño de la resolución elegida). **Monitor** transmite a la frecuencia del monitor donde se abre la VM, que se lee en cada apertura; GpuVM agrega esa frecuencia a la pantalla virtual de la VM si no la tiene. A la frecuencia del monitor, la sincronización vertical no agrega latencia y los tirones bajan a la mitad. Las máquinas nuevas la usan.
-- **Abrir en** (con más de un monitor): **Predeterminado** sigue lo elegido en [Preferencias](#preferencias); **Principal** es el monitor principal de Windows, el que sea en ese momento; o un monitor por su nombre. Si el monitor elegido no está conectado, se abre en el principal.
-- **Sincronización vertical:** **Imagen entera** muestra cada cuadro completo en el monitor; **Más rápida** muestra cada cuadro apenas llega, aunque el monitor esté a mitad de dibujar el anterior (se puede ver un corte).
-- **Ritmo de cuadros:** **Parejo** reparte los cuadros a ritmo constante, ideal a 60 FPS; **Al instante** muestra cada cuadro apenas está listo. Solo con **Imagen entera**.
+  - **Cuadros por segundo:** se ofrecen para el monitor donde se abre la máquina: su propia frecuencia (**Monitor**, que se lee en cada apertura; GpuVM agrega esa frecuencia a la pantalla virtual de la máquina si no la tiene), las que van parejas con ella, las que pueden dar tirones y un valor personalizado de 10 a 480. A la frecuencia del monitor, la sincronización vertical no agrega espera.
+  - **Sincronización vertical:** **Imagen entera** muestra cada cuadro completo en el monitor; **Más rápida** muestra cada cuadro apenas llega, aunque el monitor esté a mitad de dibujar el anterior (se puede ver un corte).
+  - **Ritmo de cuadros:** **Parejo** reparte los cuadros a ritmo constante, ideal a 60 FPS; **Al instante** muestra cada cuadro apenas está listo. Solo con la imagen entera.
+  - **Mouse:** **Para juegos** (la máquina toma el mouse, como necesitan los juegos para girar la cámara) o **Libre** (el puntero entra y sale de la ventana como en escritorio remoto; no sirve en la mayoría de juegos).
+- **Resolución:** 720p, 1080p, 1440p o 2160p.
+- **Ventana:** **Pantalla completa**, o **Ventana** (una ventana que puedes mover, del tamaño de la resolución).
+- **Abrir en** (con más de un monitor): **Como en Ajustes** sigue lo elegido en [Ajustes](#ajustes); el monitor principal de Windows, el que sea en ese momento; o un monitor por su nombre. Si el monitor elegido no está conectado, se abre en el principal.
 - **Captura:** cómo captura Sunshine la pantalla.
   - **Rápida** (la predeterminada): la imagen aparece unos 2,6 s después de conectar y también se ven los juegos en pantalla completa exclusiva. Los avisos de administrador de Windows se responden desde GpuVM ([Avisos de administrador](#avisos-de-administrador)).
   - **Clásica:** los avisos de administrador se ven en Moonlight, pero la imagen puede tardar en aparecer al conectar y los juegos en pantalla completa exclusiva se ven en negro. Consulta [Streaming](/gpuvm/docs/es/streaming/#modos-de-captura).
-- **Red:**
-  - **Solo internet** (la predeterminada): la VM no llega a este equipo ni a tu red local, salvo a lo que necesita el stream. Las reglas viven en el puerto del switch virtual de la VM, fuera de ella, así que una VM infectada no puede quitarlas.
-  - **Internet y red local:** la VM llega a este equipo y al resto de tu red. Úsala solo si la necesitas, por ejemplo para un NAS.
 - **Avanzado** (haz clic para verlo):
-  - **Mouse:** **Para juegos** (la VM toma el mouse, como necesitan los juegos para girar la cámara) o **Libre** (el puntero entra y sale de la ventana como en escritorio remoto; no sirve en la mayoría de juegos).
   - **Códec:** **Automático** (Moonlight elige el mejor que tu equipo puede mostrar), H.264, HEVC o AV1. Si la imagen no aparece, vuelve a **Automático**.
-  - **Calidad de imagen:** la tasa de bits en Mbps, hasta 150. Más calidad usa más red; al mínimo, Moonlight la ajusta a la resolución y los FPS.
+  - **Calidad de imagen:** la tasa de bits en Mbps, hasta 150. Más calidad usa más red; al mínimo (**Automática**), Moonlight la ajusta a la resolución y los FPS.
 
-Los ajustes de Moonlight, de tipo de uso, de captura y de red se guardan sin apagar la VM: los de Moonlight se aplican la próxima vez que la abras, la captura en el momento si la VM está encendida (reinicia Sunshine) y la red en el momento. Procesador, memoria, GPU y disco necesitan la VM apagada: si está encendida, el botón dice **Apagar y aplicar**, que valida, apaga la VM, aplica y la vuelve a encender. Si no puede volver a encenderla (por ejemplo, por falta de memoria libre), restaura la configuración anterior.
+Estos ajustes se guardan sin apagar la máquina: los de Moonlight se aplican la próxima vez que la abras, la captura en el momento si la máquina está encendida (reinicia Sunshine) y la red en el momento.
 
-## Aviso de la contraseña del invitado
+## Windows
 
-Si GpuVM no tiene la contraseña de Windows de la VM (por ejemplo, después de reconstruir su estado con `repair`), la VM muestra un aviso que la pide, para el usuario `gpuvm`. Se guarda cifrada con DPAPI y le permite a GpuVM corregir cosas dentro de la VM por PowerShell Direct (sin red y sin preguntarte): esperar a que termine la configuración inicial, devolver la sesión a la pantalla de la GPU, ajustar la resolución de la pantalla, instalar el soporte de mandos y responder los avisos de administrador. Las VMs creadas desde la app ya la tienen.
+### Limpieza de Windows
+
+Qué tan limpio queda Windows dentro de la máquina. Cada nivel incluye los anteriores:
+
+- **Normal:** Windows tal como viene.
+- **Privacidad:** datos de diagnóstico al mínimo que permite la edición (en Pro, Windows no baja de «Requerido»), sin identificador de publicidad, historial de actividad, sugerencias, Spotlight, Bing en Inicio, Copilot ni Recall.
+- **Sin apps de más:** además quita apps preinstaladas (Noticias, El tiempo, Solitario, Clipchamp, Teams personal, el Outlook nuevo...), también para usuarios nuevos, OneDrive y los widgets. Se pueden volver a instalar desde Microsoft Store.
+- **Mínimo:** además apaga los servicios de telemetría e informe de errores y los que una máquina no usa (mapas, ubicación, fax, modo demo), y las apps de la Store no corren en segundo plano.
+
+Junto a los niveles, una lista de todo lo que Windows trae (seguimiento, anuncios, Bing, Copilot, apps preinstaladas, OneDrive, widgets, servicios de fondo) dice qué hace cada cosa hoy o, si el nivel elegido la quita, cómo queda Windows sin ella, al lado de una escena donde esas piezas dejan de llegar a Windows. Elige un nivel y haz clic en **Aplicar**, o en **Encender y aplicar** si la máquina está apagada. Un nivel más bajo deshace los ajustes de los más altos. Nunca se tocan Microsoft Defender, Windows Update, SmartScreen, UAC, el firewall, Microsoft Store ni Xbox. El nivel también se elige al crear la máquina o en un perfil; se aplica al primer inicio de sesión de Windows.
+
+### Apps
+
+Tiendas de juegos (Steam, Epic Games, Battle.net, EA app, GOG Galaxy, Ubisoft Connect), navegadores (Chrome, Brave, Firefox), multimedia (VLC, OBS Studio, Spotify), Discord, 7-Zip, WinRAR y Proton VPN, instalados en la máquina:
+
+- El catálogo queda a la izquierda por categoría, en **Mosaico** (elige varias y luego **Instalar** en la barra que las cuenta) o en **Lista** (**Instalar** por app); la vista elegida se recuerda. Las apps instaladas quedan marcadas. **Encender e instalar** primero enciende la máquina.
+- A la derecha, la búsqueda y **En esta máquina**: las apps ya instaladas, cada una con un menú (o clic derecho) para **Reinstalar** y **Desinstalar**. Desinstalar usa el desinstalador de la propia app y pide confirmación; el de Battle.net se abre en la ventana de la máquina para terminarlo ahí.
+
+Cada instalador se descarga dentro de la máquina desde su fuente oficial y solo se ejecuta si Windows confirma que lo firma su empresa; las versiones fijas también se comprueban por SHA-256. Las apps también se eligen al crear la máquina; se instalan la primera vez que se abre. La lista de instaladas se revisa cada vez que se abre la página con la máquina encendida y se recuerda mientras está apagada. Necesita la [contraseña de Windows](#contraseña-de-windows).
+
+<Shot name="windows" alt="La sección Windows: niveles de limpieza, la escena y la lista de lo que trae Windows, y el catálogo de apps" />
+
+## Personalizar
+
+Decora el cubo de la máquina; cada máquina conserva su decoración, también al cambiarle el nombre, y se ve también en Inicio.
+
+<Shot name="personalize" alt="La sección Personalizar con el espacio, el color, el letrero LED y los stickers, y el cubo con su panel de vistas fijas" />
+
+- **Espacio:** el espacio donde está la máquina (elegir otro la mueve ahí, o **Nuevo espacio** crea uno con ella), y **Ver espacio** para verlo en Inicio.
+- **Al azar:** **Decorar al azar** elige color, letrero, stickers y figuras en un clic; puedes seguir cambiando lo que quieras.
+- **Color:** el holograma, los rayos y el ícono de la máquina. Sin elegir, usa el color de énfasis.
+- **Letrero LED:** un texto que corre alrededor del vidrio (**Apagado** / **Encendido**). **Texto** (vacío muestra el nombre de la máquina), **Color del letrero** (ámbar, rojo, verde, blanco o el color de la máquina), **Altura** (también arrastrándolo hacia arriba o abajo en el cubo) y **Uso en vivo**: **Solo el texto** o **Con el uso** (el uso de la GPU y del procesador mientras está encendida).
+- **Stickers:** GpuVM, estrella, rayo, corazón, gato, perro, araña, fantasma, cohete, fuego, diamante, luna, control, o **Subir imagen** para usar una tuya (PNG, WEBP, JPG o GIF, hasta 8 MB). Arrástralos a cualquier cara del vidrio.
+- **Figuras:** figuras de bloques que se paran sobre el cubo (gato de la suerte, planta, patito, robot, cactus, hongos, control, taza, pingüino, cohete, bonsái, perro, gato, araña, cubo mágico, conejo, oso, unicornio, tigre, cervatillo).
+
+En el cubo, mientras esta sección está a la vista:
+
+- Al arrastrar se iluminan con el énfasis las celdas de la cara y las cosas encajan en ellas. Mantén el clic derecho y arrastra de lado para girar un sticker o una figura (se detiene cada 15°); un clic derecho abre su menú (girar, tamaño, duplicar, copiar, cortar, pegar, quitar).
+- Elige varios con Shift o Ctrl y clic, un recuadro con Shift sobre un espacio vacío, o Ctrl+A; se mueven, giran, duplican (Ctrl+D) y quitan (Suprimir) juntos, y las flechas los mueven de a una celda. Lo elegido lleva encima una capa tenue del color de énfasis.
+- Ctrl+C, Ctrl+X y Ctrl+V copian, cortan y pegan stickers y figuras, también de una máquina a otra.
+- Un panel sobre el cubo lo muestra **Libre** o desde el **Frente**, la **Derecha**, **Atrás**, la **Izquierda** o **Arriba**, y lo deja quieto ahí.
+
+## Contraseña de Windows
+
+Si GpuVM no tiene la contraseña de Windows de la máquina (por ejemplo, después de reconstruir su estado con `repair`), la página muestra una tarjeta que la pide, para el usuario de la máquina. Se guarda cifrada con DPAPI y le permite a GpuVM corregir cosas dentro de la máquina por PowerShell Direct (sin red y sin preguntarte): esperar a que termine la configuración inicial, devolver la sesión a la pantalla de la GPU, ajustar la resolución de la pantalla, instalar el soporte de mandos y responder los avisos de administrador. Las máquinas creadas desde la app ya la tienen.
 
 ## Aviso del driver
 
-Si el driver de NVIDIA de la VM es distinto al del host, un aviso lo indica. Se actualiza solo la próxima vez que enciendas la VM desde la app, o en el momento con **Actualizar ahora** o **Apagar y actualizar**.
+Si el driver de NVIDIA de la máquina es distinto al del host, un aviso lo indica. Se actualiza solo la próxima vez que enciendas la máquina desde la app, o en el momento con **Actualizar ahora** o **Apagar y actualizar**.
 
-## Acciones de energía y más
+## Más opciones
 
 El menú **⋯** tiene:
 
@@ -182,9 +251,10 @@ El menú **⋯** tiene:
 - **Ver consola de Hyper-V**. Solo muestra la pantalla básica de Hyper-V, no lo que dibuja la GPU.
 - **Volver a emparejar Moonlight**.
 - **Actualizar driver de la GPU**, o **Apagar y actualizar driver** si está encendida.
-- **Crear plantilla**, o **Apagar y crear plantilla** si está encendida: guarda el Windows de esta VM como [plantilla](#plantillas). La VM queda igual y vuelve a encender al terminar.
-- **Otro patrón**: cambia el ícono de la VM (un animal u objeto sobre su color) y su color. Hacer clic en el patrón junto al nombre de la VM (o de un perfil) hace lo mismo; el nuevo se ve en todas partes al instante.
-- **Eliminar máquina**: quita la VM de Hyper-V, conservando el disco `.vhdx` o borrándolo también, tras confirmarlo en un aviso de UAC. No se puede deshacer.
+- **Crear plantilla**, o **Apagar y crear plantilla** si está encendida: guarda el Windows de esta máquina como [plantilla](#plantillas). La máquina queda igual.
+- **Cambiar nombre** (con la máquina apagada): el nombre nuevo se revisa mientras escribes y el cubo lo graba en la etiqueta de serie de la placa. La máquina cambia de nombre en Hyper-V junto con su carpeta y su disco; su configuración, el emparejamiento de Moonlight, los discos compartidos y su decoración se quedan con ella. Si un paso falla, se deshace lo que ya había cambiado.
+- **Otro ícono** (también haciendo clic en el ícono junto al nombre) y **Otro banner** (hay tres).
+- **Eliminar máquina**: la quita de Hyper-V, con **Conservar el disco** o **Borrar también el disco**, tras confirmarlo en un aviso de UAC. No se puede deshacer.
 
 <Aside type="caution">
 No uses Escritorio remoto mientras transmites: se lleva la sesión de la consola y la quita de la pantalla de la GPU.
@@ -192,47 +262,53 @@ No uses Escritorio remoto mientras transmites: se lleva la sesión de la consola
 
 ## Biblioteca
 
-La **Biblioteca**, el ícono de capas en la barra de título, tiene cinco pestañas:
+La **Biblioteca** es una sola página con todas sus secciones y una barra arriba que marca la que está a la vista. Encima de ellas, **Espacio de GpuVM en el disco**: cuánto ocupan los discos de máquinas, las plantillas, los discos compartidos y las ISOs, cada uno en su color, y cuánto queda libre.
 
-- **Perfiles:** los perfiles incluidos (marcados **Incluido**) y los tuyos. **Nuevo perfil** o **Duplicar** crea uno a partir de otro; los tuyos también se pueden editar (**Editar**) y borrar (**Eliminar**, haz clic otra vez para confirmar). Cada uno guarda procesador, memoria, parte de la GPU, tamaño y tipo de disco (**Fijo** / **Dinámico**), imagen de Windows, apps por instalar, el tipo de uso y cómo abre Moonlight (resolución, FPS, pantalla completa o ventana), sobre el perfil incluido en el que está **Basado en**. **Crear máquina** llena todo con el perfil elegido.
+<Shot name="library" alt="La Biblioteca: el espacio de GpuVM en el disco y los perfiles como tarjetas con un cubo pequeño" />
+
+- **Perfiles:** los perfiles incluidos (marcados **Incluido**) y los tuyos, como tarjetas con un cubo pequeño de lo que dan. **Duplicar** crea uno a partir de otro; los tuyos también se pueden editar (**Editar**, con la máquina que crea al lado del formulario) y borrar. La última tarjeta, **Nuevo perfil**, crea uno. Cada uno guarda procesador, memoria, parte de la GPU, tamaño y tipo de disco (**Fijo** / **Dinámico**), imagen de Windows, apps por instalar, limpieza, el tipo de uso y cómo abre Moonlight (resolución, FPS, pantalla completa o ventana), sobre el perfil incluido en el que está **Basado en**. Consulta [Perfiles](/gpuvm/docs/es/profiles/).
 - **Plantillas:** consulta [Plantillas](#plantillas).
-- **Discos:** los discos de la carpeta de GpuVM, qué VM usa cada uno (**En uso** o **Libre**) y el espacio libre del equipo. **Crear máquina con este disco** vuelve a crear una VM con un disco que se conservó al eliminarla, con Windows y sus apps como estaban; los discos libres se pueden borrar (haz clic otra vez para confirmar y luego en el aviso de UAC; no se puede deshacer). Cada fila **Windows preparado** es Windows aplicado una vez desde un ISO y una edición (unos 12 GB): las máquinas nuevas con ese Windows se crean copiándolo, en más o menos un minuto. Borrarlo libera ese espacio; la próxima máquina con ese Windows lo vuelve a preparar.
-- **Compartidos:** consulta [Discos compartidos](#discos-compartidos).
-- **ISOs:** las imágenes de Windows que usaste, con las máquinas que las usaron, más las de Descargas y Escritorio. **Agregar ISO** o **Agregar a la lista** la recuerda, y **Quitar de la lista** la olvida sin borrar el archivo. Las ISOs recordadas se ofrecen primero en **Crear máquina**.
+- **Discos compartidos:** consulta [Discos compartidos](#discos-compartidos).
+- **Discos de máquinas:** el disco de cada máquina y los que quedaron sin máquina (**En uso** o **Libre**). **Crear una máquina con este disco** vuelve a crear una máquina con un disco que se conservó al eliminarla, con Windows y sus apps como estaban; los discos libres se pueden borrar (haz clic otra vez para confirmar y luego en el aviso de UAC; no se puede deshacer). Cada **Windows preparado** es Windows aplicado una vez desde un ISO y una edición (unos 12 GB): las máquinas nuevas con ese Windows se crean copiándolo, en más o menos un minuto. Borrarlo libera ese espacio; la próxima máquina con ese Windows lo vuelve a preparar.
+- **ISOs:** las imágenes de Windows que usaste, con las máquinas que las usaron, más las de Descargas y Escritorio. **Agregar ISO** o **Agregar a la lista** la recuerda, y **Quitar de la lista** la olvida sin borrar el archivo. Las ISOs recordadas se ofrecen primero al crear una máquina.
+
+Una sección vacía muestra la tarjeta para agregar el primero.
 
 ## Plantillas
 
-Una plantilla es el Windows de una VM guardado como disco base de solo lectura, con sus apps, nivel de limpieza y contraseña. Se crea desde el menú **⋯** de una VM (**Crear plantilla**). Una VM creada **Desde plantilla** recibe un disco encima que solo guarda lo que cambia, así queda lista en segundos y ocupa pocos GB. Cada copia tiene su propia identidad de streaming (Moonlight se empareja con ella como un equipo nuevo) y su propio nombre de equipo. Su disco mide lo mismo que la plantilla y no se puede ampliar.
+Una plantilla es el Windows de una máquina guardado como disco base de solo lectura, con sus apps, nivel de limpieza y contraseña. Se crea desde el menú **⋯** de una máquina (**Crear plantilla**), o con **Nueva plantilla** en la Biblioteca, eligiendo la máquina cuyo Windows guarda y su nombre. Una máquina creada **Desde plantilla** recibe un disco encima que solo guarda lo que cambia, así queda lista en segundos y ocupa pocos GB. Cada copia tiene su propia identidad de streaming (Moonlight se empareja con ella como un equipo nuevo) y su propio nombre de equipo. Su disco mide lo mismo que la plantilla y no se puede ampliar.
 
-La pestaña **Plantillas** muestra cada plantilla con la VM de la que salió, cuánto ocupa y las máquinas creadas sobre ella (**Base de**). **Crear máquina** abre el diálogo con esa plantilla elegida. Una plantilla solo se puede borrar cuando ninguna máquina está creada sobre ella.
+Cada tarjeta de plantilla muestra la máquina de la que salió, cuánto ocupa y las máquinas creadas sobre ella, y crea una máquina a partir de ella. Una plantilla solo se puede borrar cuando ninguna máquina está creada sobre ella.
 
 ## Discos compartidos
 
-Un disco compartido guarda tus juegos o archivos aparte de Windows y pasa de una máquina a otra, así una VM nueva no descarga todo de nuevo. En la pestaña **Compartidos**, **Nuevo disco** pide un nombre, un uso (**Juegos** o **General**) y un tamaño máximo; en el equipo solo ocupa lo que guardes en él.
+Un disco compartido guarda tus juegos o archivos aparte de Windows y pasa de una máquina a otra, así una máquina nueva no descarga todo de nuevo. **Nuevo disco** pide un nombre, un uso (**Juegos** o **General**) y un tamaño máximo; en el equipo solo ocupa lo que guardes en él.
 
-- **Conéctalo** desde la tarjeta **Discos compartidos** de la VM: **Conectar**, también con la VM encendida. Dentro recibe una letra de unidad. Un disco de **Juegos** recibe `SteamLibrary`, que se suma a las bibliotecas de Steam (GpuVM cierra Steam, la suma y lo vuelve a abrir; si un juego mantiene Steam abierto, te avisa). **Desconectar** primero lo cierra dentro de Windows; si un programa lo está usando, te avisa en vez de quitarlo. Un disco conectado a otra máquina apagada se puede mover con **Traer desde**.
-- **Importar carpeta** copia una carpeta de este equipo al disco, con el avance en el botón. Una biblioteca de Steam trae solo sus juegos (`steamapps`). Funciona mientras el disco no esté conectado a una VM encendida. No se pueden importar las carpetas de GpuVM, Windows ni carpetas que las contengan (como una unidad o la carpeta Usuarios).
+- **Conéctalo** desde la sección **Máquina** de la máquina: **Conectar**, también con la máquina encendida. Dentro recibe una letra de unidad. Un disco de **Juegos** recibe `SteamLibrary`, que se suma a las bibliotecas de Steam (GpuVM cierra Steam, la suma y lo vuelve a abrir; si un juego mantiene Steam abierto, te avisa). **Desconectar** primero lo cierra dentro de Windows; si un programa lo está usando, te avisa en vez de quitarlo. Un disco conectado a otra máquina apagada se puede mover con **Traer desde**.
+- **Importar carpeta** copia una carpeta de este equipo al disco, con el avance en el botón. Una biblioteca de Steam trae solo sus juegos (`steamapps`). Funciona mientras el disco no esté conectado a una máquina encendida. No se pueden importar las carpetas de GpuVM, Windows ni carpetas que las contengan (como una unidad o la carpeta Usuarios).
 
 <Aside type="note">
-La copia solo va de este equipo al disco. Antes de escribir, GpuVM revisa que el disco no tenga enlaces donde va a escribir (una VM pudo dejar uno para sacar la copia del disco); si encuentra uno, o una carpeta que no puede revisar, no copia. Un disco que escribió otra máquina puede tener archivos que ella dejó: trátalo como cualquier disco que conectas.
+La copia solo va de este equipo al disco. Antes de escribir, GpuVM revisa que el disco no tenga enlaces donde va a escribir (una máquina pudo dejar uno para sacar la copia del disco); si encuentra uno, o una carpeta que no puede revisar, no copia. Un disco que escribió otra máquina puede tener archivos que ella dejó: trátalo como cualquier disco que conectas.
 </Aside>
 
-## Preferencias
+## Ajustes
 
-<Image src={preferencesDark} alt="Pantalla de Preferencias con las opciones de tema y de cierre de la ventana, tema oscuro" />
+**Ajustes**, al pie de la barra lateral, tiene sus secciones a la izquierda, sus opciones al centro y una vista previa en vivo del tema y el color de énfasis a la derecha.
 
-- **Tema:** **Sistema** (el predeterminado: sigue a Windows), **Claro** u **Oscuro**. El botón de sol/luna de la barra de título cambia directamente entre claro y oscuro.
-- **Al cerrar la ventana:**
-  - **Salir por completo** (el predeterminado): cerrar la ventana cierra GpuVM.
-  - **Quedarse en la bandeja:** cerrar la ventana la oculta y GpuVM sigue abierta junto al reloj, así que los trabajos en curso continúan. El menú del ícono de la bandeja tiene **Abrir GpuVM** y **Salir**; un clic izquierdo sobre él vuelve a abrir la ventana.
-- **Al salir de GpuVM:**
-  - **Dejarlas encendidas** (el predeterminado): las máquinas siguen encendidas después de cerrar GpuVM.
-  - **Apagarlas:** al salir de GpuVM se apagan de forma ordenada todas las máquinas de GpuVM encendidas, como desde el menú Inicio de Windows, y se libera su memoria. GpuVM se cierra al instante; el apagado sigue en segundo plano.
-- **Abrir las máquinas en** (con más de un monitor): **Principal** (el predeterminado) sigue al monitor principal de Windows; o un monitor por su nombre. Cada máquina puede tener el suyo en sus opciones. Moonlight no tiene un ajuste para esto, así que GpuVM mueve la ventana de Moonlight a ese monitor mientras se abre, y la imagen aparece ahí, en pantalla completa o en ventana.
-- **Servicio de GpuVM**, el servicio de Windows que hace el trabajo de Hyper-V para la app:
+<Shot name="settings" alt="Ajustes: la sección Apariencia con tema, idioma y color de énfasis, y la vista previa en vivo de una máquina" />
+
+- **Apariencia:**
+  - **Tema:** **Sistema** (el predeterminado: sigue a Windows), **Claro** u **Oscuro**.
+  - **Idioma:** **Windows** (el predeterminado: español si Windows está en español, inglés si no), **Español** o **English**. Todas las pantallas, el menú de la bandeja y lo que informa GpuVM (pasos, avisos y errores) cambian al instante.
+  - **Color de énfasis:** azul, violeta, turquesa, verde o ámbar, cada uno mostrado mitad claro y mitad oscuro. Colorea los botones, la selección, las barras de uso, el logo y el holograma de las máquinas.
+- **Ventana:**
+  - **Al cerrar la ventana:** **Salir por completo** (el predeterminado) o **Quedarse en la bandeja**: cerrar la ventana la oculta y GpuVM sigue abierta junto al reloj, así que los trabajos en curso continúan. El menú del ícono de la bandeja tiene **Abrir GpuVM** y **Salir**; un clic izquierdo sobre él vuelve a abrir la ventana.
+  - **Al salir de GpuVM:** **Dejarlas encendidas** (el predeterminado) o **Apagarlas**: al salir se apagan de forma ordenada todas las máquinas de GpuVM encendidas, como desde el menú Inicio de Windows, y se libera su memoria. GpuVM se cierra al instante; el apagado sigue en segundo plano.
+- **Máquinas** (con más de un monitor): **Abrir las máquinas en** el monitor principal de Windows (el predeterminado) o en un monitor por su nombre. Cada máquina puede tener el suyo en sus opciones. Moonlight no tiene un ajuste para esto, así que GpuVM mueve la ventana de Moonlight a ese monitor mientras se abre.
+- **Servicio**, el servicio de Windows que hace el trabajo de Hyper-V para la app:
   - **Con GpuVM** (el predeterminado): se enciende al abrir GpuVM y se apaga al salir, cuando termina lo que estaba haciendo (apagar las máquinas, una máquina que se está creando).
   - **Con Windows:** se enciende con Windows.
   - **Manual:** solo se enciende y se apaga con los botones **Iniciar** y **Detener** de aquí.
-  - Pasar a **Con Windows** o dejarlo pide confirmar en un aviso de UAC, porque cambia la configuración del servicio en Windows. Encenderlo y apagarlo no. La fila de abajo muestra su estado.
+  - Pasar a **Con Windows** o dejarlo pide confirmar en un aviso de UAC, porque cambia la configuración del servicio en Windows. Encenderlo y apagarlo no. **Estado** muestra cómo está.
 
 GpuVM se abre una sola vez: si la vuelves a abrir (por ejemplo, desde el menú Inicio mientras está en la bandeja), muestra la ventana que ya estaba abierta.

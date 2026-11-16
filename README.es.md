@@ -29,7 +29,7 @@
 
 - **Cada máquina, un holograma.** Cada máquina se dibuja como un holograma dentro de un cubo de vidrio: placa base, procesador, memoria, tarjeta gráfica y disco, con rayos que llegan a cada pieza según trabaja, y que sigue lo que cambias antes de guardar. Gíralo, acércalo y decóralo: su propio color, un letrero LED que corre alrededor del vidrio, stickers y figuras de bloques.
 - **Espacios con su propio mundo.** Agrupa las máquinas según para qué son; cada espacio es un mundo propio (un estudio, una placa base o un mundo de bloques de día, de tarde o de noche) e Inicio muestra un espacio a la vez. Arrastra las máquinas entre espacios y al orden que quieras.
-- **Juegos mientras esperas.** Dos juegos pequeños se juegan en el espacio de las máquinas (*Overclock* y *Bit a bit*), con tus máquinas como naves, solo o en equipo.
+- **Juegos mientras esperas.** Tres juegos pequeños se juegan en el espacio de las máquinas (*Overclock*, *Bit a bit* y *Torre de bloques*), con tus máquinas como naves, solo o en equipo.
 - **Español e inglés.** Toda la app, la bandeja y lo que informa el módulo siguen el idioma de Windows o el que elijas en Ajustes.
 - **Tu GPU dentro de la VM.** El GPU partitioning de Hyper-V (GPU-P) comparte la GPU del equipo con la VM, que usa el mismo driver que el host. Sin passthrough ni segunda GPU.
 - **Se abre en un clic.** «Encender y abrir» enciende la VM, espera a Windows, corrige la sesión y la pantalla, empareja Moonlight y abre la imagen dibujada y codificada por la GPU (Sunshine + NVENC), con sonido. Una VM ya encendida muestra su imagen en unos 7-10 s; otro clic trae Moonlight al frente.

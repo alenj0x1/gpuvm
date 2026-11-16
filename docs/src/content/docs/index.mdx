@@ -6,15 +6,12 @@ description: Windows 10/11 virtual machines that use your PC's GPU through Hyper
 import Diagram from '../../components/Diagram.astro';
 import { overview } from '../../diagrams';
 
-import { Image } from 'astro:assets';
+import Shot from '../../components/Shot.astro';
 import { Card, CardGrid, LinkCard, Steps } from '@astrojs/starlight/components';
-import appLight from '../../assets/screenshots/app-light.png';
-import appDark from '../../assets/screenshots/app-dark.png';
 
 GpuVM creates Windows 10 and 11 virtual machines that use your PC's GPU, with the best performance each backend allows, and a **labs** system to measure every improvement before adopting it.
 
-<Image src={appLight} alt="GpuVM desktop app showing a VM with its live stats and options, light theme" class="dark:sl-hidden" />
-<Image src={appDark} alt="GpuVM desktop app showing a VM with its live stats and options, dark theme" class="light:sl-hidden" />
+<Shot name="home" alt="GpuVM's Home: a machine as a hologram inside its glass cube on a world of blocks, with its usage beside it and the other machines below" />
 
 ## Why
 
@@ -40,7 +37,7 @@ A regular Hyper-V VM only gets a basic display adapter, so games and GPU apps do
 
 <CardGrid>
   <Card title="Desktop app" icon="laptop">
-    Tauri 2 + React, without administrator rights; a Windows service does the Hyper-V work. Every Hyper-V VM in one list, one-click start and open, a use per machine (games, movies, work), live stats, options and power actions.
+    Tauri 2 + React, in English and Spanish, without administrator rights; a Windows service does the Hyper-V work. Every Hyper-V VM grouped in spaces, one-click start and open, each machine as a hologram in a glass cube you can decorate, a use per machine (games, movies, work), live usage, options, and a Library of profiles, templates, shared disks and ISOs. See [Using the app](/gpuvm/docs/using-the-app/).
   </Card>
   <Card title="PowerShell module and CLI" icon="seti:powershell">
     The `GpuVM` module (PowerShell 7) does the work; `gpuvm.ps1` exposes it as short commands.

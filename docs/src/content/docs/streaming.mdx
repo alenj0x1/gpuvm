@@ -32,7 +32,7 @@ Work inside the VM that lasts until Windows restarts (display mode, capture mode
 
 ## Capture modes
 
-Sunshine can capture the virtual display in two ways, chosen per VM in **Options → Capture** or with `Set-GpuVMCapture -Name <vm> -Mode wgc|ddx`:
+Sunshine can capture the virtual display in two ways, chosen per machine in **Picture and control → Capture** or with `Set-GpuVMCapture -Name <vm> -Mode wgc|ddx`:
 
 | Mode | In the app | How Sunshine runs | Shows | Doesn't show |
 |---|---|---|---|---|
@@ -68,8 +68,8 @@ Don't use Remote Desktop while streaming: it takes the console session away. Gpu
 
 Moonlight on the host shows the VM. Pairing is automatic: Moonlight generates the PIN and GpuVM hands it to Sunshine through its API. The paired client is this PC's name.
 
-- To pair again: **Volver a emparejar Moonlight** in the app's menu, or `./gpuvm.ps1 connect -Name <vm> -Pair`.
-- The resolution, frame rate, V-Sync, frame pacing, mouse, codec and bitrate are set in the app's **Options** (or with `Set-GpuVMStreamingClient`), or per connection:
+- To pair again: **Pair Moonlight again** in the machine's **⋯** menu, or `./gpuvm.ps1 connect -Name <vm> -Pair`.
+- The resolution, frame rate, V-Sync, frame pacing, mouse, codec and bitrate are set in the machine's **Picture and control** section (or with `Set-GpuVMStreamingClient`), or per connection:
 
 ```powershell
 ./gpuvm.ps1 connect -Name win11 -Resolution 2560x1440 -Fps 120 -BitrateKbps 40000 -Codec HEVC

@@ -6,15 +6,12 @@ description: Máquinas virtuales Windows 10/11 que usan la GPU de tu PC con GPU 
 import Diagram from '../../../components/Diagram.astro';
 import { overview } from '../../../diagrams';
 
-import { Image } from 'astro:assets';
+import Shot from '../../../components/Shot.astro';
 import { Card, CardGrid, LinkCard, Steps } from '@astrojs/starlight/components';
-import appLight from '../../../assets/screenshots/app-light.png';
-import appDark from '../../../assets/screenshots/app-dark.png';
 
 GpuVM crea máquinas virtuales Windows 10 y 11 que usan la GPU de tu PC, con el mayor rendimiento que permite cada backend, y un sistema de **laboratorios** para medir cada mejora antes de adoptarla.
 
-<Image src={appLight} alt="App de escritorio de GpuVM con una VM, sus estadísticas en vivo y sus opciones, tema claro" class="dark:sl-hidden" />
-<Image src={appDark} alt="App de escritorio de GpuVM con una VM, sus estadísticas en vivo y sus opciones, tema oscuro" class="light:sl-hidden" />
+<Shot name="home" alt="Inicio de GpuVM: una máquina como holograma dentro de su cubo de vidrio sobre un mundo de bloques, con su uso al lado y las demás máquinas abajo" />
 
 ## Por qué
 
@@ -40,7 +37,7 @@ Una VM normal de Hyper-V solo tiene un adaptador de pantalla básico, así que l
 
 <CardGrid>
   <Card title="App de escritorio" icon="laptop">
-    Tauri 2 + React, sin permisos de administrador; un servicio de Windows hace el trabajo de Hyper-V. Todas las VMs de Hyper-V en una lista, encender y abrir en un clic, un tipo de uso por máquina (juegos, películas, trabajo), estadísticas en vivo, opciones y acciones de energía.
+    Tauri 2 + React, en español e inglés, sin permisos de administrador; un servicio de Windows hace el trabajo de Hyper-V. Todas las VMs de Hyper-V agrupadas en espacios, encender y abrir en un clic, cada máquina como un holograma en un cubo de vidrio que puedes decorar, un tipo de uso por máquina (juegos, películas, trabajo), uso en vivo, opciones y una Biblioteca de perfiles, plantillas, discos compartidos e ISOs. Consulta [Uso de la app](/gpuvm/docs/es/using-the-app/).
   </Card>
   <Card title="Módulo de PowerShell y CLI" icon="seti:powershell">
     El módulo `GpuVM` (PowerShell 7) hace el trabajo; `gpuvm.ps1` lo expone como comandos cortos.

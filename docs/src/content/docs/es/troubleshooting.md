@@ -11,15 +11,15 @@ Las causas habituales, en orden:
 2. **El driver de la VM no coincide con el del host** (después de actualizar el driver de NVIDIA). Al abrirla desde la app se sincroniza solo si la VM está apagada; o ejecuta `./gpuvm.ps1 sync-driver -Name <vm>` con la VM apagada.
 3. **Escritorio remoto se llevó la sesión** de la pantalla de la GPU. Cierra Escritorio remoto y vuelve a usar **Encender y abrir**: con la contraseña del invitado guardada, GpuVM devuelve la sesión a la consola.
 
-Si la imagen tarda en aparecer al conectar, revisa que **Opciones → Captura** esté en **Rápida**: la captura **Clásica** puede quedar en negro hasta que algo cambie en pantalla.
+Si la imagen tarda en aparecer al conectar, revisa que **Imagen y control → Captura** esté en **Rápida**: la captura **Clásica** puede quedar en negro hasta que algo cambie en pantalla.
 
-Para ver la pantalla de la VM sin la GPU, abre la consola de Hyper-V (**Ver consola de Hyper-V** en el menú **⋯**, o `vmconnect.exe localhost <vm>`). Mientras la pantalla virtual funciona, la de Hyper-V está desactivada; Escritorio remoto sigue disponible como respaldo.
+Para ver la pantalla de la VM sin la GPU, abre la consola de Hyper-V (**Ver consola de Hyper-V** en el menú **⋯** de la máquina, o `vmconnect.exe localhost <vm>`). Mientras la pantalla virtual funciona, la de Hyper-V está desactivada; Escritorio remoto sigue disponible como respaldo.
 
 Problema abierto ([laboratorio 002](/gpuvm/docs/es/labs/#lo-que-encontraron-los-laboratorios-hasta-ahora)): Sunshine puede decir "Display device configuration API is temporarily unavailable" y no cambiar la resolución.
 
 ## Un programa en pantalla completa se ve en negro
 
-El escritorio se ve bien, pero un juego o programa en **pantalla completa exclusiva** se ve en negro (puede aparecer cuando pierde el foco). Pasa con la captura **Clásica**, que no ve la pantalla completa exclusiva en una pantalla virtual. En **Opciones → Captura** elige **Rápida** (la predeterminada en las máquinas nuevas) y guarda. Consulta [Modos de captura](/gpuvm/docs/es/streaming/#modos-de-captura).
+El escritorio se ve bien, pero un juego o programa en **pantalla completa exclusiva** se ve en negro (puede aparecer cuando pierde el foco). Pasa con la captura **Clásica**, que no ve la pantalla completa exclusiva en una pantalla virtual. En **Imagen y control → Captura** elige **Rápida** (la predeterminada en las máquinas nuevas) y guarda. Consulta [Modos de captura](/gpuvm/docs/es/streaming/#modos-de-captura).
 
 ## Un programa espera permiso de administrador
 
@@ -28,7 +28,7 @@ Con la captura **Rápida**, los avisos de administrador de Windows no se dibujan
 - GpuVM tiene que estar abierto (en la ventana o en la bandeja): la tarjeta sale de la app.
 - GpuVM necesita la contraseña de Windows de la VM; sin ella, la VM muestra un aviso que la pide.
 - El vigilante se instala la primera vez que la VM se abre desde GpuVM; ábrela una vez con **Abrir**.
-- Para ver los avisos en Moonlight, cambia a **Clásica** en **Opciones → Captura**.
+- Para ver los avisos en Moonlight, cambia a **Clásica** en **Imagen y control → Captura**.
 
 ## Las ventanas se abren donde no las veo
 
@@ -56,7 +56,7 @@ El primer inicio instala Windows y el streaming, y después reinicia una vez. **
 
 ## La app dice que el servicio de GpuVM está detenido o falta
 
-La app corre sin permisos de administrador y le pide al servicio **GpuVM** el trabajo de Hyper-V. Con el servicio en **Manual**, inícialo con **Iniciar servicio**, o cámbialo a **Con GpuVM** en [Preferencias](/gpuvm/docs/es/using-the-app/#preferencias). Si falta (por ejemplo, tras una actualización fallida), **Reparar** lo vuelve a registrar después de un aviso de UAC; reinstalar GpuVM hace lo mismo.
+La app corre sin permisos de administrador y le pide al servicio **GpuVM** el trabajo de Hyper-V. Con el servicio en **Manual**, inícialo con **Iniciar servicio**, o cámbialo a **Con GpuVM** en **Ajustes → Servicio** ([Ajustes](/gpuvm/docs/es/using-the-app/#ajustes)). Si falta (por ejemplo, tras una actualización fallida), **Reparar** lo vuelve a registrar después de un aviso de UAC; reinstalar GpuVM hace lo mismo.
 
 ## No hay audio
 
@@ -68,7 +68,7 @@ Usa **Volver a emparejar Moonlight** en el menú **⋯**, o `./gpuvm.ps1 connect
 
 ## La VM no enciende por falta de memoria
 
-La memoria fija de Hyper-V tiene que estar libre al encender la VM. Cierra programas o baja la memoria de la VM en **Opciones** (o con `-Override @{ vm = @{ memoryGB = 6 } }`).
+La memoria fija de Hyper-V tiene que estar libre al encender la VM. Cierra programas o baja la memoria de la VM en su sección **Máquina**, o ábrela con **Abrir con N GB** cuando la app lo ofrece (o con `-Override @{ vm = @{ memoryGB = 6 } }`).
 
 ## Límites conocidos de GPU-P
 

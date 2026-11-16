@@ -82,7 +82,7 @@ Revisa la edición de Windows, los permisos de administrador, la virtualización
 | `-App` | App de Sunshine que se abre (por defecto `Desktop`). |
 | `-Pair` | Vuelve a emparejar aunque ya esté emparejado. |
 | `-Monitor` | El monitor donde se abre: un `id` de `Get-GpuVMMonitor` o `primary`. Sin él, el guardado para la VM o el principal. |
-| `-MemoryGB` | De 4 a 256. Abre con esa memoria cuando la VM no cabe como está configurada (se guarda, como al cambiarla en Opciones). |
+| `-MemoryGB` | De 4 a 256. Abre con esa memoria cuando la VM no cabe como está configurada (se guarda, como al cambiarla en la página de la máquina). |
 
 Los valores que pases aquí valen solo para esta conexión; los predeterminados vienen de `streaming.client` de la VM (se cambian con `Set-GpuVMStreamingClient`), donde unos FPS de `0` significan la frecuencia del monitor del equipo. `connect` termina cuando Moonlight muestra el primer cuadro; si la VM ya está abierta en Moonlight (y no se pasa `-Pair`), trae esa ventana al frente. Si la VM está apagada, guardada o en pausa mientras espera su dirección, falla al instante.
 
@@ -158,8 +158,8 @@ Además de los cmdlets anteriores, el módulo exporta estos, que usa sobre todo 
 
 | Cmdlet | Qué hace |
 |---|---|
-| `Get-GpuVMOverview` | Todas las VMs de Hyper-V con su estado y uso en vivo (CPU, memoria, GPU), creadas o no con GpuVM. |
-| `Get-GpuVMHostInfo` | Hilos, memoria y nombre de la GPU del host. |
+| `Get-GpuVMOverview` | Todas las VMs de Hyper-V con su estado y uso en vivo (CPU, memoria, GPU), creadas o no con GpuVM. En las máquinas de GpuVM, `options.diskBudget` dice hasta dónde puede crecer su disco, contando el espacio prometido a las demás máquinas de esa unidad. |
+| `Get-GpuVMHostInfo` | Hilos, memoria y nombre de la GPU del host, y en `disk` el espacio que tiene el disco de una máquina nueva en la unidad de GpuVM con todos los discos de las máquinas llenos, dejando 20 GB para Windows. |
 | `Get-GpuVMIsoList` | ISOs de Windows en Descargas y Escritorio. |
 | `Invoke-GpuVMPower` | `-Action` `Start`, `Shutdown`, `TurnOff`, `Restart`, `Pause` o `Resume` sobre cualquier VM. |
 | `Set-GpuVMGuestCredential` | Guarda la cuenta del invitado (DPAPI) para que GpuVM corrija cosas dentro de la VM por PowerShell Direct. |
@@ -199,7 +199,7 @@ Desde la app, `Remove-GpuVM`, `Remove-GpuVMDisk`, `Remove-GpuVMBase`, `Remove-Gp
 | `-VSync` | `$true` o `$false`. Sin indicarlo, queda como está. |
 | `-FramePacing` | `$true` o `$false`. Se apaga siempre que la sincronización vertical está apagada. |
 | `-Mouse` | `capture` (la VM toma el mouse, para juegos) o `absolute` (el puntero se mueve libre, como en escritorio remoto). |
-| `-Monitor` | El monitor donde se abre Moonlight: un `id` de `Get-GpuVMMonitor`, `primary`, o `default` para seguir lo elegido en Preferencias de la app. |
+| `-Monitor` | El monitor donde se abre Moonlight: un `id` de `Get-GpuVMMonitor`, `primary`, o `default` para seguir lo elegido en Ajustes de la app. |
 
 ```powershell
 Set-GpuVMStreamingClient -Name win11 -Fps 0 -VSync $true -FramePacing $false -Mouse capture   # el uso «Juegos»

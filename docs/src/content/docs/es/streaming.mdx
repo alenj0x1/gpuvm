@@ -32,7 +32,7 @@ Lo que dura dentro de la VM hasta que Windows se reinicia (modo de pantalla, mod
 
 ## Modos de captura
 
-Sunshine puede capturar la pantalla virtual de dos formas, que se eligen por VM en **Opciones → Captura** o con `Set-GpuVMCapture -Name <vm> -Mode wgc|ddx`:
+Sunshine puede capturar la pantalla virtual de dos formas, que se eligen por máquina en **Imagen y control → Captura** o con `Set-GpuVMCapture -Name <vm> -Mode wgc|ddx`:
 
 | Modo | En la app | Cómo corre Sunshine | Muestra | No muestra |
 |---|---|---|---|---|
@@ -68,8 +68,8 @@ No uses Escritorio remoto mientras transmites: se lleva la sesión de la consola
 
 Moonlight en el host muestra la VM. El emparejamiento es automático: Moonlight genera el PIN y GpuVM se lo entrega a Sunshine por su API. El cliente emparejado lleva el nombre de este equipo.
 
-- Para volver a emparejar: **Volver a emparejar Moonlight** en el menú de la app, o `./gpuvm.ps1 connect -Name <vm> -Pair`.
-- La resolución, los FPS, la sincronización vertical, el ritmo de cuadros, el mouse, el códec y la tasa de bits se eligen en las **Opciones** de la app (o con `Set-GpuVMStreamingClient`), o en cada conexión:
+- Para volver a emparejar: **Volver a emparejar Moonlight** en el menú **⋯** de la máquina, o `./gpuvm.ps1 connect -Name <vm> -Pair`.
+- La resolución, los FPS, la sincronización vertical, el ritmo de cuadros, el mouse, el códec y la tasa de bits se eligen en la sección **Imagen y control** de la máquina (o con `Set-GpuVMStreamingClient`), o en cada conexión:
 
 ```powershell
 ./gpuvm.ps1 connect -Name win11 -Resolution 2560x1440 -Fps 120 -BitrateKbps 40000 -Codec HEVC

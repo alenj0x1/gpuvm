@@ -18,7 +18,7 @@ GpuVM revisa esto por ti antes de crear una VM: `./gpuvm.ps1 check -Profile <per
 ## Recursos para la VM
 
 - **Memoria libre:** la memoria de Hyper-V es fija, así que tiene que estar *libre* al encender la VM, no solo instalada. Los dos perfiles incluidos usan 8 GB.
-- **Espacio en disco** en la unidad de la carpeta de las VMs (`C:\GpuVM` por defecto): unos 40 GB con disco dinámico, más unos 13 GB una vez por ISO y edición para el Windows preparado; un disco fijo (perfiles personalizados) necesita su tamaño completo más 10 GB.
+- **Espacio en disco** en la unidad de la carpeta de las VMs (`C:\GpuVM` por defecto): unos 40 GB con disco dinámico, más unos 13 GB una vez por ISO y edición para el Windows preparado; un disco fijo (perfiles personalizados) necesita su tamaño completo más 10 GB. Un disco dinámico crece hasta su tamaño a medida que la máquina escribe, así que GpuVM cuenta ese espacio como prometido: un disco nuevo o más grande solo recibe lo que queda con todos los discos de las máquinas de la unidad llenos, dejando 20 GB para Windows.
 - **Red:** el `Default Switch` de Hyper-V. Si no existe, la VM se crea sin red, y el streaming necesita red.
 
 ## Imagen de Windows

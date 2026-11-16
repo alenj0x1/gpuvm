@@ -11,15 +11,15 @@ The usual causes, in order:
 2. **The VM's driver doesn't match the host's** (after an NVIDIA driver update). Opening from the app syncs it on its own when the VM is off; or run `./gpuvm.ps1 sync-driver -Name <vm>` with the VM off.
 3. **Remote Desktop took the session** away from the GPU display. Close Remote Desktop and use **start and open** again: with the guest password saved, GpuVM moves the session back to the console.
 
-If the picture takes a while to show after connecting, check that **Options → Capture** is on **Fast**: the **Classic** capture can stay black until something on screen changes.
+If the picture takes a while to show after connecting, check that **Picture and control → Capture** is on **Fast**: the **Classic** capture can stay black until something on screen changes.
 
-To look at the VM's screen without the GPU, open the Hyper-V console (**Hyper-V console** in the **⋯** menu, or `vmconnect.exe localhost <vm>`). While the virtual display works, the Hyper-V display is turned off; Remote Desktop still works as a fallback.
+To look at the VM's screen without the GPU, open the Hyper-V console (**View Hyper-V console** in the machine's **⋯** menu, or `vmconnect.exe localhost <vm>`). While the virtual display works, the Hyper-V display is turned off; Remote Desktop still works as a fallback.
 
 Known open issue ([lab 002](/gpuvm/docs/labs/#what-the-labs-found-so-far)): Sunshine can report "Display device configuration API is temporarily unavailable" and not change the resolution.
 
 ## A fullscreen program shows a black screen
 
-The desktop streams fine, but a game or program in **exclusive fullscreen** shows black (it may appear when it loses focus). That happens with the **Classic** capture, which can't see exclusive fullscreen on a virtual display. In **Options → Capture** choose **Fast** (the default for new machines) and save. See [Capture modes](/gpuvm/docs/streaming/#capture-modes).
+The desktop streams fine, but a game or program in **exclusive fullscreen** shows black (it may appear when it loses focus). That happens with the **Classic** capture, which can't see exclusive fullscreen on a virtual display. In **Picture and control → Capture** choose **Fast** (the default for new machines) and save. See [Capture modes](/gpuvm/docs/streaming/#capture-modes).
 
 ## A program waits for administrator permission
 
@@ -28,7 +28,7 @@ With the **Fast** capture, Windows' administrator prompts aren't drawn in Moonli
 - GpuVM must be open (in the window or the tray): the card comes from the app.
 - GpuVM needs the VM's Windows password; without it, the VM shows a banner asking for it.
 - The watcher is installed the first time the VM is opened from GpuVM; open it once with **Open**.
-- To see the prompts in Moonlight instead, switch to **Classic** in **Options → Capture**.
+- To see the prompts in Moonlight instead, switch to **Classic** in **Picture and control → Capture**.
 
 ## Windows open where I can't see them
 
@@ -56,7 +56,7 @@ The first boot installs Windows and the streaming components, then restarts once
 
 ## The app says the GpuVM service is stopped or missing
 
-The app runs without administrator rights and asks the **GpuVM** service to do the Hyper-V work. With the service set to **Manual**, start it with **Start service**, or change it to **With GpuVM** in [Preferences](/gpuvm/docs/using-the-app/#preferences). If it is missing (for example, after a failed update), **Repair** registers it again after a UAC prompt; reinstalling GpuVM does the same.
+The app runs without administrator rights and asks the **GpuVM** service to do the Hyper-V work. With the service set to **Manual**, start it with **Start service**, or change it to **With GpuVM** in **Settings → Service** ([Settings](/gpuvm/docs/using-the-app/#settings)). If it is missing (for example, after a failed update), **Repair** registers it again after a UAC prompt; reinstalling GpuVM does the same.
 
 ## No audio
 
@@ -68,7 +68,7 @@ Use **Pair Moonlight again** in the **⋯** menu, or `./gpuvm.ps1 connect -Name 
 
 ## The VM doesn't start: not enough memory
 
-Hyper-V's fixed memory must be free when the VM starts. Close programs, or lower the VM's memory in **Options** (or with `-Override @{ vm = @{ memoryGB = 6 } }`).
+Hyper-V's fixed memory must be free when the VM starts. Close programs, or lower the VM's memory in its **Machine** section, or open it with **Open with N GB** when the app offers it (or with `-Override @{ vm = @{ memoryGB = 6 } }`).
 
 ## Known limits of GPU-P
 

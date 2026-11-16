@@ -20,9 +20,9 @@ import { Aside, Steps } from '@astrojs/starlight/components';
 ## What the installer does
 
 - Installs GpuVM **for the whole machine** in **Program Files**, with its own PowerShell 7, the PowerShell module, the profiles, the guest scripts, the `unattend.xml` template and the streaming component list inside.
-- Registers the **GpuVM** service (`gpuvm-host.exe`), which does the Hyper-V work for the app. By default it starts when the app opens and stops when it quits (see [Preferences](/gpuvm/docs/using-the-app/#preferences)). Uninstalling removes it.
+- Registers the **GpuVM** service (`gpuvm-host.exe`), which does the Hyper-V work for the app. By default it starts when the app opens and stops when it quits (see [Settings](/gpuvm/docs/using-the-app/#settings)). Uninstalling removes it.
 - The data that changes (labs and downloaded installers) goes to **`%ProgramData%\GpuVM`**, which is also restricted to administrators.
-- The installer and the app interface are in Spanish.
+- The installer is in Spanish. The app follows Windows' display language (Spanish when Windows is in Spanish, English otherwise); change it in **Settings → Appearance → Language**.
 
 <Aside type="note" title="Why Program Files">
 The GpuVM service runs the module with administrator rights, so it only runs scripts and PowerShell from Program Files, which only an administrator can modify. See [Architecture](/gpuvm/docs/architecture/#security).
