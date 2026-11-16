@@ -483,8 +483,22 @@ type BoardPal = typeof BOARD.dark;
 
 /** One part on a cell of the board, always the same for that cell: a chip, a capacitor, a row of small parts, a
  *  crystal or a connector, with its name printed beside it. */
+// A chip is bigger than its cell: next to another chip (or to any part) they piled up on each other. A cell keeps its
+// chip only if it wins over every chip around it, and the parts beside a chip give it room.
+const isChipCell = (i: number, j: number) => hash(i * 2.3 + 7, j * 4.1 + 3) < 0.22 && Math.hypot((i + 0.5) * 1.1, (j + 0.5) * 1.1) >= 2.4;
+const chipRank = (i: number, j: number) => hash(i * 13.7 + 1, j * 17.3 + 5);
+const keepsChip = (i: number, j: number) => {
+  if (!isChipCell(i, j)) return false;
+  for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) if ((a || b) && isChipCell(i + a, j + b) && chipRank(i + a, j + b) > chipRank(i, j)) return false;
+  return true;
+};
+const besideChip = (i: number, j: number) => {
+  for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) if ((a || b) && keepsChip(i + a, j + b)) return true;
+  return false;
+};
 function partAt(i: number, j: number, cell: number, P: BoardPal) {
   const h = hash(i * 2.3 + 7, j * 4.1 + 3);
+  if (h < 0.22 ? !keepsChip(i, j) : besideChip(i, j)) return null;
   const X = (i + 0.5) * cell + (hash(i, j) - 0.5) * 0.6, Z = (j + 0.5) * cell + (hash(j, i) - 0.5) * 0.6, y = FLOOR;
   if (Math.hypot(X, Z) < 2.6) return null;
   const n = Math.floor(hash(i * 7, j * 3) * 90) + 1, r = hash(i, j * 9) < 0.5 ? 0 : Math.PI / 2;
