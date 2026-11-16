@@ -238,7 +238,10 @@
       const n = Math.min(rest.length, 6), count = n >= 3 ? n - (n % 3) : n;
       html = rest.slice(0, count).map((i) => card(i, false)).join("");
     }
+    // Drawn again (another language or mode) after it was seen: the cards come in already shown, no entrance again.
+    const seen = !!box.querySelector(".reveal.in");
     box.innerHTML = html;
+    if (seen) box.querySelectorAll(".reveal").forEach((el) => el.classList.add("in"));
     box.dataset.cols = wide.length ? "" : String(Math.min(3, box.children.length));
     const date = release.date ? new Date(release.date + "T12:00:00").toLocaleDateString(lang === "es" ? "es-MX" : "en-US", { year: "numeric", month: "long", day: "numeric" }) : "";
     $("[data-release-date]").textContent = date ? (lang === "es" ? `Publicada el ${date}` : `Released ${date}`) : "";
