@@ -1,11 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
-  <title>GpuVM</title>
-  <defs><clipPath id="gpuvm-logo-r"><rect width="100" height="100" rx="22"/></clipPath></defs>
-  <g clip-path="url(#gpuvm-logo-r)">
-    <rect width="100" height="100" fill="#2f5bd3"/>
-    <circle cx="25" cy="25" r="19" fill="#e5483f"/>
-    <path d="M50 0H100V50A50 50 0 0 1 50 0Z" fill="#f2b632"/>
-    <path d="M0 100L25 50L50 100Z" fill="#2f9e6a"/>
-    <rect x="59" y="59" width="32" height="32" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="#2a2c31"/>
+  <g stroke="#ebe8e1" stroke-width="3" stroke-linecap="round">
+    <path d="M22 12v4M22 48v4M12 22h4M48 22h4M32 12v4M32 48v4M12 32h4M48 32h4M42 12v4M42 48v4M12 42h4M48 42h4"/>
   </g>
+  <rect x="17" y="17" width="30" height="30" rx="6" fill="none" stroke="#ebe8e1" stroke-width="3"/>
+  <path d="M32 20v24M20 32h24" stroke="#ebe8e1" stroke-width="2" stroke-opacity=".45"/>
+  <rect x="34" y="34" width="10" height="10" rx="2.5" fill="#7d9cf0"/>
 </svg>

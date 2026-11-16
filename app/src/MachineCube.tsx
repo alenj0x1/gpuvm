@@ -393,6 +393,9 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       stopCam(); drag = { x: e.clientX, y: e.clientY, pan: e.button === 2 || e.button === 1 }; cv.setPointerCapture(e.pointerId); cv.classList.add(drag.pan ? "panning" : "dragging");
     };
     const move = (e: PointerEvent) => {
+      // A button let go where the cube never heard it (outside the window, over another app): the turn or drag
+      // still ends, and is kept, instead of going back.
+      if ((turning || held || drag) && e.buttons === 0) { up(); return; }
       if (turning && work) {
         const dx = e.clientX - turning.x;
         if (Math.abs(dx) > 4) { turning.moved = true; menuFor = null; }
@@ -468,6 +471,8 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
     cv.addEventListener("pointermove", move);
     cv.addEventListener("pointerup", up);
     cv.addEventListener("pointercancel", up);
+    // Released outside the cube (the panel is narrow and a turn goes wide): the window still hears it.
+    window.addEventListener("pointerup", up);
     cv.addEventListener("wheel", wheel, { passive: false });
     cv.addEventListener("contextmenu", menu);
     cv.addEventListener("dblclick", reset);
@@ -1642,6 +1647,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       cv.removeEventListener("wheel", wheel);
       cv.removeEventListener("wheel", redraw);
       cv.removeEventListener("contextmenu", menu);
+      window.removeEventListener("pointerup", up);
       cv.removeEventListener("dblclick", reset);
       cv.removeEventListener("mousedown", noAutoScroll);
       cv.removeEventListener("auxclick", noAutoScroll);

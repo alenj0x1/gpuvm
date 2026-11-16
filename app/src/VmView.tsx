@@ -264,9 +264,14 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
 }
 
 /** Shared disks: attach one to this machine or take it away, also while it runs. Hidden until a disk exists. */
+// The shared disks are asked for once GpuVM opens and kept: the card is there when the page shows, instead of
+// appearing a moment later and pushing what is under it.
+let sharedCache: SharedDiskInfo[] = [];
+const sharedReady = api.sharedDisks().then((d) => { sharedCache = d; }).catch(() => {});
+
 export function SharedDisks({ vm, busy, startJob }: Pick<Props, "vm" | "busy" | "startJob">) {
-  const [disks, setDisks] = useState<SharedDiskInfo[]>([]);
-  const load = () => api.sharedDisks().then(setDisks).catch(() => {});
+  const [disks, setDisks] = useState<SharedDiskInfo[]>(sharedCache);
+  const load = () => sharedReady.then(() => api.sharedDisks()).then((d) => { sharedCache = d; setDisks(d); }).catch(() => {});
   useEffect(() => { load(); }, [vm.name, vm.state, busy?.cmd]);
   if (!disks.length) return null;
   const working = busy?.cmd === "Connect-GpuVMSharedDisk" || busy?.cmd === "Disconnect-GpuVMSharedDisk";
