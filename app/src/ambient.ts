@@ -1,6 +1,7 @@
 import { IconCircuitResistor, IconCube, IconLego, type Icon } from "@tabler/icons-react";
 import { drawFigures, mul3, turnY, viewRot, type FigureDraw } from "./decor/figureGL";
 import { t } from "./i18n";
+import * as stamps from "./spriteGL";
 
 // Ambients: the place where a space's machines are. Each one is a world drawn behind the cube with the cube's own
 // camera, so turning or zooming the cube turns and zooms the world around it. The ground covers everything in view and
@@ -383,13 +384,22 @@ function drawBlocks(f: F) {
     const s0 = Math.floor(box.x0 / STUD), s1 = Math.ceil(box.x1 / STUD), t0 = Math.floor(box.z0 / STUD), t1 = Math.ceil(box.z1 / STUD);
     if ((s1 - s0) * (t1 - t0) < 90000) {
       const w = sp.w, h = sp.h;
+      // Stamped on the GPU in one draw (thousands of them with the camera low); one by one only without WebGL.
+      // Drawn far to near, so a nearer stud covers the one behind it as before.
+      const studs: [number, number, number][] = [];
       for (let i = s0; i <= s1; i++) for (let j = t0; j <= t1; j++) {
         const x = (i + 0.5) * STUD, z = (j + 0.5) * STUD;
         if (onPath(x, z) || onWater(x, z)) continue;
         const p = proj(f, x, FLOOR, z);
         if (p[1] < f.hz - 2 || p[1] > f.H + h || p[0] < -w || p[0] > f.W + w) continue;
-        alphaOf(f, clear(f, p[1]));
-        g.drawImage(sp.c, p[0] - w / 2, p[1] - sp.up, w, h);
+        const a = clamp(f.a * clear(f, p[1]), 0, 1);
+        if (a > 0.01) studs.push([p[0], p[1], a]);
+      }
+      studs.sort((a, b) => a[1] - b[1]);
+      stamps.begin();
+      for (const s of studs) stamps.add(s[0], s[1], s[2]);
+      if (!stamps.draw(g, sp.c, w, h, sp.up, f.W, f.H, f.dpr)) {
+        for (const s of studs) { g.globalAlpha = s[2]; g.drawImage(sp.c, s[0] - w / 2, s[1] - sp.up, w, h); }
       }
     }
   }
