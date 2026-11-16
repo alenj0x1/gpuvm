@@ -231,4 +231,5 @@ export default {
   "Nuevo espacio": "New space",
   "Con {name} y un ambiente propio": "With {name} and its own ambience",
   "Ver espacio": "View space",
+  "ahora": "now",
 } as Record<string, string>;

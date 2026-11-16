@@ -178,7 +178,7 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
           value={vm.hasGpu ? (running ? `${vm.gpuPercent} %` : t("{n} % asignada", { n: vm.options?.gpuPercent ?? 100 })) : t("Sin GPU")}
           sub={vm.gpuName ?? t("Solo gráficos básicos")} spark={running && vm.hasGpu ? series(samples, (s) => s.gpu) : []} color="var(--chart-gpu)" />
         <Stat icon={<IconClock size={15} />} label={t("Tiempo encendida")} value={running ? formatUptime(vm.uptimeSeconds) : "—"}
-          sub={running ? (vm.address ?? t("Esperando red")) : t("Sin red")} />
+          sub={running ? (vm.address ?? t("Esperando red")) : t("Sin red")} chart={<UptimeDay seconds={running ? vm.uptimeSeconds : 0} />} />
       </div>
 
       {vm.managed && !vm.guestCredential && <GuestPassword vm={vm} run={run} />}
@@ -561,14 +561,29 @@ function ConfirmUninstall({ vm, app, onClose, onConfirm }: { vm: VmOverview; app
   );
 }
 
-function Stat({ icon, label, value, sub, spark, color }: { icon: React.ReactNode; label: string; value: string; sub: string; spark?: number[]; color?: string }) {
+function Stat({ icon, label, value, sub, spark, color, chart }: { icon: React.ReactNode; label: string; value: string; sub: string; spark?: number[]; color?: string; chart?: React.ReactNode }) {
   return (
     <div className="stat">
       <span className="label">{icon}{label}</span>
       <span className="value">{value}</span>
       <span className="sub" title={sub}>{sub}</span>
       {/* The line's room is kept even without data, so the strip never changes height. */}
-      <div className="spark-room">{spark && color && <Sparkline values={spark} color={color} />}</div>
+      <div className="spark-room">{chart ?? (spark && color && <Sparkline values={spark} color={color} />)}</div>
+    </div>
+  );
+}
+
+/** The last 24 hours as a ruler, with the stretch the machine has been on filled in up to now: the uptime's chart. */
+function UptimeDay({ seconds }: { seconds: number }) {
+  const now = new Date(), span = 24 * 3600, on = Math.min(span, Math.max(0, seconds));
+  const marks = [24, 18, 12, 6].map((h) => ({ h, at: 1 - h / 24 }));
+  return (
+    <div className="uptime-day" aria-hidden="true">
+      <div className="uptime-track"><span style={{ left: `${(1 - on / span) * 100}%` }} /></div>
+      <div className="uptime-marks">
+        {marks.map((m) => <span key={m.h} style={{ left: `${m.at * 100}%` }}>{new Date(now.getTime() - m.h * 3600e3).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" })}</span>)}
+        <span style={{ left: "100%" }}>{t("ahora")}</span>
+      </div>
     </div>
   );
 }
