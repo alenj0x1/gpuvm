@@ -57,6 +57,12 @@ function SectionHead({ tab }: { tab: LibraryTab }) {
 
 /** The Library on one page: every section one after the other, and a bar on top that marks the one in view and
  *  takes you to the others (the route still names a section, so links from Inicio land on it). */
+
+// The profiles GpuVM ships with describe themselves in the app's language (their JSON keeps an English note).
+const BUILT_IN_DESC: Record<string, () => string> = {
+  balanced: () => t("Buen rendimiento dejando holgura a tu PC: 8 hilos, 8 GB y disco dinámico."),
+  "max-performance": () => t("Máximo rendimiento: procesador reservado al 100 %, la topología de tu PC, 8 GB fijos y Windows optimizado."),
+};
 export function Library({ tab, onTab, host, startJob, busy, progress, notify, onOpenVm, onCreateFromTemplate }: Props) {
   const mainRef = useRef<HTMLDivElement>(null);
   const refs = useRef<Partial<Record<LibraryTab, HTMLElement | null>>>({});
@@ -198,7 +204,7 @@ function Profiles({ tabs, host, notify }: { tabs: React.ReactNode; host: HostInf
           {p.Settings && <MiniCube className="profile-cube" machine={{ cores: p.Settings.cpu, memoryGB: p.Settings.memoryGB, gpuPercent: p.Settings.gpuPercent, diskGB: p.Settings.diskGB, apps: p.Settings.apps?.length ?? 0 }} />}
           <div className="profile-text">
             <strong>{profileLabel(p.Name)}{p.BuiltIn && <span className="tag">{t("Incluido")}</span>}</strong>
-            {p.Description && <span className="profile-desc">{p.Description}</span>}
+            {(BUILT_IN_DESC[p.Name] && p.BuiltIn ? BUILT_IN_DESC[p.Name]() : p.Description) && <span className="profile-desc">{BUILT_IN_DESC[p.Name] && p.BuiltIn ? BUILT_IN_DESC[p.Name]() : p.Description}</span>}
             {p.Settings && <ResourceChips s={p.Settings} apps={apps} />}
           </div>
           <div className="profile-actions">

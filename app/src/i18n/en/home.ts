@@ -1,5 +1,7 @@
 // English for Home, the Library, creating a machine, spaces, ambients and the cleanup pieces.
 export default {
+  "Buen rendimiento dejando holgura a tu PC: 8 hilos, 8 GB y disco dinámico.": "Good performance with room left for your PC: 8 threads, 8 GB and a dynamic disk.",
+  "Máximo rendimiento: procesador reservado al 100 %, la topología de tu PC, 8 GB fijos y Windows optimizado.": "Maximum performance: the processor reserved at 100 %, your PC's topology, 8 GB fixed and an optimized Windows.",
   // Home
   "Cabe {names}.": "There's room for {names}.",
   "Cabe {n} máquina más.": "{n} more machine fits.",
