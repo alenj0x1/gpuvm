@@ -586,7 +586,6 @@ function drawBoard(f: F) {
   });
   if (f.machine) silk(f.machine.toUpperCase(), 0, 1.75, 0.2, 0, 0.75);
   silk(`${(f.space ?? "GpuVM").toUpperCase()} · REV 1.0`, -1.45, -1.78, 0.13, 0, 0.55, "left");
-  silk("GPUVM-B760", 2.2, -0.2, 0.16, Math.PI / 2, 0.45);
   f.fog = P.farDark;
   // The parts, each with its shadow and its name; nearest drawn last.
   const parts: (NonNullable<ReturnType<typeof partAt>> & { depth: number })[] = [], cell = 1.1;
@@ -619,8 +618,6 @@ function drawBoard(f: F) {
       drawBox(f, pt.boxes[0], L, k);
       onPlane(f, pt.x, pt.z, pt.r, () => {
         g.beginPath(); g.arc(-pt.s / 2 + 0.09, -pt.s / 2 + 0.09, 0.035, 0, TAU); alphaOf(f, k * 0.6); g.fillStyle = P.pin; g.fill();
-        g.font = `600 1px "DM Mono", Consolas, monospace`; g.textAlign = "center"; g.textBaseline = "middle";
-        g.save(); g.scale(0.11, 0.11); alphaOf(f, k * 0.5); g.fillStyle = Lt ? "#aab0b2" : "#8a9295"; g.fillText("GPUVM", 0, 0); g.restore();
       }, FLOOR + 0.061);
       silk(pt.label, pt.x + (pt.s / 2 + 0.22) * co, pt.z + (pt.s / 2 + 0.22) * si, 0.12, pt.r);
     } else if (pt.kind === "cap") {

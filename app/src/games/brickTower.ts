@@ -34,9 +34,9 @@ function background(g: CanvasRenderingContext2D, w: number, h: number, world: Wo
     // Kept close to its own tone: it is only a backdrop, the chips of the tower must stand out from it.
     g.fillStyle = light ? "#e4ebe6" : "#121814"; g.fillRect(0, 0, w, h);
     g.strokeStyle = light ? "#d2ddd5" : "#1b2a23"; g.lineWidth = 1.5;
-    const off = (cam * 0.4) % 22;
+    const off = (cam * 0.7) % 22;
     for (let row = -1; row < h / 22 + 1; row++) {
-      const y = row * 22 + off, i = Math.floor((cam * 0.4) / 22) - row;
+      const y = row * 22 + off, i = Math.floor((cam * 0.7) / 22) - row;
       g.beginPath();
       for (let x = -((i * 137) % 380 + 380) % 380; x < w; x += 380) { const len = 160 + (((i * 53) % 140) + 140) % 140; g.moveTo(x, y); g.lineTo(x + len, y); g.lineTo(x + len + 14, y + (i % 2 ? 14 : -14)); }
       g.stroke();
@@ -50,14 +50,14 @@ function background(g: CanvasRenderingContext2D, w: number, h: number, world: Wo
     g.fillStyle = sky; g.fillRect(0, 0, w, h);
     g.fillStyle = light ? "#ffffff" : "#e3e9ec";
     for (let n = 0; n < 6; n++) {
-      const y = ((n * 170 + cam * 0.5) % (h + 170)) - 80, x = (n * 233) % Math.max(1, w - 80), u = 12;
+      const y = ((n * 170 + cam * 0.85) % (h + 170)) - 80, x = (n * 233) % Math.max(1, w - 80), u = 12;
       g.globalAlpha = 0.9; g.fillRect(x, y, u * 6, u); g.fillRect(x + u, y - u, u * 3, u);
     }
     g.globalAlpha = 1;
   } else {
     g.fillStyle = light ? "#f2f1ee" : "#161616"; g.fillRect(0, 0, w, h);
     g.strokeStyle = light ? "rgba(28,27,24,.06)" : "rgba(235,232,225,.05)"; g.lineWidth = 1;
-    const off = (cam * 0.3) % 48;
+    const off = (cam * 0.6) % 48;
     g.beginPath();
     for (let x = 0; x < w; x += 48) { g.moveTo(x, 0); g.lineTo(x, h); }
     for (let y = off - 48; y < h; y += 48) { g.moveTo(0, y); g.lineTo(w, y); }
@@ -70,31 +70,64 @@ function mix(a: string, b: string, k: number) {
   return "#" + x.map((v, i) => Math.round(v + (y[i] - v) * k).toString(16).padStart(2, "0")).join("");
 }
 
-/** One block of the tower, drawn as the world's kind of piece: a hologram slab, a chip, or a toy brick. */
-function block(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, color: string, world: World, light: boolean, ink: string) {
+/** A color made lighter (k > 0) or darker (k < 0). */
+function tone(hex: string, k: number) { return k >= 0 ? mix(hex, "#ffffff", k) : mix(hex, "#000000", -k); }
+
+/** One block of the tower with its volume: the front, its top going back and its right side, drawn as the world's
+ *  kind of piece (a toy brick with studs, a chip with pins and its marking, a hologram slab, a solar panel). `d` is
+ *  how deep it goes back (0 for a piece falling off, seen flat). */
+function block(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, color: string, world: World, light: boolean, ink: string, d = h * 0.32) {
   if (w <= 0) return;
+  const dx = d, dy = d * 0.62;
+  const face = (c: string) => { g.fillStyle = c; g.fillRect(x, y, w, h); };
+  const top = (c: string) => { g.fillStyle = c; g.beginPath(); g.moveTo(x, y); g.lineTo(x + dx, y - dy); g.lineTo(x + w + dx, y - dy); g.lineTo(x + w, y); g.closePath(); g.fill(); };
+  const side = (c: string) => { g.fillStyle = c; g.beginPath(); g.moveTo(x + w, y); g.lineTo(x + w + dx, y - dy); g.lineTo(x + w + dx, y + h - dy); g.lineTo(x + w, y + h); g.closePath(); g.fill(); };
   if (world === "blocks") {
-    g.fillStyle = color; g.fillRect(x, y, w, h);
-    g.fillStyle = "rgba(0,0,0,.16)"; g.fillRect(x, y + h - 4, w, 4);
-    g.fillStyle = "rgba(255,255,255,.2)"; g.fillRect(x + 3, y + 3, Math.min(w - 6, w * 0.3), 3);
-    // Studs on top, one every stud's width, as many as fit.
-    const s = h * 0.62, n = Math.max(1, Math.floor(w / (s * 1.6)));
-    for (let k = 0; k < n; k++) {
-      const sx = x + (w / n) * (k + 0.5) - s / 2;
-      g.fillStyle = color; g.fillRect(sx, y - 5, s, 5);
-      g.fillStyle = "rgba(255,255,255,.22)"; g.fillRect(sx + 2, y - 5, s * 0.35, 2);
+    side(tone(color, -0.28)); face(color); top(tone(color, 0.18));
+    // The brick's lower lip and a soft shine on its front.
+    g.fillStyle = tone(color, -0.18); g.fillRect(x, y + h - h * 0.12, w, h * 0.12);
+    g.fillStyle = "rgba(255,255,255,.16)"; g.fillRect(x + 4, y + 4, Math.max(0, Math.min(w * 0.35, w - 8)), 3);
+    // Studs on top: little cylinders in rows, as many as fit the brick.
+    if (d > 0) {
+      const sw = Math.min(h * 0.42, 22), n = Math.max(1, Math.floor(w / (sw * 1.7)));
+      for (let row = 0; row < 2; row++) for (let k = 0; k < n; k++) {
+        const t0 = (row + 0.5) / 2, cx = x + (w / n) * (k + 0.5) + dx * t0, cy = y - dy * t0, rx = sw / 2, ry = rx * 0.45, sh = sw * 0.32;
+        g.fillStyle = tone(color, -0.22); g.fillRect(cx - rx, cy - sh, rx * 2, sh);
+        g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); g.fill();
+        g.fillStyle = tone(color, 0.22); g.beginPath(); g.ellipse(cx, cy - sh, rx, ry, 0, 0, Math.PI * 2); g.fill();
+        g.fillStyle = "rgba(255,255,255,.35)"; g.beginPath(); g.ellipse(cx - rx * 0.35, cy - sh - ry * 0.2, rx * 0.3, ry * 0.35, 0, 0, Math.PI * 2); g.fill();
+      }
     }
   } else if (world === "board") {
-    g.fillStyle = light ? "#2b3034" : "#3a4449"; g.fillRect(x, y, w, h);
-    g.fillStyle = light ? "#9aa1a3" : "#a7aeb0";
-    for (let px = x + 5; px < x + w - 4; px += 9) { g.fillRect(px, y - 3, 3, 3); g.fillRect(px, y + h, 3, 3); }
-    g.fillStyle = color; g.fillRect(x + 6, y + h / 2 - 2, Math.max(0, Math.min(18, w - 12)), 4);
+    const body = light ? "#2b3034" : "#3a4449";
+    side(tone(body, -0.25)); face(body); top(tone(body, 0.12));
+    // Pins along the front's top and bottom, gold pads on the top, the notch and a marking in the machine's color.
+    g.fillStyle = light ? "#b9bfc1" : "#c4cacc";
+    for (let px = x + 6; px < x + w - 5; px += 10) { g.fillRect(px, y + h, 3, 5); }
+    g.fillStyle = "#c9a24a";
+    for (let px = x + 8; px < x + w - 4; px += 14) { g.fillRect(px + dx * 0.5, y - dy * 0.5 - 1, 5, 2); }
+    g.fillStyle = tone(body, 0.2); g.beginPath(); g.arc(x + 10, y + 10, 3, 0, Math.PI * 2); g.fill();
+    // A small mark in the machine's color (never printed words).
+    g.fillStyle = color; g.fillRect(x + w / 2 - 8, y + h / 2 - 2, 16, 4);
+  } else if (world === "space") {
+    // A solar panel: a frame in the machine's color and a grid of cells.
+    side(tone("#1b2140", -0.3)); top(tone(color, 0.1));
+    face(light ? "#26304f" : "#1b2140");
+    const cols = Math.max(1, Math.floor(w / 18)), cw = (w - 6) / cols;
+    g.fillStyle = rgba(color, 0.55);
+    for (let c = 0; c < cols; c++) for (let rI = 0; rI < 2; rI++) g.fillRect(x + 3 + c * cw + 1, y + 3 + rI * ((h - 6) / 2) + 1, cw - 2, (h - 6) / 2 - 2);
+    g.strokeStyle = color; g.lineWidth = 1.5; g.strokeRect(x + 0.75, y + 0.75, w - 1.5, h - 1.5);
   } else {
-    g.fillStyle = rgba(color, light ? 0.16 : 0.2); g.fillRect(x, y, w, h);
-    g.strokeStyle = rgba(color, 0.95); g.lineWidth = 1.6; g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-    g.strokeStyle = rgba(ink, 0.12); g.lineWidth = 1; g.beginPath();
+    // A hologram slab: translucent faces, scan lines and corner marks.
+    side(rgba(color, light ? 0.1 : 0.14)); top(rgba(color, light ? 0.22 : 0.28));
+    g.fillStyle = rgba(color, light ? 0.14 : 0.18); g.fillRect(x, y, w, h);
+    g.strokeStyle = rgba(ink, 0.1); g.lineWidth = 1; g.beginPath();
     for (let sy = y + 4; sy < y + h - 2; sy += 4) { g.moveTo(x + 2, sy); g.lineTo(x + w - 2, sy); }
     g.stroke();
+    g.strokeStyle = rgba(color, 0.95); g.lineWidth = 1.6; g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    if (d > 0) { g.beginPath(); g.moveTo(x, y); g.lineTo(x + dx, y - dy); g.lineTo(x + w + dx, y - dy); g.lineTo(x + w + dx, y + h - dy); g.lineTo(x + w, y + h); g.moveTo(x + w + dx, y - dy); g.lineTo(x + w, y); g.stroke(); }
+    const m = Math.min(10, w / 4); g.lineWidth = 2.4;
+    g.beginPath(); g.moveTo(x - 3, y + m); g.lineTo(x - 3, y - 3 + 0); g.lineTo(x + m, y - 3); g.moveTo(x + w - m, y + h + 3); g.lineTo(x + w + 3, y + h + 3); g.lineTo(x + w + 3, y + h - m); g.stroke();
   }
 }
 
@@ -121,8 +154,8 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
   let score = 0, streak = 0, cam = 0, camTo = 0, perfectAt = -9, label = "", clock = 0;
   let running = false, over = false, frame = 0, last = 0, hudAt = 0, demoAim = 0;
   const unit = () => Math.max(0.75, Math.min(1.3, H / 520));
-  const bh = () => 36 * unit();
-  const baseW = () => Math.min(W * 0.5, 300 * unit());
+  const bh = () => 58 * unit();
+  const baseW = () => Math.min(W * 0.46, 280 * unit());
   // Where a floor sits on screen: the base near the bottom, each floor one block higher, scrolled by the camera.
   const yOf = (i: number) => H - 64 * unit() - (i + 1) * bh() + cam;
   const colorFor = (i: number) => zoneOf(i) === "blocks" ? BRICKS[i % BRICKS.length] : i % 3 === 0 ? host.player.color : mix(host.player.color, host.light ? "#ffffff" : "#000000", 0.25 + (i % 3) * 0.12);
@@ -163,8 +196,8 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     if (perfect) {
       x = top.x; w = top.w; streak++;
       // Three in a row: the block grows back a little (never past the base).
-      if (streak % 3 === 0) { const grow = Math.min(baseW() - w, 18 * unit()); x -= grow / 2; w += grow; label = t("¡Crece!"); }
-      else label = t("¡Perfecto!");
+      if (streak % 3 === 0) { const grow = Math.min(baseW() - w, 22 * unit()); x -= grow / 2; w += grow; label = "grow"; }
+      else label = "perfect";
       perfectAt = clock;
       burst(x + w / 2, y, moving.color, 14);
       score += 2;
@@ -179,7 +212,7 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     const next = zoneOf(floors.length);
     if (next !== world) { prevWorld = world; world = next; fade = 0; bannerAt = clock; }
     // The camera climbs to keep the top in the upper third.
-    camTo = Math.max(0, (floors.length + 1) * bh() - H * 0.55);
+    camTo = Math.max(0, (floors.length + 1) * bh() - H * 0.5);
     nextBlock();
   };
   const step = (dt: number) => {
@@ -193,7 +226,7 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
   };
   const draw = (dt: number) => {
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    cam += (camTo - cam) * Math.min(1, dt * 5);
+    cam += (camTo - cam) * Math.min(1, dt * 3.2);
     fade = Math.min(1, fade + dt / 0.7);
     if (prevWorld && fade < 1) { background(g, W, H, prevWorld, cam, host.light); g.globalAlpha = fade * fade * (3 - 2 * fade); }
     background(g, W, H, world, cam, host.light);
@@ -211,11 +244,11 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     for (let i = 1; i < floors.length; i++) { const f = floors[i], y = yOf(i); if (y > H + h || y < -h * 2) continue; block(g, f.x, y, f.w, h, f.color, f.world, host.light, ink); }
     // The figure rides on the top block.
     const top = floors[floors.length - 1];
-    if (top && !over) { const s = 54 * u, y = yOf(floors.length - 1); g.drawImage(sprite, top.x + top.w / 2 - s / 2, y - s + (world === "blocks" ? -3 : 2), s, s); }
+    if (top && !over) { const s = 64 * u, y = yOf(floors.length - 1); const d = h * 0.32; g.drawImage(sprite, top.x + top.w / 2 + d * 0.5 - s / 2, y - d * 0.31 - s * 0.92 - (zoneOf(floors.length - 1) === "blocks" ? h * 0.14 : 0), s, s); }
     if (moving.w > 0 && !over) block(g, moving.x, yOf(floors.length), moving.w, h, moving.color, zoneOf(floors.length), host.light, ink);
     for (const p of falling) {
       p.vy += 900 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
-      g.save(); g.translate(p.x + p.w / 2, p.y + h / 2); g.rotate(p.rot); block(g, -p.w / 2, -h / 2, p.w, h, p.color, world, host.light, ink); g.restore();
+      g.save(); g.translate(p.x + p.w / 2, p.y + h / 2); g.rotate(p.rot); block(g, -p.w / 2, -h / 2, p.w, h, p.color, world, host.light, ink, 0); g.restore();
     }
     falling = falling.filter((p) => p.y < H + 80);
     for (const s of sparks) { s.x += s.vx * dt; s.y += s.vy * dt; s.vy += 420 * dt; s.life -= dt; g.globalAlpha = Math.max(0, Math.min(1, s.life * 2)); g.fillStyle = s.color; g.fillRect(s.x - s.size / 2, s.y - s.size / 2, s.size, s.size); }
@@ -230,13 +263,14 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
       g.fillStyle = host.light ? "rgba(255,255,255,.9)" : "rgba(28,28,28,.9)"; g.beginPath(); g.roundRect(x, y, tw, 30 * u, 8); g.fill();
       g.fillStyle = ink; g.textAlign = "center"; g.fillText(text, W / 2, y + 20 * u); g.textAlign = "left"; g.globalAlpha = 1;
     }
-    // "Perfect" over the top for a moment.
+    // A Perfect: a ring of light opens around the top block; a grow also sweeps a line along its new width.
     const since = clock - perfectAt;
-    if (label && since < 0.9 && top) {
-      g.globalAlpha = Math.max(0, 1 - since / 0.9);
-      g.font = `700 ${15 * u}px 'Plus Jakarta Sans', sans-serif`; g.textAlign = "center"; g.fillStyle = host.player.color;
-      g.fillText(label, top.x + top.w / 2, yOf(floors.length - 1) - 50 * u - since * 30);
-      g.textAlign = "left"; g.globalAlpha = 1;
+    if (label && since < 0.6 && top) {
+      const k = since / 0.6, y = yOf(floors.length - 1), pad = 6 + k * 18;
+      g.globalAlpha = (1 - k) * 0.9; g.strokeStyle = host.player.color; g.lineWidth = 3 * (1 - k) + 1;
+      g.beginPath(); g.roundRect(top.x - pad, y - pad - h * 0.2, top.w + pad * 2, h + pad * 2 + h * 0.2, 8); g.stroke();
+      if (label === "grow") { g.fillStyle = "#ffffff"; g.globalAlpha = (1 - k) * 0.6; g.fillRect(top.x + top.w * k - 6, y, 12, h); }
+      g.globalAlpha = 1;
     }
   };
   const loop = (now: number) => {

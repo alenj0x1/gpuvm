@@ -890,7 +890,6 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       ctx.textAlign = "left";
       ctx.fillStyle = rgba(col, 0.6 * k);
       ctx.font = "500 13px ui-monospace, monospace";
-      ctx.fillText("GPUVM  ·  HYPER-V  ·  GEN 2", 14, 24);
       ctx.fillStyle = rgba(bright(col, 0.6), 0.95 * k);
       ctx.font = "700 26px ui-monospace, monospace";
       const caret = shown !== want && Math.floor(T * 3) % 2 ? "_" : "";

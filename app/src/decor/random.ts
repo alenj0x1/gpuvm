@@ -12,7 +12,7 @@ const between = (a: number, b: number) => a + Math.random() * (b - a);
 const shuffle = <T,>(list: T[]) => list.map((v) => [Math.random(), v] as const).sort((a, b) => a[0] - b[0]).map(([, v]) => v);
 
 // A function, so the Spanish ones come out in the language in use.
-const signs = () => ["GPUVM", "PLAYER ONE", "NIGHT CITY", t("MODO JUEGO"), "144 FPS", "READY", t("HOLA MUNDO"), "LEVEL UP", "RTX ON", "PRESS START"];
+const signs = () => ["PLAYER ONE", "NIGHT CITY", t("MODO JUEGO"), "144 FPS", "READY", t("HOLA MUNDO"), "LEVEL UP", "RTX ON", "PRESS START"];
 const APPS = ["steam", "discord", "chrome", "spotify", "obs", "epic", "vscode", "vlc"];
 
 export function randomDecor(): Decor {
