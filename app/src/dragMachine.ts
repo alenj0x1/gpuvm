@@ -34,7 +34,7 @@ export const carriesSpace = (e: React.DragEvent | DragEvent) => !!e.dataTransfer
 /** Runs a change of the sidebar's order and lets every row (machines and space names) glide from where it was to where
  *  it is now. `lift` is the machine that is travelling: it goes over the others. */
 export function glide(change: () => void, lift?: string) {
-  const rows = () => [...document.querySelectorAll<HTMLElement>("[data-vm], [data-space-row]")];
+  const rows = () => [...document.querySelectorAll<HTMLElement>(".side-list [data-vm], .side-list [data-space-row]")];
   const key = (el: HTMLElement) => (el.dataset.vm ? `vm:${el.dataset.vm}` : `sp:${el.dataset.spaceRow}`);
   const was = new Map(rows().map((el) => [key(el), el.getBoundingClientRect()]));
   // Drawn again right away, so the new places can be measured before anything is painted there.
@@ -53,7 +53,7 @@ export function glide(change: () => void, lift?: string) {
 
 /** A neutral flash where a machine lands, so the move is seen (never the accent: it is not a selection). */
 export function flashMachine(name: string) {
-  const el = document.querySelector<HTMLElement>(`[data-vm="${CSS.escape(name)}"]`);
+  const el = document.querySelector<HTMLElement>(`.side-list [data-vm="${CSS.escape(name)}"]`);
   el?.animate([{ background: "var(--hover)" }, { background: "var(--hover)", offset: 0.6 }, { background: "transparent" }], { duration: 900, easing: "ease-out" });
 }
 
