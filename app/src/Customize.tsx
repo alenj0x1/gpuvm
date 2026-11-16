@@ -10,7 +10,7 @@ import { STICKERS, addCustomSticker, customStickers, removeCustomSticker, sticke
 import { LED_COLORS, MACHINE_COLORS, newId, onDecorChange, useSource, type Decor, type DecorSource, type Face, type LedColor } from "./decor/store";
 import { randomDecor } from "./decor/random";
 import { ACCENTS, usePrefs } from "./prefs";
-import { Segmented, Slider } from "./ui";
+import { Segmented, Slider, portalRoot } from "./ui";
 import { t } from "./i18n";
 
 /** The color the decoration is drawn with right now: the machine's own or the accent. */
@@ -129,7 +129,7 @@ export function useDecorEdit(source: DecorSource) {
       <hr />
       <button role="menuitem" className="danger" onClick={act(() => ops.remove(targets))}><IconTrash size={16} />{t("Quitar")}<kbd>{t("Supr")}</kbd></button>
     </div>,
-    document.body,
+    portalRoot(),
   );
   return { source, edit, ops, selected, setSelected, spins, menu: menuNode, openMenu: (id: string, x: number, y: number) => setMenu({ id, x, y }) };
 }

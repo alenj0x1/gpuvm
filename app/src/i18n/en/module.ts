@@ -2,6 +2,7 @@
 // word; `patterns` the ones with values in them ($1, $2… are the regex groups, in the order the English wants them).
 // Also here: the few messages the desktop app's Rust side (src-tauri) and src/bridge.ps1 return in Spanish.
 export default {
+  "Procesador de comandos de Windows": "Windows Command Processor",
   "Navegadores": "Browsers",
   "Multimedia": "Media",
   "Comunicación": "Chat",

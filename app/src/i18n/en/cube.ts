@@ -19,7 +19,7 @@ export default {
   "Quitar {name}": "Remove {name}",
   "Al azar": "Random",
   "Color, letrero, stickers y figuras elegidos al azar. Puedes seguir cambiando lo que quieras.": "Color, sign, stickers and figures picked at random. You can keep changing whatever you like.",
-  "Decorar al azar": "Random look",
+  "Decorar al azar": "Decorate at random",
   "Color": "Color",
   "El holograma, los rayos y el ícono de la máquina. Sin elegir, usa el color de énfasis.": "The hologram, the beams and the machine's icon. If none is picked, it uses the accent color.",
   "Color de la máquina": "Machine color",

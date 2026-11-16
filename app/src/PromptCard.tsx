@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { IconCheck, IconLoader2, IconShieldLock, IconX } from "@tabler/icons-react";
 import { adminPromptAnswered, api, inTauri } from "./api";
 import { humanError } from "./ui";
-import { t } from "./i18n";
+import { t, translateModule } from "./i18n";
 import type { AdminPrompt } from "./types";
 
 /**
@@ -46,7 +46,7 @@ export function PromptCard() {
         <strong id="prompt-title">{t("{name} pide permiso de administrador", { name: prompt.name })}</strong>
       </div>
       <div className="prompt-app">
-        <span className="prompt-name">{prompt.app || t("Un programa")}</span>
+        <span className="prompt-name">{prompt.app ? translateModule(prompt.app) : t("Un programa")}</span>
         <span className={unknown ? "prompt-publisher unknown" : "prompt-publisher"}>{unknown ? t("Editor desconocido") : prompt.publisher}</span>
       </div>
       {error && <span className="error-text">{error}</span>}
