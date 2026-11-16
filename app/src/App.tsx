@@ -60,8 +60,11 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
   const [createSpace, setCreateSpace] = useState<string | null>(null);
   const spaces = useSpaces();
   const shownSpaceId = useShownSpace();
-  // The space a dragged machine is over, to mark where it would land.
+  // Where a dragged machine would land: the space it is over and the machine it would go before (null: at the end).
   const [dropOn, setDropOn] = useState<string | null>(null);
+  // undefined: over the group but not over a machine (another space takes it at the end; its own space leaves it).
+  const [dropBefore, setDropBefore] = useState<string | null | undefined>(undefined);
+  const dragFrom = useRef<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   const [jobs, setJobs] = useState<Record<string, RunningJob>>({});
   // Short actions (start, shut down, save…) in progress per VM, to show their state instantly.
@@ -288,13 +291,32 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
           </button>
           {/* With one space the list is just "Máquinas"; with several, each space heads its own machines and opens it in Home. */}
           {(spaces.length > 1 && vms ? spaces : [null]).map((sp) => {
-            const list = sp && vms ? machinesIn(sp, vms, spaces) : vms;
+            const list = sp && vms ? machinesIn(sp, vms, spaces) : vms ? machinesIn(spaces[0], vms, spaces) : vms;
+            const spaceId = sp?.id ?? spaces[0].id;
+            const names = list?.map((v) => v.name) ?? [];
             const Icon = sp ? ambientInfo(sp.ambient).icon : null;
             return (
-              <div key={sp?.id ?? "all"} className={`side-group${sp && dropOn === sp.id ? " drop" : ""}`}
-                onDragOver={(e) => { if (!sp || !carriesMachine(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (dropOn !== sp.id) setDropOn(sp.id); }}
-                onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropOn((d) => (d === sp?.id ? null : d)); }}
-                onDrop={(e) => { if (!sp) return; const name = e.dataTransfer.getData(MACHINE_DND); setDropOn(null); if (name) { e.preventDefault(); moveMachine(name, sp.id); } }}>
+              <div key={sp?.id ?? "all"} className={`side-group${dropOn === spaceId && dropBefore === undefined && dragFrom.current !== spaceId ? " drop" : ""}`}
+                onDragOver={(e) => {
+                  if (!carriesMachine(e)) return;
+                  e.preventDefault(); e.dataTransfer.dropEffect = "move";
+                  // Over a machine: before it or after it, by which half the pointer is on. Elsewhere in the group: at the end.
+                  const row = (e.target as HTMLElement).closest<HTMLElement>("[data-vm]");
+                  let before: string | null | undefined;
+                  if (row) {
+                    const r = row.getBoundingClientRect();
+                    const i = names.indexOf(row.dataset.vm!);
+                    before = e.clientY < r.top + r.height / 2 ? row.dataset.vm! : names[i + 1] ?? null;
+                  }
+                  if (dropOn !== spaceId) setDropOn(spaceId);
+                  if (dropBefore !== before) setDropBefore(before);
+                }}
+                onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropOn((d) => (d === spaceId ? null : d)); }}
+                onDrop={(e) => {
+                  const name = e.dataTransfer.getData(MACHINE_DND), before = dropBefore;
+                  setDropOn(null); setDropBefore(undefined);
+                  if (name) { e.preventDefault(); moveMachine(name, spaceId, before === undefined && dragFrom.current !== spaceId ? null : before, names); }
+                }}>
                 {sp ? (
                   <button type="button" className={`side-label side-space${selected === HOME && shownSpaceId === sp.id ? " on" : ""}`} title={`Ver ${sp.name}`}
                     onClick={() => { showSpace(sp.id); setSelected(HOME); }}>
@@ -311,8 +333,8 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
                   const busy = busyFor(vm.name);
                   return (
                     // The dot already says on or off: the row only adds what it can't, the GPU in use or a job in progress.
-                    <button key={vm.id} data-vm={vm.name} draggable={spaces.length > 1} onDragStart={(e) => dragMachine(e, vm.name)} onDragEnd={() => setDropOn(null)}
-                      className={`side-item ${vm.name === selected ? "active" : ""}`} onClick={() => setSelected(vm.name)}
+                    <button key={vm.id} data-vm={vm.name} draggable onDragStart={(e) => { dragFrom.current = spaceId; dragMachine(e, vm.name); }} onDragEnd={() => { dragFrom.current = null; setDropOn(null); setDropBefore(undefined); }}
+                      className={`side-item ${vm.name === selected ? "active" : ""}${dropOn === spaceId && dropBefore === vm.name ? " drop-before" : ""}${dropOn === spaceId && dropBefore === null && vm.name === names[names.length - 1] ? " drop-after" : ""}`} onClick={() => setSelected(vm.name)}
                       title={busy?.message ? `${vm.name}, ${busy.message}` : `${vm.name}, ${stateLabel[vm.state] ?? vm.state}`}>
                       <span className="side-icon"><MachineIcon name={vm.name} size={28} radius={8} /><span className={`dot badge ${vm.state}`} /></span>
                       <span className="name">{vm.name}</span>

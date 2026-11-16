@@ -11,7 +11,7 @@ export interface Space {
   ambient: AmbientId;
   /** The time of day of the world of blocks. */
   time?: AmbientTime;
-  /** Machine names in this space, in the order they were added. */
+  /** Machine names in this space, in the order they are shown (dragged into place, or the order they came in). */
   machines: string[];
 }
 
@@ -57,7 +57,9 @@ export function spaceOf(name: string, list = readSpaces()): Space {
 }
 /** The machines of a space, in the space's order, from the machines that exist (the first space also takes the rest). */
 export function machinesIn<T extends { name: string }>(space: Space, all: T[], list = readSpaces()): T[] {
-  return all.filter((v) => spaceOf(v.name, list).id === space.id);
+  const at = (v: T) => { const i = space.machines.indexOf(v.name); return i < 0 ? Infinity : i; };
+  // Machines the space doesn't list yet (new ones in the first space) keep their order, after the placed ones.
+  return all.filter((v) => spaceOf(v.name, list).id === space.id).map((v, i) => ({ v, i })).sort((a, b) => at(a.v) - at(b.v) || a.i - b.i).map((x) => x.v);
 }
 export const useSpaceOf = (name: string) => spaceOf(name, useSpaces());
 
@@ -75,9 +77,16 @@ export function saveSpace(s: Omit<Space, "id"> & { id?: string }): Space {
   return next;
 }
 
-/** Moves one machine into a space. */
-export function moveToSpace(machine: string, spaceId: string) {
-  write(readSpaces().map((s) => ({ ...s, machines: s.id === spaceId ? [...s.machines.filter((m) => m !== machine), machine] : s.machines.filter((m) => m !== machine) })));
+/** Moves one machine into a space, at the end or just before another machine. `shown` is the space's machines as
+ *  they are shown (machinesIn), so the first space's unlisted machines get a place too when one is put among them. */
+export function moveToSpace(machine: string, spaceId: string, before?: string | null, shown?: string[]) {
+  write(readSpaces().map((s) => {
+    if (s.id !== spaceId) return { ...s, machines: s.machines.filter((m) => m !== machine) };
+    const order = (shown ?? s.machines).filter((m) => m !== machine);
+    const i = before ? order.indexOf(before) : -1;
+    order.splice(i < 0 ? order.length : i, 0, machine);
+    return { ...s, machines: order };
+  }));
 }
 
 /** Deletes a space; its machines go back to the first one. */

@@ -204,7 +204,7 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
               <p>Un espacio sin máquinas todavía. Mueve aquí las que ya tienes o crea una nueva para {space.name}.</p>
             </div>
             <div className="home-panel-actions">
-              <button className="btn ghost" onClick={() => setEditing(space)}><IconArrowsExchange size={16} />Mover máquinas</button>
+              <button className="btn" onClick={() => setEditing(space)}><IconArrowsExchange size={16} />Mover máquinas</button>
               <button className="primary" onClick={() => onCreate(space.id)}><IconPlus size={17} />Crear máquina</button>
             </div>
           </div>
