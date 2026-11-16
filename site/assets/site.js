@@ -337,3 +337,8 @@
     }, 2600);
   });
 })();
+
+// The titles' colored half takes the hero word's colors in turn, section after section (both languages alike).
+document.querySelectorAll("main h2").forEach((h, i) => {
+  h.querySelectorAll("em").forEach((em) => { em.style.color = `var(--rot-${(i % 5) + 1})`; });
+});
