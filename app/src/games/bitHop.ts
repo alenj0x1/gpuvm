@@ -8,7 +8,7 @@ import { t } from "../i18n";
 // in some gaps and count double. The gaps narrow and the columns come faster as the score grows. In a demo (the
 // gallery's card) the machine plays by itself.
 
-type World = "studio" | "board" | "blocks";
+export type World = "studio" | "board" | "blocks";
 interface Column { x: number; gapY: number; gap: number; passed: boolean; bit: boolean; seed: number }
 interface Spark { x: number; y: number; vx: number; vy: number; life: number; color: string; size: number }
 
@@ -16,7 +16,7 @@ const rgba = (hex: string, a: number) => { const h = hex.replace("#", ""); retur
 const BRICK_COLORS = ["#cc4f43", "#d9a03a", "#3f6fb5", "#4f9c45", "#e9e3d6"];
 
 /** The machine as a small glass cube with its color, seen from a corner, tilted by how it moves. */
-function cube(g: CanvasRenderingContext2D, x: number, y: number, s: number, color: string, tilt: number) {
+export function cube(g: CanvasRenderingContext2D, x: number, y: number, s: number, color: string, tilt: number) {
   g.save(); g.translate(x, y); g.rotate(tilt);
   g.fillStyle = rgba(color, 0.18); g.fillRect(-s, -s, s * 2, s * 2);
   g.strokeStyle = color; g.lineWidth = 2; g.strokeRect(-s, -s, s * 2, s * 2);
@@ -26,10 +26,10 @@ function cube(g: CanvasRenderingContext2D, x: number, y: number, s: number, colo
 }
 
 /** The world behind: the board's traces, the blocks' sky and baseplate, or the stars. */
-function background(g: CanvasRenderingContext2D, w: number, h: number, world: World, scroll: number, light: boolean, t: number) {
+export function background(g: CanvasRenderingContext2D, w: number, h: number, world: World, scroll: number, light: boolean, t: number) {
   if (world === "board") {
     g.fillStyle = light ? "#e4ebe6" : "#121814"; g.fillRect(0, 0, w, h);
-    g.strokeStyle = light ? "#c3d4c9" : "#25402f"; g.lineWidth = 2;
+    g.strokeStyle = light ? "#d2ddd5" : "#1b2a23"; g.lineWidth = 1.5;
     const off = scroll * 0.4;
     for (let row = 0; row < h / 20 + 1; row++) {
       const y = 10 + row * 20;
@@ -37,7 +37,7 @@ function background(g: CanvasRenderingContext2D, w: number, h: number, world: Wo
       for (let x = -((off + row * 137) % 380); x < w; x += 380) { const len = 160 + ((row * 53) % 140); g.moveTo(x, y); g.lineTo(x + len, y); g.lineTo(x + len + 14, y + (row % 2 ? 14 : -14)); }
       g.stroke();
     }
-    g.fillStyle = light ? "#c7b27a" : "#7f8f86";
+    g.fillStyle = light ? "#c9d5cd" : "#26352d";
     for (let row = 0; row < h / 20 + 1; row++) for (let x = -((off + row * 137) % 380); x < w; x += 380) { g.beginPath(); g.arc(x, 10 + row * 20, 3, 0, 7); g.fill(); }
   } else if (world === "blocks") {
     const sky = g.createLinearGradient(0, 0, 0, h); sky.addColorStop(0, light ? "#8fbfe2" : "#4d7899"); sky.addColorStop(1, light ? "#e6f0ea" : "#a7c0bb");
