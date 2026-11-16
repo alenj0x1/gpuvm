@@ -76,6 +76,23 @@
     $$("img[data-shot]").forEach(setShot);
     toEmbed();
     if (before.lang !== state.lang || before.mode !== state.mode) renderNews();
+    // The live demos are drawn again in the new language; one of them taking focus scrolled the page to the app.
+    // The page stays where it was (unless the visitor scrolls meanwhile).
+    if (before.lang !== state.lang) holdScroll();
+  }
+  function holdScroll(ms = 900) {
+    const y = scrollY, until = performance.now() + ms;
+    let moved = false;
+    const stop = () => { moved = true; };
+    addEventListener("wheel", stop, { once: true, passive: true });
+    addEventListener("touchmove", stop, { once: true, passive: true });
+    addEventListener("keydown", stop, { once: true });
+    const keep = () => {
+      if (moved) return;
+      if (Math.abs(scrollY - y) > 1) scrollTo({ top: y, behavior: "instant" });
+      if (performance.now() < until) requestAnimationFrame(keep);
+    };
+    requestAnimationFrame(keep);
   }
   function onLang() {
     document.title = root.getAttribute(state.lang === "es" ? "data-title-es" : "data-title-en");
