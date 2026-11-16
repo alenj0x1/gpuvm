@@ -304,3 +304,36 @@
   // The demos' script loads deferred, after this one: mount them once it has run.
   if (embed()) mountDemos(); else addEventListener("DOMContentLoaded", mountDemos);
 })();
+
+// The hero's rotating word: each one rises in with its color while the last one leaves, every few seconds; the box
+// eases to the new word's width. Paused while the hero is out of view or the tab hidden; still with reduced motion.
+(function rotors() {
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  document.querySelectorAll(".rotor").forEach((box) => {
+    const words = (box.dataset.words || "").split("|").filter(Boolean);
+    if (words.length < 2) return;
+    box.textContent = "";
+    const spans = words.map((w) => { const s = document.createElement("span"); s.textContent = w; box.appendChild(s); return s; });
+    let i = 0;
+    const fit = () => { box.style.width = `${spans[i].offsetWidth}px`; };
+    spans[0].classList.add("on");
+    requestAnimationFrame(fit);
+    if (document.fonts) document.fonts.ready.then(fit);
+    addEventListener("resize", fit);
+    if (reduced) return;
+    let visible = true;
+    new IntersectionObserver(([e]) => { visible = e.isIntersecting; }).observe(box);
+    setInterval(() => {
+      if (!visible || document.hidden || !box.offsetParent) return;
+      const prev = spans[i];
+      i = (i + 1) % spans.length;
+      prev.classList.remove("on"); prev.classList.add("out");
+      spans[i].classList.remove("out");
+      // Back below without being seen, then up.
+      spans[i].style.transition = "none"; spans[i].getBoundingClientRect(); spans[i].style.transition = "";
+      spans[i].classList.add("on");
+      fit();
+      setTimeout(() => prev.classList.remove("out"), 650);
+    }, 2600);
+  });
+})();

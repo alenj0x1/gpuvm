@@ -99,7 +99,8 @@ i[data-ic] svg { display: block; width: 100%; height: 100%; }
 
 /* Nav */
 .nav { position: fixed; inset: 0 0 auto; z-index: 50; transition: background-color .2s; }
-.nav.scrolled { background: var(--bg); box-shadow: 0 1px 0 var(--line); }
+/* Scrolled, the bar takes the page's background, without a line under it. */
+.nav.scrolled { background: var(--bg); }
 .nav-inner { width: min(var(--wrap), 100% - 32px); margin: 0 auto; height: 64px; display: flex; align-items: center; gap: 28px; }
 .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 800; font-size: 17px; letter-spacing: -0.02em; }
 .nav-links { display: flex; gap: 24px; font-size: 15px; font-weight: 500; color: var(--muted); }
@@ -342,3 +343,15 @@ html:not([data-world="blocks"]) [data-seg="time"] { display: none; }
   .more { width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .seg-pill { transition: none; } }
+
+/* The hero's last word changes on its own: what the machine is for, each word in one of the app's accents, coming
+   up from below while the last one leaves upward; the width eases to the new word so the line stays centered. */
+.rotor { display: inline-grid; vertical-align: bottom; overflow: hidden; padding-bottom: 0.12em; margin-bottom: -0.12em; transition: width 0.55s cubic-bezier(.2, .7, .2, 1); }
+.rotor > span { grid-area: 1 / 1; justify-self: start; text-align: left; white-space: nowrap; transform: translateY(105%); opacity: 0; transition: transform 0.6s cubic-bezier(.2, .7, .2, 1), opacity 0.4s; }
+.rotor > span.on { transform: none; opacity: 1; }
+.rotor > span.out { transform: translateY(-105%); opacity: 0; }
+.rotor > span:nth-child(5n + 1) { color: var(--rot-1); } .rotor > span:nth-child(5n + 2) { color: var(--rot-2); }
+.rotor > span:nth-child(5n + 3) { color: var(--rot-3); } .rotor > span:nth-child(5n + 4) { color: var(--rot-4); }
+:root { --rot-1: #2f5bd3; --rot-2: #6a4fd2; --rot-3: #1d7f7c; --rot-4: #a8650f; }
+:root[data-mode="dark"] { --rot-1: #7d9cf0; --rot-2: #a796f2; --rot-3: #6ccfca; --rot-4: #e7b45e; }
+@media (prefers-reduced-motion: reduce) { .rotor, .rotor > span { transition: none; } }
