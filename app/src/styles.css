@@ -1286,11 +1286,3 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .game-tile { min-height: 0; }
 .game-tile-art { aspect-ratio: auto; flex: 1; min-height: 0; }
 .game-tile-row { flex: none; }
-/* The uptime's chart: the last 24 hours with the time on filled up to now, and a few hours marked under it. */
-.uptime-day { display: flex; flex-direction: column; gap: 5px; padding-top: 10px; }
-.uptime-track { position: relative; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--text) 7%, transparent); overflow: hidden; }
-.uptime-track span { position: absolute; top: 0; bottom: 0; right: 0; border-radius: 3px; background: var(--accent); opacity: 0.8; }
-.uptime-marks { position: relative; height: 12px; font-size: 10px; color: var(--faint); }
-.uptime-marks span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
-.uptime-marks span:first-child { transform: none; }
-.uptime-marks span:last-child { transform: translateX(-100%); }
