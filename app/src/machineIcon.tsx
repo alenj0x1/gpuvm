@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { decorColor, useDecor } from "./decor/store";
+import { t } from "./i18n";
 
 // A machine's icon (a tile tinted with its color): the app logo's chip with one of its four parts in the machine's color — the part of the GPU it gets.
 // Each name always gets the same part and color; "Otro ícono" moves to the next variant.
@@ -109,7 +110,8 @@ export function MachineIcon({ name, size, radius, variant, muted }: Props) {
       <rect width="40" height="40" fill={color} fillOpacity={0.14} />
       {CELL.map(([x, y], i) => (
         <rect key={i} x={x} y={y} width="9.5" height="9.5" rx="2.4"
-          fill={i === part ? color : "var(--text)"} fillOpacity={i === part ? 1 : 0.08} />
+          // The other cells in a lighter tone of the same color: gray cells over the tint looked metallic.
+          fill={color} fillOpacity={i === part ? 1 : 0.2} />
       ))}
     </svg>
   );
@@ -133,7 +135,7 @@ export function PatternButton({ name, onChange, ...props }: Omit<Props, "variant
     window.dispatchEvent(new Event("gpuvm-pattern"));
   };
   return (
-    <button type="button" className="pattern-btn" title="Otro ícono" aria-label="Otro ícono" onClick={next}>
+    <button type="button" className="pattern-btn" title={t("Otro ícono")} aria-label={t("Otro ícono")} onClick={next}>
       <MachineIcon name={name} variant={variant} {...props} />
     </button>
   );

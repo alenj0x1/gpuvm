@@ -6,8 +6,9 @@
   --hover: #e9e7e1;
   --selected: #ffffff;
   --text: #23252a;
-  --muted: #6b6e75;
-  --faint: #9a9ca2;
+  /* Secondary and faint text keep a readable contrast on white (about 6.5:1 and 4:1). */
+  --muted: #5a5d64;
+  --faint: #7b7e85;
   --line: #e4e2db;
   --ok: #2f9e6a;
   --warn: #b7791f;
@@ -35,7 +36,7 @@
   --seg-pill-line: transparent;
   --control-line: var(--line);
   --control-bg: transparent;
-  --control-bg-hover: var(--hover);
+  --control-bg-hover: #f3f3f1;
   --r-sm: 6px;
   --r: 10px;
   --r-lg: 14px;
@@ -488,7 +489,8 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .card.head .actions .primary { width: 260px; }
 
 /* Escenario: each machine's header is its scene (flowing lines), with name, state and actions on cards over it */
-:root { --scene-ink: #6b6e75; }
+/* On white the scenes' faint cells need a darker ink to show at the same opacity as in dark. */
+:root { --scene-ink: #2c2e33; }
 :root[data-theme="dark"] { --scene-ink: #a3a3a3; }
 .card.scene-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: 0; gap: 0; }
 .scene-wrap { grid-column: 1 / -1; height: 112px; border-radius: var(--r-lg) var(--r-lg) 0 0; overflow: hidden; pointer-events: none; }
@@ -510,7 +512,8 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 /* Options as rows: icon, name with its value, a line that explains it, and the control at the right */
 .opt-rows { display: flex; flex-direction: column; }
 .opt-row { display: grid; grid-template-columns: 32px minmax(0, 1fr) minmax(0, 360px); column-gap: 14px; row-gap: 10px; align-items: start; padding: 14px 0; }
-.opt-row + .opt-row, .opt-disclosure + .opt-row { border-top: 1px solid var(--line); }
+/* Options are separated by their own space, without lines between them. */
+.opt-row + .opt-row, .opt-disclosure + .opt-row { border-top: 0; }
 .opt-row:first-child { padding-top: 2px; }
 .opt-icon { width: 32px; height: 32px; border-radius: 8px; background: var(--tint-bg); color: var(--tint-fg); display: grid; place-items: center; align-self: start; }
 .opt-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -519,7 +522,8 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .opt-desc { font-size: 13px; color: var(--muted); line-height: 1.45; }
 .opt-ctl { display: flex; justify-content: flex-end; min-width: 0; }
 .opt-ctl > .slider { flex: 1; }
-.opt-row.wide .opt-ctl, .opt-below { grid-column: 2 / -1; justify-content: flex-start; }
+/* What goes under an option (lists, tiles, a bar) uses the row's whole width, from the icon's edge. */
+.opt-row.wide .opt-ctl, .opt-below { grid-column: 1 / -1; justify-content: flex-start; }
 .opt-disclosure { margin: 6px 0; align-self: flex-start; }
 @media (max-width: 900px) { .opt-row { grid-template-columns: 32px minmax(0, 1fr); } .opt-ctl { grid-column: 2 / -1; justify-content: flex-start; } }
 
@@ -535,7 +539,7 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
   box-shadow: 0 0 0 1px var(--line), 0 12px 32px rgba(0, 0, 0, 0.12); overflow-y: auto; }
 :root[data-theme="dark"] .dropdown-list { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06); }
 .dropdown-list button { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: var(--r-sm); text-align: left; }
-.dropdown-list button.active { background: var(--hover); }
+.dropdown-list button.active { background: var(--control-bg-hover); }
 .dropdown-list button.on { background: var(--sel); }
 .dropdown-check { color: var(--accent); flex: none; }
 .opt-ctl > .dropdown { max-width: 360px; }
@@ -568,9 +572,12 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .side-meta { flex: none; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 /* Tipo de uso heads its group: the rows it changes sit under it, indented, without lines between them. */
 .opt-row.section { padding-bottom: 8px; }
-.opt-row.sub { padding: 8px 0 8px 46px; border-top: 0 !important; }
+/* The rows a group head changes sit together in one soft panel that starts where the head's icon does, instead of
+   an indent that left an empty column beside them. */
+.opt-row.sub { padding: 8px 12px; border-top: 0 !important; background: color-mix(in srgb, var(--text) 2%, transparent); }
+.opt-row.section + .opt-row.sub { border-radius: var(--r) var(--r) 0 0; padding-top: 12px; }
+.opt-row.sub:has(+ .opt-row:not(.sub)), .opt-row.sub:last-child { border-radius: 0 0 var(--r) var(--r); padding-bottom: 12px; margin-bottom: 8px; }
 .opt-row.sub .opt-icon { width: 28px; height: 28px; background: transparent; color: var(--muted); }
-.opt-row.sub:has(+ .opt-row:not(.sub)) { padding-bottom: 14px; }
 .opt-row.section { grid-template-columns: 32px minmax(0, 1fr) auto; }
 
 
@@ -586,7 +593,7 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .app { background: var(--side); }
 .app:not(.single) > .content { border-top-left-radius: 14px; background: var(--bg); overflow: hidden; }
 .win-controls .app-action.labeled { width: auto; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; font-size: 12px; }
-.side-label { font-size: 11px; color: var(--faint); padding: 12px 8px 4px; }
+.side-label { font-size: 11px; color: var(--muted); padding: 12px 8px 4px; }
 .side-foot { margin-top: 8px; flex: none; }
 .side-list { flex: 1 1 auto; min-height: 0; }
 
@@ -625,21 +632,23 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .level-name { font-weight: 600; }
 .level-tagline { font-size: 12px; color: var(--muted); line-height: 1.4; }
 .level-applied { position: absolute; top: 10px; right: 10px; display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--ok); }
-.card > .cleanup-items, .levels-none, .levels-safe { margin-left: 46px; }
+/* Under a card's head its content starts at the card's edge, like the head: an indent left an empty column. */
+.card > .cleanup-items, .levels-none, .levels-safe { margin-left: 0; }
 .card > .cleanup-items { margin-top: 14px; }
 .levels-none { color: var(--faint); font-size: 13px; margin-top: 14px; margin-bottom: 0; }
 .levels-safe { display: flex; align-items: center; gap: 6px; color: var(--faint); font-size: 12px; margin-top: 12px; margin-bottom: 2px; }
 @media (max-width: 900px) { .levels { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-left: 0; } .card > .cleanup-items, .levels-none, .levels-safe { margin-left: 0; } }
 
 /* Apps: installed chips, a bar with search and categories, and the catalog as tiles or a list */
-.apps-card > :not(.opt-rows) { margin-left: 46px; }
+.apps-card > :not(.opt-rows) { margin-left: 0; }
 .apps-installed { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 .app-chip { display: inline-flex; align-items: center; gap: 8px; padding: 4px 4px 4px 8px; border-radius: var(--r); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--control-line); font-size: 13px; font-weight: 500; }
 .app-chip-more { width: 26px; height: 26px; }
 .apps-bar { display: flex; align-items: center; gap: 10px; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; }
 .app-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 8px; }
-.app-tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 8px 12px; border-radius: var(--r); box-shadow: inset 0 0 0 1px var(--control-line); text-align: center; }
-.app-tile:hover:not(:disabled) { background: var(--control-bg-hover); }
+.app-tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 8px 12px; border-radius: var(--r); background: color-mix(in srgb, var(--text) 2.5%, transparent); text-align: center; }
+/* Tiles are told apart by a soft fill, without a gray border. */
+.app-tile:hover:not(:disabled) { background: color-mix(in srgb, var(--text) 5%, transparent); }
 .app-tile.on { background: var(--sel); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
 .app-tile-logo .app-logo { width: 30px; height: 30px; }
 .app-tile-name { font-size: 13px; font-weight: 500; }
@@ -665,7 +674,7 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .app-scroll.fade-start.fade-end { mask-image: linear-gradient(transparent, #000 28px, #000 calc(100% - 28px), transparent); }
 
 /* Windows cleanup (C1): levels as a compact list, a drawing of Windows that loses what the level removes, and the list */
-.cleanup-body { display: grid; grid-template-columns: 200px minmax(300px, 1.1fr) minmax(0, 1.3fr); gap: 16px; margin: 4px 0 0 46px; align-items: start; }
+.cleanup-body { display: grid; grid-template-columns: 200px minmax(300px, 1.1fr) minmax(0, 1.3fr); gap: 16px; margin: 4px 0 0; align-items: start; }
 .level-list { display: flex; flex-direction: column; gap: 2px; }
 .level-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--r); text-align: left; color: var(--muted); }
 .level-row:hover { background: var(--control-bg-hover); color: var(--text); }
@@ -703,9 +712,9 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .app-row .app-installed { padding: 0 10px; }
 .app-tile.has:disabled { opacity: 1; cursor: default; }
 .cleanup-flow { display: block; width: 100%; height: 230px; }
-.cleanup-items .ci-name { display: block; font-size: 13px; }
+.cleanup-items .ci-name { display: block; font-size: 13px; color: var(--text); }
 .cleanup-items li.drop .ci-name { color: var(--text); }
-.cleanup-items .ci-line { display: block; font-size: 11px; color: var(--faint); line-height: 1.35; }
+.cleanup-items .ci-line { display: block; font-size: 11px; color: var(--muted); line-height: 1.35; }
 
 /* Home (I1): the machine in use up front, every machine below, and on the side memory, Library and what needs attention */
 .home-grid { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; align-items: start; }
@@ -811,7 +820,8 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .create-summary-line > span { min-width: 0; overflow-wrap: anywhere; }
 .create-summary-line.cut > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* What is chosen among cards (profiles, apps) is marked in neutral gray, never with the accent. */
-:root { --pick-bg: #ecebe6; --pick-line: #d6d4cd; }
+/* In light, what is picked or hovered in lists is a barely gray white, never a beige that reads as dirty. */
+:root { --pick-bg: #f3f3f1; --pick-line: #e3e2de; }
 :root[data-theme="dark"] { --pick-bg: #262626; --pick-line: #343434; }
 .create-profile.on, .app-tile.on, .dropdown-list button.on { background: var(--pick-bg); box-shadow: inset 0 0 0 1px var(--pick-line); }
 .app-tile-check { background: var(--text); color: var(--surface); }
