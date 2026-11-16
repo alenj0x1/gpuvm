@@ -6,7 +6,7 @@ Aquí se documentan los cambios importantes de GpuVM. El formato sigue [Keep a C
 
 Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (esa sección solo existe mientras haya alguno y el sitio de documentación no la muestra); `scripts/release.py` la convierte en la versión nueva.
 
-## [Sin publicar]
+## [0.8.0] - 2026-11-16
 
 ### Agregado
 - **Inglés.** GpuVM habla inglés además de español. **Ajustes → Apariencia → Idioma** sigue al de Windows (español si Windows está en español, inglés si no) o queda fijo; todas las pantallas, el menú de la bandeja y lo que informa el módulo (pasos, avisos y errores) cambian a la vez.
@@ -227,6 +227,7 @@ Primera versión.
 - Los instaladores de terceros están fijados por SHA-256 y se vuelven a verificar justo antes de copiarlos a la VM.
 - Las credenciales de streaming y del invitado se cifran con DPAPI.
 
+[0.8.0]: https://github.com/alenj0x1/gpuvm/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/alenj0x1/gpuvm/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/alenj0x1/gpuvm/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/alenj0x1/gpuvm/compare/v0.4.1...v0.5.0
