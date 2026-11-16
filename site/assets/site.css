@@ -351,7 +351,7 @@ html:not([data-world="blocks"]) [data-seg="time"] { display: none; }
 .rotor > span.on { transform: none; opacity: 1; }
 .rotor > span.out { transform: translateY(-105%); opacity: 0; }
 .rotor > span:nth-child(5n + 1) { color: var(--rot-1); } .rotor > span:nth-child(5n + 2) { color: var(--rot-2); }
-.rotor > span:nth-child(5n + 3) { color: var(--rot-3); } .rotor > span:nth-child(5n + 4) { color: var(--rot-4); }
-:root { --rot-1: #2f5bd3; --rot-2: #6a4fd2; --rot-3: #1d7f7c; --rot-4: #a8650f; }
-:root[data-mode="dark"] { --rot-1: #7d9cf0; --rot-2: #a796f2; --rot-3: #6ccfca; --rot-4: #e7b45e; }
+.rotor > span:nth-child(5n + 3) { color: var(--rot-3); } .rotor > span:nth-child(5n + 4) { color: var(--rot-4); } .rotor > span:nth-child(5n + 5) { color: var(--rot-5); }
+:root { --rot-1: #2f5bd3; --rot-2: #6a4fd2; --rot-3: #1d7f7c; --rot-4: #a8650f; --rot-5: #2f8550; }
+:root[data-mode="dark"] { --rot-1: #7d9cf0; --rot-2: #a796f2; --rot-3: #6ccfca; --rot-4: #e7b45e; --rot-5: #7dd19c; }
 @media (prefers-reduced-motion: reduce) { .rotor, .rotor > span { transition: none; } }
