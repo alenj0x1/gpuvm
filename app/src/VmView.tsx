@@ -18,7 +18,7 @@ import { CleanupFlow, CleanupItems, LEVEL_LOOK } from "./CleanupFlow";
 import { Sparkline, series } from "./Chart";
 import { CheckMark, Dropdown, Segmented, Slider, formatUptime, portalRoot, stateText, useScrollFade } from "./ui";
 import { api, openConsole, vmNameError } from "./api";
-import { locale, t, tn } from "./i18n";
+import { locale, t, tn, translateModule } from "./i18n";
 
 export interface JobInfo {
   cmd: string;
@@ -354,7 +354,7 @@ export function Cleanup({ vm, busy, startJob, onPreview }: Pick<Props, "vm" | "b
             <button key={l.id} type="button" role="radio" aria-checked={l.id === chosen} className={`level-row${l.id === chosen ? " on" : ""}`}
               onClick={() => setChosen(l.id)}>
               <span className="level-icon">{LEVEL_LOOK[l.id]?.icon ?? <IconSparkles size={18} />}</span>
-              <span className="level-text"><span className="level-name">{l.name}</span><span className="level-tagline">{LEVEL_LOOK[l.id]?.tagline ?? ""}</span></span>
+              <span className="level-text"><span className="level-name">{translateModule(l.name)}</span><span className="level-tagline">{LEVEL_LOOK[l.id]?.tagline ?? ""}</span></span>
               {l.id === current && <span className="level-applied"><IconCheck size={12} />{t("Aplicado")}</span>}
             </button>
           ))}
@@ -423,7 +423,7 @@ export function Apps({ vm, busy, startJob, onPreview }: Pick<Props, "vm" | "busy
     const y = box.bottom + 6 + 96 > window.innerHeight ? box.top - 96 - 6 : box.bottom + 6;
     setMenu({ app, x: Math.min(box.right - 200, window.innerWidth - 208), y });
   };
-  const categories = [...new Map(catalog.map((a) => [a.category, a.categoryName ?? a.category])).entries()];
+  const categories = [...new Map(catalog.map((a) => [a.category, a.categoryName ? translateModule(a.categoryName) : a.category])).entries()];
   const q = fold(query.trim());
   // The catalog shows every app of the category, the installed ones too (marked, not installable again).
   const available = catalog
@@ -460,7 +460,7 @@ export function Apps({ vm, busy, startJob, onPreview }: Pick<Props, "vm" | "busy
                     {on && <span className="app-tile-check"><IconCheck size={12} stroke={2.4} /></span>}
                     <span className="app-tile-logo"><AppLogo id={a.id} /></span>
                     <span className="app-tile-name">{a.name}</span>
-                    {has ? <span className="app-installed"><IconCheck size={12} />{t("Instalada")}</span> : <span className="app-tile-cat">{a.categoryName}</span>}
+                    {has ? <span className="app-installed"><IconCheck size={12} />{t("Instalada")}</span> : <span className="app-tile-cat">{translateModule(a.categoryName ?? "")}</span>}
                   </button>
                 );
               })}
@@ -470,7 +470,7 @@ export function Apps({ vm, busy, startJob, onPreview }: Pick<Props, "vm" | "busy
               {available.map((a, n) => (
                 <div key={a.id} className="app-row" style={{ "--n": n } as React.CSSProperties}>
                   <span className="app-row-logo"><AppLogo id={a.id} /></span>
-                  <span className="app-row-text"><strong>{a.name}</strong><span>{a.categoryName}</span></span>
+                  <span className="app-row-text"><strong>{a.name}</strong><span>{translateModule(a.categoryName ?? "")}</span></span>
                   {installed.includes(a.id) ? <span className="app-installed"><IconCheck size={14} />{t("Instalada")}</span> : (
                     <button type="button" className="btn" disabled={!!busy} onClick={() => install([a.id])}>
                       <IconDownload size={15} />{vm.state === "Off" ? t("Encender e instalar") : t("Instalar")}
@@ -505,7 +505,7 @@ export function Apps({ vm, busy, startJob, onPreview }: Pick<Props, "vm" | "busy
               {mineShown.map((a) => (
                 <div key={a.id} className="app-row mine" onContextMenu={(e) => { e.preventDefault(); if (!busy) openMenu(a, e.currentTarget); }}>
                   <span className="app-row-logo"><AppLogo id={a.id} /></span>
-                  <span className="app-row-text"><strong>{a.name}</strong><span>{a.categoryName}</span></span>
+                  <span className="app-row-text"><strong>{a.name}</strong><span>{translateModule(a.categoryName ?? "")}</span></span>
                   <button type="button" className="icon-btn" aria-label={t("Opciones de {name}", { name: a.name })} disabled={!!busy}
                     onClick={(e) => (menu?.app.id === a.id ? setMenu(null) : openMenu(a, e.currentTarget))}><IconDots size={15} /></button>
                 </div>

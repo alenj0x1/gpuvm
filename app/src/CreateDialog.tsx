@@ -15,7 +15,7 @@ import { draftSource, saveDecor, useSource, type DecorSource } from "./decor/sto
 import { useSpaces } from "./spaces";
 import { ambientInfo } from "./ambient";
 import { Dropdown as SpaceDropdown } from "./ui";
-import { t, tn } from "./i18n";
+import { t, tn, translateModule } from "./i18n";
 
 export interface Resources { cpu: number; memoryGB: number; gpuPercent: number; diskGB: number }
 
@@ -220,7 +220,7 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
           <div className="log" role="status">
             {job!.log.map((line, i) => (
               <span key={i} className={`log-line ${i === job!.log.length - 1 ? "now" : ""}`}>
-                {i === job!.log.length - 1 ? <IconLoader2 size={14} className="spin" /> : <IconCheck size={14} />}{line}
+                {i === job!.log.length - 1 ? <IconLoader2 size={14} className="spin" /> : <IconCheck size={14} />}{translateModule(line)}
               </span>
             ))}
             <span className="log-hint">{t("Puedes cerrar esta ventana: el avance sigue en la barra lateral.")}</span>

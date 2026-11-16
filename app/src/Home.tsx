@@ -18,7 +18,7 @@ import { ambientInfo } from "./ambient";
 import { SpaceDialog } from "./SpaceDialog";
 import { useDragScroll } from "./dragScroll";
 import { carriesMachine, dragMachine, moveMachine, MACHINE_DND } from "./dragMachine";
-import { locale, t, tn } from "./i18n";
+import { locale, t, tn, translateModule } from "./i18n";
 
 interface Props {
   vms: VmOverview[];
@@ -163,7 +163,7 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
 
   const action = (vm: VmOverview, compact = false) => {
     const busy = busyFor(vm.name);
-    if (busy) return <span className={`primary busy${compact ? " compact" : ""}`} role="status"><IconLoader2 size={16} className="spin" /><span className="ellipsis">{busy.message}</span></span>;
+    if (busy) return <span className={`primary busy${compact ? " compact" : ""}`} role="status"><IconLoader2 size={16} className="spin" /><span className="ellipsis">{translateModule(busy.message)}</span></span>;
     const m = home.machines.find((x) => x.name === vm.name);
     const off = vm.state === "Off";
     if (off && m && !m.fits) {
@@ -351,10 +351,10 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
                   <span className="notice-icon">{ISSUE_ICONS[a.kind] ?? <IconDeviceGamepad2 size={17} />}</span>
                   <div className="home-attention-text">
                     <strong>{a.vm ?? t("Equipo")}</strong>
-                    <span className={mine ? "home-attention-progress" : ""}>{mine ? busy!.message : a.text}</span>
+                    <span className={mine ? "home-attention-progress" : ""}>{mine ? translateModule(busy!.message) : translateModule(a.text)}</span>
                   </div>
                   <button className="btn compact" disabled={!!busy} onClick={act}>
-                    {mine && <IconLoader2 size={15} className="spin" />}{a.label}
+                    {mine && <IconLoader2 size={15} className="spin" />}{translateModule(a.label)}
                   </button>
                 </div>
               );

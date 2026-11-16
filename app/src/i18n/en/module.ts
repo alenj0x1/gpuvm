@@ -2,6 +2,11 @@
 // word; `patterns` the ones with values in them ($1, $2… are the regex groups, in the order the English wants them).
 // Also here: the few messages the desktop app's Rust side (src-tauri) and src/bridge.ps1 return in Spanish.
 export default {
+  "Navegadores": "Browsers",
+  "Multimedia": "Media",
+  "Comunicación": "Chat",
+  "Utilidades": "Tools",
+  "Sin apps de más": "No extra apps",
   // App (Rust) and bridge
   "El servicio de GpuVM no está instalado.": "The GpuVM service isn't installed.",
   "El servicio de GpuVM está detenido.": "The GpuVM service is stopped.",
