@@ -362,3 +362,5 @@ html:not([data-world="blocks"]) [data-seg="time"] { display: none; }
 }
 /* On a phone what's new is one column, whatever the number of cards. */
 @media (max-width: 640px) { .bento[data-cols] { grid-template-columns: minmax(0, 1fr); } }
+/* Narrow phones: the stage around the admin-prompt card gives it more room. */
+@media (max-width: 400px) { .prompt-stage { padding: 12px; } }

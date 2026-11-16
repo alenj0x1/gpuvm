@@ -360,6 +360,7 @@ const scopedCss = appCss
   /* On a phone the cleanup's closing line (what is never touched) sits centered under the list. */
   @media (max-width: 600px) { .levels-safe { flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 6px; }
     .prompt-head strong, .prompt-name { white-space: normal; overflow: visible; text-overflow: clip; }
+    .prompt-actions { flex-wrap: wrap; } .prompt-actions > button { flex: 1 1 auto; justify-content: center; }
     .opt-ctl { width: 100%; } .opt-ctl > .segmented { display: flex; width: 100%; } .opt-ctl > .segmented > button { flex: 1 1 0; justify-content: center; min-width: 0; } }
   /* Narrow (a phone): the card grows with its text instead of letting it run out of the box. */
   .prompt-demo .prompt-card { height: auto; min-height: 158px; }
