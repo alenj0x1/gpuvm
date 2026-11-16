@@ -19,12 +19,18 @@
 </p>
 
 <p align="center">
-  <img src=".github/assets/app-light.png" width="49%" alt="GpuVM en modo claro">
-  <img src=".github/assets/app-dark.png" width="49%" alt="GpuVM en modo oscuro">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/home-es-dark.webp">
+    <img src=".github/assets/home-es-light.webp" alt="Inicio de GpuVM: la máquina en uso como un cubo holograma en su espacio, con su uso al lado">
+  </picture>
 </p>
 
 ## Qué hace
 
+- **Cada máquina, un holograma.** Cada máquina se dibuja como un holograma dentro de un cubo de vidrio: placa base, procesador, memoria, tarjeta gráfica y disco, con rayos que llegan a cada pieza según trabaja, y que sigue lo que cambias antes de guardar. Gíralo, acércalo y decóralo: su propio color, un letrero LED que corre alrededor del vidrio, stickers y figuras de bloques.
+- **Espacios con su propio mundo.** Agrupa las máquinas según para qué son; cada espacio es un mundo propio (un estudio, una placa base o un mundo de bloques de día, de tarde o de noche) e Inicio muestra un espacio a la vez. Arrastra las máquinas entre espacios y al orden que quieras.
+- **Juegos mientras esperas.** Dos juegos pequeños se juegan en el espacio de las máquinas (*Overclock* y *Bit a bit*), con tus máquinas como naves, solo o en equipo.
+- **Español e inglés.** Toda la app, la bandeja y lo que informa el módulo siguen el idioma de Windows o el que elijas en Ajustes.
 - **Tu GPU dentro de la VM.** El GPU partitioning de Hyper-V (GPU-P) comparte la GPU del equipo con la VM, que usa el mismo driver que el host. Sin passthrough ni segunda GPU.
 - **Se abre en un clic.** «Encender y abrir» enciende la VM, espera a Windows, corrige la sesión y la pantalla, empareja Moonlight y abre la imagen dibujada y codificada por la GPU (Sunshine + NVENC), con sonido. Una VM ya encendida muestra su imagen en unos 7-10 s; otro clic trae Moonlight al frente.
 - **Baja latencia, al ritmo de tu monitor.** De una tecla, un clic, un movimiento del mouse o un botón del mando hasta el cambio en pantalla pasan unos 16,6 ms a 120 FPS o más, unos 11 ms más que jugando en el equipo. La VM transmite a la frecuencia de tu monitor, donde la sincronización vertical no agrega latencia y los tirones bajan a la mitad.
@@ -42,8 +48,18 @@
 - **Laboratorios.** Cada idea de rendimiento se mide (base contra candidata) antes de volverse un valor por defecto.
 
 <p align="center">
-  <img src=".github/assets/create-light.png" width="49%" alt="Crear una máquina">
-  <img src=".github/assets/empty-light.png" width="49%" alt="Primera máquina">
+  <img src=".github/assets/personalize-es-light.webp" width="49%" alt="Personalizar una máquina: color, letrero LED, stickers y figuras">
+  <img src=".github/assets/options-es-light.webp" width="49%" alt="Imagen y control: tipo de uso, FPS y lo demás">
+</p>
+
+<p align="center">
+  <img src=".github/assets/create-es-light.webp" width="49%" alt="Crear máquina: secciones a la izquierda, resumen a la derecha">
+  <img src=".github/assets/games-es-dark.webp" width="49%" alt="Juegos en el espacio de las máquinas">
+</p>
+
+<p align="center">
+  <img src=".github/assets/library-es-light.webp" width="49%" alt="La Biblioteca: perfiles, plantillas, discos e ISOs en tarjetas">
+  <img src=".github/assets/settings-es-light.webp" width="49%" alt="Ajustes con vista previa del tema y el énfasis">
 </p>
 
 ## Requisitos
@@ -65,9 +81,11 @@ Descarga `GpuVM_x.y.z_x64-setup.exe` desde [Releases](https://github.com/alenj0x
 
 ## Primeros pasos
 
-1. Abre GpuVM y elige **Crear máquina**: nombre, ISO de Windows, perfil y contraseña de Windows.
+1. Abre GpuVM y elige **Crear máquina**: nombre, ISO de Windows, perfil, usuario y contraseña de Windows.
 2. Espera a que esté lista; Windows termina de configurarse solo en unos minutos.
 3. Presiona **Abrir**. Moonlight se abre con la VM cuando su imagen está lista.
+
+GpuVM habla español e inglés: sigue el idioma de Windows, y **Ajustes → Apariencia → Idioma** fija uno.
 
 ## Documentación
 
@@ -88,7 +106,9 @@ Guía completa, referencia de la CLI, arquitectura y solución de problemas: **[
 
 ```powershell
 npm --prefix app install
-npm --prefix app run dev          # interfaz con datos de ejemplo en el navegador (?mock=empty, ?mock=noservice)
+npm --prefix app run dev          # interfaz con datos de ejemplo en el navegador (?mock=empty, ?mock=noservice, ?vms=30)
+npm --prefix app run i18n         # cada texto en español tiene su inglés (app/src/i18n/en)
+node tools/screenshots/shoot.mjs  # capturas para el README, la doc y el sitio (con la interfaz en :1430)
 npm --prefix app run tauri build  # instalador en app/src-tauri/target/release/bundle/nsis/
 Invoke-Pester ./tests             # pruebas del módulo, sin administrador
 node scripts/site/changelog.mjs   # sitio web (site/): lo nuevo, desde los changelogs

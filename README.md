@@ -19,12 +19,18 @@ English | [Español](README.es.md)
 </p>
 
 <p align="center">
-  <img src=".github/assets/app-light.png" width="49%" alt="GpuVM in light mode">
-  <img src=".github/assets/app-dark.png" width="49%" alt="GpuVM in dark mode">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/home-en-dark.webp">
+    <img src=".github/assets/home-en-light.webp" alt="GpuVM's Home: the machine in use as a hologram cube in its space, with its usage beside it">
+  </picture>
 </p>
 
 ## What it does
 
+- **Every machine, a hologram.** Each machine is drawn as a hologram inside a glass cube: motherboard, processor, memory, graphics card and disk, lit by lightning as each piece works, and following what you change before you save. Turn it, zoom it, and decorate it: its own color, an LED sign running around the glass, stickers and toy-brick figures.
+- **Spaces with their own world.** Group machines by what they are for; each space is a world of its own (a studio, a motherboard or a world of blocks by day, evening or night), with Home showing one space at a time. Drag machines between spaces and into the order you like.
+- **Games while you wait.** Two small games play in the space of machines (*Overclock* and *Bit by bit*), with your machines as the ships, solo or as a team.
+- **English and Spanish.** The whole app, the tray and what the module reports follow Windows' language or the one you pick in Settings.
 - **Your GPU inside the VM.** Hyper-V GPU partitioning (GPU-P) shares the host GPU with the VM, which runs the same driver as the host. No passthrough, no second GPU.
 - **Open it in one click.** "Start and open" starts the VM, waits for Windows, fixes the session and the display, pairs Moonlight and opens the stream, drawn and encoded by the GPU (Sunshine + NVENC), with sound. A VM that is already on shows its picture in about 7–10 s; a second click brings Moonlight to the front.
 - **Low latency, at your monitor's rate.** From a key, click, mouse move or gamepad button to the change on screen takes about 16.6 ms at 120 FPS or more, about 11 ms more than playing locally. The VM streams at your monitor's refresh rate, where V-Sync adds no latency and stutters halve.
@@ -42,8 +48,18 @@ English | [Español](README.es.md)
 - **Labs.** Every performance idea is measured (baseline vs candidate) before it becomes a default.
 
 <p align="center">
-  <img src=".github/assets/create-light.png" width="49%" alt="Create a machine">
-  <img src=".github/assets/empty-light.png" width="49%" alt="First machine">
+  <img src=".github/assets/personalize-en-light.webp" width="49%" alt="Customize a machine: color, LED sign, stickers and figures">
+  <img src=".github/assets/options-en-light.webp" width="49%" alt="Picture and control: use type, frame rate and the rest">
+</p>
+
+<p align="center">
+  <img src=".github/assets/create-en-light.webp" width="49%" alt="Create a machine: sections on the left, summary on the right">
+  <img src=".github/assets/games-en-dark.webp" width="49%" alt="Games in the space of machines">
+</p>
+
+<p align="center">
+  <img src=".github/assets/library-en-light.webp" width="49%" alt="The Library: profiles, templates, disks and ISOs as cards">
+  <img src=".github/assets/settings-en-light.webp" width="49%" alt="Settings with a live preview of theme and accent">
 </p>
 
 ## Requirements
@@ -65,11 +81,11 @@ Download `GpuVM_x.y.z_x64-setup.exe` from [Releases](https://github.com/alenj0x1
 
 ## Quick start
 
-1. Open GpuVM and choose **Crear máquina** (Create machine): name, Windows ISO, profile and the Windows password.
+1. Open GpuVM and choose **Create machine**: name, Windows ISO, profile, Windows user and password.
 2. Wait until it's ready; Windows finishes its setup on its own in a few minutes.
-3. Press **Abrir** (Open). Moonlight opens with the VM once its picture is ready.
+3. Press **Open**. Moonlight opens with the VM once its picture is ready.
 
-The interface is in Spanish for now.
+GpuVM speaks English and Spanish: it follows Windows' language, and **Settings → Appearance → Language** fixes one.
 
 ## Documentation
 
@@ -90,7 +106,9 @@ Full guide, CLI reference, architecture and troubleshooting: **[alenj0x1.github.
 
 ```powershell
 npm --prefix app install
-npm --prefix app run dev          # UI with sample data in the browser (?mock=empty, ?mock=noservice)
+npm --prefix app run dev          # UI with sample data in the browser (?mock=empty, ?mock=noservice, ?vms=30)
+npm --prefix app run i18n         # every Spanish text has its English (app/src/i18n/en)
+node tools/screenshots/shoot.mjs  # screenshots for the README, docs and website (needs the dev server on :1430)
 npm --prefix app run tauri build  # installer in app/src-tauri/target/release/bundle/nsis/
 Invoke-Pester ./tests             # module tests, no administrator needed
 npm --prefix docs run dev         # documentation site
