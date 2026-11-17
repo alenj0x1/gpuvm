@@ -7,6 +7,8 @@ import { resolveLang, setLang, t, type LangPref } from "./i18n";
 export type ThemePref = "system" | "light" | "dark";
 export type ClosePref = "quit" | "tray";
 export type VmsOnQuitPref = "keep" | "stop";
+/** Going back to Home from a machine's picture: it stays connected (back at once) or disconnects. */
+export type ViewerHomePref = "keep" | "disconnect";
 /** When the GpuVM service runs: while GpuVM is open, from Windows' start, or only when started by hand. */
 export type ServicePref = "app" | "windows" | "manual";
 /** The accent for actions, selection and focus. */
@@ -32,10 +34,11 @@ export interface Prefs {
   accent: AccentPref;
   /** The app's language: Windows' (Spanish if Windows is in Spanish, English otherwise), Spanish or English. */
   lang: LangPref;
+  viewerHome: ViewerHomePref;
 }
 
 const KEY = "gpuvm.prefs";
-const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "keep", service: "app", monitor: "primary", accent: "blue", lang: "system" };
+const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "keep", service: "app", monitor: "primary", accent: "blue", lang: "system", viewerHome: "keep" };
 const EVENT = "gpuvm-prefs";
 const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
 

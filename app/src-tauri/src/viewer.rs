@@ -49,6 +49,49 @@ struct Viewer {
     pid: u32,
     write: Mutex<()>,
     hwnd: AtomicIsize,
+    /// Inside the app's window (not full screen): placed over the content area and following it.
+    embed: bool,
+    /// Shown over the app (false while waiting for the first picture or while the person is in Home).
+    visible: std::sync::atomic::AtomicBool,
+}
+
+/// Height of the app's title bar in logical pixels (styles.css, --titlebar): the viewer covers what is below it.
+const TITLEBAR: f64 = 40.0;
+
+/// The main window's content area on screen (physical pixels), and the window's handle.
+fn content_rect(app: &AppHandle) -> Option<(isize, i32, i32, i32, i32)> {
+    use tauri::Manager;
+    let main = app.get_webview_window("main")?;
+    if main.is_minimized().unwrap_or(false) {
+        return None;
+    }
+    let hwnd = main.hwnd().ok()?.0 as isize;
+    let pos = main.inner_position().ok()?;
+    let size = main.inner_size().ok()?;
+    let top = (TITLEBAR * main.scale_factor().unwrap_or(1.0)).round() as i32;
+    let height = size.height as i32 - top;
+    if size.width == 0 || height <= 0 {
+        return None;
+    }
+    Some((hwnd, pos.x, pos.y + top, size.width as i32, height))
+}
+
+/// The app's window moved or changed size: the viewers shown inside it follow.
+pub fn follow_main(app: &AppHandle) {
+    let Some((_, x, y, w, h)) = content_rect(app) else { return };
+    let list: Vec<Arc<Viewer>> = viewers().as_ref().map(|v| v.values().cloned().collect()).unwrap_or_default();
+    for viewer in list.iter().filter(|v| v.embed) {
+        send_raw(viewer, &json!({ "type": "place", "x": x, "y": y, "w": w, "h": h }));
+    }
+}
+
+fn allow_foreground(pid: u32) {
+    #[link(name = "user32")]
+    extern "system" {
+        fn AllowSetForegroundWindow(pid: u32) -> i32;
+    }
+    // SAFETY: plain Win32 call with a process id.
+    unsafe { AllowSetForegroundWindow(pid) };
 }
 
 /// Who waits for a viewer's first picture (the "Abrir" job), by machine name.
@@ -207,7 +250,7 @@ fn same_token(a: &str, b: &str) -> bool {
     a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
-fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String>) -> Result<u32, String> {
+fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String>, embed: bool) -> Result<u32, String> {
     let pipe_name = format!(r"\\.\pipe\gpuvm-viewer-{}", random_hex(16)?);
     let token = random_hex(32)?;
     // This user only, full access; everyone else (including the network) gets nothing.
@@ -263,7 +306,7 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
     }
     drop(token);
 
-    let viewer = Arc::new(Viewer { pipe, pid, write: Mutex::new(()), hwnd: AtomicIsize::new(0) });
+    let viewer = Arc::new(Viewer { pipe, pid, write: Mutex::new(()), hwnd: AtomicIsize::new(0), embed, visible: std::sync::atomic::AtomicBool::new(!embed) });
     viewers().get_or_insert_with(HashMap::new).insert(vm.clone(), viewer.clone());
     let _ = app.emit("viewer", json!({ "vm": vm, "msg": { "type": "opened", "pid": pid } }));
 
@@ -284,6 +327,12 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
             }
             let _ = app.emit("viewer", json!({ "vm": vm, "msg": msg }));
             crate::overlay::on_viewer(&app, &vm, &msg);
+            // The first picture: the viewer comes out from behind the app, over its content area.
+            if kind == "first-frame" && viewer.embed {
+                allow_foreground(viewer.pid);
+                send_raw(&viewer, &json!({ "type": "reveal" }));
+                viewer.visible.store(true, Ordering::Relaxed);
+            }
             if matches!(kind.as_str(), "first-frame" | "error" | "app-running" | "stage-failed") {
                 if let Some(waiter) = WAITERS.lock().unwrap_or_else(|e| e.into_inner()).as_mut().and_then(|w| w.remove(&vm)) {
                     let _ = waiter.send(msg.clone());
@@ -303,6 +352,15 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
         crate::overlay::on_viewer(&app, &vm, &closed);
     });
     Ok(pid)
+}
+
+/// The viewer launch in a job's data: the module returns every object the command wrote, as a list.
+pub fn launch_in(data: &Value) -> Option<Value> {
+    let items: Vec<&Value> = match data {
+        Value::Array(a) => a.iter().collect(),
+        other => vec![other],
+    };
+    items.into_iter().rev().find_map(|v| v.get("viewerLaunch").filter(|l| l.is_object()).cloned())
 }
 
 /// The end of "Abrir": opens the viewer with the module's arguments and returns once the first picture is decoded
@@ -327,7 +385,16 @@ pub fn open_and_wait(app: &AppHandle, vm: &str, launch: &Value) -> Result<(), St
     let exe = viewer_path().ok_or("El visor de GpuVM no está instalado.")?;
     let (tx, rx) = std::sync::mpsc::channel();
     WAITERS.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(vm.to_string(), tx);
-    if let Err(e) = open_blocking(app.clone(), vm.to_string(), exe, arguments) {
+    // "Ventana" means inside GpuVM's own window now: the picture takes the app's content area.
+    let embed = arguments.windows(2).any(|w| w[0] == "--display-mode" && w[1] == "windowed");
+    if embed {
+        if let Some((hwnd, x, y, w, h)) = content_rect(app) {
+            arguments.push("--gpuvm-embed".into());
+            arguments.push(format!("{hwnd},{x},{y},{w},{h}"));
+        }
+    }
+    let embed = arguments.iter().any(|a| a == "--gpuvm-embed");
+    if let Err(e) = open_blocking(app.clone(), vm.to_string(), exe, arguments, embed) {
         WAITERS.lock().unwrap_or_else(|e| e.into_inner()).as_mut().map(|w| w.remove(vm));
         return Err(e);
     }
@@ -369,14 +436,39 @@ pub fn viewer_hwnd(vm: &str) -> Option<isize> {
 
 /// Lets the viewer take the foreground back from this app (when the panel closes).
 pub fn allow_viewer_foreground(vm: &str) {
-    #[link(name = "user32")]
-    extern "system" {
-        fn AllowSetForegroundWindow(pid: u32) -> i32;
-    }
     if let Some(pid) = viewers().as_ref().and_then(|v| v.get(vm)).map(|v| v.pid) {
-        // SAFETY: plain Win32 call with a process id.
-        unsafe { AllowSetForegroundWindow(pid) };
+        allow_foreground(pid);
     }
+}
+
+/// Back to Home: the viewer hides and its session stays connected (keep), or it disconnects.
+#[tauri::command]
+pub fn viewer_home(app: AppHandle, vm: String, keep: bool) -> Result<(), String> {
+    crate::overlay::close(&app);
+    let viewer = viewers().as_ref().and_then(|v| v.get(&vm).cloned()).ok_or("El visor de esta máquina no está abierto.")?;
+    viewer.visible.store(false, Ordering::Relaxed);
+    let msg = if keep && viewer.embed { json!({ "type": "hide" }) } else { json!({ "type": "quit" }) };
+    if send_raw(&viewer, &msg) { Ok(()) } else { Err("El visor no respondió.".into()) }
+}
+
+/// Back to a machine still connected: its picture shows again over the app (or full screen).
+#[tauri::command]
+pub fn viewer_show(app: AppHandle, vm: String) -> Result<(), String> {
+    let viewer = viewers().as_ref().and_then(|v| v.get(&vm).cloned()).ok_or("El visor de esta máquina no está abierto.")?;
+    if viewer.embed {
+        if let Some((_, x, y, w, h)) = content_rect(&app) {
+            send_raw(&viewer, &json!({ "type": "place", "x": x, "y": y, "w": w, "h": h }));
+        }
+    }
+    allow_foreground(viewer.pid);
+    viewer.visible.store(true, Ordering::Relaxed);
+    if send_raw(&viewer, &json!({ "type": "show" })) { Ok(()) } else { Err("El visor no respondió.".into()) }
+}
+
+/// Machines whose viewer is open (connected), and whether each is inside the app's window.
+#[tauri::command]
+pub fn viewer_list() -> Vec<Value> {
+    viewers().as_ref().map(|v| v.iter().map(|(name, x)| json!({ "vm": name, "embed": x.embed, "visible": x.visible.load(Ordering::Relaxed) })).collect()).unwrap_or_default()
 }
 
 /// Whether a machine's viewer is open.

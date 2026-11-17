@@ -313,7 +313,7 @@ export function SharedDisks({ vm, busy, startJob }: Pick<Props, "vm" | "busy" | 
               <div className="opt-ctl">
                 {here ? (
                   <button className="btn" disabled={!!busy} onClick={() => startJob(vm.name, "Disconnect-GpuVMSharedDisk", { Name: d.name }, load)}>
-                    {working ? <IconLoader2 size={16} className="spin" /> : <IconPlugOff size={16} />}{working ? busy!.message : t("Desconectar")}
+                    {working ? <IconLoader2 size={16} className="spin" /> : <IconPlugOff size={16} />}{working ? translateModule(busy!.message) : t("Desconectar")}
                   </button>
                 ) : (
                   <button className="btn" disabled={!!busy || (elsewhere && d.vmRunning)} onClick={() => startJob(vm.name, "Connect-GpuVMSharedDisk", { Name: d.name, VMName: vm.name }, load)}
@@ -353,7 +353,7 @@ export function Cleanup({ vm, busy, startJob, onPreview }: Pick<Props, "vm" | "b
           {(chosen !== current || applying) && (
             <button className="btn" disabled={!!busy} onClick={() => startJob(vm.name, "Set-GpuVMCleanup", { Name: vm.name, Level: chosen })}>
               {applying ? <IconLoader2 size={16} className="spin" /> : <IconSparkles size={16} />}
-              {applying ? busy!.message : vm.state === "Off" ? t("Encender y aplicar") : t("Aplicar")}
+              {applying ? translateModule(busy!.message) : vm.state === "Off" ? t("Encender y aplicar") : t("Aplicar")}
             </button>
           )}
         </OptionRow>
@@ -493,7 +493,7 @@ export function Apps({ vm, busy, startJob, onPreview }: Pick<Props, "vm" | "busy
           {/* The tiles' selection: what is chosen and the one button that installs it. */}
           {view === "tiles" && (chosen.length > 0 || working) && (
             <div className="apps-selection">
-              <span>{working ? busy!.message : tn(chosen.length, "{n} app elegida", "{n} apps elegidas")}</span>
+              <span>{working ? translateModule(busy!.message) : tn(chosen.length, "{n} app elegida", "{n} apps elegidas")}</span>
               {!working && <button type="button" className="btn ghost" onClick={() => setChosen([])}>{t("Quitar")}</button>}
               <button type="button" className="primary compact" disabled={!!busy} onClick={() => install(chosen, () => setChosen([]))}>
                 {working ? <IconLoader2 size={16} className="spin" /> : <IconDownload size={16} />}
@@ -608,7 +608,7 @@ function Header({ vm, vms = [], busy, variant, startJob, run, onRemoved, onRenam
   const paused = vm.state === "Paused";
   const off = vm.state === "Off";
   const transition = transitionText(vm.state);
-  const working = busy?.message ?? (transition ? `${transition}…` : null);
+  const working = busy?.message ? translateModule(busy.message) : transition ? `${transition}…` : null;
 
   useEffect(() => {
     if (!menu) { setConfirmOff(false); return; }

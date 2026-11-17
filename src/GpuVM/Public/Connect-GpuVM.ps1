@@ -191,7 +191,7 @@
 
         $clientName = if ($Viewer) { Get-GpuVMViewerClientName } else { $env:COMPUTERNAME }
         if ($Pair -or -not (Test-SunshineClientPaired -Address $address -Credential $credential -ClientName $clientName)) {
-            Register-MoonlightPairing -Address $address -Credential $credential -MoonlightPath $moonlight -ClientName $clientName -HostAddress $endpoint.HostAddress
+            Register-MoonlightPairing -Address $address -Credential $credential -MoonlightPath $moonlight -ClientName $clientName -HostAddress $endpoint.HostAddress -Quiet:$Viewer
             $state = Get-GpuVMState -Name $Name
             $state['streaming']['pairedClient'] = $clientName
             $state['streaming']['pairedAt'] = (Get-Date).ToString('o')

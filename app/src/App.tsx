@@ -20,6 +20,8 @@ import { MAX_SAMPLES } from "./Chart";
 import { VmView, type JobInfo } from "./VmView";
 import { CreateDialog } from "./CreateDialog";
 import { TitleBar } from "./TitleBar";
+import { ViewerStage } from "./ViewerStage";
+import { leaveViewer, openViewers, showViewer } from "./viewerStore";
 import { Toasts, humanError, stateText, useToasts, useScrollFade } from "./ui";
 import { t, translateModule } from "./i18n";
 
@@ -198,7 +200,30 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     return () => { cancelled = true; off?.(); };
   }, [push, refresh]);
 
+  // A machine opening or shown inside the app: the sidebar steps aside, the machine's cube moves to the center with
+  // the steps, and the viewer covers the content area once the first picture is there.
+  const [viewing, setViewing] = useState<{ vm: string; phase: "opening" | "live" } | null>(null);
+  const viewingRef = useRef(viewing);
+  viewingRef.current = viewing;
+
   const startJob = useCallback((vm: string, cmd: string, args: Record<string, unknown>, after?: () => void, failed?: () => void) => {
+    if (cmd === "Connect-GpuVM") {
+      // Still connected from before (the person went to Home): back to its picture at once.
+      const already = openViewers().find((o) => o.vm === vm);
+      if (already && !args.Pair) {
+        showViewer(vm).then(() => { setViewing(already.embed ? { vm, phase: "live" } : null); after?.(); })
+          .catch((e) => { failed?.(); push("error", humanError(e)); });
+        return;
+      }
+      setViewing({ vm, phase: "opening" });
+      const done = after, fail = failed;
+      after = () => {
+        const shown = openViewers().find((o) => o.vm === vm);
+        setViewing((v) => (v?.vm === vm ? (shown?.embed ? { vm, phase: "live" } : null) : v));
+        done?.();
+      };
+      failed = () => { setViewing((v) => (v?.vm === vm ? null : v)); fail?.(); };
+    }
     // A VM without a monitor of its own opens on the one chosen in Preferences.
     if (cmd === "Connect-GpuVM" && !args.Monitor && !vmsRef.current?.find((v) => v.name === vm)?.client?.monitor) {
       args = { ...args, Monitor: readPrefs().monitor };
@@ -230,6 +255,26 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     })).then((fn) => { if (cancelled) fn(); else off = fn; });
     return () => { cancelled = true; off?.(); };
   }, [startJob]);
+
+  // Home from the viewer (the title bar's button or the panel): the picture hides and the machine stays connected,
+  // or disconnects, as chosen in Settings.
+  const leaveToHome = useCallback(async (vm: string) => {
+    setViewing(null);
+    setSelected(HOME);
+    await leaveViewer(vm, readPrefs().viewerHome !== "disconnect");
+  }, []);
+  useEffect(() => {
+    if (!inTauri) return;
+    const offs: Promise<() => void>[] = [];
+    import("@tauri-apps/api/event").then(({ listen }) => {
+      offs.push(listen<{ vm: string }>("viewer-home", (e) => leaveToHome(e.payload.vm)));
+      // The viewer closed (disconnected, or the machine went off): the app shows itself again.
+      offs.push(listen<{ vm: string; msg: { type: string } }>("viewer", (e) => {
+        if (e.payload.msg.type === "closed" && viewingRef.current?.vm === e.payload.vm && viewingRef.current.phase === "live") setViewing(null);
+      }));
+    });
+    return () => { offs.forEach((o) => o.then((f) => f())); };
+  }, [leaveToHome]);
 
   const run = useCallback(async (vm: string, label: string, task: () => Promise<unknown>) => {
     setPending((p) => ({ ...p, [vm]: label }));
@@ -290,6 +335,22 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
           <p>{t("Hyper-V solo deja crear y controlar máquinas a un administrador.")}</p>
           <button className="primary" onClick={relaunchAsAdmin}><IconShieldLock size={17} />{t("Abrir como administrador")}</button>
         </div>
+      </div>
+    );
+  }
+
+  if (viewing) {
+    const vm = vms?.find((v) => v.name === viewing.vm) ?? null;
+    return (
+      <div className={`app viewing ${viewing.phase}`}>
+        <TitleBar>
+          <button className="titlebar-back" onClick={() => leaveToHome(viewing.vm)} disabled={viewing.phase === "opening"}>
+            <IconHome size={15} />{t("Inicio")}
+          </button>
+          <span className="titlebar-machine"><MachineIcon name={viewing.vm} size={20} radius={6} />{viewing.vm}</span>
+        </TitleBar>
+        <ViewerStage vm={vm} phase={viewing.phase} step={busyFor(viewing.vm)?.message} />
+        <Toasts toasts={toasts} dismiss={dismiss} />
       </div>
     );
   }

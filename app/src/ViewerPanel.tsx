@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { IconAdjustments, IconArrowsMaximize, IconChartLine, IconDeviceDesktop, IconDeviceGamepad2, IconPlayerStop, IconX } from "@tabler/icons-react";
+import { IconAdjustments, IconArrowsMaximize, IconChartLine, IconDeviceDesktop, IconDeviceGamepad2, IconHome, IconPlayerStop, IconX } from "@tabler/icons-react";
 import { api, inTauri } from "./api";
 import type { VmOverview } from "./types";
 import { GameGallery, GameStage } from "./GameStage";
@@ -89,6 +89,10 @@ export function ViewerPanel() {
             </button>
           ))}
         </div>
+        <button className="icon-btn" aria-label={t("Inicio")} title={t("Inicio")} onClick={async () => {
+          const { emitTo } = await import("@tauri-apps/api/event");
+          await emitTo("main", "viewer-home", { vm });
+        }}><IconHome size={16} /></button>
         <button className="icon-btn" aria-label={t("Cerrar")} onClick={() => invoke("viewer_panel_close")}><IconX size={16} /></button>
       </header>
       <div className="viewer-panel-body">

@@ -153,8 +153,8 @@ async fn job(app: AppHandle, job_id: String, cmd: String, args: Option<Value>) -
             let _ = app.emit("job", event);
         };
         match conn.call(&request, |event| emit(event.clone())) {
-            Ok(result) if with_viewer && result["ok"] == true && result["data"]["viewerLaunch"].is_object() => {
-                let launch = result["data"]["viewerLaunch"].clone();
+            Ok(result) if with_viewer && result["ok"] == true && viewer::launch_in(&result["data"]).is_some() => {
+                let launch = viewer::launch_in(&result["data"]).unwrap_or_default();
                 let outcome = viewer::open_and_wait(&app, &vm_name, &launch);
                 match outcome {
                     Ok(()) => emit(json!({ "type": "result", "ok": true, "data": null })),
@@ -353,6 +353,10 @@ pub fn run() {
         .manage(AppState { stop_service_on_quit: AtomicBool::new(true), ..Default::default() })
         .on_window_event(|window, event| {
             use tauri::Manager;
+            // The viewer shown inside the app's window follows it.
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_)) {
+                viewer::follow_main(window.app_handle());
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.state::<AppState>().close_to_tray.load(Ordering::Relaxed) {
                     api.prevent_close();
@@ -364,7 +368,7 @@ pub fn run() {
             prompt::start(app.handle().clone());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![ps, job, prompt::admin_prompts, prompt::admin_prompt_answered, viewer::viewer_send, viewer::viewer_is_open, overlay::viewer_panel_close, overlay::viewer_panel_vm, open_console, repair_service, relaunch_as_admin, service_status, start_service, stop_service, set_service_mode, set_service_startup, set_close_to_tray, set_stop_vms_on_quit, set_language])
+        .invoke_handler(tauri::generate_handler![ps, job, prompt::admin_prompts, prompt::admin_prompt_answered, viewer::viewer_send, viewer::viewer_is_open, viewer::viewer_home, viewer::viewer_show, viewer::viewer_list, overlay::viewer_panel_close, overlay::viewer_panel_vm, open_console, repair_service, relaunch_as_admin, service_status, start_service, stop_service, set_service_mode, set_service_startup, set_close_to_tray, set_stop_vms_on_quit, set_language])
         .build(tauri::generate_context!())
         .expect("failed to start GpuVM")
         .run(|app, event| {

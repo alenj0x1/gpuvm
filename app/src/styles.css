@@ -1340,3 +1340,33 @@ html.viewer-panel-window body::after { display: none; }
 .viewer-panel .game-tile-art { aspect-ratio: auto; flex: 1; min-height: 0; }
 .viewer-panel .game-tile-row { padding: 8px 10px; }
 .viewer-panel .game-gallery, .viewer-panel .game-gallery-grid { min-height: 0; }
+
+/* A machine opening or shown inside the app (ViewerStage.tsx): no sidebar; the cube comes from the right to the
+   center with the steps; once live, GpuVM's viewer covers everything below the title bar. */
+.app.viewing { grid-template-columns: auto minmax(0, 1fr); background: var(--bg); }
+.app.viewing .titlebar-side, .app.viewing .titlebar-main { background: var(--bg); }
+.app.viewing .viewer-stage { grid-column: 1 / -1; }
+.app.viewing .titlebar-side { display: flex; align-items: center; gap: 10px; padding: 0 12px 0 8px; }
+.titlebar-back { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: var(--r); color: var(--muted); font-size: 13px; font-weight: 500; }
+.titlebar-back:hover:not(:disabled) { background: var(--hover); color: var(--text); }
+.titlebar-back:disabled { opacity: 0.4; }
+.titlebar-machine { display: inline-flex; align-items: center; gap: 8px; color: var(--text); font-size: 13px; font-weight: 500; pointer-events: none; }
+.viewer-stage { position: relative; flex: 1; min-height: 0; background: var(--bg); overflow: hidden; }
+.viewer-stage-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; }
+.viewer-stage-cube { width: min(46vh, 420px); aspect-ratio: 1; animation: viewer-cube-in 700ms cubic-bezier(.2, .8, .2, 1) both; }
+.viewer-stage-cube > * { width: 100%; height: 100%; }
+@keyframes viewer-cube-in { from { transform: translateX(32vw) scale(.8); opacity: .6; } to { transform: none; opacity: 1; } }
+.viewer-stage-steps { display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; animation: viewer-steps-in 400ms 350ms ease-out both; }
+@keyframes viewer-steps-in { from { opacity: 0; transform: translateY(6px); } }
+.viewer-stage-bar { width: 180px; height: 3px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.viewer-stage-bar i { display: block; width: 40%; height: 100%; border-radius: 2px; background: var(--accent); animation: viewer-bar 1.4s ease-in-out infinite; }
+@keyframes viewer-bar { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+.viewer-stage.live { background: #161616; }
+/* Between 1100 and 1300 px the pending items go under the row: Home scrolls (as below 1100 px) instead of squeezing
+   the machine cards or the stage until their texts are cut. */
+@media (min-width: 1101px) and (max-width: 1300px) {
+  .main.home:has(.home-row.with-attention) { overflow-y: auto; scrollbar-width: none; }
+  .main.home:has(.home-row.with-attention) > * { flex-shrink: 0; }
+  .home-row.with-attention { height: auto; grid-template-rows: var(--row-h, 220px) auto; row-gap: 16px; }
+  .home-row.with-attention > .home-split-col:has(+ .home-attention) { display: none; }
+}

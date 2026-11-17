@@ -824,11 +824,15 @@ function Register-MoonlightPairing {
         [Parameter(Mandatory)][string]$ClientName,
         # The host's IP on the VM's network: the pairing request must come from it.
         [Parameter(Mandatory)][string]$HostAddress,
-        [int]$TimeoutSec = 60
+        [int]$TimeoutSec = 60,
+        # GpuVM's viewer pairs without showing any window.
+        [switch]$Quiet
     )
     $pin = '{0:D4}' -f [Security.Cryptography.RandomNumberGenerator]::GetInt32(0, 10000)
-    Write-Step "Emparejando Moonlight con Sunshine en $Address"
-    $task = Start-UnelevatedProcess -FilePath $MoonlightPath -ArgumentList 'pair', $Address, '--pin', $pin -KeepTask
+    Write-Step "Emparejando con Sunshine en $Address"
+    $pairArguments = @('pair', $Address, '--pin', $pin)
+    if ($Quiet) { $pairArguments += '--gpuvm-quiet' }
+    $task = Start-UnelevatedProcess -FilePath $MoonlightPath -ArgumentList $pairArguments -KeepTask
     try {
         $deadline = (Get-Date).AddSeconds($TimeoutSec)
         $submitted = $false

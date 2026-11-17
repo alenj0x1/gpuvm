@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { MachineCube, type CubeMachine } from "./MachineCube";
 import { IconAppWindow, IconBrandWindows, IconDeviceDesktop, IconExternalLink, IconPalette, IconServer, IconHandStop, IconLayoutBottombarCollapse, IconMoon, IconPlayerPlay, IconPlayerStop, IconPlugConnected, IconPlugConnectedX, IconPower, IconSun } from "@tabler/icons-react";
 import { service, type ServiceStatus } from "./api";
-import { ACCENTS, savePrefs, usePrefs, type ClosePref, type ServicePref, type ThemePref, type VmsOnQuitPref } from "./prefs";
+import { ACCENTS, savePrefs, usePrefs, type ClosePref, type ServicePref, type ThemePref, type ViewerHomePref, type VmsOnQuitPref } from "./prefs";
 import { Segmented, humanError } from "./ui";
 import { t, type LangPref } from "./i18n";
 import { MonitorPicker, useMonitors } from "./pickers";
@@ -178,6 +178,13 @@ export function Preferences() {
               <Segmented<ClosePref> value={prefs.close} onChange={(close) => savePrefs({ close })} options={[
                 { value: "quit", label: <><IconPower size={15} />{t("Salir por completo")}</> },
                 { value: "tray", label: <><IconLayoutBottombarCollapse size={15} />{t("Quedarse en la bandeja")}</> },
+              ]} />
+            </div>
+            <div className="pref-row">
+              <div className="pref-text"><strong>{t("Al volver a Inicio desde una máquina")}</strong><span>{t("Conectada, vuelves a su imagen al instante. Mientras tanto usa un poco de la GPU de este equipo.")}</span></div>
+              <Segmented<ViewerHomePref> value={prefs.viewerHome} onChange={(viewerHome) => savePrefs({ viewerHome })} options={[
+                { value: "keep", label: <><IconPlugConnected size={15} />{t("Mantenerla conectada")}</> },
+                { value: "disconnect", label: <><IconPlugConnectedX size={15} />{t("Desconectarla")}</> },
               ]} />
             </div>
             <div className="pref-row">

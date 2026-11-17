@@ -6,7 +6,8 @@ import { t } from "./i18n";
 // Custom title bar: the Windows 10 one takes the system accent color instead of the app theme's.
 // It spans the same columns as the sidebar and the content, so each part keeps its own color.
 /** Only the window's own controls: Biblioteca and Ajustes live in the sidebar, the theme in Ajustes. */
-export function TitleBar() {
+/** The app's own title bar. `children` go on the left (the viewer's Home button and machine name). */
+export function TitleBar({ children }: { children?: React.ReactNode } = {}) {
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
@@ -36,7 +37,7 @@ export function TitleBar() {
 
   return (
     <div className="titlebar">
-      <div className="titlebar-side" data-tauri-drag-region />
+      <div className="titlebar-side" data-tauri-drag-region>{children}</div>
       <div className="titlebar-main" data-tauri-drag-region>
         <div className="win-controls">
           <button aria-label={t("Minimizar")} onClick={() => act("minimize")}><IconMinus size={16} /></button>
