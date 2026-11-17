@@ -71,7 +71,7 @@ fn panel_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
 }
 
 /// Puts the panel over the right edge of the viewer's picture area.
-fn place(window: &tauri::WebviewWindow, viewer: isize) -> Option<(i32, i32)> {
+fn place(window: &tauri::WebviewWindow, viewer: isize) -> Option<(i32, i32, f64)> {
     let (x, y, w, h, scale) = client_rect(viewer)?;
     let logical = WIDTH.load(std::sync::atomic::Ordering::Relaxed) as f64;
     let width = ((logical * scale).round() as i32).min(w / 2);
@@ -81,7 +81,7 @@ fn place(window: &tauri::WebviewWindow, viewer: isize) -> Option<(i32, i32)> {
         // SAFETY: makes the viewer the panel's owner window, so the panel stays just above it.
         unsafe { SetWindowLongPtrW(own.0 as HWND, GWLP_HWNDPARENT, viewer) };
     }
-    Some((width, w))
+    Some((width, w, scale))
 }
 
 fn bring_to_front(hwnd: isize) {
@@ -96,7 +96,7 @@ fn bring_to_front(hwnd: isize) {
 pub fn open(app: &AppHandle, vm: &str) {
     let Some(viewer) = crate::viewer::viewer_hwnd(vm) else { return };
     let Some(window) = panel_window(app) else { return };
-    let Some((width, total)) = place(&window, viewer) else { return };
+    let Some((width, total, _)) = place(&window, viewer) else { return };
     {
         let mut p = panel();
         p.vm = Some(vm.to_string());
@@ -156,7 +156,7 @@ pub fn on_viewer(app: &AppHandle, vm: &str, msg: &Value) {
             if p.open && p.vm.as_deref() == Some(vm) {
                 drop(p);
                 if let (Some(viewer), Some(window)) = (crate::viewer::viewer_hwnd(vm), app.get_webview_window(LABEL)) {
-                    if let Some((width, total)) = place(&window, viewer) {
+                    if let Some((width, total, _)) = place(&window, viewer) {
                         let _ = crate::viewer::viewer_send(vm.to_string(), json!({ "type": "inset", "fraction": width as f64 / total as f64, "durationMs": 0 }));
                     }
                 }
@@ -185,8 +185,10 @@ pub fn viewer_panel_resize(app: AppHandle, width: u32) -> u32 {
     let vm = { let p = panel(); if p.open { p.vm.clone() } else { None } };
     if let Some(vm) = vm {
         if let (Some(viewer), Some(window)) = (crate::viewer::viewer_hwnd(&vm), app.get_webview_window(LABEL)) {
-            if let Some((w, total)) = place(&window, viewer) {
+            if let Some((w, total, scale)) = place(&window, viewer) {
                 let _ = crate::viewer::viewer_send(vm, json!({ "type": "inset", "fraction": w as f64 / total as f64, "durationMs": 0 }));
+                // The width it really has (at most half the viewer) is the one to remember.
+                return ((w as f64 / scale).round() as u32).min(width);
             }
         }
     }

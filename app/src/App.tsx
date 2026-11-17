@@ -21,7 +21,7 @@ import { VmView, type JobInfo } from "./VmView";
 import { CreateDialog } from "./CreateDialog";
 import { TitleBar } from "./TitleBar";
 import { ViewerStage, ZOOM_MS, type ViewerPhase } from "./ViewerStage";
-import { leaveViewer, openViewers, showViewer } from "./viewerStore";
+import { leaveViewer, showViewer } from "./viewerStore";
 import { Toasts, humanError, stateText, useToasts, useScrollFade } from "./ui";
 import { t, translateModule } from "./i18n";
 
@@ -223,15 +223,15 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
 
   const startJob = useCallback((vm: string, cmd: string, args: Record<string, unknown>, after?: () => void, failed?: () => void) => {
     if (cmd === "Connect-GpuVM") {
-      // Still connected from before (the person went to Home): straight into its picture.
-      const already = openViewers().find((o) => o.vm === vm);
-      if (already && !args.Pair && !staleViewer.current.delete(vm)) {
-        // It closed on its own (or was closed): open it again from the start, with its steps before the zoom.
+      // Still connected from before (the person went to Home): straight into its picture. The viewer itself is asked
+      // (not a list kept here), so the zoom only plays when the picture is really there; otherwise it opens from the
+      // start, with its steps before the zoom.
+      const fresh = staleViewer.current.delete(vm);
+      if (inTauri && !args.Pair && !fresh) {
         const reopen = () => {
           staleViewer.current.add(vm);
           startJobRef.current?.(vm, cmd, args, after, failed);
         };
-        // Asked first, so the zoom only plays when the picture is really there.
         import("@tauri-apps/api/core")
           .then(({ invoke }) => invoke<boolean>("viewer_is_open", { vm }))
           .catch(() => false)
@@ -244,7 +244,8 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       setViewing({ vm, phase: "opening" });
       const done = after, fail = failed;
       after = () => {
-        enterMachine(vm, () => import("@tauri-apps/api/core").then(({ invoke }) => invoke("viewer_reveal", { vm })));
+        enterMachine(vm, () => import("@tauri-apps/api/core").then(({ invoke }) => invoke("viewer_reveal", { vm })),
+          () => push("error", translateModule("El visor se cerró antes de mostrar la imagen.")));
         done?.();
       };
       failed = () => { setViewing((v) => (v?.vm === vm ? null : v)); fail?.(); };

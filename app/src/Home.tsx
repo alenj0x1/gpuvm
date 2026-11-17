@@ -208,7 +208,7 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
         <div className="card home-stage">
           <div className="home-space">
             <SpaceWithGames decorOf={hero.name} world={space.ambient} machines={vms.filter((v) => v.managed).map((v) => v.name)}>
-              <MachineCube key="home" ambient={space.ambient} time={space.time} spaceName={space.name} spin={spins.current.n} machine={cubeOf(hero, heroApps)} name={hero.name} others={others.map((v) => ({ name: v.name, machine: cubeOf(v) }))} />
+              <MachineCube key="home" travel ambient={space.ambient} time={space.time} spaceName={space.name} spin={spins.current.n} machine={cubeOf(hero, heroApps)} name={hero.name} others={others.map((v) => ({ name: v.name, machine: cubeOf(v) }))} />
             </SpaceWithGames>
             <SpaceBar spaces={spaces} space={space} onEdit={setEditing} />
           </div>

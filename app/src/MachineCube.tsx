@@ -226,7 +226,7 @@ export interface CubeEdit {
   write?: (d: Decor) => void;
 }
 
-export function MachineCube({ machine, name = "", others = [], className, perPart = false, decorOf, edit, decorShown, spin = 0, ambient: ambientIn = "studio", spaceName, time }: {
+export function MachineCube({ machine, name = "", others = [], className, perPart = false, decorOf, edit, decorShown, spin = 0, ambient: ambientIn = "studio", spaceName, time, travel = false }: {
   /** The time of day of the world (blocks). */
   time?: AmbientTime;
   /** The place where the machines float (the space's ambient); changing it fades from one to the other. */
@@ -242,6 +242,9 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
   /** Each time it changes, the cube turns once quickly while the hologram rebuilds (a new decoration arriving). */
   spin?: number;
   edit?: CubeEdit;
+  /** The same machine's cube on Home and on its page: it flies from one to the other when the page changes. Other
+   *  cubes (the opening stage, dialogs) keep their own entrance. */
+  travel?: boolean;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const owner = decorOf ?? name;
@@ -312,7 +315,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
     const before = lastSpace;
     const swap = { from: -1, t: 1, started: false, yaw: START_YAW };
     // The same machine's cube was on screen a moment ago somewhere else: start from there.
-    const came = lastCube.get(decorRef.current.owner);
+    const came = travel ? lastCube.get(decorRef.current.owner) : undefined;
     const arrive = came && came.canvas !== cv && performance.now() - came.t < 1500 && !reduced
       ? { ...came, k: 0, t0: performance.now(), box: cv.getBoundingClientRect(), style: cv.getAttribute("style") } : null;
     // On its way it flies over the whole window (its own box would cut it), with only the cube drawn; at its place the
@@ -1304,7 +1307,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
           scene.k = 0;
         }
       } else if (landed < 1) landed = Math.min(1, landed + dt / 0.45);
-      if (decorRef.current.owner && !flying) lastCube.set(decorRef.current.owner, { x: rect.left + CX, y: rect.top + CY, s: Sz, t: performance.now(), canvas: cv });
+      if (travel && decorRef.current.owner && !flying) lastCube.set(decorRef.current.owner, { x: rect.left + CX, y: rect.top + CY, s: Sz, t: performance.now(), canvas: cv });
       cyw = Math.cos(view.yaw); syw = Math.sin(view.yaw); cpt = Math.cos(view.pitch); spt = Math.sin(view.pitch);
       under = vis(0, -1, 0);
       // The place around the machines, drawn with the same camera; a new one fades in over the last.

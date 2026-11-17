@@ -256,7 +256,7 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
               ))}
             </div>
           )}
-          <MachineCube key={vm.name} machine={{
+          <MachineCube key={vm.name} travel machine={{
             power: running ? "on" : vm.state === "Starting" || vm.state === "Stopping" ? "starting" : "off",
             cores: preview.cpu ?? vm.options.cpu,
             memoryGB: preview.memoryGB ?? vm.options.memoryGB,

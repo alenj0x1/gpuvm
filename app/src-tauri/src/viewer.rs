@@ -53,6 +53,9 @@ struct Viewer {
     embed: bool,
     /// Shown over the app (false while waiting for the first picture or while the person is in Home).
     visible: std::sync::atomic::AtomicBool,
+    /// Its picture was revealed once: the late reveal after the first picture must not bring back a viewer the
+    /// person already left for Home.
+    revealed: std::sync::atomic::AtomicBool,
     /// The machine opens full screen (its "Pantalla completa" option): it still starts inside the app, hidden, and
     /// goes full screen when revealed.
     full_screen: bool,
@@ -79,13 +82,34 @@ fn content_rect(app: &AppHandle) -> Option<(isize, i32, i32, i32, i32)> {
     Some((hwnd, pos.x, pos.y + top, size.width as i32, height))
 }
 
-/// The app's window moved or changed size: the viewers shown inside it follow.
+/// Latest place for the viewers inside the app, and whether a thread is sending it.
+static FOLLOW: Mutex<Option<(i32, i32, i32, i32)>> = Mutex::new(None);
+static FOLLOWING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The app's window moved or changed size: the viewers shown inside it follow. Called on the UI thread for every
+/// move, so the pipe writes happen on a worker that always sends the latest place (a busy viewer never freezes
+/// the window's drag).
 pub fn follow_main(app: &AppHandle) {
     let Some((_, x, y, w, h)) = content_rect(app) else { return };
-    let list: Vec<Arc<Viewer>> = viewers().as_ref().map(|v| v.values().cloned().collect()).unwrap_or_default();
-    for viewer in list.iter().filter(|v| v.embed) {
-        send_raw(viewer, &json!({ "type": "place", "x": x, "y": y, "w": w, "h": h }));
+    *FOLLOW.lock().unwrap_or_else(|e| e.into_inner()) = Some((x, y, w, h));
+    if FOLLOWING.swap(true, Ordering::AcqRel) {
+        return;
     }
+    std::thread::spawn(|| loop {
+        let next = FOLLOW.lock().unwrap_or_else(|e| e.into_inner()).take();
+        let Some((x, y, w, h)) = next else {
+            FOLLOWING.store(false, Ordering::Release);
+            // A place stored between the take and the flag: send it too.
+            if FOLLOW.lock().unwrap_or_else(|e| e.into_inner()).is_some() && !FOLLOWING.swap(true, Ordering::AcqRel) {
+                continue;
+            }
+            return;
+        };
+        let list: Vec<Arc<Viewer>> = viewers().as_ref().map(|v| v.values().cloned().collect()).unwrap_or_default();
+        for viewer in list.iter().filter(|v| v.embed) {
+            send_raw(viewer, &json!({ "type": "place", "x": x, "y": y, "w": w, "h": h }));
+        }
+    });
 }
 
 fn allow_foreground(pid: u32) {
@@ -309,7 +333,7 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
     }
     drop(token);
 
-    let viewer = Arc::new(Viewer { pipe, pid, write: Mutex::new(()), hwnd: AtomicIsize::new(0), embed, visible: std::sync::atomic::AtomicBool::new(!embed), full_screen });
+    let viewer = Arc::new(Viewer { pipe, pid, write: Mutex::new(()), hwnd: AtomicIsize::new(0), embed, visible: std::sync::atomic::AtomicBool::new(!embed), revealed: std::sync::atomic::AtomicBool::new(!embed), full_screen });
     viewers().get_or_insert_with(HashMap::new).insert(vm.clone(), viewer.clone());
     let _ = app.emit("viewer", json!({ "vm": vm, "msg": { "type": "opened", "pid": pid } }));
 
@@ -336,7 +360,7 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
                 let late = viewer.clone();
                 std::thread::spawn(move || {
                     std::thread::sleep(Duration::from_millis(2000));
-                    if !late.visible.load(Ordering::Relaxed) {
+                    if !late.revealed.load(Ordering::Relaxed) {
                         reveal(&late);
                     }
                 });
@@ -462,6 +486,7 @@ pub fn allow_viewer_foreground(vm: &str) {
 
 fn reveal(viewer: &Viewer) {
     viewer.visible.store(true, Ordering::Relaxed);
+    viewer.revealed.store(true, Ordering::Relaxed);
     allow_foreground(viewer.pid);
     send_raw(viewer, &json!({ "type": "reveal", "fullscreen": viewer.full_screen }));
 }
@@ -496,8 +521,12 @@ pub fn viewer_show(app: AppHandle, vm: String) -> Result<(), String> {
         }
     }
     allow_foreground(viewer.pid);
+    if !send_raw(&viewer, &json!({ "type": "show" })) {
+        return Err("El visor no respondió.".into());
+    }
     viewer.visible.store(true, Ordering::Relaxed);
-    if send_raw(&viewer, &json!({ "type": "show" })) { Ok(()) } else { Err("El visor no respondió.".into()) }
+    viewer.revealed.store(true, Ordering::Relaxed);
+    Ok(())
 }
 
 /// Machines whose viewer is open (connected), and whether each is inside the app's window.

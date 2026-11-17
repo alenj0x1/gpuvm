@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { IconCheck, IconLayoutGrid, IconPlus, IconX } from "@tabler/icons-react";
 import { api, inTauri } from "./api";
 import type { VmOverview } from "./types";
@@ -35,6 +35,8 @@ const send = (vm: string, msg: Record<string, unknown>) => invoke("viewer_send",
  *  the shelf with the machines' figures, games for the waits and, if turned on, the weather. */
 export function ViewerPanel() {
   const [vm, setVm] = useState<string>(() => new URLSearchParams(location.search).get("vm") ?? "");
+  const vmRef = useRef(vm);
+  vmRef.current = vm;
   const [open, setOpen] = useState(!inTauri);
   const [vms, setVms] = useState<VmOverview[]>([]);
   const [stats, setStats] = useState<ViewerStats | null>(null);
@@ -57,6 +59,8 @@ export function ViewerPanel() {
     const offs = [
       listen<{ open: boolean; vm: string }>("viewer-panel", (p) => { setVm(p.vm); setOpen(p.open); if (!p.open) setEdit(false); }),
       listen<{ vm: string; msg: Record<string, unknown> & { type: string } }>("viewer", (p) => {
+        // Another machine may stay connected in the background: only this one's numbers.
+        if (p.vm !== vmRef.current) return;
         if (p.msg.type === "stats") onStats(p.msg as unknown as ViewerStats);
         if (p.msg.type === "window") setFullScreen(!!p.msg.fullScreen);
       }),
@@ -108,10 +112,12 @@ export function ViewerPanel() {
     const up = () => {
       target.removeEventListener("pointermove", move);
       target.removeEventListener("pointerup", up);
+      target.removeEventListener("pointercancel", up);
       invoke<number>("viewer_panel_resize", { width: last }).then((w) => { try { localStorage.setItem(WIDTH_KEY, String(w ?? last)); } catch { /* no storage */ } });
     };
     target.addEventListener("pointermove", move);
     target.addEventListener("pointerup", up);
+    target.addEventListener("pointercancel", up);
   };
   const goHome = async () => {
     const { emitTo } = await import("@tauri-apps/api/event");
