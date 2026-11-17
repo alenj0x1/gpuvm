@@ -1,17 +1,20 @@
-import { useEffect, useMemo, useState } from "react";
-import { IconAdjustments, IconArrowsMaximize, IconArrowsMinimize, IconChartLine, IconDeviceDesktop, IconDeviceGamepad2, IconHome, IconPlayerStop, IconX } from "@tabler/icons-react";
+import { useEffect, useState } from "react";
+import { IconCheck, IconLayoutGrid, IconPlus, IconX } from "@tabler/icons-react";
 import { api, inTauri } from "./api";
 import type { VmOverview } from "./types";
-import { GameGallery, GameStage } from "./GameStage";
+import { GameStage } from "./GameStage";
 import { useDecor } from "./decor/store";
 import type { GameDef } from "./games";
 import { MachineIcon } from "./machineIcon";
+import { refreshPrefs } from "./prefs";
 import { t } from "./i18n";
 import { humanError } from "./ui";
+import {
+  ActionsWidget, ClockWidget, GamesWidget, MachinesWidget, ShelfWidget, StatsWidget, WeatherWidget, WidgetBoard, WidgetTray,
+  defaultWidgets, forgetWeather, loadWidgets, newWidget, saveWidgets, type ViewerStats, type WidgetItem,
+} from "./ViewerWidgets";
 
-type Tab = "machines" | "games" | "picture";
 const WIDTH_KEY = "gpuvm.viewerPanelWidth";
-interface Stats { receivedFps: number; renderedFps: number; networkDropPercent: number; decodeMs: number; renderMs: number; hostLatencyMs: number; networkLatencyMs: number }
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T | null> {
   if (!inTauri) return null;
@@ -27,28 +30,48 @@ async function listen<T>(event: string, handler: (payload: T) => void): Promise<
 
 const send = (vm: string, msg: Record<string, unknown>) => invoke("viewer_send", { vm, msg }).catch(() => {});
 
-/** The panel beside GpuVM's viewer: it slides in from the right while the picture moves aside. Machines (switch
- *  without leaving the viewer), games for the waits, and the picture's numbers and actions. */
+/** The panel beside GpuVM's viewer: it slides in from the right while the picture moves aside. A board of widgets
+ *  the person arranges (ViewerWidgets.tsx): machines to switch to, the usual actions, the picture's numbers, the time,
+ *  the shelf with the machines' figures, games for the waits and, if turned on, the weather. */
 export function ViewerPanel() {
   const [vm, setVm] = useState<string>(() => new URLSearchParams(location.search).get("vm") ?? "");
   const [open, setOpen] = useState(!inTauri);
-  const [tab, setTab] = useState<Tab>("machines");
   const [vms, setVms] = useState<VmOverview[]>([]);
-  const [stats, setStats] = useState<Stats | null>(null);
+  const [stats, setStats] = useState<ViewerStats | null>(null);
+  const [history, setHistory] = useState<number[]>([]);
   const [overlay, setOverlay] = useState(false);
   const [fullScreen, setFullScreen] = useState(false);
   const [error, setError] = useState("");
+  const [items, setItems] = useState<WidgetItem[]>(loadWidgets);
+  const [edit, setEdit] = useState(false);
+  const [game, setGame] = useState<GameDef | null>(null);
+  const decor = useDecor(vm);
+
+  const onStats = (s: ViewerStats) => {
+    setStats(s);
+    setHistory((h) => [...h.slice(-39), s.renderedFps]);
+  };
 
   useEffect(() => {
     invoke<string | null>("viewer_panel_vm").then((v) => { if (v) { setVm(v); setOpen(true); } });
     const offs = [
-      listen<{ open: boolean; vm: string }>("viewer-panel", (p) => { setVm(p.vm); setOpen(p.open); }),
+      listen<{ open: boolean; vm: string }>("viewer-panel", (p) => { setVm(p.vm); setOpen(p.open); if (!p.open) setEdit(false); }),
       listen<{ vm: string; msg: Record<string, unknown> & { type: string } }>("viewer", (p) => {
-        if (p.msg.type === "stats") setStats(p.msg as unknown as Stats);
+        if (p.msg.type === "stats") onStats(p.msg as unknown as ViewerStats);
         if (p.msg.type === "window") setFullScreen(!!p.msg.fullScreen);
       }),
     ];
     return () => { offs.forEach((o) => o.then((f) => f())); };
+  }, []);
+
+  // The panel lives on hidden between uses: each time it opens it takes the theme and accent chosen meanwhile.
+  useEffect(() => { if (open) refreshPrefs(); }, [open]);
+
+  // In the browser preview there is no viewer: made-up numbers so the widget can be seen working.
+  useEffect(() => {
+    if (inTauri) return;
+    const timer = setInterval(() => onStats({ receivedFps: 60, renderedFps: 57 + Math.random() * 3 - (Math.random() < 0.08 ? 8 : 0), networkDropPercent: 0, decodeMs: 1.2, renderMs: 0.4, hostLatencyMs: 4 + Math.random(), networkLatencyMs: 1.5 + Math.random() * 0.6 }), 1000);
+    return () => clearInterval(timer);
   }, []);
 
   // The machine list while the panel is open; nothing runs while it is hidden.
@@ -60,6 +83,13 @@ export function ViewerPanel() {
     const timer = setInterval(load, 4000);
     return () => { alive = false; clearInterval(timer); };
   }, [open]);
+
+  const change = (next: WidgetItem[]) => {
+    setItems(next);
+    saveWidgets(next);
+    // Taking the weather off forgets its city too.
+    if (!next.some((x) => x.type === "weather")) forgetWeather();
+  };
 
   // The panel's width: dragged from its left edge, within limits (overlay.rs), remembered.
   useEffect(() => {
@@ -89,10 +119,15 @@ export function ViewerPanel() {
   };
 
   useEffect(() => {
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape") invoke("viewer_panel_close"); };
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (game) return;
+      if (edit) { setEdit(false); return; }
+      invoke("viewer_panel_close");
+    };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, []);
+  }, [game, edit]);
 
   const switchTo = async (name: string) => {
     setError("");
@@ -103,100 +138,55 @@ export function ViewerPanel() {
     } catch (e) { setError(humanError(e)); }
   };
 
-  const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: "machines", label: t("Máquinas"), icon: <IconDeviceDesktop size={15} /> },
-    { id: "games", label: t("Juegos"), icon: <IconDeviceGamepad2 size={15} /> },
-    { id: "picture", label: t("Imagen"), icon: <IconAdjustments size={15} /> },
-  ];
-
   return (
     <aside className={`viewer-panel${open ? " open" : ""}`} aria-label={t("Panel del visor")}>
       <div className="viewer-panel-edge" onPointerDown={startResize} onDoubleClick={() => { invoke("viewer_panel_resize", { width: 340 }); try { localStorage.removeItem(WIDTH_KEY); } catch { /* no storage */ } }} aria-hidden="true" />
       <div className="viewer-panel-top">
-        <button className="titlebar-back" onClick={goHome}><IconHome size={15} />{t("Inicio")}</button>
-        <span className="viewer-panel-machine"><MachineIcon name={vm} size={20} radius={6} />{vm}</span>
-        <button className="icon-btn" aria-label={t("Cerrar")} title={t("Cerrar")} onClick={() => invoke("viewer_panel_close")}><IconX size={16} /></button>
+        <span className="viewer-panel-machine"><MachineIcon name={vm} size={20} radius={6} /><span>{vm}</span></span>
+        {!game && (
+          <button type="button" className={`vp-edit${edit ? " on" : ""}`} onClick={() => setEdit(!edit)}>
+            {edit ? <><IconCheck size={15} />{t("Listo")}</> : <><IconLayoutGrid size={15} />{t("Editar")}</>}
+          </button>
+        )}
+        <button type="button" className="icon-btn" aria-label={t("Cerrar")} title={t("Cerrar")} onClick={() => invoke("viewer_panel_close")}><IconX size={16} /></button>
       </div>
-      <header className="viewer-panel-head">
-        <div className="viewer-panel-tabs" role="tablist">
-          {tabs.map((x) => (
-            <button key={x.id} role="tab" aria-selected={tab === x.id} className={tab === x.id ? "on" : ""} onClick={() => setTab(x.id)}>
-              {x.icon}{x.label}
-            </button>
-          ))}
-        </div>
-      </header>
       <div className="viewer-panel-body">
-        {tab === "machines" && <Machines vms={vms} current={vm} onSwitch={switchTo} />}
-        {tab === "games" && <Games vm={vm} names={vms.map((v) => v.name)} />}
-        {tab === "picture" && (
-          <Picture stats={stats} overlay={overlay} fullScreen={fullScreen}
-            onFullscreen={() => send(vm, { type: "fullscreen" })}
-            onOverlay={() => { send(vm, { type: "stats", on: !overlay }); setOverlay(!overlay); }}
-            onDisconnect={() => { invoke("viewer_panel_close"); send(vm, { type: "quit" }); }} />
+        {game ? (
+          <div className="viewer-game"><GameStage game={game} machines={vms.filter((v) => v.streaming).map((v) => v.name)} first={vm} fallback={decor} onClose={() => setGame(null)} /></div>
+        ) : (
+          <>
+            {items.length === 0 && !edit ? (
+              <div className="vp-board-empty">
+                <span className="vp-empty-icon"><IconLayoutGrid size={20} /></span>
+                <strong>{t("Sin widgets")}</strong>
+                <span>{t("Elige lo que quieres tener a mano mientras usas la máquina.")}</span>
+                <button type="button" className="vp-chip" onClick={() => setEdit(true)}><IconPlus size={14} />{t("Agregar")}</button>
+              </div>
+            ) : (
+              <WidgetBoard items={items} onChange={change} edit={edit}>
+                {(it, size) => {
+                  switch (it.type) {
+                    case "machines": return <MachinesWidget vms={vms} current={vm} size={size} onSwitch={switchTo} />;
+                    case "actions": return (
+                      <ActionsWidget size={size} fullScreen={fullScreen} overlay={overlay} onHome={goHome}
+                        onFullscreen={() => send(vm, { type: "fullscreen" })}
+                        onOverlay={() => { send(vm, { type: "stats", on: !overlay }); setOverlay(!overlay); }}
+                        onDisconnect={() => { invoke("viewer_panel_close"); send(vm, { type: "quit" }); }} />
+                    );
+                    case "stats": return <StatsWidget stats={stats} history={history} size={size} />;
+                    case "clock": return <ClockWidget size={size} />;
+                    case "shelf": return <ShelfWidget vms={vms} size={size} />;
+                    case "games": return <GamesWidget size={size} player={vm} fallback={decor} onPlay={(g) => { setEdit(false); setGame(g); }} />;
+                    case "weather": return <WeatherWidget size={size} open={open} />;
+                  }
+                }}
+              </WidgetBoard>
+            )}
+            {edit && <WidgetTray items={items} onAdd={(type) => change([...items, newWidget(type, items)])} onReset={() => change(defaultWidgets())} />}
+          </>
         )}
         {error && <p className="viewer-panel-error">{error}</p>}
       </div>
     </aside>
-  );
-}
-
-function Machines({ vms, current, onSwitch }: { vms: VmOverview[]; current: string; onSwitch: (name: string) => void }) {
-  const list = useMemo(() => [...vms].filter((v) => v.streaming).sort((a, b) => (a.name === current ? -1 : b.name === current ? 1 : 0)), [vms, current]);
-  return (
-    <ul className="viewer-machines">
-      {list.map((v) => {
-        const here = v.name === current;
-        const on = v.state === "Running";
-        return (
-          <li key={v.name} className={here ? "here" : ""}>
-            <MachineIcon name={v.name} size={28} />
-            <div className="viewer-machine-text">
-              <span className="name">{v.name}</span>
-              <span className="sub">{here ? t("Viendo ahora") : on ? t("Encendida") : t("Apagada")}</span>
-            </div>
-            {!here && (
-              <button className="btn" disabled={!on && !v.fits} onClick={() => onSwitch(v.name)}>
-                {on ? t("Cambiar") : t("Encender")}
-              </button>
-            )}
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-function Games({ vm, names }: { vm: string; names: string[] }) {
-  const decor = useDecor(vm);
-  const [game, setGame] = useState<GameDef | null>(null);
-  if (game) return <div className="viewer-game"><GameStage game={game} machines={names} first={vm} fallback={decor} onClose={() => setGame(null)} /></div>;
-  return <div className="viewer-games"><GameGallery player={vm} fallback={decor} onPick={setGame} onClose={() => {}} /></div>;
-}
-
-function Picture({ stats, overlay, fullScreen, onFullscreen, onOverlay, onDisconnect }: {
-  stats: Stats | null; overlay: boolean; fullScreen: boolean; onFullscreen: () => void; onOverlay: () => void; onDisconnect: () => void;
-}) {
-  const ms = (n: number | undefined) => (n && n > 0 ? `${n.toFixed(1)} ms` : "—");
-  const rows: [string, string][] = [
-    [t("Cuadros por segundo"), stats ? `${Math.round(stats.renderedFps)}` : "—"],
-    [t("Red"), ms(stats?.networkLatencyMs)],
-    [t("Máquina"), ms(stats?.hostLatencyMs)],
-    [t("Decodificación"), ms(stats?.decodeMs)],
-    [t("Pérdidas de red"), stats ? `${stats.networkDropPercent.toFixed(1)} %` : "—"],
-  ];
-  return (
-    <>
-      <dl className="viewer-stats">
-        {rows.map(([k, v]) => (<div key={k}><dt>{k}</dt><dd>{v}</dd></div>))}
-      </dl>
-      <div className="viewer-actions">
-        <button className="btn" onClick={onFullscreen}>
-          {fullScreen ? <><IconArrowsMinimize size={16} />{t("Dentro de GpuVM")}</> : <><IconArrowsMaximize size={16} />{t("Pantalla completa")}</>}
-        </button>
-        <button className={`btn${overlay ? " on" : ""}`} onClick={onOverlay}><IconChartLine size={16} />{t("Datos sobre la imagen")}</button>
-        <button className="btn" onClick={onDisconnect}><IconPlayerStop size={16} />{t("Desconectar")}</button>
-      </div>
-    </>
   );
 }

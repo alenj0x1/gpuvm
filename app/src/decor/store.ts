@@ -121,6 +121,13 @@ export function renameDecor(from: string, to: string) {
   saveDecor(to, d);
 }
 
+// Another window of the app (the viewer's panel) sees a decoration changed in the main one.
+window.addEventListener("storage", (e) => {
+  if (!e.key?.startsWith(KEY)) return;
+  cache.delete(e.key.slice(KEY.length));
+  window.dispatchEvent(new Event(EVENT));
+});
+
 function subscribe(onChange: () => void) {
   window.addEventListener(EVENT, onChange);
   return () => window.removeEventListener(EVENT, onChange);
