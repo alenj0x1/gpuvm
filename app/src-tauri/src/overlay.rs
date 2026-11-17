@@ -84,6 +84,44 @@ fn place(window: &tauri::WebviewWindow, viewer: isize) -> Option<(i32, i32, f64)
     Some((width, w, scale))
 }
 
+/// Tells the taskbar the panel belongs to a full-screen picture, so it stays hidden while the panel has the focus
+/// (otherwise Windows shows the taskbar over the bottom of the stream). Off when the picture is inside the app.
+fn mark_full_screen(window: &tauri::WebviewWindow, on: bool) {
+    use windows_sys::core::GUID;
+    use windows_sys::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED};
+    #[repr(C)]
+    struct TaskbarList2Vtbl {
+        _query_interface: usize,
+        _add_ref: usize,
+        release: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32,
+        hr_init: unsafe extern "system" fn(*mut std::ffi::c_void) -> i32,
+        _add_tab: usize,
+        _delete_tab: usize,
+        _activate_tab: usize,
+        _set_active_alt: usize,
+        mark_fullscreen_window: unsafe extern "system" fn(*mut std::ffi::c_void, HWND, i32) -> i32,
+    }
+    const CLSID_TASKBAR_LIST: GUID = GUID::from_u128(0x56FDF344_FD6D_11d0_958A_006097C9A090);
+    const IID_ITASKBAR_LIST2: GUID = GUID::from_u128(0x602D4995_B13A_429b_A66E_1935E44F4317);
+    let Ok(own) = window.hwnd() else { return };
+    // SAFETY: COM is set up for this call and released; the object is used through ITaskbarList2's documented
+    // vtable order and released once.
+    unsafe {
+        let init = CoInitializeEx(std::ptr::null(), COINIT_APARTMENTTHREADED as u32);
+        let mut list: *mut std::ffi::c_void = std::ptr::null_mut();
+        if CoCreateInstance(&CLSID_TASKBAR_LIST, std::ptr::null_mut(), CLSCTX_INPROC_SERVER, &IID_ITASKBAR_LIST2, &mut list) == 0 && !list.is_null() {
+            let vtbl = &**(list as *mut *const TaskbarList2Vtbl);
+            if (vtbl.hr_init)(list) == 0 {
+                (vtbl.mark_fullscreen_window)(list, own.0 as HWND, on as i32);
+            }
+            (vtbl.release)(list);
+        }
+        if init >= 0 {
+            CoUninitialize();
+        }
+    }
+}
+
 fn bring_to_front(hwnd: isize) {
     #[link(name = "user32")]
     extern "system" {
@@ -105,6 +143,7 @@ pub fn open(app: &AppHandle, vm: &str) {
     let _ = crate::viewer::send_to(vm, &json!({ "type": "capture", "on": false }));
     let _ = crate::viewer::send_to(vm, &json!({ "type": "inset", "fraction": width as f64 / total as f64, "durationMs": SLIDE_MS }));
     let _ = window.show();
+    mark_full_screen(&window, crate::viewer::viewer_full_screen(vm));
     let _ = window.emit("viewer-panel", json!({ "open": true, "vm": vm }));
     if let Ok(own) = window.hwnd() {
         bring_to_front(own.0 as isize);
@@ -155,7 +194,9 @@ pub fn on_viewer(app: &AppHandle, vm: &str, msg: &Value) {
             let p = panel();
             if p.open && p.vm.as_deref() == Some(vm) {
                 drop(p);
+                let full = msg["fullScreen"].as_bool().unwrap_or(false);
                 if let (Some(viewer), Some(window)) = (crate::viewer::viewer_hwnd(vm), app.get_webview_window(LABEL)) {
+                    mark_full_screen(&window, full);
                     if let Some((width, total, _)) = place(&window, viewer) {
                         let _ = crate::viewer::send_to(vm, &json!({ "type": "inset", "fraction": width as f64 / total as f64, "durationMs": 0 }));
                     }

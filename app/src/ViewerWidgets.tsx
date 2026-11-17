@@ -138,6 +138,17 @@ export function WidgetBoard({ items, onChange, edit, children }: {
 
   const cols = width >= 416 ? 3 : 2;
   const cellW = (width - GAP * (cols - 1)) / cols;
+  // A layout arranged in a narrow panel (two columns) leaves the third one empty when the panel is widened: the first
+  // time it shows in three, the widgets fill it in their order (once; a layout that already uses the third column
+  // is kept as it is).
+  useEffect(() => {
+    if (cols !== 3) return;
+    const list = live.current;
+    if (!list.length || !list.every((it) => it.x + shownW(it, 2) <= 2)) return;
+    const order = [...list].sort((a, b) => a.y - b.y || a.x - b.x).map(({ x: _x, y: _y, ...rest }) => rest);
+    const flowed = settle(order, 3);
+    if (flowed.some((f) => { const o = list.find((x) => x.id === f.id)!; return o.x !== f.x || o.y !== f.y; })) onChange(flowed);
+  }, [cols]);
   const px = (c: Cell) => ({ x: c.x * (cellW + GAP), y: c.y * (ROW + GAP), w: c.w * cellW + (c.w - 1) * GAP, h: c.h * ROW + (c.h - 1) * GAP });
 
   // The layout as shown: with the dragged widget at the cell it asks for, or the resized one at its new size.

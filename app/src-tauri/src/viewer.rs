@@ -60,6 +60,8 @@ struct Viewer {
     revealed: std::sync::atomic::AtomicBool,
     /// The first picture arrived (a viewer that repeats it gets one late reveal, not one thread per message).
     first_frame: std::sync::atomic::AtomicBool,
+    /// Its window is full screen now (its last "window" report).
+    full_now: std::sync::atomic::AtomicBool,
     /// When the viewer last asked for the panel or Home: repeated asks closer than PANEL_GAP are dropped.
     last_toggle: Mutex<Option<Instant>>,
     /// The machine opens full screen (its "Pantalla completa" option): it still starts inside the app, hidden, and
@@ -346,7 +348,7 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
     }
     drop(token);
 
-    let viewer = Arc::new(Viewer { pipe, pid, write: Mutex::new(()), hwnd: AtomicIsize::new(0), embed, visible: std::sync::atomic::AtomicBool::new(!embed), revealed: std::sync::atomic::AtomicBool::new(!embed), first_frame: std::sync::atomic::AtomicBool::new(false), last_toggle: Mutex::new(None), full_screen });
+    let viewer = Arc::new(Viewer { pipe, pid, write: Mutex::new(()), hwnd: AtomicIsize::new(0), embed, visible: std::sync::atomic::AtomicBool::new(!embed), revealed: std::sync::atomic::AtomicBool::new(!embed), first_frame: std::sync::atomic::AtomicBool::new(false), full_now: std::sync::atomic::AtomicBool::new(false), last_toggle: Mutex::new(None), full_screen });
     viewers().get_or_insert_with(HashMap::new).insert(vm.clone(), viewer.clone());
     let _ = app.emit("viewer", json!({ "vm": vm, "msg": { "type": "opened", "pid": pid } }));
 
@@ -362,6 +364,7 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
                 // Only a window of the viewer's own process: the panel is owned by it and placed over it, so a
                 // handle of another program's window would put GpuVM's panel (and the focus) there.
                 viewer.hwnd.store(if window_of(hwnd, viewer.pid) { hwnd } else { 0 }, Ordering::Relaxed);
+                viewer.full_now.store(msg["fullScreen"].as_bool().unwrap_or(false), Ordering::Relaxed);
                 // The handle stays here: pages only need to know that it changed.
                 if let Some(o) = msg.as_object_mut() {
                     o.remove("hwnd");
@@ -511,6 +514,11 @@ pub fn send_to(vm: &str, msg: &Value) -> Result<(), String> {
 }
 
 /// The viewer's window, for placing the panel over it.
+/// Whether a machine's viewer is full screen now.
+pub fn viewer_full_screen(vm: &str) -> bool {
+    viewers().as_ref().and_then(|v| v.get(vm)).is_some_and(|v| v.full_now.load(Ordering::Relaxed))
+}
+
 pub fn viewer_hwnd(vm: &str) -> Option<isize> {
     let viewer = viewers().as_ref()?.get(vm).cloned()?;
     let hwnd = viewer.hwnd.load(Ordering::Relaxed);

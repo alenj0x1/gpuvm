@@ -2,12 +2,13 @@
 # watch the viewer's open/close transitions. Nothing here changes settings; it only captures and clicks.
 #   screen.ps1 shot  -Out x.png [-Scale 0.5]
 #   screen.ps1 click -X 100 -Y 200
+#   screen.ps1 drag  -X 100 -Y 200 -ToX 300 -ToY 200
 #   screen.ps1 keys  -Keys '^%+g'             (SendKeys syntax, to the foreground window)
 #   screen.ps1 film  -Out dir -Seconds 12 -Fps 12 [-Scale 0.4]
 #   screen.ps1 window                         (GpuVM's window rectangle)
 param(
-    [Parameter(Mandatory)][ValidateSet('shot', 'click', 'keys', 'film', 'window')][string]$Action,
-    [string]$Out, [double]$Scale = 0.5, [int]$X, [int]$Y, [string]$Keys, [int]$Seconds = 10, [int]$Fps = 10,
+    [Parameter(Mandatory)][ValidateSet('shot', 'click', 'keys', 'film', 'window', 'drag')][string]$Action,
+    [string]$Out, [double]$Scale = 0.5, [int]$X, [int]$Y, [int]$ToX, [int]$ToY, [string]$Keys, [int]$Seconds = 10, [int]$Fps = 10,
     # Which monitor to capture: its index in Screen.AllScreens (0 = the first one Windows lists).
     [int]$Monitor = -1
 )
@@ -61,6 +62,18 @@ switch ($Action) {
         "clicked $X,$Y"
     }
     'keys' { [System.Windows.Forms.SendKeys]::SendWait($Keys); "sent" }
+    'drag' {
+        # From X,Y to ToX,ToY in small steps, like a hand would (pages see pointermove events along the way).
+        [Lab.Native]::SetCursorPos($X, $Y) | Out-Null
+        Start-Sleep -Milliseconds 80
+        [Lab.Native]::mouse_event(0x2, 0, 0, 0, [UIntPtr]::Zero)
+        for ($i = 1; $i -le 20; $i++) {
+            [Lab.Native]::SetCursorPos([int]($X + ($ToX - $X) * $i / 20), [int]($Y + ($ToY - $Y) * $i / 20)) | Out-Null
+            Start-Sleep -Milliseconds 25
+        }
+        [Lab.Native]::mouse_event(0x4, 0, 0, 0, [UIntPtr]::Zero)
+        "dragged $X,$Y -> $ToX,$ToY"
+    }
     'window' {
         $p = Get-Process gpuvm -ErrorAction SilentlyContinue | Select-Object -First 1
         if (-not $p) { 'no window'; return }

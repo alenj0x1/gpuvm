@@ -1418,7 +1418,10 @@ html.viewer-panel-window body::after { display: none; }
 
 .vp-clock { display: flex; flex-direction: column; justify-content: center; padding: 0 14px; min-width: 0; }
 .vp-clock.tall { gap: 4px; }
-.vp-clock.tall strong { font-size: 46px; letter-spacing: -.03em; }
+/* The time shrinks to fit a one-column widget: four digits plus a. m./p. m. ("10:01 AM") went past its edge. */
+.vp-clock { container-type: inline-size; }
+.vp-time { white-space: nowrap; }
+.vp-clock.tall strong { font-size: min(46px, calc((100cqi - 30px) / 2.9)); letter-spacing: -.03em; }
 .vp-clock.tall small { font-size: 14px; }
 .vp-clock.tall > span:last-child { font-size: 13px; }
 .vp-time { display: flex; align-items: baseline; gap: 5px; white-space: nowrap; }

@@ -126,6 +126,17 @@ export function ViewerPanel() {
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
+      // The viewer's shortcuts also work while the panel has the focus: the same keys close it or go Home.
+      // By the key's position, its letter or its key code: input without a scan code (remote desktops, test
+      // tools) has no `code`.
+      const letter = e.code === "KeyG" || e.keyCode === 71 || e.key.toLowerCase() === "g" ? "g"
+        : e.code === "KeyH" || e.keyCode === 72 || e.key.toLowerCase() === "h" ? "h" : "";
+      if (e.ctrlKey && e.altKey && e.shiftKey && letter) {
+        e.preventDefault();
+        if (letter === "g") invoke("viewer_panel_close");
+        else goHome();
+        return;
+      }
       if (e.key !== "Escape" || e.defaultPrevented) return;
       if (game) return;
       if (edit) { setEdit(false); return; }
@@ -133,7 +144,7 @@ export function ViewerPanel() {
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [game, edit]);
+  }, [game, edit, vm]);
 
   const switchTo = async (name: string) => {
     setError("");

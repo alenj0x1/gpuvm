@@ -42,3 +42,22 @@ quickly enough for the app to show them.
 - A viewer killed from outside left the app showing a dark live screen on the next Open; build 9 falls back to a full
   open.
 - Build 10: full screen is set before the window comes out from behind the app: zoom, ~0.3 s of the dark stage, then the picture straight in full screen (15.6 s from the click); no frame inside the app.
+
+### Nov 17, 2026 (after the code and security reviews; installed silently with `install-build.ps1`, driven with `screen.ps1`)
+
+- The viewer now runs at Low integrity. First run: every connection failed with "Failed to import private key"
+  (NTE_PERM): Qt's Schannel backend imports the client key into the user's key store, which Low can't write. GpuVM
+  mode now uses Qt's OpenSSL backend (key in memory, `tls\qopensslbackend.dll` shipped). After that: full open of a
+  running win-gpu, picture full screen at ~22 s from the click (machine already on); embedding inside the app works at
+  Low (owner window, placement, reveal).
+- Return to a connected machine from Home: ~0.8 s, no steps (the viewer is asked first). Home from the panel: ~1.2 s.
+- The cube flies from Home to its place on the machine page in ~0.5 s.
+- Panel: Ctrl+Alt+Shift+G and H did nothing while the panel had the focus (only the viewer listened): the panel
+  handles them too. With the panel focused over a full-screen picture, Windows showed the taskbar over the stream: the
+  panel is marked full screen for the taskbar (ITaskbarList2::MarkFullscreenWindow) while the picture is.
+- Weather with the real network: search, temperature and forgetting the city on removal all work under the new CSP.
+- Widening the panel left the third column empty for a layout arranged in two: it now fills once. Lab 040 caught the
+  clock's "10:01 AM" going past a one-column widget (passed earlier at "8:13"); the time now shrinks to fit. Lab 040:
+  sizes 440/440, drags 140/140.
+- Open: after many installs that killed the viewer mid-stream, win-gpu's Sunshine stopped sending video ("No video
+  traffic was ever received", UDP port test OK). Not reproduced on a fresh host session yet.
