@@ -976,8 +976,10 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .profile-editor .dialog-body { margin-right: 0; padding-right: 4px; }
 .profile-editor-cube { border-radius: var(--r-lg); background: var(--surface-2); overflow: hidden; min-height: 0; }
 @media (max-width: 900px) { .profile-editor { grid-template-columns: minmax(0, 1fr); } .profile-editor-cube { display: none; } }
-.pref-section { animation: appear 0.22s cubic-bezier(0.3, 0.8, 0.3, 1) both; }
-@media (prefers-reduced-motion: reduce) { .pref-section { animation: none; } }
+/* Switching sections: the card stays put (no flash of the container), only what is inside it comes in. */
+.pref-section > * { animation: pref-in 0.2s cubic-bezier(0.3, 0.8, 0.3, 1) both; }
+@keyframes pref-in { from { opacity: 0; transform: translateY(4px); } }
+@media (prefers-reduced-motion: reduce) { .pref-section > * { animation: none; } }
 .storage .skeleton-text { display: inline-block; width: 54px; height: 10px; border-radius: 4px; background: var(--chart-grid); vertical-align: middle; }
 .storage.loading .storage-legend i { opacity: 0.4; }
 .profile-name-cut { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block !important; }

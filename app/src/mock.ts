@@ -289,7 +289,7 @@ export async function job(jobId: string, cmd: string, args: Record<string, unkno
     : cmd === "New-GpuVM" && args.Template ? [`Copia diferencial de ${args.Template}`, "Identidad propia: nombre de equipo y Sunshine", "Encendiendo", "Esperando a Windows"]
     : cmd === "New-GpuVM"
     ? ["Edición: Windows 10 Pro (es-MX)", "Leyendo archivos del driver", "Creando disco Fixed de 96 GB", "Aplicando la imagen de Windows", "Copiando el driver de la GPU al invitado", "Registrando la VM en Hyper-V"]
-    : ["Encendiendo", "Esperando a Windows", "Iniciando sesión en Windows", "Esperando a Sunshine", "Sunshine capturará la pantalla virtual", "Abriendo Desktop a 1920x1080 y 60 FPS"];
+    : ["Encendiendo", "Esperando a Windows", "Iniciando sesión en Windows", "Esperando a Sunshine", "Sunshine capturará la pantalla virtual (Virtual Display)", "Abriendo a 1920x1080 y 60 FPS", "Conectando la imagen"];
   for (const message of steps) {
     emit({ type: "progress", message });
     await wait(900);
