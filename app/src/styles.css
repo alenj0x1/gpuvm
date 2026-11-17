@@ -1372,3 +1372,43 @@ html.viewer-panel-window body::after { display: none; }
   .home-row.with-attention { height: auto; grid-template-rows: var(--row-h, 220px) auto; row-gap: 16px; }
   .home-row.with-attention > .home-split-col:has(+ .home-attention) { display: none; }
 }
+
+/* Into and out of the machine: the cube zooms in until it fills the view (the picture takes its place), and back. */
+.viewer-stage.entering .viewer-stage-cube { animation: viewer-zoom-in 560ms cubic-bezier(.6, 0, .2, 1) both; }
+.viewer-stage.entering .viewer-stage-steps { animation: viewer-steps-out 200ms ease-in both; }
+.viewer-stage.entering::after, .viewer-stage.leaving::after { content: ""; position: absolute; inset: 0; background: #161616; pointer-events: none; }
+.viewer-stage.entering::after { animation: viewer-dim-in 560ms cubic-bezier(.6, 0, .2, 1) both; }
+.viewer-stage.leaving::after { animation: viewer-dim-in 560ms cubic-bezier(.2, .8, .2, 1) reverse both; }
+.viewer-stage.leaving .viewer-stage-cube { animation: viewer-zoom-in 560ms cubic-bezier(.2, .8, .2, 1) reverse both; }
+.viewer-stage.leaving .viewer-stage-steps { display: none; }
+@keyframes viewer-zoom-in { from { transform: none; opacity: 1; } to { transform: scale(4.2); opacity: 0; } }
+@keyframes viewer-dim-in { 0%, 45% { opacity: 0; } to { opacity: 1; } }
+@keyframes viewer-steps-out { to { opacity: 0; transform: translateY(8px); } }
+
+/* The panel's top row (Home always at hand, also in full screen) and its draggable left edge. */
+.viewer-panel-top { display: flex; align-items: center; gap: 8px; padding: 10px 10px 2px 8px; }
+.viewer-panel-machine { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 8px; color: var(--text); font-size: 13px; font-weight: 500; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; justify-content: center; }
+.viewer-panel-head { padding-top: 6px; }
+.viewer-panel-edge { position: absolute; left: 0; top: 0; bottom: 0; width: 8px; cursor: ew-resize; z-index: 5; display: grid; place-items: center; touch-action: none; }
+.viewer-panel-edge::after { content: ""; width: 4px; height: 36px; border-radius: 2px; background: var(--line); opacity: 0; transition: opacity .15s, height .15s; }
+.viewer-panel-edge:hover::after { opacity: 1; height: 56px; }
+.viewer-panel-edge:active::after { opacity: 1; height: 56px; background: var(--accent); }
+
+/* Home's loading constellation (HomeLoading.tsx). */
+.home-loading { display: grid; place-items: center; overflow: hidden; }
+.home-loading svg { width: min(100%, 980px); height: 100%; max-height: 100%; }
+.home-loading use { fill: none; stroke: var(--accent); stroke-width: 1.2; stroke-linejoin: round; vector-effect: non-scaling-stroke;
+  stroke-dasharray: 120; stroke-dashoffset: 120; animation: home-loading-draw 1.4s cubic-bezier(.3, .8, .3, 1) forwards; }
+.home-loading-core use { stroke-width: .38; }
+.home-loading-core rect { fill: var(--accent); animation: home-loading-pulse 1.6s ease-in-out infinite; }
+.home-loading-orbit { fill: none; stroke: var(--muted); stroke-opacity: .3; stroke-width: 1; stroke-dasharray: 2 8; transform-origin: 400px 250px; animation: home-loading-turn 40s linear infinite; }
+@keyframes home-loading-pulse { 50% { opacity: .35; } }
+@keyframes home-loading-turn { to { transform: rotate(360deg); } }
+.home-loading-machine use { stroke: var(--text); stroke-opacity: .55; stroke-width: .6; }
+.home-loading-machine { animation: home-loading-float 4.2s ease-in-out infinite; }
+.home-loading-machine text { fill: var(--muted); font-size: 13px; font-family: inherit; }
+.home-loading-link { stroke: var(--muted); stroke-opacity: .35; stroke-width: 1; stroke-dasharray: 4 6; opacity: 0; animation: home-loading-link 1.2s ease-out forwards; }
+@keyframes home-loading-draw { to { stroke-dashoffset: 0; } }
+@keyframes home-loading-float { 50% { transform: translateY(-6px); } }
+@keyframes home-loading-link { to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .home-loading use, .home-loading-machine, .home-loading-link { animation: none; stroke-dashoffset: 0; opacity: 1; } }

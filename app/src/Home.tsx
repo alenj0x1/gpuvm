@@ -1,3 +1,4 @@
+import { HomeLoading } from "./HomeLoading";
 import { memo, useEffect, useRef, useState } from "react";
 import {
   IconApps, IconArrowRight, IconBolt, IconCpu, IconDatabase, IconDeviceGamepad2, IconDisc, IconDownload, IconExternalLink, IconKey,
@@ -55,17 +56,9 @@ const gb = (n: number) => `${n.toLocaleString(locale(), { maximumFractionDigits:
 const Memo = memo(({ render }: { sig: string; render: () => React.ReactNode }) => <>{render()}</>, (a, b) => a.sig === b.sig);
 
 /** Home while it loads: the stage and the row under it, with their real shape. */
-export function HomeSkeleton() {
-  return (
-    <div className="main home" aria-busy="true">
-      <div className="skeleton home-stage" style={{ marginBottom: 16 }} />
-      <div className="home-row with-attention">
-        <div className="skeleton" style={{ height: 200 }} />
-        <div className="skeleton" style={{ height: 200 }} />
-        <div className="skeleton" style={{ height: 200 }} />
-      </div>
-    </div>
-  );
+/** Home while its data loads: the machines as a constellation (HomeLoading). */
+export function HomeSkeleton({ names }: { names?: string[] } = {}) {
+  return <HomeLoading names={names} />;
 }
 
 /** Home: the space of machines up front, with the one in use (or the last one opened) in its cube and, beside it, how
@@ -149,7 +142,7 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
     return () => { live = false; };
   }, [hero?.name, jobs]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!home) return <HomeSkeleton />;
+  if (!home) return <HomeSkeleton names={vms?.map((v) => v.name)} />;
 
   const others = inSpace.filter((v) => v !== hero);
   const memUsed = home.host.memoryTotalGB - home.host.memoryFreeGB;

@@ -53,6 +53,9 @@ struct Viewer {
     embed: bool,
     /// Shown over the app (false while waiting for the first picture or while the person is in Home).
     visible: std::sync::atomic::AtomicBool,
+    /// The machine opens full screen (its "Pantalla completa" option): it still starts inside the app, hidden, and
+    /// goes full screen when revealed.
+    full_screen: bool,
 }
 
 /// Height of the app's title bar in logical pixels (styles.css, --titlebar): the viewer covers what is below it.
@@ -250,7 +253,7 @@ fn same_token(a: &str, b: &str) -> bool {
     a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
-fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String>, embed: bool) -> Result<u32, String> {
+fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String>, embed: bool, full_screen: bool) -> Result<u32, String> {
     let pipe_name = format!(r"\\.\pipe\gpuvm-viewer-{}", random_hex(16)?);
     let token = random_hex(32)?;
     // This user only, full access; everyone else (including the network) gets nothing.
@@ -306,7 +309,7 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
     }
     drop(token);
 
-    let viewer = Arc::new(Viewer { pipe, pid, write: Mutex::new(()), hwnd: AtomicIsize::new(0), embed, visible: std::sync::atomic::AtomicBool::new(!embed) });
+    let viewer = Arc::new(Viewer { pipe, pid, write: Mutex::new(()), hwnd: AtomicIsize::new(0), embed, visible: std::sync::atomic::AtomicBool::new(!embed), full_screen });
     viewers().get_or_insert_with(HashMap::new).insert(vm.clone(), viewer.clone());
     let _ = app.emit("viewer", json!({ "vm": vm, "msg": { "type": "opened", "pid": pid } }));
 
@@ -327,11 +330,16 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
             }
             let _ = app.emit("viewer", json!({ "vm": vm, "msg": msg }));
             crate::overlay::on_viewer(&app, &vm, &msg);
-            // The first picture: the viewer comes out from behind the app, over its content area.
+            // The first picture: the app zooms into the machine and then reveals the viewer (viewer_reveal). If the
+            // page doesn't (hidden, busy), the viewer comes out on its own a moment later.
             if kind == "first-frame" && viewer.embed {
-                allow_foreground(viewer.pid);
-                send_raw(&viewer, &json!({ "type": "reveal" }));
-                viewer.visible.store(true, Ordering::Relaxed);
+                let late = viewer.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_millis(2000));
+                    if !late.visible.load(Ordering::Relaxed) {
+                        reveal(&late);
+                    }
+                });
             }
             if matches!(kind.as_str(), "first-frame" | "error" | "app-running" | "stage-failed") {
                 if let Some(waiter) = WAITERS.lock().unwrap_or_else(|e| e.into_inner()).as_mut().and_then(|w| w.remove(&vm)) {
@@ -389,16 +397,23 @@ pub fn open_and_wait(app: &AppHandle, vm: &str, launch: &Value) -> Result<(), St
     let exe = viewer_path().ok_or("El visor de GpuVM no está instalado.")?;
     let (tx, rx) = std::sync::mpsc::channel();
     WAITERS.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(vm.to_string(), tx);
-    // "Ventana" means inside GpuVM's own window now: the picture takes the app's content area.
-    let embed = arguments.windows(2).any(|w| w[0] == "--display-mode" && w[1] == "windowed");
-    if embed {
-        if let Some((hwnd, x, y, w, h)) = content_rect(app) {
-            arguments.push("--gpuvm-embed".into());
-            arguments.push(format!("{hwnd},{x},{y},{w},{h}"));
-        }
+    // The picture always starts inside the app's window, hidden behind it; a machine set to full screen goes full
+    // screen when it is revealed, and coming out of full screen brings it back inside the app.
+    let full_screen = match arguments.iter().position(|a| a == "--display-mode") {
+        Some(i) => arguments.get(i + 1).map(String::as_str) != Some("windowed"),
+        None => true,
+    };
+    if let Some(i) = arguments.iter().position(|a| a == "--display-mode") {
+        arguments.drain(i..(i + 2).min(arguments.len()));
+    }
+    arguments.push("--display-mode".into());
+    arguments.push("windowed".into());
+    if let Some((hwnd, x, y, w, h)) = content_rect(app) {
+        arguments.push("--gpuvm-embed".into());
+        arguments.push(format!("{hwnd},{x},{y},{w},{h}"));
     }
     let embed = arguments.iter().any(|a| a == "--gpuvm-embed");
-    if let Err(e) = open_blocking(app.clone(), vm.to_string(), exe, arguments, embed) {
+    if let Err(e) = open_blocking(app.clone(), vm.to_string(), exe, arguments, embed, full_screen) {
         WAITERS.lock().unwrap_or_else(|e| e.into_inner()).as_mut().map(|w| w.remove(vm));
         return Err(e);
     }
@@ -445,13 +460,29 @@ pub fn allow_viewer_foreground(vm: &str) {
     }
 }
 
+fn reveal(viewer: &Viewer) {
+    viewer.visible.store(true, Ordering::Relaxed);
+    allow_foreground(viewer.pid);
+    send_raw(viewer, &json!({ "type": "reveal", "fullscreen": viewer.full_screen }));
+}
+
+/// The app finished zooming into the machine: the picture comes out from behind it.
+#[tauri::command]
+pub fn viewer_reveal(vm: String) -> Result<(), String> {
+    let viewer = viewers().as_ref().and_then(|v| v.get(&vm).cloned()).ok_or("El visor de esta máquina no está abierto.")?;
+    if !viewer.visible.load(Ordering::Relaxed) {
+        reveal(&viewer);
+    }
+    Ok(())
+}
+
 /// Back to Home: the viewer hides and its session stays connected (keep), or it disconnects.
 #[tauri::command]
 pub fn viewer_home(app: AppHandle, vm: String, keep: bool) -> Result<(), String> {
     crate::overlay::close(&app);
     let viewer = viewers().as_ref().and_then(|v| v.get(&vm).cloned()).ok_or("El visor de esta máquina no está abierto.")?;
     viewer.visible.store(false, Ordering::Relaxed);
-    let msg = if keep && viewer.embed { json!({ "type": "hide" }) } else { json!({ "type": "quit" }) };
+    let msg = if keep { json!({ "type": "hide" }) } else { json!({ "type": "quit" }) };
     if send_raw(&viewer, &msg) { Ok(()) } else { Err("El visor no respondió.".into()) }
 }
 

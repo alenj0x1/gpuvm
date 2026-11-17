@@ -20,7 +20,7 @@ import { MAX_SAMPLES } from "./Chart";
 import { VmView, type JobInfo } from "./VmView";
 import { CreateDialog } from "./CreateDialog";
 import { TitleBar } from "./TitleBar";
-import { ViewerStage } from "./ViewerStage";
+import { ViewerStage, ZOOM_MS, type ViewerPhase } from "./ViewerStage";
 import { leaveViewer, openViewers, showViewer } from "./viewerStore";
 import { Toasts, humanError, stateText, useToasts, useScrollFade } from "./ui";
 import { t, translateModule } from "./i18n";
@@ -202,24 +202,33 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
 
   // A machine opening or shown inside the app: the sidebar steps aside, the machine's cube moves to the center with
   // the steps, and the viewer covers the content area once the first picture is there.
-  const [viewing, setViewing] = useState<{ vm: string; phase: "opening" | "live" } | null>(null);
+  // Phases: opening (the cube comes to the center with the steps), entering (it zooms in, into the machine), live
+  // (the picture covers the area), leaving (the picture hides and the cube zooms back out on the way to Home).
+  const [viewing, setViewing] = useState<{ vm: string; phase: ViewerPhase } | null>(null);
   const viewingRef = useRef(viewing);
   viewingRef.current = viewing;
 
+  // Into the machine: the cube zooms in and then the picture comes out from behind the app.
+  const enterMachine = useCallback((vm: string, reveal: () => Promise<unknown>) => {
+    setViewing({ vm, phase: "entering" });
+    window.setTimeout(() => {
+      reveal().catch(() => {}).finally(() => setViewing((v) => (v?.vm === vm ? { vm, phase: "live" } : v)));
+    }, ZOOM_MS);
+  }, []);
+
   const startJob = useCallback((vm: string, cmd: string, args: Record<string, unknown>, after?: () => void, failed?: () => void) => {
     if (cmd === "Connect-GpuVM") {
-      // Still connected from before (the person went to Home): back to its picture at once.
+      // Still connected from before (the person went to Home): straight into its picture.
       const already = openViewers().find((o) => o.vm === vm);
       if (already && !args.Pair) {
-        showViewer(vm).then(() => { setViewing(already.embed ? { vm, phase: "live" } : null); after?.(); })
-          .catch((e) => { failed?.(); push("error", humanError(e)); });
+        enterMachine(vm, () => showViewer(vm));
+        after?.();
         return;
       }
       setViewing({ vm, phase: "opening" });
       const done = after, fail = failed;
       after = () => {
-        const shown = openViewers().find((o) => o.vm === vm);
-        setViewing((v) => (v?.vm === vm ? (shown?.embed ? { vm, phase: "live" } : null) : v));
+        enterMachine(vm, () => import("@tauri-apps/api/core").then(({ invoke }) => invoke("viewer_reveal", { vm })));
         done?.();
       };
       failed = () => { setViewing((v) => (v?.vm === vm ? null : v)); fail?.(); };
@@ -249,6 +258,8 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     let cancelled = false;
     import("@tauri-apps/api/event").then(({ listen }) => listen<{ from: string; to: string }>("viewer-switch", (e) => {
       const { from, to } = e.payload;
+      // The old picture steps aside at once (the new machine's steps show), and closes once the new one is up.
+      import("@tauri-apps/api/core").then(({ invoke }) => invoke("viewer_send", { vm: from, msg: { type: "hide" } }).catch(() => {}));
       startJob(to, "Connect-GpuVM", { Name: to }, () => {
         import("@tauri-apps/api/core").then(({ invoke }) => invoke("viewer_send", { vm: from, msg: { type: "quit" } }).catch(() => {}));
       });
@@ -259,9 +270,11 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
   // Home from the viewer (the title bar's button or the panel): the picture hides and the machine stays connected,
   // or disconnects, as chosen in Settings.
   const leaveToHome = useCallback(async (vm: string) => {
-    setViewing(null);
     setSelected(HOME);
     await leaveViewer(vm, readPrefs().viewerHome !== "disconnect");
+    // Out of the machine: the cube zooms back out, then Home.
+    setViewing({ vm, phase: "leaving" });
+    window.setTimeout(() => setViewing((v) => (v?.vm === vm && v.phase === "leaving" ? null : v)), ZOOM_MS);
   }, []);
   useEffect(() => {
     if (!inTauri) return;
@@ -344,7 +357,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     return (
       <div className={`app viewing ${viewing.phase}`}>
         <TitleBar>
-          <button className="titlebar-back" onClick={() => leaveToHome(viewing.vm)} disabled={viewing.phase === "opening"}>
+          <button className="titlebar-back" onClick={() => leaveToHome(viewing.vm)} disabled={viewing.phase !== "live"}>
             <IconHome size={15} />{t("Inicio")}
           </button>
           <span className="titlebar-machine"><MachineIcon name={viewing.vm} size={20} radius={6} />{viewing.vm}</span>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { IconAdjustments, IconArrowsMaximize, IconChartLine, IconDeviceDesktop, IconDeviceGamepad2, IconHome, IconPlayerStop, IconX } from "@tabler/icons-react";
+import { IconAdjustments, IconArrowsMaximize, IconArrowsMinimize, IconChartLine, IconDeviceDesktop, IconDeviceGamepad2, IconHome, IconPlayerStop, IconX } from "@tabler/icons-react";
 import { api, inTauri } from "./api";
 import type { VmOverview } from "./types";
 import { GameGallery, GameStage } from "./GameStage";
@@ -10,6 +10,7 @@ import { t } from "./i18n";
 import { humanError } from "./ui";
 
 type Tab = "machines" | "games" | "picture";
+const WIDTH_KEY = "gpuvm.viewerPanelWidth";
 interface Stats { receivedFps: number; renderedFps: number; networkDropPercent: number; decodeMs: number; renderMs: number; hostLatencyMs: number; networkLatencyMs: number }
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T | null> {
@@ -35,6 +36,7 @@ export function ViewerPanel() {
   const [vms, setVms] = useState<VmOverview[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [overlay, setOverlay] = useState(false);
+  const [fullScreen, setFullScreen] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -43,6 +45,7 @@ export function ViewerPanel() {
       listen<{ open: boolean; vm: string }>("viewer-panel", (p) => { setVm(p.vm); setOpen(p.open); }),
       listen<{ vm: string; msg: Record<string, unknown> & { type: string } }>("viewer", (p) => {
         if (p.msg.type === "stats") setStats(p.msg as unknown as Stats);
+        if (p.msg.type === "window") setFullScreen(!!p.msg.fullScreen);
       }),
     ];
     return () => { offs.forEach((o) => o.then((f) => f())); };
@@ -57,6 +60,33 @@ export function ViewerPanel() {
     const timer = setInterval(load, 4000);
     return () => { alive = false; clearInterval(timer); };
   }, [open]);
+
+  // The panel's width: dragged from its left edge, within limits (overlay.rs), remembered.
+  useEffect(() => {
+    const saved = Number(localStorage.getItem(WIDTH_KEY));
+    if (saved) invoke("viewer_panel_resize", { width: saved });
+  }, []);
+  const startResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    target.setPointerCapture(e.pointerId);
+    const startX = e.screenX, startW = window.innerWidth;
+    let frame = 0, last = startW;
+    const move = (ev: PointerEvent) => {
+      last = Math.round(startW - (ev.screenX - startX));
+      if (!frame) frame = requestAnimationFrame(() => { frame = 0; invoke<number>("viewer_panel_resize", { width: last }); });
+    };
+    const up = () => {
+      target.removeEventListener("pointermove", move);
+      target.removeEventListener("pointerup", up);
+      invoke<number>("viewer_panel_resize", { width: last }).then((w) => { try { localStorage.setItem(WIDTH_KEY, String(w ?? last)); } catch { /* no storage */ } });
+    };
+    target.addEventListener("pointermove", move);
+    target.addEventListener("pointerup", up);
+  };
+  const goHome = async () => {
+    const { emitTo } = await import("@tauri-apps/api/event");
+    await emitTo("main", "viewer-home", { vm });
+  };
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => { if (e.key === "Escape") invoke("viewer_panel_close"); };
@@ -81,6 +111,12 @@ export function ViewerPanel() {
 
   return (
     <aside className={`viewer-panel${open ? " open" : ""}`} aria-label={t("Panel del visor")}>
+      <div className="viewer-panel-edge" onPointerDown={startResize} onDoubleClick={() => { invoke("viewer_panel_resize", { width: 340 }); try { localStorage.removeItem(WIDTH_KEY); } catch { /* no storage */ } }} aria-hidden="true" />
+      <div className="viewer-panel-top">
+        <button className="titlebar-back" onClick={goHome}><IconHome size={15} />{t("Inicio")}</button>
+        <span className="viewer-panel-machine"><MachineIcon name={vm} size={20} radius={6} />{vm}</span>
+        <button className="icon-btn" aria-label={t("Cerrar")} title={t("Cerrar")} onClick={() => invoke("viewer_panel_close")}><IconX size={16} /></button>
+      </div>
       <header className="viewer-panel-head">
         <div className="viewer-panel-tabs" role="tablist">
           {tabs.map((x) => (
@@ -89,17 +125,12 @@ export function ViewerPanel() {
             </button>
           ))}
         </div>
-        <button className="icon-btn" aria-label={t("Inicio")} title={t("Inicio")} onClick={async () => {
-          const { emitTo } = await import("@tauri-apps/api/event");
-          await emitTo("main", "viewer-home", { vm });
-        }}><IconHome size={16} /></button>
-        <button className="icon-btn" aria-label={t("Cerrar")} onClick={() => invoke("viewer_panel_close")}><IconX size={16} /></button>
       </header>
       <div className="viewer-panel-body">
         {tab === "machines" && <Machines vms={vms} current={vm} onSwitch={switchTo} />}
         {tab === "games" && <Games vm={vm} names={vms.map((v) => v.name)} />}
         {tab === "picture" && (
-          <Picture stats={stats} overlay={overlay}
+          <Picture stats={stats} overlay={overlay} fullScreen={fullScreen}
             onFullscreen={() => send(vm, { type: "fullscreen" })}
             onOverlay={() => { send(vm, { type: "stats", on: !overlay }); setOverlay(!overlay); }}
             onDisconnect={() => { invoke("viewer_panel_close"); send(vm, { type: "quit" }); }} />
@@ -143,8 +174,8 @@ function Games({ vm, names }: { vm: string; names: string[] }) {
   return <div className="viewer-games"><GameGallery player={vm} fallback={decor} onPick={setGame} onClose={() => {}} /></div>;
 }
 
-function Picture({ stats, overlay, onFullscreen, onOverlay, onDisconnect }: {
-  stats: Stats | null; overlay: boolean; onFullscreen: () => void; onOverlay: () => void; onDisconnect: () => void;
+function Picture({ stats, overlay, fullScreen, onFullscreen, onOverlay, onDisconnect }: {
+  stats: Stats | null; overlay: boolean; fullScreen: boolean; onFullscreen: () => void; onOverlay: () => void; onDisconnect: () => void;
 }) {
   const ms = (n: number | undefined) => (n && n > 0 ? `${n.toFixed(1)} ms` : "—");
   const rows: [string, string][] = [
@@ -160,7 +191,9 @@ function Picture({ stats, overlay, onFullscreen, onOverlay, onDisconnect }: {
         {rows.map(([k, v]) => (<div key={k}><dt>{k}</dt><dd>{v}</dd></div>))}
       </dl>
       <div className="viewer-actions">
-        <button className="btn" onClick={onFullscreen}><IconArrowsMaximize size={16} />{t("Pantalla completa")}</button>
+        <button className="btn" onClick={onFullscreen}>
+          {fullScreen ? <><IconArrowsMinimize size={16} />{t("Dentro de GpuVM")}</> : <><IconArrowsMaximize size={16} />{t("Pantalla completa")}</>}
+        </button>
         <button className={`btn${overlay ? " on" : ""}`} onClick={onOverlay}><IconChartLine size={16} />{t("Datos sobre la imagen")}</button>
         <button className="btn" onClick={onDisconnect}><IconPlayerStop size={16} />{t("Desconectar")}</button>
       </div>

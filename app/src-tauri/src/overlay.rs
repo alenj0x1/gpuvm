@@ -15,8 +15,10 @@ use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
 use windows_sys::Win32::UI::WindowsAndMessaging::{GetClientRect, IsIconic, IsWindow, SetWindowLongPtrW, GWLP_HWNDPARENT};
 
 pub const LABEL: &str = "viewer-panel";
-/// Panel width in logical pixels (scaled with the viewer's monitor).
-const WIDTH: f64 = 340.0;
+/// Panel width in logical pixels (scaled with the viewer's monitor); the person can drag its edge between the limits.
+static WIDTH: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(340);
+const MIN_WIDTH: u32 = 300;
+const MAX_WIDTH: u32 = 560;
 /// Same as the page's slide (styles.css, .viewer-panel).
 const SLIDE_MS: u64 = 320;
 
@@ -71,7 +73,8 @@ fn panel_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
 /// Puts the panel over the right edge of the viewer's picture area.
 fn place(window: &tauri::WebviewWindow, viewer: isize) -> Option<(i32, i32)> {
     let (x, y, w, h, scale) = client_rect(viewer)?;
-    let width = ((WIDTH * scale).round() as i32).min(w / 2);
+    let logical = WIDTH.load(std::sync::atomic::Ordering::Relaxed) as f64;
+    let width = ((logical * scale).round() as i32).min(w / 2);
     let _ = window.set_size(PhysicalSize::new(width as u32, h as u32));
     let _ = window.set_position(PhysicalPosition::new(x + w - width, y));
     if let Ok(own) = window.hwnd() {
@@ -172,6 +175,22 @@ pub fn on_viewer(app: &AppHandle, vm: &str, msg: &Value) {
         }
         _ => {}
     }
+}
+
+/// The panel's edge was dragged (or its page loaded with the saved width): new width in logical pixels.
+#[tauri::command]
+pub fn viewer_panel_resize(app: AppHandle, width: u32) -> u32 {
+    let width = width.clamp(MIN_WIDTH, MAX_WIDTH);
+    WIDTH.store(width, std::sync::atomic::Ordering::Relaxed);
+    let vm = { let p = panel(); if p.open { p.vm.clone() } else { None } };
+    if let Some(vm) = vm {
+        if let (Some(viewer), Some(window)) = (crate::viewer::viewer_hwnd(&vm), app.get_webview_window(LABEL)) {
+            if let Some((w, total)) = place(&window, viewer) {
+                let _ = crate::viewer::viewer_send(vm, json!({ "type": "inset", "fraction": w as f64 / total as f64, "durationMs": 0 }));
+            }
+        }
+    }
+    width
 }
 
 /// The panel's close button and Escape.

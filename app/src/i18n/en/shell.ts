@@ -205,5 +205,6 @@ export default {
   "Al volver a Inicio desde una máquina": "Going back to Home from a machine",
   "Conectada, vuelves a su imagen al instante. Mientras tanto usa un poco de la GPU de este equipo.": "Connected, you're back to its picture at once. Meanwhile it uses a little of this PC's GPU.",
   "Mantenerla conectada": "Keep it connected",
+  "Dentro de GpuVM": "Inside GpuVM",
   "Desconectarla": "Disconnect it",
 } as Record<string, string>;
