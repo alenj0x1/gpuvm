@@ -16,6 +16,8 @@ Add-Type -Namespace Lab -Name Native -MemberDefinition @'
 [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
 [DllImport("user32.dll")] public static extern bool GetWindowRect(System.IntPtr h, out RECT r);
 [DllImport("user32.dll")] public static extern bool SetForegroundWindow(System.IntPtr h);
+[DllImport("user32.dll")] public static extern bool ShowWindow(System.IntPtr h, int c);
+[DllImport("user32.dll")] public static extern bool IsIconic(System.IntPtr h);
 public struct RECT { public int Left, Top, Right, Bottom; }
 '@
 [Lab.Native]::SetProcessDPIAware() | Out-Null
@@ -44,6 +46,7 @@ switch ($Action) {
     'window' {
         $p = Get-Process gpuvm -ErrorAction SilentlyContinue | Where-Object MainWindowHandle -ne 0 | Select-Object -First 1
         if (-not $p) { 'no window'; return }
+        if ([Lab.Native]::IsIconic($p.MainWindowHandle)) { [Lab.Native]::ShowWindow($p.MainWindowHandle, 9) | Out-Null; Start-Sleep -Milliseconds 400 }
         $r = New-Object Lab.Native+RECT
         [Lab.Native]::GetWindowRect($p.MainWindowHandle, [ref]$r) | Out-Null
         [Lab.Native]::SetForegroundWindow($p.MainWindowHandle) | Out-Null
