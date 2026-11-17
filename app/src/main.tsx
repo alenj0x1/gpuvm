@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { PromptCard } from "./PromptCard";
+import { ViewerPanel } from "./ViewerPanel";
 import { initPrefs, usePrefs } from "./prefs";
 import { resolveLang } from "./i18n";
 // Fonts load with the app, not from styles.css, so the website demos can reuse the stylesheet without them.
@@ -20,10 +21,15 @@ const isPrompt = "__TAURI_INTERNALS__" in window
   ? (window as unknown as { __TAURI_INTERNALS__: { metadata: { currentWindow: { label: string } } } }).__TAURI_INTERNALS__.metadata.currentWindow.label === "prompt"
   : new URLSearchParams(location.search).has("prompt");
 if (isPrompt) document.documentElement.classList.add("prompt-window");
+// The side panel over GpuVM's viewer (label "viewer-panel"; "?viewer-panel" in the browser).
+const isViewerPanel = "__TAURI_INTERNALS__" in window
+  ? (window as unknown as { __TAURI_INTERNALS__: { metadata: { currentWindow: { label: string } } } }).__TAURI_INTERNALS__.metadata.currentWindow.label === "viewer-panel"
+  : new URLSearchParams(location.search).has("viewer-panel");
+if (isViewerPanel) document.documentElement.classList.add("viewer-panel-window");
 // A change of language draws the app again (the root re-renders everything under it) without starting it over: a
 // remount reset the panels' sizes and left the scenes and cards gray until their data came back.
 function Root() {
   resolveLang(usePrefs().lang);
-  return isPrompt ? <PromptCard /> : <App />;
+  return isPrompt ? <PromptCard /> : isViewerPanel ? <ViewerPanel /> : <App />;
 }
 createRoot(document.getElementById("root")!).render(<Root />);

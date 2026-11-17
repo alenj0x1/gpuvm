@@ -18,7 +18,7 @@ function asPlayer(name: string, decor: Decor, light: boolean, accent: string): G
 
 /** A game running in the space: the canvas, its score and lives, and the start, pause and game-over cards. On the
  *  start card the player picks the machine to play with and, if the game has them, a mode. */
-function GameStage({ game, machines, first, fallback, world, onClose }: {
+export function GameStage({ game, machines, first, fallback, world, onClose }: {
   game: GameDef; machines: string[]; first?: string; fallback: Decor; world?: string; onClose: () => void;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -249,7 +249,7 @@ function GameDemo({ game, player, fallback, world, mode: pickedMode, team = [] }
 }
 
 /** The games, each on a card showing the game itself playing, with its best score. */
-function GameGallery({ player, fallback, world, onPick, onClose }: { player?: string; fallback: Decor; world?: string; onPick: (g: GameDef) => void; onClose: () => void }) {
+export function GameGallery({ player, fallback, world, onPick, onClose }: { player?: string; fallback: Decor; world?: string; onPick: (g: GameDef) => void; onClose: () => void }) {
   useEffect(() => {
     const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", key);

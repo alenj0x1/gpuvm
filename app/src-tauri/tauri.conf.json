@@ -38,6 +38,7 @@
       "../../templates/": "gpuvm/templates/",
       "../../streaming/": "gpuvm/streaming/",
       "../../apps/": "gpuvm/apps/",
+      "../../viewer/": "gpuvm/viewer/",
       "../.cache/pwsh/": "pwsh/",
       "../host/target/release/gpuvm-host.exe": "gpuvm-host.exe"
     },

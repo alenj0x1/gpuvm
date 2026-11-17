@@ -8,6 +8,8 @@
 mod backend;
 mod prompt;
 mod service;
+mod overlay;
+mod viewer;
 #[cfg(debug_assertions)]
 mod direct;
 
@@ -136,7 +138,14 @@ async fn ps(state: State<'_, AppState>, cmd: String, args: Option<Value>) -> Res
 /// Starts a long job; progress arrives as "job" events with the same jobId.
 #[tauri::command]
 async fn job(app: AppHandle, job_id: String, cmd: String, args: Option<Value>) -> Result<(), String> {
-    let request = json!({ "id": job_id, "cmd": cmd, "args": args.unwrap_or(json!({})) });
+    let mut args = args.unwrap_or(json!({}));
+    // With GpuVM's viewer installed, the module gets the machine ready and this app opens the viewer itself.
+    let with_viewer = cmd == "Connect-GpuVM" && viewer::viewer_path().is_some();
+    if with_viewer {
+        args["Viewer"] = json!(true);
+    }
+    let vm_name = args["Name"].as_str().unwrap_or("").to_string();
+    let request = json!({ "id": job_id, "cmd": cmd, "args": args });
     let mut conn = tauri::async_runtime::spawn_blocking(backend::connect).await.map_err(|e| e.to_string())??;
     std::thread::spawn(move || {
         let emit = |mut event: Value| {
@@ -144,6 +153,14 @@ async fn job(app: AppHandle, job_id: String, cmd: String, args: Option<Value>) -
             let _ = app.emit("job", event);
         };
         match conn.call(&request, |event| emit(event.clone())) {
+            Ok(result) if with_viewer && result["ok"] == true && result["data"]["viewerLaunch"].is_object() => {
+                let launch = result["data"]["viewerLaunch"].clone();
+                let outcome = viewer::open_and_wait(&app, &vm_name, &launch);
+                match outcome {
+                    Ok(()) => emit(json!({ "type": "result", "ok": true, "data": null })),
+                    Err(error) => emit(json!({ "type": "result", "ok": false, "error": error })),
+                }
+            }
             Ok(result) => emit(result),
             Err(_) => emit(json!({ "type": "result", "ok": false, "error": "El trabajo terminó sin respuesta." })),
         }
@@ -347,7 +364,7 @@ pub fn run() {
             prompt::start(app.handle().clone());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![ps, job, prompt::admin_prompts, prompt::admin_prompt_answered, open_console, repair_service, relaunch_as_admin, service_status, start_service, stop_service, set_service_mode, set_service_startup, set_close_to_tray, set_stop_vms_on_quit, set_language])
+        .invoke_handler(tauri::generate_handler![ps, job, prompt::admin_prompts, prompt::admin_prompt_answered, viewer::viewer_send, viewer::viewer_is_open, overlay::viewer_panel_close, overlay::viewer_panel_vm, open_console, repair_service, relaunch_as_admin, service_status, start_service, stop_service, set_service_mode, set_service_startup, set_close_to_tray, set_stop_vms_on_quit, set_language])
         .build(tauri::generate_context!())
         .expect("failed to start GpuVM")
         .run(|app, event| {

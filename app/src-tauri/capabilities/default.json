@@ -2,6 +2,6 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Permissions for the main window",
-  "windows": ["main", "prompt"],
+  "windows": ["main", "prompt", "viewer-panel"],
   "permissions": ["core:default", "dialog:allow-open", "core:window:allow-start-dragging", "core:window:allow-minimize", "core:window:allow-toggle-maximize", "core:window:allow-close"]
 }

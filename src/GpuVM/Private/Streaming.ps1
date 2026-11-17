@@ -684,6 +684,17 @@ function Get-MoonlightPath {
     ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
 }
 
+# GpuVM's own viewer (fork of Moonlight, repo gpuvm-viewer), installed next to the module. The app launches it
+# itself (unelevated, with a private pipe); the module only pairs it and returns the stream arguments.
+function Get-GpuVMViewerPath {
+    $path = Join-Path $script:RepoRoot 'viewer\GpuVMViewer.exe'
+    if (Test-Path -LiteralPath $path -PathType Leaf) { $path }
+}
+
+# The name the viewer's pairing has in Sunshine: apart from a Moonlight paired from this same PC, which has its own
+# certificate.
+function Get-GpuVMViewerClientName { "$($env:COMPUTERNAME) GpuVM" }
+
 # Moonlight talks to a server the guest controls, so it never runs elevated: it starts as the interactive
 # user through a one-shot scheduled task (Limited run level). Returns the task name.
 # With -KeepTask the task stays registered so the caller can follow it (Get-UnelevatedTaskState) and remove it.

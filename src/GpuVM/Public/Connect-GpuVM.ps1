@@ -19,13 +19,22 @@
         # The monitor to open on: a monitor's id (Get-GpuVMMonitor) or "primary". Without it, the one saved for the VM.
         [ValidateLength(0, 300)][string]$Monitor,
         # Opens with this much memory when it doesn't fit as configured (saved, like changing it in Options).
-        [ValidateRange(4, 256)][int]$MemoryGB
+        [ValidateRange(4, 256)][int]$MemoryGB,
+        # GpuVM's viewer: gets the machine ready and returns the stream arguments ({ viewerLaunch }) for the app to
+        # open the viewer itself, instead of opening Moonlight.
+        [switch]$Viewer
     )
     Assert-Admin
     $state = Get-GpuVMState -Name $Name
     if (-not $state['streaming']) { throw "La VM '$Name' se creó sin streaming." }
-    $moonlight = Get-MoonlightPath
-    if (-not $moonlight) { throw 'Moonlight no está instalado en este equipo. Instálalo con: ./gpuvm.ps1 client-install' }
+    if ($Viewer) {
+        $moonlight = Get-GpuVMViewerPath
+        if (-not $moonlight) { throw 'El visor de GpuVM no está instalado. Reinstala GpuVM.' }
+    }
+    else {
+        $moonlight = Get-MoonlightPath
+        if (-not $moonlight) { throw 'Moonlight no está instalado en este equipo. Instálalo con: ./gpuvm.ps1 client-install' }
+    }
     Initialize-GpuVMRoot -Path $state['config']['vm']['root']
 
     $vm = Get-VM -Name $Name
@@ -180,7 +189,7 @@
             Set-SunshineVirtualDisplay -Address $address -Credential $credential -OnlyDisplay:([bool]$state['config']['streaming']['disableHyperVVideo'])
         }
 
-        $clientName = $env:COMPUTERNAME
+        $clientName = if ($Viewer) { Get-GpuVMViewerClientName } else { $env:COMPUTERNAME }
         if ($Pair -or -not (Test-SunshineClientPaired -Address $address -Credential $credential -ClientName $clientName)) {
             Register-MoonlightPairing -Address $address -Credential $credential -MoonlightPath $moonlight -ClientName $clientName -HostAddress $endpoint.HostAddress
             $state = Get-GpuVMState -Name $Name
@@ -229,6 +238,22 @@
     }
 
     Write-Step "Abriendo a $($client['resolution']) y $(Resolve-GpuVMStreamFps $client['fps']) FPS"
+    if ($Viewer) {
+        $state = Get-GpuVMState -Name $Name
+        $state['lastOpenedAt'] = (Get-Date).ToString('o')
+        if ($boot) { $state['guestPrepared'] = $prepared }
+        Save-GpuVMState $state
+        if (-not $audioLater) { Stop-GuestAudioCheck $audioCheck -TimeoutSec 0 }
+        else { Write-Warning 'El audio de la VM quedará listo en unos segundos o la próxima vez que la abras.'; Stop-GuestAudioCheck $audioCheck -TimeoutSec 0 }
+        # The app waits for the viewer's first picture before the button goes back to "Abrir".
+        Write-Step 'Conectando la imagen'
+        return [pscustomobject]@{
+            viewerLaunch = [pscustomobject]@{
+                arguments = @(Get-MoonlightStreamArguments -Address $address -Client $client)
+                monitor   = $target
+            }
+        }
+    }
     $launched = Get-Date
     # Moonlight runs as the signed-in user, not as administrator: it talks to a server the guest controls.
     Start-UnelevatedProcess -FilePath $moonlight -ArgumentList (Get-MoonlightStreamArguments -Address $address -Client $client) | Out-Null

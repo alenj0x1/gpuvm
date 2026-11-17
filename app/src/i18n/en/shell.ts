@@ -194,4 +194,12 @@ export default {
   "Ya hay una máquina con ese nombre": "There's already a machine with that name",
   "Imagen de Windows": "Windows image",
   "Otro ícono": "Another icon",
+  // The viewer's side panel (ViewerPanel.tsx)
+  "Imagen": "Picture",
+  "Panel del visor": "Viewer panel",
+  "Viendo ahora": "Watching now",
+  "Cambiar": "Switch",
+  "Decodificación": "Decoding",
+  "Pérdidas de red": "Network loss",
+  "Datos sobre la imagen": "Stats on the picture",
 } as Record<string, string>;

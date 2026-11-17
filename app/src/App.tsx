@@ -9,7 +9,7 @@ import { Logo } from "./Logo";
 import { TripleSpark } from "./Chart";
 import type { HostInfo, JobEvent, Sample, VmOverview } from "./types";
 import { readPrefs } from "./prefs";
-import { api, onJob, relaunchAsAdmin, repairService, service, startJob as runJob } from "./api";
+import { api, inTauri, onJob, relaunchAsAdmin, repairService, service, startJob as runJob } from "./api";
 import { MachineIcon, renamePatternVariant } from "./machineIcon";
 import { renameSceneStyle } from "./Scene";
 import { renameDecor } from "./decor/store";
@@ -215,6 +215,21 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       push("error", humanError(e));
     });
   }, [push]);
+
+  // The viewer's panel asked to switch machines: the new one opens as usual (its button shows the progress) and the
+  // viewer of the old one closes once the new picture is up.
+  useEffect(() => {
+    if (!inTauri) return;
+    let off: (() => void) | undefined;
+    let cancelled = false;
+    import("@tauri-apps/api/event").then(({ listen }) => listen<{ from: string; to: string }>("viewer-switch", (e) => {
+      const { from, to } = e.payload;
+      startJob(to, "Connect-GpuVM", { Name: to }, () => {
+        import("@tauri-apps/api/core").then(({ invoke }) => invoke("viewer_send", { vm: from, msg: { type: "quit" } }).catch(() => {}));
+      });
+    })).then((fn) => { if (cancelled) fn(); else off = fn; });
+    return () => { cancelled = true; off?.(); };
+  }, [startJob]);
 
   const run = useCallback(async (vm: string, label: string, task: () => Promise<unknown>) => {
     setPending((p) => ({ ...p, [vm]: label }));
