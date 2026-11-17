@@ -29,3 +29,15 @@ quickly enough for the app to show them.
 
 - Same run against a real VM: first frame time vs Moonlight (labs 019 and 023), side panel open/close, latency with
   the panel closed (lab 020) and smoothness (lab 021), to confirm the fork adds nothing while the panel is hidden.
+
+### Nov 16, 2026 (win-gpu, full screen machine, installed builds 6-9, filmed with `screen.ps1` + `montage.ps1`)
+
+- Build 6: one zoom only (the hologram used to move twice because the machine changed state right before the zoom);
+  the viewer window flashed over the app with its border for ~100 ms when created.
+- Build 7: created hidden and shown by SDL "without activation": it still came to the front, black, before the zoom.
+- Build 8/9: shown natively below the app (SetWindowPos with SWP_SHOWWINDOW | SWP_NOACTIVATE; SDL hears WM_SHOWWINDOW
+  and creates the decoder). Full open: nothing shows over the app, single zoom, picture at 14.7 s from the click (VM
+  already on); one ~60 ms frame of the picture inside the app before it goes full screen. Ctrl+Alt+Shift+H: zoom out to
+  Home in ~1.2 s; Open again: zoom in and picture in 0.7 s (session kept connected).
+- A viewer killed from outside left the app showing a dark live screen on the next Open; build 9 falls back to a full
+  open.

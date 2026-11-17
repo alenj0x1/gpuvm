@@ -7,7 +7,9 @@
 #   screen.ps1 window                         (GpuVM's window rectangle)
 param(
     [Parameter(Mandatory)][ValidateSet('shot', 'click', 'keys', 'film', 'window')][string]$Action,
-    [string]$Out, [double]$Scale = 0.5, [int]$X, [int]$Y, [string]$Keys, [int]$Seconds = 10, [int]$Fps = 10
+    [string]$Out, [double]$Scale = 0.5, [int]$X, [int]$Y, [string]$Keys, [int]$Seconds = 10, [int]$Fps = 10,
+    # Which monitor to capture: its index in Screen.AllScreens (0 = the first one Windows lists).
+    [int]$Monitor = -1
 )
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 Add-Type -Namespace Lab -Name Native -MemberDefinition @'
@@ -37,7 +39,7 @@ public static System.IntPtr Main(int pid) {
 public struct RECT { public int Left, Top, Right, Bottom; }
 '@
 [Lab.Native]::SetProcessDPIAware() | Out-Null
-$screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+$screen = if ($Monitor -ge 0) { [System.Windows.Forms.Screen]::AllScreens[$Monitor].Bounds } else { [System.Windows.Forms.Screen]::PrimaryScreen.Bounds }
 
 function Save-Shot([string]$path, [double]$scale) {
     $bmp = [System.Drawing.Bitmap]::new($screen.Width, $screen.Height)
