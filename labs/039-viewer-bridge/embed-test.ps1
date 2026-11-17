@@ -6,7 +6,9 @@ param(
     [Parameter(Mandatory)][string]$Address,
     [string]$Viewer = (Join-Path $PSScriptRoot '..\..\viewer\GpuVMViewer.exe'),
     [int]$RevealAfterMs = 1500,
-    [int]$StaySec = 4
+    [int]$StaySec = 4,
+    # Reveal full screen, as a machine set to full screen is.
+    [switch]$FullScreen
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -Namespace Lab -Name Win -MemberDefinition @'
@@ -70,7 +72,7 @@ while ((Get-Date) -lt $deadline) {
     if ($line -notmatch '"stats"') { Write-Host ("{0,6} ms  {1}" -f $ms, $line) }
     if ($line -match '"first-frame"' -and -not $revealed) {
         Start-Sleep -Milliseconds $RevealAfterMs
-        $writer.WriteLine('{"type":"reveal","fullscreen":false}')
+        $writer.WriteLine((@{ type = 'reveal'; fullscreen = [bool]$FullScreen } | ConvertTo-Json -Compress))
         Write-Host ("{0,6} ms  reveal sent" -f [int]((Get-Date) - $started).TotalMilliseconds)
         $revealed = $true
         Start-Sleep -Seconds $StaySec

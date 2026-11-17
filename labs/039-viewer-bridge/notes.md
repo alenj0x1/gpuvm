@@ -59,5 +59,9 @@ quickly enough for the app to show them.
 - Widening the panel left the third column empty for a layout arranged in two: it now fills once. Lab 040 caught the
   clock's "10:01 AM" going past a one-column widget (passed earlier at "8:13"); the time now shrinks to fit. Lab 040:
   sizes 440/440, drags 140/140.
-- Open: after many installs that killed the viewer mid-stream, win-gpu's Sunshine stopped sending video ("No video
-  traffic was ever received", UDP port test OK). Not reproduced on a fresh host session yet.
+- After many installs that killed the viewer mid-stream, win-gpu's Sunshine stopped sending video ("No video traffic
+  was ever received", UDP port test OK). A reboot of win-gpu fixed it.
+- Open: a machine set to full screen shows its picture inside the app for ~0.6 s (after ~0.3 s black) before going
+  full screen, only at Low integrity. `embed-test.ps1 -FullScreen` (viewer not at Low) goes straight to full screen.
+  In the Low run's log the size change to 1920x1080 comes ~3 s after the window was shown below the app; the cause of
+  the delay at Low (z-order against the app's higher-integrity window, or SDL's full-screen path) is not found yet.
