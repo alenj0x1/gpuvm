@@ -273,9 +273,9 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
   // or disconnects, as chosen in Settings.
   const leaveToHome = useCallback(async (vm: string) => {
     setSelected(HOME);
-    await leaveViewer(vm, readPrefs().viewerHome !== "disconnect");
-    // Out of the machine: the cube zooms back out, then Home.
+    // Out of the machine: the cube zooms back out (starting while the picture hides), then Home.
     setViewing({ vm, phase: "leaving" });
+    leaveViewer(vm, readPrefs().viewerHome !== "disconnect");
     window.setTimeout(() => setViewing((v) => (v?.vm === vm && v.phase === "leaving" ? null : v)), ZOOM_MS);
   }, []);
   useEffect(() => {
