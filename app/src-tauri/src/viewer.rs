@@ -131,6 +131,19 @@ fn window_of(hwnd: isize, pid: u32) -> bool {
     unsafe { IsWindow(hwnd as _) != 0 && GetWindowThreadProcessId(hwnd as _, &mut owner) != 0 && owner == pid }
 }
 
+/// Puts a viewer's window in front and gives it the keyboard (it can't do it itself at Low integrity).
+fn bring_forward(hwnd: isize, pid: u32) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SetForegroundWindow, SetWindowPos, HWND_TOP, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW};
+    if !window_of(hwnd, pid) {
+        return;
+    }
+    // SAFETY: a window of the viewer's own process, checked just above.
+    unsafe {
+        SetWindowPos(hwnd as _, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+        SetForegroundWindow(hwnd as _);
+    }
+}
+
 fn allow_foreground(pid: u32) {
     #[link(name = "user32")]
     extern "system" {
@@ -364,7 +377,15 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
                 // Only a window of the viewer's own process: the panel is owned by it and placed over it, so a
                 // handle of another program's window would put GpuVM's panel (and the focus) there.
                 viewer.hwnd.store(if window_of(hwnd, viewer.pid) { hwnd } else { 0 }, Ordering::Relaxed);
-                viewer.full_now.store(msg["fullScreen"].as_bool().unwrap_or(false), Ordering::Relaxed);
+                let full = msg["fullScreen"].as_bool().unwrap_or(false);
+                viewer.full_now.store(full, Ordering::Relaxed);
+                // At Low integrity the viewer can't put its window in front of this app's: it went full screen but
+                // stayed behind it until something raised it. This app may, so it does as soon as the picture is
+                // full screen and meant to be seen.
+                let shown = viewer.hwnd.load(Ordering::Relaxed);
+                if full && shown != 0 && viewer.visible.load(Ordering::Relaxed) {
+                    bring_forward(shown, viewer.pid);
+                }
                 // The handle stays here: pages only need to know that it changed.
                 if let Some(o) = msg.as_object_mut() {
                     o.remove("hwnd");

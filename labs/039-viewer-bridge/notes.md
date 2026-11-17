@@ -63,5 +63,8 @@ quickly enough for the app to show them.
   was ever received", UDP port test OK). A reboot of win-gpu fixed it.
 - Open: a machine set to full screen shows its picture inside the app for ~0.6 s (after ~0.3 s black) before going
   full screen, only at Low integrity. `embed-test.ps1 -FullScreen` (viewer not at Low) goes straight to full screen.
-  In the Low run's log the size change to 1920x1080 comes ~3 s after the window was shown below the app; the cause of
-  the delay at Low (z-order against the app's higher-integrity window, or SDL's full-screen path) is not found yet.
+  Two causes, found with a rect log in the reveal and a Low copy of the viewer (`icacls /setintegritylevel low`):
+  at Low the viewer can't raise its window over the app's (the app now raises it when the viewer reports full
+  screen), and the window is full size at once but the renderer is rebuilt after it, so the old picture showed at the
+  old size until the new one's first frame. Fix: the window is cloaked by DWM (keeps rendering) from the reveal until
+  that frame (1.5 s at most). Filmed after the fix: dark stage, then the picture straight in full screen.
