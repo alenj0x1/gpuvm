@@ -298,7 +298,8 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
     let pipe_name = format!(r"\\.\pipe\gpuvm-viewer-{}", random_hex(16)?);
     let token = random_hex(32)?;
     // This user only, full access; everyone else (including the network) gets nothing.
-    let sddl = format!("D:P(A;;GA;;;{})", current_user_sid()?);
+    // The Low label lets the viewer (Low integrity) open it; the access list still allows only this user.
+    let sddl = format!("D:P(A;;GA;;;{})S:(ML;;NW;;;LW)", current_user_sid()?);
     let mut sd = std::ptr::null_mut();
     // SAFETY: valid NUL-terminated SDDL; the descriptor is freed after the pipe is created.
     if unsafe { ConvertStringSecurityDescriptorToSecurityDescriptorW(wide(&sddl).as_ptr(), SDDL_REVISION_1, &mut sd, std::ptr::null_mut()) } == 0 {
@@ -319,15 +320,10 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
 
     const TOKEN_VAR: &str = "GPUVM_VIEWER_TOKEN";
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let child = std::process::Command::new(&exe)
-        .args(&arguments)
-        .arg("--gpuvm-pipe").arg(&pipe_name)
-        .arg("--gpuvm-token-env").arg(TOKEN_VAR)
-        .env(TOKEN_VAR, &token)
-        .creation_flags(CREATE_NO_WINDOW)
-        .spawn()
-        .map_err(|e| format!("No se pudo abrir el visor: {e}"))?;
-    let pid = child.id();
+    let mut all = arguments.clone();
+    all.extend(["--gpuvm-pipe".into(), pipe_name.clone(), "--gpuvm-token-env".into(), TOKEN_VAR.into()]);
+    // At Low integrity (lowbox.rs): the viewer handles what the machine sends.
+    let pid = crate::lowbox::spawn_low(&exe, &all, &[(TOKEN_VAR, token.as_str())])?;
 
     let refuse = |message: &str| -> Result<u32, String> {
         let _ = std::process::Command::new(crate::system32("taskkill.exe")).args(["/PID", &pid.to_string(), "/F"]).creation_flags(CREATE_NO_WINDOW).status();

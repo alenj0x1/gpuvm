@@ -8,6 +8,7 @@
 mod backend;
 mod prompt;
 mod service;
+mod lowbox;
 mod overlay;
 mod viewer;
 #[cfg(debug_assertions)]
