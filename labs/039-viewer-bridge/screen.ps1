@@ -18,6 +18,22 @@ Add-Type -Namespace Lab -Name Native -MemberDefinition @'
 [DllImport("user32.dll")] public static extern bool SetForegroundWindow(System.IntPtr h);
 [DllImport("user32.dll")] public static extern bool ShowWindow(System.IntPtr h, int c);
 [DllImport("user32.dll")] public static extern bool IsIconic(System.IntPtr h);
+[DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, System.UIntPtr extra);
+[DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();
+[DllImport("user32.dll")] public static extern bool IsWindowVisible(System.IntPtr h);
+[DllImport("user32.dll")] public static extern int GetWindowThreadProcessId(System.IntPtr h, out int pid);
+public delegate bool EnumProc(System.IntPtr h, System.IntPtr l);
+[DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc f, System.IntPtr l);
+// The app's main window: restores its minimized windows, then the largest visible one (not the panel or tray).
+public static System.IntPtr Main(int pid) {
+    EnumWindows((h, l) => { int p; GetWindowThreadProcessId(h, out p); if (p == pid && IsWindowVisible(h) && IsIconic(h)) ShowWindow(h, 9); return true; }, System.IntPtr.Zero);
+    System.Threading.Thread.Sleep(300);
+    System.IntPtr best = System.IntPtr.Zero; long area = 0;
+    EnumWindows((h, l) => { int p; GetWindowThreadProcessId(h, out p); RECT r;
+        if (p == pid && IsWindowVisible(h) && GetWindowRect(h, out r)) { long a = (long)(r.Right - r.Left) * (r.Bottom - r.Top); if (a > area) { area = a; best = h; } }
+        return true; }, System.IntPtr.Zero);
+    return best;
+}
 public struct RECT { public int Left, Top, Right, Bottom; }
 '@
 [Lab.Native]::SetProcessDPIAware() | Out-Null
@@ -44,12 +60,16 @@ switch ($Action) {
     }
     'keys' { [System.Windows.Forms.SendKeys]::SendWait($Keys); "sent" }
     'window' {
-        $p = Get-Process gpuvm -ErrorAction SilentlyContinue | Where-Object MainWindowHandle -ne 0 | Select-Object -First 1
+        $p = Get-Process gpuvm -ErrorAction SilentlyContinue | Select-Object -First 1
         if (-not $p) { 'no window'; return }
-        if ([Lab.Native]::IsIconic($p.MainWindowHandle)) { [Lab.Native]::ShowWindow($p.MainWindowHandle, 9) | Out-Null; Start-Sleep -Milliseconds 400 }
+        $h = [Lab.Native]::Main($p.Id)
         $r = New-Object Lab.Native+RECT
-        [Lab.Native]::GetWindowRect($p.MainWindowHandle, [ref]$r) | Out-Null
-        [Lab.Native]::SetForegroundWindow($p.MainWindowHandle) | Out-Null
+        [Lab.Native]::GetWindowRect($h, [ref]$r) | Out-Null
+        # Windows only lets the process with the last input change the foreground: an Alt tap lifts that lock.
+        [Lab.Native]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero); [Lab.Native]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero)
+        [Lab.Native]::SetForegroundWindow($h) | Out-Null
+        Start-Sleep -Milliseconds 300
+        if ([Lab.Native]::GetForegroundWindow() -ne $h) { 'not in front'; return }
         "$($r.Left),$($r.Top),$($r.Right),$($r.Bottom)"
     }
     'film' {

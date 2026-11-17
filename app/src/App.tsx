@@ -209,20 +209,28 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
   viewingRef.current = viewing;
 
   // Into the machine: the cube zooms in and then the picture comes out from behind the app.
-  const enterMachine = useCallback((vm: string, reveal: () => Promise<unknown>) => {
+  // If the picture can't come out (the viewer closed meanwhile), the app shows itself again and `fallback` runs.
+  const enterMachine = useCallback((vm: string, reveal: () => Promise<unknown>, fallback?: () => void) => {
     setViewing({ vm, phase: "entering" });
     window.setTimeout(() => {
-      reveal().catch(() => {}).finally(() => setViewing((v) => (v?.vm === vm ? { vm, phase: "live" } : v)));
+      reveal()
+        .then(() => setViewing((v) => (v?.vm === vm ? { vm, phase: "live" } : v)))
+        .catch(() => { setViewing((v) => (v?.vm === vm ? null : v)); fallback?.(); });
     }, ZOOM_MS);
   }, []);
+  // Machines whose connected viewer turned out to be gone: the next "Abrir" opens them from scratch.
+  const staleViewer = useRef(new Set<string>());
 
   const startJob = useCallback((vm: string, cmd: string, args: Record<string, unknown>, after?: () => void, failed?: () => void) => {
     if (cmd === "Connect-GpuVM") {
       // Still connected from before (the person went to Home): straight into its picture.
       const already = openViewers().find((o) => o.vm === vm);
-      if (already && !args.Pair) {
-        enterMachine(vm, () => showViewer(vm));
-        after?.();
+      if (already && !args.Pair && !staleViewer.current.delete(vm)) {
+        enterMachine(vm, () => showViewer(vm).then(() => after?.()), () => {
+          // It closed on its own (or was closed): open it again from the start.
+          staleViewer.current.add(vm);
+          startJobRef.current?.(vm, cmd, args, after, failed);
+        });
         return;
       }
       setViewing({ vm, phase: "opening" });
@@ -249,6 +257,9 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       push("error", humanError(e));
     });
   }, [push]);
+
+  const startJobRef = useRef(startJob);
+  startJobRef.current = startJob;
 
   // The viewer's panel asked to switch machines: the new one opens as usual (its button shows the progress) and the
   // viewer of the old one closes once the new picture is up.
