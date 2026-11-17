@@ -154,6 +154,10 @@ const segDist = (x: number, y: number, a: V3, b: V3) => {
 /** A figure's size on the cube at size 1. */
 const FIG = 0.62;
 /** A picked sticker: the same image under a soft layer of the selection color. */
+// Where each machine's cube was last drawn on screen (page pixels): a cube that appears on another page right after
+// (Home to the machine, and back) starts there and glides to its place, as if the same cube moved.
+const lastCube = new Map<string, { x: number; y: number; s: number; t: number; canvas: HTMLCanvasElement }>();
+const ARRIVE_MS = 650;
 const tints = new WeakMap<HTMLCanvasElement, { color: string; c: HTMLCanvasElement }>();
 function stickerTinted(img: HTMLCanvasElement, color: string) {
   const hit = tints.get(img);
@@ -307,6 +311,14 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
     const mountedAt = performance.now();
     const before = lastSpace;
     const swap = { from: -1, t: 1, started: false, yaw: START_YAW };
+    // The same machine's cube was on screen a moment ago somewhere else: start from there.
+    const came = lastCube.get(decorRef.current.owner);
+    const arrive = came && came.canvas !== cv && performance.now() - came.t < 1500 && !reduced
+      ? { ...came, k: 0, t0: performance.now(), box: cv.getBoundingClientRect(), style: cv.getAttribute("style") } : null;
+    // On its way it flies over the whole window (its own box would cut it), with only the cube drawn; at its place the
+    // canvas goes back into its box and the world and the neighbors fade in around it.
+    if (arrive) cv.style.cssText += ";position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:40;pointer-events:none";
+    let landed = arrive ? 0 : 1;
     let spun = spins.current;
     if (before && before.name !== space.current.name && performance.now() - before.at < 2500) {
       swap.from = space.current.others.findIndex((o) => o.name === before.name);
@@ -1270,12 +1282,29 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
         if (swap.t === 1) view.zoom = 1;
       }
       // Centered in the part of the canvas on screen: a tall one that starts low on the page still shows the whole cube.
-      const rect = cv.getBoundingClientRect();
-      const top = Math.max(0, -rect.top), bottom = Math.min(H, window.innerHeight - rect.top), seen = Math.max(H * 0.4, bottom - top);
-      const mid = bottom - top > H * 0.4 ? (top + bottom) / 2 : H / 2;
-      Sz = Math.min(W / 3.1, seen / 3.75) * view.zoom;
+      const flying = !!arrive && arrive.k < 1;
+      // While flying, the place is worked out for the box it lands in.
+      const rect = flying ? arrive!.box : cv.getBoundingClientRect();
+      const bw = rect.width, bh = rect.height;
+      const top = Math.max(0, -rect.top), bottom = Math.min(bh, window.innerHeight - rect.top), seen = Math.max(bh * 0.4, bottom - top);
+      const mid = bottom - top > bh * 0.4 ? (top + bottom) / 2 : bh / 2;
+      Sz = Math.min(bw / 3.1, seen / 3.75) * view.zoom;
       HALF = seen / 2 / (Sz / view.zoom);
-      HALFW = W / 2 / (Sz / view.zoom); CX = W / 2 + view.ox; CY = mid + view.oy;
+      HALFW = bw / 2 / (Sz / view.zoom); CX = bw / 2 + view.ox; CY = mid + view.oy;
+      if (flying) {
+        // By the clock, not by frames: a slow first frame on the new page doesn't make the flight drag.
+        arrive.k = Math.min(1, (now - arrive.t0) / ARRIVE_MS);
+        const e = 1 - Math.pow(1 - arrive.k, 3);
+        CX = arrive.x + (rect.left + CX - arrive.x) * e;
+        CY = arrive.y + (rect.top + CY - arrive.y) * e;
+        Sz = arrive.s + (Sz - arrive.s) * e;
+        if (arrive.k >= 1) {
+          if (arrive.style === null) cv.removeAttribute("style"); else cv.setAttribute("style", arrive.style);
+          CX -= rect.left; CY -= rect.top;
+          scene.k = 0;
+        }
+      } else if (landed < 1) landed = Math.min(1, landed + dt / 0.45);
+      if (decorRef.current.owner && !flying) lastCube.set(decorRef.current.owner, { x: rect.left + CX, y: rect.top + CY, s: Sz, t: performance.now(), canvas: cv });
       cyw = Math.cos(view.yaw); syw = Math.sin(view.yaw); cpt = Math.cos(view.pitch); spt = Math.sin(view.pitch);
       under = vis(0, -1, 0);
       // The place around the machines, drawn with the same camera; a new one fades in over the last.
@@ -1283,16 +1312,16 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       scene.k = Math.min(1, scene.k + (reduced ? 1 : dt / 0.7));
       if (scene.k >= 1) scene.prev = null;
       const av = { g, W, H, T, dt, yaw: view.yaw, pitch: view.pitch, Sz, CX, CY, light, accent: uiAccent, reduced, space: labels.current.space, machine: labels.current.machine, time: timeRef.current };
-      if (scene.prev && hasScene(scene.prev)) drawAmbient(scene.prev, av, stateOf(scene.prev), 1);
+      if (scene.prev && hasScene(scene.prev) && !flying) drawAmbient(scene.prev, av, stateOf(scene.prev), 1);
       const fadeIn = scene.prev && hasScene(scene.prev) ? scene.k * scene.k * (3 - 2 * scene.k) : scene.k;
-      drawAmbient(scene.cur, av, stateOf(scene.cur), fadeIn);
+      if (!flying) drawAmbient(scene.cur, av, stateOf(scene.cur), fadeIn);
       const plain = !hasScene(scene.cur);
       const sp = space.current, spots = layout(sp.others.length);
       const setObj = (i: number) => Object.assign(OBJ, spots[i]);
       // In a world, each machine lights the ground under it with its hologram and casts its shadow away from the light.
       const lit = ambientLight(scene.cur, light, timeRef.current);
       if (scene.cur === "blocks" && lit) SUN = lit.dir;
-      if (lit) {
+      if (lit && !flying) {
         const keep = { ...OBJ };
         Object.assign(OBJ, { x: 0, y: 0, z: 0, s: 1 });
         const L = lit.dir, count = Math.min(sp.others.length, MAX_NEIGHBORS);
@@ -1371,7 +1400,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       // In the world of blocks the machines are built of bricks, drawn solid under the glass instead of as a hologram.
       const bricks = scene.cur === "blocks";
       if (bricks) ctx = g;
-      sp.others.forEach((o, i) => { if (i >= room && rest < 0.05) return; setObj(i + 1); FADE = (o.machine.power === "off" ? 0.5 : 0.8) * (0.55 + 0.45 * rest) * (i >= room ? rest : 1); if (i === swap.from && swap.t < 1) FADE += (1 - FADE) * (1 - swap.t); const keep = accent; accent = decorColor(o.name, light) ?? keep; if (bricks) { FADE = Math.min(1, FADE + 0.2); brickMachine(o.machine, o.machine.power === "off" ? 0 : 1, 0, false); } else lite(o.machine); accent = keep; });
+      sp.others.forEach((o, i) => { if (flying || (i >= room && rest < 0.05)) return; setObj(i + 1); FADE = (o.machine.power === "off" ? 0.5 : 0.8) * (0.55 + 0.45 * rest) * (i >= room ? rest : 1) * landed; if (i === swap.from && swap.t < 1) FADE += (1 - FADE) * (1 - swap.t); const keep = accent; accent = decorColor(o.name, light) ?? keep; if (bricks) { FADE = Math.min(1, FADE + 0.2); brickMachine(o.machine, o.machine.power === "off" ? 0 : 1, 0, false); } else lite(o.machine); accent = keep; });
       setObj(0);
       FADE = 1;
       if (bricks) {

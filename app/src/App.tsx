@@ -226,11 +226,19 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       // Still connected from before (the person went to Home): straight into its picture.
       const already = openViewers().find((o) => o.vm === vm);
       if (already && !args.Pair && !staleViewer.current.delete(vm)) {
-        enterMachine(vm, () => showViewer(vm).then(() => after?.()), () => {
-          // It closed on its own (or was closed): open it again from the start.
+        // It closed on its own (or was closed): open it again from the start, with its steps before the zoom.
+        const reopen = () => {
           staleViewer.current.add(vm);
           startJobRef.current?.(vm, cmd, args, after, failed);
-        });
+        };
+        // Asked first, so the zoom only plays when the picture is really there.
+        import("@tauri-apps/api/core")
+          .then(({ invoke }) => invoke<boolean>("viewer_is_open", { vm }))
+          .catch(() => false)
+          .then((alive) => {
+            if (alive) enterMachine(vm, () => showViewer(vm).then(() => after?.()), reopen);
+            else reopen();
+          });
         return;
       }
       setViewing({ vm, phase: "opening" });

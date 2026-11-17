@@ -26,6 +26,8 @@ function start() {
   import("@tauri-apps/api/event").then(({ listen }) => listen<{ vm: string; msg: { type: string } }>("viewer", (e) => {
     if (["opened", "first-frame", "closed"].includes(e.payload.msg.type)) refresh();
   }));
+  // An event can be missed while the window sleeps in the background: asked again when it comes back.
+  window.addEventListener("focus", () => { refresh(); });
   refresh();
 }
 

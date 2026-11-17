@@ -506,8 +506,33 @@ pub fn viewer_list() -> Vec<Value> {
     viewers().as_ref().map(|v| v.iter().map(|(name, x)| json!({ "vm": name, "embed": x.embed, "visible": x.visible.load(Ordering::Relaxed) })).collect()).unwrap_or_default()
 }
 
-/// Whether a machine's viewer is open.
+/// Whether a machine's viewer is open and its process still running (asked right before zooming into it, so the
+/// app never zooms into a picture that is gone). A dead one is forgotten here.
 #[tauri::command]
 pub fn viewer_is_open(vm: String) -> bool {
-    viewers().as_ref().is_some_and(|v| v.contains_key(&vm))
+    let Some(viewer) = viewers().as_ref().and_then(|v| v.get(&vm).cloned()) else { return false };
+    if process_running(viewer.pid) {
+        return true;
+    }
+    let mut all = viewers();
+    if all.as_ref().and_then(|v| v.get(&vm)).is_some_and(|v| Arc::ptr_eq(v, &viewer)) {
+        all.as_mut().map(|v| v.remove(&vm));
+    }
+    false
+}
+
+fn process_running(pid: u32) -> bool {
+    use windows_sys::Win32::System::Threading::{GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    const STILL_ACTIVE: u32 = 259;
+    // SAFETY: the handle is checked and closed here.
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if handle.is_null() {
+            return false;
+        }
+        let mut code = 0u32;
+        let ok = GetExitCodeProcess(handle, &mut code);
+        CloseHandle(handle);
+        ok != 0 && code == STILL_ACTIVE
+    }
 }
