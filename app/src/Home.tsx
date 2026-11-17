@@ -57,8 +57,8 @@ const Memo = memo(({ render }: { sig: string; render: () => React.ReactNode }) =
 
 /** Home while it loads: the stage and the row under it, with their real shape. */
 /** Home while its data loads: the machines as a constellation (HomeLoading). */
-export function HomeSkeleton({ names }: { names?: string[] } = {}) {
-  return <HomeLoading names={names} />;
+export function HomeSkeleton({ vms }: { vms?: VmOverview[] | null } = {}) {
+  return <HomeLoading vms={vms} />;
 }
 
 /** Home: the space of machines up front, with the one in use (or the last one opened) in its cube and, beside it, how
@@ -142,7 +142,7 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
     return () => { live = false; };
   }, [hero?.name, jobs]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!home) return <HomeSkeleton names={vms?.map((v) => v.name)} />;
+  if (!home) return <HomeSkeleton vms={vms} />;
 
   const others = inSpace.filter((v) => v !== hero);
   const memUsed = home.host.memoryTotalGB - home.host.memoryFreeGB;

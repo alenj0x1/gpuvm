@@ -1,38 +1,44 @@
-/** Home while its data loads: a constellation. The cube in the center and the machines around it draw themselves in
- *  fine lines and float, until Home arrives and takes their place. Drawn with CSS on SVG (no canvas, no per-frame
- *  work in JS). */
-export function HomeLoading({ names = [] }: { names?: string[] }) {
-  const shown = names.slice(0, 8);
-  const count = shown.length || 5;
-  const ring = Array.from({ length: count }, (_, i) => {
-    const a = -Math.PI / 2 + (i / count) * Math.PI * 2 + 0.35;
-    return { x: 400 + Math.cos(a) * 300, y: 250 + Math.sin(a) * 175, name: shown[i] ?? "" };
-  });
+import { MiniCube, type MiniMachine } from "./MiniCube";
+import type { VmOverview } from "./types";
+
+const SAMPLE: MiniMachine = { cores: 8, memoryGB: 16, gpuPercent: 60, diskGB: 256, apps: 2 };
+
+function miniOf(vm: VmOverview): MiniMachine {
+  return {
+    cores: vm.options?.cpu ?? vm.processorCount,
+    memoryGB: vm.options?.memoryGB ?? vm.memoryStartupGB,
+    gpuPercent: vm.hasGpu ? vm.options?.gpuPercent ?? 0 : 0,
+    diskGB: vm.options?.diskGB ?? 0,
+    apps: 0,
+  };
+}
+
+/** Home while its data loads: a constellation of the machines themselves (their cubes, with their pieces) around the
+ *  first one, each coming in and floating on an orbit, until Home arrives and takes their place. Without the list yet,
+ *  faint machines wait in their places. */
+export function HomeLoading({ vms }: { vms?: VmOverview[] | null }) {
+  const list = (vms ?? []).slice(0, 9);
+  const center = list[0] ?? null;
+  const around = list.length > 1 ? list.slice(1) : Array.from({ length: 5 }, () => null);
   return (
     <div className="main home home-loading" aria-busy="true">
-      <svg viewBox="0 0 800 500" preserveAspectRatio="xMidYMid meet" role="presentation">
-        <defs>
-          <g id="home-loading-cube">
-            <path d="M0 -14 L14 -7 L0 0 L-14 -7 Z M-14 -7 L-14 9 L0 16 L0 0 M14 -7 L14 9 L0 16" />
-          </g>
-        </defs>
-        <ellipse className="home-loading-orbit" cx={400} cy={250} rx={300} ry={175} />
-        {ring.map((p, i) => (
-          <line key={`l${i}`} className="home-loading-link" x1={400} y1={250} x2={p.x} y2={p.y} style={{ animationDelay: `${0.25 + i * 0.12}s` }} />
-        ))}
-        <g className="home-loading-core" transform="translate(400 250) scale(5)">
-          <use href="#home-loading-cube" />
-          <rect x={-2.2} y={-1.6} width={4.4} height={4.4} rx={1} transform="matrix(1 .5 -1 .5 0 -7)" />
-        </g>
-        {ring.map((p, i) => (
-          <g key={i} className="home-loading-machine" style={{ animationDelay: `${i * 0.5}s` }}>
-            <g transform={`translate(${p.x} ${p.y}) scale(2)`}>
-              <use href="#home-loading-cube" style={{ animationDelay: `${0.3 + i * 0.12}s` }} />
-            </g>
-            {p.name && <text x={p.x} y={p.y + 52} textAnchor="middle">{p.name}</text>}
-          </g>
-        ))}
-      </svg>
+      <div className="home-loading-field">
+        <svg className="home-loading-orbit" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          <ellipse cx={50} cy={50} rx={38} ry={35} />
+        </svg>
+        <div className="home-loading-core">
+          <MiniCube machine={center ? miniOf(center) : SAMPLE} ghost={!center || center.state !== "Running"} />
+        </div>
+        {around.map((vm, i) => {
+          const a = -Math.PI / 2 + (i / around.length) * Math.PI * 2 + 0.4;
+          return (
+            <div key={vm?.name ?? i} className="home-loading-machine"
+              style={{ left: `${50 + Math.cos(a) * 38}%`, top: `${50 + Math.sin(a) * 35}%`, animationDelay: `${0.15 + i * 0.12}s, ${i * 0.6}s` }}>
+              <MiniCube machine={vm ? miniOf(vm) : SAMPLE} ghost={!vm || vm.state !== "Running"} />
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
