@@ -370,7 +370,11 @@ pub fn open_and_wait(app: &AppHandle, vm: &str, launch: &Value) -> Result<(), St
     if arguments.first().map(String::as_str) != Some("stream") {
         return Err("El módulo no devolvió cómo abrir la máquina.".into());
     }
-    let mut arguments = arguments;
+    // The module quotes the app's name for a command line ("Desktop"); here each argument goes on its own, so the
+    // quotes would become part of the name.
+    let mut arguments: Vec<String> = arguments.into_iter()
+        .map(|a| if a.len() >= 2 && a.starts_with('"') && a.ends_with('"') { a[1..a.len() - 1].to_string() } else { a })
+        .collect();
     // The machine's monitor: the viewer opens on the display that holds its center.
     let monitor = &launch["monitor"];
     if let (Some(x), Some(y), Some(w), Some(h)) = (monitor["x"].as_i64(), monitor["y"].as_i64(), monitor["width"].as_i64(), monitor["height"].as_i64()) {
