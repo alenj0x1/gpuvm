@@ -1,4 +1,4 @@
-﻿# Lab 021: how evenly the picture moves with each FPS, V-Sync and frame pacing setting (for the "Movies" and "Work"
+# Lab 021: how evenly the picture moves with each FPS, V-Sync and frame pacing setting (for the "Movies" and "Work"
 # uses), measured on a bar crossing the screen at constant speed in the VM (tools/latency/motion-target.ps1).
 #   local    the bar runs on this PC, without streaming: the best this monitor can show
 #   <name>   the bar runs in the VM; Moonlight opens with that variant's settings (borderless)
@@ -9,6 +9,7 @@ param(
     [string]$Name = 'win10',
     [string[]]$Only,
     # Other variants instead of the built-in ones: @{ Name = '...'; Client = @{ fps = 180; vsync = $true } } each.
+    # Viewer = 'gpuvm' opens GpuVM's viewer instead of Moonlight (tools/latency/common.ps1, Start-LatencyViewer).
     [hashtable[]]$Custom,
     [int]$Rounds = 2,
     [double]$Seconds = 20,
@@ -65,19 +66,22 @@ try {
             foreach ($k in $saved.Keys) { $client[$k] = $saved[$k] }
             $client['displayMode'] = 'borderless'
             foreach ($k in $variant.Client.Keys) { $client[$k] = $variant.Client[$k] }
-            $fps = [int]$client['fps']
+            # FPS 0 = automatic (the monitor's refresh, lab 022): as GpuVM opens it, the VM's display is left as it is.
+            $auto = -not ([int]$client['fps'] -gt 0)
+            $fps = [int](& $vm.Module { param($f) Resolve-GpuVMStreamFps $f } $client['fps'])
             $width, $height = [int[]]("$($client['resolution'])" -split 'x')
-            if ($guestFps -ne $fps) {
+            $viewer = if ($variant.PSObject.Properties['Viewer']) { $variant.Viewer } else { 'moonlight' }
+            if (-not $auto -and $guestFps -ne $fps) {
                 $set = & $vm.Module { param($n, $c, $r, $f) Set-GuestDisplayResolution -Name $n -Credential $c -Resolution $r -Fps $f } $Name $vm.Guest $client['resolution'] $fps
                 $guestFps = $fps
                 "guest display $($client['resolution'])@$fps : $($set | ConvertTo-Json -Compress)" | Write-Host
                 Start-Sleep -Seconds 2
             }
             $arguments = & $vm.Module { param($a, $c) Get-MoonlightStreamArguments -Address $a -Client $c } $vm.Address $client
-            Get-Process Moonlight -ErrorAction SilentlyContinue | Stop-Process -Force
             $started = Get-Date
-            $process = Start-Process (Join-Path $env:ProgramFiles 'Moonlight Game Streaming\Moonlight.exe') -ArgumentList $arguments -PassThru
-            $firstFrameSec = Wait-LatencyStreamVisible -Since $started
+            $session = Start-LatencyViewer -Viewer $viewer -Arguments $arguments
+            $process = $session.Process
+            $firstFrameSec = Wait-LatencyViewerFrame $session -Since $started
             $process.Refresh()
             if (-not [GpuVMInputMeter]::BringToFront($process.MainWindowHandle)) { 'Moonlight is not in front: the picture may be covered' | Write-Host }
             Start-Sleep -Milliseconds 500
@@ -93,7 +97,7 @@ try {
             "$($variant.Name) r$round picture after $pictureSec s" | Write-Host
             Start-Sleep -Seconds 2
             $row = Measure-Motion -Bounds $bounds -Fps $fps -Seconds $Seconds
-            $row | Add-Member variant $variant.Name -PassThru | Add-Member round $round -PassThru | Add-Member fps $fps -PassThru |
+            $row | Add-Member variant $variant.Name -PassThru | Add-Member viewer $viewer -PassThru | Add-Member round $round -PassThru | Add-Member fps $fps -PassThru |
                 Add-Member firstFrameSec $firstFrameSec -PassThru | Add-Member startedAt $started.ToString("o") -PassThru | Add-Member pictureSec $pictureSec -PassThru | Add-Member arguments ($arguments -join ' ') | Out-Null
             $results.Add($row)
             if ($row.PSObject.Properties['error']) {
@@ -118,7 +122,8 @@ try {
                 "$($variant.Name) r$round : $($row.error) ($guest)" | Write-Host
             }
             else { "$($variant.Name) r$round : updates/s $($row.updatesPerSec) sd $($row.intervalSdMs) ms p99 $($row.intervalP99Ms) ms stutter $($row.stutterPct) % speedCV $($row.speedCvPct) %" | Write-Host }
-            Stop-LatencyStream ([pscustomobject]@{ Process = $process }) -VM $vm
+            Stop-LatencyStream $session -VM $vm
+            if ($session.Bridge) { $session.Bridge.Dispose() }
         }
     }
 }

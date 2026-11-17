@@ -77,3 +77,26 @@ Reference figures: NVIDIA reports 50-100 ms system latency for most players and 
 ## Conclusion
 
 Measured: about 16.6 ms median from a key, click, mouse move or gamepad button on the host to the change in Moonlight's picture at 120 FPS or more (5.6 ms without streaming, so the stream adds about 11 ms); 60 FPS adds one more host frame. Codec and display mode make no difference to the median. At 120 FPS V-Sync sometimes adds a frame to clicks; lab 022 removed that trade-off by running the VM's display at the monitor's refresh rate, where V-Sync costs nothing. Adopted with lab 022: per-machine uses (Games, Movies and video, Work) and V-Sync, frame pacing and mouse settings.
+
+### Nov 17, 2026: GpuVM's viewer vs Moonlight (win-gpu, 1920x1080, automatic FPS = 180, V-Sync and pacing off, borderless)
+
+`out/run-20261117-165011.json`, `out/guest-local-20261117-170000.json`. Both viewers get the same arguments
+(`Get-MoonlightStreamArguments`); GpuVM's viewer is started as the app starts it (private pipe, token, GpuVM mode, so
+it lowers itself to Low; not in a job, not embedded, panel closed). 2 interleaved rounds, 40 samples per kind.
+
+| Variant | Key median / p95 | Click median / p95 | Move median / p95 |
+|---|---|---|---|
+| local (host) | 6.1 / 10.8 | 5.6 / 11.3 | 5.7 / 8.4 |
+| guest-local (target and meter inside win-gpu, no stream) | 19.8 / 66.3 | 19.1 / 47.6 | 19.2 / 47.0 |
+| moonlight r1, r2 | 98.7, 98.7 / 255, 404 | 84.9, 74.4 / 175, 166 | 75.6, 90.3 / 229, 151 |
+| gpuvm r1, r2 | 72.2, 90.2 / 289, 298 | 83.0, 81.6 / 183, 193 | 75.1, 78.8 / 202, 179 |
+
+- **GpuVM's viewer adds nothing measurable over Moonlight**: the medians overlap round to round (72-90 vs 74-99 ms).
+  It showed the picture sooner (4.1-4.2 s from launch vs 11-15 s).
+- The absolute numbers are far from Nov 8 (16.6 ms on win10): the minimum sample is already 33-52 ms. Inside the VM
+  without streaming the same target answers in ~19 ms (14 ms more than on the host). Lab 021 the same day shows why:
+  the stream of win-gpu advances only 16-29 times per second (see there). Not caused by the viewer; to investigate
+  apart (win-gpu's capture of its virtual display, and whether a GDI target is updated slowly in a GPU-P VM).
+- Instrument: GpuVM's viewer started from a console writes its log there, not to a file; its first frame is now taken
+  from the pipe (`Wait-LatencyViewerFrame`). The lab pipe is created like the app's (Low label), since the viewer
+  lowers itself to Low in GpuVM mode.

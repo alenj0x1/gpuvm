@@ -1,4 +1,4 @@
-﻿# Lab 020: end-to-end input latency (key, click, mouse move, gamepad button) from the host to Moonlight's picture.
+# Lab 020: end-to-end input latency (key, click, mouse move, gamepad button) from the host to Moonlight's picture.
 #   local    the input target runs on this PC, without streaming: what the meter, the target and DWM cost by themselves
 #   <name>   the target runs in the VM; Moonlight is opened with that variant's settings and measured the same way
 # Variants run in interleaved rounds (A B C ... A B C ...) so drift over time doesn't favor one of them.
@@ -10,6 +10,7 @@ param(
     [string]$Name = 'win10',
     [string[]]$Only,
     # Other variants instead of the built-in ones: @{ Name = '...'; Client = @{ fps = 180; vsync = $true } } each.
+    # Viewer = 'gpuvm' opens GpuVM's viewer instead of Moonlight (tools/latency/common.ps1, Start-LatencyViewer).
     [hashtable[]]$Custom,
     [int]$Rounds = 2,
     [int]$Samples = 40,
@@ -79,20 +80,22 @@ try {
             $client = [ordered]@{}
             foreach ($k in $saved.Keys) { $client[$k] = $saved[$k] }
             foreach ($k in $variant.Client.Keys) { $client[$k] = $variant.Client[$k] }
-            $fps = [int]$client['fps']
+            # FPS 0 = automatic (the monitor's refresh, lab 022): as GpuVM opens it, the VM's display is left as it is.
+            $auto = -not ([int]$client['fps'] -gt 0)
+            $fps = [int](& $vm.Module { param($f) Resolve-GpuVMStreamFps $f } $client['fps'])
             $width, $height = [int[]]("$($client['resolution'])" -split 'x')
-            if ($guestFps -ne $fps) {
+            $viewer = if ($variant.PSObject.Properties['Viewer']) { $variant.Viewer } else { 'moonlight' }
+            if (-not $auto -and $guestFps -ne $fps) {
                 $set = & $vm.Module { param($n, $c, $r, $f) Set-GuestDisplayResolution -Name $n -Credential $c -Resolution $r -Fps $f } $Name $vm.Guest $client['resolution'] $fps
                 $guestFps = $fps
                 "guest display $($client['resolution'])@$fps : $($set | ConvertTo-Json -Compress)" | Write-Host
                 Start-Sleep -Seconds 2
             }
             $arguments = & $vm.Module { param($a, $c) Get-MoonlightStreamArguments -Address $a -Client $c } $vm.Address $client
-            Get-Process Moonlight -ErrorAction SilentlyContinue | Stop-Process -Force
             $started = Get-Date
-            $process = Start-Process (Join-Path $env:ProgramFiles 'Moonlight Game Streaming\Moonlight.exe') -ArgumentList $arguments -PassThru
-            $session = [pscustomobject]@{ Process = $process }
-            $firstFrameSec = Wait-LatencyStreamVisible -Since $started
+            $session = Start-LatencyViewer -Viewer $viewer -Arguments $arguments
+            $process = $session.Process
+            $firstFrameSec = Wait-LatencyViewerFrame $session -Since $started
             Start-Sleep -Seconds 5
             $process.Refresh()
             $window = $process.MainWindowHandle
@@ -109,12 +112,13 @@ try {
             "$($variant.Name) r$round picture after $([math]::Round($firstFrameSec + 5 + $wait.Elapsed.TotalSeconds, 1)) s" | Write-Host
             Start-Sleep -Milliseconds 300
             foreach ($row in Invoke-Pass $bounds ($guestPad -and $round -eq 1) $window) {
-                $row | Add-Member variant $variant.Name -PassThru | Add-Member round $round -PassThru |
+                $row | Add-Member variant $variant.Name -PassThru | Add-Member viewer $viewer -PassThru | Add-Member round $round -PassThru |
                     Add-Member fps $fps -PassThru | Add-Member firstFrameSec $firstFrameSec -PassThru | Add-Member startedAt $started.ToString("o") -PassThru |
                     Add-Member arguments ($arguments -join ' ') -PassThru | ForEach-Object { $results.Add($_) }
                 "$($variant.Name) r$round $($row.kind): median $($row.medianMs) p95 $($row.p95Ms) misses $($row.misses)" | Write-Host
             }
             Stop-LatencyStream $session -VM $vm
+            if ($session.Bridge) { $session.Bridge.Dispose() }
         }
     }
 }

@@ -39,3 +39,21 @@ Runs 1-4 (`out/run-20261108-150058`, `-150633`, `-152017`, `-153405`) are discar
 ## Conclusion
 
 Confirmed in part. Frame pacing helps only at 60 FPS, where it gives the most even motion: the "Movies and video" use keeps 60 FPS with V-Sync and pacing. At 120 FPS and above pacing adds stutters, so "Work" (and "Games") use V-Sync without pacing; more FPS is smoother still, and 165 FPS (the most the virtual display accepts on this host) was the smoothest of all.
+
+### Nov 17, 2026: GpuVM's viewer vs Moonlight (win-gpu, automatic FPS = 180, V-Sync and pacing off, borderless)
+
+`out/run-20261117-170420.json`, 2 interleaved rounds of 20 s.
+
+| Variant | Updates/s | Interval sd, ms | p99, ms | Stutter % | Speed CV % |
+|---|---|---|---|---|---|
+| local (host, 162 reads/s) | 153.6 | 4.2 | 16.5 | 2.9 | 39.4 |
+| moonlight r1 | bar not seen (Moonlight not in front) | | | | |
+| moonlight r2 | 16.2 | 30.9 | 173 | 91 | 104 |
+| gpuvm r1, r2 | 29.4, 28.6 | 24.3, 25.9 | 128, 122 | 89, 91 | 184, 101 |
+
+- Both viewers show the same thing: the bar advances only 16-29 times per second although 180 FPS are asked and the
+  target draws continuously. The viewer is not the cause (GpuVM's is not worse than Moonlight).
+- The local reference itself was noisier than on Nov 8 (162 reads/s, 2.9 % stutter vs 179 and 0.06 %): other work on
+  the host while it ran. Its numbers compare the viewers with each other only.
+- Open: why win-gpu's stream updates this rarely for a GDI-drawn target (win10 gave 110-160 updates/s). Candidates:
+  the virtual display's capture in Sunshine, GDI drawing in a GPU-P VM, the encoder skipping unchanged frames.

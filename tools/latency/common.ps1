@@ -117,13 +117,111 @@ public static class GpuVMLatency {
 # Waits until Moonlight shows the stream (its log says "Video stream is"), instead of a fixed warmup: at 120/144 FPS
 # the first frame takes up to ~30 s, at 60 FPS a few seconds. Returns the seconds it took, or -1 on timeout.
 function Wait-LatencyStreamVisible {
-    param([Parameter(Mandatory)][datetime]$Since, [int]$TimeoutSec = 90)
+    param([Parameter(Mandatory)][datetime]$Since, [int]$TimeoutSec = 90,
+        # Where the viewer writes its log: Moonlight in TEMP, GpuVM's viewer under LocalLow (Get-LatencyViewerLogDir).
+        [string]$LogDir = $env:TEMP)
     $watch = [Diagnostics.Stopwatch]::StartNew()
     while ($watch.Elapsed.TotalSeconds -lt $TimeoutSec) {
-        $log = Get-ChildItem $env:TEMP -Filter 'Moonlight*.log' -ErrorAction SilentlyContinue |
+        $log = Get-ChildItem $LogDir -Filter 'Moonlight*.log' -ErrorAction SilentlyContinue |
             Where-Object LastWriteTime -ge $Since | Sort-Object LastWriteTime -Descending | Select-Object -First 1
         if ($log -and (Select-String -LiteralPath $log.FullName -Pattern 'Video stream is' -Quiet)) { return [math]::Round($watch.Elapsed.TotalSeconds, 1) }
         Start-Sleep -Milliseconds 500
+    }
+    -1
+}
+
+# The viewers a lab can compare with the same arguments:
+#   moonlight  the installed Moonlight (Program Files\Moonlight Game Streaming)
+#   gpuvm      GpuVM's viewer as the app starts it: private pipe, one-time token in the environment, GpuVM mode (it
+#              lowers itself to Low integrity and keeps its data under LocalLow). Not embedded: it opens its own window
+#              with the display mode in the arguments, the panel closed. Unlike the app, it is not put in a job.
+function Get-LatencyViewerLogDir([string]$Viewer) {
+    if ($Viewer -eq 'gpuvm') { Join-Path $env:USERPROFILE 'AppData\LocalLow\GpuVM\Viewer\logs' } else { $env:TEMP }
+}
+
+function Stop-LatencyViewers { Get-Process Moonlight, GpuVMViewer -ErrorAction SilentlyContinue | Stop-Process -Force }
+
+if (-not ('GpuVMLatencyBridge' -as [type])) {
+    Add-Type -TypeDefinition @"
+using System;
+using System.IO;
+using System.IO.Pipes;
+using System.Threading;
+// Plays the app's side of the viewer's pipe: checks the hello, then keeps reading (the viewer's queue never fills)
+// and notes when the first picture was reported.
+public class GpuVMLatencyBridge : IDisposable {
+    readonly NamedPipeServerStream server;
+    readonly string token;
+    public volatile bool Hello;
+    public long FirstFrameTicks = -1;
+    [System.Runtime.InteropServices.DllImport("advapi32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    static extern bool ConvertStringSecurityDescriptorToSecurityDescriptorW(string sddl, uint rev, out IntPtr sd, IntPtr size);
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern IntPtr LocalFree(IntPtr p);
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    static extern Microsoft.Win32.SafeHandles.SafePipeHandle CreateNamedPipeW(string name, uint open, uint mode, uint max, uint outSize, uint inSize, uint timeout, ref SECURITY_ATTRIBUTES sa);
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    struct SECURITY_ATTRIBUTES { public int nLength; public IntPtr lpSecurityDescriptor; public int bInheritHandle; }
+    // Like the app's pipe (viewer.rs): this user only, first instance, local clients, labelled Low so the viewer
+    // (which lowers itself to Low in GpuVM mode) can open it.
+    public GpuVMLatencyBridge(string name, string token) {
+        this.token = token;
+        string user = System.Security.Principal.WindowsIdentity.GetCurrent().User.Value;
+        IntPtr sd;
+        if (!ConvertStringSecurityDescriptorToSecurityDescriptorW("D:P(A;;GA;;;" + user + ")S:(ML;;NW;;;LW)", 1, out sd, IntPtr.Zero)) throw new Exception("security descriptor");
+        var sa = new SECURITY_ATTRIBUTES { nLength = System.Runtime.InteropServices.Marshal.SizeOf(typeof(SECURITY_ATTRIBUTES)), lpSecurityDescriptor = sd };
+        // PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE | FILE_FLAG_OVERLAPPED; PIPE_TYPE_BYTE | PIPE_REJECT_REMOTE_CLIENTS
+        var handle = CreateNamedPipeW(@"\\.\pipe\" + name, 0x3 | 0x80000 | 0x40000000, 0x8, 1, 65536, 65536, 0, ref sa);
+        LocalFree(sd);
+        if (handle.IsInvalid) throw new Exception("pipe " + System.Runtime.InteropServices.Marshal.GetLastWin32Error());
+        server = new NamedPipeServerStream(PipeDirection.InOut, true, false, handle);
+        new Thread(Run) { IsBackground = true }.Start();
+    }
+    void Run() {
+        try {
+            server.WaitForConnection();
+            var reader = new StreamReader(server);
+            string line;
+            while ((line = reader.ReadLine()) != null) {
+                if (!Hello) { Hello = line.Contains(token); continue; }
+                if (FirstFrameTicks < 0 && line.Contains("\"first-frame\"")) FirstFrameTicks = DateTime.UtcNow.Ticks;
+            }
+        } catch { }
+    }
+    public void Dispose() { try { server.Dispose(); } catch { } }
+}
+"@
+}
+
+# Starts one of the viewers with the stream arguments; returns { Process, Viewer, Bridge }.
+function Start-LatencyViewer {
+    param([Parameter(Mandatory)][ValidateSet('moonlight', 'gpuvm')][string]$Viewer, [Parameter(Mandatory)][string[]]$Arguments)
+    Stop-LatencyViewers
+    if ($Viewer -eq 'moonlight') {
+        $process = Start-Process (Join-Path $env:ProgramFiles 'Moonlight Game Streaming\Moonlight.exe') -ArgumentList $Arguments -PassThru
+        return [pscustomobject]@{ Process = $process; Viewer = $Viewer; Bridge = $null }
+    }
+    $exe = (Resolve-Path (Join-Path $PSScriptRoot '..\..\viewer\GpuVMViewer.exe')).Path
+    $hex = { param($n) $b = [byte[]]::new($n); [Security.Cryptography.RandomNumberGenerator]::Fill($b); -join ($b | ForEach-Object { $_.ToString('x2') }) }
+    $name = 'gpuvm-viewer-' + (& $hex 16)
+    $token = & $hex 32
+    $bridge = [GpuVMLatencyBridge]::new($name, $token)
+    $psi = [Diagnostics.ProcessStartInfo]::new($exe)
+    foreach ($a in @($Arguments) + @('--gpuvm-pipe', "\\.\pipe\$name", '--gpuvm-token-env', 'GPUVM_VIEWER_TOKEN')) { $psi.ArgumentList.Add($a.Trim('"')) }
+    $psi.Environment['GPUVM_VIEWER_TOKEN'] = $token
+    $psi.UseShellExecute = $false
+    $process = [Diagnostics.Process]::Start($psi)
+    [pscustomobject]@{ Process = $process; Viewer = $Viewer; Bridge = $bridge }
+}
+
+# Seconds until the viewer's first picture: GpuVM's viewer says it on its pipe; Moonlight writes it in its log (GpuVM's
+# viewer logs to the lab's console instead of a file when started from one). -1 on timeout.
+function Wait-LatencyViewerFrame {
+    param([Parameter(Mandatory)]$Session, [Parameter(Mandatory)][datetime]$Since, [int]$TimeoutSec = 90)
+    if (-not $Session.Bridge) { return Wait-LatencyStreamVisible -Since $Since -TimeoutSec $TimeoutSec -LogDir (Get-LatencyViewerLogDir $Session.Viewer) }
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    while ($watch.Elapsed.TotalSeconds -lt $TimeoutSec) {
+        if ($Session.Bridge.FirstFrameTicks -ge 0) { return [math]::Round(([datetime]::new($Session.Bridge.FirstFrameTicks, 'Utc') - $Since.ToUniversalTime()).TotalSeconds, 1) }
+        Start-Sleep -Milliseconds 200
     }
     -1
 }
