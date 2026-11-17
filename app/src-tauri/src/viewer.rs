@@ -7,11 +7,12 @@
 //! - Only the process this app started may connect (its PID is checked) and it must present the one-time token
 //!   it got through its environment, never the command line.
 //! - Messages are JSON lines from a fixed list, with a size limit; anything else is dropped.
-//! - The viewer runs unelevated, as this app does.
+//! - The viewer runs at Low integrity with a restricted token, inside a job (lowbox.rs).
+//! - This app raises the viewer's window only right after it asked for the picture (reveal, show, full screen),
+//!   never because the viewer says so on its own.
 
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -23,7 +24,7 @@ use windows_sys::Win32::Security::Cryptography::{BCryptGenRandom, BCRYPT_USE_SYS
 use windows_sys::Win32::Security::{GetTokenInformation, TokenUser, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER};
 use windows_sys::Win32::Storage::FileSystem::{ReadFile, WriteFile, FILE_FLAG_FIRST_PIPE_INSTANCE, FILE_FLAG_OVERLAPPED, PIPE_ACCESS_DUPLEX};
 use windows_sys::Win32::System::Pipes::{ConnectNamedPipe, CreateNamedPipeW, GetNamedPipeClientProcessId, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_WAIT};
-use windows_sys::Win32::System::Threading::{CreateEventW, GetCurrentProcess, OpenProcessToken, WaitForSingleObject};
+use windows_sys::Win32::System::Threading::{CreateEventW, GetCurrentProcess, OpenProcessToken, WaitForMultipleObjects, WaitForSingleObject};
 use windows_sys::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
 
 /// Longest line either side sends; the viewer's own limit is the same.
@@ -48,7 +49,10 @@ impl Drop for Pipe {
 
 struct Viewer {
     pipe: Pipe,
-    pid: u32,
+    /// Its process (handle and job): what is killed, checked and given the foreground is always this one.
+    child: crate::lowbox::LowChild,
+    /// Until when a full-screen report raises its window: set when this app asks for the picture.
+    raise_until: Mutex<Option<Instant>>,
     write: Mutex<()>,
     hwnd: AtomicIsize,
     /// Inside the app's window (not full screen): placed over the content area and following it.
@@ -255,7 +259,7 @@ fn overlapped_io(pipe: HANDLE, write: Option<&[u8]>, read: Option<&mut [u8]>, ti
 }
 
 /// Waits up to `timeout` for the viewer to connect.
-fn wait_connect(pipe: HANDLE, timeout: Duration) -> bool {
+fn wait_connect(pipe: HANDLE, process: HANDLE, timeout: Duration) -> bool {
     // SAFETY: as in overlapped_io.
     unsafe {
         let event = CreateEventW(std::ptr::null(), 1, 0, std::ptr::null());
@@ -267,7 +271,8 @@ fn wait_connect(pipe: HANDLE, timeout: Duration) -> bool {
             match GetLastError() {
                 ERROR_PIPE_CONNECTED => true,
                 ERROR_IO_PENDING => {
-                    if WaitForSingleObject(event, timeout.as_millis() as u32) != WAIT_OBJECT_0 {
+                    // A viewer that exits before connecting fails the open at once.
+                    if WaitForMultipleObjects(2, [event, process].as_ptr(), 0, timeout.as_millis() as u32) != WAIT_OBJECT_0 {
                         CancelIoEx(pipe, &ov);
                     }
                     let mut done = 0u32;
@@ -334,17 +339,17 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
     let pipe = Pipe(handle);
 
     const TOKEN_VAR: &str = "GPUVM_VIEWER_TOKEN";
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let mut all = arguments.clone();
     all.extend(["--gpuvm-pipe".into(), pipe_name.clone(), "--gpuvm-token-env".into(), TOKEN_VAR.into()]);
     // At Low integrity (lowbox.rs): the viewer handles what the machine sends.
-    let pid = crate::lowbox::spawn_low(&exe, &all, &[(TOKEN_VAR, token.as_str())])?;
+    let child = crate::lowbox::spawn_low(&exe, &all, &[(TOKEN_VAR, token.as_str())])?;
+    let pid = child.pid;
 
     let refuse = |message: &str| -> Result<u32, String> {
-        let _ = std::process::Command::new(crate::system32("taskkill.exe")).args(["/PID", &pid.to_string(), "/F"]).creation_flags(CREATE_NO_WINDOW).status();
+        child.kill();
         Err(message.to_string())
     };
-    if !wait_connect(pipe.0, Duration::from_secs(20)) {
+    if !wait_connect(pipe.0, child.handle(), Duration::from_secs(20)) {
         return refuse("El visor no respondió.");
     }
     let mut client = 0u32;
@@ -361,7 +366,7 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
     }
     drop(token);
 
-    let viewer = Arc::new(Viewer { pipe, pid, write: Mutex::new(()), hwnd: AtomicIsize::new(0), embed, visible: std::sync::atomic::AtomicBool::new(!embed), revealed: std::sync::atomic::AtomicBool::new(!embed), first_frame: std::sync::atomic::AtomicBool::new(false), full_now: std::sync::atomic::AtomicBool::new(false), last_toggle: Mutex::new(None), full_screen });
+    let viewer = Arc::new(Viewer { pipe, child, raise_until: Mutex::new(None), write: Mutex::new(()), hwnd: AtomicIsize::new(0), embed, visible: std::sync::atomic::AtomicBool::new(!embed), revealed: std::sync::atomic::AtomicBool::new(!embed), first_frame: std::sync::atomic::AtomicBool::new(false), full_now: std::sync::atomic::AtomicBool::new(false), last_toggle: Mutex::new(None), full_screen });
     viewers().get_or_insert_with(HashMap::new).insert(vm.clone(), viewer.clone());
     let _ = app.emit("viewer", json!({ "vm": vm, "msg": { "type": "opened", "pid": pid } }));
 
@@ -376,15 +381,15 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
                 let hwnd = msg["hwnd"].as_f64().unwrap_or(0.0) as isize;
                 // Only a window of the viewer's own process: the panel is owned by it and placed over it, so a
                 // handle of another program's window would put GpuVM's panel (and the focus) there.
-                viewer.hwnd.store(if window_of(hwnd, viewer.pid) { hwnd } else { 0 }, Ordering::Relaxed);
+                viewer.hwnd.store(if window_of(hwnd, viewer.child.pid) { hwnd } else { 0 }, Ordering::Relaxed);
                 let full = msg["fullScreen"].as_bool().unwrap_or(false);
                 viewer.full_now.store(full, Ordering::Relaxed);
                 // At Low integrity the viewer can't put its window in front of this app's: it went full screen but
-                // stayed behind it until something raised it. This app may, so it does as soon as the picture is
-                // full screen and meant to be seen.
+                // stayed behind it until something raised it. This app may, but only once and only right after it
+                // asked for the picture (a viewer can't take the keyboard whenever it likes).
                 let shown = viewer.hwnd.load(Ordering::Relaxed);
-                if full && shown != 0 && viewer.visible.load(Ordering::Relaxed) {
-                    bring_forward(shown, viewer.pid);
+                if full && shown != 0 && viewer.visible.load(Ordering::Relaxed) && take_raise(&viewer) {
+                    bring_forward(shown, viewer.child.pid);
                 }
                 // The handle stays here: pages only need to know that it changed.
                 if let Some(o) = msg.as_object_mut() {
@@ -531,6 +536,9 @@ pub fn send_to(vm: &str, msg: &Value) -> Result<(), String> {
         return Err("Orden no válida para el visor.".into());
     }
     let viewer = viewers().as_ref().and_then(|v| v.get(vm).cloned()).ok_or("El visor de esta máquina no está abierto.")?;
+    if kind == "fullscreen" {
+        allow_raise(&viewer);
+    }
     if send_raw(&viewer, msg) { Ok(()) } else { Err("El visor no respondió.".into()) }
 }
 
@@ -544,20 +552,33 @@ pub fn viewer_hwnd(vm: &str) -> Option<isize> {
     let viewer = viewers().as_ref()?.get(vm).cloned()?;
     let hwnd = viewer.hwnd.load(Ordering::Relaxed);
     // Checked again on use: a closed window's handle can be reused by another program.
-    window_of(hwnd, viewer.pid).then_some(hwnd)
+    window_of(hwnd, viewer.child.pid).then_some(hwnd)
 }
 
 /// Lets the viewer take the foreground back from this app (when the panel closes).
 pub fn allow_viewer_foreground(vm: &str) {
-    if let Some(pid) = viewers().as_ref().and_then(|v| v.get(vm)).map(|v| v.pid) {
+    if let Some(pid) = viewers().as_ref().and_then(|v| v.get(vm)).map(|v| v.child.pid) {
         allow_foreground(pid);
     }
 }
 
+/// How long after this app asks for the picture a full-screen report may raise the viewer.
+const RAISE_WINDOW: Duration = Duration::from_secs(3);
+
+fn allow_raise(viewer: &Viewer) {
+    *viewer.raise_until.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now() + RAISE_WINDOW);
+}
+
+/// Uses up the raise this app granted, if it is still current.
+fn take_raise(viewer: &Viewer) -> bool {
+    viewer.raise_until.lock().unwrap_or_else(|e| e.into_inner()).take().is_some_and(|until| Instant::now() < until)
+}
+
 fn reveal(viewer: &Viewer) {
+    allow_raise(viewer);
     viewer.visible.store(true, Ordering::Relaxed);
     viewer.revealed.store(true, Ordering::Relaxed);
-    allow_foreground(viewer.pid);
+    allow_foreground(viewer.child.pid);
     send_raw(viewer, &json!({ "type": "reveal", "fullscreen": viewer.full_screen }));
 }
 
@@ -590,7 +611,9 @@ pub async fn viewer_show(app: AppHandle, vm: String) -> Result<(), String> {
             send_raw(&viewer, &json!({ "type": "place", "x": x, "y": y, "w": w, "h": h }));
         }
     }
-    allow_foreground(viewer.pid);
+    allow_foreground(viewer.child.pid);
+    // Coming back to a full-screen picture: its next full-screen report raises it.
+    allow_raise(&viewer);
     if !send_raw(&viewer, &json!({ "type": "show" })) {
         return Err("El visor no respondió.".into());
     }
@@ -610,7 +633,7 @@ pub fn viewer_list() -> Vec<Value> {
 #[tauri::command]
 pub fn viewer_is_open(vm: String) -> bool {
     let Some(viewer) = viewers().as_ref().and_then(|v| v.get(&vm).cloned()) else { return false };
-    if process_running(viewer.pid) {
+    if viewer.child.running() {
         return true;
     }
     let mut all = viewers();
@@ -618,20 +641,4 @@ pub fn viewer_is_open(vm: String) -> bool {
         all.as_mut().map(|v| v.remove(&vm));
     }
     false
-}
-
-fn process_running(pid: u32) -> bool {
-    use windows_sys::Win32::System::Threading::{GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
-    const STILL_ACTIVE: u32 = 259;
-    // SAFETY: the handle is checked and closed here.
-    unsafe {
-        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-        if handle.is_null() {
-            return false;
-        }
-        let mut code = 0u32;
-        let ok = GetExitCodeProcess(handle, &mut code);
-        CloseHandle(handle);
-        ok != 0 && code == STILL_ACTIVE
-    }
 }

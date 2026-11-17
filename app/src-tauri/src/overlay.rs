@@ -7,6 +7,7 @@
 //! picture directly (no extra latency).
 
 use serde_json::{json, Value};
+use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
 use windows_sys::Win32::Foundation::{HWND, POINT, RECT};
@@ -84,9 +85,13 @@ fn place(window: &tauri::WebviewWindow, viewer: isize) -> Option<(i32, i32, f64)
     Some((width, w, scale))
 }
 
+/// The panel's last taskbar mark: 0 none yet, 1 off, 2 on (a viewer's repeated reports don't redo the COM call).
+static MARKED: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
 /// Tells the taskbar the panel belongs to a full-screen picture, so it stays hidden while the panel has the focus
 /// (otherwise Windows shows the taskbar over the bottom of the stream). Off when the picture is inside the app.
 fn mark_full_screen(window: &tauri::WebviewWindow, on: bool) {
+    MARKED.store(if on { 2 } else { 1 }, Ordering::Relaxed);
     use windows_sys::core::GUID;
     use windows_sys::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED};
     #[repr(C)]
@@ -196,7 +201,9 @@ pub fn on_viewer(app: &AppHandle, vm: &str, msg: &Value) {
                 drop(p);
                 let full = msg["fullScreen"].as_bool().unwrap_or(false);
                 if let (Some(viewer), Some(window)) = (crate::viewer::viewer_hwnd(vm), app.get_webview_window(LABEL)) {
-                    mark_full_screen(&window, full);
+                    if MARKED.load(Ordering::Relaxed) != if full { 2 } else { 1 } {
+                        mark_full_screen(&window, full);
+                    }
                     if let Some((width, total, _)) = place(&window, viewer) {
                         let _ = crate::viewer::send_to(vm, &json!({ "type": "inset", "fraction": width as f64 / total as f64, "durationMs": 0 }));
                     }

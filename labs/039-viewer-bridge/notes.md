@@ -68,3 +68,19 @@ quickly enough for the app to show them.
   screen), and the window is full size at once but the renderer is rebuilt after it, so the old picture showed at the
   old size until the new one's first frame. Fix: the window is cloaked by DWM (keeps rendering) from the reveal until
   that frame (1.5 s at most). Filmed after the fix: dark stage, then the picture straight in full screen.
+
+### Nov 17, 2026 (second security review; installed build, driven with `screen.ps1`)
+
+- Panel games: Overclock started from the panel over a full-screen picture; its keys went to the game, not the machine.
+- Light theme and orange accent chosen in Settings while connected: the panel took both on its next opening.
+- Switching machines from the panel: not tested (one streaming machine).
+- The viewer's token: privileges removed and Administrators deny-only before the Low label (even when the app runs as
+  administrator), inside a job: one process, ended when the app lets go, no desktop switching, logoff, system
+  parameters, display modes or clipboard writes. A console probe (cmd) can't run in it (0xC0000142, its console host
+  is a second process); the job and token are checked from outside instead. Full open, panel Full screen (window ->
+  full screen, raised in ~0.8 s) and Home -> Open (~1 s) all work with it.
+- The app raises the viewer only within 3 s after it asked for the picture (reveal, show, Full screen), once.
+- The pairing run drops itself to Low before touching LocalLow: started from an elevated shell, the viewer ran at
+  0x1000. Compiled QML is no longer cached there.
+- install-build.ps1 copies the installer to a new random folder under Program Files (only administrators can create
+  folders there) and checks its hash before running it.
