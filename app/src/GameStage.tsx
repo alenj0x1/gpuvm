@@ -214,7 +214,7 @@ export function SpaceWithGames({ decor: shown, decorOf, machines = [], world, ch
 }
 
 /** One game playing by itself on its card: the real game, in a demo, with the machine in front. */
-function GameDemo({ game, player, fallback, world, mode: pickedMode, team = [] }: { game: GameDef; player?: string; fallback: Decor; world?: string; mode?: string; team?: string[] }) {
+export function GameDemo({ game, player, fallback, world, mode: pickedMode, team = [] }: { game: GameDef; player?: string; fallback: Decor; world?: string; mode?: string; team?: string[] }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const inst = useRef<GameInstance | null>(null);
   const cast = () => {

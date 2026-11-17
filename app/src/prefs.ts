@@ -108,6 +108,17 @@ export function initPrefs() {
   systemDark.addEventListener("change", () => {
     if (readPrefs().theme === "system") { applyTheme("system"); window.dispatchEvent(new Event(EVENT)); }
   });
+  // Another window of the app (the viewer's panel beside the main one) changed them: follow at once.
+  window.addEventListener("storage", (e) => { if (e.key === KEY) refreshPrefs(); });
+}
+
+/** Applies the stored theme and accent again (a window that stayed hidden while they changed elsewhere). */
+export function refreshPrefs() {
+  const prefs = readPrefs();
+  const before = `${document.documentElement.dataset.theme}|${document.documentElement.dataset.accent}`;
+  applyTheme(prefs.theme);
+  applyAccent(prefs.accent);
+  if (before !== `${document.documentElement.dataset.theme}|${document.documentElement.dataset.accent}`) window.dispatchEvent(new Event(EVENT));
 }
 
 export function usePrefs(): Prefs {
