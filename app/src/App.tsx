@@ -258,11 +258,13 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     let cancelled = false;
     import("@tauri-apps/api/event").then(({ listen }) => listen<{ from: string; to: string }>("viewer-switch", (e) => {
       const { from, to } = e.payload;
-      // The old picture steps aside at once (the new machine's steps show), and closes once the new one is up.
+      // Out of this machine (its picture steps aside and its cube zooms out), then the other one comes to the center
+      // with its steps; the old one closes once the new picture is up.
       import("@tauri-apps/api/core").then(({ invoke }) => invoke("viewer_send", { vm: from, msg: { type: "hide" } }).catch(() => {}));
-      startJob(to, "Connect-GpuVM", { Name: to }, () => {
+      setViewing({ vm: from, phase: "leaving" });
+      window.setTimeout(() => startJob(to, "Connect-GpuVM", { Name: to }, () => {
         import("@tauri-apps/api/core").then(({ invoke }) => invoke("viewer_send", { vm: from, msg: { type: "quit" } }).catch(() => {}));
-      });
+      }), ZOOM_MS);
     })).then((fn) => { if (cancelled) fn(); else off = fn; });
     return () => { cancelled = true; off?.(); };
   }, [startJob]);
@@ -284,6 +286,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       // The viewer closed (disconnected, or the machine went off): the app shows itself again.
       offs.push(listen<{ vm: string; msg: { type: string } }>("viewer", (e) => {
         if (e.payload.msg.type === "closed" && viewingRef.current?.vm === e.payload.vm && viewingRef.current.phase === "live") setViewing(null);
+        if (e.payload.msg.type === "home" && viewingRef.current?.vm === e.payload.vm && viewingRef.current.phase === "live") leaveToHome(e.payload.vm);
       }));
     });
     return () => { offs.forEach((o) => o.then((f) => f())); };

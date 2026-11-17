@@ -1397,8 +1397,6 @@ html.viewer-panel-window body::after { display: none; }
 /* Home's loading constellation (HomeLoading.tsx): the machines' own cubes on an orbit around the first one. */
 .home-loading { display: grid; place-items: center; overflow: hidden; width: 100%; height: 100%; min-height: 0; }
 .home-loading-field { position: relative; width: min(100%, 1000px); height: min(100%, 640px); min-height: 360px; }
-.home-loading-orbit { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.home-loading-orbit ellipse { fill: none; stroke: var(--muted); stroke-opacity: .25; stroke-width: 1; stroke-dasharray: 2 8; vector-effect: non-scaling-stroke; }
 .home-loading-core { position: absolute; left: 50%; top: 50%; width: min(34vh, 300px); aspect-ratio: 1; transform: translate(-50%, -50%);
   animation: home-loading-in 700ms cubic-bezier(.2, .8, .2, 1) both; }
 .home-loading-machine { position: absolute; width: min(15vh, 130px); aspect-ratio: 1; margin: calc(min(15vh, 130px) / -2) 0 0 calc(min(15vh, 130px) / -2);
@@ -1407,3 +1405,19 @@ html.viewer-panel-window body::after { display: none; }
 @keyframes home-loading-in { from { opacity: 0; scale: .7; } }
 @keyframes home-loading-float { 50% { translate: 0 -8px; } }
 @media (prefers-reduced-motion: reduce) { .home-loading-core, .home-loading-machine { animation: none; } }
+
+/* Tips for the waits (Tips.tsx): one line, fading from one to the next. */
+.tips { display: inline-flex; align-items: center; gap: 8px; margin: 0; color: var(--muted); font-size: 13px; max-width: min(90%, 620px); }
+.tips svg { flex: none; color: var(--accent); }
+.tips span { animation: tips-in 500ms ease-out both; }
+@keyframes tips-in { from { opacity: 0; transform: translateY(4px); } }
+.home-loading { grid-template-rows: minmax(0, 1fr) auto; padding-bottom: 20px; }
+.home-loading-tips { justify-self: center; }
+.viewer-stage-tips { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); animation: viewer-steps-in 400ms 600ms ease-out both; }
+/* The lines from the center machine to the others, with light traveling along them (instead of a plain ring). */
+.home-loading-links { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.home-loading-links g { animation: home-loading-in 600ms ease-out both; }
+.home-loading-links .rail { stroke: var(--muted); stroke-opacity: .18; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.home-loading-links .flow { stroke: var(--accent); stroke-width: 2; stroke-linecap: round; vector-effect: non-scaling-stroke;
+  stroke-dasharray: 3 97; animation: home-loading-flow 2.4s linear infinite; }
+@keyframes home-loading-flow { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }

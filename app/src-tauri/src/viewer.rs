@@ -29,7 +29,7 @@ use windows_sys::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED
 /// Longest line either side sends; the viewer's own limit is the same.
 const MAX_LINE: usize = 16 * 1024;
 /// Messages the viewer may send.
-const FROM_VIEWER: &[&str] = &["hello", "stage", "stage-failed", "connected", "error", "app-running", "window", "first-frame", "stats", "panel", "ended"];
+const FROM_VIEWER: &[&str] = &["hello", "stage", "stage-failed", "connected", "error", "app-running", "window", "first-frame", "stats", "panel", "home", "ended"];
 /// Commands this app may send.
 const TO_VIEWER: &[&str] = &["inset", "capture", "fullscreen", "stats", "quit", "focus"];
 

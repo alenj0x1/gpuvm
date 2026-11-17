@@ -206,5 +206,15 @@ export default {
   "Conectada, vuelves a su imagen al instante. Mientras tanto usa un poco de la GPU de este equipo.": "Connected, you're back to its picture at once. Meanwhile it uses a little of this PC's GPU.",
   "Mantenerla conectada": "Keep it connected",
   "Dentro de GpuVM": "Inside GpuVM",
+  // Tips for the waits (Tips.tsx)
+  "Ctrl+Alt+Shift+G abre el panel mientras ves una máquina.": "Ctrl+Alt+Shift+G opens the panel while you're on a machine.",
+  "Ctrl+Alt+Shift+H te lleva a Inicio y la máquina sigue conectada.": "Ctrl+Alt+Shift+H takes you Home and the machine stays connected.",
+  "Ctrl+Alt+Shift+Z suelta el mouse sin salir de la máquina.": "Ctrl+Alt+Shift+Z frees the mouse without leaving the machine.",
+  "El panel se ensancha arrastrando su borde izquierdo.": "Drag the panel's left edge to make it wider.",
+  "Arrastra las máquinas de la barra lateral para ordenarlas o pasarlas a otro espacio.": "Drag machines in the sidebar to reorder them or move them to another space.",
+  "En Personalizar puedes poner stickers, figuras y un letrero LED en el cubo de cada máquina.": "In Personalize you can add stickers, figures and an LED sign to each machine's cube.",
+  "En Overclock puedes jugar en equipo con tus otras máquinas.": "In Overclock you can play as a team with your other machines.",
+  "Un disco compartido lleva tus juegos de Steam de una máquina a otra sin descargarlos de nuevo.": "A shared disk takes your Steam games from one machine to another without downloading them again.",
+  "A 120 FPS o más, la imagen responde a tus teclas unos 5 ms antes que a 60 FPS.": "At 120 FPS or more, the picture answers your keys about 5 ms sooner than at 60 FPS.",
   "Desconectarla": "Disconnect it",
 } as Record<string, string>;
