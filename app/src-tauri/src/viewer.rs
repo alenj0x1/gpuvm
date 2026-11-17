@@ -28,6 +28,8 @@ use windows_sys::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED
 
 /// Longest line either side sends; the viewer's own limit is the same.
 const MAX_LINE: usize = 16 * 1024;
+/// Shortest time between two panel or Home requests from a viewer (a key held down, or a viewer that loops).
+const PANEL_GAP: Duration = Duration::from_millis(250);
 /// Messages the viewer may send.
 const FROM_VIEWER: &[&str] = &["hello", "stage", "stage-failed", "connected", "error", "app-running", "window", "first-frame", "stats", "panel", "home", "ended"];
 /// Commands this app may send.
@@ -56,6 +58,10 @@ struct Viewer {
     /// Its picture was revealed once: the late reveal after the first picture must not bring back a viewer the
     /// person already left for Home.
     revealed: std::sync::atomic::AtomicBool,
+    /// The first picture arrived (a viewer that repeats it gets one late reveal, not one thread per message).
+    first_frame: std::sync::atomic::AtomicBool,
+    /// When the viewer last asked for the panel or Home: repeated asks closer than PANEL_GAP are dropped.
+    last_toggle: Mutex<Option<Instant>>,
     /// The machine opens full screen (its "Pantalla completa" option): it still starts inside the app, hidden, and
     /// goes full screen when revealed.
     full_screen: bool,
@@ -110,6 +116,17 @@ pub fn follow_main(app: &AppHandle) {
             send_raw(viewer, &json!({ "type": "place", "x": x, "y": y, "w": w, "h": h }));
         }
     });
+}
+
+/// Whether a window belongs to a process.
+fn window_of(hwnd: isize, pid: u32) -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowThreadProcessId, IsWindow};
+    if hwnd == 0 {
+        return false;
+    }
+    let mut owner = 0u32;
+    // SAFETY: plain queries on a window handle; a stale or foreign handle only makes them fail or differ.
+    unsafe { IsWindow(hwnd as _) != 0 && GetWindowThreadProcessId(hwnd as _, &mut owner) != 0 && owner == pid }
 }
 
 fn allow_foreground(pid: u32) {
@@ -333,7 +350,7 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
     }
     drop(token);
 
-    let viewer = Arc::new(Viewer { pipe, pid, write: Mutex::new(()), hwnd: AtomicIsize::new(0), embed, visible: std::sync::atomic::AtomicBool::new(!embed), revealed: std::sync::atomic::AtomicBool::new(!embed), full_screen });
+    let viewer = Arc::new(Viewer { pipe, pid, write: Mutex::new(()), hwnd: AtomicIsize::new(0), embed, visible: std::sync::atomic::AtomicBool::new(!embed), revealed: std::sync::atomic::AtomicBool::new(!embed), first_frame: std::sync::atomic::AtomicBool::new(false), last_toggle: Mutex::new(None), full_screen });
     viewers().get_or_insert_with(HashMap::new).insert(vm.clone(), viewer.clone());
     let _ = app.emit("viewer", json!({ "vm": vm, "msg": { "type": "opened", "pid": pid } }));
 
@@ -346,17 +363,26 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
             }
             if kind == "window" {
                 let hwnd = msg["hwnd"].as_f64().unwrap_or(0.0) as isize;
-                viewer.hwnd.store(hwnd, Ordering::Relaxed);
+                // Only a window of the viewer's own process: the panel is owned by it and placed over it, so a
+                // handle of another program's window would put GpuVM's panel (and the focus) there.
+                viewer.hwnd.store(if window_of(hwnd, viewer.pid) { hwnd } else { 0 }, Ordering::Relaxed);
                 // The handle stays here: pages only need to know that it changed.
                 if let Some(o) = msg.as_object_mut() {
                     o.remove("hwnd");
                 }
             }
+            if matches!(kind.as_str(), "panel" | "home") {
+                let mut last = viewer.last_toggle.lock().unwrap_or_else(|e| e.into_inner());
+                if last.is_some_and(|t| t.elapsed() < PANEL_GAP) {
+                    continue;
+                }
+                *last = Some(Instant::now());
+            }
             let _ = app.emit("viewer", json!({ "vm": vm, "msg": msg }));
             crate::overlay::on_viewer(&app, &vm, &msg);
             // The first picture: the app zooms into the machine and then reveals the viewer (viewer_reveal). If the
             // page doesn't (hidden, busy), the viewer comes out on its own a moment later.
-            if kind == "first-frame" && viewer.embed {
+            if kind == "first-frame" && viewer.embed && !viewer.first_frame.swap(true, Ordering::AcqRel) {
                 let late = viewer.clone();
                 std::thread::spawn(move || {
                     std::thread::sleep(Duration::from_millis(2000));
@@ -420,7 +446,16 @@ pub fn open_and_wait(app: &AppHandle, vm: &str, launch: &Value) -> Result<(), St
     }
     let exe = viewer_path().ok_or("El visor de GpuVM no está instalado.")?;
     let (tx, rx) = std::sync::mpsc::channel();
-    WAITERS.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(vm.to_string(), tx);
+    {
+        // One opening per machine at a time (a double click, or a switch from the panel while it connects): a
+        // second viewer would replace the first in the list and leave it streaming out of reach.
+        let mut waiters = WAITERS.lock().unwrap_or_else(|e| e.into_inner());
+        let waiters = waiters.get_or_insert_with(HashMap::new);
+        if waiters.contains_key(vm) {
+            return Err("Esta máquina ya se está abriendo.".into());
+        }
+        waiters.insert(vm.to_string(), tx);
+    }
     // The picture always starts inside the app's window, hidden behind it; a machine set to full screen goes full
     // screen when it is revealed, and coming out of full screen brings it back inside the app.
     let full_screen = match arguments.iter().position(|a| a == "--display-mode") {
@@ -463,18 +498,26 @@ fn send_raw(viewer: &Viewer, msg: &Value) -> bool {
 
 /// A command for a machine's viewer (from the panel).
 #[tauri::command]
-pub fn viewer_send(vm: String, msg: Value) -> Result<(), String> {
+pub async fn viewer_send(vm: String, msg: Value) -> Result<(), String> {
+    send_to(&vm, &msg)
+}
+
+/// A command for a machine's viewer, from this app's own code (the panel's placement).
+pub fn send_to(vm: &str, msg: &Value) -> Result<(), String> {
     let kind = msg["type"].as_str().unwrap_or("");
     if !TO_VIEWER.contains(&kind) {
         return Err("Orden no válida para el visor.".into());
     }
-    let viewer = viewers().as_ref().and_then(|v| v.get(&vm).cloned()).ok_or("El visor de esta máquina no está abierto.")?;
-    if send_raw(&viewer, &msg) { Ok(()) } else { Err("El visor no respondió.".into()) }
+    let viewer = viewers().as_ref().and_then(|v| v.get(vm).cloned()).ok_or("El visor de esta máquina no está abierto.")?;
+    if send_raw(&viewer, msg) { Ok(()) } else { Err("El visor no respondió.".into()) }
 }
 
 /// The viewer's window, for placing the panel over it.
 pub fn viewer_hwnd(vm: &str) -> Option<isize> {
-    viewers().as_ref()?.get(vm).map(|v| v.hwnd.load(Ordering::Relaxed)).filter(|&h| h != 0)
+    let viewer = viewers().as_ref()?.get(vm).cloned()?;
+    let hwnd = viewer.hwnd.load(Ordering::Relaxed);
+    // Checked again on use: a closed window's handle can be reused by another program.
+    window_of(hwnd, viewer.pid).then_some(hwnd)
 }
 
 /// Lets the viewer take the foreground back from this app (when the panel closes).
@@ -493,7 +536,7 @@ fn reveal(viewer: &Viewer) {
 
 /// The app finished zooming into the machine: the picture comes out from behind it.
 #[tauri::command]
-pub fn viewer_reveal(vm: String) -> Result<(), String> {
+pub async fn viewer_reveal(vm: String) -> Result<(), String> {
     let viewer = viewers().as_ref().and_then(|v| v.get(&vm).cloned()).ok_or("El visor de esta máquina no está abierto.")?;
     if !viewer.visible.load(Ordering::Relaxed) {
         reveal(&viewer);
@@ -503,7 +546,7 @@ pub fn viewer_reveal(vm: String) -> Result<(), String> {
 
 /// Back to Home: the viewer hides and its session stays connected (keep), or it disconnects.
 #[tauri::command]
-pub fn viewer_home(app: AppHandle, vm: String, keep: bool) -> Result<(), String> {
+pub async fn viewer_home(app: AppHandle, vm: String, keep: bool) -> Result<(), String> {
     crate::overlay::close(&app);
     let viewer = viewers().as_ref().and_then(|v| v.get(&vm).cloned()).ok_or("El visor de esta máquina no está abierto.")?;
     viewer.visible.store(false, Ordering::Relaxed);
@@ -513,7 +556,7 @@ pub fn viewer_home(app: AppHandle, vm: String, keep: bool) -> Result<(), String>
 
 /// Back to a machine still connected: its picture shows again over the app (or full screen).
 #[tauri::command]
-pub fn viewer_show(app: AppHandle, vm: String) -> Result<(), String> {
+pub async fn viewer_show(app: AppHandle, vm: String) -> Result<(), String> {
     let viewer = viewers().as_ref().and_then(|v| v.get(&vm).cloned()).ok_or("El visor de esta máquina no está abierto.")?;
     if viewer.embed {
         if let Some((_, x, y, w, h)) = content_rect(&app) {

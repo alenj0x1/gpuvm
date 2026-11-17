@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "panels",
+  "description": "The viewer's side panel and the admin-prompt card: only what they show and do",
+  "windows": ["viewer-panel", "prompt"],
+  "permissions": [
+    "core:default", "core:window:allow-start-dragging", "core:window:allow-close",
+    "allow-ps", "allow-admin-prompts", "allow-admin-prompt-answered",
+    "allow-viewer-send", "allow-viewer-panel-resize", "allow-viewer-panel-close", "allow-viewer-panel-vm"
+  ]
+}

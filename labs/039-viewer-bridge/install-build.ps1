@@ -1,30 +1,48 @@
-# Lab 039 helper: installs the latest build without the installer's pages (NSIS /S) and opens GpuVM again, so an
-# iteration needs only the person's Yes in the UAC prompt. That prompt stays on purpose: the service only trusts the
-# gpuvm.exe in Program Files (admins only), and anything that installed there without it would let any program do
-# the same. The app is ended without its quit handler, so the machines keep running.
+# Lab 039 helper: installs the latest build without the installer's pages (NSIS /S) and opens GpuVM again. The app
+# is ended without its quit handler, so the machines keep running.
+# - Run as administrator: the installer is first copied to a folder only administrators can write
+#   (ProgramData\GpuVM-lab) and runs from there, so nothing running as the user can swap it between the copy and
+#   the run.
+# - Run as the user: a one-shot task of this user asks for UAC on the real desktop (a sandboxed shell can't). The
+#   prompt stays on purpose: the service only trusts the gpuvm.exe in Program Files, and anything that installed
+#   there without it would let any program do the same.
 param([string]$Setup = (Join-Path $PSScriptRoot '..\..\app\src-tauri\target\release\bundle\nsis\GpuVM_0.8.0_x64-setup.exe'))
 $Setup = (Resolve-Path $Setup).Path
 Get-Process gpuvm, GpuVMViewer -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Milliseconds 800
-$before = (Get-Item 'C:\Program Files\GpuVM\gpuvm.exe').LastWriteTime
+$before = (Get-FileHash 'C:\Program Files\GpuVM\gpuvm.exe').Hash
 $elevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+$code = $null
 if ($elevated) {
-    $p = Start-Process -FilePath $Setup -ArgumentList '/S' -PassThru; $p.WaitForExit()
+    $safe = Join-Path $env:ProgramData 'GpuVM-lab'
+    New-Item -ItemType Directory -Force -Path $safe | Out-Null
+    # Administrators and SYSTEM only, nothing inherited.
+    $acl = New-Object Security.AccessControl.DirectorySecurity
+    $acl.SetAccessRuleProtection($true, $false)
+    foreach ($sid in 'S-1-5-32-544', 'S-1-5-18') {
+        $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier $sid), 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
+    }
+    Set-Acl -Path $safe -AclObject $acl
+    $copy = Join-Path $safe 'GpuVM-setup.exe'
+    Copy-Item -LiteralPath $Setup -Destination $copy -Force
+    try {
+        $p = Start-Process -FilePath $copy -ArgumentList '/S' -PassThru; $p.WaitForExit(); $code = $p.ExitCode
+    } finally { Remove-Item -LiteralPath $copy -Force -ErrorAction SilentlyContinue }
 } else {
-    # A sandboxed shell can't raise a UAC prompt: a one-shot task of this user asks for it on the real desktop.
     $done = Join-Path $env:TEMP ('gpuvm-install-' + [guid]::NewGuid().ToString('N') + '.txt')
-    $cmd = "try { `$p = Start-Process -FilePath '$Setup' -ArgumentList '/S' -Verb RunAs -PassThru -ErrorAction Stop; `$p.WaitForExit(); `$p.ExitCode } catch { 'declined' } | Set-Content '$done'"
+    # Paths go into a single-quoted string of the task's command: their quotes doubled.
+    $q = { param($s) "'" + ($s -replace "'", "''") + "'" }
+    $cmd = "try { `$p = Start-Process -FilePath $(& $q $Setup) -ArgumentList '/S' -Verb RunAs -PassThru -ErrorAction Stop; `$p.WaitForExit(); `$p.ExitCode } catch { 'declined' } | Set-Content -LiteralPath $(& $q $done)"
     $name = 'GpuVM-lab-install-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
     $pwsh = (Get-Command pwsh).Source
-    Register-ScheduledTask -TaskName $name -Action (New-ScheduledTaskAction -Execute $pwsh -Argument "-NoProfile -WindowStyle Hidden -Command $cmd") -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries) | Out-Null
-    Start-ScheduledTask -TaskName $name
-    $deadline = (Get-Date).AddMinutes(4)
-    while (-not (Test-Path $done) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
-    Unregister-ScheduledTask -TaskName $name -Confirm:$false
-    $result = if (Test-Path $done) { (Get-Content $done) -join ''; Remove-Item $done } else { 'no answer' }
-    if ($result -ne '0') { "installer: $result (nothing installed)"; & (Join-Path $PSScriptRoot 'run-build.ps1') -Installed; return }
-    $p = [pscustomobject]@{ ExitCode = 0 }
+    try {
+        Register-ScheduledTask -TaskName $name -Action (New-ScheduledTaskAction -Execute $pwsh -Argument "-NoProfile -WindowStyle Hidden -Command $cmd") -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries) | Out-Null
+        Start-ScheduledTask -TaskName $name
+        $deadline = (Get-Date).AddMinutes(4)
+        while (-not (Test-Path $done) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
+    } finally { Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue }
+    $code = if (Test-Path $done) { (Get-Content $done) -join ''; Remove-Item $done } else { 'no answer' }
 }
-$after = (Get-Item 'C:\Program Files\GpuVM\gpuvm.exe').LastWriteTime
-"installer exit $($p.ExitCode); gpuvm.exe $before -> $after"
+$after = (Get-FileHash 'C:\Program Files\GpuVM\gpuvm.exe').Hash
+"installer: $code; gpuvm.exe $(if ($before -eq $after) { 'unchanged' } else { 'replaced' })"
 & (Join-Path $PSScriptRoot 'run-build.ps1') -Installed

@@ -125,6 +125,7 @@ export default {
   "El visor no respondió.": "The viewer didn't respond.",
   "El visor no se identificó.": "The viewer didn't identify itself.",
   "El visor se cerró antes de mostrar la imagen.": "The viewer closed before showing the picture.",
+  "Esta máquina ya se está abriendo.": "This machine is already opening.",
   "La máquina tiene otra sesión abierta. Ciérrala e inténtalo de nuevo.": "The machine has another session open. Close it and try again.",
   "No se pudo generar una clave para el visor.": "Couldn't create a key for the viewer.",
   "No se pudo leer el usuario actual.": "Couldn't read the current user.",

@@ -1,7 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissions for the main window",
-  "windows": ["main", "prompt", "viewer-panel"],
-  "permissions": ["core:default", "dialog:allow-open", "core:window:allow-start-dragging", "core:window:allow-minimize", "core:window:allow-toggle-maximize", "core:window:allow-close"]
+  "description": "The main window: everything the app does",
+  "windows": ["main"],
+  "permissions": [
+    "core:default", "dialog:allow-open", "core:window:allow-start-dragging", "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize", "core:window:allow-close",
+    "allow-ps", "allow-job", "allow-admin-prompts", "allow-admin-prompt-answered",
+    "allow-viewer-send", "allow-viewer-is-open", "allow-viewer-home", "allow-viewer-show", "allow-viewer-list",
+    "allow-viewer-reveal", "allow-viewer-panel-resize", "allow-viewer-panel-close", "allow-viewer-panel-vm",
+    "allow-open-console", "allow-repair-service", "allow-relaunch-as-admin", "allow-service-status",
+    "allow-start-service", "allow-stop-service", "allow-set-service-mode", "allow-set-service-startup",
+    "allow-set-close-to-tray", "allow-set-stop-vms-on-quit", "allow-set-language"
+  ]
 }

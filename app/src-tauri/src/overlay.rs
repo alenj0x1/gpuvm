@@ -102,8 +102,8 @@ pub fn open(app: &AppHandle, vm: &str) {
         p.vm = Some(vm.to_string());
         p.open = true;
     }
-    let _ = crate::viewer::viewer_send(vm.to_string(), json!({ "type": "capture", "on": false }));
-    let _ = crate::viewer::viewer_send(vm.to_string(), json!({ "type": "inset", "fraction": width as f64 / total as f64, "durationMs": SLIDE_MS }));
+    let _ = crate::viewer::send_to(vm, &json!({ "type": "capture", "on": false }));
+    let _ = crate::viewer::send_to(vm, &json!({ "type": "inset", "fraction": width as f64 / total as f64, "durationMs": SLIDE_MS }));
     let _ = window.show();
     let _ = window.emit("viewer-panel", json!({ "open": true, "vm": vm }));
     if let Ok(own) = window.hwnd() {
@@ -121,7 +121,7 @@ pub fn close(app: &AppHandle) {
         p.vm.clone()
     };
     let Some(vm) = vm else { return };
-    let _ = crate::viewer::viewer_send(vm.clone(), json!({ "type": "inset", "fraction": 0.0, "durationMs": SLIDE_MS }));
+    let _ = crate::viewer::send_to(&vm, &json!({ "type": "inset", "fraction": 0.0, "durationMs": SLIDE_MS }));
     if let Some(window) = app.get_webview_window(LABEL) {
         let _ = window.emit("viewer-panel", json!({ "open": false, "vm": vm }));
         let app = app.clone();
@@ -138,10 +138,10 @@ pub fn close(app: &AppHandle) {
     }
     if let Some(viewer) = crate::viewer::viewer_hwnd(&vm) {
         crate::viewer::allow_viewer_foreground(&vm);
-        let _ = crate::viewer::viewer_send(vm.clone(), json!({ "type": "focus" }));
+        let _ = crate::viewer::send_to(&vm, &json!({ "type": "focus" }));
         bring_to_front(viewer);
     }
-    let _ = crate::viewer::viewer_send(vm, json!({ "type": "capture", "on": true }));
+    let _ = crate::viewer::send_to(&vm, &json!({ "type": "capture", "on": true }));
 }
 
 /// Messages from a viewer that concern the panel.
@@ -157,7 +157,7 @@ pub fn on_viewer(app: &AppHandle, vm: &str, msg: &Value) {
                 drop(p);
                 if let (Some(viewer), Some(window)) = (crate::viewer::viewer_hwnd(vm), app.get_webview_window(LABEL)) {
                     if let Some((width, total, _)) = place(&window, viewer) {
-                        let _ = crate::viewer::viewer_send(vm.to_string(), json!({ "type": "inset", "fraction": width as f64 / total as f64, "durationMs": 0 }));
+                        let _ = crate::viewer::send_to(vm, &json!({ "type": "inset", "fraction": width as f64 / total as f64, "durationMs": 0 }));
                     }
                 }
             }
@@ -179,14 +179,14 @@ pub fn on_viewer(app: &AppHandle, vm: &str, msg: &Value) {
 
 /// The panel's edge was dragged (or its page loaded with the saved width): new width in logical pixels.
 #[tauri::command]
-pub fn viewer_panel_resize(app: AppHandle, width: u32) -> u32 {
+pub async fn viewer_panel_resize(app: AppHandle, width: u32) -> u32 {
     let width = width.clamp(MIN_WIDTH, MAX_WIDTH);
     WIDTH.store(width, std::sync::atomic::Ordering::Relaxed);
     let vm = { let p = panel(); if p.open { p.vm.clone() } else { None } };
     if let Some(vm) = vm {
         if let (Some(viewer), Some(window)) = (crate::viewer::viewer_hwnd(&vm), app.get_webview_window(LABEL)) {
             if let Some((w, total, scale)) = place(&window, viewer) {
-                let _ = crate::viewer::viewer_send(vm, json!({ "type": "inset", "fraction": w as f64 / total as f64, "durationMs": 0 }));
+                let _ = crate::viewer::send_to(&vm, &json!({ "type": "inset", "fraction": w as f64 / total as f64, "durationMs": 0 }));
                 // The width it really has (at most half the viewer) is the one to remember.
                 return ((w as f64 / scale).round() as u32).min(width);
             }
@@ -197,7 +197,7 @@ pub fn viewer_panel_resize(app: AppHandle, width: u32) -> u32 {
 
 /// The panel's close button and Escape.
 #[tauri::command]
-pub fn viewer_panel_close(app: AppHandle) {
+pub async fn viewer_panel_close(app: AppHandle) {
     close(&app);
 }
 
