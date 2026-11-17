@@ -41,3 +41,4 @@ quickly enough for the app to show them.
   Home in ~1.2 s; Open again: zoom in and picture in 0.7 s (session kept connected).
 - A viewer killed from outside left the app showing a dark live screen on the next Open; build 9 falls back to a full
   open.
+- Build 10: full screen is set before the window comes out from behind the app: zoom, ~0.3 s of the dark stage, then the picture straight in full screen (15.6 s from the click); no frame inside the app.
