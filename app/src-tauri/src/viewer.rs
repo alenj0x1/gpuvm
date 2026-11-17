@@ -387,7 +387,7 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
                     }
                 });
             }
-            if matches!(kind.as_str(), "first-frame" | "error" | "app-running" | "stage-failed") {
+            if matches!(kind.as_str(), "first-frame" | "error" | "app-running" | "stage-failed" | "ended") {
                 if let Some(waiter) = WAITERS.lock().unwrap_or_else(|e| e.into_inner()).as_mut().and_then(|w| w.remove(&vm)) {
                     let _ = waiter.send(msg.clone());
                 }
@@ -476,10 +476,12 @@ pub fn open_and_wait(app: &AppHandle, vm: &str, launch: &Value) -> Result<(), St
     let msg = rx.recv_timeout(Duration::from_secs(90)).unwrap_or_else(|_| json!({ "type": "timeout" }));
     match msg["type"].as_str().unwrap_or("") {
         "first-frame" => Ok(()),
-        "error" => Err(msg["message"].as_str().unwrap_or("El visor no pudo conectarse.").to_string()),
+        // Text from the streaming host (untrusted): kept short.
+        "error" => Err(msg["message"].as_str().unwrap_or("El visor no pudo conectarse.").chars().take(200).collect()),
         "app-running" => Err("La máquina tiene otra sesión abierta. Ciérrala e inténtalo de nuevo.".into()),
         "stage-failed" => Err(format!("No se pudo conectar ({}).", msg["stage"].as_str().unwrap_or("?"))),
-        "closed" => Err("El visor se cerró antes de mostrar la imagen.".into()),
+        // The viewer's last message on every exit ("ended"), or its pipe closing.
+        "closed" | "ended" => Err("El visor se cerró antes de mostrar la imagen.".into()),
         // Still connecting: the viewer stays open and shows the picture when it comes.
         _ => Ok(()),
     }
