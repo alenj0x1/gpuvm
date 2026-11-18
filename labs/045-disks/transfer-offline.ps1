@@ -4,7 +4,8 @@
 # the disk fingerprint, the content, the new streaming identity and web login, and that a tampered file is refused
 # and leaves nothing behind. Takes the shared lab lock (it moves GBs on C:). Elevated PowerShell 7.
 param(
-    [string]$Parent = 'C:\GpuVM\.bases\a9f7251fed9ef730\base.vhdx',
+    # A never-booted Windows base if there is one, else lab045-tpl's disk (any Windows disk works as a parent).
+    [string]$Parent = $(@(Get-ChildItem 'C:\GpuVM\.bases\*\base.vhdx', 'C:\GpuVM\.templates\lab045-tpl\lab045-tpl.vhdx' -ErrorAction SilentlyContinue)[0].FullName),
     [int]$KeepGB = 2,
     [int]$WasteGB = 4,
     [string[]]$Compressions = @('NoCompression', 'Fastest')

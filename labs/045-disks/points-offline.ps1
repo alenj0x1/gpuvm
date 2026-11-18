@@ -3,7 +3,8 @@
 # going back, deleting (merging) and renaming keep exactly the expected content. Times each operation and the
 # merge of a layer with -LayerGB of real data. Removes everything at the end. Elevated PowerShell 7.
 param(
-    [string]$Parent = 'C:\GpuVM\.bases\a9f7251fed9ef730\base.vhdx',
+    # A never-booted Windows base if there is one, else lab045-tpl's disk (any Windows disk works as a parent).
+    [string]$Parent = $(@(Get-ChildItem 'C:\GpuVM\.bases\*\base.vhdx', 'C:\GpuVM\.templates\lab045-tpl\lab045-tpl.vhdx' -ErrorAction SilentlyContinue)[0].FullName),
     [int]$LayerGB = 4
 )
 $ErrorActionPreference = 'Stop'

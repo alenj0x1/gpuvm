@@ -9,7 +9,8 @@
 # Source: a differencing disk on a Windows base where -WasteGB of random data was written and deleted (space the
 # guest "used once"), plus -KeepGB kept. Interleaved rounds. Writes out/compact-*.json. Elevated PowerShell 7.
 param(
-    [string]$Parent = 'C:\GpuVM\.bases\a9f7251fed9ef730\base.vhdx',
+    # A never-booted Windows base if there is one, else lab045-tpl's disk (any Windows disk works as a parent).
+    [string]$Parent = $(@(Get-ChildItem 'C:\GpuVM\.bases\*\base.vhdx', 'C:\GpuVM\.templates\lab045-tpl\lab045-tpl.vhdx' -ErrorAction SilentlyContinue)[0].FullName),
     [int]$WasteGB = 8,
     [int]$KeepGB = 2,
     [int]$Rounds = 2,

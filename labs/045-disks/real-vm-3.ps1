@@ -49,7 +49,7 @@ try {
     $budget = & $m { $script:DiskCache = $null; Get-GpuVMDiskBudget -Root (Get-GpuVMDefaultRoot) }
     Note 'disk room before' @{ freeGB = $budget['freeGB']; promisedGB = $budget['promisedGB']; availableGB = $budget['availableGB'] }
 
-    $t = Timed { New-GpuVM -Template $Template -Disposable -Confirm:$false }
+    $t = Timed { New-GpuVM -Template $Template -Disposable -Override @{ vm = @{ memoryGB = 4 } } -Confirm:$false }
     $disp = $t.r.Name
     Note 'disposable create+start' @{ s = $t.s; name = $disp }
     $budget = & $m { $script:DiskCache = $null; Get-GpuVMDiskBudget -Root (Get-GpuVMDefaultRoot) }

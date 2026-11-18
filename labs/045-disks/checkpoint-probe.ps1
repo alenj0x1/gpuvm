@@ -3,7 +3,8 @@
 # and tries Checkpoint-VM / Restore-VMSnapshot / Remove-VMSnapshot. Verifies the disk content offline
 # (a marker file written into the mounted disk). Removes everything at the end. Elevated PowerShell 7.
 param(
-    [string]$Parent = 'C:\GpuVM\.bases\a9f7251fed9ef730\base.vhdx',
+    # A never-booted Windows base if there is one, else lab045-tpl's disk (any Windows disk works as a parent).
+    [string]$Parent = $(@(Get-ChildItem 'C:\GpuVM\.bases\*\base.vhdx', 'C:\GpuVM\.templates\lab045-tpl\lab045-tpl.vhdx' -ErrorAction SilentlyContinue)[0].FullName),
     [string]$Work = 'C:\GpuVM\lab045-ck'
 )
 $ErrorActionPreference = 'Stop'
