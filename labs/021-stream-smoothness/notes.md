@@ -57,3 +57,17 @@ Confirmed in part. Frame pacing helps only at 60 FPS, where it gives the most ev
   the host while it ran. Its numbers compare the viewers with each other only.
 - Open: why win-gpu's stream updates this rarely for a GDI-drawn target (win10 gave 110-160 updates/s). Candidates:
   the virtual display's capture in Sunshine, GDI drawing in a GPU-P VM, the encoder skipping unchanged frames.
+
+### Nov 17, 2026: why does win-gpu's stream move only ~20-40 times per second?
+
+Ruled out, each with GpuVM's viewer at 180 FPS, borderless:
+- **The viewer**: Moonlight shows the same (see above).
+- **The GDI target**: the same bar drawn by Edge (`gdi-vs-gpu.ps1`, requestAnimationFrame, composed on the GPU) moves
+  as rarely: 21-42 updates/s vs 31-39 for GDI. The host meter read 132-161 times/s, so it is not the limit.
+- **Sunshine's capture mode** (`capture-ab.ps1`, interleaved, put back to WGC after): DDX 34-43, WGC 32-39 updates/s.
+- Measuring inside the VM doesn't work: a GDI read of a screen row takes ~70 ms there (13-16 reads/s), and
+  DwmGetCompositionTimingInfo stays at 0.2 frames/s whatever the screen does (it doesn't describe the virtual display).
+
+Precondition not met in these runs: the host GPU was 37 % busy with no stream (5 Chrome processes at 7-9 % 3D each,
+WebView and other desktop apps). The VM shares this GPU (GPU-P), so the next step is the same measurement with the
+host GPU idle.
