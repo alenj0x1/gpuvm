@@ -19,10 +19,11 @@ function Import-GpuVM {
     Assert-Admin
     $archive = Open-TransferArchive -Path $Path
     $vmDir = $null
-    $name = $null
+    # Not $name: PowerShell names ignore case and that is the validated -Name parameter.
+    $vmName = $null
     try {
         $manifest = $archive.Manifest
-        $name = if ($Name) { Assert-GpuVMNameFree -Name $Name -Root (Get-GpuVMDefaultRoot); $Name }
+        $vmName = if ($Name) { Assert-GpuVMNameFree -Name $Name -Root (Get-GpuVMDefaultRoot); $Name }
             else { Get-FreeGpuVMName -Base $(if ($manifest['name']) { $manifest['name'] } else { 'importada' }) }
         $diskBytes = [int64]$manifest['disk']['bytes']
         $sizeGB = [math]::Ceiling([math]::Max($diskBytes, [int64]$manifest['diskSizeBytes']) / 1GB)
@@ -40,11 +41,11 @@ function Import-GpuVM {
         $failed = @(Test-GpuVMHost -Profile $Profile -Override @{ vm = @{ disk = @{ type = 'Dynamic'; sizeGB = [math]::Max(1, $sizeGB - [math]::Floor($diskBytes / 1GB)) } } } |
             Where-Object Status -eq 'Fail')
         if ($failed) { throw ('El equipo no pasa la revisión: ' + (($failed | ForEach-Object { "$($_.Name): $($_.Detail)" }) -join '; ')) }
-        if (-not $PSCmdlet.ShouldProcess($name, "Importar desde $Path")) { return }
+        if (-not $PSCmdlet.ShouldProcess($vmName, "Importar desde $Path")) { return }
 
         Initialize-GpuVMRoot -Path $root
-        $vmDir = Join-Path $root $name
-        $vhdPath = Join-Path $vmDir "Virtual Hard Disks\$name.vhdx"
+        $vmDir = Join-Path $root $vmName
+        $vhdPath = Join-Path $vmDir "Virtual Hard Disks\$vmName.vhdx"
         New-Item -ItemType Directory -Path (Split-Path $vhdPath -Parent) -Force | Out-Null
         $in = $archive.DiskEntry.Open()
         $out = [IO.File]::Open($vhdPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
@@ -66,13 +67,13 @@ function Import-GpuVM {
             $sunshine.set = Set-SunshineWebCredential -WindowsRoot $winRoot -User 'gpuvm' -Password $webPassword
         }
 
-        Write-Step "Registrando la máquina '$name' en Hyper-V"
-        New-VM -Name $name -Generation 2 -MemoryStartupBytes ([int64]$config['vm']['memoryGB'] * 1GB) -VHDPath $vhdPath -Path $root | Out-Null
-        Invoke-GpuVMBackend -Backend $config['backend'] -Operation Apply -Arguments $name, $config
+        Write-Step "Registrando la máquina '$vmName' en Hyper-V"
+        New-VM -Name $vmName -Generation 2 -MemoryStartupBytes ([int64]$config['vm']['memoryGB'] * 1GB) -VHDPath $vhdPath -Path $root | Out-Null
+        Invoke-GpuVMBackend -Backend $config['backend'] -Operation Apply -Arguments $vmName, $config
 
         $streamingProvider = if ($config['streaming']) { $config['streaming']['provider'] } else { 'sunshine' }
         $state = [ordered]@{
-            name          = $name
+            name          = $vmName
             backend       = $config['backend']
             profile       = $config['name']
             config        = $config
@@ -97,10 +98,10 @@ function Import-GpuVM {
         Save-GpuVMState $state
     }
     catch {
-        if ($name -and $vmDir) {
+        if ($vmName -and $vmDir) {
             Write-Step 'La importación falló; limpiando lo que se alcanzó a crear'
-            if (Get-VM -Name $name -ErrorAction SilentlyContinue) { Remove-VM -Name $name -Force -ErrorAction SilentlyContinue }
-            $disk = Join-Path $vmDir "Virtual Hard Disks\$name.vhdx"
+            if (Get-VM -Name $vmName -ErrorAction SilentlyContinue) { Remove-VM -Name $vmName -Force -ErrorAction SilentlyContinue }
+            $disk = Join-Path $vmDir "Virtual Hard Disks\$vmName.vhdx"
             if ((Get-VHD -Path $disk -ErrorAction SilentlyContinue).Attached) { Dismount-VHD -Path $disk -ErrorAction SilentlyContinue }
             Remove-Item -LiteralPath $vmDir -Recurse -Force -ErrorAction SilentlyContinue
         }
@@ -108,10 +109,10 @@ function Import-GpuVM {
     }
     finally { $archive.Zip.Dispose() }
 
-    Write-Step "Máquina '$name' importada"
+    Write-Step "Máquina '$vmName' importada"
     if ($Start) {
-        try { Assert-VMCanStart -Name $name; Start-VM -Name $name -ErrorAction Stop }
+        try { Assert-VMCanStart -Name $vmName; Start-VM -Name $vmName -ErrorAction Stop }
         catch { Write-Warning "La máquina se importó pero no pudo encender: $($_.Exception.Message)" }
     }
-    Get-GpuVM -Name $name
+    Get-GpuVM -Name $vmName
 }
