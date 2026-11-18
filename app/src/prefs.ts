@@ -42,10 +42,15 @@ export interface Prefs {
   animFps: number;
   /** The resolution they draw at, in % of the screen's: less is lighter on the GPU the machines share. */
   animQuality: number;
+  /** The viewer keeps the last 30 s of the picture in memory, to save them as a clip. Off: it holds memory. */
+  replay: boolean;
+  /** Where screenshots and videos go ("" = Pictures\GpuVM and Videos\GpuVM). */
+  shotsDir: string;
+  videosDir: string;
 }
 
 const KEY = "gpuvm.prefs";
-const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "stop", noticesAfterQuit: true, service: "app", monitor: "primary", accent: "blue", lang: "system", viewerHome: "keep", animFps: 0, animQuality: 100 };
+const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "stop", noticesAfterQuit: true, service: "app", monitor: "primary", accent: "blue", lang: "system", viewerHome: "keep", animFps: 0, animQuality: 100, replay: false, shotsDir: "", videosDir: "" };
 const EVENT = "gpuvm-prefs";
 const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
 
@@ -110,6 +115,14 @@ async function applyService(mode: ServicePref) {
   await invoke("set_service_mode", { mode }).catch(() => {});
 }
 
+/** The capture settings go to the Rust side, which tells the open viewers (and moves their files to these folders). */
+async function applyCapture(prefs: Prefs) {
+  if (!inTauri) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("set_capture_prefs", { replay: prefs.replay, shotsDir: prefs.shotsDir || null, videosDir: prefs.videosDir || null, lang: resolveLang(prefs.lang) })
+    .catch(() => {});
+}
+
 export function savePrefs(change: Partial<Prefs>) {
   const next = { ...readPrefs(), ...change };
   try { localStorage.setItem(KEY, JSON.stringify({ ...next, version: VERSION })); } catch { /* no storage */ }
@@ -120,6 +133,7 @@ export function savePrefs(change: Partial<Prefs>) {
   if (change.noticesAfterQuit !== undefined) applyNoticesAfterQuit(next.noticesAfterQuit);
   if (change.service) applyService(next.service);
   if (change.lang) applyLang(next.lang);
+  if ("replay" in change || "shotsDir" in change || "videosDir" in change || change.lang) applyCapture(next);
   window.dispatchEvent(new Event(EVENT));
 }
 
@@ -133,6 +147,7 @@ export function initPrefs() {
   applyNoticesAfterQuit(prefs.noticesAfterQuit);
   applyService(prefs.service);
   applyLang(prefs.lang);
+  applyCapture(prefs);
   systemDark.addEventListener("change", () => {
     if (readPrefs().theme === "system") { applyTheme("system"); window.dispatchEvent(new Event(EVENT)); }
   });

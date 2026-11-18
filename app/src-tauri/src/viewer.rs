@@ -32,9 +32,11 @@ const MAX_LINE: usize = 16 * 1024;
 /// Shortest time between two panel or Home requests from a viewer (a key held down, or a viewer that loops).
 const PANEL_GAP: Duration = Duration::from_millis(250);
 /// Messages the viewer may send.
-const FROM_VIEWER: &[&str] = &["hello", "stage", "stage-failed", "connected", "error", "app-running", "window", "first-frame", "stats", "panel", "home", "ended", "drag"];
+const FROM_VIEWER: &[&str] = &["hello", "stage", "stage-failed", "connected", "error", "app-running", "window", "first-frame", "stats", "panel", "home", "ended", "drag",
+    // Screenshots and recordings (capture.rs).
+    "capture", "capture-error", "recording"];
 /// Commands this app may send.
-const TO_VIEWER: &[&str] = &["inset", "capture", "fullscreen", "stats", "quit", "focus"];
+const TO_VIEWER: &[&str] = &["inset", "capture", "fullscreen", "stats", "quit", "focus", "screenshot", "record", "replay-save"];
 
 struct Pipe(HANDLE);
 // SAFETY: a pipe handle can be used from any thread; reads and writes are overlapped, each with its own event.
@@ -395,6 +397,8 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
     let viewer = Arc::new(Viewer { pipe, child, raise_until: Mutex::new(None), write: Mutex::new(()), hwnd: AtomicIsize::new(0), embed, visible: std::sync::atomic::AtomicBool::new(!embed), revealed: std::sync::atomic::AtomicBool::new(!embed), first_frame: std::sync::atomic::AtomicBool::new(false), full_now: std::sync::atomic::AtomicBool::new(false), last_toggle: Mutex::new(None), last_drag: Mutex::new(None), full_screen });
     viewers().get_or_insert_with(HashMap::new).insert(vm.clone(), viewer.clone());
     let _ = app.emit("viewer", json!({ "vm": vm, "msg": { "type": "opened", "pid": pid } }));
+    // The capture settings (the last 30 s on or off, the notices' language): kept by the viewer until its stream starts.
+    send_raw(&viewer, &crate::capture::setup_message());
 
     std::thread::spawn(move || {
         while let Some(line) = read_line(viewer.pipe.0, &mut pending, None) {
@@ -430,6 +434,15 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
                     *last = Some(Instant::now());
                     crate::dropzone::on_drag(&app, &vm);
                 }
+                continue;
+            }
+            if kind == "recording" {
+                crate::capture::on_recording(&vm, msg["on"].as_bool().unwrap_or(false));
+            }
+            if kind == "capture" {
+                // A finished file: this app moves it out of the viewer's folder (capture.rs); the pages hear
+                // "capture-saved" with where it went, never the viewer's own name for it.
+                crate::capture::on_file(&app, &vm, &msg);
                 continue;
             }
             if matches!(kind.as_str(), "panel" | "home") {
@@ -470,6 +483,7 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
             crate::clipboard::clear();
         }
         announce_cover();
+        crate::capture::on_recording(&vm, false);
         let closed = json!({ "type": "closed" });
         if let Some(waiter) = WAITERS.lock().unwrap_or_else(|e| e.into_inner()).as_mut().and_then(|w| w.remove(&vm)) {
             let _ = waiter.send(closed.clone());
@@ -584,6 +598,14 @@ pub fn send_to(vm: &str, msg: &Value) -> Result<(), String> {
         allow_raise(&viewer);
     }
     if send_raw(&viewer, msg) { Ok(()) } else { Err("El visor no respondió.".into()) }
+}
+
+/// The same message to every open viewer (settings that apply to all of them).
+pub fn broadcast(msg: &Value) {
+    let list: Vec<Arc<Viewer>> = viewers().as_ref().map(|v| v.values().cloned().collect()).unwrap_or_default();
+    for viewer in list {
+        send_raw(&viewer, msg);
+    }
 }
 
 /// The viewer's window, for placing the panel over it.
