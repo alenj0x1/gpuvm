@@ -26,6 +26,7 @@ class QuietForm : Form
 
 static class P
 {
+    [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
     [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
     static string dir;
     static string role;
@@ -37,6 +38,7 @@ static class P
     [STAThread]
     static int Main(string[] a)
     {
+        SetProcessDPIAware();
         role = a[0];
         if (role == "launch") { try { return Launch(a); } catch (Exception e) { File.AppendAllText(Path.Combine(Path.GetDirectoryName(a[2]), "launch.err"), e.Message + Environment.NewLine); return 3; } }
         dir = a[1];
@@ -47,6 +49,7 @@ static class P
             if (role == "target") return Target(a.Length > 2 && a[2] == "accept");
             if (role == "overlay") return Overlay();
             if (role == "source") return Source(a[2], a.Length > 3 && a[3] == "overlay");
+            if (role == "drop-on") { var files = new string[a.Length - 4]; Array.Copy(a, 4, files, 0, files.Length); return DropOn(int.Parse(a[2]), int.Parse(a[3]), files); }
         }
         catch (Exception e) { Log("error " + e); return 2; }
         return 1;
@@ -166,6 +169,59 @@ static class P
         {
             var t = new System.Windows.Forms.Timer { Interval = 300 };
             t.Tick += (o, x) => { t.Stop(); Mouse(0, start); Thread.Sleep(30); Mouse(0x0002); };
+            t.Start();
+        };
+        try { Application.Run(form); }
+        finally { if (!released) Mouse(0x0004); }
+        return 0;
+    }
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+
+    // The real app: drags files from a small window of ours 300 px left of (x, y) onto (x, y), hovers 1.5 s (the
+    // app's drop area appears) and lets go. Cancelled if what is under the pointer is not GpuVM's (gpuvm, its viewer)
+    // or ours. Screen coordinates are physical pixels (the process makes itself DPI aware, like screen.ps1).
+    static int DropOn(int x, int y, string[] files)
+    {
+        var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "gpuvm", "GpuVMViewer", "DropProbe" };
+        var start = new Point(x - 300, y);
+        var end = new Point(x, y);
+        var form = new Form { ShowInTaskbar = false, TopMost = true, FormBorderStyle = FormBorderStyle.None, StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(start.X - 20, start.Y - 20, 40, 40), BackColor = Color.Orange };
+        string outcome = "?";
+        bool released = false;
+        Func<Point, string> owner = p =>
+        {
+            uint pid; GetWindowThreadProcessId(GetAncestor(WindowFromPoint(p), 2), out pid);
+            try { return Process.GetProcessById((int)pid).ProcessName; } catch { return "?"; }
+        };
+        form.MouseDown += (s, e) =>
+        {
+            var data = new DataObject(DataFormats.FileDrop, files);
+            form.QueryContinueDrag += (o, q) =>
+            {
+                var p = Cursor.Position;
+                var who = owner(p);
+                if (!allowed.Contains(who)) { q.Action = DragAction.Cancel; outcome = "cancel: " + who + " under pointer"; return; }
+                if ((q.KeyState & 1) == 0) { q.Action = DragAction.Drop; outcome = "drop over " + who; }
+            };
+            var mover = new Thread(() =>
+            {
+                try
+                {
+                    for (int i = 0; i <= 30; i++) { Mouse(0, new Point(start.X + i * (end.X - start.X) / 30, end.Y)); Thread.Sleep(15); }
+                    for (int i = 0; i < 100; i++) { Mouse(0, new Point(end.X + i % 2, end.Y)); Thread.Sleep(15); }
+                }
+                finally { Mouse(0x0004); released = true; }
+            });
+            mover.IsBackground = true;
+            mover.Start();
+            var r = form.DoDragDrop(data, DragDropEffects.Copy);
+            Log("done " + outcome + " effect=" + r);
+            form.Close();
+        };
+        form.Shown += (s, e) =>
+        {
+            var t = new System.Windows.Forms.Timer { Interval = 300 };
+            t.Tick += (o, ev) => { t.Stop(); Mouse(0, start); Thread.Sleep(30); Mouse(0x0002); };
             t.Start();
         };
         try { Application.Run(form); }
