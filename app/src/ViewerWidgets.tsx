@@ -88,17 +88,22 @@ function place(items: WidgetItem[], cols: number, first?: string): Record<string
 }
 
 const KEY = "gpuvm.viewerPanelWidgets";
-// Boards arranged before the capture widget existed get it once, under the others (taking it off later is kept).
-const CAPTURE_ADDED = "gpuvm.viewerPanelWidgets.capture";
+// Boards arranged before the capture widget existed get it, under the others, unless the person took it off
+// (remembered by markRemoved; a board saved by an older version simply doesn't have it yet).
+const CAPTURE_REMOVED = "gpuvm.viewerPanelWidgets.captureRemoved";
+/** Notes the widgets the person took off the board, so they aren't added back. */
+export function markRemoved(before: WidgetItem[], after: WidgetItem[]) {
+  try {
+    if (before.some((x) => x.type === "capture") && !after.some((x) => x.type === "capture")) localStorage.setItem(CAPTURE_REMOVED, "1");
+    if (after.some((x) => x.type === "capture")) localStorage.removeItem(CAPTURE_REMOVED);
+  } catch { /* no storage */ }
+}
 export function loadWidgets(): WidgetItem[] {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? "null");
     if (!Array.isArray(raw)) return defaultWidgets();
-    if (!localStorage.getItem(CAPTURE_ADDED)) {
-      localStorage.setItem(CAPTURE_ADDED, "1");
-      if (!raw.some((x) => x?.type === "capture")) {
-        raw.push({ type: "capture", w: 2, h: 2, x: 0, y: Math.max(0, ...raw.map((o) => (Number(o?.y) || 0) + (Number(o?.h) || 1))) });
-      }
+    if (!localStorage.getItem(CAPTURE_REMOVED) && !raw.some((x) => x?.type === "capture")) {
+      raw.push({ type: "capture", w: 2, h: 2, x: 0, y: Math.max(0, ...raw.map((o) => (Number(o?.y) || 0) + (Number(o?.h) || 1))) });
     }
     const seen = new Set<string>();
     const list = raw.filter((x) => x && x.type in SPEC && !seen.has(x.type) && !!seen.add(x.type)).map((x) => {

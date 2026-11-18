@@ -15,11 +15,19 @@ if (-not (Test-Path $beeps)) {
 }
 $video = Join-Path $src 'in.h264'
 $results = @()
-foreach ($audio in 'opus', 'aac') {
+# Cases: the Opus packets as received; the shipped AAC path; AAC on a live-like clock (offset, arrival jitter up to
+# 3 ms) with the machine silent from 3 to 6 s (no packets: the recorder fills silence and the sound resumes on time).
+$cases = @(
+    @{ name = 'opus'; args = @('--audio', 'opus') },
+    @{ name = 'aac'; args = @('--audio', 'aac') },
+    @{ name = 'aac-live-silence'; args = @('--audio', 'aac', '--offset', '60000000', '--jitter', '3000', '--mute-from', '3000', '--mute-to', '6000') }
+)
+foreach ($case in $cases) {
+    $audio = $case.name
     $file = Join-Path $out "sync-$audio.mp4"
     $wav = Join-Path $out "sync-$audio.wav"
     Remove-Item $file, $wav -ErrorAction SilentlyContinue
-    $null = & (Join-Path $bin 'mp4test.exe') --codec h264 --video $video --fps 60 --opus $beeps --audio $audio --out $file
+    $null = & (Join-Path $bin 'mp4test.exe') --codec h264 --video $video --fps 60 --opus $beeps --out $file @($case.args)
     & ffmpeg -hide_banner -loglevel error -y -i $file -vn -c:a pcm_s16le $wav
     $on = (& python -I (Join-Path $PSScriptRoot 'tools\onsets.py') $wav) | ConvertFrom-Json
     # Beeps 1..n-1 (the first second may be cut by the decoder's start).

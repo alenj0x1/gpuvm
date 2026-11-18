@@ -11,6 +11,7 @@
 #include "mp4writer.cpp"
 #include "aacencoder.cpp"
 #include "audiotrack.cpp"
+#include "recordfile.cpp"
 
 #pragma comment(lib, "opus.lib")
 
@@ -110,6 +111,7 @@ int main(int argc, char** argv)
     long long offsetUs = 0;
     // Packets stamped by arrival, as the viewer does live: up to this much late, at random.
     int jitterUs = 0;
+    long long muteFromMs = -1, muteToMs = -1;
     unsigned rng = 12345;
     int fps = 60, start = 0, drop = 0, spp = 240, primaries = 1, transfer = 1, matrix = 1, width = 1920, height = 1080;
     for (int i = 1; i + 1 < argc; i += 2) {
@@ -128,6 +130,8 @@ int main(int argc, char** argv)
         else if (k == "--audio") audioCodec = v;
         else if (k == "--offset") offsetUs = std::stoll(v);
         else if (k == "--jitter") jitterUs = std::stoi(v);
+        else if (k == "--mute-from") muteFromMs = std::stoll(v);
+        else if (k == "--mute-to") muteToMs = std::stoll(v);
     }
     std::vector<uint8_t> raw = readAll(video);
     std::vector<Frame> frames = codec == "av1" ? obuFrames(raw) : annexBFrames(raw, codec == "h264");
@@ -144,53 +148,46 @@ int main(int argc, char** argv)
     Mp4AudioInfo ai;
     ai.samplesPerPacket = spp;
 
-    // The same path as the viewer: Opus decoded and encoded as AAC (default), or the Opus packets as they are.
-    AudioTrack track;
-    bool aac = audioCodec == "aac" && !packets.empty();
-    if (aac && !track.open(ai)) {
-        std::cout << "{\"ok\":false,\"error\":\"aac-open\"}" << std::endl;
-        return 1;
-    }
-    Mp4Writer w;
+    // The same path as the viewer (RecordFile: Opus decoded and encoded as AAC, silence where no sound came), or the
+    // Opus packets as they are (--audio opus, the first lab's comparison).
+    bool aac = audioCodec == "aac";
     std::wstring wpath(outPath.begin(), outPath.end());
-    if (!w.open(wpath, vi, packets.empty() ? nullptr : aac ? &track.info() : &ai)) {
-        std::cout << "{\"ok\":false,\"error\":\"" << w.error() << "\"}" << std::endl;
+    RecordFile rec;
+    Mp4Writer plain;
+    bool opened = aac ? rec.open(wpath, vi, packets.empty() ? nullptr : &ai) : plain.open(wpath, vi, packets.empty() ? nullptr : &ai);
+    if (!opened) {
+        std::cout << "{\"ok\":false,\"error\":\"open\"}" << std::endl;
         return 1;
     }
-    std::vector<AacFrame> encoded;
-    auto audioOut = [&](const uint8_t* p, size_t n, int64_t t) {
-        if (!aac) { w.addAudio(p, n, t); return; }
-        encoded.clear();
-        track.push(p, n, t, encoded);
-        for (const AacFrame& fr : encoded) w.addAudio(fr.data.data(), fr.data.size(), fr.timeUs);
-    };
-    // Interleaved by time, as they arrive live.
+    // Interleaved by time, as they arrive live. --mute-from/--mute-to (ms): the machine sends no sound then.
     auto t0 = std::chrono::steady_clock::now();
     size_t a = 0;
     int written = 0, keys = 0;
     for (size_t f = 0; f < frames.size(); f++) {
         int64_t vt = (int64_t)f * 1000000 / fps;
         while (a < packets.size() && (int64_t)a * spp * 1000000 / 48000 <= vt) {
+            int64_t at = (int64_t)a * spp * 1000000 / 48000;
             rng = rng * 1103515245 + 12345;
             int64_t late = jitterUs > 0 ? (int64_t)((rng >> 8) % (unsigned)jitterUs) : 0;
-            audioOut(packets[a].data(), packets[a].size(), (int64_t)a * spp * 1000000 / 48000 + offsetUs + late);
+            bool muted = at >= muteFromMs * 1000 && at < muteToMs * 1000;
+            if (!muted) {
+                if (aac) rec.addAudio(packets[a].data(), packets[a].size(), at + offsetUs + late);
+                else plain.addAudio(packets[a].data(), packets[a].size(), at + offsetUs + late);
+            }
             a++;
         }
         vt += offsetUs;
         if ((int)f < start || (drop > 0 && f % drop == (size_t)drop - 1 && !frames[f].key)) continue;
-        w.addVideo(frames[f].data.data(), frames[f].data.size(), vt, frames[f].key);
+        if (aac) rec.addVideo(frames[f].data.data(), frames[f].data.size(), vt, frames[f].key);
+        else plain.addVideo(frames[f].data.data(), frames[f].data.size(), vt, frames[f].key);
         written++;
         keys += frames[f].key;
     }
-    if (aac) {
-        encoded.clear();
-        track.finish(encoded);
-        for (const AacFrame& fr : encoded) w.addAudio(fr.data.data(), fr.data.size(), fr.timeUs);
-    }
-    bool ok = w.close();
+    bool ok = aac ? rec.close() : plain.close();
     double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
-    std::cout << "{\"ok\":" << (ok ? "true" : "false") << ",\"error\":\"" << w.error() << "\",\"frames\":" << frames.size()
+    std::cout << "{\"ok\":" << (ok ? "true" : "false") << ",\"error\":\"" << (aac ? rec.error() : plain.error()) << "\",\"frames\":" << frames.size()
               << ",\"written\":" << written << ",\"keys\":" << keys << ",\"audioPackets\":" << packets.size()
-              << ",\"bytes\":" << w.bytes() << ",\"durationMs\":" << w.durationMs() << ",\"writeMs\":" << ms << "}" << std::endl;
+              << ",\"durationMs\":" << (aac ? rec.durationMs() : plain.durationMs()) << ",\"writeMs\":" << ms
+              << ",\"sound\":\"" << (aac ? rec.summary() : std::string("opus")) << "\"}" << std::endl;
     return ok ? 0 : 1;
 }

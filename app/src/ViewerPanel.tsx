@@ -11,7 +11,7 @@ import { t } from "./i18n";
 import { humanError } from "./ui";
 import {
   ActionsWidget, CaptureWidget, ClockWidget, GamesWidget, MachinesWidget, ShelfWidget, StatsWidget, WeatherWidget, WidgetBoard, WidgetTray,
-  defaultWidgets, forgetWeather, loadWidgets, newWidget, saveWidgets, type CaptureState, type SavedCapture, type ViewerStats, type WidgetItem,
+  defaultWidgets, forgetWeather, loadWidgets, markRemoved, newWidget, saveWidgets, type CaptureState, type SavedCapture, type ViewerStats, type WidgetItem,
 } from "./ViewerWidgets";
 import { usePrefs } from "./prefs";
 
@@ -137,6 +137,7 @@ export function ViewerPanel({ machine, onSwitched, onResize, sample }: {
   }, [open]);
 
   const change = (next: WidgetItem[]) => {
+    markRemoved(items, next);
     setItems(next);
     saveWidgets(next);
     // Taking the weather off forgets its city too.

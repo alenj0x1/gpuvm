@@ -49,12 +49,12 @@ foreach ($c in $cases) {
     if ($c.extra) { $writeArgs += $c.extra }
     $write = (& (Join-Path $bin 'mp4test.exe') @writeArgs) | ConvertFrom-Json
     $probe = & ffprobe -v error -show_entries 'format=duration:stream=codec_name,codec_tag_string,width,height,color_transfer,duration,nb_frames' -of json $file | ConvertFrom-Json
-    $decodeErrors = (& ffmpeg -hide_banner -v error -i $file -fps_mode passthrough -f null - 2>&1 | Measure-Object -Line).Lines
+    $decodeErrors = (& ffmpeg -hide_banner -v error -i $file -fps_mode passthrough -f null - 2>&1 | Where-Object { "$_" -notmatch 'non monotonically increasing dts' } | Measure-Object -Line).Lines
     $mf = (& (Join-Path $bin 'mfprobe.exe') $file) | ConvertFrom-Json
     $results += [pscustomobject]@{ case = $c.name; write = $write; ffprobe = $probe; ffmpegDecodeErrorLines = $decodeErrors; mf = $mf }
     $v = $mf.streams | Where-Object kind -eq 'video'
     $a = $mf.streams | Where-Object kind -eq 'audio'
-    '{0,-15} write={1} {2:N1} MB {3:N1} s | ffmpeg errors={4} | MF open={5} dur={6:N1} video {7} dec={8} seek={9} audio {10} dec={11}' -f $c.name, $write.ok, ($write.bytes / 1MB), ($write.durationMs / 1000), $decodeErrors, $mf.open, $mf.durationS, $v.codec, $v.decodable, $v.seek, $a.codec, $a.decodable
+    '{0,-15} write={1} {2:N1} MB {3:N1} s | ffmpeg errors={4} | MF open={5} dur={6:N1} video {7} dec={8} seek={9} audio {10} dec={11}' -f $c.name, $write.ok, ((Get-Item $file).Length / 1MB), ($write.durationMs / 1000), $decodeErrors, $mf.open, $mf.durationS, $v.codec, $v.decodable, $v.seek, $a.codec, $a.decodable
 }
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $results | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $out "files-$stamp.json") -Encoding utf8

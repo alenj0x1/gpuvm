@@ -20,6 +20,8 @@ param(
     [switch]$SkipInput,
     [switch]$Force,
     [string]$Session = 'capture-clips',
+    # This session already holds C:\GpuVM\.lab-lock (taken before, e.g. for installing the build): don't take it again.
+    [switch]$HaveLock,
     [string]$Out = (Join-Path $PSScriptRoot "out\run-$(Get-Date -Format 'yyyyMMdd-HHmmss').json")
 )
 $ErrorActionPreference = 'Stop'
@@ -35,8 +37,23 @@ $captures = Join-Path $env:USERPROFILE 'AppData\LocalLow\GpuVM\Viewer\Captures'
 # The shared lock: the PC's GPU and VMs are shared by several sessions.
 $lock = 'C:\GpuVM\.lab-lock'
 $waited = [Diagnostics.Stopwatch]::StartNew()
-while ($true) {
-    try { $fs = [IO.File]::Open($lock, 'CreateNew', 'Write'); $w = [IO.StreamWriter]::new($fs); $w.Write("$Session lab 044 $(Get-Date -Format o)"); $w.Dispose(); break }
+$queue = 'C:\GpuVM\.lab-queue'
+if ($HaveLock -and -not (Select-String $lock -Pattern $Session -Quiet -ErrorAction SilentlyContinue)) { throw "The lab lock is not this session's: $(Get-Content $lock -ErrorAction SilentlyContinue)" }
+while (-not $HaveLock) {
+    # The queue says who is next: the lock is taken only when it is empty or this session is first (its line goes).
+    $next = @(Get-Content $queue -ErrorAction SilentlyContinue | Where-Object { $_.Trim() })
+    if ($next.Count -and $next[0].Trim() -ne $Session) {
+        if (-not ($next | Where-Object { $_.Trim() -eq $Session })) { Add-Content $queue $Session }
+        if ($waited.Elapsed.TotalMinutes -gt 60) { throw "Still queued behind: $($next -join ', ')" }
+        "queued behind: $($next[0])" | Write-Host
+        Start-Sleep -Seconds 30
+        continue
+    }
+    try {
+        $fs = [IO.File]::Open($lock, 'CreateNew', 'Write'); $w = [IO.StreamWriter]::new($fs); $w.Write("$Session lab 044 $(Get-Date -Format o)"); $w.Dispose()
+        if ($next.Count) { Set-Content $queue @($next | Select-Object -Skip 1) }
+        break
+    }
     catch [IO.IOException] {
         if ($waited.Elapsed.TotalMinutes -gt 20) { throw "The lab lock is held: $(Get-Content $lock -ErrorAction SilentlyContinue)" }
         "lock held by: $(Get-Content $lock -ErrorAction SilentlyContinue); waiting" | Write-Host
@@ -82,7 +99,7 @@ try {
             $probe = & ffprobe -v error -show_entries 'format=duration:stream=codec_name,width,height,color_transfer,nb_frames' -of json $path | ConvertFrom-Json
             $r.durationS = [double]$probe.format.duration
             $r.streams = @($probe.streams | ForEach-Object { "$($_.codec_name) $($_.width)x$($_.height)" })
-            $r.ffmpegErrorLines = (& ffmpeg -hide_banner -v error -i $path -fps_mode passthrough -f null - 2>&1 | Measure-Object -Line).Lines
+            $r.ffmpegErrorLines = (& ffmpeg -hide_banner -v error -i $path -fps_mode passthrough -f null - 2>&1 | Where-Object { "$_" -notmatch 'non monotonically increasing dts' } | Measure-Object -Line).Lines
             $r.mf = (& (Join-Path $bin 'mfprobe.exe') $path) | ConvertFrom-Json
             if ($r.durationS -gt 0) { $r.mbPerMin = [math]::Round($r.bytes / 1MB / $r.durationS * 60, 1) }
         }
@@ -101,10 +118,16 @@ try {
             Stop-LatencyViewers
             $row = [ordered]@{ variant = $variant; round = $round; startedAt = (Get-Date).ToString('o'); arguments = $arguments -join ' ' }
             try {
+                # A session left open (a viewer that was killed) makes the next one stop at "app-running": closed first.
+                try { & $vm.Module { param($a, $c) Invoke-SunshineApi -Address $a -Credential $c -Method POST -Path '/api/apps/close' } $vm.Address $vm.Sunshine | Out-Null } catch { }
+                Start-Sleep -Seconds 2
                 Start-Lab041Target $vm 'gpu'
                 $started = Get-Date
                 $session = Start-LatencyViewer -Viewer gpuvm -Arguments $arguments
                 $row.firstFrameSec = Wait-LatencyViewerFrame $session -Since $started
+                if ($row.firstFrameSec -lt 0) {
+                    throw "no picture: $(@($session.Bridge.Events.ToArray()) -join ' ')"
+                }
                 $session.Process.Refresh()
                 $window = $session.Process.MainWindowHandle
                 [void][GpuVMInputMeter]::BringToFront($window)
