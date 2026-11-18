@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { MachineCube, type CubeMachine } from "./MachineCube";
+import { IconCamera, IconFolder, IconFolderOpen, IconHistory, IconHistoryOff } from "@tabler/icons-react";
 import { IconAppWindow, IconBrandWindows, IconDeviceDesktop, IconExternalLink, IconPalette, IconServer, IconHandStop, IconLayoutBottombarCollapse, IconMoon, IconPlayerPlay, IconPlayerStop, IconPlugConnected, IconPlugConnectedX, IconPower, IconSun } from "@tabler/icons-react";
-import { service, type ServiceStatus } from "./api";
+import { inTauri, service, type ServiceStatus } from "./api";
 import { ACCENTS, savePrefs, usePrefs, type ClosePref, type ServicePref, type ThemePref, type ViewerHomePref, type VmsOnQuitPref } from "./prefs";
 import { Segmented, Slider, humanError } from "./ui";
 import { t, type LangPref } from "./i18n";
@@ -100,13 +101,93 @@ const ANIM_FPS = [15, 30, 60, 120, 0];
 /** The option a stored limit is shown at: its own, or the nearest one (no limit stays last). */
 const animFpsIndex = (fps: number) => (fps > 0 ? ANIM_FPS.slice(0, -1).reduce((best, f, i) => (Math.abs(f - fps) < Math.abs(ANIM_FPS[best] - fps) ? i : best), 0) : ANIM_FPS.length - 1);
 
-type PrefSection = "look" | "window" | "machines" | "service";
+type PrefSection = "look" | "window" | "machines" | "captures" | "service";
 const prefSections = (): { id: PrefSection; label: string; icon: React.ReactNode }[] => [
   { id: "look", label: t("Apariencia"), icon: <IconPalette size={17} /> },
   { id: "window", label: t("Ventana"), icon: <IconAppWindow size={17} /> },
   { id: "machines", label: t("Máquinas"), icon: <IconDeviceDesktop size={17} /> },
+  { id: "captures", label: t("Capturas"), icon: <IconCamera size={17} /> },
   { id: "service", label: t("Servicio"), icon: <IconServer size={17} /> },
 ];
+
+/** "Capturas": the last 30 s kept in memory (off by default), and where screenshots and videos go. */
+function CapturePrefs() {
+  const prefs = usePrefs();
+  const [folders, setFolders] = useState<{ shots: string | null; videos: string | null; hevc?: boolean }>({ shots: null, videos: null });
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!inTauri) { setFolders({ shots: "C:\\Users\\…\\Pictures\\GpuVM", videos: "C:\\Users\\…\\Videos\\GpuVM", hevc: false }); return; }
+    import("@tauri-apps/api/core").then(({ invoke }) => invoke<{ shots: string | null; videos: string | null; hevc: boolean }>("capture_folders")).then(setFolders).catch(() => {});
+  }, [prefs.shotsDir, prefs.videosDir]);
+
+  const choose = async (video: boolean) => {
+    setError(null);
+    if (!inTauri) return;
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const dir = await open({ directory: true, defaultPath: (video ? folders.videos : folders.shots) ?? undefined });
+    if (typeof dir === "string") savePrefs(video ? { videosDir: dir } : { shotsDir: dir });
+  };
+  const show = async (video: boolean) => {
+    setError(null);
+    if (!inTauri) return;
+    const { invoke } = await import("@tauri-apps/api/core");
+    invoke("capture_open_folder", { video }).catch((e) => setError(humanError(e)));
+  };
+  const folderRow = (video: boolean) => {
+    const custom = video ? prefs.videosDir : prefs.shotsDir;
+    const path = video ? folders.videos : folders.shots;
+    return (
+      <div className="pref-row">
+        <div className="pref-text">
+          <strong>{video ? t("Carpeta de videos") : t("Carpeta de capturas")}</strong>
+          <span className="pref-path" title={path ?? ""}>{path ? t("{path}, una carpeta por máquina", { path }) : "—"}</span>
+        </div>
+        <div className="pref-side">
+          {custom && <button type="button" className="btn ghost" onClick={() => savePrefs(video ? { videosDir: "" } : { shotsDir: "" })}>{t("Restablecer")}</button>}
+          <button type="button" className="btn ghost" onClick={() => show(video)}><IconFolderOpen size={16} />{t("Abrir")}</button>
+          <button type="button" className="btn" onClick={() => choose(video)}><IconFolder size={16} />{t("Elegir carpeta")}</button>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <div className="pref-row">
+        <div className="pref-text">
+          <strong>{t("Guardar los últimos 30 s")}</strong>
+          <span>{t("El visor guarda en memoria los últimos 30 segundos de la imagen, listos para guardarse como clip con Ctrl+Alt+Shift+B o desde el panel. Ocupa unos 130 MB a 35 Mb/s.")}</span>
+        </div>
+        <Segmented<boolean> value={prefs.replay} onChange={(replay) => savePrefs({ replay })} options={[
+          { value: false, label: <><IconHistoryOff size={15} />{t("Desactivado")}</> },
+          { value: true, label: <><IconHistory size={15} />{t("Activado")}</> },
+        ]} />
+      </div>
+      {folderRow(false)}
+      {folderRow(true)}
+      {folders.hevc === false && (
+        <div className="pref-row">
+          <div className="pref-text">
+            <strong>{t("Videos en HEVC")}</strong>
+            <span>{t("Las grabaciones de máquinas que transmiten en HEVC no se abren en Películas y TV sin la extensión HEVC de Microsoft. El navegador y VLC ya las reproducen.")}</span>
+          </div>
+          <div className="pref-side">
+            <button type="button" className="btn" onClick={() => import("@tauri-apps/api/core").then(({ invoke }) => invoke("capture_get_hevc")).catch((e) => setError(humanError(e)))}>
+              <IconExternalLink size={16} />{t("Ver en Microsoft Store")}
+            </button>
+          </div>
+        </div>
+      )}
+      <div className="pref-row">
+        <div className="pref-text">
+          <strong>{t("Atajos")}</strong>
+          {error ? <span className="error-text">{error}</span> : <span>{t("Ctrl+Alt+Shift+P captura la imagen y Ctrl+Alt+Shift+R empieza o detiene la grabación.")}</span>}
+        </div>
+      </div>
+    </>
+  );
+}
 
 /** A machine to show the theme and accent on, the same cube as every machine's page. */
 const PREVIEW: CubeMachine = { power: "on", cores: 8, memoryGB: 16, gpuPercent: 60, diskGB: 256, usage: { cpu: 35, gpu: 55, mem: 45, disk: 10 }, apps: ["steam", "discord", "chrome"], removed: 0 };
@@ -224,6 +305,7 @@ export function Preferences() {
             </div>
           </div>
         ))}
+        {section("captures", <CapturePrefs />)}
         {section("service", <ServicePrefs />)}
       </div>
       {/* Always in view: the theme and accent applied to a machine and to the app's own controls. */}

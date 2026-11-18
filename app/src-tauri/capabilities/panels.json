@@ -6,6 +6,7 @@
   "permissions": [
     "core:default", "core:window:allow-start-dragging", "core:window:allow-close",
     "allow-ps", "allow-admin-prompts", "allow-admin-prompt-answered",
-    "allow-viewer-send", "allow-viewer-panel-resize", "allow-viewer-panel-close", "allow-viewer-panel-vm"
+    "allow-viewer-send", "allow-viewer-panel-resize", "allow-viewer-panel-close", "allow-viewer-panel-vm",
+    "allow-capture-open", "allow-capture-reveal", "allow-capture-open-folder", "allow-capture-state"
   ]
 }

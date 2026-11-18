@@ -11,6 +11,7 @@
     "allow-viewer-reveal", "allow-viewer-covered", "allow-viewer-panel-resize", "allow-viewer-panel-close", "allow-viewer-panel-vm",
     "allow-open-console", "allow-repair-service", "allow-relaunch-as-admin", "allow-service-status",
     "allow-start-service", "allow-stop-service", "allow-set-service-mode", "allow-set-service-startup",
-    "allow-set-close-to-tray", "allow-set-stop-vms-on-quit", "allow-set-language"
+    "allow-set-close-to-tray", "allow-set-stop-vms-on-quit", "allow-set-language",
+    "allow-set-capture-prefs", "allow-capture-folders", "allow-capture-open", "allow-capture-reveal", "allow-capture-open-folder", "allow-capture-state", "allow-capture-get-hevc"
   ]
 }

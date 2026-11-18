@@ -10,9 +10,10 @@ import { refreshPrefs } from "./prefs";
 import { t } from "./i18n";
 import { humanError } from "./ui";
 import {
-  ActionsWidget, ClockWidget, GamesWidget, MachinesWidget, ShelfWidget, StatsWidget, WeatherWidget, WidgetBoard, WidgetTray,
-  defaultWidgets, forgetWeather, loadWidgets, newWidget, saveWidgets, type ViewerStats, type WidgetItem,
+  ActionsWidget, CaptureWidget, ClockWidget, GamesWidget, MachinesWidget, ShelfWidget, StatsWidget, WeatherWidget, WidgetBoard, WidgetTray,
+  defaultWidgets, forgetWeather, loadWidgets, newWidget, saveWidgets, type CaptureState, type SavedCapture, type ViewerStats, type WidgetItem,
 } from "./ViewerWidgets";
+import { usePrefs } from "./prefs";
 
 const WIDTH_KEY = "gpuvm.viewerPanelWidth";
 
@@ -29,6 +30,16 @@ async function listen<T>(event: string, handler: (payload: T) => void): Promise<
 }
 
 const send = (vm: string, msg: Record<string, unknown>) => invoke("viewer_send", { vm, msg }).catch(() => {});
+
+/** Why a capture failed, in words (the viewer and the app send a short reason). */
+const captureErrorText = (reason: string) => ({
+  "disk-full": t("No hay espacio en el disco"),
+  "too-slow": t("El disco no da abasto, la grabación se detuvo"),
+  "no-frame": t("No llegó la imagen, inténtalo de nuevo"),
+  "format": t("Esta imagen no se puede capturar"),
+  "replay-empty": t("Aún no hay segundos guardados"),
+  "replay-off": t("Actívalo en Ajustes, en Capturas"),
+}[reason] ?? t("No se pudo guardar"));
 
 /** The panel beside GpuVM's viewer: it slides in from the right while the picture moves aside. A board of widgets
  *  the person arranges (ViewerWidgets.tsx): machines to switch to, the usual actions, the picture's numbers, the time,
@@ -54,6 +65,18 @@ export function ViewerPanel({ machine, onSwitched, onResize, sample }: {
   const [edit, setEdit] = useState(false);
   const [game, setGame] = useState<GameDef | null>(null);
   const decor = useDecor(vm);
+  // Screenshots and recordings: per machine, as the viewers report them (they may record while the panel is closed).
+  const prefs = usePrefs();
+  const [captures, setCaptures] = useState<Record<string, { recording: boolean; since: number; last: SavedCapture | null; error: string }>>({});
+  const captureOf = (name: string) => captures[name] ?? { recording: false, since: 0, last: null, error: "" };
+  const setCapture = (name: string, change: Partial<{ recording: boolean; since: number; last: SavedCapture | null; error: string }>) =>
+    setCaptures((all) => ({ ...all, [name]: { ...(all[name] ?? { recording: false, since: 0, last: null, error: "" }), ...change } }));
+  const errorTimer = useRef(0);
+  const showError = (name: string, text: string) => {
+    setCapture(name, { error: text });
+    clearTimeout(errorTimer.current);
+    errorTimer.current = window.setTimeout(() => setCapture(name, { error: "" }), 5000);
+  };
 
   const onStats = (s: ViewerStats) => {
     setStats(s);
@@ -65,10 +88,17 @@ export function ViewerPanel({ machine, onSwitched, onResize, sample }: {
     const offs = [
       listen<{ open: boolean; vm: string }>("viewer-panel", (p) => { setVm(p.vm); setOpen(p.open); if (!p.open) setEdit(false); }),
       listen<{ vm: string; msg: Record<string, unknown> & { type: string } }>("viewer", (p) => {
+        // Recording state is kept for every machine (it can record while another one is on screen).
+        if (p.msg.type === "recording") setCapture(p.vm, p.msg.on ? { recording: true, since: Date.now(), error: "" } : { recording: false });
+        if (p.msg.type === "capture-error") showError(p.vm, captureErrorText(String(p.msg.reason ?? "")));
+        if (p.msg.type === "closed" || p.msg.type === "ended") setCapture(p.vm, { recording: false });
         // Another machine may stay connected in the background: only this one's numbers.
         if (p.vm !== vmRef.current) return;
         if (p.msg.type === "stats") onStats(p.msg as unknown as ViewerStats);
         if (p.msg.type === "window") setFullScreen(!!p.msg.fullScreen);
+      }),
+      listen<SavedCapture & { vm: string }>("capture-saved", (p) => {
+        setCapture(p.vm, { last: { kind: p.kind, path: p.path, name: p.name, thumb: p.thumb, durationMs: p.durationMs, at: Date.now() }, error: "" });
       }),
     ];
     return () => { offs.forEach((o) => o.then((f) => f())); };
@@ -76,6 +106,18 @@ export function ViewerPanel({ machine, onSwitched, onResize, sample }: {
 
   // The panel lives on hidden between uses: each time it opens it takes the theme and accent chosen meanwhile.
   useEffect(() => { if (open) refreshPrefs(); }, [open]);
+
+  // And the machine's newest capture and recording, which may have happened before the panel existed (keys).
+  useEffect(() => {
+    if (!open || !vm || !inTauri) return;
+    invoke<{ last: (SavedCapture & { at: number }) | null; recordingSince: number | null }>("capture_state", { vm }).then((s) => {
+      if (!s) return;
+      setCapture(vm, {
+        recording: s.recordingSince != null, since: s.recordingSince ?? 0,
+        ...(s.last ? { last: { kind: s.last.kind, path: s.last.path, name: s.last.name, thumb: s.last.thumb, durationMs: s.last.durationMs, at: s.last.at } } : {}),
+      });
+    }).catch(() => {});
+  }, [open, vm]);
 
   // In the browser preview there is no viewer: made-up numbers so the widget can be seen working.
   useEffect(() => {
@@ -205,6 +247,25 @@ export function ViewerPanel({ machine, onSwitched, onResize, sample }: {
                         onOverlay={() => { send(vm, { type: "stats", on: !overlay }); setOverlay(!overlay); }}
                         onDisconnect={() => { invoke("viewer_panel_close"); send(vm, { type: "quit" }); }} />
                     );
+                    case "capture": {
+                      const c = captureOf(vm);
+                      const state: CaptureState = { ...c, replay: prefs.replay };
+                      // The website's sample: made-up files so the widget can be seen working.
+                      const sampleShot = (kind: SavedCapture["kind"], durationMs = 0) =>
+                        setCapture(vm, { last: { kind, path: "", name: `${vm} 2026-11-18 21.04.13.${kind === "shot" ? "png" : "mp4"}`, thumb: null, durationMs, at: Date.now() } });
+                      return (
+                        <CaptureWidget size={size} state={state}
+                          onShot={() => (inTauri ? send(vm, { type: "screenshot" }) : sampleShot("shot"))}
+                          onRecord={() => {
+                            if (inTauri) { send(vm, { type: "record", on: !c.recording }); return; }
+                            if (c.recording) { setCapture(vm, { recording: false }); sampleShot("clip", Date.now() - c.since); }
+                            else setCapture(vm, { recording: true, since: Date.now() });
+                          }}
+                          onReplay={() => (inTauri ? send(vm, { type: "replay-save" }) : sampleShot("replay", 30000))}
+                          onOpen={(f) => invoke("capture_open", { path: f.path }).catch((e) => showError(vm, humanError(e)))}
+                          onReveal={(f) => invoke("capture_reveal", { path: f.path }).catch((e) => showError(vm, humanError(e)))} />
+                      );
+                    }
                     case "stats": return <StatsWidget stats={stats} history={history} size={size} />;
                     case "clock": return <ClockWidget size={size} />;
                     case "shelf": return <ShelfWidget vms={vms} size={size} />;
