@@ -16,7 +16,8 @@ function Enter-LabLock {
     if ($env:LAB045_LOCK_HELD -eq '1') { return }
     $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
     while ($true) {
-        $queue = Get-LabQueue
+        # @(): with one line the function's output is a single string, and [0] would be its first letter.
+        $queue = @(Get-LabQueue)
         $myTurn = -not $queue.Count -or $queue[0] -like "$script:LabSession*"
         if ($myTurn) {
             try {
