@@ -50,6 +50,10 @@ export function Slider({ value, min, max, step = 1, onChange, label, format = St
     if (v !== latest.current.value) onChange(v);
   };
   const onDown = (e: PointerEvent<HTMLDivElement>) => {
+    // No text selection or native drag starts from the slider; it still takes the focus for the arrow keys.
+    e.preventDefault();
+    window.getSelection()?.removeAllRanges();
+    e.currentTarget.focus();
     e.currentTarget.setPointerCapture(e.pointerId);
     setDragging(true);
     setFromPointer(e.clientX);

@@ -16,6 +16,11 @@ initPrefs();
 window.addEventListener("contextmenu", (e) => {
   if (!(e.target as HTMLElement)?.closest?.("input, textarea, [contenteditable='true']")) e.preventDefault();
 });
+// Only GpuVM's own drags (machines, spaces) start a drag: the web view's drag of selected text or of an image showed
+// the "not allowed" cursor and swallowed the pointer, so sliders and handles stopped following the mouse.
+window.addEventListener("dragstart", (e) => {
+  if (!(e.target as HTMLElement)?.closest?.("[draggable='true']")) e.preventDefault();
+});
 // The administrator-prompt card runs in its own small window (label "prompt"; "?prompt" in the browser).
 const isPrompt = "__TAURI_INTERNALS__" in window
   ? (window as unknown as { __TAURI_INTERNALS__: { metadata: { currentWindow: { label: string } } } }).__TAURI_INTERNALS__.metadata.currentWindow.label === "prompt"

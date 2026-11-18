@@ -42,12 +42,25 @@ export interface Prefs {
 }
 
 const KEY = "gpuvm.prefs";
-const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "keep", service: "app", monitor: "primary", accent: "blue", lang: "system", viewerHome: "keep", animFps: 0, animQuality: 100 };
+const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "stop", service: "app", monitor: "primary", accent: "blue", lang: "system", viewerHome: "keep", animFps: 0, animQuality: 100 };
 const EVENT = "gpuvm-prefs";
 const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
 
+// Before version 2 every save stored "keep" (then the default) even when nobody chose it: machines stayed on in
+// Hyper-V after quitting. Version 2 moves those to the new default once; a later "keep" is a real choice.
+const VERSION = 2;
+
 export function readPrefs(): Prefs {
-  try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") }; } catch { return DEFAULTS; }
+  try {
+    const saved = JSON.parse(localStorage.getItem(KEY) ?? "{}");
+    if (saved.version !== VERSION) {
+      if (saved.vmsOnQuit === "keep") saved.vmsOnQuit = "stop";
+      saved.version = VERSION;
+      if (localStorage.getItem(KEY)) localStorage.setItem(KEY, JSON.stringify(saved));
+    }
+    delete saved.version;
+    return { ...DEFAULTS, ...saved };
+  } catch { return DEFAULTS; }
 }
 
 export function resolvedTheme(pref: ThemePref): "light" | "dark" {
@@ -90,7 +103,7 @@ async function applyService(mode: ServicePref) {
 
 export function savePrefs(change: Partial<Prefs>) {
   const next = { ...readPrefs(), ...change };
-  try { localStorage.setItem(KEY, JSON.stringify(next)); } catch { /* no storage */ }
+  try { localStorage.setItem(KEY, JSON.stringify({ ...next, version: VERSION })); } catch { /* no storage */ }
   applyTheme(next.theme);
   applyAccent(next.accent);
   if (change.close) applyClose(next.close);

@@ -96,6 +96,10 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); }
+/* Like a desktop app: dragging over cards, cubes, sliders or handles never selects their text. What is typed stays
+   selectable, and so do errors, to copy them. */
+body { user-select: none; -webkit-user-select: none; }
+input, textarea, [contenteditable="true"], .error-text, .selectable { user-select: text; -webkit-user-select: text; }
 button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; }
 input { font: inherit; color: inherit; }
 ::-webkit-scrollbar { width: 0; height: 0; }
