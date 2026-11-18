@@ -42,6 +42,8 @@
         'Get-GpuVMInstalledApp'
         'Uninstall-GpuVMApp'
         'Send-GpuVMClipboard'
+        'Send-GpuVMFile'
+        'Stop-GpuVMTransfer'
         'Stop-GpuVMAll'
         'Set-GpuVMCapture'
         'Resolve-GpuVMAdminPrompt'

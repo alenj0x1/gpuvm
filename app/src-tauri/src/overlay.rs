@@ -71,6 +71,15 @@ fn panel_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
         .ok()
 }
 
+/// The picture of a viewer on screen (physical x, y, width, height): its client area without the side panel when
+/// the panel is open on it. Where the drop area goes (dropzone.rs).
+pub fn picture_rect(viewer: isize, vm: &str) -> Option<(i32, i32, i32, i32)> {
+    let (x, y, w, h, scale) = client_rect(viewer)?;
+    let open_here = { let p = panel(); p.open && p.vm.as_deref() == Some(vm) };
+    let panel_w = if open_here { ((WIDTH.load(Ordering::Relaxed) as f64 * scale).round() as i32).min(w / 2) } else { 0 };
+    Some((x, y, w - panel_w, h))
+}
+
 /// Puts the panel over the right edge of the viewer's picture area.
 fn place(window: &tauri::WebviewWindow, viewer: isize) -> Option<(i32, i32, f64)> {
     let (x, y, w, h, scale) = client_rect(viewer)?;

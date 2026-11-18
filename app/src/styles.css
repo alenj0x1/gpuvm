@@ -458,6 +458,17 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
   .segment-row > .segmented { flex-direction: column; flex-wrap: nowrap; width: 100%; }
   .segment-row > .segmented button { justify-content: flex-start; }
 }
+/* Drop area over the viewer's picture (DropZone, window "viewer-drop"): the picture dims and the target shows in the
+   middle; files over it brighten the card's icon. */
+html.drop-window, html.drop-window body, html.drop-window #root { background: transparent; min-height: 0; height: 100%; overflow: hidden; }
+.drop-veil { box-sizing: border-box; height: 100%; display: grid; place-items: center; background: rgba(18, 19, 22, 0.55); }
+.drop-card { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 20px 28px; border-radius: var(--r-lg);
+  background: var(--surface); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); font-size: 13px; }
+.drop-card strong { font-size: 15px; font-weight: 600; }
+.drop-card > span:last-child { color: var(--muted); }
+.drop-icon { display: grid; place-items: center; width: 44px; height: 44px; margin-bottom: 6px; border-radius: 12px; background: var(--surface-2);
+  color: var(--muted); box-shadow: inset 0 0 0 1px var(--line); }
+.drop-veil.over .drop-icon { background: var(--tint-bg); color: var(--tint-fg); box-shadow: none; }
 /* Administrator-prompt card (PromptCard): its own transparent window over Moonlight. */
 html.prompt-window, html.prompt-window body, html.prompt-window #root { background: transparent; min-height: 0; height: 100%; overflow: hidden; }
 .prompt-card { box-sizing: border-box; height: 100%; display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: var(--r-lg);

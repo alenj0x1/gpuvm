@@ -135,6 +135,16 @@ fn host_paths(request: &Value) -> Vec<(String, bool)> {
         "Add-GpuVMIso" => add(&args["Path"], false),
         "Import-GpuVMSharedDisk" => add(&args["Path"], true),
         "Save-GpuVMProfile" => add(&args["Settings"]["iso"], false),
+        // Files and folders of this PC sent into a VM (dropped on the viewer). Opened for reading data, which works
+        // for both. With FromVM the paths are inside the source VM, not on this PC.
+        // Anything that is not a text (a number, an object) is kept as an invalid path, so it is refused instead of
+        // skipping the check.
+        "Send-GpuVMFile" if args["FromVM"].as_str().unwrap_or("").is_empty() => {
+            let list = match &args["Path"] { Value::Array(list) => list.clone(), other => vec![other.clone()] };
+            for v in list {
+                paths.push((v.as_str().unwrap_or("?").to_string(), true));
+            }
+        }
         _ => {}
     }
     paths
