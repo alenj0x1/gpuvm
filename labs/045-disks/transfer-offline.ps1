@@ -16,7 +16,7 @@ $m = Get-Module GpuVM
 $name = 'lab045-xf'
 $root = & $m { Get-GpuVMDefaultRoot }
 # Outside GpuVM's folder: Export-GpuVM refuses to write inside it.
-$work = Join-Path $env:TEMP 'lab045-xfer-files'
+$work = Join-Path $(if ($env:LAB045_WORKDIR) { $env:LAB045_WORKDIR } else { $env:TEMP }) 'lab045-xfer-files'
 $out = Join-Path $PSScriptRoot 'out'
 New-Item -ItemType Directory -Force $out | Out-Null
 $result = [ordered]@{ startedAt = (Get-Date).ToString('o'); keepGB = $KeepGB; wasteGB = $WasteGB

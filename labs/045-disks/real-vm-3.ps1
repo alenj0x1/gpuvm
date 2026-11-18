@@ -26,7 +26,8 @@ function Timed([scriptblock]$body) { $sw = [Diagnostics.Stopwatch]::StartNew(); 
 function StopClean($n) { $vm = Get-VM -Name $n -ErrorAction SilentlyContinue; if ($vm -and $vm.State -ne 'Off') { Stop-VM -Name $n -Force } }
 
 $imp = 'lab045-imp'
-$work = Join-Path $env:TEMP 'lab045-real3'
+# Another drive when LAB045_WORKDIR says so: the export file on C: would take the room the import needs.
+$work = Join-Path $(if ($env:LAB045_WORKDIR) { $env:LAB045_WORKDIR } else { $env:TEMP }) 'lab045-real3'
 $exportFile = Join-Path $work 'disposable.gpuvm'
 $keepWasRunning = $false
 $disp = $null
