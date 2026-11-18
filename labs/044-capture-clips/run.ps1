@@ -19,7 +19,7 @@ param(
     [int]$Samples = 40,
     [switch]$SkipInput,
     [switch]$Force,
-    [string]$Session = 'capture-clips',
+    [string]$LockName = 'capture-clips',
     # This session already holds C:\GpuVM\.lab-lock (taken before, e.g. for installing the build): don't take it again.
     [switch]$HaveLock,
     [string]$Out = (Join-Path $PSScriptRoot "out\run-$(Get-Date -Format 'yyyyMMdd-HHmmss').json")
@@ -38,19 +38,23 @@ $captures = Join-Path $env:USERPROFILE 'AppData\LocalLow\GpuVM\Viewer\Captures'
 $lock = 'C:\GpuVM\.lab-lock'
 $waited = [Diagnostics.Stopwatch]::StartNew()
 $queue = 'C:\GpuVM\.lab-queue'
-if ($HaveLock -and -not (Select-String $lock -Pattern $Session -Quiet -ErrorAction SilentlyContinue)) { throw "The lab lock is not this session's: $(Get-Content $lock -ErrorAction SilentlyContinue)" }
+# Never two runs at once (a run believed stopped kept streaming without the lock once).
+$parent = (Get-CimInstance Win32_Process -Filter "ProcessId=$PID").ParentProcessId
+$others = @(Get-CimInstance Win32_Process -Filter "Name='pwsh.exe' or Name='powershell.exe'" | Where-Object { ($_.ProcessId -notin @($PID, $parent)) -and $_.CommandLine -match '-File\s+\S*044-capture-clips[\\/]run\.ps1' })
+if ($others) { throw "Another lab 044 run is still alive (PID $($others.ProcessId -join ', ')): stop it first (taskkill /T /F /PID ...)." }
+if ($HaveLock -and -not (Select-String $lock -Pattern $LockName -Quiet -ErrorAction SilentlyContinue)) { throw "The lab lock is not this session's: $(Get-Content $lock -ErrorAction SilentlyContinue)" }
 while (-not $HaveLock) {
     # The queue says who is next: the lock is taken only when it is empty or this session is first (its line goes).
     $next = @(Get-Content $queue -ErrorAction SilentlyContinue | Where-Object { $_.Trim() })
-    if ($next.Count -and $next[0].Trim() -ne $Session) {
-        if (-not ($next | Where-Object { $_.Trim() -eq $Session })) { Add-Content $queue $Session }
+    if ($next.Count -and $next[0].Trim() -ne $LockName) {
+        if (-not ($next | Where-Object { $_.Trim() -eq $LockName })) { Add-Content $queue $LockName }
         if ($waited.Elapsed.TotalMinutes -gt 60) { throw "Still queued behind: $($next -join ', ')" }
         "queued behind: $($next[0])" | Write-Host
         Start-Sleep -Seconds 30
         continue
     }
     try {
-        $fs = [IO.File]::Open($lock, 'CreateNew', 'Write'); $w = [IO.StreamWriter]::new($fs); $w.Write("$Session lab 044 $(Get-Date -Format o)"); $w.Dispose()
+        $fs = [IO.File]::Open($lock, 'CreateNew', 'Write'); $w = [IO.StreamWriter]::new($fs); $w.Write("$LockName lab 044 $(Get-Date -Format o)"); $w.Dispose()
         if ($next.Count) { Set-Content $queue @($next | Select-Object -Skip 1) }
         break
     }
@@ -126,7 +130,10 @@ try {
                 $session = Start-LatencyViewer -Viewer gpuvm -Arguments $arguments
                 $row.firstFrameSec = Wait-LatencyViewerFrame $session -Since $started
                 if ($row.firstFrameSec -lt 0) {
-                    throw "no picture: $(@($session.Bridge.Events.ToArray()) -join ' ')"
+                    $p = @($session)[0].Process
+                    $exit = if ($p -and $p.HasExited) { "exited $($p.ExitCode)" } else { 'still running' }
+                    $hello = if (@($session)[0].Bridge) { @($session)[0].Bridge.Hello } else { 'no bridge' }
+                    throw "no picture (viewer $exit, hello $hello): $(@(@($session)[0].Bridge.Events.ToArray()) -join ' ')"
                 }
                 $session.Process.Refresh()
                 $window = $session.Process.MainWindowHandle
@@ -189,7 +196,7 @@ try {
                 Stop-LatencyStream $session -VM $vm
                 if ($session.Bridge) { $session.Bridge.Dispose() }
             }
-            catch { $row.error = "$_"; "$variant r$round : $_" | Write-Host }
+            catch { $row.error = "$_ at $($_.InvocationInfo.ScriptLineNumber): $($_.InvocationInfo.Line.Trim())"; "$variant r$round : $($row.error)" | Write-Host }
             $results.Add([pscustomobject]$row)
             $m = $row.motion; $s = $row.stats
             $in = if ($row.input) { ($row.input | ForEach-Object { "$($_.kind) $($_.medianMs)/$($_.p95Ms)" }) -join ', ' } else { '-' }
