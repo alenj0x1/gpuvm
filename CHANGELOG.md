@@ -6,7 +6,7 @@ All notable changes to GpuVM are documented here. The format follows [Keep a Cha
 
 Changes waiting for the next version sit under **Unreleased** at the top (this section only exists while there are some, and the docs site doesn't show it); `scripts/release.py` turns it into the new version.
 
-## [Unreleased]
+## [0.9.0] - 2026-11-18
 
 ### Added
 - **GpuVM's own viewer.** Machines open inside the app, in GpuVM's viewer (built on Moonlight): the machine's cube moves to the center with the steps while it connects, then the picture fills the window under the title bar. **Home** (in the title bar, the side panel or Ctrl+Alt+Shift+H) zooms out to Home and keeps the machine connected, so opening it again goes straight back to its picture; **Settings → Window** can disconnect it instead. A machine set to full screen goes full screen when its picture is ready, and full screen can be toggled from the panel. Switching machines zooms out of one and brings the other to the center, and waits show tips.
@@ -249,6 +249,7 @@ First version.
 - Third-party installers are pinned by SHA-256 and verified again right before copying them into the VM.
 - Streaming and guest credentials are encrypted with DPAPI.
 
+[0.9.0]: https://github.com/alenj0x1/gpuvm/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/alenj0x1/gpuvm/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/alenj0x1/gpuvm/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/alenj0x1/gpuvm/compare/v0.5.0...v0.6.0
