@@ -83,6 +83,23 @@ Checks:
 - The check "a running disposable is not swept" read 1 instead of 0, but nothing had been deleted (step log): `Remove-GpuVMDisposable` returned an empty list wrapped in a list. The app would have shown a deletion that never happened. Fixed: it returns one name per deleted machine.
 - Re-pairing a disposable or imported machine costs about 47 s more than a warm open (55 s against 7.7 s): its new Sunshine identity asks for a new pairing. Reusing a pre-paired identity would save that, but two machines running with the same identity break pairing and streaming. Kept as is: one identity per machine.
 
+### Final check after the security review (`run-all.ps1 -Labs transfer-offline.ps1,real-vm-3.ps1`, 12:2x)
+Import no longer mounts the file's disk on this PC. The imported machine is marked `pendingIdentityReset`, and on its first open `Connect-GpuVM` resets Sunshine's identity inside the VM over PowerShell Direct, sets the new web login with `sunshine.exe --creds`, then restarts Windows. Export builds the merged disk in `<root>\.staging` and writes the file only through a handle whose real path was checked.
+
+| Step | Result |
+|---|---|
+| Disposable: create + start / first open / second open | 7.1 s / 91.1 s / 8.3 s |
+| Export refuses a disposable machine | yes (the sweep could delete it mid-export) |
+| Sweep after shutdown | 0.1 s, VM and folder gone |
+| Export a normal copy of the template (14.71 GB chain) | 120.5 s, 14.66 GB file |
+| Import | 38.8 s |
+| First open of the imported machine (identity reset in the VM + restart + pairing through the new login) | **77.5 s, paired** |
+| Offline: export 11 GB uncompressed / Fastest | 172 s / 178 s (16.5 / 10.7 GB) |
+| Offline: import checks (free name, fingerprint, content, disk untouched, marked for the reset, no pairing) | all pass |
+
+- The first attempt with the old host-side login gave 401 on the first open: my reimplementation of Sunshine's salted hash was not what Sunshine expects. `--creds` is Sunshine's own way, and it pairs.
+- "Tampered file refused" failed once: the first import still reserved its 64 GB, so the refusal was for disk room. A direct check also found a real bug. A file that isn't a VHDX made the cleanup throw (`.Attached` on nothing, under StrictMode), so the fingerprint message was lost and the folder stayed behind. Fixed: refused with "no coincide con su huella" and nothing left behind.
+
 ### Export/import
 - Real machines: lab045-real (16.0 GB disk) gives a 14.66 GB file in 36.6 s; a disposable machine (template + copy, 15.47 GB) gives 14.44 GB in 34 s.
 - Import on this PC is held back by the full-size disk-room rule: 130 GB free - 49 promised - 20 margin = 61 < 64. With the export file on C: and a second test machine reserving 64 GB, no import fits. It runs once front 2's lab045-win2 is gone.
