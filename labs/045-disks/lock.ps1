@@ -4,7 +4,7 @@ $script:LabLockPath = 'C:\GpuVM\.lab-lock'
 $script:LabLockOwned = $false
 
 function Enter-LabLock {
-    param([Parameter(Mandatory)][string]$What, [int]$TimeoutMinutes = 30)
+    param([Parameter(Mandatory)][string]$What, [int]$TimeoutMinutes = 90)
     $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
     while ($true) {
         try {

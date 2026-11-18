@@ -1083,3 +1083,19 @@ InModuleScope GpuVM {
         }
     }
 }
+
+InModuleScope GpuVM {
+    Describe 'Export destination' {
+        It 'never writes inside Windows, the programs, ProgramData or GpuVM folders' {
+            Test-Throws { Assert-GpuVMExportPath -Path (Join-Path $env:windir 'x.gpuvm') } | Should Be $true
+            Test-Throws { Assert-GpuVMExportPath -Path (Join-Path $env:ProgramFiles 'x.gpuvm') } | Should Be $true
+            Test-Throws { Assert-GpuVMExportPath -Path (Join-Path $env:ProgramData 'x.gpuvm') } | Should Be $true
+            Test-Throws { Assert-GpuVMExportPath -Path (Join-Path (Get-GpuVMDefaultRoot) 'x.gpuvm') } | Should Be $true
+            Test-Throws { Assert-GpuVMExportPath -Path '\\server\share\x.gpuvm' } | Should Be $true
+        }
+        It 'accepts a plain folder of the user' {
+            $p = Join-Path $env:TEMP 'x.gpuvm'
+            Assert-GpuVMExportPath -Path $p | Should Be ([IO.Path]::GetFullPath($p))
+        }
+    }
+}
