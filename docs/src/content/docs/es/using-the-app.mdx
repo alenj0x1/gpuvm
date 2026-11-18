@@ -105,8 +105,8 @@ El botón principal cambia según el estado de la máquina:
 
 | Estado | Botón | Qué hace |
 |---|---|---|
-| Apagada | **Encender y abrir** | Enciende la máquina y la abre en Moonlight. |
-| Encendida | **Abrir** | La abre en Moonlight. |
+| Apagada | **Encender y abrir** | Enciende la máquina y la abre en el visor de GpuVM. |
+| Encendida | **Abrir** | La abre en el visor de GpuVM. |
 | En pausa | **Reanudar** | Reanuda la máquina. |
 | Apagada, sin memoria libre suficiente | **Abrir con N GB** / **Falta memoria** | La abre con la memoria que cabe / dice qué falta. |
 | No creada con GpuVM | **Encender** / **Ver consola** | La enciende / abre la consola de Hyper-V. |
@@ -116,31 +116,39 @@ El botón principal cambia según el estado de la máquina:
 1. Si la máquina está apagada y el driver de la GPU del host cambió, primero copia el driver nuevo a la máquina (evita la pantalla negra o el código 43).
 2. Enciende la máquina y espera a que Windows arranque (la primera vez, termina de configurarse) e inicie sesión solo. Si Windows está terminando actualizaciones, o se reinicia para terminarlas, el botón lo dice.
 3. Devuelve la sesión de Windows a la pantalla de la GPU si se la había llevado otra.
-4. Ajusta la pantalla de la máquina a la resolución y los FPS de Moonlight, y hace que Sunshine la capture.
+4. Ajusta la pantalla de la máquina a la resolución y los FPS de la imagen, y hace que Sunshine la capture.
 5. La primera vez, instala el soporte de mandos y el vigilante de avisos de administrador.
-6. Empareja Moonlight con Sunshine si este equipo todavía no está emparejado.
-7. Abre Moonlight y espera a que aparezca la imagen.
+6. Empareja el visor con Sunshine si este equipo todavía no está emparejado.
+7. Abre el visor y espera a que aparezca la imagen.
 
-Lo que dura hasta que Windows se reinicia (la pantalla, el modo de captura, el sonido) se hace una vez por arranque y por una sola conexión con la máquina. Abrir una máquina ya encendida tarda unos 7 a 10 segundos hasta ver la imagen; apagada, cerca de un minuto, casi todo en que arranquen Windows y Sunshine. Volver a hacer clic en **Abrir** con Moonlight ya mostrándola trae esa ventana de Moonlight al frente. Si la máquina está apagada, guardada o en pausa mientras GpuVM espera su dirección de red, lo dice al instante en vez de seguir esperando.
+Lo que dura hasta que Windows se reinicia (la pantalla, el modo de captura, el sonido) se hace una vez por arranque y por una sola conexión con la máquina. Abrir una máquina ya encendida tarda unos 7 a 10 segundos hasta ver la imagen; apagada, cerca de un minuto, casi todo en que arranquen Windows y Sunshine. Si la máquina está apagada, guardada o en pausa mientras GpuVM espera su dirección de red, lo dice al instante en vez de seguir esperando.
 
 Los avisos que surjan en el camino (por ejemplo, que el audio todavía no está configurado) aparecen como notificaciones.
 
+## La imagen de la máquina
+
+Mientras la máquina se conecta, su cubo pasa al centro con los pasos. Después la imagen llena la ventana bajo la barra de título, o pasa a pantalla completa si la máquina está configurada así.
+
+- **Inicio** en la barra de título, o **Ctrl+Alt+Shift+H**, vuelve a Inicio y deja la máquina conectada: **Abrir** vuelve directo a su imagen. Para desconectarla en su lugar, consulta [Ajustes](#ajustes).
+- **Ctrl+Alt+Shift+G** abre el panel lateral junto a la imagen: un tablero de widgets (máquinas, acciones, los números de la imagen, un reloj, los juegos, el clima) que se ordena con **Editar**. Consulta [Panel lateral](/docs/es/streaming/#panel-lateral).
+- Mientras se muestra una imagen, los hologramas y escenas de la app se detienen, así la GPU queda para las máquinas.
+
 ## Teclado, mouse y mandos
 
-Con Moonlight en pantalla completa, **Alt+F4**, **Alt+Tab** y la **tecla Windows** van a la máquina en vez de cerrar Moonlight o regresarte a este equipo. Para salir del stream, presiona **Ctrl+Alt+Shift+Q**. Con el mouse **Para juegos**, **Ctrl+Alt+Shift+Z** lo libera sin cerrar.
+Con la máquina en pantalla completa, **Alt+F4**, **Alt+Tab** y la **tecla Windows** van a la máquina en vez de cerrar la imagen o regresarte a este equipo. Para salir del stream, presiona **Ctrl+Alt+Shift+Q**. Con el mouse **Para juegos**, **Ctrl+Alt+Shift+Z** lo libera sin cerrar.
 
 Los mandos también funcionan: GpuVM instala en la máquina el controlador de mando virtual (ViGEmBus), y un control conectado a este equipo llega a Windows en la máquina como un control de Xbox 360.
 
-De una tecla, un clic, un movimiento del mouse o un botón del mando en este equipo hasta el cambio en la imagen de Moonlight pasan unos 17 ms (mediana) a 120 FPS o más, unos 11 ms más que el mismo equipo sin streaming. A 60 FPS se suma un cuadro más.
+De una tecla, un clic, un movimiento del mouse o un botón del mando en este equipo hasta el cambio en la imagen pasan unos 17 ms (mediana) a 120 FPS o más, unos 11 ms más que el mismo equipo sin streaming. A 60 FPS se suma un cuadro más.
 
 ## Avisos de administrador
 
-Con la captura **Rápida** (la predeterminada), los avisos de administrador de Windows (UAC) dentro de la máquina no se pueden transmitir: Windows los dibuja en un escritorio aparte y protegido. GpuVM los muestra en su lugar: mientras hay uno abierto, aparece una tarjeta pequeña encima de todo, Moonlight incluido, con la máquina, el programa que pide permiso y su editor (**Editor desconocido** si no está firmado). **Permitir** y **Rechazar** lo responden en la máquina.
+Con la captura **Rápida** (la predeterminada), los avisos de administrador de Windows (UAC) dentro de la máquina no se pueden transmitir: Windows los dibuja en un escritorio aparte y protegido. GpuVM los muestra en su lugar: mientras hay uno abierto, aparece una tarjeta pequeña encima de todo, la imagen de la máquina incluida, con la máquina, el programa que pide permiso y su editor (**Editor desconocido** si no está firmado). **Permitir** y **Rechazar** lo responden en la máquina.
 
 - Solo este equipo puede responder: un programa dentro de la máquina no puede aprobarse a sí mismo.
 - Si mientras tanto se abrió otro aviso, no se presiona nada y la tarjeta muestra el nuevo.
 - Necesita la [contraseña de Windows](#contraseña-de-windows) de la máquina.
-- Con la captura **Clásica** los avisos se ven en Moonlight como siempre y la tarjeta no aparece. Consulta [Modos de captura](/docs/es/streaming/#modos-de-captura).
+- Con la captura **Clásica** los avisos se ven en la imagen como siempre y la tarjeta no aparece. Consulta [Modos de captura](/docs/es/streaming/#modos-de-captura).
 
 ## Pegar en la VM
 
@@ -163,7 +171,7 @@ Procesador, memoria, GPU y disco necesitan la máquina apagada: si está encendi
 
 ## Imagen y control
 
-Cómo muestra Moonlight la máquina y cómo la controlas:
+Cómo muestra el visor la máquina y cómo la controlas:
 
 <Shot name="options" alt="La sección Imagen y control: tipo de uso, cuadros por segundo, sincronización vertical, ritmo de cuadros, mouse, resolución y ventana" />
 
@@ -180,16 +188,16 @@ Cómo muestra Moonlight la máquina y cómo la controlas:
   - **Ritmo de cuadros:** **Parejo** reparte los cuadros a ritmo constante, ideal a 60 FPS; **Al instante** muestra cada cuadro apenas está listo. Solo con la imagen entera.
   - **Mouse:** **Para juegos** (la máquina toma el mouse, como necesitan los juegos para girar la cámara) o **Libre** (el puntero entra y sale de la ventana como en escritorio remoto; no sirve en la mayoría de juegos).
 - **Resolución:** 720p, 1080p, 1440p o 2160p.
-- **Ventana:** **Pantalla completa**, o **Ventana** (una ventana que puedes mover, del tamaño de la resolución).
+- **Ventana:** **Pantalla completa**, o **Ventana** (la imagen queda dentro de la ventana de GpuVM, bajo la barra de título).
 - **Abrir en** (con más de un monitor): **Como en Ajustes** sigue lo elegido en [Ajustes](#ajustes); el monitor principal de Windows, el que sea en ese momento; o un monitor por su nombre. Si el monitor elegido no está conectado, se abre en el principal.
 - **Captura:** cómo captura Sunshine la pantalla.
   - **Rápida** (la predeterminada): la imagen aparece unos 2,6 s después de conectar y también se ven los juegos en pantalla completa exclusiva. Los avisos de administrador de Windows se responden desde GpuVM ([Avisos de administrador](#avisos-de-administrador)).
-  - **Clásica:** los avisos de administrador se ven en Moonlight, pero la imagen puede tardar en aparecer al conectar y los juegos en pantalla completa exclusiva se ven en negro. Consulta [Streaming](/docs/es/streaming/#modos-de-captura).
+  - **Clásica:** los avisos de administrador se ven en la imagen, pero la imagen puede tardar en aparecer al conectar y los juegos en pantalla completa exclusiva se ven en negro. Consulta [Streaming](/docs/es/streaming/#modos-de-captura).
 - **Avanzado** (haz clic para verlo):
-  - **Códec:** **Automático** (Moonlight elige el mejor que tu equipo puede mostrar), H.264, HEVC o AV1. Si la imagen no aparece, vuelve a **Automático**.
-  - **Calidad de imagen:** la tasa de bits en Mbps, hasta 150. Más calidad usa más red; al mínimo (**Automática**), Moonlight la ajusta a la resolución y los FPS.
+  - **Códec:** **Automático** (el visor elige el mejor que tu equipo puede mostrar), H.264, HEVC o AV1. Si la imagen no aparece, vuelve a **Automático**.
+  - **Calidad de imagen:** la tasa de bits en Mbps, hasta 150. Más calidad usa más red; al mínimo (**Automática**), el visor la ajusta a la resolución y los FPS.
 
-Estos ajustes se guardan sin apagar la máquina: los de Moonlight se aplican la próxima vez que la abras, la captura en el momento si la máquina está encendida (reinicia Sunshine) y la red en el momento.
+Estos ajustes se guardan sin apagar la máquina: los de la imagen se aplican la próxima vez que la abras, la captura en el momento si la máquina está encendida (reinicia Sunshine) y la red en el momento.
 
 ## Windows
 
@@ -267,7 +275,7 @@ La **Biblioteca** es una sola página con todas sus secciones y una barra arriba
 
 <Shot name="library" alt="La Biblioteca: el espacio de GpuVM en el disco y los perfiles como tarjetas con un cubo pequeño" />
 
-- **Perfiles:** los perfiles incluidos (marcados **Incluido**) y los tuyos, como tarjetas con un cubo pequeño de lo que dan. **Duplicar** crea uno a partir de otro; los tuyos también se pueden editar (**Editar**, con la máquina que crea al lado del formulario) y borrar. La última tarjeta, **Nuevo perfil**, crea uno. Cada uno guarda procesador, memoria, parte de la GPU, tamaño y tipo de disco (**Fijo** / **Dinámico**), imagen de Windows, apps por instalar, limpieza, el tipo de uso y cómo abre Moonlight (resolución, FPS, pantalla completa o ventana), sobre el perfil incluido en el que está **Basado en**. Consulta [Perfiles](/docs/es/profiles/).
+- **Perfiles:** los perfiles incluidos (marcados **Incluido**) y los tuyos, como tarjetas con un cubo pequeño de lo que dan. **Duplicar** crea uno a partir de otro; los tuyos también se pueden editar (**Editar**, con la máquina que crea al lado del formulario) y borrar. La última tarjeta, **Nuevo perfil**, crea uno. Cada uno guarda procesador, memoria, parte de la GPU, tamaño y tipo de disco (**Fijo** / **Dinámico**), imagen de Windows, apps por instalar, limpieza, el tipo de uso y cómo se abre la imagen (resolución, FPS, pantalla completa o ventana), sobre el perfil incluido en el que está **Basado en**. Consulta [Perfiles](/docs/es/profiles/).
 - **Plantillas:** consulta [Plantillas](#plantillas).
 - **Discos compartidos:** consulta [Discos compartidos](#discos-compartidos).
 - **Discos de máquinas:** el disco de cada máquina y los que quedaron sin máquina (**En uso** o **Libre**). **Crear una máquina con este disco** vuelve a crear una máquina con un disco que se conservó al eliminarla, con Windows y sus apps como estaban; los discos libres se pueden borrar (haz clic otra vez para confirmar y luego en el aviso de UAC; no se puede deshacer). Cada **Windows preparado** es Windows aplicado una vez desde un ISO y una edición (unos 12 GB): las máquinas nuevas con ese Windows se crean copiándolo, en más o menos un minuto. Borrarlo libera ese espacio; la próxima máquina con ese Windows lo vuelve a preparar.
@@ -277,7 +285,7 @@ Una sección vacía muestra la tarjeta para agregar el primero.
 
 ## Plantillas
 
-Una plantilla es el Windows de una máquina guardado como disco base de solo lectura, con sus apps, nivel de limpieza y contraseña. Se crea desde el menú **⋯** de una máquina (**Crear plantilla**), o con **Nueva plantilla** en la Biblioteca, eligiendo la máquina cuyo Windows guarda y su nombre. Una máquina creada **Desde plantilla** recibe un disco encima que solo guarda lo que cambia, así queda lista en segundos y ocupa pocos GB. Cada copia tiene su propia identidad de streaming (Moonlight se empareja con ella como un equipo nuevo) y su propio nombre de equipo. Su disco mide lo mismo que la plantilla y no se puede ampliar.
+Una plantilla es el Windows de una máquina guardado como disco base de solo lectura, con sus apps, nivel de limpieza y contraseña. Se crea desde el menú **⋯** de una máquina (**Crear plantilla**), o con **Nueva plantilla** en la Biblioteca, eligiendo la máquina cuyo Windows guarda y su nombre. Una máquina creada **Desde plantilla** recibe un disco encima que solo guarda lo que cambia, así queda lista en segundos y ocupa pocos GB. Cada copia tiene su propia identidad de streaming (el visor se empareja con ella como un equipo nuevo) y su propio nombre de equipo. Su disco mide lo mismo que la plantilla y no se puede ampliar.
 
 Cada tarjeta de plantilla muestra la máquina de la que salió, cuánto ocupa y las máquinas creadas sobre ella, y crea una máquina a partir de ella. Una plantilla solo se puede borrar cuando ninguna máquina está creada sobre ella.
 
@@ -302,10 +310,13 @@ La copia solo va de este equipo al disco. Antes de escribir, GpuVM revisa que el
   - **Tema:** **Sistema** (el predeterminado: sigue a Windows), **Claro** u **Oscuro**.
   - **Idioma:** **Windows** (el predeterminado: español si Windows está en español, inglés si no), **Español** o **English**. Todas las pantallas, el menú de la bandeja y lo que informa GpuVM (pasos, avisos y errores) cambian al instante.
   - **Color de énfasis:** azul, violeta, turquesa, verde o ámbar, cada uno mostrado mitad claro y mitad oscuro. Colorea los botones, la selección, las barras de uso, el logo y el holograma de las máquinas.
+  - **Fluidez de las animaciones:** los cuadros por segundo de los hologramas y escenas: 15, 30, 60, 120 o **Máx** (el predeterminado: tantos como muestre el monitor). Menos dejan más GPU libre para las máquinas.
+  - **Calidad de las animaciones:** la resolución con que se dibujan, de 25 a 100 % (el predeterminado). Más baja se ve menos nítida y usa menos GPU.
 - **Ventana:**
   - **Al cerrar la ventana:** **Salir por completo** (el predeterminado) o **Quedarse en la bandeja**: cerrar la ventana la oculta y GpuVM sigue abierta junto al reloj, así que los trabajos en curso continúan. El menú del ícono de la bandeja tiene **Abrir GpuVM** y **Salir**; un clic izquierdo sobre él vuelve a abrir la ventana.
   - **Al salir de GpuVM:** **Dejarlas encendidas** (el predeterminado) o **Apagarlas**: al salir se apagan de forma ordenada todas las máquinas de GpuVM encendidas, como desde el menú Inicio de Windows, y se libera su memoria. GpuVM se cierra al instante; el apagado sigue en segundo plano.
-- **Máquinas** (con más de un monitor): **Abrir las máquinas en** el monitor principal de Windows (el predeterminado) o en un monitor por su nombre. Cada máquina puede tener el suyo en sus opciones. Moonlight no tiene un ajuste para esto, así que GpuVM mueve la ventana de Moonlight a ese monitor mientras se abre.
+  - **Al volver a Inicio desde una máquina:** **Mantenerla conectada** (el predeterminado: al abrirla de nuevo vuelves directo a su imagen, y mientras tanto usa un poco de la GPU de este equipo) o **Desconectarla**.
+- **Máquinas** (con más de un monitor): **Abrir las máquinas en** el monitor principal de Windows (el predeterminado) o en un monitor por su nombre. Cada máquina puede tener el suyo en sus opciones. En pantalla completa, la imagen de la máquina va a ese monitor.
 - **Servicio**, el servicio de Windows que hace el trabajo de Hyper-V para la app:
   - **Con GpuVM** (el predeterminado): se enciende al abrir GpuVM y se apaga al salir, cuando termina lo que estaba haciendo (apagar las máquinas, una máquina que se está creando).
   - **Con Windows:** se enciende con Windows.

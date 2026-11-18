@@ -1,6 +1,6 @@
 ---
 title: Instalación
-description: Instala GpuVM desde GitHub Releases y prepara Hyper-V, PowerShell 7 y Moonlight.
+description: Instala GpuVM desde GitHub Releases y prepara Hyper-V, y Moonlight si usas connect de la CLI.
 ---
 
 import { Aside, Steps } from '@astrojs/starlight/components';
@@ -11,9 +11,7 @@ import { Aside, Steps } from '@astrojs/starlight/components';
 
 2. **Descarga el instalador** (`.exe` de NSIS) desde [GitHub Releases](https://github.com/alenj0x1/gpuvm/releases) y ejecútalo.
 
-3. **Instala Moonlight** ([más abajo](#instalar-moonlight)).
-
-4. **Abre GpuVM.** Se abre sin permisos de administrador.
+3. **Abre GpuVM.** Se abre sin permisos de administrador.
 
 </Steps>
 
@@ -40,7 +38,7 @@ Si la virtualización está desactivada en el BIOS/UEFI, activa primero Intel VT
 
 ## Instalar Moonlight
 
-Moonlight muestra la VM en tu escritorio. Descárgalo desde [moonlight-stream.org](https://moonlight-stream.org), o desde el repositorio ejecuta:
+La app no necesita Moonlight: muestra las máquinas en el visor propio de GpuVM, que el instalador incluye. Moonlight solo hace falta para `./gpuvm.ps1 connect` de la CLI sin `-Viewer`, que abre Moonlight instalado en Program Files. Descárgalo desde [moonlight-stream.org](https://moonlight-stream.org), o desde el repositorio ejecuta:
 
 ```powershell
 ./gpuvm.ps1 client-install

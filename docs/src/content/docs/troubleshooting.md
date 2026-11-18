@@ -1,9 +1,9 @@
 ---
 title: Troubleshooting and known limits
-description: Black screen in Moonlight, administrator prompts, gamepads, driver sync, anti-cheat, GPU selection on Windows 10 and other known limits of GPU-P.
+description: Black screen, a picture that stutters, administrator prompts, gamepads, driver sync, anti-cheat, GPU selection on Windows 10 and other known limits of GPU-P.
 ---
 
-## Black screen in Moonlight
+## Black screen
 
 The usual causes, in order:
 
@@ -17,18 +17,27 @@ To look at the VM's screen without the GPU, open the Hyper-V console (**View Hyp
 
 Known open issue ([lab 002](/docs/labs/#what-the-labs-found-so-far)): Sunshine can report "Display device configuration API is temporarily unavailable" and not change the resolution.
 
+## The picture stutters or slows down
+
+The machines share this PC's GPU through GPU-P. When another program uses the GPU heavily (a game, 3D work, many videos), the machine has less left to draw and encode its picture, and it can stutter. Close that program or lower what it draws.
+
+GpuVM's own holograms and scenes stop while a machine's picture is shown, and draw at 30 FPS while GpuVM doesn't have the focus. While a machine stays connected and you are on Home, they still draw:
+
+- Lower **Animation smoothness** and **Animation quality** in **Settings → Appearance** ([Settings](/docs/using-the-app/#settings)).
+- Or set **Settings → Window → Going back to Home from a machine** to **Disconnect it**.
+
 ## A fullscreen program shows a black screen
 
 The desktop streams fine, but a game or program in **exclusive fullscreen** shows black (it may appear when it loses focus). That happens with the **Classic** capture, which can't see exclusive fullscreen on a virtual display. In **Picture and control → Capture** choose **Fast** (the default for new machines) and save. See [Capture modes](/docs/streaming/#capture-modes).
 
 ## A program waits for administrator permission
 
-With the **Fast** capture, Windows' administrator prompts aren't drawn in Moonlight; GpuVM shows them in a card over everything, with **Allow** and **Deny** ([Administrator prompts](/docs/using-the-app/#administrator-prompts)). If no card appears:
+With the **Fast** capture, Windows' administrator prompts aren't drawn in the machine's picture; GpuVM shows them in a card over everything, with **Allow** and **Deny** ([Administrator prompts](/docs/using-the-app/#administrator-prompts)). If no card appears:
 
 - GpuVM must be open (in the window or the tray): the card comes from the app.
 - GpuVM needs the VM's Windows password; without it, the VM shows a banner asking for it.
 - The watcher is installed the first time the VM is opened from GpuVM; open it once with **Open**.
-- To see the prompts in Moonlight instead, switch to **Classic** in **Picture and control → Capture**.
+- To see the prompts in the picture instead, switch to **Classic** in **Picture and control → Capture**.
 
 ## Windows open where I can't see them
 
@@ -40,7 +49,7 @@ Not anymore: in fullscreen, Alt+F4, Alt+Tab and the Windows key go to the VM. To
 
 ## The gamepad doesn't work
 
-GpuVM installs the gamepad driver (ViGEmBus) the first time it opens the VM, with the guest password saved; Sunshine then restarts to use it. If a controller doesn't respond, open the VM again from GpuVM, and check that Moonlight sees the controller on this PC.
+GpuVM installs the gamepad driver (ViGEmBus) the first time it opens the VM, with the guest password saved; Sunshine then restarts to use it. If a controller doesn't respond, open the VM again from GpuVM, and check that the controller works on this PC.
 
 ## Driver sync
 
@@ -64,7 +73,7 @@ The VM's sound comes from GpuVM's USB speaker, **Speakers (GpuVM Audio)** ([Stre
 
 ## Pairing fails
 
-Use **Pair Moonlight again** in the **⋯** menu, or `./gpuvm.ps1 connect -Name <vm> -Pair`. If Moonlight isn't installed, install it ([Install](/docs/install/#install-moonlight)).
+Use **Pair Moonlight again** in the **⋯** menu, or `./gpuvm.ps1 connect -Name <vm> -Pair`. From the app, this pairs GpuVM's viewer; if the viewer is missing, the app says so: install GpuVM again. From the CLI, `connect` pairs Moonlight, which has to be installed ([Install](/docs/install/#install-moonlight)).
 
 ## The VM doesn't start: not enough memory
 

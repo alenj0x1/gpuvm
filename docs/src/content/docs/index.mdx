@@ -1,6 +1,6 @@
 ---
 title: Overview
-description: Windows 10/11 virtual machines that use your PC's GPU through Hyper-V GPU partitioning, streamed to your desktop with Sunshine and Moonlight.
+description: Windows 10/11 virtual machines that use your PC's GPU through Hyper-V GPU partitioning, streamed to your desktop with Sunshine and GpuVM's own viewer.
 ---
 
 import Diagram from '../../components/Diagram.astro';
@@ -25,9 +25,9 @@ A regular Hyper-V VM only gets a basic display adapter, so games and GPU apps do
 
 2. **First boot.** Inside the VM, the guest setup script applies the profile's optimizations, installs the streaming components (Sunshine, a virtual display and GpuVM's own USB speaker for audio) and deletes `unattend.xml`, which holds the password. The VM then restarts once on its own.
 
-3. **Start and open.** One click starts the VM, syncs the GPU driver if the host's changed, waits for Windows and Sunshine, fixes the session and the display, pairs Moonlight automatically and opens the stream, by default at your monitor's refresh rate. A VM that is already on shows its picture in about 7 to 10 seconds.
+3. **Start and open.** One click starts the VM, syncs the GPU driver if the host's changed, waits for Windows and Sunshine, fixes the session and the display, pairs GpuVM's viewer automatically and opens the stream inside the app, by default at your monitor's refresh rate. A VM that is already on shows its picture in about 7 to 10 seconds.
 
-4. **Use and measure.** You use the VM in Moonlight on the host, with the image the GPU renders, your keyboard, mouse and gamepads, about 11 ms behind playing locally at 120 FPS or more. Windows' administrator prompts in the VM are answered from a card on the host. The app shows live CPU, memory and GPU usage, and [labs](/docs/labs/) let you test changes with real measurements.
+4. **Use and measure.** You use the VM in GpuVM's viewer, inside the app or full screen, with the image the GPU renders, your keyboard, mouse and gamepads, about 11 ms behind playing locally at 120 FPS or more. Windows' administrator prompts in the VM are answered from a card on the host. The app shows live CPU, memory and GPU usage, and [labs](/docs/labs/) let you test changes with real measurements.
 
 </Steps>
 
@@ -43,7 +43,7 @@ A regular Hyper-V VM only gets a basic display adapter, so games and GPU apps do
     The `GpuVM` module (PowerShell 7) does the work; `gpuvm.ps1` exposes it as short commands.
   </Card>
   <Card title="Streaming" icon="rocket">
-    Sunshine inside the VM, a virtual display drawn by the GPU at your monitor's refresh rate, GpuVM's own USB speaker for audio, gamepads, and Moonlight on the host.
+    Sunshine inside the VM, a virtual display drawn by the GPU at your monitor's refresh rate, GpuVM's own USB speaker for audio, gamepads, and GpuVM's own viewer on the host, built on Moonlight.
   </Card>
   <Card title="Profiles and labs" icon="setting">
     JSON profiles with inheritance, and labs that compare a baseline against a candidate before a change is adopted.

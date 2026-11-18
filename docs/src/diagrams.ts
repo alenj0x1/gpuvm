@@ -3,13 +3,13 @@
 type Lang = 'en' | 'es';
 const t = (lang: Lang, en: string, es: string) => (lang === 'es' ? es : en);
 
-// Host and VM: the GPU goes down to the VM through GPU-P, image and sound come back to Moonlight.
+// Host and VM: the GPU goes down to the VM through GPU-P, image and sound come back to GpuVM's viewer.
 export const overview = (lang: Lang) => ({
   width: 440,
   height: 520,
   label: t(lang,
-    'The host shares its GPU with the VM through GPU-P; GpuVM configures the VM; inside it, Sunshine captures the virtual display and sends image and audio back to Moonlight.',
-    'El equipo comparte su GPU con la VM mediante GPU-P; GpuVM configura la VM; dentro, Sunshine captura la pantalla virtual y devuelve imagen y audio a Moonlight.'),
+    'The host shares its GPU with the VM through GPU-P; GpuVM configures the VM; inside it, Sunshine captures the virtual display and sends image and audio back to the GpuVM viewer.',
+    'El equipo comparte su GPU con la VM mediante GPU-P; GpuVM configura la VM; dentro, Sunshine captura la pantalla virtual y devuelve imagen y audio al visor de GpuVM.'),
   groups: [
     { x: 10, y: 20, w: 420, h: 170, title: t(lang, 'Your PC · Windows 10/11', 'Tu PC · Windows 10/11'), icon: 'device-desktop-analytics' },
     { x: 10, y: 330, w: 420, h: 170, title: 'VM · Hyper-V', icon: 'brand-windows', titleAt: 'bottom' as const },
@@ -17,7 +17,7 @@ export const overview = (lang: Lang) => ({
   nodes: [
     { id: 'gpu', x: 80, y: 115, icon: 'gpu', label: 'RTX 4060' },
     { id: 'app', x: 220, y: 115, icon: 'app-window', label: t(lang, 'GpuVM app', 'App GpuVM') },
-    { id: 'moon', x: 360, y: 115, icon: 'device-desktop', label: 'Moonlight' },
+    { id: 'moon', x: 360, y: 115, icon: 'device-desktop', label: t(lang, 'GpuVM\nviewer', 'Visor de\nGpuVM') },
     { id: 'part', x: 80, y: 405, icon: 'cpu-2', label: t(lang, 'GPU\npartition', 'Parte de\nla GPU') },
     { id: 'disp', x: 220, y: 405, icon: 'device-tv', label: t(lang, 'Virtual\ndisplay', 'Pantalla\nvirtual') },
     { id: 'sun', x: 360, y: 405, icon: 'broadcast', label: 'Sunshine' },
@@ -84,6 +84,28 @@ export const adminPrompt = (lang: Lang) => ({
     { from: 'watcher', to: 'card', label: 'KVP' },
     { from: 'card', to: 'module', label: t(lang, 'Allow / Deny', 'Permitir / Rechazar') },
     { from: 'module', to: 'helper', label: 'PowerShell Direct' },
+  ],
+});
+
+// GpuVM's viewer: the app starts it isolated and talks to it over a private pipe; it streams from Sunshine in the VM.
+export const viewer = (lang: Lang) => ({
+  width: 460,
+  height: 520,
+  label: t(lang,
+    'The GpuVM app starts the viewer at Low integrity with a restricted token inside a job, and talks to it over a private pipe with a one-time token; the viewer receives the picture and sound from Sunshine inside the VM and sends it the input.',
+    'La app GpuVM inicia el visor con integridad baja y un token restringido dentro de un job, y habla con él por una tubería privada con un token de un solo uso; el visor recibe la imagen y el sonido de Sunshine dentro de la VM y le envía la entrada.'),
+  groups: [
+    { x: 10, y: 20, w: 440, h: 170, title: t(lang, 'Your PC · as the user', 'Tu PC · como el usuario'), icon: 'device-desktop-analytics' },
+    { x: 10, y: 330, w: 440, h: 170, title: 'VM', icon: 'brand-windows', titleAt: 'bottom' as const },
+  ],
+  nodes: [
+    { id: 'app', x: 100, y: 115, icon: 'app-window', label: t(lang, 'GpuVM app', 'App GpuVM') },
+    { id: 'viewer', x: 350, y: 115, icon: 'device-desktop', label: t(lang, 'Viewer\nLow · job', 'Visor\nbaja · job') },
+    { id: 'sun', x: 350, y: 405, icon: 'broadcast', label: 'Sunshine' },
+  ],
+  edges: [
+    { from: 'app', to: 'viewer', label: t(lang, 'pipe + token', 'tubería + token') },
+    { from: 'sun', to: 'viewer', label: t(lang, 'picture, sound', 'imagen, sonido') },
   ],
 });
 

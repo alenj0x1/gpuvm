@@ -33,19 +33,21 @@
 - **Juegos mientras esperas.** Cuatro juegos pequeños se juegan en el espacio de las máquinas (*Overclock*, *Bit a bit*, *Stack* y *Cache*), con tus máquinas como naves, solo o en equipo.
 - **Español e inglés.** Toda la app, la bandeja y lo que informa el módulo siguen el idioma de Windows o el que elijas en Ajustes.
 - **Tu GPU dentro de la VM.** El GPU partitioning de Hyper-V (GPU-P) comparte la GPU del equipo con la VM, que usa el mismo driver que el host. Sin passthrough ni segunda GPU.
-- **Se abre en un clic.** «Encender y abrir» enciende la VM, espera a Windows, corrige la sesión y la pantalla, empareja Moonlight y abre la imagen dibujada y codificada por la GPU (Sunshine + NVENC), con sonido. Una VM ya encendida muestra su imagen en unos 7-10 s; otro clic trae Moonlight al frente.
+- **Se abre en un clic.** «Encender y abrir» enciende la VM, espera a Windows, corrige la sesión y la pantalla, empareja el visor y abre la imagen dibujada y codificada por la GPU (Sunshine + NVENC), con sonido. Una VM ya encendida muestra su imagen en unos 7-10 s.
+- **El visor propio de GpuVM.** Basado en Moonlight, muestra la máquina dentro de la app o en pantalla completa. **Inicio** (o Ctrl+Alt+Shift+H) deja la máquina conectada, así al abrirla de nuevo vuelves directo a su imagen. Las animaciones de la app se detienen mientras se muestra una imagen y dejan la GPU a las máquinas.
+- **Panel lateral.** Ctrl+Alt+Shift+G abre un tablero de widgets junto a la imagen: máquinas, acciones, los números de la imagen, un reloj, los juegos y el clima, que se ordena con **Editar**.
 - **Baja latencia, al ritmo de tu monitor.** De una tecla, un clic, un movimiento del mouse o un botón del mando hasta el cambio en pantalla pasan unos 16,6 ms a 120 FPS o más, unos 11 ms más que jugando en el equipo. La VM transmite a la frecuencia de tu monitor, donde la sincronización vertical no agrega latencia y los tirones bajan a la mitad.
 - **Un tipo de uso por máquina.** Juegos, Películas y video o Trabajo ajustan los FPS, la sincronización vertical, el ritmo de cuadros y el mouse; el códec, la calidad de imagen y lo demás se ajustan por máquina.
 - **Mandos.** Los controles conectados a tu equipo llegan a la VM como un control de Xbox 360 (ViGEmBus, que instala GpuVM).
-- **Se corrige sola.** Vuelve a copiar el driver de la GPU si cambió el del equipo, devuelve la sesión de Windows a la pantalla de la GPU y ajusta la resolución a la de Moonlight.
+- **Se corrige sola.** Vuelve a copiar el driver de la GPU si cambió el del equipo, devuelve la sesión de Windows a la pantalla de la GPU y ajusta la resolución a la de la imagen.
 - **Crea máquinas sin pasar por el instalador.** Eliges un ISO oficial de Windows y un perfil: la imagen se aplica directo al disco y se configura sola.
 - **Estadísticas y opciones.** Uso en vivo de CPU, memoria y GPU; procesadores, memoria, parte de la GPU y calidad de la imagen de cada VM.
-- **Biblioteca.** Tus propios perfiles (procesadores, memoria, GPU, disco, ISO, apps, cómo abre Moonlight), los discos que quedaron de VMs eliminadas para volver a crearlas, y las ISOs que usaste.
+- **Biblioteca.** Tus propios perfiles (procesadores, memoria, GPU, disco, ISO, apps, cómo se abre la imagen), los discos que quedaron de VMs eliminadas para volver a crearlas, y las ISOs que usaste.
 - **Plantillas y discos compartidos.** Guarda una VM como plantilla y crea otras encima en segundos; deja tu biblioteca de juegos en un disco compartido que pasa de una VM a otra, importada desde la biblioteca de Steam de tu equipo.
 - **Windows limpio.** Elige un nivel (privacidad, sin apps de más, mínimo) para quitar telemetría, publicidad, sugerencias, Copilot y apps preinstaladas, sin tocar Defender, Windows Update ni el firewall.
 - **Apps en un paso.** 16 apps (tiendas de juegos, navegadores, multimedia, Discord, 7-Zip, WinRAR, Proton VPN) con buscador y categorías, instaladas dentro de la VM solo si las firma su empresa o coinciden con un hash fijado.
 - **Captura rápida.** La imagen aparece unos 2,6 s después de conectar, también la de los juegos en pantalla completa exclusiva; los avisos de administrador de Windows en la VM aparecen en una tarjeta encima de todo con Permitir y Rechazar, y solo se responden desde tu equipo. Pega texto del PC en la VM con un botón.
-- **Mantiene aparte al equipo.** La app y Moonlight corren sin permisos de administrador; un servicio de Windows que solo la app de GpuVM puede usar hace el trabajo de Hyper-V, y borrar pide un aviso de administrador de Windows. El portapapeles solo va del PC a la VM, nunca al revés.
+- **Mantiene aparte al equipo.** La app corre sin permisos de administrador, y el visor corre aislado, con integridad baja y un token restringido; un servicio de Windows que solo la app de GpuVM puede usar hace el trabajo de Hyper-V, y borrar pide un aviso de administrador de Windows. El portapapeles solo va del PC a la VM, nunca al revés.
 - **Laboratorios.** Cada idea de rendimiento se mide (base contra candidata) antes de volverse un valor por defecto.
 
 <p align="center">
@@ -84,7 +86,7 @@ Descarga `GpuVM_x.y.z_x64-setup.exe` desde [Releases](https://github.com/alenj0x
 
 1. Abre GpuVM y elige **Crear máquina**: nombre, ISO de Windows, perfil, usuario y contraseña de Windows.
 2. Espera a que esté lista; Windows termina de configurarse solo en unos minutos.
-3. Presiona **Abrir**. Moonlight se abre con la VM cuando su imagen está lista.
+3. Presiona **Abrir**. La imagen de la máquina se abre dentro de GpuVM cuando está lista.
 
 GpuVM habla español e inglés: sigue el idioma de Windows, y **Ajustes → Apariencia → Idioma** fija uno.
 
@@ -101,6 +103,7 @@ Guía completa, referencia de la CLI, arquitectura y solución de problemas: **[
 | `guest/` | Scripts que corren dentro de la VM: primer inicio, optimizaciones, streaming, resolución de la pantalla, avisos de administrador. |
 | `profiles/` | Perfiles JSON con herencia (`balanced`, `max-performance`). |
 | `streaming/components.json` | Componentes de terceros fijados por versión y SHA-256. |
+| `viewer/` | El visor de GpuVM, compilado desde el repositorio aparte [gpuvm-viewer](https://github.com/alenj0x1/gpuvm-viewer) e incluido por el instalador. |
 | `labs/` | Las mediciones detrás de cada decisión. |
 
 ## Desarrollo
@@ -132,9 +135,9 @@ GpuVM descarga e instala dentro de la VM, verificados por SHA-256:
 - [Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver): monitor virtual dibujado por la GPU.
 - [nefcon](https://github.com/nefarius/nefcon): instalador de drivers.
 - [usbip-win2](https://github.com/vadimgrn/usbip-win2) (BSD-2-Clause): cliente USB/IP con drivers firmados por Microsoft; conecta el altavoz USB propio de GpuVM dentro de la VM.
-- [ViGEmBus](https://github.com/nefarius/ViGEmBus) (BSD-3-Clause): bus de mandos virtuales, para los controles que reenvía Moonlight.
+- [ViGEmBus](https://github.com/nefarius/ViGEmBus) (BSD-3-Clause): bus de mandos virtuales, para los controles que reenvía el visor.
 
-En el equipo usa [Moonlight](https://moonlight-stream.org) (GPL-3.0), instalado con winget.
+En el equipo, el visor de GpuVM está basado en [Moonlight](https://github.com/moonlight-stream/moonlight-qt) (moonlight-qt, GPL-3.0). El fork vive en el repositorio aparte [gpuvm-viewer](https://github.com/alenj0x1/gpuvm-viewer) (rama `gpuvm`), con licencia GPL-3.0, y el instalador lo incluye. El `connect` de la CLI abre [Moonlight](https://moonlight-stream.org) en sí, instalado con winget.
 
 El catálogo de apps muestra el ícono de cada app, tomado de su instalador o sitio oficial; los íconos y nombres son marcas de sus dueños y solo identifican sus apps.
 

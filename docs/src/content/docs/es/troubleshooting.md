@@ -1,9 +1,9 @@
 ---
 title: Problemas y límites conocidos
-description: Pantalla negra en Moonlight, avisos de administrador, mandos, sincronización del driver, anti-cheat, selección de GPU en Windows 10 y otros límites conocidos de GPU-P.
+description: Pantalla negra, imagen que se traba, avisos de administrador, mandos, sincronización del driver, anti-cheat, selección de GPU en Windows 10 y otros límites conocidos de GPU-P.
 ---
 
-## Pantalla negra en Moonlight
+## Pantalla negra
 
 Las causas habituales, en orden:
 
@@ -17,18 +17,27 @@ Para ver la pantalla de la VM sin la GPU, abre la consola de Hyper-V (**Ver cons
 
 Problema abierto ([laboratorio 002](/docs/es/labs/#lo-que-encontraron-los-laboratorios-hasta-ahora)): Sunshine puede decir "Display device configuration API is temporarily unavailable" y no cambiar la resolución.
 
+## La imagen se traba o va lenta
+
+Las máquinas comparten la GPU de este equipo mediante GPU-P. Cuando otro programa usa mucho la GPU (un juego, trabajo en 3D, muchos videos), a la máquina le queda menos para dibujar y codificar su imagen, y puede trabarse. Cierra ese programa o baja lo que dibuja.
+
+Los hologramas y escenas de GpuVM se detienen mientras se muestra la imagen de una máquina, y se dibujan a 30 FPS mientras GpuVM no tiene el foco. Si una máquina sigue conectada mientras estás en Inicio, siguen dibujándose:
+
+- Baja **Fluidez de las animaciones** y **Calidad de las animaciones** en **Ajustes → Apariencia** ([Ajustes](/docs/es/using-the-app/#ajustes)).
+- O pon **Ajustes → Ventana → Al volver a Inicio desde una máquina** en **Desconectarla**.
+
 ## Un programa en pantalla completa se ve en negro
 
 El escritorio se ve bien, pero un juego o programa en **pantalla completa exclusiva** se ve en negro (puede aparecer cuando pierde el foco). Pasa con la captura **Clásica**, que no ve la pantalla completa exclusiva en una pantalla virtual. En **Imagen y control → Captura** elige **Rápida** (la predeterminada en las máquinas nuevas) y guarda. Consulta [Modos de captura](/docs/es/streaming/#modos-de-captura).
 
 ## Un programa espera permiso de administrador
 
-Con la captura **Rápida**, los avisos de administrador de Windows no se dibujan en Moonlight; GpuVM los muestra en una tarjeta encima de todo, con **Permitir** y **Rechazar** ([Avisos de administrador](/docs/es/using-the-app/#avisos-de-administrador)). Si no aparece la tarjeta:
+Con la captura **Rápida**, los avisos de administrador de Windows no se dibujan en la imagen de la máquina; GpuVM los muestra en una tarjeta encima de todo, con **Permitir** y **Rechazar** ([Avisos de administrador](/docs/es/using-the-app/#avisos-de-administrador)). Si no aparece la tarjeta:
 
 - GpuVM tiene que estar abierto (en la ventana o en la bandeja): la tarjeta sale de la app.
 - GpuVM necesita la contraseña de Windows de la VM; sin ella, la VM muestra un aviso que la pide.
 - El vigilante se instala la primera vez que la VM se abre desde GpuVM; ábrela una vez con **Abrir**.
-- Para ver los avisos en Moonlight, cambia a **Clásica** en **Imagen y control → Captura**.
+- Para ver los avisos en la imagen, cambia a **Clásica** en **Imagen y control → Captura**.
 
 ## Las ventanas se abren donde no las veo
 
@@ -40,7 +49,7 @@ Ya no: en pantalla completa, Alt+F4, Alt+Tab y la tecla Windows van a la VM. Par
 
 ## El mando no funciona
 
-GpuVM instala el controlador de mandos (ViGEmBus) la primera vez que abre la VM, con la contraseña del invitado guardada; después Sunshine se reinicia para usarlo. Si un control no responde, vuelve a abrir la VM desde GpuVM y revisa que Moonlight vea el control en este equipo.
+GpuVM instala el controlador de mandos (ViGEmBus) la primera vez que abre la VM, con la contraseña del invitado guardada; después Sunshine se reinicia para usarlo. Si un control no responde, vuelve a abrir la VM desde GpuVM y revisa que el control funcione en este equipo.
 
 ## Sincronizar el driver
 
@@ -64,7 +73,7 @@ El sonido de la VM sale del altavoz USB de GpuVM, **Altavoces (GpuVM Audio)** ([
 
 ## Falla el emparejamiento
 
-Usa **Volver a emparejar Moonlight** en el menú **⋯**, o `./gpuvm.ps1 connect -Name <vm> -Pair`. Si Moonlight no está instalado, instálalo ([Instalación](/docs/es/install/#instalar-moonlight)).
+Usa **Volver a emparejar Moonlight** en el menú **⋯**, o `./gpuvm.ps1 connect -Name <vm> -Pair`. Desde la app, esto empareja el visor de GpuVM; si falta el visor, la app lo dice: vuelve a instalar GpuVM. Desde la CLI, `connect` empareja Moonlight, que tiene que estar instalado ([Instalación](/docs/es/install/#instalar-moonlight)).
 
 ## La VM no enciende por falta de memoria
 

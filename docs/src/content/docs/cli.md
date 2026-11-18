@@ -23,8 +23,8 @@ description: The gpuvm.ps1 commands and the GpuVM PowerShell module cmdlets.
 | `set` | `Set-GpuVM` | Changes an existing VM that is off (profile or override). |
 | `list` | `Get-GpuVM` | Lists the VMs created with GpuVM and whether their GPU driver matches the host's. |
 | `sync-driver` | `Sync-GpuVMDriver` | Copies the host's GPU driver into the guest. |
-| `connect` | `Connect-GpuVM` | Opens the VM in Moonlight, leaving everything ready on its own. |
-| `client-install` | `Install-GpuVMClient` | Installs Moonlight on the host with winget. |
+| `connect` | `Connect-GpuVM` | Opens the VM in Moonlight, leaving everything ready on its own. With `-Viewer`, prepares it for GpuVM's viewer instead. |
+| `client-install` | `Install-GpuVMClient` | Installs Moonlight on the host with winget, for `connect`. |
 | `components-update` | `Update-GpuVMComponent` | Looks for new versions of the streaming components. |
 | `remove` | `Remove-GpuVM` | Removes the VM from Hyper-V. |
 | `rename` | `Rename-GpuVM` | Renames the VM with its folder and disk. |
@@ -44,7 +44,7 @@ description: The gpuvm.ps1 commands and the GpuVM PowerShell module cmdlets.
 | `-Profile` | `balanced` | Profile to check against. |
 | `-Override` | | Hashtable merged over the profile. |
 
-Checks Windows edition, administrator rights, virtualization, Hyper-V, partitionable GPUs, GPU selection on Windows 10, network switch, the profile against your hardware, free memory, the GPU, disk space, Moonlight and the streaming components.
+Checks Windows edition, administrator rights, virtualization, Hyper-V, partitionable GPUs, GPU selection on Windows 10, network switch, the profile against your hardware, free memory, the GPU, disk space, Moonlight (a warning when missing; only `connect` needs it) and the streaming components.
 
 ### new
 
@@ -60,7 +60,7 @@ Checks Windows edition, administrator rights, virtualization, Hyper-V, partition
 
 ### set
 
-`-Name` (required), `-Profile`, `-Override`. The VM must be off. Without `-Profile` it starts from the VM's current settings; with `-Profile` it keeps the disk, folder and Moonlight preferences.
+`-Name` (required), `-Profile`, `-Override`. The VM must be off. Without `-Profile` it starts from the VM's current settings; with `-Profile` it keeps the disk, folder and picture preferences.
 
 ### list
 
@@ -77,14 +77,15 @@ Checks Windows edition, administrator rights, virtualization, Hyper-V, partition
 | `-Name` | Required. |
 | `-Resolution` | For example `2560x1440`. |
 | `-Fps` | 10–480. |
-| `-BitrateKbps` | Moonlight bitrate. |
+| `-BitrateKbps` | Stream bitrate. |
 | `-Codec` | `auto`, `H.264`, `HEVC` or `AV1`. |
 | `-App` | Sunshine app to open (default `Desktop`). |
 | `-Pair` | Pair again even if already paired. |
 | `-Monitor` | The monitor to open on: an `id` from `Get-GpuVMMonitor`, or `primary`. Without it, the one saved for the VM, or the primary one. |
 | `-MemoryGB` | 4–256. Opens with this much memory when the VM doesn't fit as configured (saved, like changing it on the machine's page). |
+| `-Viewer` | For GpuVM's viewer: gets the VM ready and pairs the viewer, then returns the stream arguments (`viewerLaunch`) without opening anything. The app uses it and starts the viewer itself. |
 
-Values given here apply to this connection only; the defaults come from the VM's `streaming.client` (set with `Set-GpuVMStreamingClient`), where an FPS of `0` means the refresh rate of the monitor it opens on. `connect` returns when Moonlight shows the first frame; if the VM is already open in Moonlight (and `-Pair` isn't given), it brings that window to the front instead. A VM that is off, saved or paused while it waits for the VM's address fails at once.
+Values given here apply to this connection only; the defaults come from the VM's `streaming.client` (set with `Set-GpuVMStreamingClient`), where an FPS of `0` means the refresh rate of the monitor it opens on. Without `-Viewer`, `connect` opens Moonlight installed under Program Files (`client-install`) and returns when it shows the first frame; if the VM is already open in Moonlight (and `-Pair` isn't given), it brings that window to the front instead. A VM that is off, saved or paused while it waits for the VM's address fails at once.
 
 ### client-install
 
@@ -163,7 +164,7 @@ Besides the cmdlets above, the module exports these, used mainly by the app:
 | `Get-GpuVMIsoList` | Windows ISOs in Downloads and Desktop. |
 | `Invoke-GpuVMPower` | `-Action` `Start`, `Shutdown`, `TurnOff`, `Restart`, `Pause` or `Resume` on any VM. |
 | `Set-GpuVMGuestCredential` | Saves the guest account (DPAPI) so GpuVM can fix things inside the VM through PowerShell Direct. |
-| `Set-GpuVMStreamingClient` | Changes how Moonlight opens the VM. Doesn't need the VM off. See [below](#set-gpuvmstreamingclient). |
+| `Set-GpuVMStreamingClient` | Changes how the VM's picture opens. Doesn't need the VM off. See [below](#set-gpuvmstreamingclient). |
 | `Set-GpuVMCapture` | `-Name`, `-Mode` `wgc` (the default: Windows.Graphics.Capture, the picture shows right after connecting and exclusive fullscreen is captured) or `ddx` (desktop duplication: shows Windows' administrator prompts in the stream). Applied right away if the VM is running (restarts Sunshine), otherwise on the next open. See [Capture modes](/docs/streaming/#capture-modes). |
 | `Get-GpuVMAdminPrompt` | The Windows administrator prompts open in running GpuVM machines captured with `wgc`: `name`, `id`, `app`, `publisher`. Reads Hyper-V's data exchange only (about 100 ms, no PowerShell Direct); the app polls it every 2 s. |
 | `Resolve-GpuVMAdminPrompt` | `-Name`, `-Answer` `Allow` or `Deny`, `-PromptId` (the `id` from `Get-GpuVMAdminPrompt`). Presses Yes or No in the VM, only if that prompt is still the one open; otherwise it fails and presses nothing. Needs the guest password. See [Administrator prompts](/docs/streaming/#administrator-prompts). |
@@ -193,13 +194,13 @@ Through the app, `Remove-GpuVM`, `Remove-GpuVMDisk`, `Remove-GpuVMBase`, `Remove
 | `-Name` | Required. |
 | `-Resolution` | For example `2560x1440`. |
 | `-Fps` | 10–480, or `0` for the host monitor's refresh rate, read every time the VM opens. |
-| `-BitrateKbps` | 0–500000; `0` lets Moonlight choose it from the resolution and FPS. |
+| `-BitrateKbps` | 0–500000; `0` lets the viewer or Moonlight choose it from the resolution and FPS. |
 | `-Codec` | `auto`, `H.264`, `HEVC` or `AV1`. |
 | `-DisplayMode` | `fullscreen`, `windowed` (a resizable window the size of the resolution) or `borderless`. |
 | `-VSync` | `$true` or `$false`. Unset leaves it as is. |
 | `-FramePacing` | `$true` or `$false`. Turned off whenever V-Sync is off. |
 | `-Mouse` | `capture` (the VM takes the mouse, for games) or `absolute` (the pointer moves freely, as in remote desktop). |
-| `-Monitor` | The monitor Moonlight opens on: an `id` from `Get-GpuVMMonitor`, `primary`, or `default` to follow the app's choice in Settings. |
+| `-Monitor` | The monitor the VM opens on: an `id` from `Get-GpuVMMonitor`, `primary`, or `default` to follow the app's choice in Settings. |
 
 ```powershell
 Set-GpuVMStreamingClient -Name win11 -Fps 0 -VSync $true -FramePacing $false -Mouse capture   # the "Games" use

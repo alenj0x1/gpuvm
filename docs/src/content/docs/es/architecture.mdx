@@ -1,10 +1,10 @@
 ---
 title: Arquitectura y extensión
-description: Cómo encajan la app, el servicio GpuVM, el módulo, los backends, el camino de los avisos de administrador y el modelo de seguridad, y cómo extender GpuVM.
+description: Cómo encajan la app, el servicio GpuVM, el módulo, los backends, el visor, el camino de los avisos de administrador y el modelo de seguridad, y cómo extender GpuVM.
 ---
 
 import Diagram from '../../../components/Diagram.astro';
-import { adminPrompt, architecture } from '../../../diagrams';
+import { adminPrompt, architecture, viewer } from '../../../diagrams';
 
 ## Visión general
 
@@ -22,6 +22,7 @@ import { adminPrompt, architecture } from '../../../diagrams';
 | `guest/` | Scripts que corren dentro de la VM: configuración del primer inicio, optimizaciones, streaming, audio, resolución de pantalla, modo de captura, el vigilante de avisos de administrador (`admin-prompt.ps1`) y `collect-info.ps1` para los laboratorios. |
 | `templates/` | Plantilla de `unattend.xml`. |
 | `streaming/components.json` | Versiones, URLs y SHA-256 de los componentes de streaming y de ViGEmBus. |
+| `viewer/` | Compilación del visor de GpuVM, del repositorio aparte [`gpuvm-viewer`](https://github.com/alenj0x1/gpuvm-viewer) (no se versiona aquí); el instalador la incluye. |
 | `labs/` | [Laboratorios](/docs/es/labs/). |
 | `tests/` | Pruebas con Pester. |
 
@@ -69,11 +70,28 @@ Con la captura predeterminada (Windows.Graphics.Capture), los avisos de administ
 <Diagram {...adminPrompt('es')} />
 
 1. **Vigilante en el invitado.** `guest/admin-prompt.ps1 -Mode watch` corre en la VM como SYSTEM desde el arranque (tarea programada `GpuVM-AdminPrompt`, que `Connect-GpuVM` instala en `C:\Program Files\GpuVM\AdminPrompt` y actualiza cuando cambia su hash). Cuando se abre un aviso de UAC, se inicia a sí mismo en el escritorio seguro (`-Mode secure`) para leer el programa y el editor con UI Automation, y los escribe, con el id del aviso (el id de proceso de su `consent.exe`), en la clave `GpuVMAdminPrompt` del intercambio de datos de Hyper-V (KVP).
-2. **Consulta desde la app.** La parte en Rust llama a `Get-GpuVMAdminPrompt` cada 2 s. Lee el KVP de las VMs encendidas que capturan con WGC (unos 100 ms, sin PowerShell Direct) y rearma cada valor a partir de textos cortos y comprobados, porque todo viene del invitado. La consulta vive en Rust y no en la página, así sigue corriendo aunque Moonlight tape la ventana.
-3. **Tarjeta.** Mientras hay un aviso abierto, una ventana aparte, siempre encima, muestra la máquina, el programa y el editor con **Permitir** y **Rechazar**; los avisos ya respondidos se recuerdan para que una actualización tardía del KVP no traiga la tarjeta de vuelta, y el foco vuelve a Moonlight al terminar.
+2. **Consulta desde la app.** La parte en Rust llama a `Get-GpuVMAdminPrompt` cada 2 s. Lee el KVP de las VMs encendidas que capturan con WGC (unos 100 ms, sin PowerShell Direct) y rearma cada valor a partir de textos cortos y comprobados, porque todo viene del invitado. La consulta vive en Rust y no en la página, así sigue corriendo aunque la imagen de una máquina tape la ventana.
+3. **Tarjeta.** Mientras hay un aviso abierto, una ventana aparte, siempre encima, muestra la máquina, el programa y el editor con **Permitir** y **Rechazar**; los avisos ya respondidos se recuerdan para que una actualización tardía del KVP no traiga la tarjeta de vuelta, y al terminar el foco vuelve a la ventana que lo tenía.
 4. **Respuesta.** `Resolve-GpuVMAdminPrompt -Name <vm> -Answer Allow|Deny -PromptId <id>` entra por PowerShell Direct con la contraseña del invitado y ejecuta `-Mode answer`, que inicia un ayudante de un solo uso como SYSTEM en el escritorio seguro de la sesión de consola. Presiona Sí o No solo si el aviso abierto sigue siendo `<id>`; si no, falla con «el aviso ya cambió».
 
 Solo el equipo puede iniciar el paso 4: el invitado publica datos, pero nada dentro de él puede ordenar una respuesta, así que un programa en la VM no puede aprobar su propio aviso.
+
+## El visor
+
+La app muestra las máquinas en el visor de GpuVM (`GpuVMViewer.exe`), un fork de Moonlight que vive en el repositorio aparte [`gpuvm-viewer`](https://github.com/alenj0x1/gpuvm-viewer) (rama `gpuvm`, GPL-3.0). Solo transmite; la app dibuja lo que rodea la imagen (la pantalla de espera, el panel lateral, la tarjeta de avisos de administrador). `Connect-GpuVM -Viewer` deja la máquina lista, empareja el visor y devuelve los argumentos del stream; la parte en Rust (`viewer.rs`, `lowbox.rs`) abre el visor por su cuenta.
+
+<Diagram {...viewer('es')} />
+
+El visor interpreta lo que envía el servidor de streaming de la máquina, y ese servidor corre dentro de una VM que GpuVM trata como no confiable. Por eso el visor corre aislado:
+
+- **Integridad baja y token restringido.** A su token se le quitan los privilegios y Administradores queda solo para denegar antes de la etiqueta de integridad baja, así no tiene permisos de administrador aunque la app corra elevada. Un proceso de integridad baja no puede escribir los archivos ni el registro del usuario, abrir el proceso de la app ni enviar mensajes a sus ventanas. Su configuración, su emparejamiento y sus archivos temporales viven en `LocalLow\GpuVM\Viewer`.
+- **Job object.** Un solo proceso, que termina con la app y ante una excepción no controlada. No puede cambiar de escritorio, cerrar la sesión, cambiar parámetros del sistema ni modos de pantalla, ni escribir en el portapapeles.
+- **Tubería privada.** La tubería tiene un nombre al azar y se crea antes de que el visor arranque. Solo el usuario actual puede abrirla y se rechazan los clientes remotos. Solo puede conectarse el proceso que inició la app, y debe presentar un token de un solo uso que recibe por su entorno, nunca por la línea de comandos. Los mensajes son líneas JSON de una lista fija, con un límite de tamaño.
+- **Seguido por el handle de su proceso.** Terminarlo, comprobar que sigue vivo y esperar a que se conecte usan el handle, no un ID de proceso que se puede reutilizar. Su ventana se usa solo si pertenece a ese proceso.
+- **Al frente solo cuando se pide.** La app trae la ventana del visor al frente solo dentro de los 3 s después de pedir la imagen, nunca porque el visor lo diga por su cuenta. Se abre una máquina a la vez.
+- **Cada ventana llama solo a sus propios comandos.** El panel lateral no puede tocar el servicio GpuVM ni volver a abrir GpuVM como administrador.
+
+Mientras se muestra una imagen, la app avisa a sus páginas que la ventana está tapada: los hologramas y escenas se detienen, y se dibujan a 30 FPS mientras GpuVM no tiene el foco.
 
 ## Seguridad
 
@@ -87,7 +105,8 @@ Solo el equipo puede iniciar el paso 4: el invitado publica datos, pero nada den
 - **DPAPI:** las credenciales de Sunshine y la contraseña del invitado se guardan cifradas con DPAPI en el host.
 - **Componentes fijados:** Sunshine, Virtual Display Driver, nefcon, usbip-win2 y ViGEmBus están fijados por SHA-256 en `streaming/components.json`. Un archivo cuyo hash no coincide no se usa. El invitado no descarga nada. Solo se confía en el certificado que firmó el driver de la pantalla virtual; los drivers de usbip-win2 deben estar firmados por Microsoft.
 - **Limpieza de la contraseña:** `unattend.xml` guarda la contraseña en texto plano y se borra dentro de la VM en cuanto ya no hace falta.
-- **Sin inyección de argumentos:** el nombre de la app de Moonlight se valida antes de armar la línea de comandos de Moonlight.
+- **Visor aislado:** integridad baja, token restringido y un job object. Consulta [El visor](#el-visor).
+- **Sin inyección de argumentos:** el nombre de la app de Sunshine se valida antes de armar la línea de comandos del visor o de Moonlight.
 
 Dos variables de entorno llevan los datos a otro lugar: `GPUVM_DATA` (todos los datos) y `GPUVM_LABS_ROOT` (laboratorios).
 

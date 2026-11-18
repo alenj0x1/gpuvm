@@ -33,19 +33,21 @@ English | [Español](README.es.md)
 - **Games while you wait.** Four small games play in the space of machines (*Overclock*, *Bit by bit*, *Stack* and *Cache*), with your machines as the ships, solo or as a team.
 - **English and Spanish.** The whole app, the tray and what the module reports follow Windows' language or the one you pick in Settings.
 - **Your GPU inside the VM.** Hyper-V GPU partitioning (GPU-P) shares the host GPU with the VM, which runs the same driver as the host. No passthrough, no second GPU.
-- **Open it in one click.** "Start and open" starts the VM, waits for Windows, fixes the session and the display, pairs Moonlight and opens the stream, drawn and encoded by the GPU (Sunshine + NVENC), with sound. A VM that is already on shows its picture in about 7–10 s; a second click brings Moonlight to the front.
+- **Open it in one click.** "Start and open" starts the VM, waits for Windows, fixes the session and the display, pairs the viewer and opens the stream, drawn and encoded by the GPU (Sunshine + NVENC), with sound. A VM that is already on shows its picture in about 7–10 s.
+- **GpuVM's own viewer.** Built on Moonlight, it shows the machine inside the app or full screen. **Home** (or Ctrl+Alt+Shift+H) keeps the machine connected, so opening it again goes straight back to its picture. The app's animations stop while a picture is shown, leaving the GPU to the machines.
+- **Side panel.** Ctrl+Alt+Shift+G opens a board of widgets beside the picture: machines, actions, the picture's numbers, a clock, the games and the weather, arranged with **Edit**.
 - **Low latency, at your monitor's rate.** From a key, click, mouse move or gamepad button to the change on screen takes about 16.6 ms at 120 FPS or more, about 11 ms more than playing locally. The VM streams at your monitor's refresh rate, where V-Sync adds no latency and stutters halve.
 - **A use for each machine.** Games, Movies and video or Work set the frame rate, V-Sync, frame pacing and mouse; codec, image quality and the rest can be tuned per machine.
 - **Gamepads.** Controllers connected to your PC reach the VM as an Xbox 360 controller (ViGEmBus, installed by GpuVM).
-- **Fixes itself.** It copies the GPU driver again when the host driver changes, puts the Windows session back on the GPU display and matches the display resolution to Moonlight.
+- **Fixes itself.** It copies the GPU driver again when the host driver changes, puts the Windows session back on the GPU display and matches the display resolution to the picture.
 - **Create machines without the installer.** Pick an official Windows ISO and a profile: the image is applied straight to a disk and set up unattended.
 - **Stats and options.** Live CPU, memory and GPU usage; processors, memory, GPU share and stream quality for each VM.
-- **Library.** Your own profiles (processors, memory, GPU, disk, ISO, apps, how Moonlight opens), the disks kept from deleted VMs to create them again, and the ISOs you used.
+- **Library.** Your own profiles (processors, memory, GPU, disk, ISO, apps, how the picture opens), the disks kept from deleted VMs to create them again, and the ISOs you used.
 - **Templates and shared disks.** Save a VM as a template and create new ones on top of it in seconds; keep your game library on a shared disk that moves between VMs, imported from your PC's Steam library.
 - **Clean Windows.** Pick a level (privacy, no extra apps, minimal) to cut telemetry, ads, suggestions, Copilot and preinstalled apps, without touching Defender, Windows Update or the firewall.
 - **Apps in one step.** 16 apps (game launchers, browsers, media, Discord, 7-Zip, WinRAR, Proton VPN) with search and categories, installed inside the VM only if signed by their publisher or matching a pinned hash.
 - **Fast capture.** The picture shows about 2.6 s after connecting, games in exclusive fullscreen too; Windows' administrator prompts in the VM appear in a card over everything with Allow and Deny, answerable only from your PC. Paste text from the PC into the VM with one button.
-- **Keeps the host apart.** The app and Moonlight run without administrator rights; a Windows service that only GpuVM's own app can use does the Hyper-V work, and deleting asks for a Windows administrator prompt. The clipboard only goes from the PC to the VM, never back.
+- **Keeps the host apart.** The app runs without administrator rights, and the viewer runs isolated at Low integrity with a restricted token; a Windows service that only GpuVM's own app can use does the Hyper-V work, and deleting asks for a Windows administrator prompt. The clipboard only goes from the PC to the VM, never back.
 - **Labs.** Every performance idea is measured (baseline vs candidate) before it becomes a default.
 
 <p align="center">
@@ -84,7 +86,7 @@ Download `GpuVM_x.y.z_x64-setup.exe` from [Releases](https://github.com/alenj0x1
 
 1. Open GpuVM and choose **Create machine**: name, Windows ISO, profile, Windows user and password.
 2. Wait until it's ready; Windows finishes its setup on its own in a few minutes.
-3. Press **Open**. Moonlight opens with the VM once its picture is ready.
+3. Press **Open**. The machine's picture opens inside GpuVM once it is ready.
 
 GpuVM speaks English and Spanish: it follows Windows' language, and **Settings → Appearance → Language** fixes one.
 
@@ -101,6 +103,7 @@ Full guide, CLI reference, architecture and troubleshooting: **[gpuvm.alenj.dev/
 | `guest/` | Scripts that run inside the VM: first boot, optimizations, streaming, display resolution, administrator prompts. |
 | `profiles/` | JSON profiles with inheritance (`balanced`, `max-performance`). |
 | `streaming/components.json` | Third-party components pinned by version and SHA-256. |
+| `viewer/` | GpuVM's viewer, built from the separate [gpuvm-viewer](https://github.com/alenj0x1/gpuvm-viewer) repository and bundled by the installer. |
 | `labs/` | Measurements behind each decision. |
 
 ## Development
@@ -132,9 +135,9 @@ GpuVM downloads and installs these inside the VM, verified by SHA-256:
 - [Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver) — virtual monitor drawn by the GPU.
 - [nefcon](https://github.com/nefarius/nefcon) — driver installer.
 - [usbip-win2](https://github.com/vadimgrn/usbip-win2) (BSD-2-Clause) — USB/IP client with Microsoft-signed drivers; it plugs in GpuVM's own USB speaker inside the VM.
-- [ViGEmBus](https://github.com/nefarius/ViGEmBus) (BSD-3-Clause) — virtual gamepad bus driver, for the controllers Moonlight forwards.
+- [ViGEmBus](https://github.com/nefarius/ViGEmBus) (BSD-3-Clause) — virtual gamepad bus driver, for the controllers the viewer forwards.
 
-On the host it uses [Moonlight](https://moonlight-stream.org) (GPL-3.0), installed with winget.
+On the host, GpuVM's viewer is built on [Moonlight](https://github.com/moonlight-stream/moonlight-qt) (moonlight-qt, GPL-3.0). The fork is kept in the separate [gpuvm-viewer](https://github.com/alenj0x1/gpuvm-viewer) repository (branch `gpuvm`), under GPL-3.0, and the installer bundles it. The CLI's `connect` opens [Moonlight](https://moonlight-stream.org) itself, installed with winget.
 
 The app catalog shows each app's own icon, taken from its official installer or website; the icons and names are trademarks of their owners and only identify their apps.
 

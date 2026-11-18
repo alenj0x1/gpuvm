@@ -1,6 +1,6 @@
 ---
 title: Install
-description: Install GpuVM from GitHub Releases and prepare Hyper-V, PowerShell 7 and Moonlight.
+description: Install GpuVM from GitHub Releases and prepare Hyper-V, plus Moonlight if you use the CLI's connect.
 ---
 
 import { Aside, Steps } from '@astrojs/starlight/components';
@@ -11,15 +11,13 @@ import { Aside, Steps } from '@astrojs/starlight/components';
 
 2. **Download the installer** (NSIS `.exe`) from [GitHub Releases](https://github.com/alenj0x1/gpuvm/releases) and run it.
 
-3. **Install Moonlight** ([see below](#install-moonlight)).
-
-4. **Open GpuVM.** It opens without administrator rights.
+3. **Open GpuVM.** It opens without administrator rights.
 
 </Steps>
 
 ## What the installer does
 
-- Installs GpuVM **for the whole machine** in **Program Files**, with its own PowerShell 7, the PowerShell module, the profiles, the guest scripts, the `unattend.xml` template and the streaming component list inside.
+- Installs GpuVM **for the whole machine** in **Program Files**, with its own PowerShell 7, GpuVM's viewer (which shows the machines), the PowerShell module, the profiles, the guest scripts, the `unattend.xml` template and the streaming component list inside.
 - Registers the **GpuVM** service (`gpuvm-host.exe`), which does the Hyper-V work for the app. By default it starts when the app opens and stops when it quits (see [Settings](/docs/using-the-app/#settings)). Uninstalling removes it.
 - The data that changes (labs and downloaded installers) goes to **`%ProgramData%\GpuVM`**, which is also restricted to administrators.
 - The installer is in Spanish. The app follows Windows' display language (Spanish when Windows is in Spanish, English otherwise); change it in **Settings → Appearance → Language**.
@@ -40,7 +38,7 @@ If virtualization is off in the BIOS/UEFI, turn on Intel VT-x or AMD-V there fir
 
 ## Install Moonlight
 
-Moonlight shows the VM on your desktop. Download it from [moonlight-stream.org](https://moonlight-stream.org), or from the repository run:
+The app doesn't need Moonlight: it shows machines in GpuVM's own viewer, which the installer bundles. Moonlight is only needed for the CLI's `./gpuvm.ps1 connect` without `-Viewer`, which opens Moonlight installed under Program Files. Download it from [moonlight-stream.org](https://moonlight-stream.org), or from the repository run:
 
 ```powershell
 ./gpuvm.ps1 client-install
