@@ -93,6 +93,10 @@ Both widen what a guest can reach, so neither was adopted (build-approach §4b).
   repeated names became "(2)" (`out/vm2vm-*.jsonl`). The small files go one round trip each from the source VM:
   that is the next thing to speed up (pack them in the source VM).
 
+- Small files from another VM, read several per round trip (200 files of 0-32 KB, 3.2 MB): 1,708 / 1,214 / 997 ms
+  with the lock held at 11:21, hashes equal (`out/remeasure.jsonl`). A first run at ~10:40 (1.3 s) fell inside a
+  stray stream of another lab and was repeated. Before batching, these went one round trip each.
+
 ### Bugs the real run found (all fixed)
 
 - SDL accepts dropped files by default (`DragAcceptFiles`). Windows handed the paths to the viewer through
