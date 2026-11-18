@@ -38,8 +38,9 @@ function Import-GpuVM {
         $freeGB = Get-DriveFreeGB $root
         $needGB = [math]::Ceiling($diskBytes / 1GB) + $script:DiskMarginGB
         if ($needGB -gt $freeGB) { throw "No hay espacio para importar: el disco ocupa $([math]::Ceiling($diskBytes / 1GB)) GB y quedan $freeGB GB libres." }
-        $failed = @(Test-GpuVMHost -Profile $Profile -Override @{ vm = @{ disk = @{ type = 'Dynamic'; sizeGB = [math]::Max(1, $sizeGB - [math]::Floor($diskBytes / 1GB)) } } } |
-            Where-Object Status -eq 'Fail')
+        # Same rule as any new machine: its disk at full size must fit next to what the other disks may still grow.
+        $checkOverride = if ($Override) { Merge-Hashtable -Base $Override -Override $diskOverride } else { $diskOverride }
+        $failed = @(Test-GpuVMHost -Profile $Profile -Override $checkOverride | Where-Object Status -eq 'Fail')
         if ($failed) { throw ('El equipo no pasa la revisión: ' + (($failed | ForEach-Object { "$($_.Name): $($_.Detail)" }) -join '; ')) }
         if (-not $PSCmdlet.ShouldProcess($vmName, "Importar desde $Path")) { return }
 

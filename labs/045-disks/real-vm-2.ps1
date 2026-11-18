@@ -33,6 +33,7 @@ $work = Join-Path $env:TEMP 'lab045-real-export'
 $exportFile = Join-Path $work 'lab045-real.gpuvm'
 $keepWasRunning = $false
 $disp = $null
+$imported = $false
 
 Enter-LabLock 'disks-backup | lab 045 parte 2: desechable e importar en VM real (win-gpu apagada ~25 min)'
 try {
@@ -75,6 +76,7 @@ try {
 
     # ---- import it back
     $t = Timed { Import-GpuVM -Path $exportFile -Credential $cred -Confirm:$false | Out-Null }
+    $imported = $true
     Note 'import' @{ s = $t.s }
     Check 'imported under its own name (free again)' $true ([bool](Get-VM -Name $name -ErrorAction SilentlyContinue))
     $st = & $m { param($n) Get-GpuVMState -Name $n } $name
@@ -97,7 +99,9 @@ finally {
         if (Get-VM -Name $name -ErrorAction SilentlyContinue) { StopClean $name; Remove-GpuVM -Name $name -DeleteDisk -Confirm:$false }
         try { Remove-GpuVMTemplate -Name $tpl -Confirm:$false } catch { Write-Warning $_.Exception.Message }
     }
-    Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
+    # The export is the only copy of lab045-real until it is imported back: kept when that didn't happen.
+    if ($imported -or -not (Get-ChildItem $work -Filter *.gpuvm -ErrorAction SilentlyContinue)) { Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue }
+    else { Write-Warning "Export kept at $exportFile (lab045-real was not imported back)" }
     if ($keepWasRunning) { Set-LabLockNote "encendiendo $Keep"; try { Start-VM -Name $Keep; Note 'start-win-gpu' @{ ok = $true } } catch { Write-Warning "No se pudo encender ${Keep}: $($_.Exception.Message)" } }
     Exit-LabLock
     $global:GpuVMProgressSink = $null
