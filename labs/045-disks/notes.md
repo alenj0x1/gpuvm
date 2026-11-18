@@ -45,8 +45,33 @@ Scripts (elevated PowerShell 7, each one cleans up after itself). They only use 
 - On an empty disk created by `New-VHD`, `Optimize-Volume -ReTrim` + Quick did work (4.1 → 0.19 GB). On a `Convert-VHD` output it reports 20 GB trimmed yet nothing is given back. Only `Optimize-VHD -Mode Retrim` on a read-only mount does.
 - Convert-VHD times were noisy (20-165 s for the same 19 GB) during the first runs: another session was copying GBs on C: at the same time. From then on these labs take the lock and wait for C: to be quiet.
 
+### Real VM (`real-vm.ps1`, 2026-11-18 09:02-09:35, win-gpu shut down cleanly and started again)
+`lab045-real` is installed from the Windows 10 ISO with the balanced profile, 4 GB and 4 threads. "Open" is `Connect-GpuVM -Viewer`: it waits for Windows and Sunshine, then pairs, and opens no window.
+
+| Step | Time |
+|---|---|
+| Create from the ISO (warm base) | 57-90 s |
+| First open (Windows setup + Sunshine + pairing) | 359-466 s |
+| Second open | 7.2-7.9 s |
+| Create a restore point | 1.3 s |
+| Open on the point (boot) | 50.5 s |
+| Go back to the point | 1.3 s |
+| Open after going back (boot, still paired) | 52.8 s |
+| Delete the point (merge of the little written since) | 1.3 s |
+| Template from the 16.0 GB disk, with compaction | 19.2 s, **14.66 GB** |
+
+Checks:
+- A file written after the point is gone after going back.
+- The GPU is still visible in the guest.
+- The machine is still paired: GpuVM's pairing state goes back with the point, and so does Sunshine's inside the disk.
+
+**Bug found and fixed on the first run.** After creating a point the VM didn't start: *"Account does not have permission to open attachment ... Access is denied"*. Hyper-V gives each VM an explicit read/write entry (`NT VIRTUAL MACHINE\<VM id>`) on its disk file when it is attached. A new file at the same path doesn't have it, and `Set-VMHardDiskDrive` with the same path doesn't add it. The new top disk now gets the explicit entries of the VM's previous disk file (`Copy-GpuVMDiskAccess`). `points-offline.ps1` checks the entry after creating a point and after going back. The second run booted fine on the point and after going back.
+
+**Disposable copy refused by the disk-room check.** It reported 10 GB available: 127 GB free, minus 97 GB "promised", minus the 20 GB margin. The promised space is what every VM's disk may still grow into, including lab045-real's own 48 GB. A copy of a 64 GB template asks for the full 64 GB. This is GpuVM's existing worst-case rule, the same for every copy of a template. Part 2 exports lab045-real and removes it first.
+
 ### Export/import
-(pending: waiting for the shared lock)
+- Offline VM (`transfer-offline.ps1`, first run): a 11.25 GB disk becomes a 7.48 GB file with `Fastest` compression, in 159 s. The manifest has no DPAPI blobs or paths. That run stopped at the import (a local `$name` overwrote `-Name`); fixed.
+- (pending: part 2 on the real VM, and the offline import checks)
 
 ## Conclusions
 - Adopted: GpuVM's own restore points (`New/Restore/Remove/Get-GpuVMRestorePoint`).
