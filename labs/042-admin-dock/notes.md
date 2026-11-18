@@ -83,8 +83,11 @@ Plus the service's poll (section 2, ~0.2 % of the PC). A prompt raised meanwhile
 it and the card's WebView2 closed again. Opening GpuVM again (Start menu / second launch) brings the main window back
 in the same process and ends the mode.
 
-Not yet proven end to end: the mode ending by itself when the last watched machine shuts down (needs win-gpu off;
-other sessions use it). The code path: every poll returns `watched`; 0 while the mode is on calls `app.exit`.
+Ending by itself (`notices-exit.ps1`, inside front 4's window that shut win-gpu down cleanly): GpuVM in notices-only
+mode since 09:55:31; Hyper-V logged win-gpu shut down (event 18504) at 09:56:03.345 and gpuvm.exe was already gone at
+the next check, 09:56:03.494. So it ended within the same second, as soon as no watched machine was on. (The script's
+own 0.5 s `Get-VM` check still read Running just before and labelled it "unexpected": the instrument, not the app;
+Hyper-V's event log is the reference.)
 
 ## Decision
 
