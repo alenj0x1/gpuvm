@@ -1,9 +1,8 @@
 // Lab 040 screenshots: the panel at each width and theme, normal and while editing, in a headless Chrome of its own.
 //   node labs/040-viewer-widgets/shots.mjs [port] [outDir]
 // Layouts: the default one, and a crowded one with every widget at a bigger size.
-import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { startChrome } from "./chrome.mjs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -11,12 +10,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 const port = Number(process.argv[2] ?? 1420);
 const out = process.argv[3] ?? join(here, "shots");
 mkdirSync(out, { recursive: true });
-const profile = mkdtempSync(join(tmpdir(), "lab040-"));
-const debug = 9300 + Math.floor(Math.random() * 500);
-const proc = spawn("C:/Program Files/Google/Chrome/Application/chrome.exe", ["--headless=new", `--remote-debugging-port=${debug}`, `--user-data-dir=${profile}`, "--no-first-run", "--lang=es", "about:blank"], { stdio: "ignore" });
+const chrome = await startChrome(["--lang=es"]);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-let target;
-for (let i = 0; i < 50 && !target; i++) { await sleep(200); try { target = (await (await fetch(`http://127.0.0.1:${debug}/json`)).json()).find((t) => t.type === "page"); } catch { /* starting */ } }
+const target = chrome.target;
+if (!target) { console.error("chrome did not start"); process.exit(2); }
 const ws = new WebSocket(target.webSocketDebuggerUrl);
 await new Promise((r) => ws.addEventListener("open", r, { once: true }));
 let id = 0; const pending = new Map();
@@ -44,8 +41,6 @@ for (const [name, layout] of Object.entries(LAYOUTS)) for (const theme of ["dark
   const shot = await call("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   writeFileSync(join(out, `${name}-${theme}-${width}${edit ? "-edit" : ""}.png`), Buffer.from(shot.result.data, "base64"));
 }
-proc.kill();
-await sleep(800);
-try { rmSync(profile, { recursive: true, force: true }); } catch { /* locked */ }
+chrome.close();
 console.log("ok", out);
 process.exit(0);

@@ -2,27 +2,19 @@
 // page's clock runs at full speed) and runs check.js there. Needs the dev server up (npm --prefix app run dev).
 //   node labs/040-viewer-widgets/run.mjs [port] [options-json]
 // e.g. node run.mjs 1440 '{"themes":["dark"],"widths":[340]}'. Writes the report next to this file (report.json).
-import { spawn } from "node:child_process";
-import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
+import { startChrome } from "./chrome.mjs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const port = Number(process.argv[2] ?? 1420);
 const opts = process.argv[3] ?? "{}";
-const chrome = ["C:/Program Files/Google/Chrome/Application/chrome.exe", "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"];
-const profile = mkdtempSync(join(tmpdir(), "lab040-"));
-const debug = 9300 + Math.floor(Math.random() * 500);
-const proc = spawn(chrome[0], ["--headless=new", `--remote-debugging-port=${debug}`, `--user-data-dir=${profile}`, "--window-size=1200,1000", "--no-first-run", "about:blank"], { stdio: "ignore" });
-const done = (code) => { try { proc.kill(); } catch { /* gone */ } setTimeout(() => { try { rmSync(profile, { recursive: true, force: true }); } catch { /* still locked */ } process.exit(code); }, 800); };
+const chrome = await startChrome(["--window-size=1200,1000"]);
+const done = (code) => { chrome.close(); process.exit(code); };
 const fail = setTimeout(() => { console.error("timed out"); done(2); }, 20 * 60000);
 
-let target;
-for (let i = 0; i < 50 && !target; i++) {
-  await new Promise((r) => setTimeout(r, 200));
-  try { target = (await (await fetch(`http://127.0.0.1:${debug}/json`)).json()).find((t) => t.type === "page"); } catch { /* not up yet */ }
-}
+const target = chrome.target;
 if (!target) { console.error("chrome did not start"); done(2); }
 const ws = new WebSocket(target.webSocketDebuggerUrl);
 await new Promise((r) => ws.addEventListener("open", r, { once: true }));

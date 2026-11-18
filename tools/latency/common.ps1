@@ -154,6 +154,9 @@ public class GpuVMLatencyBridge : IDisposable {
     readonly string token;
     public volatile bool Hello;
     public long FirstFrameTicks = -1;
+    // The viewer's last "stats" line (received/rendered FPS, decode, host and network latency), and all of them.
+    public volatile string LastStats;
+    public readonly System.Collections.Concurrent.ConcurrentQueue<string> Stats = new System.Collections.Concurrent.ConcurrentQueue<string>();
     [System.Runtime.InteropServices.DllImport("advapi32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
     static extern bool ConvertStringSecurityDescriptorToSecurityDescriptorW(string sddl, uint rev, out IntPtr sd, IntPtr size);
     [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern IntPtr LocalFree(IntPtr p);
@@ -184,6 +187,7 @@ public class GpuVMLatencyBridge : IDisposable {
             while ((line = reader.ReadLine()) != null) {
                 if (!Hello) { Hello = line.Contains(token); continue; }
                 if (FirstFrameTicks < 0 && line.Contains("\"first-frame\"")) FirstFrameTicks = DateTime.UtcNow.Ticks;
+                if (line.Contains("\"stats\"")) { LastStats = line; Stats.Enqueue(line); }
             }
         } catch { }
     }
@@ -245,4 +249,19 @@ function Assert-LatencyGpuIdle {
     $message = "The host GPU is $([math]::Round($pct)) % busy without a stream ($((@($users) | Select-Object -First 6) -join ', ')). Close what draws on it, or pass -Force."
     if ($Force) { Write-Warning $message; return [math]::Round($pct, 1) }
     throw $message
+}
+
+# The viewer's own numbers averaged since -Since (GpuVM's viewer only; $null for Moonlight): received and rendered FPS,
+# network drop %, decode, render, host and network latency (ms), as it reports them once a second.
+function Get-LatencyViewerStats {
+    param([Parameter(Mandatory)]$Session, [int]$LastSeconds = 15)
+    if (-not $Session.Bridge) { return $null }
+    $rows = @($Session.Bridge.Stats.ToArray() | Select-Object -Last $LastSeconds | ForEach-Object { try { $_ | ConvertFrom-Json } catch { } } | Where-Object { $_ })
+    if (-not $rows) { return $null }
+    $avg = [ordered]@{ samples = $rows.Count }
+    foreach ($k in 'receivedFps', 'renderedFps', 'networkDropPercent', 'decodeMs', 'renderMs', 'hostLatencyMs', 'networkLatencyMs') {
+        $v = @($rows | ForEach-Object { $_.$k } | Where-Object { $null -ne $_ })
+        if ($v) { $avg[$k] = [math]::Round(($v | Measure-Object -Average).Average, 2) }
+    }
+    [pscustomobject]$avg
 }
