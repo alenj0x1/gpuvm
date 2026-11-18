@@ -47,27 +47,36 @@ function Send-GpuVMFile {
         $pipe = New-TransferPipe -Session $target -Id $TransferId -Total $total -Marker $marker
         $buffer = [byte[]]::new($script:TransferChunk)
         $big = [System.Collections.Generic.List[object]]::new()
+        # From another VM, small files are read several per round trip (up to 4 MB): one each took ~0.1 s.
+        $batch = [System.Collections.Generic.List[object]]::new()
+        $batchBytes = [int64]0
         foreach ($entry in $entries) {
             if ($entry.Dir) { Write-TransferBytes -Pipe $pipe -Bytes (New-TarHeader -Name $entry.Rel -Directory); continue }
             if ($entry.Size -ge $script:TransferDirectMin) { $big.Add($entry); continue }
-            Write-TransferBytes -Pipe $pipe -Bytes (New-TarHeader -Name $entry.Rel -Size $entry.Size)
-            if ($FromVM) { Copy-GuestFileToPipe -Session $source -Entry $entry -Pipe $pipe }
-            else {
-                $stream = [IO.File]::Open($entry.Full, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
-                try {
-                    $left = $entry.Size
-                    while ($left -gt 0 -and ($n = $stream.Read($buffer, 0, [int][math]::Min($buffer.Length, $left))) -gt 0) {
-                        Write-TransferBytes -Pipe $pipe -Bytes $buffer -Count $n
-                        $left -= $n
-                    }
-                    # The archive says how long the file is: one that shrank while it was read can't be completed.
-                    if ($left -ne 0) { throw "$($entry.Rel) cambió mientras se enviaba; vuelve a intentarlo." }
+            if ($FromVM) {
+                $batch.Add($entry); $batchBytes += $entry.Size
+                if ($batchBytes -ge $script:TransferChunk -or $batch.Count -ge 500) {
+                    Copy-GuestFilesToPipe -Session $source -Entries $batch.ToArray() -Pipe $pipe
+                    $batch.Clear(); $batchBytes = 0
                 }
-                finally { $stream.Dispose() }
+                continue
             }
+            Write-TransferBytes -Pipe $pipe -Bytes (New-TarHeader -Name $entry.Rel -Size $entry.Size)
+            $stream = [IO.File]::Open($entry.Full, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+            try {
+                $left = $entry.Size
+                while ($left -gt 0 -and ($n = $stream.Read($buffer, 0, [int][math]::Min($buffer.Length, $left))) -gt 0) {
+                    Write-TransferBytes -Pipe $pipe -Bytes $buffer -Count $n
+                    $left -= $n
+                }
+                # The archive says how long the file is: one that shrank while it was read can't be completed.
+                if ($left -ne 0) { throw "$($entry.Rel) cambió mientras se enviaba; vuelve a intentarlo." }
+            }
+            finally { $stream.Dispose() }
             $pad = (512 - ($entry.Size % 512)) % 512
             if ($pad) { Write-TransferBytes -Pipe $pipe -Bytes ([byte[]]::new($pad)) }
         }
+        if ($batch.Count) { Copy-GuestFilesToPipe -Session $source -Entries $batch.ToArray() -Pipe $pipe }
         # The end of a tar archive: two empty blocks.
         Write-TransferBytes -Pipe $pipe -Bytes ([byte[]]::new(1024))
         Send-TransferChunk -Pipe $pipe

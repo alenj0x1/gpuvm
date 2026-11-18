@@ -177,7 +177,9 @@ export default {
   "Esa copia ya no está.": "That copy is no longer there.",
   "No se pudo copiar.": "It couldn't be copied.",
   // GpuVM service (app/host): it checks the paths of this PC as the user, and relays PowerShell
-  "PowerShell dejó de responder.": "PowerShell stopped responding.",  "La VM no respondió a tiempo; vuelve a intentarlo.": "The VM didn't answer in time; try again.",
+  "PowerShell dejó de responder.": "PowerShell stopped responding.",
+  "La máquina de origen no devolvió todos los archivos; vuelve a intentarlo.": "The source machine didn't send back every file; try again.",
+  "La VM no respondió a tiempo; vuelve a intentarlo.": "The VM didn't answer in time; try again.",
   "La contraseña no es correcta para la cuenta de la VM.": "The password isn't right for the VM's account.",
   "El aviso ya cambió o se cerró. Revisa el nuevo antes de responder.": "The prompt changed or closed. Check the new one before answering.",
 

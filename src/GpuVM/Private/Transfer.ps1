@@ -322,30 +322,28 @@ function Get-GuestTransferEntries {
     [pscustomobject]@{ Entries = $entries; Skipped = [int]$raw['skipped'] }
 }
 
-# One file of the source VM into the stream, 4 MB at a time: exactly the size it reported (more or less means the
-# file changed, or the VM lies, and the copy stops).
-function Copy-GuestFileToPipe {
-    param([Parameter(Mandatory)]$Session, [Parameter(Mandatory)]$Entry, [Parameter(Mandatory)][hashtable]$Pipe)
-    $offset = [int64]0
-    while ($offset -lt $Entry.Size) {
-        $want = [int][math]::Min($script:TransferChunk, $Entry.Size - $offset)
-        $bytes = Invoke-Command -Session $Session -ErrorAction Stop -ArgumentList $Entry.Full, $offset, $want -ScriptBlock {
-            param($path, [int64]$at, [int]$count)
-            $s = [IO.File]::Open($path, 'Open', 'Read', 'ReadWrite')
-            try {
-                $null = $s.Seek($at, 'Begin')
-                $b = [byte[]]::new($count); $n = 0
-                while ($n -lt $count -and ($r = $s.Read($b, $n, $count - $n)) -gt 0) { $n += $r }
-                if ($n -lt $count) { $c = [byte[]]::new($n); [Array]::Copy($b, $c, $n); $b = $c }
-                , $b
-            }
-            finally { $s.Dispose() }
-        }
-        # A byte[] comes back as one object; @($bytes)[-1] would unroll it and keep its last byte.
-        if ($bytes -isnot [byte[]] -and $bytes -is [Array]) { $bytes = $bytes[-1] }
-        if ($bytes -isnot [byte[]] -or $bytes.Length -ne $want) { throw "$($Entry.Rel) cambió mientras se enviaba; vuelve a intentarlo." }
-        Write-TransferBytes -Pipe $Pipe -Bytes $bytes
-        $offset += $want
+# Several small files of the source VM into the stream with one round trip: each must come back with exactly the
+# size it reported (more or less means the file changed, or the VM lies, and the copy stops). The archive itself is
+# still written here, with the names checked here: a tar made by the source VM could carry links that write outside
+# the folder in the other VM.
+function Copy-GuestFilesToPipe {
+    param([Parameter(Mandatory)]$Session, [Parameter(Mandatory)][object[]]$Entries, [Parameter(Mandatory)][hashtable]$Pipe)
+    $paths = [string[]]@($Entries | ForEach-Object { $_.Full })
+    $answer = Invoke-Command -Session $Session -ErrorAction Stop -ArgumentList (, $paths) -ScriptBlock {
+        param([string[]]$list)
+        foreach ($p in $list) { , [IO.File]::ReadAllBytes($p) }
+    }
+    # One file comes back as a byte[]; several as a list of them. Never through @(), which unrolls a byte[].
+    $got = [System.Collections.Generic.List[object]]::new()
+    if ($answer -is [byte[]]) { $got.Add($answer) } else { foreach ($a in $answer) { $got.Add($a) } }
+    if ($got.Count -ne $Entries.Count) { throw 'La máquina de origen no devolvió todos los archivos; vuelve a intentarlo.' }
+    for ($i = 0; $i -lt $Entries.Count; $i++) {
+        $entry = $Entries[$i]; $bytes = $got[$i]
+        if ($bytes -isnot [byte[]] -or $bytes.Length -ne $entry.Size) { throw "$($entry.Rel) cambió mientras se enviaba; vuelve a intentarlo." }
+        Write-TransferBytes -Pipe $Pipe -Bytes (New-TarHeader -Name $entry.Rel -Size $entry.Size)
+        if ($bytes.Length) { Write-TransferBytes -Pipe $Pipe -Bytes $bytes }
+        $pad = (512 - ($entry.Size % 512)) % 512
+        if ($pad) { Write-TransferBytes -Pipe $Pipe -Bytes ([byte[]]::new($pad)) }
     }
 }
 

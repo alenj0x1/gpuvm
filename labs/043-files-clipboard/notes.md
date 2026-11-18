@@ -65,5 +65,42 @@ Notes:
 - First pilot runs (5-10 MB/s for everything, even the shared disk) were thrown away: another session's VHD compact
   was writing 1.7 GB/s to C: without the lock. `run.ps1` now waits for a quiet disk before each sample and records it.
 
-Pending: several PowerShell Direct sessions in parallel (`parallel.ps1`). That would keep the existing channel and
-add no attack surface.
+### Several PowerShell Direct sessions at once (`parallel.ps1`)
+
+512 MB written by N sessions, each writing every N-th 4 MB part at its offset. 2 rounds, with the lock held.
+Results: `out/parallel-*.jsonl`.
+
+| Sessions | Round 1 | Round 2 |
+|---|---|---|
+| 1 | 9.5 MB/s | 10.6 MB/s |
+| 2 | 20.5 | 18.7 |
+| 4 | 30.9 | 33.2 |
+| 8 | 41.3 | 42.8 |
+
+Decision: files of 16 MB or more go through up to 8 sessions at once, and smaller files keep the tar stream. This
+stays on the channel GpuVM already uses, with no new attack surface. Copy-VMFile (59-76 MB/s) would need the Guest
+Service Interface turned on. The shared disk (157-173 MB/s) needs the host to mount a file system written by the guest.
+Both widen what a guest can reach, so neither was adopted (build-approach §4b).
+
+### The product, measured (`Send-GpuVMFile`)
+
+- 1 GB from the PC: 31,952 / 30,144 ms (32-34 MB/s), hash equal (`out/product-1gb.jsonl`). The old single-stream code
+  took 221 s, `Copy-Item -ToSession` took 103-109 s.
+- Dropped on the real viewer in the installed app (a 300 MB file and a folder of 12 photos): the progress card went from
+  0 to 100 % in ~12 s, and 13 files arrived with an equal hash.
+- VM -> VM, `win-gpu` -> `lab045-win2` (a 64 MB file and a folder of 200 small files and a name with ñ, selected in
+  win-gpu's File Explorer and read with `Get-GpuVMExplorerSelection`): 16.3 / 15.2 s (4.1-4.4 MB/s), hash equal,
+  repeated names became "(2)" (`out/vm2vm-*.jsonl`). The small files go one round trip each from the source VM:
+  that is the next thing to speed up (pack them in the source VM).
+
+### Bugs the real run found (all fixed)
+
+- SDL accepts dropped files by default (`DragAcceptFiles`). Windows handed the paths to the viewer through
+  `WM_DROPFILES`, and the app's drop area never showed. The viewer now turns SDL's drop events off and only sends `drag`.
+- wry registers its drop target on the web view's child windows when the window is built. The drop window is built
+  hidden, so Windows gave the drop to the web view, which refused it. An invisible (alpha 1) native window with its
+  own OLE drop target now takes the drop.
+- The drop area was shown with Win32 and hidden with Tauri's `hide()`, which did nothing (Tauri thought it was
+  hidden), so it stayed over the picture. It is now hidden with Win32 too.
+- PowerShell unrolled byte arrays assigned through `if`/`@()`, and `Wait-Job -Timeout 0.5` meant 0 seconds. The
+  first real drop hung at 1 % and its bridge spun the CPU. Recorded in tool-pitfalls §9g.
