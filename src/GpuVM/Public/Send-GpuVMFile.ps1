@@ -46,8 +46,10 @@ function Send-GpuVMFile {
         }
         $pipe = New-TransferPipe -Session $target -Id $TransferId -Total $total -Marker $marker
         $buffer = [byte[]]::new($script:TransferChunk)
+        $big = [System.Collections.Generic.List[object]]::new()
         foreach ($entry in $entries) {
             if ($entry.Dir) { Write-TransferBytes -Pipe $pipe -Bytes (New-TarHeader -Name $entry.Rel -Directory); continue }
+            if ($entry.Size -ge $script:TransferDirectMin) { $big.Add($entry); continue }
             Write-TransferBytes -Pipe $pipe -Bytes (New-TarHeader -Name $entry.Rel -Size $entry.Size)
             if ($FromVM) { Copy-GuestFileToPipe -Session $source -Entry $entry -Pipe $pipe }
             else {
@@ -69,6 +71,7 @@ function Send-GpuVMFile {
         # The end of a tar archive: two empty blocks.
         Write-TransferBytes -Pipe $pipe -Bytes ([byte[]]::new(1024))
         Send-TransferChunk -Pipe $pipe
+        if ($big.Count) { Copy-TransferBigFiles -Name $Name -FromVM $FromVM -Big $big.ToArray() -Staging $receiver.Staging -Pipe $pipe }
         $receiving = $false
         $done = Close-GuestReceiver -Session $target -Id $TransferId
         if (-not $done.Ok) { throw "La máquina no pudo guardar los archivos. $($done.Error)" }

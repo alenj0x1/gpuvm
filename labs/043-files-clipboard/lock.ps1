@@ -11,10 +11,14 @@ function Get-LabQueue { @(Get-Content -LiteralPath $script:LabQueuePath -ErrorAc
 function Enter-LabLock {
     param([Parameter(Mandatory)][string]$Owner, [Parameter(Mandatory)][string]$Doing, [int]$WaitMinutes = 60)
     $deadline = (Get-Date).AddMinutes($WaitMinutes)
+    # Already ours (a lab run inside a longer window of the same session): keep it, and don't release it at the end.
+    $held = Get-Content -Raw $script:LabLockPath -ErrorAction SilentlyContinue
+    $script:LabLockReentered = [bool]($held -and $held.StartsWith("$Owner |"))
+    if ($script:LabLockReentered) { return }
     while ($true) {
-        $queue = Get-LabQueue
+        $queue = @(Get-LabQueue)
         $myTurn = -not $queue.Count -or $queue[0].Trim() -eq $Owner
-        if (-not $myTurn -and $queue -notcontains $Owner) { Add-Content -LiteralPath $script:LabQueuePath -Value $Owner; $queue = Get-LabQueue }
+        if (-not $myTurn -and $queue -notcontains $Owner) { Add-Content -LiteralPath $script:LabQueuePath -Value $Owner; $queue = @(Get-LabQueue) }
         if ($myTurn) {
             try {
                 $stream = [IO.File]::Open($script:LabLockPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
@@ -35,6 +39,7 @@ function Enter-LabLock {
 
 function Exit-LabLock {
     param([Parameter(Mandatory)][string]$Owner)
+    if ((Get-Variable LabLockReentered -Scope Script -ValueOnly -ErrorAction Ignore)) { return }
     $text = Get-Content -Raw $script:LabLockPath -ErrorAction SilentlyContinue
     if ($text -and $text.StartsWith("$Owner |")) { Remove-Item -LiteralPath $script:LabLockPath -Force }
 }

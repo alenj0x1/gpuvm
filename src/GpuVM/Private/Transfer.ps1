@@ -5,6 +5,11 @@
 # the VM never reads anything of this PC: it only receives bytes.
 
 $script:TransferChunk = 4MB
+# Files from this size up don't go in the stream: several PowerShell Direct sessions write parts of each at once.
+# One session tops out near 10 MB/s; 2, 4 and 8 reached ~20, ~32 and ~42 MB/s (lab 043, parallel.ps1), with no new
+# channel into the VM.
+$script:TransferDirectMin = 16MB
+$script:TransferLanes = 8
 # Names and counts a guest (the source of a VM -> VM copy) may report: anything else stops the copy.
 $script:TransferMaxEntries = 200000
 $script:TransferMaxName = 1024
@@ -164,11 +169,11 @@ function Open-GuestReceiver {
         $process = [Diagnostics.Process]::Start($psi)
         $global:GpuVMReceive[$id] = @{ process = $process; dest = $dest; staging = $staging; error = $process.StandardError.ReadToEndAsync() }
         $drive = [IO.DriveInfo]::new([IO.Path]::GetPathRoot($dest))
-        @{ dest = $dest; free = [int64]$drive.AvailableFreeSpace }
+        @{ dest = $dest; staging = $staging; free = [int64]$drive.AvailableFreeSpace }
     }
     $answer = @($answer)[-1]
     if ($answer['error']) { throw (ConvertTo-GuestString $answer['error']) }
-    [pscustomobject]@{ Dest = ConvertTo-GuestString $answer['dest'] -MaxLength 400; Free = [int64]$answer['free'] }
+    [pscustomobject]@{ Dest = ConvertTo-GuestString $answer['dest'] -MaxLength 400; Staging = ConvertTo-GuestString $answer['staging'] -MaxLength 460; Free = [int64]$answer['free'] }
 }
 
 function Send-GuestBytes {
@@ -337,5 +342,102 @@ function Copy-GuestFileToPipe {
         if ($bytes -isnot [byte[]] -or $bytes.Length -ne $want) { throw "$($Entry.Rel) cambió mientras se enviaba; vuelve a intentarlo." }
         Write-TransferBytes -Pipe $Pipe -Bytes $bytes
         $offset += $want
+    }
+}
+
+# The big files, each written into the hidden folder by several sessions at once (every lane writes every n-th 4 MB
+# part at its offset). From another VM each lane also reads its parts there: the bytes only pass through memory.
+function Copy-TransferBigFiles {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [string]$FromVM,
+        [Parameter(Mandatory)][object[]]$Big,
+        [Parameter(Mandatory)][string]$Staging,
+        [Parameter(Mandatory)][hashtable]$Pipe
+    )
+    $sum = [int64]($Big | Measure-Object -Property Size -Sum).Sum
+    # One lane per 64 MB, up to 8: opening a session costs ~0.2 s and a small file gains nothing from more.
+    $lanes = [int][math]::Min($script:TransferLanes, [math]::Max(1, [math]::Ceiling($sum / 64MB)))
+    $targetCred = Get-GpuVMGuestCredential -State (Get-GpuVMState -Name $Name)
+    $targets = @(1..$lanes | ForEach-Object { New-PSSession -VMName $Name -Credential $targetCred -ErrorAction Stop })
+    $sources = @()
+    if ($FromVM) {
+        $sourceCred = Get-GpuVMGuestCredential -State (Get-GpuVMState -Name $FromVM)
+        $sources = @(1..$lanes | ForEach-Object { New-PSSession -VMName $FromVM -Credential $sourceCred -ErrorAction Stop })
+    }
+    $chunkSize = $script:TransferChunk
+    $marker = $Pipe.Marker
+    try {
+        foreach ($file in $Big) {
+            $dest = Join-Path $Staging $file.Rel
+            Invoke-Command -Session $targets[0] -ErrorAction Stop -ArgumentList $dest, $file.Size -ScriptBlock {
+                param($p, [int64]$len)
+                New-Item -ItemType Directory -Force -Path (Split-Path $p) | Out-Null
+                $s = [IO.File]::Create($p); $s.SetLength($len); $s.Dispose()
+            }
+            $state = [hashtable]::Synchronized(@{ bytes = [int64]0; error = $null })
+            $job = 0..($lanes - 1) | ForEach-Object -ThrottleLimit $lanes -AsJob -Parallel {
+                $lane = $_
+                $entry = $using:file; $count = $using:lanes; $size = $using:chunkSize; $state = $using:state; $stop = $using:marker
+                $t = ($using:targets)[$lane]
+                $src = if ($using:FromVM) { ($using:sources)[$lane] } else { $null }
+                $local = $null
+                try {
+                    Invoke-Command -Session $t -ErrorAction Stop -ArgumentList $using:dest -ScriptBlock { param($p) $global:lane = [IO.File]::Open($p, 'Open', 'Write', 'ReadWrite') }
+                    if (-not $src) { $local = [IO.File]::Open($entry.Full, 'Open', 'Read', 'ReadWrite') }
+                    $buf = [byte[]]::new($size)
+                    for ($at = [int64]$lane * $size; $at -lt $entry.Size; $at += [int64]$count * $size) {
+                        if ($state.error -or (Test-Path -LiteralPath $stop)) { break }
+                        $want = [int][math]::Min($size, $entry.Size - $at)
+                        if ($src) {
+                            $bytes = @(Invoke-Command -Session $src -ErrorAction Stop -ArgumentList $entry.Full, $at, $want -ScriptBlock {
+                                param($path, [int64]$from, [int]$n)
+                                $s = [IO.File]::Open($path, 'Open', 'Read', 'ReadWrite')
+                                try {
+                                    $null = $s.Seek($from, 'Begin')
+                                    $b = [byte[]]::new($n); $got = 0
+                                    while ($got -lt $n -and ($r = $s.Read($b, $got, $n - $got)) -gt 0) { $got += $r }
+                                    if ($got -lt $n) { $c = [byte[]]::new($got); [Array]::Copy($b, $c, $got); $b = $c }
+                                    , $b
+                                }
+                                finally { $s.Dispose() }
+                            })[-1]
+                        }
+                        else {
+                            $null = $local.Seek($at, 'Begin')
+                            $got = 0
+                            while ($got -lt $want -and ($r = $local.Read($buf, $got, $want - $got)) -gt 0) { $got += $r }
+                            $bytes = if ($got -eq $buf.Length) { $buf } else { $c = [byte[]]::new($got); [Array]::Copy($buf, $c, $got); $c }
+                        }
+                        # Exactly the size the file had when it was measured: more or less means it changed (or the
+                        # source VM lies), and the copy stops.
+                        if ($bytes -isnot [byte[]] -or $bytes.Length -ne $want) { $state.error = "$($entry.Rel) cambió mientras se enviaba; vuelve a intentarlo."; break }
+                        Invoke-Command -Session $t -ErrorAction Stop -ArgumentList $at, $bytes -ScriptBlock {
+                            param([int64]$from, [byte[]]$b)
+                            $null = $global:lane.Seek($from, 'Begin'); $global:lane.Write($b, 0, $b.Length)
+                        }
+                        [Threading.Monitor]::Enter($state.SyncRoot)
+                        try { $state.bytes += $want } finally { [Threading.Monitor]::Exit($state.SyncRoot) }
+                    }
+                }
+                catch { if (-not $state.error) { $state.error = "$_" } }
+                finally {
+                    if ($local) { $local.Dispose() }
+                    Invoke-Command -Session $t -ErrorAction SilentlyContinue -ScriptBlock { if ($global:lane) { $global:lane.Dispose() } }
+                }
+            }
+            try {
+                while (-not ($job | Wait-Job -Timeout 0.5)) {
+                    Write-TransferProgress -Percent ([math]::Min(99, [math]::Floor(100 * ($Pipe.Sent + $state.bytes) / $Pipe.Total))) -Sent ($Pipe.Sent + $state.bytes) -Total $Pipe.Total
+                }
+            }
+            finally { $job | Remove-Job -Force }
+            if (Test-Path -LiteralPath $marker) { throw [OperationCanceledException]::new('Envío cancelado.') }
+            if ($state.error) { throw $state.error }
+            $Pipe.Sent += $file.Size
+        }
+    }
+    finally {
+        $targets + $sources | Remove-PSSession -ErrorAction SilentlyContinue
     }
 }
