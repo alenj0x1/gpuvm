@@ -51,6 +51,7 @@ try {
         $keepWasRunning = $true
         $t = Timed { Stop-VM -Name $Keep -Force }
         Note 'stop-win-gpu' @{ s = $t.s }
+        Set-LabLockNote "$Keep APAGADA por disks-backup (vuelve a encenderse al terminar)"
     }
     $result.diskQuietMBps = Wait-DiskQuiet
 
@@ -131,7 +132,7 @@ finally {
     }
     if ($made -contains "template:$tpl") { try { Remove-GpuVMTemplate -Name $tpl -Confirm:$false } catch { Write-Warning "cleanup template: $($_.Exception.Message)" } }
     if (Test-Path $exportFile) { Remove-Item $exportFile -Force }
-    if ($keepWasRunning) { try { Start-VM -Name $Keep; Note 'start-win-gpu' @{ ok = $true } } catch { Write-Warning "No se pudo encender ${Keep}: $($_.Exception.Message)" } }
+    if ($keepWasRunning) { Set-LabLockNote "encendiendo $Keep"; try { Start-VM -Name $Keep; Note 'start-win-gpu' @{ ok = $true } } catch { Write-Warning "No se pudo encender ${Keep}: $($_.Exception.Message)" } }
     Exit-LabLock
     $global:GpuVMProgressSink = $null
     $result.failures = $failures
