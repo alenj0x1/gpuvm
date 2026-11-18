@@ -1099,3 +1099,19 @@ InModuleScope GpuVM {
         }
     }
 }
+
+InModuleScope GpuVM {
+    Describe 'Disposable disk room' {
+        It 'a disposable machine is promised only its fixed reserve; the others their whole disk' {
+            Mock Get-VM { @([pscustomobject]@{ Name = 'tmp' }, [pscustomobject]@{ Name = 'keep' }) }
+            Mock Get-VMHardDiskDrive { [pscustomobject]@{ Path = "C:\GpuVM\$VMName\d.vhdx" } }
+            Mock Get-VHD { [pscustomobject]@{ Size = 64GB; FileSize = 5GB; VhdType = 'Differencing' } }
+            Mock Get-GpuVMState { if ($Name -eq 'tmp') { @{ disposable = @{ createdAt = 'x' } } } else { @{ name = 'keep' } } }
+            $script:DiskCache = $null
+            $usage = @(Get-VMDiskUsage)
+            ($usage | Where-Object VM -eq 'tmp').GrowthGB | Should Be ($script:DisposableReserveGB - 5)
+            ($usage | Where-Object VM -eq 'keep').GrowthGB | Should Be 59
+            $script:DiskCache = $null
+        }
+    }
+}

@@ -6,6 +6,16 @@
 # Grace period for a disposable machine that never started (creation interrupted, not enough memory): after it,
 # the cleanup deletes it too.
 $script:DisposableGraceMinutes = 30
+# What a disposable machine reserves on the drive (the others reserve their disk's full size). If the drive gets
+# down to the host's margin while one runs, it is shut down cleanly and then deleted like any used disposable machine.
+$script:DisposableReserveGB = 20
+
+# Whether the VM that owns a disk is a disposable machine (for the disk-room count), read from its gpuvm.json.
+function Test-GpuVMDisposableByName {
+    param([Parameter(Mandatory)][string]$Name)
+    $state = try { Get-GpuVMState -Name $Name } catch { $null }
+    Test-GpuVMDisposable -State $state
+}
 
 function Test-GpuVMDisposable {
     param([System.Collections.IDictionary]$State)

@@ -141,6 +141,15 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     }).catch(() => {});
   }, [disposableOff]);
 
+  // A running disposable machine only reserves a fixed part of the drive: every 30 s the module checks the drive and
+  // shuts it down if it got down to the host's margin.
+  const disposableOn = (vms ?? []).some((v) => v.disposable && v.state === "Running");
+  useEffect(() => {
+    if (!disposableOn) return;
+    const id = setInterval(() => { api.sweepDisposable().catch(() => {}); }, 30000);
+    return () => clearInterval(id);
+  }, [disposableOn]);
+
   useEffect(() => { api.hostInfo().then((h) => setHost(h[0] ?? null)).catch(() => {}); }, []);
   useEffect(() => { if (!embedded) window.history.replaceState(null, "", selected ? `#${encodeURIComponent(selected)}` : " "); }, [selected, embedded]);
   useEffect(() => {

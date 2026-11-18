@@ -13,6 +13,16 @@ function Remove-GpuVMDisposable {
     $root = Get-GpuVMDefaultRoot
     $removed = [System.Collections.Generic.List[string]]::new()
     $known = @{}
+    # Disposable machines only reserve a fixed amount of the drive: when it gets down to the host's margin, the running
+    # ones are shut down cleanly (in the background), and the next sweep deletes them.
+    if ((Get-DriveFreeGB $root) -lt $script:DiskMarginGB) {
+        foreach ($vm in @(Get-VM -ErrorAction SilentlyContinue | Where-Object State -eq 'Running')) {
+            if (-not (Test-GpuVMDisposableByName -Name $vm.Name)) { continue }
+            if (-not $PSCmdlet.ShouldProcess($vm.Name, 'Apagar la máquina desechable (poco espacio)')) { continue }
+            Write-Warning "Queda poco espacio en $(Split-Path $root -Qualifier): se apaga la máquina desechable '$($vm.Name)' y se borra."
+            Stop-VM -Name $vm.Name -Force -AsJob | Out-Null
+        }
+    }
     foreach ($vm in @(Get-VM -ErrorAction SilentlyContinue)) {
         $known[$vm.Name] = $true
         $state = try { Get-GpuVMState -Name $vm.Name } catch { $null }

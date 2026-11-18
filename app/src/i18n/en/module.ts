@@ -514,6 +514,8 @@ export const patterns: [RegExp, string][] = [
   [/^Borrando la máquina desechable '(.+)'$/, "Deleting the disposable machine '$1'"],
   [/^Borrando lo que quedó de la máquina desechable '(.+)'$/, "Deleting what was left of the disposable machine '$1'"],
   [/^La máquina '(.+)' se conserva$/, "The machine '$1' is kept"],
+  [/^Queda poco espacio en (.+): se apaga la máquina desechable '(.+)' y se borra\.$/, "$1 is running out of space: the disposable machine '$2' shuts down and is deleted."],
+  [/^Una máquina desechable necesita (\d+) GB libres en (.+) además de lo reservado para las otras máquinas; hay (\d+) GB\.$/, "A disposable machine needs $1 GB free on $2 besides what is reserved for the other machines; there are $3 GB."],
   [/^Apaga la máquina '(.+)' para crear un punto de restauración\.$/, "Shut down the machine '$1' to create a restore point."],
   [/^Apaga la máquina '(.+)' para volver a un punto de restauración\.$/, "Shut down the machine '$1' to go back to a restore point."],
   [/^Apaga la máquina '(.+)' para borrar este punto de restauración\.$/, "Shut down the machine '$1' to delete this restore point."],

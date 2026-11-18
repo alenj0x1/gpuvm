@@ -115,6 +115,16 @@ function New-GpuVMFromTemplate {
     $diskOverride = @{ vm = @{ disk = @{ type = 'Dynamic'; sizeGB = [int]$base['sizeGB'] } } }
     $checkOverride = if ($Override) { Merge-Hashtable -Base $Override -Override $diskOverride } else { $diskOverride }
     $failed = @(Test-GpuVMHost -Profile $Profile -Override $checkOverride | Where-Object Status -eq 'Fail')
+    if ($Disposable) {
+        # A disposable machine reserves a fixed amount, not the template's full size: it is shut down (and deleted) if
+        # the drive gets near the host's margin (Remove-GpuVMDisposable).
+        $failed = @($failed | Where-Object Name -ne 'Disco')
+        $budget = Get-GpuVMDiskBudget -Root (Get-GpuVMDefaultRoot)
+        if ($budget['availableGB'] -lt $script:DisposableReserveGB) {
+            $failed += New-CheckResult 'Disco' Fail ("Una máquina desechable necesita $($script:DisposableReserveGB) GB libres en $($budget['drive']) " +
+                "además de lo reservado para las otras máquinas; hay $($budget['availableGB']) GB.")
+        }
+    }
     if ($failed) {
         throw ('El equipo no pasa la revisión: ' + (($failed | ForEach-Object { "$($_.Name): $($_.Detail)" }) -join '; '))
     }
