@@ -49,6 +49,8 @@ function New-GpuVMTemplate {
         Write-Step "Copiando el disco de $VMName (puede tardar unos minutos)"
         # Convert-VHD copies into a new dynamic disk; a disk that is itself a copy of a template is merged into one.
         Convert-VHD -Path $source -DestinationPath $target -VHDType Dynamic -ErrorAction Stop
+        # Only what Windows uses now: the space of deleted files is given back (lab 045).
+        Compress-GpuVMDiskCopy -Path $target | Out-Null
         (Get-Item -LiteralPath $target).IsReadOnly = $true
 
         $streaming = $null

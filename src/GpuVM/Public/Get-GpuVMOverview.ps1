@@ -59,6 +59,8 @@ function Get-GpuVMOverview {
             streaming      = [bool]($state -and $state['streaming'])
             paired         = [bool]($state -and $state['streaming'] -and $state['streaming']['pairedClient'])
             guestCredential = [bool]($state -and $state['guest'])
+            disposable     = Test-GpuVMDisposable -State $state
+            restorePoints  = if ($state -and $state.Contains('restorePoints')) { @($state['restorePoints']).Count } else { 0 }
             address        = $address
             # A Windows administrator prompt open in the VM (WGC can't stream it; the app offers Allow / Deny).
             adminPrompt    = if ($state -and $state['streaming'] -and $vm.State -eq 'Running' -and (Get-GpuVMCaptureMode -State $state) -eq 'wgc') {

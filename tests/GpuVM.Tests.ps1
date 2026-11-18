@@ -1014,3 +1014,72 @@ InModuleScope GpuVM {
         }
     }
 }
+
+
+# Front 4: restore points, disposable machines, export/import (pure logic; the disk work is proven in labs/045-disks).
+InModuleScope GpuVM {
+    Describe 'Restore points' {
+        It 'accepts only ids GpuVM makes' {
+            $s = @{ vhdPath = 'C:\GpuVM\a\Virtual Hard Disks\a.vhdx' }
+            (Get-RestorePointPath -State $s -Id '20261118-101500-a1b2') | Should Be 'C:\GpuVM\a\Virtual Hard Disks\points\20261118-101500-a1b2.vhdx'
+            Test-Throws { Get-RestorePointPath -State $s -Id '..\..\x' } | Should Be $true
+            Test-Throws { Get-RestorePointPath -State $s -Id '20261118-101500-a1b2\..' } | Should Be $true
+        }
+        It 'new ids have the expected shape' {
+            (New-RestorePointId) -match '^[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$' | Should Be $true
+        }
+        It 'an empty or single list is still a list' {
+            @(Get-GpuVMRestorePointList -State @{}).Count | Should Be 0
+            @(Get-GpuVMRestorePointList -State @{ restorePoints = @(@{ id = 'x' }) }).Count | Should Be 1
+        }
+    }
+
+    Describe 'Disposable machines' {
+        It 'a machine without the mark is never disposable' {
+            Test-GpuVMDisposableDone -State @{ name = 'a' } -VMState 'Off' | Should Be $false
+            Test-GpuVMDisposableDone -State @{ disposable = $true } -VMState 'Off' | Should Be $false
+        }
+        It 'a running disposable machine is kept' {
+            Test-GpuVMDisposableDone -State @{ disposable = @{ createdAt = '2020-01-01T00:00:00Z'; startedAt = '2020-01-01T00:01:00Z' } } -VMState 'Running' | Should Be $false
+        }
+        It 'off after it ran, it goes' {
+            Test-GpuVMDisposableDone -State @{ disposable = @{ createdAt = (Get-Date).ToString('o'); startedAt = (Get-Date).ToString('o') } } -VMState 'Off' | Should Be $true
+        }
+        It 'never started: kept during the grace period, then it goes' {
+            Test-GpuVMDisposableDone -State @{ disposable = @{ createdAt = (Get-Date).ToString('o'); startedAt = $null } } -VMState 'Off' | Should Be $false
+            Test-GpuVMDisposableDone -State @{ disposable = @{ createdAt = (Get-Date).AddHours(-1).ToString('o'); startedAt = $null } } -VMState 'Off' | Should Be $true
+        }
+    }
+
+    Describe 'Export manifest' {
+        $good = [ordered]@{ format = 1; kind = 'gpuvm-machine'; name = 'win10'; edition = 'Windows 10 Pro'; user = 'gpuvm'
+            installedApps = @('vlc', 'steam'); disk = @{ bytes = 1024; sha256 = ('a' * 64) } }
+        It 'reads a valid manifest' {
+            $m = Read-TransferManifest -Text ($good | ConvertTo-Json -Depth 5)
+            $m['name'] | Should Be 'win10'
+            ($m['installedApps'] -join ',') | Should Be 'vlc,steam'
+            $m['disk']['bytes'] | Should Be 1024
+        }
+        It 'drops values that are not what they claim' {
+            $bad = Merge-Hashtable -Base $good -Override @{ name = '..\..\Windows'; user = 'a b;c'; installedApps = @('ok', '../x', @{ a = 1 }) }
+            $m = Read-TransferManifest -Text ($bad | ConvertTo-Json -Depth 5)
+            $m['name'] | Should Be $null
+            $m['user'] | Should Be $null
+            ($m['installedApps'] -join ',') | Should Be 'ok'
+        }
+        It 'refuses files that are not GpuVM machines or lack the fingerprint' {
+            Test-Throws { Read-TransferManifest -Text 'not json' } | Should Be $true
+            Test-Throws { Read-TransferManifest -Text '{"kind":"other","format":1}' } | Should Be $true
+            Test-Throws { Read-TransferManifest -Text ((Merge-Hashtable -Base $good -Override @{ disk = @{ bytes = 1; sha256 = 'xyz' } }) | ConvertTo-Json -Depth 5) } | Should Be $true
+        }
+        It 'refuses a newer format' {
+            Test-Throws { Read-TransferManifest -Text ((Merge-Hashtable -Base $good -Override @{ format = 99 }) | ConvertTo-Json -Depth 5) } | Should Be $true
+        }
+        It 'a new manifest carries no secrets' {
+            $state = [ordered]@{ name = 'w'; edition = 'e'; profile = 'balanced'; guest = @{ user = 'gpuvm'; password = 'BLOB' }
+                streaming = @{ password = 'BLOB2'; pairedClient = 'x' }; config = @{ guest = @{ cleanup = 'none' } }; gpu = @{ driverVersion = '1.2' } }
+            $text = New-TransferManifest -State $state -SizeBytes 10 | ConvertTo-Json -Depth 5
+            $text -match 'BLOB|pairedClient|password' | Should Be $false
+        }
+    }
+}

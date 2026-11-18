@@ -1,0 +1,32 @@
+# Disposable machines: a copy of a template (a differencing disk, ready in seconds) that is deleted with its disk
+# once it has been on and is off again. The mark lives in its gpuvm.json, which only administrators can write (the
+# VMs' folder is restricted), and it can only be set when the VM is made: an existing machine can never be turned
+# into a disposable one, so the cleanup never deletes a machine someone meant to keep.
+
+# Grace period for a disposable machine that never started (creation interrupted, not enough memory): after it,
+# the cleanup deletes it too.
+$script:DisposableGraceMinutes = 30
+
+function Test-GpuVMDisposable {
+    param([System.Collections.IDictionary]$State)
+    [bool]($State -and $State.Contains('disposable') -and $State['disposable'] -is [System.Collections.IDictionary])
+}
+
+# Remembered when it starts: from then on, being off means it was used and closed.
+function Set-GpuVMDisposableStarted {
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$State)
+    if (-not (Test-GpuVMDisposable -State $State) -or $State['disposable']['startedAt']) { return }
+    $State['disposable']['startedAt'] = (Get-Date).ToString('o')
+    Save-GpuVMState $State
+}
+
+# Whether the cleanup deletes this disposable machine now.
+function Test-GpuVMDisposableDone {
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$State, [string]$VMState)
+    if (-not (Test-GpuVMDisposable -State $State)) { return $false }
+    if ($VMState -and $VMState -ne 'Off') { return $false }
+    if ($State['disposable']['startedAt']) { return $true }
+    $created = [datetime]::MinValue
+    if (-not [datetime]::TryParse([string]$State['disposable']['createdAt'], [ref]$created)) { return $true }
+    ((Get-Date) - $created).TotalMinutes -ge $script:DisposableGraceMinutes
+}
