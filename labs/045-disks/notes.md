@@ -69,7 +69,24 @@ Checks:
 
 **Disposable copy refused by the disk-room check.** It reported 10 GB available: 127 GB free, minus 97 GB "promised", minus the 20 GB margin. The promised space is what every VM's disk may still grow into, including lab045-real's own 48 GB. A copy of a 64 GB template asks for the full 64 GB. This is GpuVM's existing worst-case rule, the same for every copy of a template. Part 2 exports lab045-real and removes it first.
 
+### Disposable machine on a real VM (`real-vm-3.ps1`, 10:15, after the person chose option B: a disposable reserves 20 GB)
+| Step | Result |
+|---|---|
+| Disk room before | 144.6 GB free, 49 promised (win-gpu), 75 available |
+| Create + start a disposable copy of lab045-tpl | 10.5 s |
+| Disk room with it on | promised 69 GB (+20, not +64), 55 available |
+| First open (new Sunshine identity, the viewer pairs again) | 55.1 s |
+| Second open | 7.7 s |
+| Export it (template + copy merged, 15.47 GB) | 34 s, 14.44 GB file |
+| Sweep after shutdown (VM and folder deleted) | 0.2 s |
+
+- The check "a running disposable is not swept" read 1 instead of 0, but nothing had been deleted (step log): `Remove-GpuVMDisposable` returned an empty list wrapped in a list. The app would have shown a deletion that never happened. Fixed: it returns one name per deleted machine.
+- Re-pairing a disposable or imported machine costs about 47 s more than a warm open (55 s against 7.7 s): its new Sunshine identity asks for a new pairing. Reusing a pre-paired identity would save that, but two machines running with the same identity break pairing and streaming. Kept as is: one identity per machine.
+
 ### Export/import
+- Real machines: lab045-real (16.0 GB disk) gives a 14.66 GB file in 36.6 s; a disposable machine (template + copy, 15.47 GB) gives 14.44 GB in 34 s.
+- Import on this PC is held back by the full-size disk-room rule: 130 GB free - 49 promised - 20 margin = 61 < 64. With the export file on C: and a second test machine reserving 64 GB, no import fits. It runs once front 2's lab045-win2 is gone.
+- A file whose disk is under 64 GB (the offline test VM) failed the profiles' 64 GB minimum. The imported disk now grows to 64 GB on setup.
 - Offline VM (`transfer-offline.ps1`, first run): a 11.25 GB disk becomes a 7.48 GB file with `Fastest` compression, in 159 s. The manifest has no DPAPI blobs or paths. That run stopped at the import (a local `$name` overwrote `-Name`); fixed.
 - (pending: part 2 on the real VM, and the offline import checks)
 
