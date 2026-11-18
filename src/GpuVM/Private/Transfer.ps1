@@ -245,7 +245,8 @@ function Send-TransferChunk {
     param([hashtable]$Pipe)
     if ($Pipe.Fill -eq 0) { return }
     if (Test-Path -LiteralPath $Pipe.Marker) { throw [OperationCanceledException]::new('Envío cancelado.') }
-    $piece = if ($Pipe.Fill -eq $Pipe.Buffer.Length) { $Pipe.Buffer } else { $b = [byte[]]::new($Pipe.Fill); [Array]::Copy($Pipe.Buffer, $b, $Pipe.Fill); $b }
+    # Assigned in each branch: "$x = if (...) { $array }" unrolls the array into loose objects (4 million of them).
+    if ($Pipe.Fill -eq $Pipe.Buffer.Length) { $piece = $Pipe.Buffer } else { $piece = [byte[]]::new($Pipe.Fill); [Array]::Copy($Pipe.Buffer, $piece, $Pipe.Fill) }
     Send-GuestBytes -Session $Pipe.Session -Id $Pipe.Id -Bytes $piece
     $Pipe.Fill = 0
     $Pipe.Sent += $piece.Length
@@ -256,6 +257,8 @@ function Send-TransferChunk {
 }
 function Write-TransferProgress {
     param([int]$Percent, [int64]$Sent, [int64]$Total)
+    # The stream also carries tar headers and padding: never more than the files themselves.
+    $Sent = [math]::Min($Sent, $Total)
     $unit = if ($Total -ge 1GB) { 1GB, 'GB' } else { 1MB, 'MB' }
     $fmt = { param($n) [math]::Round($n / $unit[0], 1).ToString([cultureinfo]::InvariantCulture) }
     Write-Step "Enviando $Percent % · $(& $fmt $Sent) de $(& $fmt $Total) $($unit[1])"
@@ -338,7 +341,8 @@ function Copy-GuestFileToPipe {
             }
             finally { $s.Dispose() }
         }
-        $bytes = @($bytes)[-1]
+        # A byte[] comes back as one object; @($bytes)[-1] would unroll it and keep its last byte.
+        if ($bytes -isnot [byte[]] -and $bytes -is [Array]) { $bytes = $bytes[-1] }
         if ($bytes -isnot [byte[]] -or $bytes.Length -ne $want) { throw "$($Entry.Rel) cambió mientras se enviaba; vuelve a intentarlo." }
         Write-TransferBytes -Pipe $Pipe -Bytes $bytes
         $offset += $want
@@ -390,7 +394,7 @@ function Copy-TransferBigFiles {
                         if ($state.error -or (Test-Path -LiteralPath $stop)) { break }
                         $want = [int][math]::Min($size, $entry.Size - $at)
                         if ($src) {
-                            $bytes = @(Invoke-Command -Session $src -ErrorAction Stop -ArgumentList $entry.Full, $at, $want -ScriptBlock {
+                            $bytes = (Invoke-Command -Session $src -ErrorAction Stop -ArgumentList $entry.Full, $at, $want -ScriptBlock {
                                 param($path, [int64]$from, [int]$n)
                                 $s = [IO.File]::Open($path, 'Open', 'Read', 'ReadWrite')
                                 try {
@@ -401,13 +405,15 @@ function Copy-TransferBigFiles {
                                     , $b
                                 }
                                 finally { $s.Dispose() }
-                            })[-1]
+                            })
+                            # One byte[] back (not wrapped in @(): that would unroll it into its bytes).
+                            if ($bytes -isnot [byte[]] -and $bytes -is [Array]) { $bytes = $bytes[-1] }
                         }
                         else {
                             $null = $local.Seek($at, 'Begin')
                             $got = 0
                             while ($got -lt $want -and ($r = $local.Read($buf, $got, $want - $got)) -gt 0) { $got += $r }
-                            $bytes = if ($got -eq $buf.Length) { $buf } else { $c = [byte[]]::new($got); [Array]::Copy($buf, $c, $got); $c }
+                            if ($got -eq $buf.Length) { $bytes = $buf } else { $bytes = [byte[]]::new($got); [Array]::Copy($buf, $bytes, $got) }
                         }
                         # Exactly the size the file had when it was measured: more or less means it changed (or the
                         # source VM lies), and the copy stops.
@@ -427,7 +433,10 @@ function Copy-TransferBigFiles {
                 }
             }
             try {
-                while (-not ($job | Wait-Job -Timeout 0.5)) {
+                # Wait-Job's timeout is whole seconds (0.5 became 0 and this loop spun, flooding the app with progress):
+                # the job's own state, checked twice a second.
+                while ($job.State -in 'NotStarted', 'Running') {
+                    Start-Sleep -Milliseconds 500
                     Write-TransferProgress -Percent ([math]::Min(99, [math]::Floor(100 * ($Pipe.Sent + $state.bytes) / $Pipe.Total))) -Sent ($Pipe.Sent + $state.bytes) -Total $Pipe.Total
                 }
             }

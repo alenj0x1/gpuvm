@@ -176,7 +176,8 @@ export default {
   "Copia desconocida.": "Unknown copy.",
   "Esa copia ya no está.": "That copy is no longer there.",
   "No se pudo copiar.": "It couldn't be copied.",
-  "La VM no respondió a tiempo; vuelve a intentarlo.": "The VM didn't answer in time; try again.",
+  // GpuVM service (app/host): it checks the paths of this PC as the user, and relays PowerShell
+  "PowerShell dejó de responder.": "PowerShell stopped responding.",  "La VM no respondió a tiempo; vuelve a intentarlo.": "The VM didn't answer in time; try again.",
   "La contraseña no es correcta para la cuenta de la VM.": "The password isn't right for the VM's account.",
   "El aviso ya cambió o se cerró. Revisa el nuevo antes de responder.": "The prompt changed or closed. Check the new one before answering.",
 
@@ -516,4 +517,10 @@ export const patterns: [RegExp, string][] = [
   [/^Se omitieron (\d+) enlaces \(accesos a otras carpetas\)\.$/, "$1 links (shortcuts to other folders) were skipped."],
   [/^No hay una sesión iniciada en la pantalla de '(.+)'\.$/, "Nobody is signed in on the screen of '$1'."],
   [/^'(.+)' no respondió a tiempo; vuelve a intentarlo\.$/, "'$1' didn't answer in time; try again."],
+  [/^Tu usuario no tiene acceso a (.+)\.$/, "Your user has no access to $1."],
+  [/^(.+) pasa por un enlace a otra carpeta; elige la ubicación real\.$/, "$1 goes through a link to another folder; choose the real location."],
+  [/^(.+) no es una ruta de un disco de este equipo\.$/, "$1 isn't a path on a disk of this PC."],
+  [/^No se pudo abrir (.+) \(error (\d+)\)\.$/, "$1 couldn't be opened (error $2)."],
+  // Last: the specific "No existe …" messages above go first.
+  [/^No existe (.+)\.$/, "$1 doesn't exist."],
 ];
