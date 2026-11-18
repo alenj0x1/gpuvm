@@ -64,6 +64,15 @@
         'Import-GpuVMSharedDisk'
         'Remove-GpuVMSharedDisk'
         'Get-GpuVMHome'
+        'Get-GpuVMRestorePoint'
+        'New-GpuVMRestorePoint'
+        'Restore-GpuVMRestorePoint'
+        'Remove-GpuVMRestorePoint'
+        'Export-GpuVM'
+        'Import-GpuVM'
+        'Get-GpuVMImportInfo'
+        'Remove-GpuVMDisposable'
+        'Set-GpuVMDisposable'
     )
     CmdletsToExport   = @()
     AliasesToExport   = @()

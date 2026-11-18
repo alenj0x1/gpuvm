@@ -332,6 +332,8 @@ function Rename-HyperVGpuPVM {
             $target = Get-RenamedVMPath -Path $State[$key] @paths
             if ($target) { $renamed[$key] = $target }
         }
+        # Restore points are differencing disks that name their parent by path: point them at the new folder.
+        if ($moveFolder) { Repair-GpuVMDiskChain -State $renamed -From $oldDir -To $newDir -Name $Name -NewName $NewName }
         $done.Add(@{ step = 'state'; path = $renamed['statePath']; text = (Get-Content -Raw -LiteralPath $renamed['statePath']) })
         Save-GpuVMState $renamed
     }

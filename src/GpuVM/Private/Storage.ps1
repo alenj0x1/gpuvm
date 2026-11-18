@@ -29,7 +29,10 @@ function Get-VMDiskUsage {
             [pscustomobject]@{
                 VM = $vm.Name; Path = $drive.Path; Drive = (Split-Path $drive.Path -Qualifier).ToUpperInvariant()
                 SizeGB = [math]::Round($vhd.Size / 1GB, 1); FileGB = [math]::Round($vhd.FileSize / 1GB, 1)
-                GrowthGB = [math]::Max(0, [math]::Round(($vhd.Size - $vhd.FileSize) / 1GB, 1)); Type = [string]$vhd.VhdType
+                # A disposable machine is promised only its fixed reserve (it is shut down before the drive fills up).
+                GrowthGB = if (Test-GpuVMDisposableByName -Name $vm.Name) { [math]::Max(0, [math]::Round($script:DisposableReserveGB - $vhd.FileSize / 1GB, 1)) }
+                    else { [math]::Max(0, [math]::Round(($vhd.Size - $vhd.FileSize) / 1GB, 1)) }
+                Type = [string]$vhd.VhdType
             }
         }
     }

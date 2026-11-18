@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  IconApps, IconBolt, IconBrandWindows, IconCheck, IconCpu, IconDatabase, IconDeviceFloppy, IconDisc, IconLayoutGrid, IconLoader2, IconPalette, IconPlus, IconSparkles, IconTag, IconTemplate, IconTopologyStar3, IconUser, IconX,
+  IconApps, IconBolt, IconBrandWindows, IconCheck, IconCpu, IconDatabase, IconDeviceFloppy, IconDisc, IconFileImport, IconFlask, IconLayoutGrid, IconLoader2, IconPalette, IconPlus, IconSparkles, IconTag, IconTemplate, IconTopologyStar3, IconUser, IconX,
 } from "@tabler/icons-react";
-import type { AppInfo, CleanupLevelId, HostInfo, IsoFile, ProfileInfo, ProfileSettings, TemplateInfo, VmOverview } from "./types";
-import { api, pickIso, vmNameError } from "./api";
+import type { AppInfo, CleanupLevelId, HostInfo, ImportInfo, IsoFile, ProfileInfo, ProfileSettings, TemplateInfo, VmOverview } from "./types";
+import { api, pickIso, pickMachineFile, vmNameError } from "./api";
 import { PatternButton } from "./machineIcon";
 import { CheckMark, Segmented, Slider, humanError } from "./ui";
 import { AppPicker, IsoPicker, useCleanupLevels, profileLabel } from "./pickers";
@@ -15,7 +15,7 @@ import { draftSource, saveDecor, useSource, type DecorSource } from "./decor/sto
 import { useSpaces } from "./spaces";
 import { ambientInfo } from "./ambient";
 import { Dropdown as SpaceDropdown } from "./ui";
-import { t, tn, translateModule } from "./i18n";
+import { locale, t, tn, translateModule } from "./i18n";
 
 export interface Resources { cpu: number; memoryGB: number; gpuPercent: number; diskGB: number }
 
@@ -29,7 +29,7 @@ interface Props {
   /** The space it goes into at first (the one Home shows). */
   space?: string | null;
   onCreate: (args: {
-    name: string; iso: string | null; template: string | null; profile: string; user: string; password: string;
+    name: string; iso: string | null; template: string | null; file: string | null; disposable: boolean; profile: string; user: string; password: string;
     apps: string[]; cleanup: CleanupLevelId; resources: Resources | null; space: string;
   }) => void;
   onClose: () => void;
@@ -63,9 +63,18 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
   const [repeat, setRepeat] = useState("");
   // From a template: Windows, its apps, cleanup and account come from it, so only name, profile and resources are asked.
   const [templates, setTemplates] = useState<TemplateInfo[]>([]);
-  const [source, setSource] = useState<"iso" | "template">(initialTemplate ? "template" : "iso");
+  const [source, setSource] = useState<"iso" | "template" | "file">(initialTemplate ? "template" : "iso");
   const [template, setTemplate] = useState<string | null>(initialTemplate ?? null);
+  // From a file exported with GpuVM: Windows, apps and account come from it; only its password is asked.
+  const [file, setFile] = useState<ImportInfo | null>(null);
+  // A copy of the template that is deleted with its disk once it is turned off.
+  const [disposable, setDisposable] = useState(false);
+  const [fileError, setFileError] = useState("");
+  const [reading, setReading] = useState(false);
+  const [nameTouched, setNameTouched] = useState(false);
   const fromTemplate = source === "template";
+  const fromFile = source === "file";
+  const prebuilt = fromTemplate || fromFile;
   const [dirty, setDirty] = useState(false);
   const [, repaint] = useState(0);
   const [saving, setSaving] = useState<{ name: string; busy: boolean; error: string } | null>(null);
@@ -108,7 +117,7 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
     { id: "name", label: t("Nombre y espacio"), icon: <IconTag size={16} /> },
     { id: "start", label: t("Punto de partida"), icon: <IconLayoutGrid size={16} /> },
     { id: "resources", label: t("Recursos"), icon: <IconCpu size={16} /> },
-    ...(fromTemplate ? [] : [
+    ...(prebuilt ? [] : [
       { id: "windows" as Section, label: t("Windows y cuenta"), icon: <IconBrandWindows size={16} /> },
       { id: "apps" as Section, label: t("Apps"), icon: <IconApps size={16} /> },
       { id: "cleanup" as Section, label: t("Limpieza"), icon: <IconSparkles size={16} /> },
@@ -132,7 +141,7 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
     const grow = new ResizeObserver(spy);
     if (body.firstElementChild) Array.from(body.children).forEach((c) => grow.observe(c));
     return () => { body.removeEventListener("scroll", spy); grow.disconnect(); };
-  }, [busy, fromTemplate]);
+  }, [busy, prebuilt]);
   const goTo = (id: Section) => {
     const body = bodyRef.current, el = refs.current[id];
     if (body && el) body.scrollTo({ top: body.scrollTop + el.getBoundingClientRect().top - body.getBoundingClientRect().top - 8, behavior: "smooth" });
@@ -154,11 +163,12 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
   const repeatError = repeat && password !== repeat && (blurred.repeat || repeat.length >= password.length) ? t("Las contraseñas no coinciden") : "";
   const complete = !!name && !nameError && !!res && (fromTemplate
     ? !!template
+    : fromFile ? !!file && !!password
     : !!iso && !userError && password.length >= MIN_PASSWORD && password === repeat);
 
   const base = chosen?.Settings;
   const changed = !!base && !!res && (res.cpu !== base.cpu || res.memoryGB !== base.memoryGB || res.gpuPercent !== base.gpuPercent || res.diskGB !== base.diskGB
-    || (!fromTemplate && (cleanup !== (base.cleanup ?? "none") || apps.join(",") !== (base.apps ?? []).join(","))));
+    || (!prebuilt && (cleanup !== (base.cleanup ?? "none") || apps.join(",") !== (base.apps ?? []).join(","))));
   const settings: ProfileSettings | null = base && res ? { ...base, ...res, apps, cleanup, iso: iso ?? base.iso } : null;
 
   const submit = (e?: React.FormEvent) => {
@@ -167,8 +177,9 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
     const resources = changed ? res : null;
     const decor = draft.get();
     if (decor.color || decor.led || decor.stickers.length || decor.figures.length) saveDecor(name, decor);
-    if (fromTemplate) onCreate({ name, iso: null, template, profile, user: "", password: "", apps: [], cleanup: "none", resources, space: space.id });
-    else onCreate({ name, iso, template: null, profile, user, password, apps, cleanup, resources, space: space.id });
+    if (fromTemplate) onCreate({ name, iso: null, template, file: null, disposable, profile, user: "", password: "", apps: [], cleanup: "none", resources, space: space.id });
+    else if (fromFile) onCreate({ name, iso: null, template: null, file: file!.path, disposable: false, profile, user: file!.user ?? user, password, apps: [], cleanup: "none", resources, space: space.id });
+    else onCreate({ name, iso, template: null, file: null, disposable: false, profile, user, password, apps, cleanup, resources, space: space.id });
   };
   const saveProfile = async () => {
     if (!saving || !settings) return;
@@ -182,6 +193,21 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
       setProfile(n);
       setSaving(null);
     } catch (err) { setSaving({ ...saving, busy: false, error: humanError(err) }); }
+  };
+
+  // The file is read (its manifest only) when it is picked: a file that isn't a machine says so right there.
+  const pickFile = async () => {
+    const path = await pickMachineFile();
+    if (!path) return;
+    setReading(true); setFileError("");
+    try {
+      const info = await api.importInfo(path);
+      setFile(info);
+      if (info.user) setUser(info.user);
+      if (!nameTouched) setName(info.freeName);
+      touch();
+    } catch (err) { setFile(null); setFileError(humanError(err)); }
+    finally { setReading(false); }
   };
 
   const browse = async () => {
@@ -238,7 +264,7 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
                 <div className="create-account">
                   <div className="field">
                     <label className="field-top" htmlFor="vm-name"><span>{t("Nombre")}</span></label>
-                    <input id="vm-name" ref={nameRef} className="text-input" aria-label={t("Nombre")} value={name} onChange={(e) => { setName(e.target.value); touch(); }} />
+                    <input id="vm-name" ref={nameRef} className="text-input" aria-label={t("Nombre")} value={name} onChange={(e) => { setName(e.target.value); setNameTouched(true); touch(); }} />
                     {nameError && <span className="error-text">{nameError}</span>}
                   </div>
                   <div className="field">
@@ -251,13 +277,44 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
 
               {section("start", t("Punto de partida"), t("Un perfil llena todo lo de abajo; puedes cambiar lo que quieras."), (
                 <>
-                  {templates.length > 0 && (
-                    <div className="segment-row">
-                      <Segmented value={source} onChange={(v) => { setSource(v); touch(); }} options={[
-                        { value: "iso", label: <><IconDisc size={15} />{t("Instalar Windows")}</> },
-                        { value: "template", label: <><IconTemplate size={15} />{t("Desde plantilla")}</> },
-                      ]} />
-                    </div>
+                  <div className="segment-row">
+                    <Segmented value={source} onChange={(v) => { setSource(v); touch(); }} options={[
+                      { value: "iso", label: <><IconDisc size={15} />{t("Instalar Windows")}</> },
+                      ...(templates.length > 0 ? [{ value: "template" as const, label: <><IconTemplate size={15} />{t("Desde plantilla")}</> }] : []),
+                      { value: "file", label: <><IconFileImport size={15} />{t("Desde archivo")}</> },
+                    ]} />
+                  </div>
+                  {fromFile && (
+                    <>
+                      <div className="choice-list">
+                        <button type="button" className={`choice ${file ? "on" : ""}`} onClick={pickFile} disabled={reading}>
+                          <span className="check">{reading ? <IconLoader2 size={14} className="spin" /> : file ? <CheckMark /> : <IconFileImport size={15} />}</span>
+                          <span className="grow">
+                            <span className="title">{file ? file.path.split("\\").pop() : t("Elegir archivo")}</span>
+                            <span className="desc">{file
+                              ? [file.edition, tn(file.installedApps.length, "{n} app", "{n} apps"), `${file.diskGB.toLocaleString(locale())} GB`,
+                                file.exportedAt ? t("Exportada el {date}", { date: new Date(file.exportedAt).toLocaleDateString(locale()) }) : null].filter(Boolean).join(" · ")
+                              : t("Una máquina exportada con GpuVM (.gpuvm)")}</span>
+                          </span>
+                        </button>
+                      </div>
+                      {fileError && <span className="error-text">{fileError}</span>}
+                      {file && file.diskGB + 20 > file.freeGB && (
+                        <span className="error-text">{t("Faltan {gb} GB libres para importarla", { gb: Math.ceil(file.diskGB + 20 - file.freeGB) })}</span>
+                      )}
+                      {file && (
+                        <div className="create-account">
+                          <div className="field">
+                            <label className="field-top" htmlFor="vm-user-file"><span>{t("Usuario")}</span></label>
+                            <input id="vm-user-file" className="text-input" value={file.user ?? user} readOnly />
+                          </div>
+                          <div className="field">
+                            <label className="field-top" htmlFor="vm-pass-file"><span>{t("Contraseña de Windows")}</span></label>
+                            <input id="vm-pass-file" className="text-input" type="password" value={password} onChange={(e) => { setPassword(e.target.value); touch(); }} />
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                   {fromTemplate && (
                     <div className="choice-list" role="radiogroup" aria-label={t("Plantilla")}>
@@ -271,6 +328,14 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
                           </span>
                         </button>
                       ))}
+                      <button type="button" role="checkbox" aria-checked={disposable} className={`choice ${disposable ? "on" : ""}`}
+                        onClick={() => { setDisposable((d) => !d); touch(); }}>
+                        <span className="check">{disposable ? <CheckMark /> : <IconFlask size={15} />}</span>
+                        <span className="grow">
+                          <span className="title">{t("Desechable")}</span>
+                          <span className="desc">{t("Se borra con su disco al apagarla. Para probar algo sin tocar tus máquinas.")}</span>
+                        </span>
+                      </button>
                     </div>
                   )}
                   <div className="create-profiles" role="radiogroup" aria-label={t("Perfil")}>
@@ -298,7 +363,7 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
                 </div>
               ))}
 
-              {!fromTemplate && section("windows", t("Windows y cuenta"), t("La imagen que se instala y la cuenta con la que entras."), (
+              {!prebuilt && section("windows", t("Windows y cuenta"), t("La imagen que se instala y la cuenta con la que entras."), (
                 <>
                   <div className="field">
                     <div className="field-top"><span>{t("Imagen de Windows")}</span></div>
@@ -324,11 +389,11 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
                 </>
               ))}
 
-              {!fromTemplate && catalog.length > 0 && section("apps", t("Apps"), t("Se instalan desde su fuente oficial al abrirla por primera vez."), (
+              {!prebuilt && catalog.length > 0 && section("apps", t("Apps"), t("Se instalan desde su fuente oficial al abrirla por primera vez."), (
                 <AppPicker apps={catalog} value={apps} onChange={(v) => { setApps(v); touch(); }} scroll={false} />
               ))}
 
-              {!fromTemplate && cleanupLevels.length > 0 && section("cleanup", t("Limpieza de Windows"), t("Cada nivel incluye lo de los anteriores. La seguridad no se toca."), (
+              {!prebuilt && cleanupLevels.length > 0 && section("cleanup", t("Limpieza de Windows"), t("Cada nivel incluye lo de los anteriores. La seguridad no se toca."), (
                 <>
                 <div className="level-list create-levels" role="radiogroup" aria-label={t("Limpieza")}>
                   {cleanupLevels.map((l) => (
@@ -378,6 +443,8 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
               <span className="create-summary-line"><IconLayoutGrid size={14} /><span>{changed ? t("{profile}, con cambios", { profile: profileLabel(profile) }) : profileLabel(profile)}</span></span>
               {fromTemplate ? (
                 <span className="create-summary-line"><IconTemplate size={14} /><span>{t("Plantilla {name}", { name: template ?? "—" })}</span></span>
+              ) : fromFile ? (
+                <span className="create-summary-line cut" title={file?.path}><IconFileImport size={14} /><span>{file ? file.path.split("\\").pop() : t("Sin archivo")}</span></span>
               ) : (
                 <>
                   <span className="create-summary-line cut" title={isoName}><IconDisc size={14} /><span>{isoName ?? t("Sin imagen de Windows")}</span></span>

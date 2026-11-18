@@ -130,6 +130,26 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     return () => { alive = false; clearTimeout(timer); document.removeEventListener("visibilitychange", wake); };
   }, [refresh]);
 
+  // Disposable machines are deleted once they ran and are off: when one turns off here, and at start for the ones
+  // that turned off while the app was closed (the module decides which, and never touches a running one).
+  const disposableOff = (vms ?? []).filter((v) => v.disposable && v.state === "Off").map((v) => v.name).join("|");
+  useEffect(() => {
+    api.sweepDisposable().then((gone) => {
+      if (!gone.length) return;
+      refresh();
+      push("ok", gone.length === 1 ? t("{name} se borró al apagarse.", { name: gone[0] }) : t("{n} máquinas desechables se borraron al apagarse.", { n: gone.length }));
+    }).catch(() => {});
+  }, [disposableOff]);
+
+  // A running disposable machine only reserves a fixed part of the drive: every 30 s the module checks the drive and
+  // shuts it down if it got down to the host's margin.
+  const disposableOn = (vms ?? []).some((v) => v.disposable && v.state === "Running");
+  useEffect(() => {
+    if (!disposableOn) return;
+    const id = setInterval(() => { api.sweepDisposable().catch(() => {}); }, 30000);
+    return () => clearInterval(id);
+  }, [disposableOn]);
+
   useEffect(() => { api.hostInfo().then((h) => setHost(h[0] ?? null)).catch(() => {}); }, []);
   useEffect(() => { if (!embedded) window.history.replaceState(null, "", selected ? `#${encodeURIComponent(selected)}` : " "); }, [selected, embedded]);
   useEffect(() => {
@@ -573,21 +593,23 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
         <CreateDialog host={host} existing={vms ?? []} job={createJob} error={createError} template={createTemplate}
           space={createSpace ?? (selected === HOME ? shownSpaceId : current ? null : shownSpaceId)}
           onClose={() => { setCreating(false); setCreateTemplate(null); }}
-          onCreate={({ name, iso, template, profile, user, password, apps, cleanup, resources, space }) => {
+          onCreate={({ name, iso, template, file, disposable, profile, user, password, apps, cleanup, resources, space }) => {
             setCreateError(null);
             // The new machine goes into the space picked for it, even before it exists in the list.
             if (space) moveToSpace(name, space);
             // Resources changed in the dialog go as an override of the chosen profile, like Options does.
             const hw = resources ? { vm: { cpu: { count: resources.cpu }, memoryGB: resources.memoryGB, disk: { sizeGB: resources.diskGB } }, gpu: { allocationPercent: resources.gpuPercent } } : {};
-            const args = template
-              ? { Name: name, Template: template, Profile: profile, ...(resources ? { Override: hw } : {}), Start: true }
+            const args = file
+              ? { Path: file, Name: name, Profile: profile, ...(resources ? { Override: hw } : {}), Credential: { user, password }, Start: true }
+              : template
+              ? { Name: name, Template: template, Profile: profile, ...(resources ? { Override: hw } : {}), Start: true, ...(disposable ? { Disposable: true } : {}) }
               : { Name: name, IsoPath: iso, Profile: profile, Override: { ...hw, guest: { apps, cleanup } }, Credential: { user, password }, Start: true };
-            startJob(NEW_VM, "New-GpuVM", args, () => {
+            startJob(NEW_VM, file ? "Import-GpuVM" : "New-GpuVM", args, () => {
               setCreating(false);
               setCreateTemplate(null);
               // Open the new machine once the list has it; before that, the route would fall back to Home.
               refresh().then(() => setSelected(name));
-              push("ok", template ? t("{name} está lista.", { name }) : t("{name} está lista. Windows termina de configurarse solo en unos minutos.", { name }));
+              push("ok", template || file ? t("{name} está lista.", { name }) : t("{name} está lista. Windows termina de configurarse solo en unos minutos.", { name }));
             });
           }} />
       )}

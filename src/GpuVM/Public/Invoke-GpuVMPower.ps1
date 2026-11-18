@@ -10,7 +10,12 @@ function Invoke-GpuVMPower {
     )
     Assert-Admin
     switch ($Action) {
-        'Start' { Assert-VMCanStart -Name $Name; Start-VM -Name $Name }
+        'Start' {
+            Assert-VMCanStart -Name $Name; Start-VM -Name $Name
+            # A disposable machine counts as used from its first start: once off again, the cleanup deletes it.
+            $state = try { Get-GpuVMState -Name $Name } catch { $null }
+            if ($state) { Set-GpuVMDisposableStarted -State $state }
+        }
         'Shutdown' {
             # Windows installs its pending updates while it shuts down, which can take minutes: said, and remembered for
             # the next start (it finishes them then).

@@ -1,4 +1,4 @@
-import type { AppInfo, InstalledApp, BaseInfo, CleanupLevel, HomeInfo, SharedDiskInfo, TemplateInfo, DiskInfo, DisplayMode, HostInfo, IsoFile, JobEvent, ProfileInfo, ProfileSettings, StreamSettings, VmOverview, AdminPrompt, HostMonitor } from "./types";
+import type { AppInfo, InstalledApp, BaseInfo, CleanupLevel, HomeInfo, SharedDiskInfo, TemplateInfo, DiskInfo, DisplayMode, HostInfo, IsoFile, JobEvent, ProfileInfo, ProfileSettings, StreamSettings, VmOverview, AdminPrompt, HostMonitor, RestorePointList, ImportInfo } from "./types";
 import * as mock from "./mock";
 import { t } from "./i18n";
 
@@ -63,6 +63,12 @@ export const api = {
   removeBase: (key: string) => ps("Remove-GpuVMBase", { Key: key, Confirm: false }),
   addIso: (path: string) => ps("Add-GpuVMIso", { Path: path }),
   removeIso: (path: string) => ps("Remove-GpuVMIso", { Path: path }),
+  // Creating, going back to and deleting a point, exporting and importing run as jobs (startJob) so their steps show on the button.
+  restorePoints: (name: string) => ps<RestorePointList>("Get-GpuVMRestorePoint", { Name: name }).then((r) => r[0]),
+  /** Deletes the disposable machines that ran and are off, and their leftovers; returns the names deleted. */
+  sweepDisposable: () => ps<string>("Remove-GpuVMDisposable", { Confirm: false }),
+  importInfo: (path: string) => ps<ImportInfo>("Get-GpuVMImportInfo", { Path: path }).then((r) => r[0]),
+  keepDisposable: (name: string) => ps("Set-GpuVMDisposable", { Name: name, Keep: true }),
 };
 
 /** What is wrong with a new machine name, as New-GpuVM and Rename-GpuVM check it, or "" when it can be used.
@@ -149,6 +155,22 @@ export async function pickIso(): Promise<string | null> {
   if (!inTauri) return "D:\\ISOs\\Win11_24H2_Spanish_x64.iso";
   const { open } = await import("@tauri-apps/plugin-dialog");
   const file = await open({ multiple: false, filters: [{ name: t("Imagen de Windows"), extensions: ["iso"] }] });
+  return typeof file === "string" ? file : null;
+}
+
+/** Where to save a machine exported to one file (Windows' own save dialog, so the person picks the place). */
+export async function pickExportFile(name: string): Promise<string | null> {
+  if (!inTauri) return `C:\\Users\\Usuario\\Documents\\${name}.gpuvm`;
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  const file = await save({ defaultPath: `${name}.gpuvm`, filters: [{ name: t("Máquina de GpuVM"), extensions: ["gpuvm"] }] });
+  return typeof file === "string" ? file : null;
+}
+
+/** A machine file to import. */
+export async function pickMachineFile(): Promise<string | null> {
+  if (!inTauri) return "C:\\Users\\Usuario\\Documents\\win10.gpuvm";
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const file = await open({ multiple: false, filters: [{ name: t("Máquina de GpuVM"), extensions: ["gpuvm"] }] });
   return typeof file === "string" ? file : null;
 }
 

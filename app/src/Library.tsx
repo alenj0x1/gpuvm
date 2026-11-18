@@ -3,7 +3,7 @@ import { CLEANUP_REMOVED, MachineCube } from "./MachineCube";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  IconAdjustmentsHorizontal, IconCopyPlus, IconDatabase, IconDeviceFloppy, IconDisc, IconFolderDown, IconLoader2, IconPencil, IconPlus,
+  IconAdjustmentsHorizontal, IconCopyPlus, IconDatabase, IconDeviceFloppy, IconDisc, IconFlask, IconFolderDown, IconLoader2, IconPencil, IconPlus,
   IconRestore, IconStack2, IconTemplate, IconTrash, IconX,
 } from "@tabler/icons-react";
 import type { VmOverview, AppInfo, BaseInfo, DiskInfo, HostInfo, IsoFile, ProfileInfo, ProfileSettings, SharedDiskInfo, TemplateInfo } from "./types";
@@ -521,6 +521,19 @@ function Templates({ tabs, notify, onOpenVm, onCreate, startJob }: { tabs: React
   const cleanupLevels = useCleanupLevels();
   const load = useCallback(() => api.templates().then((t) => { cache.templates = t; setTemplates(t); }).catch((e) => { setTemplates([]); notify("error", humanError(e)); }), [notify]);
   useEffect(() => { load(); }, [load]);
+  // A throwaway copy in one click: named like the module would ("<template>-desechable", -2…), started, and opened.
+  const openDisposable = async (template: string) => {
+    try {
+      const taken = new Set((await api.overview()).map((v) => v.name.toLowerCase()));
+      const base = `${template.slice(0, 29)}-desechable`;
+      let name = base;
+      for (let i = 2; taken.has(name.toLowerCase()); i++) name = `${base.slice(0, 40 - `-${i}`.length)}-${i}`;
+      startJob(name, "New-GpuVM", { Name: name, Template: template, Disposable: true, Confirm: false }, () => {
+        onOpenVm(name);
+        startJob(name, "Connect-GpuVM", { Name: name });
+      });
+    } catch (e) { notify("error", humanError(e)); }
+  };
   const remove = async (name: string) => {
     try { await api.removeTemplate(name); setConfirm(null); load(); notify("ok", t("Plantilla {name} eliminada.", { name })); }
     catch (e) { notify("error", humanError(e)); }
@@ -546,6 +559,7 @@ function Templates({ tabs, notify, onOpenVm, onCreate, startJob }: { tabs: React
             </div>
             <div className="profile-actions">
               <button className="btn compact" onClick={() => onCreate(tpl.name)}><IconPlus size={15} />{t("Crear máquina")}</button>
+              <button className="btn ghost compact fold-label" onClick={() => openDisposable(tpl.name)} aria-label={t("Abrir desechable")} title={t("Una copia que se borra sola al apagarla")}><IconFlask size={15} /><span>{t("Abrir desechable")}</span></button>
               {tpl.usedBy.length === 1 && <button className="btn ghost compact" onClick={() => onOpenVm(tpl.usedBy[0])}>{t("Ver máquina")}</button>}
               {tpl.usedBy.length === 0 && (confirm === tpl.name
                 ? <button className="btn compact danger-fill profile-delete" onClick={() => remove(tpl.name)}><IconTrash size={15} />{t("Borrar {gb} GB", { gb: tpl.fileGB })}</button>

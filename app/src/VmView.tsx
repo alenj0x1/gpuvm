@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  IconAdjustments, IconBrandWindows, IconAlertTriangle, IconAppWindow, IconApps, IconArrowsMaximize, IconBolt, IconCheck, IconChevronRight, IconClipboardText, IconClock, IconCpu, IconDeviceDesktop, IconDeviceFloppy, IconDeviceGamepad2, IconDots, IconDownload, IconExternalLink, IconFolders, IconGauge, IconKey, IconLayoutBoard, IconLayoutGrid, IconLink, IconList, IconLoader2, IconNetwork, IconPalette, IconPencil, IconPlayerPause, IconPlayerPlay, IconPlayerTrackNext, IconPlugConnected, IconPlugOff, IconPlus, IconPointer, IconPower, IconRectangle, IconRefresh, IconRotate360, IconRefreshAlert, IconScreenShare, IconSearch, IconShieldCheck, IconSparkles, IconTemplate, IconTopologyStar3, IconTrash, IconWaveSine, IconWorld,
+  IconAdjustments, IconBrandWindows, IconAlertTriangle, IconAppWindow, IconApps, IconArrowsMaximize, IconBolt, IconCheck, IconChevronRight, IconClipboardText, IconClock, IconCpu, IconDeviceDesktop, IconDeviceFloppy, IconDeviceGamepad2, IconDots, IconDownload, IconExternalLink, IconFileExport, IconFolders, IconGauge, IconKey, IconLayoutBoard, IconLayoutGrid, IconLink, IconList, IconLoader2, IconNetwork, IconPalette, IconPencil, IconPlayerPause, IconPlayerPlay, IconPlayerTrackNext, IconPlugConnected, IconPlugOff, IconPlus, IconPointer, IconPower, IconRectangle, IconRefresh, IconRotate360, IconRefreshAlert, IconScreenShare, IconSearch, IconShieldCheck, IconSparkles, IconTemplate, IconTopologyStar3, IconTrash, IconWaveSine, IconWorld,
 } from "@tabler/icons-react";
 import type { AppInfo, CleanupLevelId, DiskBudget, SharedDiskInfo, DisplayMode, HostInfo, MouseMode, Sample, StreamSettings, VmOverview } from "./types";
 import { usePrefs } from "./prefs";
@@ -13,11 +13,12 @@ import { machineSource } from "./decor/store";
 import { moveToSpace, showSpace, spaceOf, useSpaceOf, useSpaces } from "./spaces";
 import { ambientInfo } from "./ambient";
 import { SpaceDialog } from "./SpaceDialog";
+import { RestorePoints } from "./RestorePoints";
 import { Scene, nextSceneStyle, sceneStyle } from "./Scene";
 import { CleanupFlow, CleanupItems, LEVEL_LOOK } from "./CleanupFlow";
 import { Sparkline, series } from "./Chart";
 import { CheckMark, Dropdown, Segmented, Slider, formatUptime, portalRoot, scrollToSection, stateText, useScrollFade } from "./ui";
-import { api, openConsole, vmNameError } from "./api";
+import { api, openConsole, pickExportFile, vmNameError } from "./api";
 import { locale, t, tn, translateModule } from "./i18n";
 
 export interface JobInfo {
@@ -221,6 +222,7 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
         <section className="vm-section" ref={(el) => { sectionRefs.current.machine = el; }}>
           <Options part="machine" vm={vm} host={host} busy={busy} startJob={startJob} run={run} onPreview={(r) => setPreview((p) => ({ ...p, ...r }))} />
           <SharedDisks vm={vm} busy={busy} startJob={startJob} />
+          <RestorePoints vm={vm} busy={busy} startJob={startJob} run={run} />
         </section>
       )}
       {tabs.includes("display") && (
@@ -724,6 +726,15 @@ function Header({ vm, vms = [], busy, variant, startJob, run, onRemoved, onRenam
             {!locked && vm.managed && (
               <button role="menuitem" onClick={() => { setMenu(false); setTemplating(true); }}>
                 <IconTemplate size={16} />{off ? t("Crear plantilla") : t("Apagar y crear plantilla")}
+              </button>
+            )}
+            {!locked && vm.managed && (
+              <button role="menuitem" onClick={async () => {
+                setMenu(false);
+                const path = await pickExportFile(vm.name);
+                if (path) startJob(vm.name, "Export-GpuVM", { Name: vm.name, Path: path, ShutdownIfRunning: true, Confirm: false });
+              }}>
+                <IconFileExport size={16} />{off ? t("Exportar a un archivo") : t("Apagar y exportar")}
               </button>
             )}
             {!locked && vm.managed && off && (

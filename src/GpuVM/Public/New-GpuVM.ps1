@@ -11,21 +11,30 @@ function New-GpuVM {
     #>
     [CmdletBinding(SupportsShouldProcess)]
     param(
-        [Parameter(Mandatory)][ValidatePattern('^[\w-]{1,40}$')][string]$Name,
+        [ValidatePattern('^[\w-]{1,40}$')][string]$Name,
         [string]$IsoPath,
         [string]$Profile = 'balanced',
         [hashtable]$Override,
         [string]$Edition,
         [pscredential]$Credential,
         [ValidatePattern('^[\w-]{1,40}$')][string]$Template,
-        [switch]$Start
+        [switch]$Start,
+        # A throwaway copy of -Template: it starts now and is deleted with its disk once it is turned off.
+        # Without -Name it is called "<template>-desechable" (or -2, -3...).
+        [switch]$Disposable
     )
     Assert-Admin
+    if ($Disposable) {
+        if (-not $Template) { throw 'Una máquina desechable se crea desde una plantilla (-Template).' }
+        if (-not $Name) { $Name = Get-FreeGpuVMName -Base ($Template.Substring(0, [math]::Min($Template.Length, 29)) + '-desechable') }
+        $Start = $true
+    }
+    if (-not $Name) { throw 'Elige un nombre para la máquina (-Name).' }
     Assert-GpuVMNameFree -Name $Name
     if ($Template) {
         if ($IsoPath -or $Edition -or $Credential) { throw 'Con -Template, Windows, su edición y su contraseña vienen de la plantilla; quita -IsoPath, -Edition y -Credential.' }
         if (-not $PSCmdlet.ShouldProcess($Name, "Crear VM desde la plantilla $Template")) { return }
-        return New-GpuVMFromTemplate -Name $Name -Template $Template -Profile $Profile -Override $Override -Start:$Start
+        return New-GpuVMFromTemplate -Name $Name -Template $Template -Profile $Profile -Override $Override -Start:$Start -Disposable:$Disposable
     }
 
     $failed = @(Test-GpuVMHost -Profile $Profile -Override $Override | Where-Object Status -eq 'Fail')
@@ -97,7 +106,8 @@ function New-GpuVMFromTemplate {
         [Parameter(Mandatory)][string]$Template,
         [string]$Profile = 'balanced',
         [hashtable]$Override,
-        [switch]$Start
+        [switch]$Start,
+        [switch]$Disposable
     )
     # Not $template: PowerShell names are case-insensitive, and that would overwrite the -Template string.
     $base = Read-GpuVMTemplate -Name $Template
@@ -105,6 +115,16 @@ function New-GpuVMFromTemplate {
     $diskOverride = @{ vm = @{ disk = @{ type = 'Dynamic'; sizeGB = [int]$base['sizeGB'] } } }
     $checkOverride = if ($Override) { Merge-Hashtable -Base $Override -Override $diskOverride } else { $diskOverride }
     $failed = @(Test-GpuVMHost -Profile $Profile -Override $checkOverride | Where-Object Status -eq 'Fail')
+    if ($Disposable) {
+        # A disposable machine reserves a fixed amount, not the template's full size: it is shut down (and deleted) if
+        # the drive gets near the host's margin (Remove-GpuVMDisposable).
+        $failed = @($failed | Where-Object Name -ne 'Disco')
+        $budget = Get-GpuVMDiskBudget -Root (Get-GpuVMDefaultRoot)
+        if ($budget['availableGB'] -lt $script:DisposableReserveGB) {
+            $failed += New-CheckResult 'Disco' Fail ("Una máquina desechable necesita $($script:DisposableReserveGB) GB libres en $($budget['drive']) " +
+                "además de lo reservado para las otras máquinas; hay $($budget['availableGB']) GB.")
+        }
+    }
     if ($failed) {
         throw ('El equipo no pasa la revisión: ' + (($failed | ForEach-Object { "$($_.Name): $($_.Detail)" }) -join '; '))
     }
@@ -121,11 +141,12 @@ function New-GpuVMFromTemplate {
     $state['pendingRename'] = $true
     $state['pendingApps'] = @(if ($base.Contains('pendingApps')) { $base['pendingApps'] })
     $state['installedApps'] = @(if ($base.Contains('installedApps')) { $base['installedApps'] })
+    if ($Disposable) { $state['disposable'] = [ordered]@{ createdAt = (Get-Date).ToString('o'); startedAt = $null } }
     Save-GpuVMState $state
 
     Write-Step "VM '$Name' lista sobre la plantilla '$Template'."
     if ($Start) {
-        try { Assert-VMCanStart -Name $Name; Start-VM -Name $Name -ErrorAction Stop }
+        try { Assert-VMCanStart -Name $Name; Start-VM -Name $Name -ErrorAction Stop; Set-GpuVMDisposableStarted -State $state }
         catch { Write-Warning "La VM se creó pero no pudo encender: $($_.Exception.Message)" }
     }
     Get-GpuVM -Name $Name
