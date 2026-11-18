@@ -1234,3 +1234,23 @@ InModuleScope GpuVM {
         }
     }
 }
+
+InModuleScope GpuVM {
+    Describe 'Disposable machines are protected' {
+        It 'points, export and templates refuse a disposable machine' {
+            Test-Throws { Assert-GpuVMNotDisposable -State @{ disposable = @{ createdAt = 'x' } } -Action 'exportar' } | Should Be $true
+            Test-Throws { Assert-GpuVMNotDisposable -State @{ name = 'normal' } -Action 'exportar' } | Should Be $false
+        }
+        It 'the sweep deletes nothing when Hyper-V does not answer' {
+            Mock Assert-Admin { }
+            Mock Get-GpuVMDefaultRoot { 'C:\GpuVM-test-root' }
+            Mock Get-DriveFreeGB { 500 }
+            Mock Get-VM { throw 'Hyper-V is busy' }
+            Mock Remove-Item { throw 'nothing may be deleted' }
+            Mock Get-ChildItem { throw 'no folder may be listed' }
+            @(Remove-GpuVMDisposable -Confirm:$false -WarningAction SilentlyContinue).Count | Should Be 0
+            Assert-MockCalled Remove-Item -Times 0
+            Assert-MockCalled Get-ChildItem -Times 0
+        }
+    }
+}

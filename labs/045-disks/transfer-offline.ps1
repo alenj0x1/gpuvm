@@ -117,15 +117,12 @@ try {
     }
     Check 'marker came along' 'export-me' $inside.marker
     Check 'kept file intact (SHA-256)' $keepHash $inside.keep
-    Check 'old Sunshine identity removed' $false $inside.root
-    Check 'old certificate removed' $false $inside.pem
-    Check 'new Sunshine web user' 'gpuvm' $inside.user
-    Check 'new Sunshine salt length' 16 $inside.salt
+    # Import never touches the file's disk (it came from outside): the identity is reset inside the VM on its first
+    # open (real-vm-3.ps1). Here: still the exported identity, and the machine marked for the reset.
+    Check 'imported disk not modified (old identity still there)' $true $inside.root
     $st = & $m { param($n) Get-GpuVMState -Name $n } $newName
-    $pw = [pscredential]::new('x', (ConvertTo-SecureString $st['streaming']['password'])).GetNetworkCredential().Password
-    $chars = $inside.hash
-    $expect = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($pw + (InGuest $newName { param($r) (Get-Content -Raw (Join-Path $r 'Program Files\Sunshine\config\sunshine_state.json') | ConvertFrom-Json).salt }))))
-    Check 'web password hash matches the saved password' $expect $chars
+    Check 'marked to reset its identity on first open' $true ([bool]$st['pendingIdentityReset'])
+    Check 'new web login saved for the reset (DPAPI)' $true ([bool]$st['streaming']['password'] -and $st['streaming']['password'] -ne 'dpapi-blob')
     Check 'guest password saved (DPAPI, this PC)' 'lab-only' ([pscredential]::new('x', (ConvertTo-SecureString $st['guest']['password'])).GetNetworkCredential().Password)
     Check 'pairing not carried over' '' "$($st['streaming']['pairedClient'])"
     Check 'apps came along' 'vlc' ($st['installedApps'] -join ',')
@@ -141,11 +138,11 @@ try {
         $w = [IO.StreamWriter]::new($zip.CreateEntry('manifest.json').Open()); $w.Write($text); $w.Dispose()
     } finally { $zip.Dispose() }
     $err = $null
-    try { Import-GpuVM -Path $bad -Name 'lab045-bad' -Confirm:$false | Out-Null } catch { $err = $_.Exception.Message }
+    try { Import-GpuVM -Path $bad -Name 'lab045-bad' -Credential $cred -Confirm:$false | Out-Null } catch { $err = $_.Exception.Message }
     Check 'tampered file refused' $true ($err -match 'huella')
     Check 'nothing left after refusal' $false ((Test-Path (Join-Path $root 'lab045-bad')) -or [bool](Get-VM -Name 'lab045-bad' -ErrorAction SilentlyContinue))
     $err = $null
-    try { Import-GpuVM -Path (Join-Path $work 'nope.gpuvm') -Confirm:$false | Out-Null } catch { $err = $_.Exception.Message }
+    try { Import-GpuVM -Path (Join-Path $work 'nope.gpuvm') -Credential $cred -Confirm:$false | Out-Null } catch { $err = $_.Exception.Message }
     Check 'missing file says so' $true ($err -match 'No existe')
 }
 finally {

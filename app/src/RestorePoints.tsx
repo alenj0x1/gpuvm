@@ -94,7 +94,7 @@ export function RestorePoints({ vm, busy, startJob, run }: Props) {
             <div className="opt-ctl">
               <button className="btn ghost" disabled={!!busy || p.missing} onClick={() => setBack(p)}><IconArrowBackUp size={16} />{t("Volver")}</button>
               {armed === p.id ? (
-                <button className="btn danger-fill" onClick={() => remove(p)}><IconTrash size={16} />{t("Borrar")}</button>
+                <button className="btn danger-fill" onClick={() => remove(p)}><IconTrash size={16} />{t("Borrar punto")}</button>
               ) : (
                 <button className="icon-btn" aria-label={t("Borrar punto")} title={t("Borrar punto")} disabled={!!busy} onClick={() => setArmed(p.id)}><IconTrash size={17} /></button>
               )}

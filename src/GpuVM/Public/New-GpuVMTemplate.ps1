@@ -15,6 +15,7 @@ function New-GpuVMTemplate {
     )
     Assert-Admin
     $state = Get-GpuVMState -Name $VMName
+    Assert-GpuVMNotDisposable -State $state -Action 'guardar como plantilla'
     $vm = Get-VM -Name $VMName -ErrorAction Stop
     $wasRunning = $vm.State -eq 'Running'
     if ($vm.State -ne 'Off' -and -not ($wasRunning -and $ShutdownIfRunning)) { throw "Apaga la VM '$VMName' antes de crear la plantilla." }

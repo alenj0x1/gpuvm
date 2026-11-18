@@ -174,15 +174,23 @@ function Restore-GpuVMRestorePointCore {
     $fresh = Join-Path (Split-Path $current -Parent) ".restore-$Id.vhdx"
     Write-Step 'Volviendo al punto de restauración'
     New-VHD -Path $fresh -ParentPath $pointPath -Differencing -ErrorAction Stop | Out-Null
+    # The current top disk is set aside (not deleted) until the new one is in its place: if anything fails, it goes back
+    # and the VM is never left without a disk.
+    $aside = Join-Path (Split-Path $current -Parent) ".before-restore-$Id.vhdx"
+    $setAside = $false
     try {
         Copy-GpuVMDiskAccess -From $current -To $fresh
-        Remove-Item -LiteralPath $current -Force -ErrorAction Stop
+        [IO.File]::Move($current, $aside)
+        $setAside = $true
         [IO.File]::Move($fresh, $current)
     }
     catch {
+        $failure = $_
+        if ($setAside -and -not (Test-Path -LiteralPath $current)) { [IO.File]::Move($aside, $current) }
         if (Test-Path -LiteralPath $fresh) { Remove-Item -LiteralPath $fresh -Force -ErrorAction SilentlyContinue }
-        throw
+        throw $failure
     }
+    Remove-Item -LiteralPath $aside -Force -ErrorAction SilentlyContinue
     Update-GpuVMDiskAttachment -Name $Name -Path $current
     foreach ($key in $script:RestorePointStateKeys) {
         if ($point['state'].Contains($key)) { $State[$key] = Copy-Value $point['state'][$key] }

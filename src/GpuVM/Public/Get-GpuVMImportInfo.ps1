@@ -22,7 +22,7 @@ function Get-GpuVMImportInfo {
             installedApps = @($m['installedApps'])
             exportedAt    = $m['exportedAt']
             diskGB        = [math]::Round($m['disk']['bytes'] / 1GB, 1)
-            fileGB        = [math]::Round((Get-Item -LiteralPath $Path).Length / 1GB, 1)
+            fileGB        = [math]::Round($archive.Length / 1GB, 1)
             freeGB        = Get-DriveFreeGB (Get-GpuVMDefaultRoot)
         }
     }

@@ -13,6 +13,7 @@ function Remove-GpuVMRestorePoint {
     )
     Assert-Admin
     $state = Get-GpuVMState -Name $Name
+    Assert-GpuVMNotDisposable -State $state -Action 'cambiar sus puntos de restauración'
     if (-not $PSCmdlet.ShouldProcess($Name, "Borrar el punto $Id")) { return }
     # A point nothing sits on is deleted with the VM on; merging into one needs it off.
     $restart = $false

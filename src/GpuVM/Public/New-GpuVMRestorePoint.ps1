@@ -15,7 +15,7 @@ function New-GpuVMRestorePoint {
     )
     Assert-Admin
     $state = Get-GpuVMState -Name $Name
-    if ($state.Contains('ephemeral') -and $state['ephemeral']) { throw 'Una máquina desechable no guarda puntos de restauración.' }
+    Assert-GpuVMNotDisposable -State $state -Action 'guardar puntos de restauración'
     if (-not $PSCmdlet.ShouldProcess($Name, 'Crear punto de restauración')) { return }
     $restart = Stop-GpuVMForDisk -Name $Name -ShutdownIfRunning:$ShutdownIfRunning -Action 'crear un punto de restauración'
     try { $point = New-GpuVMRestorePointCore -Name $Name -State $state -Label $Label }

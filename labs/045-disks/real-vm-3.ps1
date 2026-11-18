@@ -23,9 +23,11 @@ function Check($label, $expected, $actual) {
     Write-Host ("{0,-50} {1,-5} expected={2} actual={3}" -f $label, $ok, $expected, $actual)
 }
 function Timed([scriptblock]$body) { $sw = [Diagnostics.Stopwatch]::StartNew(); $r = & $body; [pscustomobject]@{ r = $r; s = [math]::Round($sw.Elapsed.TotalSeconds, 1) } }
-function StopClean($n) { $vm = Get-VM -Name $n -ErrorAction SilentlyContinue; if ($vm -and $vm.State -ne 'Off') { Stop-VM -Name $n -Force } }
+# Only for this lab's own VMs: a clean shutdown, and if it fails, off (so win-gpu can always start again at the end).
+function StopClean($n) { $vm = Get-VM -Name $n -ErrorAction SilentlyContinue; if ($vm -and $vm.State -ne 'Off') { try { Stop-VM -Name $n -Force -ErrorAction Stop } catch { Stop-VM -Name $n -TurnOff -Force } } }
 
 $imp = 'lab045-imp'
+$src = 'lab045-src'
 # Another drive when LAB045_WORKDIR says so: the export file on C: would take the room the import needs.
 $work = Join-Path $(if ($env:LAB045_WORKDIR) { $env:LAB045_WORKDIR } else { $env:TEMP }) 'lab045-real3'
 $exportFile = Join-Path $work 'disposable.gpuvm'
@@ -59,18 +61,22 @@ try {
     $t = Timed { Connect-GpuVM -Name $disp -Viewer | Out-Null }
     Note 'disposable second open (warm)' @{ s = $t.s }
     Check 'running disposable is not swept' 0 @(Remove-GpuVMDisposable -Confirm:$false).Count
+    $err = $null; try { Export-GpuVM -Name $disp -Path (Join-Path $work 'no.gpuvm') -Confirm:$false | Out-Null } catch { $err = $_.Exception.Message }
+    Check 'export refuses a disposable machine' $true ($err -match 'desechable')
     StopClean $disp
-
-    $chain = & $m { param($p) Get-VhdChainBytes -Path $p } (Get-VMHardDiskDrive -VMName $disp).Path
-    $t = Timed { Export-GpuVM -Name $disp -Path $exportFile -Confirm:$false }
-    Note 'export (real Windows 10: template + its copy merged)' @{ s = $t.s; chainGB = [math]::Round($chain / 1GB, 2); fileGB = $t.r.sizeGB; freedGB = $t.r.freedGB }
-
     $t = Timed { @(Remove-GpuVMDisposable -Confirm:$false) }
     Note 'disposable sweep after shutdown' @{ s = $t.s; removed = ($t.r -join ',') }
     Check 'disposable VM gone' $false ([bool](Get-VM -Name $disp -ErrorAction SilentlyContinue))
     Check 'disposable folder gone' $false (Test-Path (Join-Path (& $m { Get-GpuVMDefaultRoot }) $disp))
     $disp = $null
 
+    # Export refuses disposable machines (the sweep could delete one mid-export): a normal copy of the template is
+    # exported instead (a real Windows 10 with Sunshine; never started, it still has the template's identity).
+    New-GpuVM -Name $src -Template $Template -Override @{ vm = @{ memoryGB = 4 } } -Confirm:$false | Out-Null
+    $chain = & $m { param($p) Get-VhdChainBytes -Path $p } (Get-VMHardDiskDrive -VMName $src).Path
+    $t = Timed { Export-GpuVM -Name $src -Path $exportFile -Confirm:$false }
+    Note 'export (real Windows 10: template + copy merged)' @{ s = $t.s; chainGB = [math]::Round($chain / 1GB, 2); fileGB = $t.r.sizeGB; freedGB = $t.r.freedGB }
+    Remove-GpuVM -Name $src -DeleteDisk -Confirm:$false
     $t = Timed { Import-GpuVM -Path $exportFile -Name $imp -Credential $cred -Override @{ vm = @{ memoryGB = 4 } } -Confirm:$false | Out-Null }
     Note 'import' @{ s = $t.s }
     $st = & $m { param($n) Get-GpuVMState -Name $n } $imp
@@ -88,7 +94,7 @@ catch {
 }
 finally {
     Write-Host 'cleanup'
-    foreach ($n in @($disp, $imp) | Where-Object { $_ }) {
+    foreach ($n in @($disp, $src, $imp) | Where-Object { $_ }) {
         if (Get-VM -Name $n -ErrorAction SilentlyContinue) { try { StopClean $n; Remove-GpuVM -Name $n -DeleteDisk -Confirm:$false } catch { Write-Warning "cleanup ${n}: $($_.Exception.Message)" } }
     }
     Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue

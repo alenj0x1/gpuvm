@@ -1,4 +1,4 @@
-﻿function Connect-GpuVM {
+function Connect-GpuVM {
     <#
     .SYNOPSIS
     Opens the VM in Moonlight with the image rendered by the GPU. Gets everything ready on its own: updates the driver
@@ -77,6 +77,21 @@
         Wait-GuestReady -Name $Name -Credential $guest -BootMessage $bootMessage
         Open-GuestSession -Name $Name -Credential $guest
         $null = Wait-GuestSignIn -Name $Name -Credential $guest
+        # An imported machine still has the streaming identity it was exported with: it gets its own, inside the VM,
+        # before Sunshine is used for anything (Import-GpuVM never mounts the file's disk on this PC).
+        if ($state.Contains('pendingIdentityReset') -and $state['pendingIdentityReset']) {
+            Write-Step 'Dando a la máquina su propia identidad de streaming'
+            Reset-GuestStreamingIdentity -Name $Name -Credential $guest -WebCredential (Get-SunshineCredential -State $state)
+            $state = Get-GpuVMState -Name $Name
+            $state['pendingIdentityReset'] = $false
+            Save-GpuVMState $state
+            Write-Step 'Reiniciando Windows para terminar'
+            # -Wait -For Heartbeat: the next checks must see the restarted Windows, not the one still shutting down.
+            Restart-VM -Name $Name -Type Reboot -Force -Wait -For Heartbeat -Timeout 600
+            Wait-GuestReady -Name $Name -Credential $guest -BootMessage 'Esperando a Windows'
+            Open-GuestSession -Name $Name -Credential $guest
+            $null = Wait-GuestSignIn -Name $Name -Credential $guest
+        }
         if ($state.Contains('updatesPending') -and $state['updatesPending']) {
             $state = Get-GpuVMState -Name $Name
             $state['updatesPending'] = $false
