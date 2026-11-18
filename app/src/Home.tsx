@@ -458,7 +458,7 @@ export function EmptyHome({ gpuName, onCreate, onRoute }: { gpuName: string | nu
         <div className="home-panel home-empty-panel">
           <div className="home-empty-text">
             <h1>{t("Crea tu primera máquina")}</h1>
-            <p>{t("Windows 10 u 11 con tu {gpu}, lista para abrir con Moonlight en un clic.", { gpu: gpuName ? gpuName.replace("NVIDIA GeForce ", "") : "GPU" })}</p>
+            <p>{t("Windows 10 u 11 con tu {gpu}, lista para abrir en un clic.", { gpu: gpuName ? gpuName.replace("NVIDIA GeForce ", "") : "GPU" })}</p>
           </div>
           {ready.length > 0 && (
             <div className="home-library-grid home-empty-ready">

@@ -368,7 +368,7 @@ function ProfileEditor({ initial, host, apps, existing, onCancel, onSaved, notif
               <FpsPicker value={s.fps ?? 60} monitor={resolveMonitor(monitors, "default", prefs.monitor)} onChange={(fps) => set({ fps })} />
             </div>
             <div className="field">
-              <div className="field-top"><span>Moonlight</span></div>
+              <div className="field-top"><span>{t("Imagen")}</span></div>
               <div className="segment-row">
                 <Segmented value={s.resolution ?? "1920x1080"} onChange={(resolution) => set({ resolution })}
                   options={RESOLUTIONS.map((r) => ({ value: r, label: r.split("x")[1] + "p" }))} />
@@ -385,7 +385,7 @@ function ProfileEditor({ initial, host, apps, existing, onCancel, onSaved, notif
               <Segmented value={profileUse ?? ""} onChange={(id) => set({ ...USES.find((u) => u.id === id)!.client })}
                 options={USES.map((u) => ({ value: u.id, label: <><u.icon size={15} />{u.label}</> }))} />
             </div>
-            <span className="hint">{profileUse ? USES.find((u) => u.id === profileUse)!.description : t("Personalizado. Los ajustes de Moonlight se cambiaron a mano.")}</span>
+            <span className="hint">{profileUse ? USES.find((u) => u.id === profileUse)!.description : t("Personalizado. Los ajustes del visor se cambiaron a mano.")}</span>
           </div>
 
           {cleanupLevels.length > 0 && (

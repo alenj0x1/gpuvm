@@ -51,7 +51,7 @@ export default {
   "imagen de Windows": "Windows image",
   "imágenes de Windows": "Windows images",
   "Crea tu primera máquina": "Create your first machine",
-  "Windows 10 u 11 con tu {gpu}, lista para abrir con Moonlight en un clic.": "Windows 10 or 11 with your {gpu}, ready to open in Moonlight with one click.",
+  "Windows 10 u 11 con tu {gpu}, lista para abrir en un clic.": "Windows 10 or 11 with your {gpu}, ready to open with one click.",
 
   // Spaces and ambients
   "Mis máquinas": "My machines",
@@ -206,7 +206,7 @@ export default {
   "Pantalla completa": "Full screen",
   "Ventana": "Window",
   "Tipo de uso": "Use",
-  "Personalizado. Los ajustes de Moonlight se cambiaron a mano.": "Custom. The Moonlight settings were changed by hand.",
+  "Personalizado. Los ajustes del visor se cambiaron a mano.": "Custom. The viewer settings were changed by hand.",
   "Apps que se instalan": "Apps to install",
   "Guardar perfil": "Save profile",
   "Disco {name} borrado.": "Disk {name} deleted.",

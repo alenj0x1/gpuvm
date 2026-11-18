@@ -713,7 +713,7 @@ function Header({ vm, vms = [], busy, variant, startJob, run, onRemoved, onRenam
               <button role="menuitem" onClick={() => { setMenu(false); openConsole(vm.name); }}><IconDeviceDesktop size={16} />{t("Ver consola de Hyper-V")}</button>
             )}
             {!locked && vm.managed && vm.streaming && (
-              <button role="menuitem" onClick={() => job("Connect-GpuVM", { Name: vm.name, Pair: true })}><IconLink size={16} />{t("Volver a emparejar Moonlight")}</button>
+              <button role="menuitem" onClick={() => job("Connect-GpuVM", { Name: vm.name, Pair: true })}><IconLink size={16} />{t("Volver a emparejar el visor")}</button>
             )}
             <hr />
             {!locked && vm.managed && (
@@ -847,7 +847,7 @@ function RenameMachine({ vm, vms, onClose, onDraft, onRename }: {
         <div className="dialog-head"><MachineIcon name={vm.name} size={40} radius={10} /><h2>{t("Cambiar nombre")}</h2></div>
         <form className="dialog-form" onSubmit={(e) => { e.preventDefault(); if (complete) onRename(trimmed); }}>
           <div className="dialog-body">
-            <p className="dialog-text">{t("Cambian también su carpeta y su disco. Moonlight sigue emparejado y los discos compartidos siguen conectados.")}</p>
+            <p className="dialog-text">{t("Cambian también su carpeta y su disco. El visor sigue emparejado y los discos compartidos siguen conectados.")}</p>
             <div className="field">
               <label className="field-top" htmlFor="vm-rename"><span>{t("Nombre")}</span></label>
               <input id="vm-rename" className="text-input" value={name} autoFocus spellCheck={false} maxLength={60}
@@ -1152,7 +1152,7 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
         {vm.streaming && (
           <OptionRow icon={<IconScreenShare size={17} />} title={t("Captura")} desc={draft.captureMode === "wgc"
             ? t("La imagen aparece apenas te conectas y se ven los juegos en pantalla completa exclusiva. Los avisos de administrador de Windows se responden desde GpuVM.")
-            : t("Los avisos de administrador se ven en Moonlight, pero la imagen puede tardar en aparecer al conectar y los juegos en pantalla completa exclusiva se ven en negro.")}>
+            : t("Los avisos de administrador se ven en el visor, pero la imagen puede tardar en aparecer al conectar y los juegos en pantalla completa exclusiva se ven en negro.")}>
             <Segmented value={draft.captureMode} onChange={(captureMode) => setDraft({ ...draft, captureMode })} options={[
               { value: "wgc", label: <><IconBolt size={15} />{t("Rápida")}</> },
               { value: "ddx", label: <><IconScreenShare size={15} />{t("Clásica")}</> },
@@ -1167,11 +1167,11 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
         {vm.streaming && advanced && (
           <>
             <OptionRow icon={<IconAppWindow size={17} />} title={t("Códec")}
-              desc={draft.codec === "auto" ? t("Moonlight elige el mejor que tu equipo puede mostrar.") : t("Si la imagen no aparece, vuelve a Automático.")}>
+              desc={draft.codec === "auto" ? t("El visor elige el mejor que tu equipo puede mostrar.") : t("Si la imagen no aparece, vuelve a Automático.")}>
               <Segmented value={draft.codec} onChange={(codec) => setDraft({ ...draft, codec })} options={CODECS} />
             </OptionRow>
             <OptionRow icon={<IconSparkles size={17} />} title={t("Calidad de imagen")} value={draft.bitrateKbps ? `${draft.bitrateKbps / 1000} Mbps` : t("Automática")}
-              desc={t("Más calidad usa más red. Al mínimo, Moonlight la ajusta a la resolución y los FPS.")}>
+              desc={t("Más calidad usa más red. Al mínimo, el visor la ajusta a la resolución y los FPS.")}>
               <Slider label={t("Calidad de imagen")} value={draft.bitrateKbps / 1000} min={0} max={150} step={5} format={(v) => (v ? String(v) : "Auto")}
                 onChange={(mbps) => setDraft({ ...draft, bitrateKbps: mbps * 1000 })} />
             </OptionRow>
