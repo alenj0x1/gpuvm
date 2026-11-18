@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { MachineCube, type CubeMachine } from "./MachineCube";
-import { IconAppWindow, IconBrandWindows, IconDeviceDesktop, IconExternalLink, IconPalette, IconServer, IconHandStop, IconLayoutBottombarCollapse, IconMoon, IconPlayerPlay, IconPlayerStop, IconPlugConnected, IconPlugConnectedX, IconPower, IconSun } from "@tabler/icons-react";
+import { IconAppWindow, IconBrandWindows, IconDeviceDesktop, IconExternalLink, IconPalette, IconServer, IconHandStop, IconLayoutBottombarCollapse, IconMoon, IconPlayerPlay, IconPlayerStop, IconPlugConnected, IconPlugConnectedX, IconPower, IconShieldLock, IconShieldOff, IconSun } from "@tabler/icons-react";
 import { service, type ServiceStatus } from "./api";
 import { ACCENTS, savePrefs, usePrefs, type ClosePref, type ServicePref, type ThemePref, type ViewerHomePref, type VmsOnQuitPref } from "./prefs";
 import { Segmented, Slider, humanError } from "./ui";
@@ -214,6 +214,15 @@ export function Preferences() {
                 { value: "stop", label: <><IconPlayerStop size={15} />{t("Apagarlas")}</> },
               ]} />
             </div>
+            {prefs.vmsOnQuit === "keep" && (
+              <div className="pref-row">
+                <div className="pref-text"><strong>{t("Avisos de administrador después de salir")}</strong><span>{t("GpuVM se queda junto al reloj, sin ventanas, mientras alguna máquina siga encendida y te muestra cuando pida permiso de administrador.")}</span></div>
+                <Segmented<boolean> value={prefs.noticesAfterQuit} onChange={(noticesAfterQuit) => savePrefs({ noticesAfterQuit })} options={[
+                  { value: true, label: <><IconShieldLock size={15} />{t("Mostrarlos")}</> },
+                  { value: false, label: <><IconShieldOff size={15} />{t("No mostrarlos")}</> },
+                ]} />
+              </div>
+            )}
           </>
         ))}
         {monitors.length > 1 && section("machines", (

@@ -28,6 +28,9 @@ export interface Prefs {
   theme: ThemePref;
   close: ClosePref;
   vmsOnQuit: VmsOnQuitPref;
+  /** After quitting with the machines left on, GpuVM stays in the background (tray only) showing their administrator
+   *  prompts until none is on. */
+  noticesAfterQuit: boolean;
   service: ServicePref;
   /** The monitor VMs open on unless a VM has its own: a monitor's id or "primary". */
   monitor: string;
@@ -42,7 +45,7 @@ export interface Prefs {
 }
 
 const KEY = "gpuvm.prefs";
-const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "stop", service: "app", monitor: "primary", accent: "blue", lang: "system", viewerHome: "keep", animFps: 0, animQuality: 100 };
+const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "stop", noticesAfterQuit: true, service: "app", monitor: "primary", accent: "blue", lang: "system", viewerHome: "keep", animFps: 0, animQuality: 100 };
 const EVENT = "gpuvm-prefs";
 const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
 
@@ -95,6 +98,12 @@ async function applyVmsOnQuit(pref: VmsOnQuitPref) {
   await invoke("set_stop_vms_on_quit", { enabled: pref === "stop" }).catch(() => {});
 }
 
+async function applyNoticesAfterQuit(enabled: boolean) {
+  if (!inTauri) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("set_notices_after_quit", { enabled }).catch(() => {});
+}
+
 async function applyService(mode: ServicePref) {
   if (!inTauri) return;
   const { invoke } = await import("@tauri-apps/api/core");
@@ -108,6 +117,7 @@ export function savePrefs(change: Partial<Prefs>) {
   applyAccent(next.accent);
   if (change.close) applyClose(next.close);
   if (change.vmsOnQuit) applyVmsOnQuit(next.vmsOnQuit);
+  if (change.noticesAfterQuit !== undefined) applyNoticesAfterQuit(next.noticesAfterQuit);
   if (change.service) applyService(next.service);
   if (change.lang) applyLang(next.lang);
   window.dispatchEvent(new Event(EVENT));
@@ -120,6 +130,7 @@ export function initPrefs() {
   applyAccent(prefs.accent);
   applyClose(prefs.close);
   applyVmsOnQuit(prefs.vmsOnQuit);
+  applyNoticesAfterQuit(prefs.noticesAfterQuit);
   applyService(prefs.service);
   applyLang(prefs.lang);
   systemDark.addEventListener("change", () => {

@@ -37,6 +37,8 @@ export interface AdminPrompt {
   id: number;
   app: string | null;
   publisher: string | null;
+  /** The machine is still reading the program and publisher: the answer waits for them. */
+  reading?: boolean;
 }
 
 export type StreamSettings = Partial<Pick<ClientSettings, "vsync" | "framePacing" | "mouse" | "codec" | "bitrateKbps">>;

@@ -6,6 +6,7 @@
 //! - Deleting machines or disks asks for a UAC confirmation first (the service requires it).
 
 mod backend;
+mod notices;
 mod prompt;
 mod service;
 mod lowbox;
@@ -13,6 +14,7 @@ mod overlay;
 mod viewer;
 #[cfg(debug_assertions)]
 mod direct;
+mod dock;
 
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -245,6 +247,7 @@ fn relaunch_as_admin(app: AppHandle) -> Result<(), String> {
 /// Brings the main window back (from the tray, minimized or behind other windows).
 fn show_main(app: &AppHandle) {
     use tauri::Manager;
+    notices::leave(app);
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
         let _ = window.show();
@@ -261,13 +264,35 @@ fn set_language(app: AppHandle, lang: String) -> Result<(), String> {
     ENGLISH.store(lang == "en", Ordering::Relaxed);
     if app.tray_by_id(TRAY_ID).is_some() {
         app.remove_tray_by_id(TRAY_ID);
-        ensure_tray(&app).map_err(|e| e.to_string())?;
     }
+    refresh_tray(&app);
     Ok(())
 }
 
-/// Tray icon with "Abrir GpuVM" and "Salir" (or their English); a left click opens the window.
-fn ensure_tray(app: &AppHandle) -> tauri::Result<()> {
+/// The tray icon the app needs now: the notices-only one, the usual one when "Al cerrar la ventana" keeps GpuVM in
+/// the tray, or none.
+pub(crate) fn refresh_tray(app: &AppHandle) {
+    use tauri::Manager;
+    let wanted = if notices::active() { Some(true) } else if app.state::<AppState>().close_to_tray.load(Ordering::Relaxed) { Some(false) } else { None };
+    let current = *TRAY_KIND.lock().unwrap_or_else(|e| e.into_inner());
+    if app.tray_by_id(TRAY_ID).is_some() && current == wanted {
+        return;
+    }
+    app.remove_tray_by_id(TRAY_ID);
+    *TRAY_KIND.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    if let Some(notices) = wanted {
+        if ensure_tray(app, notices).is_ok() {
+            *TRAY_KIND.lock().unwrap_or_else(|e| e.into_inner()) = wanted;
+        }
+    }
+}
+
+/// Which tray icon is up: Some(true) the notices-only one, Some(false) the usual one.
+static TRAY_KIND: std::sync::Mutex<Option<bool>> = std::sync::Mutex::new(None);
+
+/// Tray icon with "Abrir GpuVM" and "Salir" (or their English); a left click opens the window. In notices-only mode
+/// its tooltip says GpuVM is watching administrator prompts, and Salir ends GpuVM for good.
+fn ensure_tray(app: &AppHandle, notices: bool) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
     if app.tray_by_id(TRAY_ID).is_some() {
@@ -275,15 +300,25 @@ fn ensure_tray(app: &AppHandle) -> tauri::Result<()> {
     }
     let en = ENGLISH.load(Ordering::Relaxed);
     let show = MenuItem::with_id(app, "show", if en { "Open GpuVM" } else { "Abrir GpuVM" }, true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", if en { "Quit" } else { "Salir" }, true, None::<&str>)?;
+    let quit = if notices {
+        MenuItem::with_id(app, "quit-now", if en { "Stop watching and quit" } else { "Dejar de vigilar y salir" }, true, None::<&str>)?
+    } else {
+        MenuItem::with_id(app, "quit", if en { "Quit" } else { "Salir" }, true, None::<&str>)?
+    };
     let menu = Menu::with_items(app, &[&show, &quit])?;
+    let tooltip = match (notices, en) {
+        (true, true) => "GpuVM · Watching administrator prompts",
+        (true, false) => "GpuVM · Vigilando avisos de administrador",
+        _ => "GpuVM",
+    };
     let mut tray = TrayIconBuilder::with_id(TRAY_ID)
-        .tooltip("GpuVM")
+        .tooltip(tooltip)
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => show_main(app),
-            "quit" => app.exit(0),
+            "quit" => notices::request_quit(app),
+            "quit-now" => app.exit(0),
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -304,12 +339,8 @@ const TRAY_ID: &str = "main";
 #[tauri::command]
 fn set_close_to_tray(app: AppHandle, state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
     state.close_to_tray.store(enabled, Ordering::Relaxed);
-    if enabled {
-        ensure_tray(&app).map_err(|e| e.to_string())
-    } else {
-        app.remove_tray_by_id(TRAY_ID);
-        Ok(())
-    }
+    refresh_tray(&app);
+    Ok(())
 }
 
 /// "Al cerrar GpuVM" preference: true shuts the GpuVM machines down when the app quits.
@@ -359,9 +390,14 @@ pub fn run() {
                 viewer::follow_main(window.app_handle());
             }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if window.state::<AppState>().close_to_tray.load(Ordering::Relaxed) {
+                if window.label() == "main" {
                     api.prevent_close();
-                    let _ = window.hide();
+                    if window.state::<AppState>().close_to_tray.load(Ordering::Relaxed) {
+                        let _ = window.hide();
+                    } else {
+                        // Quitting: GpuVM exits, or stays watching admin prompts (notices.rs).
+                        notices::request_quit(window.app_handle());
+                    }
                 }
             }
         })
@@ -369,11 +405,17 @@ pub fn run() {
             prompt::start(app.handle().clone());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![ps, job, prompt::admin_prompts, prompt::admin_prompt_answered, viewer::viewer_send, viewer::viewer_is_open, viewer::viewer_home, viewer::viewer_show, viewer::viewer_list, viewer::viewer_reveal, viewer::viewer_covered, overlay::viewer_panel_resize, overlay::viewer_panel_close, overlay::viewer_panel_vm, open_console, repair_service, relaunch_as_admin, service_status, start_service, stop_service, set_service_mode, set_service_startup, set_close_to_tray, set_stop_vms_on_quit, set_language])
+        .invoke_handler(tauri::generate_handler![ps, job, prompt::admin_prompts, prompt::admin_prompt_answered, dock::dock_prompt, dock::dock_answer, viewer::viewer_send, viewer::viewer_is_open, viewer::viewer_home, viewer::viewer_show, viewer::viewer_list, viewer::viewer_reveal, viewer::viewer_covered, overlay::viewer_panel_resize, overlay::viewer_panel_close, overlay::viewer_panel_vm, open_console, repair_service, relaunch_as_admin, service_status, start_service, stop_service, set_service_mode, set_service_startup, set_close_to_tray, set_stop_vms_on_quit, set_language, notices::set_notices_after_quit])
         .build(tauri::generate_context!())
         .expect("failed to start GpuVM")
         .run(|app, event| {
             use tauri::Manager;
+            // The last window closed by notices-only mode is not a quit: only app.exit (a code) ends it.
+            if let tauri::RunEvent::ExitRequested { api, code: None, .. } = &event {
+                if notices::active() {
+                    api.prevent_exit();
+                }
+            }
             // Quitting from the window or the tray; hiding to the tray does not get here.
             if let tauri::RunEvent::Exit = event {
                 let state = app.state::<AppState>();

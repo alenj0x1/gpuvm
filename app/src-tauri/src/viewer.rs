@@ -429,6 +429,7 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
             }
             let _ = app.emit("viewer", json!({ "vm": vm, "msg": msg }));
             crate::overlay::on_viewer(&app, &vm, &msg);
+            crate::dock::on_viewer(&app, &vm, &msg);
             // The first picture: the app zooms into the machine and then reveals the viewer (viewer_reveal). If the
             // page doesn't (hidden, busy), the viewer comes out on its own a moment later.
             if kind == "first-frame" && viewer.embed && !viewer.first_frame.swap(true, Ordering::AcqRel) {
@@ -458,6 +459,7 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
         }
         let _ = app.emit("viewer", json!({ "vm": vm, "msg": closed }));
         crate::overlay::on_viewer(&app, &vm, &closed);
+        crate::dock::on_viewer(&app, &vm, &closed);
     });
     Ok(pid)
 }
@@ -648,6 +650,28 @@ pub async fn viewer_show(app: AppHandle, vm: String) -> Result<(), String> {
     viewer.revealed.store(true, Ordering::Relaxed);
     announce_cover();
     Ok(())
+}
+
+/// Whether a machine's viewer is open and its picture shown (not hidden while the person is in Home).
+pub fn viewer_visible(vm: &str) -> bool {
+    viewers().as_ref().and_then(|v| v.get(vm)).is_some_and(|v| v.visible.load(Ordering::Relaxed))
+}
+
+/// Closes every viewer (GpuVM is going to its notices-only mode: no windows left).
+pub fn quit_all() {
+    let list: Vec<Arc<Viewer>> = viewers().as_ref().map(|v| v.values().cloned().collect()).unwrap_or_default();
+    for viewer in list {
+        send_raw(&viewer, &json!({ "type": "quit" }));
+    }
+}
+
+/// The machine whose viewer window has the keyboard now, if any (what an admin prompt is about to interrupt).
+pub fn foreground_vm() -> Option<String> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+    // SAFETY: reading the foreground window has no preconditions.
+    let foreground = unsafe { GetForegroundWindow() } as isize;
+    let all = viewers();
+    all.as_ref()?.iter().find(|(_, v)| v.hwnd.load(Ordering::Relaxed) == foreground && window_of(foreground, v.child.pid)).map(|(name, _)| name.clone())
 }
 
 /// Machines whose viewer is open (connected), and whether each is inside the app's window.

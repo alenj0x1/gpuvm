@@ -474,7 +474,38 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .prompt-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .prompt-publisher { font-size: 12px; color: var(--muted); }
 .prompt-publisher.unknown { color: var(--warn, var(--muted)); }
+.prompt-app .skeleton-line { display: block; height: 12px; width: 70%; margin: 2px 0; border-radius: 6px; background: var(--hover); animation: pulse 1.4s ease-in-out infinite; }
+.prompt-app .skeleton-line.short { width: 40%; }
 .prompt-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: auto; }
+/* Administrator-prompt dock (PromptDock): a transparent window the size of a machine's picture. The picture darkens
+   like Windows' secure desktop and the prompt drops from the top center, attached to the edge. Always graphite: it is
+   part of the picture, whatever the app's theme. */
+html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #root { background: transparent; min-height: 0; height: 100%; overflow: hidden; }
+.dock-stage { position: relative; height: 100%; --dk-bg: #1c1c1c; --dk-fg: #ebe8e1; --dk-muted: #a8a59e; --dk-line: #2f2f2f; --dk-chip: #262626; }
+.dock-veil { position: absolute; inset: 0; background: #161616; opacity: 0; transition: opacity 320ms ease-out; }
+.dock-veil.on { opacity: 0.45; }
+.dock { position: absolute; top: 0; left: 50%; box-sizing: border-box; width: min(460px, calc(100% - 32px)); display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px; border-radius: 0 0 16px 16px; background: var(--dk-bg); color: var(--dk-fg); font-size: 13px;
+  transform: translate(-50%, -110%); transition: transform 320ms cubic-bezier(.2, .8, .2, 1); }
+.dock.on { transform: translate(-50%, 0); }
+.dock-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: var(--dk-chip); color: var(--accent-dark); flex: none; }
+.dock-icon svg { display: block; }
+.dock-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; line-height: 1.35; }
+.dock-text strong { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dock-text span { font-size: 12px; color: var(--dk-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dock-text span.unknown { color: #e7b45e; }
+.dock-text .dock-error { color: #f09595; white-space: normal; }
+.dock-skeleton { display: block; height: 11px; width: 70%; margin: 2px 0; border-radius: 6px; background: var(--dk-chip); animation: pulse 1.4s ease-in-out infinite; }
+.dock-skeleton.short { width: 40%; }
+.dock-actions { display: flex; gap: 8px; flex: none; }
+.dock-btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 0; border-radius: var(--r-sm); font: inherit; font-size: 12px; cursor: pointer; }
+.dock-btn svg { display: block; flex: none; }
+.dock-btn.dock-deny { background: transparent; color: var(--dk-fg); box-shadow: inset 0 0 0 1px var(--dk-line); }
+.dock-btn.dock-deny:hover:not(:disabled) { background: var(--dk-chip); }
+.dock-btn.dock-allow { background: var(--dk-fg); color: var(--dk-bg); }
+.dock-btn.dock-allow:hover:not(:disabled) { background: #ffffff; }
+.dock-btn:disabled { opacity: 0.4; cursor: default; }
+.dock-btn[aria-busy="true"] { opacity: 0.7; cursor: default; }
 .dialog-logo { width: 40px; height: 40px; border-radius: 10px; background: var(--surface-2); }
 .pref-stack { flex-direction: column; align-items: flex-end; gap: 6px; }
 .pref-stack .segment-row { justify-content: flex-end; }

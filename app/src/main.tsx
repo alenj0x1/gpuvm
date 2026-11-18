@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { PromptCard } from "./PromptCard";
+import { PromptDock } from "./PromptDock";
 import { ViewerPanel } from "./ViewerPanel";
 import { initPrefs, usePrefs } from "./prefs";
 import { resolveLang } from "./i18n";
@@ -31,10 +32,16 @@ const isViewerPanel = "__TAURI_INTERNALS__" in window
   ? (window as unknown as { __TAURI_INTERNALS__: { metadata: { currentWindow: { label: string } } } }).__TAURI_INTERNALS__.metadata.currentWindow.label === "viewer-panel"
   : new URLSearchParams(location.search).has("viewer-panel");
 if (isViewerPanel) document.documentElement.classList.add("viewer-panel-window");
+// The administrator-prompt dock over a machine's picture (label "prompt-dock"; "?prompt-dock" in the browser). It is
+// part of the picture, so it is always drawn in the dark theme.
+const isPromptDock = "__TAURI_INTERNALS__" in window
+  ? (window as unknown as { __TAURI_INTERNALS__: { metadata: { currentWindow: { label: string } } } }).__TAURI_INTERNALS__.metadata.currentWindow.label === "prompt-dock"
+  : new URLSearchParams(location.search).has("prompt-dock");
+if (isPromptDock) document.documentElement.classList.add("prompt-dock-window");
 // A change of language draws the app again (the root re-renders everything under it) without starting it over: a
 // remount reset the panels' sizes and left the scenes and cards gray until their data came back.
 function Root() {
   resolveLang(usePrefs().lang);
-  return isPrompt ? <PromptCard /> : isViewerPanel ? <ViewerPanel /> : <App />;
+  return isPromptDock ? <PromptDock /> : isPrompt ? <PromptCard /> : isViewerPanel ? <ViewerPanel /> : <App />;
 }
 createRoot(document.getElementById("root")!).render(<Root />);
