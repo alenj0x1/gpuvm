@@ -108,9 +108,11 @@ function Read-TransferManifest {
 
 function Open-TransferArchive {
     param([Parameter(Mandatory)][string]$Path)
-    $full = [IO.Path]::GetFullPath($Path)
-    if (-not (Test-Path -LiteralPath $full -PathType Leaf)) { throw "No existe el archivo $Path." }
-    try { $zip = [IO.Compression.ZipFile]::OpenRead($full) } catch { throw 'El archivo no es una máquina de GpuVM.' }
+    # Opened once, checked to be the very file asked for (no folder of the path swapped for a link since the service
+    # checked it as the user), and read only through this handle.
+    $stream = Open-GpuVMSafeFile -Path ([IO.Path]::GetFullPath($Path))
+    try { $zip = [IO.Compression.ZipArchive]::new($stream, [IO.Compression.ZipArchiveMode]::Read, $false) }
+    catch { $stream.Dispose(); throw 'El archivo no es una máquina de GpuVM.' }
     $manifestEntry = $zip.GetEntry('manifest.json')
     $diskEntry = $zip.GetEntry('disk.vhdx')
     if (-not $manifestEntry -or -not $diskEntry) { $zip.Dispose(); throw 'El archivo no es una máquina de GpuVM.' }
@@ -120,7 +122,7 @@ function Open-TransferArchive {
         if ($diskEntry.Length -ne $manifest['disk']['bytes']) { throw 'El archivo está dañado: el disco no mide lo que dice.' }
     }
     catch { $zip.Dispose(); throw }
-    [pscustomobject]@{ Zip = $zip; Manifest = $manifest; DiskEntry = $diskEntry }
+    [pscustomobject]@{ Zip = $zip; Manifest = $manifest; DiskEntry = $diskEntry; Length = $stream.Length }
 }
 
 # GpuVM writes the file as administrator: never inside Windows, the programs' folders, ProgramData or GpuVM's own
@@ -155,25 +157,37 @@ function Get-FreeGpuVMName {
     throw "No hay un nombre libre para '$Base'."
 }
 
-# Sunshine's web login (user, salted SHA-256 of the password) written straight into the guest's sunshine_state.json,
-# so the copy gets credentials only this PC knows. Same format Sunshine writes with --creds.
-function Set-SunshineWebCredential {
+# An imported machine gets its own streaming identity and Sunshine web login inside the VM, over PowerShell Direct,
+# the first time it is opened: the disk came from a file of unknown origin and is never mounted on this PC. Sunshine
+# is stopped, its identity and certificate are removed (it makes new ones when it starts), and the web login is set
+# with sunshine.exe --creds, as GpuVM's guest setup does. Windows restarts afterwards so Sunshine starts as usual.
+function Reset-GuestStreamingIdentity {
     param(
-        [Parameter(Mandatory)][string]$WindowsRoot,
-        [Parameter(Mandatory)][string]$User,
-        [Parameter(Mandatory)][string]$Password
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][pscredential]$Credential,
+        [Parameter(Mandatory)][pscredential]$WebCredential
     )
-    $statePath = Join-Path $WindowsRoot 'Program Files\Sunshine\config\sunshine_state.json'
-    Assert-NoReparsePoint -Root $WindowsRoot -Path $statePath
-    if (-not (Test-Path -LiteralPath $statePath)) { return $false }
-    $state = Get-Content -Raw -LiteralPath $statePath | ConvertFrom-Json -AsHashtable
-    if ($state -isnot [System.Collections.IDictionary]) { $state = [ordered]@{} }
-    $chars = [char[]]'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
-    $salt = -join (1..16 | ForEach-Object { $chars[[Security.Cryptography.RandomNumberGenerator]::GetInt32($chars.Length)] })
-    $hash = [Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($Password + $salt))
-    $state['username'] = $User
-    $state['salt'] = $salt
-    $state['password'] = [Convert]::ToHexString($hash)
-    [IO.File]::WriteAllText($statePath, ($state | ConvertTo-Json -Depth 10))
-    $true
+    $user = $WebCredential.UserName
+    $password = $WebCredential.GetNetworkCredential().Password
+    $result = Invoke-Guest -Name $Name -Credential $Credential -ArgumentList $user, $password -ScriptBlock {
+        param($user, $password)
+        $dir = Join-Path $env:ProgramFiles 'Sunshine'
+        $exe = Join-Path $dir 'sunshine.exe'
+        if (-not (Test-Path $exe)) { return 'no-sunshine' }
+        Get-Service SunshineService -ErrorAction SilentlyContinue | Stop-Service -Force -ErrorAction SilentlyContinue
+        Get-Process sunshine -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        $config = Join-Path $dir 'config'
+        $statePath = Join-Path $config 'sunshine_state.json'
+        if (Test-Path $statePath) {
+            $state = Get-Content -Raw $statePath | ConvertFrom-Json
+            if ($state -and $state.PSObject.Properties['root']) { $state.PSObject.Properties.Remove('root') }
+            # Without a byte order mark: Sunshine's JSON reader doesn't take one.
+            [IO.File]::WriteAllText($statePath, ($state | ConvertTo-Json -Depth 10))
+        }
+        foreach ($pem in 'cacert.pem', 'cakey.pem') { Remove-Item (Join-Path $config "credentials\$pem") -Force -ErrorAction SilentlyContinue }
+        Push-Location $dir
+        try { & $exe --creds $user $password | Out-Null } finally { Pop-Location }
+        'ok'
+    }
+    if ("$result" -ne 'ok') { throw "No se pudo dar a la máquina su propia identidad de streaming ($result)." }
 }

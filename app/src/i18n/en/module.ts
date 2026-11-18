@@ -230,6 +230,7 @@ export default {
   "El disco del archivo no coincide con su huella: el archivo está dañado o fue modificado. No se importa.": "The file's disk doesn't match its fingerprint: the file is damaged or was changed. It isn't imported.",
   "El disco del archivo depende de otro disco; no se importa.": "The file's disk depends on another disk; it isn't imported.",
   "Elige una carpeta de un disco de este equipo.": "Choose a folder on a drive of this PC.",
+  "Reiniciando Windows para terminar": "Restarting Windows to finish",
 } as Record<string, string>;
 
 export const patterns: [RegExp, string][] = [
@@ -539,6 +540,16 @@ export const patterns: [RegExp, string][] = [
   [/^Borrando la máquina desechable '(.+)'$/, "Deleting the disposable machine '$1'"],
   [/^Borrando lo que quedó de la máquina desechable '(.+)'$/, "Deleting what was left of the disposable machine '$1'"],
   [/^La máquina '(.+)' se conserva$/, "The machine '$1' is kept"],
+  [/^Una máquina desechable no se puede guardar puntos de restauración\. Consérvala primero para hacerlo\.$/, "A disposable machine can't keep restore points. Keep it first to do that."],
+  [/^Una máquina desechable no se puede volver a un punto de restauración\. Consérvala primero para hacerlo\.$/, "A disposable machine can't go back to a restore point. Keep it first to do that."],
+  [/^Una máquina desechable no se puede cambiar sus puntos de restauración\. Consérvala primero para hacerlo\.$/, "A disposable machine's restore points can't be changed. Keep it first to do that."],
+  [/^Una máquina desechable no se puede exportar\. Consérvala primero para hacerlo\.$/, "A disposable machine can't be exported. Keep it first to do that."],
+  [/^Una máquina desechable no se puede guardar como plantilla\. Consérvala primero para hacerlo\.$/, "A disposable machine can't be saved as a template. Keep it first to do that."],
+  [/^Hyper-V no respondió; no se borra nada ahora: (.+)$/, "Hyper-V didn't answer; nothing is deleted now: $1"],
+  [/^No se pudo dar a la máquina su propia identidad de streaming \((.+)\)\.$/, "Couldn't give the machine its own streaming identity ($1)."],
+  [/^(.+) pasa por un enlace a otra carpeta; elige la ubicación real\.$/, "$1 goes through a link to another folder; choose the real location."],
+  [/^No hay permiso para usar (.+)\.$/, "There's no permission to use $1."],
+  [/^No se pudo abrir (.+)\.$/, "Couldn't open $1."],
   [/^Queda poco espacio en (.+): se apaga la máquina desechable '(.+)' y se borra\.$/, "$1 is running out of space: the disposable machine '$2' shuts down and is deleted."],
   [/^Una máquina desechable necesita (\d+) GB libres en (.+) además de lo reservado para las otras máquinas; hay (\d+) GB\.$/, "A disposable machine needs $1 GB free on $2 besides what is reserved for the other machines; there are $3 GB."],
   [/^Apaga la máquina '(.+)' para crear un punto de restauración\.$/, "Shut down the machine '$1' to create a restore point."],

@@ -16,14 +16,16 @@ function Remove-GpuVMDisposable {
     # Disposable machines only reserve a fixed amount of the drive: when it gets down to the host's margin, the running
     # ones are shut down cleanly (in the background), and the next sweep deletes them.
     if ((Get-DriveFreeGB $root) -lt $script:DiskMarginGB) {
-        foreach ($vm in @(Get-VM -ErrorAction SilentlyContinue | Where-Object State -eq 'Running')) {
+        foreach ($vm in @(Get-VM -ErrorAction Stop | Where-Object State -eq 'Running')) {
             if (-not (Test-GpuVMDisposableByName -Name $vm.Name)) { continue }
             if (-not $PSCmdlet.ShouldProcess($vm.Name, 'Apagar la máquina desechable (poco espacio)')) { continue }
             Write-Warning "Queda poco espacio en $(Split-Path $root -Qualifier): se apaga la máquina desechable '$($vm.Name)' y se borra."
             Stop-VM -Name $vm.Name -Force -AsJob | Out-Null
         }
     }
-    foreach ($vm in @(Get-VM -ErrorAction SilentlyContinue)) {
+    # If Hyper-V doesn't answer, nothing is swept: an empty list would make every disposable machine's folder look left behind.
+    $all = try { @(Get-VM -ErrorAction Stop) } catch { Write-Warning "Hyper-V no respondió; no se borra nada ahora: $($_.Exception.Message)"; return }
+    foreach ($vm in $all) {
         $known[$vm.Name] = $true
         $state = try { Get-GpuVMState -Name $vm.Name } catch { $null }
         if (-not $state -or -not (Test-GpuVMDisposableDone -State $state -VMState $vm.State.ToString())) { continue }

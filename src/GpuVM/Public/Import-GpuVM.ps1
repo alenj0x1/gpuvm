@@ -3,7 +3,8 @@ function Import-GpuVM {
     .SYNOPSIS
     Creates a VM from a .gpuvm file made with Export-GpuVM. The disk is checked against the fingerprint saved in the
     file; the VM gets its own streaming identity (the viewer pairs again) and its settings from -Profile. If the name
-    is taken it gets "<name>-2". Without -Credential, GpuVM asks for the Windows password later.
+    is taken it gets "<name>-2". The Windows password is needed: the first time the VM is opened, GpuVM uses it to give
+    Sunshine inside the copy its own identity and web login.
     .EXAMPLE
     Import-GpuVM -Path D:\Copias\win10.gpuvm -Credential (Get-Credential gpuvm)
     #>
@@ -13,7 +14,7 @@ function Import-GpuVM {
         [ValidatePattern('^[\w-]{1,40}$')][string]$Name,
         [string]$Profile = 'balanced',
         [hashtable]$Override,
-        [pscredential]$Credential,
+        [Parameter(Mandatory)][pscredential]$Credential,
         [switch]$Start
     )
     Assert-Admin
@@ -61,14 +62,9 @@ function Import-GpuVM {
         $vhd = Get-VHD -Path $vhdPath
         if ($vhd.VhdType -eq 'Differencing') { throw 'El disco del archivo depende de otro disco; no se importa.' }
 
+        # The disk comes from a file of unknown origin: it is never mounted on this PC. Sunshine's identity and web login
+        # are reset inside the VM, over PowerShell Direct, the first time it is opened (Connect-GpuVM).
         $webPassword = New-RandomPassword
-        $sunshine = @{ set = $false }
-        Invoke-WithMountedWindows -Path $vhdPath -ScriptBlock {
-            param($winRoot)
-            Write-Step 'Dando a la máquina su propia identidad de streaming'
-            Reset-ClonedGuestIdentity -WindowsRoot $winRoot
-            $sunshine.set = Set-SunshineWebCredential -WindowsRoot $winRoot -User 'gpuvm' -Password $webPassword
-        }
 
         Write-Step "Registrando la máquina '$vmName' en Hyper-V"
         New-VM -Name $vmName -Generation 2 -MemoryStartupBytes ([int64]$config['vm']['memoryGB'] * 1GB) -VHDPath $vhdPath -Path $root | Out-Null
@@ -89,15 +85,13 @@ function Import-GpuVM {
             toolVersion   = $script:ToolVersion
             statePath     = Join-Path $vmDir 'gpuvm.json'
             edition       = $manifest['edition']
-            streaming     = if ($sunshine.set) {
-                [ordered]@{ provider = $streamingProvider; user = 'gpuvm'; password = ConvertTo-SecureString $webPassword -AsPlainText -Force | ConvertFrom-SecureString; pairedClient = $null }
-            } else { $null }
+            streaming     = [ordered]@{ provider = $streamingProvider; user = 'gpuvm'; password = ConvertTo-SecureString $webPassword -AsPlainText -Force | ConvertFrom-SecureString; pairedClient = $null }
+            pendingIdentityReset = $true
             pendingRename = $true
             pendingApps   = @($manifest['pendingApps'])
             installedApps = @($manifest['installedApps'])
         }
-        # Without a password GpuVM has no guest credential yet; the app asks for it (the user name is in the profile).
-        if ($Credential) { $state['guest'] = [ordered]@{ user = $Credential.UserName; password = $Credential.Password | ConvertFrom-SecureString } }
+        $state['guest'] = [ordered]@{ user = $Credential.UserName; password = $Credential.Password | ConvertFrom-SecureString }
         Save-GpuVMState $state
     }
     catch {
@@ -105,7 +99,7 @@ function Import-GpuVM {
             Write-Step 'La importación falló; limpiando lo que se alcanzó a crear'
             if (Get-VM -Name $vmName -ErrorAction SilentlyContinue) { Remove-VM -Name $vmName -Force -ErrorAction SilentlyContinue }
             $disk = Join-Path $vmDir "Virtual Hard Disks\$vmName.vhdx"
-            if ((Get-VHD -Path $disk -ErrorAction SilentlyContinue).Attached) { Dismount-VHD -Path $disk -ErrorAction SilentlyContinue }
+            $vhdInfo = Get-VHD -Path $disk -ErrorAction SilentlyContinue; if ($vhdInfo -and $vhdInfo.Attached) { Dismount-VHD -Path $disk -ErrorAction SilentlyContinue }
             Remove-Item -LiteralPath $vmDir -Recurse -Force -ErrorAction SilentlyContinue
         }
         throw

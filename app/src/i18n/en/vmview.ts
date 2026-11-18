@@ -255,7 +255,6 @@ export default {
   "Ocupa {size}": "Takes {size}",
   "Cambios desde entonces {size}": "Changes since then {size}",
   "Volver": "Go back",
-  "Borrar": "Delete",
   "Borrar punto": "Delete point",
   "Volver a {point}": "Go back to {point}",
   "Windows vuelve a como estaba el {date}. Los ajustes de la máquina no cambian.": "Windows goes back to how it was on {date}. The machine's settings don't change.",

@@ -16,6 +16,7 @@ function Restore-GpuVMRestorePoint {
     )
     Assert-Admin
     $state = Get-GpuVMState -Name $Name
+    Assert-GpuVMNotDisposable -State $state -Action 'volver a un punto de restauración'
     if (-not $PSCmdlet.ShouldProcess($Name, "Volver al punto $Id")) { return }
     $restart = Stop-GpuVMForDisk -Name $Name -ShutdownIfRunning:$ShutdownIfRunning -Action 'volver a un punto de restauración'
     try {

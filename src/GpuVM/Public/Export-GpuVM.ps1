@@ -17,26 +17,40 @@ function Export-GpuVM {
     )
     Assert-Admin
     $state = Get-GpuVMState -Name $Name
+    Assert-GpuVMNotDisposable -State $state -Action 'exportar'
     $target = [IO.Path]::GetFullPath($Path)
     if ([IO.Path]::GetExtension($target) -ne $script:TransferExtension) { $target += $script:TransferExtension }
-    if (Test-Path -LiteralPath $target) { throw "Ya existe $target. Elige otro nombre." }
     $dir = Split-Path $target -Parent
     if (-not (Test-Path -LiteralPath $dir -PathType Container)) { throw "No existe la carpeta $dir." }
     $target = Assert-GpuVMExportPath -Path $target
     $source = (Get-VMHardDiskDrive -VMName $Name | Select-Object -First 1).Path
     if (-not $source) { throw "La máquina '$Name' no tiene disco." }
-    # The merged copy and the file are both written next to the target: at most twice what the chain takes.
+    # The merged copy is made in GpuVM's own folder and the file in the chosen one: each needs up to what the chain takes.
     $chain = Get-VhdChainBytes -Path $source
-    $needGB = [math]::Ceiling(2 * $chain / 1GB) + 5
-    $freeGB = Get-DriveFreeGB $target
-    if ($needGB -gt $freeGB) { throw "No hay espacio en $(Split-Path $target -Qualifier) para exportar: hacen falta hasta $needGB GB y quedan $freeGB GB libres." }
+    $root = Get-GpuVMDefaultRoot
+    $chainGB = [math]::Ceiling($chain / 1GB) + 5
+    $sameDrive = (Split-Path $root -Qualifier) -eq (Split-Path $target -Qualifier)
+    foreach ($check in @(@($root, $(if ($sameDrive) { 2 * $chainGB } else { $chainGB })), @($target, $chainGB))) {
+        if ($sameDrive -and $check[0] -eq $target) { continue }
+        $freeGB = Get-DriveFreeGB $check[0]
+        if ($check[1] -gt $freeGB) { throw "No hay espacio en $(Split-Path $check[0] -Qualifier) para exportar: hacen falta hasta $($check[1]) GB y quedan $freeGB GB libres." }
+    }
     if (-not $PSCmdlet.ShouldProcess($Name, "Exportar a $target")) { return }
 
-    $restart = Stop-GpuVMForDisk -Name $Name -ShutdownIfRunning:$ShutdownIfRunning -Action 'exportarla'
-    $temp = "$target.disk.partial.vhdx"
-    $partial = "$target.partial"
+    # The destination file is created now, once, and checked to be exactly where it was asked (no folder of the path
+    # swapped for a link since the service checked it as the user). Everything after writes and, on failure, deletes it
+    # through this handle, never through its path again.
+    $file = New-GpuVMSafeFile -Path $target
+    # The merged disk is made in a folder only administrators can write (inside GpuVM's root), never in the user's folder.
+    Initialize-GpuVMRoot -Path $root
+    $staging = Join-Path $root ".staging\export-$([guid]::NewGuid().ToString('n'))"
+    New-Item -ItemType Directory -Path $staging -Force | Out-Null
+    $temp = Join-Path $staging 'disk.vhdx'
+    $ok = $false
+    $restart = $false
     $sw = [Diagnostics.Stopwatch]::StartNew()
     try {
+        $restart = Stop-GpuVMForDisk -Name $Name -ShutdownIfRunning:$ShutdownIfRunning -Action 'exportarla'
         try {
             Write-Step 'Copiando el disco de la máquina'
             Convert-VHD -Path $source -DestinationPath $temp -VHDType Dynamic -ErrorAction Stop
@@ -52,36 +66,31 @@ function Export-GpuVM {
         $manifest = New-TransferManifest -State $state -SizeBytes $vhd.Size
         $length = (Get-Item -LiteralPath $temp).Length
 
-        $file = [IO.File]::Open($partial, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+        $zip = [IO.Compression.ZipArchive]::new($file, [IO.Compression.ZipArchiveMode]::Create, $true)
         try {
-            $zip = [IO.Compression.ZipArchive]::new($file, [IO.Compression.ZipArchiveMode]::Create, $false)
-            try {
-                $entry = $zip.CreateEntry('disk.vhdx', [IO.Compression.CompressionLevel]::$Compression)
-                $in = [IO.File]::OpenRead($temp)
-                $out = $entry.Open()
-                try { $copy = Copy-StreamWithHash -Source $in -Destination $out -Length $length -Label 'Exportando' }
-                finally { $out.Dispose(); $in.Dispose() }
-                $manifest['disk'] = [ordered]@{ bytes = $copy.Bytes; sha256 = $copy.Sha256 }
-                $manifestEntry = $zip.CreateEntry('manifest.json', [IO.Compression.CompressionLevel]::Optimal)
-                $writer = [IO.StreamWriter]::new($manifestEntry.Open(), [Text.UTF8Encoding]::new($false))
-                try { $writer.Write(($manifest | ConvertTo-Json -Depth 5)) } finally { $writer.Dispose() }
-            }
-            finally { $zip.Dispose() }
+            $entry = $zip.CreateEntry('disk.vhdx', [IO.Compression.CompressionLevel]::$Compression)
+            $in = [IO.File]::OpenRead($temp)
+            $out = $entry.Open()
+            try { $copy = Copy-StreamWithHash -Source $in -Destination $out -Length $length -Label 'Exportando' }
+            finally { $out.Dispose(); $in.Dispose() }
+            $manifest['disk'] = [ordered]@{ bytes = $copy.Bytes; sha256 = $copy.Sha256 }
+            $manifestEntry = $zip.CreateEntry('manifest.json', [IO.Compression.CompressionLevel]::Optimal)
+            $writer = [IO.StreamWriter]::new($manifestEntry.Open(), [Text.UTF8Encoding]::new($false))
+            try { $writer.Write(($manifest | ConvertTo-Json -Depth 5)) } finally { $writer.Dispose() }
         }
-        finally { $file.Dispose() }
-        [IO.File]::Move($partial, $target)
-    }
-    catch {
-        Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue
-        throw
+        finally { $zip.Dispose() }
+        $file.Flush($true)
+        $size = $file.Length
+        $ok = $true
     }
     finally {
+        # A file that didn't finish is deleted through its handle.
+        Close-GpuVMNewFile -Stream $file -Discard:(-not $ok)
         if (Test-Path -LiteralPath $temp) {
-            if ((Get-VHD -Path $temp -ErrorAction SilentlyContinue).Attached) { Dismount-VHD -Path $temp -ErrorAction SilentlyContinue }
-            Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue
+            $vhdInfo = Get-VHD -Path $temp -ErrorAction SilentlyContinue; if ($vhdInfo -and $vhdInfo.Attached) { Dismount-VHD -Path $temp -ErrorAction SilentlyContinue }
         }
+        Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
     }
-    $size = (Get-Item -LiteralPath $target).Length
     Write-Step "Máquina exportada ($([math]::Round($size / 1GB, 1)) GB)"
     [ordered]@{
         name       = $Name

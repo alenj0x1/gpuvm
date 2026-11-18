@@ -40,3 +40,10 @@ function Test-GpuVMDisposableDone {
     if (-not [datetime]::TryParse([string]$State['disposable']['createdAt'], [ref]$created)) { return $true }
     ((Get-Date) - $created).TotalMinutes -ge $script:DisposableGraceMinutes
 }
+
+# Taking points, going back or exporting needs the machine off; a used disposable machine that is off gets deleted by
+# the next sweep, so these refuse disposable machines (Set-GpuVMDisposable -Keep makes one a normal machine first).
+function Assert-GpuVMNotDisposable {
+    param([System.Collections.IDictionary]$State, [Parameter(Mandatory)][string]$Action)
+    if (Test-GpuVMDisposable -State $State) { throw "Una máquina desechable no se puede $Action. Consérvala primero para hacerlo." }
+}

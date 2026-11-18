@@ -723,12 +723,12 @@ function Header({ vm, vms = [], busy, variant, startJob, run, onRemoved, onRenam
                 <IconDownload size={16} />{off ? t("Actualizar driver de la GPU") : t("Apagar y actualizar driver")}
               </button>
             )}
-            {!locked && vm.managed && (
+            {!locked && vm.managed && !vm.disposable && (
               <button role="menuitem" onClick={() => { setMenu(false); setTemplating(true); }}>
                 <IconTemplate size={16} />{off ? t("Crear plantilla") : t("Apagar y crear plantilla")}
               </button>
             )}
-            {!locked && vm.managed && (
+            {!locked && vm.managed && !vm.disposable && (
               <button role="menuitem" onClick={async () => {
                 setMenu(false);
                 const path = await pickExportFile(vm.name);
