@@ -9,7 +9,9 @@
 # Every Write-Step is timestamped into out/real-steps-*.log. Takes the shared lab lock. Elevated PowerShell 7.
 param(
     [string]$IsoPath = 'C:\Users\you\Downloads\Win10_22H2_Spanish_Mexico_x64v1.iso',
-    [string]$Keep = 'win-gpu'
+    [string]$Keep = 'win-gpu',
+    # Leaves lab045-real and its template for another session's test (it deletes them when done).
+    [switch]$CleanAll
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lock.ps1')
@@ -125,12 +127,13 @@ catch {
 }
 finally {
     Write-Host 'cleanup'
-    foreach ($n in @($made) | Where-Object { $_ -notlike 'template:*' }) {
+    $leave = if ($CleanAll) { @() } else { @($name) }
+    foreach ($n in @($made) | Where-Object { $_ -notlike 'template:*' -and $_ -notin $leave }) {
         try { StopClean $n; if (Get-VM -Name $n -ErrorAction SilentlyContinue) { Remove-GpuVM -Name $n -DeleteDisk -Confirm:$false } } catch { Write-Warning "cleanup ${n}: $($_.Exception.Message)" }
         $d = Join-Path (& $m { Get-GpuVMDefaultRoot }) $n
         if (Test-Path $d) { Get-ChildItem $d -Recurse -File | ForEach-Object { $_.IsReadOnly = $false }; Remove-Item $d -Recurse -Force -ErrorAction SilentlyContinue }
     }
-    if ($made -contains "template:$tpl") { try { Remove-GpuVMTemplate -Name $tpl -Confirm:$false } catch { Write-Warning "cleanup template: $($_.Exception.Message)" } }
+    if ($CleanAll -and $made -contains "template:$tpl") { try { Remove-GpuVMTemplate -Name $tpl -Confirm:$false } catch { Write-Warning "cleanup template: $($_.Exception.Message)" } }
     if (Test-Path $exportFile) { Remove-Item $exportFile -Force }
     if ($keepWasRunning) { Set-LabLockNote "encendiendo $Keep"; try { Start-VM -Name $Keep; Note 'start-win-gpu' @{ ok = $true } } catch { Write-Warning "No se pudo encender ${Keep}: $($_.Exception.Message)" } }
     Exit-LabLock
