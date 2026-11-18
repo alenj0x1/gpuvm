@@ -32,7 +32,7 @@ const MAX_LINE: usize = 16 * 1024;
 /// Shortest time between two panel or Home requests from a viewer (a key held down, or a viewer that loops).
 const PANEL_GAP: Duration = Duration::from_millis(250);
 /// Messages the viewer may send.
-const FROM_VIEWER: &[&str] = &["hello", "stage", "stage-failed", "connected", "error", "app-running", "window", "first-frame", "stats", "panel", "home", "ended"];
+const FROM_VIEWER: &[&str] = &["hello", "stage", "stage-failed", "connected", "error", "app-running", "window", "first-frame", "stats", "panel", "home", "ended", "drag"];
 /// Commands this app may send.
 const TO_VIEWER: &[&str] = &["inset", "capture", "fullscreen", "stats", "quit", "focus"];
 
@@ -68,6 +68,8 @@ struct Viewer {
     full_now: std::sync::atomic::AtomicBool,
     /// When the viewer last asked for the panel or Home: repeated asks closer than PANEL_GAP are dropped.
     last_toggle: Mutex<Option<Instant>>,
+    /// When the viewer last reported a drag (same limit as the panel).
+    last_drag: Mutex<Option<Instant>>,
     /// The machine opens full screen (its "Pantalla completa" option): it still starts inside the app, hidden, and
     /// goes full screen when revealed.
     full_screen: bool,
@@ -390,7 +392,7 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
     }
     drop(token);
 
-    let viewer = Arc::new(Viewer { pipe, child, raise_until: Mutex::new(None), write: Mutex::new(()), hwnd: AtomicIsize::new(0), embed, visible: std::sync::atomic::AtomicBool::new(!embed), revealed: std::sync::atomic::AtomicBool::new(!embed), first_frame: std::sync::atomic::AtomicBool::new(false), full_now: std::sync::atomic::AtomicBool::new(false), last_toggle: Mutex::new(None), full_screen });
+    let viewer = Arc::new(Viewer { pipe, child, raise_until: Mutex::new(None), write: Mutex::new(()), hwnd: AtomicIsize::new(0), embed, visible: std::sync::atomic::AtomicBool::new(!embed), revealed: std::sync::atomic::AtomicBool::new(!embed), first_frame: std::sync::atomic::AtomicBool::new(false), full_now: std::sync::atomic::AtomicBool::new(false), last_toggle: Mutex::new(None), last_drag: Mutex::new(None), full_screen });
     viewers().get_or_insert_with(HashMap::new).insert(vm.clone(), viewer.clone());
     let _ = app.emit("viewer", json!({ "vm": vm, "msg": { "type": "opened", "pid": pid } }));
 
@@ -419,6 +421,16 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
                 if let Some(o) = msg.as_object_mut() {
                     o.remove("hwnd");
                 }
+            }
+            // Something is dragged over the picture: this app shows its own drop area (dropzone.rs). Nothing else
+            // sees it, and a viewer that repeats it is held to one every PANEL_GAP.
+            if kind == "drag" {
+                let mut last = viewer.last_drag.lock().unwrap_or_else(|e| e.into_inner());
+                if !last.is_some_and(|t| t.elapsed() < PANEL_GAP) && viewer.visible.load(Ordering::Relaxed) {
+                    *last = Some(Instant::now());
+                    crate::dropzone::on_drag(&app, &vm);
+                }
+                continue;
             }
             if matches!(kind.as_str(), "panel" | "home") {
                 let mut last = viewer.last_toggle.lock().unwrap_or_else(|e| e.into_inner());
@@ -451,7 +463,12 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
         if all.as_ref().and_then(|v| v.get(&vm)).is_some_and(|v| Arc::ptr_eq(v, &viewer)) {
             all.as_mut().map(|v| v.remove(&vm));
         }
+        // The last machine closed: the clipboard copies kept for it are forgotten.
+        let none_left = all.as_ref().is_none_or(|v| v.is_empty());
         drop(all);
+        if none_left {
+            crate::clipboard::clear();
+        }
         announce_cover();
         let closed = json!({ "type": "closed" });
         if let Some(waiter) = WAITERS.lock().unwrap_or_else(|e| e.into_inner()).as_mut().and_then(|w| w.remove(&vm)) {
@@ -573,6 +590,11 @@ pub fn send_to(vm: &str, msg: &Value) -> Result<(), String> {
 /// Whether a machine's viewer is full screen now.
 pub fn viewer_full_screen(vm: &str) -> bool {
     viewers().as_ref().and_then(|v| v.get(vm)).is_some_and(|v| v.full_now.load(Ordering::Relaxed))
+}
+
+/// A machine is open in a viewer (the clipboard widget only keeps copies meanwhile).
+pub fn any_open() -> bool {
+    viewers().as_ref().is_some_and(|v| !v.is_empty())
 }
 
 pub fn viewer_hwnd(vm: &str) -> Option<isize> {

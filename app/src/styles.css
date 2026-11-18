@@ -462,6 +462,20 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
   .segment-row > .segmented { flex-direction: column; flex-wrap: nowrap; width: 100%; }
   .segment-row > .segmented button { justify-content: flex-start; }
 }
+/* Drop area over the viewer's picture (DropZone, window "viewer-drop"): the picture dims and the target shows in the
+   middle; files over it brighten the card's icon. */
+html.drop-window, html.drop-window body, html.drop-window #root { background: transparent; min-height: 0; height: 100%; overflow: hidden; }
+.drop-veil { box-sizing: border-box; height: 100%; display: grid; place-items: center; background: rgba(18, 19, 22, 0.55); }
+.drop-card { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 20px 28px; border-radius: var(--r-lg);
+  background: var(--surface); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); font-size: 13px; }
+.drop-card strong { font-size: 15px; font-weight: 600; }
+.drop-card > span:last-child { color: var(--muted); }
+.drop-icon { display: grid; place-items: center; width: 44px; height: 44px; margin-bottom: 6px; border-radius: 12px; background: var(--surface-2);
+  color: var(--muted); box-shadow: inset 0 0 0 1px var(--line); }
+.drop-veil.over .drop-icon { background: var(--tint-bg); color: var(--tint-fg); box-shadow: none; }
+.drop-progress { box-sizing: border-box; height: 100%; display: flex; align-items: center; padding: 0 4px; border-radius: var(--r-lg);
+  background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
+.drop-progress ul { list-style: none; margin: 0; padding: 0; flex: 1; min-width: 0; }
 /* Administrator-prompt card (PromptCard): its own transparent window over Moonlight. */
 html.prompt-window, html.prompt-window body, html.prompt-window #root { background: transparent; min-height: 0; height: 100%; overflow: hidden; }
 .prompt-card { box-sizing: border-box; height: 100%; display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: var(--r-lg);
@@ -1387,6 +1401,34 @@ html.viewer-panel-window body::after { display: none; }
   background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); color: var(--text); font-size: 13px; font-weight: 500; white-space: nowrap; }
 .vp-chip:hover:not(:disabled) { background: var(--hover); }
 .vp-chip:disabled { opacity: .4; cursor: default; }
+.vp-chip.on { background: var(--sel); }
+/* Archivos and Portapapeles (FilesWidgets.tsx): rows like the games' list, the action at the right; the percent goes
+   before the name so a long name never hides it. */
+.vp-files, .vp-clip { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.vp-files-empty { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 8px 14px; text-align: center; }
+.vp-files-empty strong { font-size: 13px; font-weight: 500; }
+.vp-files-empty > span:last-child:not(.vp-empty-icon) { font-size: 12px; color: var(--muted); line-height: 1.45; }
+.vp-transfers, .vp-clips { list-style: none; margin: 0; padding: 6px; display: flex; flex-direction: column; gap: 2px; flex: 1; min-height: 0; }
+.vp-transfer, .vp-clips li { display: flex; align-items: center; gap: 10px; min-height: 46px; padding: 4px 6px 4px 8px; border-radius: var(--r); flex: none; min-width: 0; }
+.vp-clips li:hover { background: var(--hover); }
+.vp-transfer-mark { width: 40px; flex: none; display: grid; place-items: center; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--text); }
+.vp-transfer-mark strong { font-weight: 600; }
+.vp-transfer.done .vp-transfer-mark { color: var(--tint-fg); }
+.vp-transfer.error .vp-transfer-mark, .vp-transfer.cancelled .vp-transfer-mark { color: var(--muted); }
+.vp-transfer-text, .vp-clip-text { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.vp-transfer-text .name, .vp-clip-text .name, .vp-clip-text .text { color: var(--text); font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vp-clip-text .text { font-weight: 400; }
+.vp-transfer-text .sub, .vp-clip-text .sub { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vp-transfer.error .sub, .vp-clip-text .sub.err { white-space: normal; }
+.vp-transfer-bar { display: block; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.vp-transfer-bar i { display: block; height: 100%; background: var(--accent); transition: width .4s ease; }
+.vp-send { flex: none; display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 10px; border-top: 1px solid var(--line); }
+.vp-send-label { font-size: 12px; color: var(--muted); }
+.vp-send-targets { display: flex; flex-wrap: wrap; gap: 6px; }
+.vp-send-error { font-size: 12px; color: var(--muted); }
+.vp-clip-thumb { width: 40px; height: 30px; flex: none; object-fit: cover; border-radius: 4px; box-shadow: inset 0 0 0 1px var(--line); }
+.vp-clip-icon { width: 30px; height: 30px; flex: none; display: grid; place-items: center; border-radius: var(--r-sm); background: var(--tint-bg); color: var(--tint-fg); }
+.vp-clip-foot { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px 10px; border-top: 1px solid var(--line); }
 .vp-chip.ghost { background: none; box-shadow: none; color: var(--muted); }
 .vp-chip.ghost:hover { color: var(--text); }
 .vp-icon { width: 30px; height: 30px; padding: 0; flex: none; display: grid; place-items: center; border-radius: var(--r-sm); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); }

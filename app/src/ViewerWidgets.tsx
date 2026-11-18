@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalS
 import {
   IconActivity, IconArrowsMaximize, IconArrowsMinimize, IconBooks, IconBolt, IconChartLine, IconClock, IconCloud, IconCloudFog,
   IconCloudRain, IconCloudSnow, IconCloudStorm, IconDeviceDesktop, IconDeviceGamepad2, IconHome, IconMinus, IconMoon,
-  IconPlayerPlay, IconPlugConnectedX, IconPlus, IconSun, IconTrophy, IconCloudSearch, type Icon,
+  IconPlayerPlay, IconPlugConnectedX, IconPlus, IconSun, IconTrophy, IconCloudSearch, IconFiles, IconClipboard, type Icon,
 } from "@tabler/icons-react";
 import { MiniCube } from "./MiniCube";
 import { miniOf } from "./HomeLoading";
@@ -19,7 +19,7 @@ import type { VmOverview } from "./types";
 // order without leaving holes. Dragging one moves it among the others, which slide aside while it passes; its corner
 // resizes it in whole cells, each kind within its own limits. The layout is remembered.
 
-export type WidgetType = "machines" | "actions" | "stats" | "clock" | "shelf" | "games" | "weather";
+export type WidgetType = "machines" | "actions" | "stats" | "clock" | "shelf" | "games" | "weather" | "files" | "clipboard";
 /** A widget on the board: its kind, its size in cells and the cell of its top left corner. */
 export interface WidgetItem { id: string; type: WidgetType; w: number; h: number; x: number; y: number }
 interface Spec { icon: Icon; name: () => string; minW: number; maxW: number; minH: number; maxH: number; w: number; h: number }
@@ -34,11 +34,13 @@ export const SPEC: Record<WidgetType, Spec> = {
   shelf: { icon: IconBooks, name: () => t("Estantería"), minW: 1, maxW: 3, minH: 1, maxH: 4, w: 2, h: 2 },
   games: { icon: IconDeviceGamepad2, name: () => t("Juegos"), minW: 1, maxW: 3, minH: 1, maxH: 3, w: 2, h: 2 },
   weather: { icon: IconCloud, name: () => t("Clima"), minW: 1, maxW: 3, minH: 1, maxH: 2, w: 1, h: 1 },
+  files: { icon: IconFiles, name: () => t("Archivos"), minW: 2, maxW: 3, minH: 2, maxH: 5, w: 2, h: 2 },
+  clipboard: { icon: IconClipboard, name: () => t("Portapapeles"), minW: 2, maxW: 3, minH: 2, maxH: 5, w: 2, h: 3 },
 };
-const ORDER: WidgetType[] = ["machines", "actions", "stats", "clock", "shelf", "games", "weather"];
+const ORDER: WidgetType[] = ["machines", "actions", "stats", "clock", "files", "clipboard", "shelf", "games", "weather"];
 // The shelf and the games ask for the whole width: two columns in a narrow panel, three in a wide one (no empty
 // column beside them). Placed in this order, the first free cell each.
-const DEFAULT_SIZES: [WidgetType, number, number][] = [["machines", 2, 2], ["stats", 1, 2], ["clock", 1, 2], ["actions", 2, 2], ["shelf", 3, 2], ["games", 3, 2]];
+const DEFAULT_SIZES: [WidgetType, number, number][] = [["machines", 2, 2], ["stats", 1, 2], ["clock", 1, 2], ["actions", 2, 2], ["files", 2, 2], ["clipboard", 2, 3], ["shelf", 3, 2], ["games", 3, 2]];
 
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
 const GAP = 8, ROW = 76;
@@ -86,6 +88,9 @@ function place(items: WidgetItem[], cols: number, first?: string): Record<string
 }
 
 const KEY = "gpuvm.viewerPanelWidgets";
+/** Widgets added after the first layouts were saved (Archivos and Portapapeles, 0.10). */
+const NEWER: WidgetType[] = ["files", "clipboard"];
+const OFFERED = "gpuvm.viewerPanelWidgetsOffered";
 export function loadWidgets(): WidgetItem[] {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? "null");
@@ -96,6 +101,12 @@ export function loadWidgets(): WidgetItem[] {
       const base = { id: x.type, type: x.type as WidgetType, w: clamp(Number(x.w) || 1, s.minW, s.maxW), h: clamp(Number(x.h) || 1, s.minH, s.maxH) };
       return Number.isFinite(x.x) && Number.isFinite(x.y) ? { ...base, x: clamp(x.x, 0, 2), y: Math.max(0, x.y) } : base;
     });
+    // Widgets that came out after the layout was saved go under it once; removed later, they stay removed.
+    const offered = new Set<string>(JSON.parse(localStorage.getItem(OFFERED) ?? "[]"));
+    for (const type of NEWER) {
+      if (!offered.has(type) && !list.some((x) => x.type === type)) list.push(newWidget(type, settle(list)));
+    }
+    localStorage.setItem(OFFERED, JSON.stringify(NEWER));
     return settle(list);
   } catch { return defaultWidgets(); }
 }

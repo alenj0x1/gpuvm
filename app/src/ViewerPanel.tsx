@@ -7,6 +7,7 @@ import { useDecor } from "./decor/store";
 import type { GameDef } from "./games";
 import { MachineIcon } from "./machineIcon";
 import { refreshPrefs } from "./prefs";
+import { ClipboardWidget, FilesWidget } from "./FilesWidgets";
 import { t } from "./i18n";
 import { humanError } from "./ui";
 import {
@@ -210,6 +211,8 @@ export function ViewerPanel({ machine, onSwitched, onResize, sample }: {
                     case "shelf": return <ShelfWidget vms={vms} size={size} />;
                     case "games": return <GamesWidget size={size} player={vm} fallback={decor} onPlay={(g) => { setEdit(false); setGame(g); }} />;
                     case "weather": return <WeatherWidget size={size} open={open} />;
+                    case "files": return <FilesWidget vm={vm} vms={vms} size={size} />;
+                    case "clipboard": return <ClipboardWidget vm={vm} size={size} />;
                   }
                 }}
               </WidgetBoard>

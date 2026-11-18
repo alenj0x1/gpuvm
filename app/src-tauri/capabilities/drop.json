@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "drop",
+  "description": "The drop area over GpuVM's viewer: it shows the drop and the copies, and can only cancel a copy or hide itself (the copy itself starts in Rust from Windows' own drop event)",
+  "windows": ["viewer-drop"],
+  "permissions": [
+    "core:event:default", "core:window:default",
+    "allow-transfer-cancel", "allow-transfer-list", "allow-viewer-drop-hide", "allow-viewer-drop-state"
+  ]
+}

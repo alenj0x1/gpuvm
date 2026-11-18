@@ -36,6 +36,8 @@ export const api = {
       ...(stream.bitrateKbps !== undefined ? { BitrateKbps: stream.bitrateKbps } : {}),
     }),
   monitors: () => ps<HostMonitor>("Get-GpuVMMonitor"),
+  /** What is selected in a machine's File Explorer (what "Enviar a" sends to another machine). */
+  explorerSelection: (name: string) => ps<{ name: string; paths: string[]; names: string[] }>("Get-GpuVMExplorerSelection", { Name: name }).then((r) => r[0]),
   /** A monitor's id, "primary", or "default" to follow Preferences. */
   setMonitor: (name: string, monitor: string) => ps("Set-GpuVMStreamingClient", { Name: name, Monitor: monitor }),
   /** The machine must be off; the app runs it as a job (startJob) so its steps show on the button. */
