@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { IconCheck, IconLoader2, IconShieldLock, IconX } from "@tabler/icons-react";
-import { adminPromptAnswered, api, inTauri } from "./api";
+import { api, inTauri } from "./api";
 import { humanError } from "./ui";
 import { t, translateModule } from "./i18n";
 import type { AdminPrompt } from "./types";
@@ -33,8 +33,10 @@ export function PromptCard() {
     setBusy(choice);
     setError("");
     try {
-      await api.answerAdminPrompt(prompt.name, choice, prompt.id);
-      await adminPromptAnswered(prompt.name, prompt.id);
+      if (!inTauri) { await new Promise((r) => setTimeout(r, 400)); setPrompts([]); return; }
+      // A narrow command: only a prompt GpuVM put on this card can be answered (prompt.rs, card_answer).
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("card_answer", { name: prompt.name, id: prompt.id, allow: choice === "Allow" });
     }
     catch (e) { setError(humanError(e)); setBusy(null); }
   };

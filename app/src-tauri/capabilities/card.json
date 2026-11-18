@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "card",
+  "description": "The admin-prompt card: it lists the prompts GpuVM put on it and answers one of them, nothing else",
+  "windows": ["prompt"],
+  "permissions": ["core:default", "allow-admin-prompts", "allow-card-answer"]
+}

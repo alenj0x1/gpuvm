@@ -147,8 +147,26 @@ fn show(app: &AppHandle, prompts: Value) {
     }
 }
 
-/// The card answered this prompt: forget it and close the card now (the next poll would still list it for a moment).
+/// Permitir / Rechazar on the card. The card's page names the prompt, but only one this app put on the card can be
+/// answered (its window has no generic command; capabilities/card.json).
 #[tauri::command]
+pub async fn card_answer(app: AppHandle, name: String, id: i64, allow: bool) -> Result<(), String> {
+    let shown = CURRENT.lock().unwrap_or_else(|e| e.into_inner()).as_ref()
+        .and_then(|v| v.as_array().map(|list| list.iter().any(|p| key(p) == (name.clone(), id))))
+        .unwrap_or(false);
+    if !shown {
+        return Err("El aviso ya cambió o se cerró. Revisa el nuevo antes de responder.".into());
+    }
+    let state = app.state::<crate::AppState>();
+    let request = json!({ "id": crate::next_id(&state), "cmd": "Resolve-GpuVMAdminPrompt",
+        "args": { "Name": name, "Answer": if allow { "Allow" } else { "Deny" }, "PromptId": id } });
+    crate::query(&state, request).await.and_then(crate::into_data)?;
+    admin_prompt_answered(app.clone(), name, id);
+    Ok(())
+}
+
+/// A prompt was answered (card or dock): forget it and close what showed it now (the next poll would still list it
+/// for a moment).
 pub fn admin_prompt_answered(app: AppHandle, name: String, id: i64) {
     let mut answered = ANSWERED.lock().unwrap_or_else(|e| e.into_inner());
     answered.push((name.clone(), id));
