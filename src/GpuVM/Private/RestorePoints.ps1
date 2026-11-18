@@ -54,8 +54,23 @@ function Stop-GpuVMForDisk {
     $true
 }
 
-# Hyper-V gives the VM's worker process access to its disk (and the disk's parents) when the disk is attached;
-# a disk file made again at the same path must be attached again to get that access.
+# Hyper-V gives each VM its own read/write entry on its disk file (NT VIRTUAL MACHINE\<VM id>) when the disk is
+# attached. A file made again at the same path doesn't have it, and attaching the same path again doesn't add it
+# (lab 045: "Account does not have permission to open attachment"). So the new file gets the explicit entries the
+# VM's previous disk file had: that VM's own access, nothing more.
+function Copy-GpuVMDiskAccess {
+    param([Parameter(Mandatory)][string]$From, [Parameter(Mandatory)][string]$To)
+    $source = Get-Acl -LiteralPath $From
+    $target = Get-Acl -LiteralPath $To
+    $changed = $false
+    foreach ($rule in $source.GetAccessRules($true, $false, [Security.Principal.SecurityIdentifier])) {
+        if ($rule.AccessControlType -ne 'Allow') { continue }
+        $target.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($rule.IdentityReference, $rule.FileSystemRights, 'Allow'))
+        $changed = $true
+    }
+    if ($changed) { Set-Acl -LiteralPath $To -AclObject $target }
+}
+
 function Update-GpuVMDiskAttachment {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$Path)
     $full = [IO.Path]::GetFullPath($Path)
@@ -112,6 +127,7 @@ function New-GpuVMRestorePointCore {
         [IO.File]::Move($current, $pointPath)
         $moved = $true
         New-VHD -Path $current -ParentPath $pointPath -Differencing -ErrorAction Stop | Out-Null
+        Copy-GpuVMDiskAccess -From $pointPath -To $current
         Set-FileReadOnly -Path $pointPath -Value $true
         Update-GpuVMDiskAttachment -Name $Name -Path $current
     }
@@ -159,6 +175,7 @@ function Restore-GpuVMRestorePointCore {
     Write-Step 'Volviendo al punto de restauración'
     New-VHD -Path $fresh -ParentPath $pointPath -Differencing -ErrorAction Stop | Out-Null
     try {
+        Copy-GpuVMDiskAccess -From $current -To $fresh
         Remove-Item -LiteralPath $current -Force -ErrorAction Stop
         [IO.File]::Move($fresh, $current)
     }
@@ -210,6 +227,8 @@ function Remove-GpuVMRestorePointCore {
         Set-FileReadOnly -Path $pointPath -Value $false
         $childReadOnly = (Get-Item -LiteralPath $child).IsReadOnly
         Set-FileReadOnly -Path $child -Value $false
+        # The merged file takes the child's place: it gets the VM's access the child had.
+        Copy-GpuVMDiskAccess -From $child -To $pointPath
         try { Merge-VHD -Path $child -DestinationPath $pointPath -ErrorAction Stop }
         catch {
             # Merge-VHD leaves both files as they were when it fails before writing.

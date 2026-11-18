@@ -60,6 +60,8 @@ try {
     $t = Timed { New-GpuVMRestorePoint -Name $name -Label 'uno' -Confirm:$false }; $p1 = $t.r.id
     Check 'create P1 (VM off)' 1 @(Points $name).Count $t.ms
     Check 'disk path unchanged' $vhd (Get-VMHardDiskDrive -VMName $name).Path
+    $vmAce = "NT VIRTUAL MACHINE\$((Get-VM $name).Id.ToString().ToUpper())"
+    Check 'top disk keeps the VM access after a point' $true ([bool]((icacls $vhd) -match [regex]::Escape($vmAce)))
     Check 'P1 is read-only' $true (Get-Item (Join-Path $vmDir "Virtual Hard Disks\points\$p1.vhdx")).IsReadOnly
     $t = Timed { Marker $name 'B' $LayerGB }; Check "marker B + $LayerGB GB layer" 'B' $t.r $t.ms
     # Change what GpuVM knows about the guest: it must come back with the point.
@@ -70,6 +72,7 @@ try {
 
     $t = Timed { Restore-GpuVMRestorePoint -Name $name -Id $p1 -Confirm:$false }
     Check 'back to P1 -> A' 'A' (Marker $name $null) $t.ms
+    Check 'top disk keeps the VM access after going back' $true ([bool]((icacls $vhd) -match [regex]::Escape($vmAce)))
     Check 'apps back to P1' 'vlc' ((State $name)['installedApps'] -join ',')
     Check 'GPU-P adapter kept' 1 @(Get-VMGpuPartitionAdapter -VMName $name).Count
     Check 'VM on P1' $p1 ((Points $name | Where-Object current).id)
