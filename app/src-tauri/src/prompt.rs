@@ -1,15 +1,16 @@
-//! Windows administrator prompts in a VM captured with WGC (labs 025-026): Moonlight can't show them, so GpuVM asks
-//! the module every 2 s (light: Hyper-V data exchange) and, while one is open, shows a small card over everything
-//! with Permitir / Rechazar. Polling lives here, not in the page: the page stops polling when Moonlight covers it.
-//! The card takes the focus when it appears: Moonlight keeps the mouse inside its window while it has the focus, and
-//! gets it back once the prompt is answered.
+//! Windows administrator prompts in a VM captured with WGC (labs 025, 026, 042): the viewer can't show them, so GpuVM
+//! asks the module every second (light: Hyper-V data exchange). A prompt of a machine whose picture is shown drops as
+//! the dock over that picture (dock.rs); any other shows as a small card over everything with Permitir / Rechazar.
+//! Polling lives here, not in the page: the page stops polling when the viewer covers it, and notices-only mode
+//! (notices.rs) has no page at all. The card takes the focus only from a viewer (which then releases the mouse) and
+//! gives it back once the prompt is answered.
 
 use serde_json::{json, Value};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
 
-const LABEL: &str = "prompt";
+pub const LABEL: &str = "prompt";
 const WIDTH: f64 = 400.0;
 const HEIGHT: f64 = 168.0;
 
@@ -17,7 +18,15 @@ const HEIGHT: f64 = 168.0;
 static CURRENT: Mutex<Option<Value>> = Mutex::new(None);
 /// Prompts already answered: the guest's data exchange reports a closed prompt a few seconds late, and the card must
 /// not come back for it.
-static ANSWERED: Mutex<Vec<i64>> = Mutex::new(Vec::new());
+static ANSWERED: Mutex<Vec<(String, i64)>> = Mutex::new(Vec::new());
+/// Time between two looks at the machines' prompts. Lab 042: one look takes ~43 ms and ~28 ms of CPU in the service
+/// (0.2 % of this PC's 12 threads at 1 s); every second instead of every 2 halves the wait before a prompt shows.
+const POLL_MS: u64 = 1000;
+
+/// A prompt's machine and id: an answered prompt is forgotten by both (ids are process ids, per machine).
+fn key(p: &Value) -> (String, i64) {
+    (p["name"].as_str().unwrap_or("").to_string(), p["id"].as_i64().unwrap_or(0))
+}
 /// The window that had the focus before the card (Moonlight), to give it back.
 static PREVIOUS: Mutex<isize> = Mutex::new(0);
 
@@ -62,22 +71,30 @@ pub fn start(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut last = String::new();
         loop {
-            let prompts = {
-                let state = app.state::<crate::AppState>();
-                let request = json!({ "id": crate::next_id(&state), "cmd": "Get-GpuVMAdminPrompt", "args": {} });
-                crate::query(&state, request).await.and_then(crate::into_data).unwrap_or(json!([]))
-            };
-            let prompts = if prompts.is_array() { prompts } else { json!([prompts]) };
-            let prompts = {
+            let reply = crate::notices::poll(&app).await;
+            // Notices-only mode ends once no watched machine is on (a failed query is not "none").
+            if crate::notices::active() && reply.as_ref().is_some_and(|r| r["watched"].as_u64() == Some(0)) {
+                crate::notices::finish(&app);
+            }
+            let prompts = reply.map(|r| r["prompts"].clone()).unwrap_or(json!([]));
+            let prompts = if prompts.is_array() { prompts } else if prompts.is_null() { json!([]) } else { json!([prompts]) };
+            let prompts: Vec<Value> = {
                 let answered = ANSWERED.lock().unwrap_or_else(|e| e.into_inner());
-                Value::Array(prompts.as_array().into_iter().flatten().filter(|p| !answered.contains(&p["id"].as_i64().unwrap_or(0))).cloned().collect())
+                prompts.as_array().into_iter().flatten().filter(|p| !answered.contains(&key(p))).cloned().collect()
             };
-            let text = prompts.to_string();
+            // A prompt of a machine whose picture is shown drops as the dock over it; the rest go to the card.
+            let docked = prompts.iter().find(|p| crate::dock::wants(p["name"].as_str().unwrap_or(""))).cloned();
+            let cards: Vec<Value> = prompts.into_iter().filter(|p| docked.as_ref() != Some(p)).collect();
+            let text = format!("{}|{}", Value::Array(cards.clone()), docked.clone().unwrap_or(Value::Null));
             if text != last {
                 last = text;
-                show(&app, prompts);
+                match docked {
+                    Some(p) => crate::dock::show(&app, p),
+                    None => crate::dock::hide(&app),
+                }
+                show(&app, Value::Array(cards));
             }
-            tokio::time::sleep(Duration::from_secs(2)).await;
+            tokio::time::sleep(Duration::from_millis(POLL_MS)).await;
         }
     });
 }
@@ -98,9 +115,11 @@ fn show(app: &AppHandle, prompts: Value) {
         let _ = w.emit("admin-prompt", prompts);
         return;
     }
-    // A new window each time, top right of the main monitor; it takes the focus (and Moonlight releases the mouse).
+    // A new window each time, top right of the main monitor. It takes the focus only from a viewer (which then
+    // releases the mouse); over anything else (notices-only mode, another program) it appears without taking it.
+    let take_focus = crate::viewer::foreground_vm().is_some();
     // SAFETY: reading the foreground window has no preconditions.
-    *PREVIOUS.lock().unwrap_or_else(|e| e.into_inner()) = unsafe { GetForegroundWindow() };
+    *PREVIOUS.lock().unwrap_or_else(|e| e.into_inner()) = if take_focus { unsafe { GetForegroundWindow() } } else { 0 };
     let built = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into()))
         .title("GpuVM")
         .inner_size(WIDTH, HEIGHT)
@@ -110,7 +129,7 @@ fn show(app: &AppHandle, prompts: Value) {
         .shadow(false)
         .always_on_top(true)
         .skip_taskbar(true)
-        .focused(true)
+        .focused(take_focus)
         .visible(false)
         .build();
     let Ok(window) = built else { return };
@@ -121,20 +140,26 @@ fn show(app: &AppHandle, prompts: Value) {
         let _ = window.set_position(PhysicalPosition::new(x, y));
     }
     let _ = window.show();
-    if let Some(hwnd) = card_hwnd(&window) {
-        bring_to_front(hwnd);
+    if take_focus {
+        if let Some(hwnd) = card_hwnd(&window) {
+            bring_to_front(hwnd);
+        }
     }
 }
 
 /// The card answered this prompt: forget it and close the card now (the next poll would still list it for a moment).
 #[tauri::command]
-pub fn admin_prompt_answered(app: AppHandle, id: i64) {
+pub fn admin_prompt_answered(app: AppHandle, name: String, id: i64) {
     let mut answered = ANSWERED.lock().unwrap_or_else(|e| e.into_inner());
-    answered.push(id);
+    answered.push((name.clone(), id));
     if answered.len() > 32 {
         answered.remove(0);
     }
     drop(answered);
+    if crate::dock::current_vm().as_deref() == Some(name.as_str()) {
+        crate::dock::hide(&app);
+        return;
+    }
     if let Some(w) = app.get_webview_window(LABEL) {
         let card = card_hwnd(&w);
         let _ = w.close();

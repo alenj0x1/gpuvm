@@ -61,7 +61,7 @@ for (let i = vms.length; i < Number(params.get("vms") ?? 0); i++) {
 
 // The card over Moonlight (PromptCard): open http://localhost:1420/?prompt to see it with a sample prompt.
 // The website's demo of the card turns it on with showSamplePrompt().
-let samplePrompt = params.has("prompt");
+let samplePrompt = params.has("prompt") || params.has("prompt-dock");
 export const showSamplePrompt = () => { samplePrompt = true; };
 export const adminPrompts = async () =>
   samplePrompt ? [{ name: "win10", id: 4242, app: "Procesador de comandos de Windows", publisher: params.get("prompt") === "unknown" ? "Desconocido" : "Microsoft Windows" }] : [];

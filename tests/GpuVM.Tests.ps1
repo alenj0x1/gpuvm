@@ -1,4 +1,4 @@
-# Tests that need neither administrator rights nor Hyper-V. Run: Invoke-Pester ./tests
+﻿# Tests that need neither administrator rights nor Hyper-V. Run: Invoke-Pester ./tests
 $repo = Split-Path $PSScriptRoot -Parent
 Import-Module (Join-Path $repo 'src\GpuVM\GpuVM.psd1') -Force
 
@@ -1011,6 +1011,125 @@ InModuleScope GpuVM {
             Rename-GpuVMIsoUse -Name 'win10' -NewName 'juegos'
             @(Read-IsoLibrary)[0]['usedBy'] | Should Be @('juegos', 'otra')
             $script:DataRoot = $saved
+        }
+    }
+
+    Describe 'Administrator prompts' {
+        It 'escapes the host item it sends to the guest' {
+            $xml = [xml](ConvertTo-KvpItemText -Key 'GpuVMAdminPromptAnswer' -Value '{"a":"<b>&"}')
+            $xml.SelectSingleNode("/INSTANCE/PROPERTY[@NAME='Data']/VALUE").InnerText | Should Be '{"a":"<b>&"}'
+            $xml.SelectSingleNode("/INSTANCE/PROPERTY[@NAME='Source']/VALUE").InnerText | Should Be '0'
+        }
+
+        It 'reads a prompt from a watcher with or without a one-time code' {
+            Mock Get-VM { [pscustomobject]@{ State = 'Running'; Id = [guid]::NewGuid() } }
+            Mock Get-GuestKvpJson { [pscustomobject]@{ open = $true; id = 42; app = 'cmd'; publisher = 'Microsoft Windows' } }
+            $p = Get-GuestAdminPromptState -Name 'vm'
+            $p.id | Should Be 42
+            $p.nonce | Should Be $null
+            $p.reading | Should Be $false
+            Mock Get-GuestKvpJson { [pscustomobject]@{ open = $true; id = 42; nonce = ('a' * 32); reading = $true } }
+            $p = Get-GuestAdminPromptState -Name 'vm'
+            $p.nonce | Should Be ('a' * 32)
+            $p.reading | Should Be $true
+            # The code never reaches the app.
+            (Get-GuestAdminPrompt -Name 'vm').PSObject.Properties['nonce'] | Should Be $null
+        }
+
+        It 'ignores what the guest sends out of shape' {
+            Mock Get-VM { [pscustomobject]@{ State = 'Running'; Id = [guid]::NewGuid() } }
+            Mock Get-GuestKvpJson { [pscustomobject]@{ open = $true; id = 'x' } }
+            Get-GuestAdminPromptState -Name 'vm' | Should Be $null
+            Mock Get-GuestKvpJson { [pscustomobject]@{ open = $true; id = 7; nonce = 'NOT-HEX'; app = ('z' * 500) } }
+            $p = Get-GuestAdminPromptState -Name 'vm'
+            $p.nonce | Should Be $null
+            $p.app.Length | Should Be 80
+            Mock Get-GuestKvpJson { 'text' }
+            Get-GuestAdminPromptState -Name 'vm' | Should Be $null
+        }
+
+        It 'answers through the data exchange when the prompt has a code, and refuses another prompt' {
+            Mock Get-GuestAdminPromptState { [pscustomobject]@{ id = 42; nonce = ('b' * 32); reading = $false } }
+            Mock Send-GuestAdminPromptAnswer { $script:sent = "$Answer $PromptId $Nonce"; 'done' }
+            Mock Invoke-GuestAdminPromptAnswer { throw 'no debe usar PowerShell Direct' }
+            (Resolve-GpuVMAdminPrompt -Name 'vm' -Answer Allow -PromptId 42)['answer'] | Should Be 'Allow'
+            $script:sent | Should Be "yes 42 $('b' * 32)"
+            Test-Throws { Resolve-GpuVMAdminPrompt -Name 'vm' -Answer Allow -PromptId 43 } | Should Be $true
+        }
+
+        It 'falls back to PowerShell Direct for a watcher without a code' {
+            Mock Get-GuestAdminPromptState { [pscustomobject]@{ id = 42; nonce = $null; reading = $false } }
+            Mock Send-GuestAdminPromptAnswer { throw 'no debe usar la KVP' }
+            Mock Get-GpuVMState { @{ name = 'vm'; guest = @{ user = 'u' } } }
+            Mock Get-GpuVMGuestCredential { [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force)) }
+            Mock Invoke-GuestAdminPromptAnswer { 'done' }
+            (Resolve-GpuVMAdminPrompt -Name 'vm' -Answer Deny -PromptId 42)['answer'] | Should Be 'Deny'
+        }
+
+        It 'counts the watched machines for notices-only mode' {
+            Mock Get-VM { @([pscustomobject]@{ Name = 'a'; State = 'Running' }, [pscustomobject]@{ Name = 'b'; State = 'Running' }) }
+            Mock Get-GpuVMState { @{ streaming = @{ x = 1 } } }
+            Mock Get-GpuVMCaptureMode { 'wgc' }
+            Mock Get-GuestAdminPrompt { if ($Name -eq 'b') { [pscustomobject]@{ id = 5; app = 'cmd'; publisher = 'p'; reading = $false } } }
+            $r = Get-GpuVMAdminPrompt -WithWatched
+            $r['watched'] | Should Be 2
+            @($r['prompts']).Count | Should Be 1
+            @($r['prompts'])[0]['name'] | Should Be 'b'
+        }
+    }
+}
+
+InModuleScope GpuVM {
+    Describe 'File transfers' {
+        It 'sends only plain files and folders of this PC, never GpuVM, Windows or what contains them' {
+            Mock Get-GpuVMDefaultRoot { 'C:\GpuVM' }
+            $file = Join-Path $TestDrive 'foto.png'; 'x' | Set-Content $file
+            Test-Throws { Assert-SendablePath -Path $file } | Should Be $false
+            Test-Throws { Assert-SendablePath -Path $TestDrive } | Should Be $false
+            Test-Throws { Assert-SendablePath -Path 'foto.png' } | Should Be $true
+            Test-Throws { Assert-SendablePath -Path "$TestDrive\..\x" } | Should Be $true
+            Test-Throws { Assert-SendablePath -Path 'C:\' } | Should Be $true
+            Test-Throws { Assert-SendablePath -Path (Join-Path $env:SystemRoot 'System32\drivers\etc\hosts') } | Should Be $true
+            Test-Throws { Assert-SendablePath -Path 'C:\GpuVM\win10\gpuvm.json' } | Should Be $true
+            $link = Join-Path $TestDrive 'enlace'
+            New-Item -ItemType Junction -Path $link -Target $env:SystemRoot | Out-Null
+            Test-Throws { Assert-SendablePath -Path $link } | Should Be $true
+        }
+
+        It 'skips links inside a folder and keeps two items with the same name apart' {
+            $a = Join-Path $TestDrive 'a\Proyecto'; $b = Join-Path $TestDrive 'b\Proyecto'
+            New-Item -ItemType Directory -Force (Join-Path $a 'sub'), $b | Out-Null
+            'uno' | Set-Content (Join-Path $a 'sub\uno.txt'); 'dos' | Set-Content (Join-Path $b 'dos.txt')
+            New-Item -ItemType Junction -Path (Join-Path $a 'fuera') -Target $env:SystemRoot | Out-Null
+            $list = Get-HostTransferEntries -Path $a, $b
+            $list.Skipped | Should Be 1
+            @($list.Entries.Rel) -contains 'Proyecto\sub\uno.txt' | Should Be $true
+            @($list.Entries.Rel) -contains 'Proyecto (2)\dos.txt' | Should Be $true
+            @($list.Entries | Where-Object { $_.Rel -like '*fuera*' }).Count | Should Be 0
+        }
+
+        It 'refuses names from a guest that would leave the folder' {
+            foreach ($bad in '..\Windows\x', 'a\..\..\b', 'C:\x', 'a:b', 'a\\b', '', ('x' * 300), 'con. ', "a`tb") {
+                Test-Throws { Assert-TransferName -Name $bad } | Should Be $true
+            }
+            Test-Throws { Assert-TransferName -Name 'Fotos\año 2026\canción.txt' } | Should Be $false
+        }
+
+        It 'writes a tar that Windows reads back with every name' {
+            $tar = Join-Path $TestDrive 't.tar'
+            $fs = [IO.File]::Create($tar)
+            foreach ($e in @(@{ n = 'Carpeta ñ'; d = $true; b = '' }, @{ n = "Carpeta ñ\$('n' * 120).txt"; d = $false; b = 'largo' }, @{ n = 'Carpeta ñ\😀.txt'; d = $false; b = 'x' })) {
+                if ($e.d) { $h = New-TarHeader -Name $e.n -Directory; $fs.Write($h, 0, $h.Length); continue }
+                $data = [Text.Encoding]::UTF8.GetBytes($e.b)
+                $h = New-TarHeader -Name $e.n -Size $data.Length; $fs.Write($h, 0, $h.Length); $fs.Write($data, 0, $data.Length)
+                $pad = (512 - $data.Length % 512) % 512; $fs.Write([byte[]]::new($pad), 0, $pad)
+            }
+            $fs.Write([byte[]]::new(1024), 0, 1024); $fs.Dispose()
+            $out = Join-Path $TestDrive 'x'; New-Item -ItemType Directory $out | Out-Null
+            & "$env:SystemRoot\System32\tar.exe" -x -f $tar -C $out
+            $LASTEXITCODE | Should Be 0
+            Get-Content -Raw (Join-Path $out "Carpeta ñ\$('n' * 120).txt") | Should Be 'largo'
+            Test-Path -LiteralPath (Join-Path $out 'Carpeta ñ\😀.txt') | Should Be $true
         }
     }
 }

@@ -32,9 +32,11 @@ const MAX_LINE: usize = 16 * 1024;
 /// Shortest time between two panel or Home requests from a viewer (a key held down, or a viewer that loops).
 const PANEL_GAP: Duration = Duration::from_millis(250);
 /// Messages the viewer may send.
-const FROM_VIEWER: &[&str] = &["hello", "stage", "stage-failed", "connected", "error", "app-running", "window", "first-frame", "stats", "panel", "home", "ended"];
+const FROM_VIEWER: &[&str] = &["hello", "stage", "stage-failed", "connected", "error", "app-running", "window", "first-frame", "stats", "panel", "home", "ended", "drag",
+    // Screenshots and recordings (capture.rs).
+    "capture", "capture-error", "recording"];
 /// Commands this app may send.
-const TO_VIEWER: &[&str] = &["inset", "capture", "fullscreen", "stats", "quit", "focus"];
+const TO_VIEWER: &[&str] = &["inset", "capture", "fullscreen", "stats", "quit", "focus", "screenshot", "record", "replay-save"];
 
 struct Pipe(HANDLE);
 // SAFETY: a pipe handle can be used from any thread; reads and writes are overlapped, each with its own event.
@@ -68,6 +70,8 @@ struct Viewer {
     full_now: std::sync::atomic::AtomicBool,
     /// When the viewer last asked for the panel or Home: repeated asks closer than PANEL_GAP are dropped.
     last_toggle: Mutex<Option<Instant>>,
+    /// When the viewer last reported a drag (same limit as the panel).
+    last_drag: Mutex<Option<Instant>>,
     /// The machine opens full screen (its "Pantalla completa" option): it still starts inside the app, hidden, and
     /// goes full screen when revealed.
     full_screen: bool,
@@ -390,9 +394,11 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
     }
     drop(token);
 
-    let viewer = Arc::new(Viewer { pipe, child, raise_until: Mutex::new(None), write: Mutex::new(()), hwnd: AtomicIsize::new(0), embed, visible: std::sync::atomic::AtomicBool::new(!embed), revealed: std::sync::atomic::AtomicBool::new(!embed), first_frame: std::sync::atomic::AtomicBool::new(false), full_now: std::sync::atomic::AtomicBool::new(false), last_toggle: Mutex::new(None), full_screen });
+    let viewer = Arc::new(Viewer { pipe, child, raise_until: Mutex::new(None), write: Mutex::new(()), hwnd: AtomicIsize::new(0), embed, visible: std::sync::atomic::AtomicBool::new(!embed), revealed: std::sync::atomic::AtomicBool::new(!embed), first_frame: std::sync::atomic::AtomicBool::new(false), full_now: std::sync::atomic::AtomicBool::new(false), last_toggle: Mutex::new(None), last_drag: Mutex::new(None), full_screen });
     viewers().get_or_insert_with(HashMap::new).insert(vm.clone(), viewer.clone());
     let _ = app.emit("viewer", json!({ "vm": vm, "msg": { "type": "opened", "pid": pid } }));
+    // The capture settings (the last 30 s on or off, the notices' language): kept by the viewer until its stream starts.
+    send_raw(&viewer, &crate::capture::setup_message());
 
     std::thread::spawn(move || {
         while let Some(line) = read_line(viewer.pipe.0, &mut pending, None) {
@@ -420,6 +426,25 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
                     o.remove("hwnd");
                 }
             }
+            // Something is dragged over the picture: this app shows its own drop area (dropzone.rs). Nothing else
+            // sees it, and a viewer that repeats it is held to one every PANEL_GAP.
+            if kind == "drag" {
+                let mut last = viewer.last_drag.lock().unwrap_or_else(|e| e.into_inner());
+                if !last.is_some_and(|t| t.elapsed() < PANEL_GAP) && viewer.visible.load(Ordering::Relaxed) {
+                    *last = Some(Instant::now());
+                    crate::dropzone::on_drag(&app, &vm);
+                }
+                continue;
+            }
+            if kind == "recording" {
+                crate::capture::on_recording(&vm, msg["on"].as_bool().unwrap_or(false));
+            }
+            if kind == "capture" {
+                // A finished file: this app moves it out of the viewer's folder (capture.rs); the pages hear
+                // "capture-saved" with where it went, never the viewer's own name for it.
+                crate::capture::on_file(&app, &vm, &msg);
+                continue;
+            }
             if matches!(kind.as_str(), "panel" | "home") {
                 let mut last = viewer.last_toggle.lock().unwrap_or_else(|e| e.into_inner());
                 if last.is_some_and(|t| t.elapsed() < PANEL_GAP) {
@@ -429,6 +454,7 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
             }
             let _ = app.emit("viewer", json!({ "vm": vm, "msg": msg }));
             crate::overlay::on_viewer(&app, &vm, &msg);
+            crate::dock::on_viewer(&app, &vm, &msg);
             // The first picture: the app zooms into the machine and then reveals the viewer (viewer_reveal). If the
             // page doesn't (hidden, busy), the viewer comes out on its own a moment later.
             if kind == "first-frame" && viewer.embed && !viewer.first_frame.swap(true, Ordering::AcqRel) {
@@ -450,14 +476,21 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
         if all.as_ref().and_then(|v| v.get(&vm)).is_some_and(|v| Arc::ptr_eq(v, &viewer)) {
             all.as_mut().map(|v| v.remove(&vm));
         }
+        // The last machine closed: the clipboard copies kept for it are forgotten.
+        let none_left = all.as_ref().is_none_or(|v| v.is_empty());
         drop(all);
+        if none_left {
+            crate::clipboard::clear();
+        }
         announce_cover();
+        crate::capture::on_recording(&vm, false);
         let closed = json!({ "type": "closed" });
         if let Some(waiter) = WAITERS.lock().unwrap_or_else(|e| e.into_inner()).as_mut().and_then(|w| w.remove(&vm)) {
             let _ = waiter.send(closed.clone());
         }
         let _ = app.emit("viewer", json!({ "vm": vm, "msg": closed }));
         crate::overlay::on_viewer(&app, &vm, &closed);
+        crate::dock::on_viewer(&app, &vm, &closed);
     });
     Ok(pid)
 }
@@ -567,10 +600,23 @@ pub fn send_to(vm: &str, msg: &Value) -> Result<(), String> {
     if send_raw(&viewer, msg) { Ok(()) } else { Err("El visor no respondió.".into()) }
 }
 
+/// The same message to every open viewer (settings that apply to all of them).
+pub fn broadcast(msg: &Value) {
+    let list: Vec<Arc<Viewer>> = viewers().as_ref().map(|v| v.values().cloned().collect()).unwrap_or_default();
+    for viewer in list {
+        send_raw(&viewer, msg);
+    }
+}
+
 /// The viewer's window, for placing the panel over it.
 /// Whether a machine's viewer is full screen now.
 pub fn viewer_full_screen(vm: &str) -> bool {
     viewers().as_ref().and_then(|v| v.get(vm)).is_some_and(|v| v.full_now.load(Ordering::Relaxed))
+}
+
+/// A machine is open in a viewer (the clipboard widget only keeps copies meanwhile).
+pub fn any_open() -> bool {
+    viewers().as_ref().is_some_and(|v| !v.is_empty())
 }
 
 pub fn viewer_hwnd(vm: &str) -> Option<isize> {
@@ -648,6 +694,28 @@ pub async fn viewer_show(app: AppHandle, vm: String) -> Result<(), String> {
     viewer.revealed.store(true, Ordering::Relaxed);
     announce_cover();
     Ok(())
+}
+
+/// Whether a machine's viewer is open and its picture shown (not hidden while the person is in Home).
+pub fn viewer_visible(vm: &str) -> bool {
+    viewers().as_ref().and_then(|v| v.get(vm)).is_some_and(|v| v.visible.load(Ordering::Relaxed))
+}
+
+/// Closes every viewer (GpuVM is going to its notices-only mode: no windows left).
+pub fn quit_all() {
+    let list: Vec<Arc<Viewer>> = viewers().as_ref().map(|v| v.values().cloned().collect()).unwrap_or_default();
+    for viewer in list {
+        send_raw(&viewer, &json!({ "type": "quit" }));
+    }
+}
+
+/// The machine whose viewer window has the keyboard now, if any (what an admin prompt is about to interrupt).
+pub fn foreground_vm() -> Option<String> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+    // SAFETY: reading the foreground window has no preconditions.
+    let foreground = unsafe { GetForegroundWindow() } as isize;
+    let all = viewers();
+    all.as_ref()?.iter().find(|(_, v)| v.hwnd.load(Ordering::Relaxed) == foreground && window_of(foreground, v.child.pid)).map(|(name, _)| name.clone())
 }
 
 /// Machines whose viewer is open (connected), and whether each is inside the app's window.

@@ -37,7 +37,7 @@ fn panel() -> std::sync::MutexGuard<'static, Panel> {
 }
 
 /// The viewer's client area on screen, in physical pixels, and its DPI scale.
-fn client_rect(hwnd: isize) -> Option<(i32, i32, i32, i32, f64)> {
+pub(crate) fn client_rect(hwnd: isize) -> Option<(i32, i32, i32, i32, f64)> {
     // SAFETY: plain queries on a window handle; a stale handle only makes them fail.
     unsafe {
         let hwnd = hwnd as HWND;
@@ -71,6 +71,15 @@ fn panel_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
         .ok()
 }
 
+/// The picture of a viewer on screen (physical x, y, width, height): its client area without the side panel when
+/// the panel is open on it. Where the drop area goes (dropzone.rs).
+pub fn picture_rect(viewer: isize, vm: &str) -> Option<(i32, i32, i32, i32)> {
+    let (x, y, w, h, scale) = client_rect(viewer)?;
+    let open_here = { let p = panel(); p.open && p.vm.as_deref() == Some(vm) };
+    let panel_w = if open_here { ((WIDTH.load(Ordering::Relaxed) as f64 * scale).round() as i32).min(w / 2) } else { 0 };
+    Some((x, y, w - panel_w, h))
+}
+
 /// Puts the panel over the right edge of the viewer's picture area.
 fn place(window: &tauri::WebviewWindow, viewer: isize) -> Option<(i32, i32, f64)> {
     let (x, y, w, h, scale) = client_rect(viewer)?;
@@ -92,6 +101,11 @@ static MARKED: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0)
 /// (otherwise Windows shows the taskbar over the bottom of the stream). Off when the picture is inside the app.
 fn mark_full_screen(window: &tauri::WebviewWindow, on: bool) {
     MARKED.store(if on { 2 } else { 1 }, Ordering::Relaxed);
+    mark_taskbar(window, on);
+}
+
+/// The taskbar's full-screen mark for one of GpuVM's windows over a viewer (the panel, the admin-prompt dock).
+pub(crate) fn mark_taskbar(window: &tauri::WebviewWindow, on: bool) {
     use windows_sys::core::GUID;
     use windows_sys::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED};
     #[repr(C)]
@@ -127,7 +141,7 @@ fn mark_full_screen(window: &tauri::WebviewWindow, on: bool) {
     }
 }
 
-fn bring_to_front(hwnd: isize) {
+pub(crate) fn bring_to_front(hwnd: isize) {
     #[link(name = "user32")]
     extern "system" {
         fn SetForegroundWindow(hwnd: isize) -> i32;
@@ -247,6 +261,17 @@ pub async fn viewer_panel_resize(app: AppHandle, width: u32) -> u32 {
 #[tauri::command]
 pub async fn viewer_panel_close(app: AppHandle) {
     close(&app);
+}
+
+/// The panel's width in physical pixels when it is open on this machine's viewer (the dock leaves it uncovered).
+pub fn open_width(app: &AppHandle, vm: &str) -> Option<i32> {
+    let p = panel();
+    if !p.open || p.vm.as_deref() != Some(vm) {
+        return None;
+    }
+    drop(p);
+    let size = app.get_webview_window(LABEL)?.outer_size().ok()?;
+    Some(size.width as i32)
 }
 
 /// The machine the panel is on, for its page when it loads.

@@ -157,6 +157,14 @@ public class GpuVMLatencyBridge : IDisposable {
     // The viewer's last "stats" line (received/rendered FPS, decode, host and network latency), and all of them.
     public volatile string LastStats;
     public readonly System.Collections.Concurrent.ConcurrentQueue<string> Stats = new System.Collections.Concurrent.ConcurrentQueue<string>();
+    // Every other message (capture, recording, capture-error...), for labs that drive the viewer (lab 044).
+    public readonly System.Collections.Concurrent.ConcurrentQueue<string> Events = new System.Collections.Concurrent.ConcurrentQueue<string>();
+    readonly object writeLock = new object();
+    // Sends one command to the viewer, as the app does (one JSON line).
+    public bool Send(string json) {
+        try { lock (writeLock) { var b = System.Text.Encoding.UTF8.GetBytes(json + "\n"); server.Write(b, 0, b.Length); server.Flush(); } return true; }
+        catch { return false; }
+    }
     [System.Runtime.InteropServices.DllImport("advapi32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
     static extern bool ConvertStringSecurityDescriptorToSecurityDescriptorW(string sddl, uint rev, out IntPtr sd, IntPtr size);
     [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern IntPtr LocalFree(IntPtr p);
@@ -188,6 +196,7 @@ public class GpuVMLatencyBridge : IDisposable {
                 if (!Hello) { Hello = line.Contains(token); continue; }
                 if (FirstFrameTicks < 0 && line.Contains("\"first-frame\"")) FirstFrameTicks = DateTime.UtcNow.Ticks;
                 if (line.Contains("\"stats\"")) { LastStats = line; Stats.Enqueue(line); }
+                else Events.Enqueue(line);
             }
         } catch { }
     }

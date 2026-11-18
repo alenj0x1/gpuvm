@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import {
+  IconCamera, IconFolder, IconHistory, IconPhoto, IconVideo,
   IconActivity, IconArrowsMaximize, IconArrowsMinimize, IconBooks, IconBolt, IconChartLine, IconClock, IconCloud, IconCloudFog,
   IconCloudRain, IconCloudSnow, IconCloudStorm, IconDeviceDesktop, IconDeviceGamepad2, IconHome, IconMinus, IconMoon,
-  IconPlayerPlay, IconPlugConnectedX, IconPlus, IconSun, IconTrophy, IconCloudSearch, type Icon,
+  IconPlayerPlay, IconPlugConnectedX, IconPlus, IconSun, IconTrophy, IconCloudSearch, IconFiles, IconClipboard, type Icon,
 } from "@tabler/icons-react";
 import { MiniCube } from "./MiniCube";
 import { miniOf } from "./HomeLoading";
@@ -19,7 +20,7 @@ import type { VmOverview } from "./types";
 // order without leaving holes. Dragging one moves it among the others, which slide aside while it passes; its corner
 // resizes it in whole cells, each kind within its own limits. The layout is remembered.
 
-export type WidgetType = "machines" | "actions" | "stats" | "clock" | "shelf" | "games" | "weather";
+export type WidgetType = "machines" | "actions" | "capture" | "stats" | "clock" | "shelf" | "games" | "weather" | "files" | "clipboard";
 /** A widget on the board: its kind, its size in cells and the cell of its top left corner. */
 export interface WidgetItem { id: string; type: WidgetType; w: number; h: number; x: number; y: number }
 interface Spec { icon: Icon; name: () => string; minW: number; maxW: number; minH: number; maxH: number; w: number; h: number }
@@ -29,16 +30,19 @@ interface Spec { icon: Icon; name: () => string; minW: number; maxW: number; min
 export const SPEC: Record<WidgetType, Spec> = {
   machines: { icon: IconDeviceDesktop, name: () => t("Máquinas"), minW: 1, maxW: 3, minH: 1, maxH: 6, w: 2, h: 2 },
   actions: { icon: IconBolt, name: () => t("Acciones"), minW: 1, maxW: 3, minH: 1, maxH: 2, w: 2, h: 1 },
+  capture: { icon: IconCamera, name: () => t("Captura"), minW: 1, maxW: 3, minH: 1, maxH: 2, w: 2, h: 2 },
   stats: { icon: IconActivity, name: () => t("Imagen"), minW: 1, maxW: 3, minH: 1, maxH: 3, w: 1, h: 2 },
   clock: { icon: IconClock, name: () => t("Reloj"), minW: 1, maxW: 3, minH: 1, maxH: 2, w: 1, h: 1 },
   shelf: { icon: IconBooks, name: () => t("Estantería"), minW: 1, maxW: 3, minH: 1, maxH: 4, w: 2, h: 2 },
   games: { icon: IconDeviceGamepad2, name: () => t("Juegos"), minW: 1, maxW: 3, minH: 1, maxH: 3, w: 2, h: 2 },
   weather: { icon: IconCloud, name: () => t("Clima"), minW: 1, maxW: 3, minH: 1, maxH: 2, w: 1, h: 1 },
+  files: { icon: IconFiles, name: () => t("Archivos"), minW: 2, maxW: 3, minH: 2, maxH: 5, w: 2, h: 2 },
+  clipboard: { icon: IconClipboard, name: () => t("Portapapeles"), minW: 2, maxW: 3, minH: 2, maxH: 5, w: 2, h: 3 },
 };
-const ORDER: WidgetType[] = ["machines", "actions", "stats", "clock", "shelf", "games", "weather"];
+const ORDER: WidgetType[] = ["machines", "actions", "capture", "stats", "clock", "files", "clipboard", "shelf", "games", "weather"];
 // The shelf and the games ask for the whole width: two columns in a narrow panel, three in a wide one (no empty
 // column beside them). Placed in this order, the first free cell each.
-const DEFAULT_SIZES: [WidgetType, number, number][] = [["machines", 2, 2], ["stats", 1, 2], ["clock", 1, 2], ["actions", 2, 2], ["shelf", 3, 2], ["games", 3, 2]];
+const DEFAULT_SIZES: [WidgetType, number, number][] = [["machines", 2, 2], ["stats", 1, 2], ["clock", 1, 2], ["actions", 2, 2], ["capture", 3, 2], ["files", 2, 2], ["clipboard", 2, 3], ["shelf", 3, 2], ["games", 3, 2]];
 
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
 const GAP = 8, ROW = 76;
@@ -86,6 +90,9 @@ function place(items: WidgetItem[], cols: number, first?: string): Record<string
 }
 
 const KEY = "gpuvm.viewerPanelWidgets";
+/** Widgets added after the first layouts were saved (Captura, Archivos and Portapapeles, 0.10). */
+const NEWER: WidgetType[] = ["capture", "files", "clipboard"];
+const OFFERED = "gpuvm.viewerPanelWidgetsOffered";
 export function loadWidgets(): WidgetItem[] {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? "null");
@@ -96,11 +103,21 @@ export function loadWidgets(): WidgetItem[] {
       const base = { id: x.type, type: x.type as WidgetType, w: clamp(Number(x.w) || 1, s.minW, s.maxW), h: clamp(Number(x.h) || 1, s.minH, s.maxH) };
       return Number.isFinite(x.x) && Number.isFinite(x.y) ? { ...base, x: clamp(x.x, 0, 2), y: Math.max(0, x.y) } : base;
     });
+    // Widgets that came out after the layout was saved go under it once; removed later, they stay removed.
+    const offered = new Set<string>(JSON.parse(localStorage.getItem(OFFERED) ?? "[]"));
+    for (const type of NEWER) {
+      if (!offered.has(type) && !list.some((x) => x.type === type)) list.push(newWidget(type, settle(list)));
+    }
+    localStorage.setItem(OFFERED, JSON.stringify(NEWER));
     return settle(list);
   } catch { return defaultWidgets(); }
 }
 export function saveWidgets(items: WidgetItem[]) {
-  try { localStorage.setItem(KEY, JSON.stringify(items.map(({ type, w, h, x, y }) => ({ type, w, h, x, y })))); } catch { /* no storage */ }
+  try {
+    localStorage.setItem(KEY, JSON.stringify(items.map(({ type, w, h, x, y }) => ({ type, w, h, x, y }))));
+    // A board saved from the defaults already had every widget: one taken off later stays off.
+    localStorage.setItem(OFFERED, JSON.stringify(NEWER));
+  } catch { /* no storage */ }
 }
 export const defaultWidgets = () => settle(DEFAULT_SIZES.map(([type, w, h]) => ({ id: type, type, w, h })));
 export const missingWidgets = (items: WidgetItem[]) => ORDER.filter((type) => !items.some((x) => x.type === type));
@@ -381,6 +398,89 @@ export function ActionsWidget({ size, fullScreen, overlay, onHome, onFullscreen,
           <a.icon size={18} />{labels && <span>{a.label}</span>}
         </button>
       ))}
+    </div>
+  );
+}
+
+/** A file the app saved from the viewer (capture.rs "capture-saved"). */
+export interface SavedCapture { kind: "shot" | "clip" | "replay"; path: string; name: string; thumb: string | null; durationMs: number; at: number }
+/** What the capture widget shows and does (kept by the panel, which hears the viewer). */
+export interface CaptureState {
+  recording: boolean;
+  /** When the recording started (Date.now()), for the time shown. */
+  since: number;
+  replay: boolean;
+  last: SavedCapture | null;
+  error: string;
+}
+
+const clock = (ms: number) => {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const mm = String(Math.floor(s / 60) % 60).padStart(2, "0"), ss = String(s % 60).padStart(2, "0");
+  return s >= 3600 ? `${Math.floor(s / 3600)}:${mm}:${ss}` : `${mm}:${ss}`;
+};
+
+function useNow(on: boolean) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!on) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [on]);
+  return now;
+}
+
+/** Capture: a screenshot, recording (Detener while it records, with its time) and the last 30 s; with room, the
+ *  newest file with its picture (opens it) and a button that shows it in its folder. */
+export function CaptureWidget({ size, state, onShot, onRecord, onReplay, onOpen, onReveal }: {
+  size: WidgetSize; state: CaptureState; onShot: () => void; onRecord: () => void; onReplay: () => void;
+  onOpen: (c: SavedCapture) => void; onReveal: (c: SavedCapture) => void;
+}) {
+  const now = useNow(state.recording || !!state.last);
+  const labels = size.px >= 220, under = size.h >= 2 && size.px < 300;
+  const replayTitle = state.replay ? t("Guardar los últimos 30 s") : t("Actívalo en Ajustes, en Capturas");
+  const buttons = (
+    <div className={`vp-capture-buttons${labels ? (under ? " labels under" : " labels") : ""}`}>
+      <button type="button" title={t("Capturar")} aria-label={t("Capturar")} onClick={onShot}>
+        <IconCamera size={18} />{labels && <span>{t("Capturar")}</span>}
+      </button>
+      <button type="button" className={state.recording ? "rec" : ""} title={state.recording ? t("Detener") : t("Grabar")} aria-label={state.recording ? t("Detener") : t("Grabar")} aria-pressed={state.recording} onClick={onRecord}>
+        {state.recording ? <span className="vp-rec-dot" aria-hidden="true" /> : <IconVideo size={18} />}
+        {state.recording
+          ? <span>{labels && <>{t("Detener")} </>}<span className="vp-rec-time">{clock(now - state.since)}</span></span>
+          : labels && <span>{t("Grabar")}</span>}
+      </button>
+      <button type="button" title={replayTitle} aria-label={replayTitle} disabled={!state.replay} onClick={onReplay}>
+        <IconHistory size={18} />{labels && <span>{t("Guardar 30 s")}</span>}
+      </button>
+    </div>
+  );
+  if (size.h < 2) return <div className="vp-capture">{buttons}</div>;
+  const last = state.last;
+  const when = last ? (now - last.at < 60000 ? t("Hace un momento") : t("Hace {n} min", { n: Math.floor((now - last.at) / 60000) })) : "";
+  return (
+    <div className="vp-capture tall">
+      {buttons}
+      {state.error ? (
+        <div className="vp-capture-last"><span className="vp-error">{state.error}</span></div>
+      ) : last ? (
+        <div className="vp-capture-last">
+          <button type="button" className="vp-capture-thumb" title={t("Abrir")} aria-label={t("Abrir {name}", { name: last.name })} onClick={() => onOpen(last)}>
+            {last.thumb ? <img src={last.thumb} alt="" draggable={false} /> : last.kind === "shot" ? <IconPhoto size={16} /> : <IconVideo size={16} />}
+            {last.kind !== "shot" && last.durationMs > 0 && <small>{clock(last.durationMs)}</small>}
+          </button>
+          <span className="vp-machine-text">
+            <span className="name" title={last.name}>{last.name}</span>
+            <span className="sub">{when}</span>
+          </span>
+          <button type="button" className="vp-icon" title={t("Mostrar en la carpeta")} aria-label={t("Mostrar en la carpeta")} onClick={() => onReveal(last)}>
+            <IconFolder size={15} />
+          </button>
+        </div>
+      ) : (
+        <div className="vp-capture-last empty"><span className="vp-empty-icon"><IconPhoto size={16} /></span><strong>{t("Sin capturas todavía")}</strong></div>
+      )}
     </div>
   );
 }

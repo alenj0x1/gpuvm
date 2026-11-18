@@ -9,8 +9,12 @@ fn main() {
         "ps", "job", "admin_prompts", "admin_prompt_answered",
         "viewer_send", "viewer_is_open", "viewer_home", "viewer_show", "viewer_list", "viewer_reveal", "viewer_covered",
         "viewer_panel_resize", "viewer_panel_close", "viewer_panel_vm",
+        "transfer_start", "transfer_cancel", "transfer_list", "viewer_drop_hide", "viewer_drop_state",
+        "clipboard_items", "clipboard_send", "clipboard_auto", "clipboard_clear",
         "open_console", "repair_service", "relaunch_as_admin", "service_status", "start_service", "stop_service",
         "set_service_mode", "set_service_startup", "set_close_to_tray", "set_stop_vms_on_quit", "set_language",
+        "set_notices_after_quit", "dock_prompt", "dock_answer",
+        "set_capture_prefs", "capture_folders", "capture_open", "capture_reveal", "capture_open_folder", "capture_state", "capture_get_hevc",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().windows_attributes(windows).app_manifest(commands))
         .expect("Tauri build script failed");
