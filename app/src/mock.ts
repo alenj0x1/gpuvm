@@ -1,4 +1,4 @@
-import type { BaseInfo, DiskInfo, SharedDiskInfo, TemplateInfo, DisplayMode, IsoFile, JobEvent, MouseMode, ProfileInfo, ProfileSettings, VmOverview } from "./types";
+import type { BaseInfo, DiskInfo, SharedDiskInfo, TemplateInfo, DisplayMode, IsoFile, JobEvent, MouseMode, ProfileInfo, ProfileSettings, RestorePointList, VmOverview } from "./types";
 import catalog from "../../apps/catalog.json";
 
 // Sample data for designing in the browser (there is no Hyper-V outside the app).
@@ -19,7 +19,7 @@ const vms: VmOverview[] = [
     id: "a1b2c3d4", name: "win11-pruebas", state: "Off", managed: true, profile: "balanced",
     edition: "Windows 11 Pro", generation: 2, processorCount: 8, cpuPercent: 0, memoryStartupGB: 8,
     memoryAssignedGB: 0, memoryDemandGB: 0, uptimeSeconds: 0, hasGpu: true, gpuName: "NVIDIA GeForce RTX 4060",
-    gpuPercent: 0, driverInSync: false, fits: false, fitGB: 6, missingGB: 1.9, streaming: true, paired: false, guestCredential: true, address: null,
+    gpuPercent: 0, driverInSync: false, fits: false, fitGB: 6, missingGB: 1.9, streaming: true, paired: false, guestCredential: true, restorePoints: 2, address: null,
     client: { app: "Desktop", resolution: "2560x1440", fps: 120, bitrateKbps: 40000, codec: "HEVC" },
     options: { cpu: 8, memoryGB: 8, gpuPercent: 100, diskGB: 200, diskType: "Fixed", diskFreeGB: 232, captureMode: "wgc", networkIsolation: true, cleanup: "none", diskBudget: { drive: "C:", freeGB: 232, promisedGB: 86, marginGB: 20, availableGB: 126, sizeGB: 200, usedGB: 61, maxGB: 326, others: [{ vm: "estudio", promisedGB: 86 }] } },
   },
@@ -31,7 +31,24 @@ const vms: VmOverview[] = [
     guestCredential: true, address: null, client: { app: "Desktop", resolution: "1920x1080", fps: 60, bitrateKbps: 0, codec: "auto" },
     options: { cpu: 6, memoryGB: 6, gpuPercent: 60, diskGB: 128, diskType: "Dynamic", diskFreeGB: 232, captureMode: "wgc", networkIsolation: true, cleanup: "privacy", diskBudget: { drive: "C:", freeGB: 232, promisedGB: 0, marginGB: 20, availableGB: 126, sizeGB: 128, usedGB: 42, maxGB: 254, others: [] } },
   },
+  {
+    id: "d15b0sa1", name: "juegos-desechable", state: "Running", managed: true, profile: "balanced", edition: "Windows 10 Pro", generation: 2,
+    processorCount: 8, cpuPercent: 12, memoryStartupGB: 6, memoryAssignedGB: 6, memoryDemandGB: 3.2, uptimeSeconds: 640,
+    hasGpu: true, gpuName: "NVIDIA GeForce RTX 4060", gpuPercent: 18, driverInSync: true, fits: true, fitGB: 6, missingGB: 0, streaming: true, paired: true,
+    guestCredential: true, disposable: true, address: "172.29.111.214", client: { app: "Desktop", resolution: "1920x1080", fps: 60, bitrateKbps: 0, codec: "auto" },
+    options: { cpu: 8, memoryGB: 6, gpuPercent: 100, diskGB: 128, diskType: "Differencing", diskFreeGB: 232, captureMode: "wgc", networkIsolation: true, cleanup: "none", diskBudget: null },
+  },
 ];
+
+const restorePoints: Record<string, RestorePointList> = {
+  "win11-pruebas": {
+    max: 10, changesGB: 1.4, restoredFrom: null,
+    points: [
+      { id: "20261112-091000-a1b2", label: "Recién instalada", createdAt: "2026-11-12T09:10:00-05:00", sizeGB: 38.2, missing: false, current: false },
+      { id: "20261117-213000-c3d4", label: "Antes del juego", createdAt: "2026-11-17T21:30:00-05:00", sizeGB: 2.1, missing: false, current: true },
+    ],
+  },
+};
 
 // Many machines, to see how every screen holds up: open http://localhost:1420/?vms=30 for thirty in all.
 for (let i = vms.length; i < Number(params.get("vms") ?? 0); i++) {
@@ -205,6 +222,18 @@ export async function ps(cmd: string, args: Record<string, unknown>): Promise<un
     case "Rename-GpuVM":
       renameVm(String(args.Name), String(args.NewName));
       return [];
+    case "Get-GpuVMImportInfo":
+      return [{ path: args.Path, name: "win10", freeName: vms.some((v) => v.name === "win10") ? "win10-2" : "win10", edition: "Windows 10 Pro", user: "gpuvm",
+        installedApps: ["steam", "vlc"], exportedAt: "2026-11-16T20:05:00-05:00", diskGB: 61.4, fileGB: 61.4, freeGB: 232 }];
+    case "Get-GpuVMRestorePoint":
+      return [restorePoints[String(args.Name)] ?? { max: 10, changesGB: null, restoredFrom: null, points: [] }];
+    case "Remove-GpuVMDisposable":
+      return [];
+    case "Set-GpuVMDisposable": {
+      const vm = vms.find((v) => v.name === args.Name);
+      if (vm) vm.disposable = false;
+      return [{ name: args.Name, disposable: false }];
+    }
     case "Set-GpuVMGuestCredential":
       vms.find((v) => v.name === args.Name)!.guestCredential = true;
       return [];

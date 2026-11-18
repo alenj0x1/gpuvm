@@ -123,6 +123,27 @@ function Open-TransferArchive {
     [pscustomobject]@{ Zip = $zip; Manifest = $manifest; DiskEntry = $diskEntry }
 }
 
+# GpuVM writes the file as administrator: never inside Windows, the programs' folders, ProgramData or GpuVM's own
+# folders, never through a link, and never over an existing file (the caller opens it with CreateNew).
+function Assert-GpuVMExportPath {
+    param([Parameter(Mandatory)][string]$Path)
+    $full = [IO.Path]::GetFullPath($Path)
+    if ($full -notmatch '^[A-Za-z]:\\') { throw 'Elige una carpeta de un disco de este equipo.' }
+    $protected = @(
+        [Environment]::GetFolderPath('Windows'), [Environment]::GetFolderPath('ProgramFiles'),
+        [Environment]::GetFolderPath('ProgramFilesX86'), [Environment]::GetFolderPath('CommonApplicationData'),
+        (Get-GpuVMDefaultRoot)
+    ) | Where-Object { $_ } | ForEach-Object { [IO.Path]::GetFullPath($_).TrimEnd('\') }
+    foreach ($dir in $protected) {
+        if ($full.StartsWith("$dir\", [StringComparison]::OrdinalIgnoreCase)) { throw "No se puede guardar en $dir. Elige otra carpeta, por ejemplo Documentos." }
+    }
+    $item = Get-Item -LiteralPath (Split-Path $full -Parent) -Force -ErrorAction Stop
+    for ($cur = $item; $cur; $cur = $cur.Parent) {
+        if ($cur.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "$($cur.FullName) es un enlace a otra carpeta; elige otra." }
+    }
+    $full
+}
+
 # The first name of "<base>", "<base>-2", "<base>-3"… free in Hyper-V and in GpuVM's folder.
 function Get-FreeGpuVMName {
     param([Parameter(Mandatory)][string]$Base)

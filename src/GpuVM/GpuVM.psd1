@@ -67,6 +67,7 @@
         'Remove-GpuVMRestorePoint'
         'Export-GpuVM'
         'Import-GpuVM'
+        'Get-GpuVMImportInfo'
         'Remove-GpuVMDisposable'
         'Set-GpuVMDisposable'
     )

@@ -573,21 +573,23 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
         <CreateDialog host={host} existing={vms ?? []} job={createJob} error={createError} template={createTemplate}
           space={createSpace ?? (selected === HOME ? shownSpaceId : current ? null : shownSpaceId)}
           onClose={() => { setCreating(false); setCreateTemplate(null); }}
-          onCreate={({ name, iso, template, profile, user, password, apps, cleanup, resources, space }) => {
+          onCreate={({ name, iso, template, file, profile, user, password, apps, cleanup, resources, space }) => {
             setCreateError(null);
             // The new machine goes into the space picked for it, even before it exists in the list.
             if (space) moveToSpace(name, space);
             // Resources changed in the dialog go as an override of the chosen profile, like Options does.
             const hw = resources ? { vm: { cpu: { count: resources.cpu }, memoryGB: resources.memoryGB, disk: { sizeGB: resources.diskGB } }, gpu: { allocationPercent: resources.gpuPercent } } : {};
-            const args = template
+            const args = file
+              ? { Path: file, Name: name, Profile: profile, ...(resources ? { Override: hw } : {}), Credential: { user, password }, Start: true }
+              : template
               ? { Name: name, Template: template, Profile: profile, ...(resources ? { Override: hw } : {}), Start: true }
               : { Name: name, IsoPath: iso, Profile: profile, Override: { ...hw, guest: { apps, cleanup } }, Credential: { user, password }, Start: true };
-            startJob(NEW_VM, "New-GpuVM", args, () => {
+            startJob(NEW_VM, file ? "Import-GpuVM" : "New-GpuVM", args, () => {
               setCreating(false);
               setCreateTemplate(null);
               // Open the new machine once the list has it; before that, the route would fall back to Home.
               refresh().then(() => setSelected(name));
-              push("ok", template ? t("{name} está lista.", { name }) : t("{name} está lista. Windows termina de configurarse solo en unos minutos.", { name }));
+              push("ok", template || file ? t("{name} está lista.", { name }) : t("{name} está lista. Windows termina de configurarse solo en unos minutos.", { name }));
             });
           }} />
       )}

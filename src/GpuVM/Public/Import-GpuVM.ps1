@@ -12,6 +12,7 @@ function Import-GpuVM {
         [Parameter(Mandatory)][string]$Path,
         [ValidatePattern('^[\w-]{1,40}$')][string]$Name,
         [string]$Profile = 'balanced',
+        [hashtable]$Override,
         [pscredential]$Credential,
         [switch]$Start
     )
@@ -25,7 +26,9 @@ function Import-GpuVM {
             else { Get-FreeGpuVMName -Base $(if ($manifest['name']) { $manifest['name'] } else { 'importada' }) }
         $diskBytes = [int64]$manifest['disk']['bytes']
         $sizeGB = [math]::Ceiling([math]::Max($diskBytes, [int64]$manifest['diskSizeBytes']) / 1GB)
-        $config = Resolve-GpuVMProfile -Name $Profile -Override @{ vm = @{ disk = @{ type = 'Dynamic'; sizeGB = $sizeGB } } }
+        # The disk is the file's: its size and type win over the profile and the override.
+        $diskOverride = @{ vm = @{ disk = @{ type = 'Dynamic'; sizeGB = $sizeGB } } }
+        $config = Resolve-GpuVMProfile -Name $Profile -Override $(if ($Override) { Merge-Hashtable -Base $Override -Override $diskOverride } else { $diskOverride })
         if ($manifest['cleanup']) { $config['guest']['cleanup'] = $manifest['cleanup'] }
         if ($manifest['user']) { $config['guest']['userName'] = $manifest['user'] }
         if ($config.Contains('iso')) { $config.Remove('iso') }

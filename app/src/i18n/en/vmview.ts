@@ -231,4 +231,17 @@ export default {
   "Nuevo espacio": "New space",
   "Con {name} y un ambiente propio": "With {name} and its own ambience",
   "Ver espacio": "View space",
+
+  // Export and import (machine menu, Create machine)
+  "Exportar a un archivo": "Export to a file",
+  "Apagar y exportar": "Shut down and export",
+  "Máquina de GpuVM": "GpuVM machine",
+  "Desde archivo": "From a file",
+  "Elegir archivo": "Choose file",
+  "Exportada el {date}": "Exported on {date}",
+  "Una máquina exportada con GpuVM (.gpuvm)": "A machine exported with GpuVM (.gpuvm)",
+  "Faltan {gb} GB libres para importarla": "{gb} GB more free space is needed to import it",
+  "Sin archivo": "No file",
+  "{n} app": "{n} app",
+  "{n} apps": "{n} apps",
 } as Record<string, string>;

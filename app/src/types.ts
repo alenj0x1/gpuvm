@@ -66,6 +66,10 @@ export interface VmOverview {
   streaming: boolean;
   paired: boolean;
   guestCredential: boolean;
+  /** Deleted with its disk once it has run and is off again. */
+  disposable?: boolean;
+  /** How many restore points it has. */
+  restorePoints?: number;
   address: string | null;
   client: ClientSettings | null;
   options: { cpu: number; memoryGB: number; gpuPercent: number; diskGB: number; diskType: string; diskFreeGB: number; captureMode: "ddx" | "wgc"; networkIsolation: boolean; cleanup: CleanupLevelId; diskBudget?: DiskBudget | null } | null;
@@ -227,3 +231,10 @@ export interface Sample {
   gpu: number;
   mem: number;
 }
+
+/** Get-GpuVMImportInfo: what a .gpuvm file holds. */
+export interface ImportInfo { path: string; name: string | null; freeName: string; edition: string | null; user: string | null; installedApps: string[]; exportedAt: string | null; diskGB: number; fileGB: number; freeGB: number }
+
+/** Get-GpuVMRestorePoint: a machine's restore points, oldest first. */
+export interface RestorePoint { id: string; label: string | null; createdAt: string; sizeGB: number | null; missing: boolean; current: boolean }
+export interface RestorePointList { points: RestorePoint[]; max: number; changesGB: number | null; restoredFrom: { id: string; at: string } | null }

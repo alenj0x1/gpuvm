@@ -22,6 +22,7 @@ function Export-GpuVM {
     if (Test-Path -LiteralPath $target) { throw "Ya existe $target. Elige otro nombre." }
     $dir = Split-Path $target -Parent
     if (-not (Test-Path -LiteralPath $dir -PathType Container)) { throw "No existe la carpeta $dir." }
+    $target = Assert-GpuVMExportPath -Path $target
     $source = (Get-VMHardDiskDrive -VMName $Name | Select-Object -First 1).Path
     if (-not $source) { throw "La máquina '$Name' no tiene disco." }
     # The merged copy and the file are both written next to the target: at most twice what the chain takes.
