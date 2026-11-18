@@ -92,7 +92,8 @@ function place(items: WidgetItem[], cols: number, first?: string): Record<string
 const KEY = "gpuvm.viewerPanelWidgets";
 /** Widgets added after the first layouts were saved (Captura, Archivos and Portapapeles, 0.10). */
 const NEWER: WidgetType[] = ["capture", "files", "clipboard"];
-const OFFERED = "gpuvm.viewerPanelWidgetsOffered";
+// v2: test builds of one feature each wrote the first key while their boards lacked the others' widgets.
+const OFFERED = "gpuvm.viewerPanelWidgetsOffered.v2";
 export function loadWidgets(): WidgetItem[] {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? "null");
@@ -105,10 +106,13 @@ export function loadWidgets(): WidgetItem[] {
     });
     // Widgets that came out after the layout was saved go under it once; removed later, they stay removed.
     const offered = new Set<string>(JSON.parse(localStorage.getItem(OFFERED) ?? "[]"));
+    let added = false;
     for (const type of NEWER) {
-      if (!offered.has(type) && !list.some((x) => x.type === type)) list.push(newWidget(type, settle(list)));
+      if (!offered.has(type) && !list.some((x) => x.type === type)) { list.push(newWidget(type, settle(list))); added = true; }
     }
-    localStorage.setItem(OFFERED, JSON.stringify(NEWER));
+    // Saved with the board right away: the panel loads it more than once, and the offer is noted only once.
+    if (added) saveWidgets(settle(list));
+    else localStorage.setItem(OFFERED, JSON.stringify(NEWER));
     return settle(list);
   } catch { return defaultWidgets(); }
 }
@@ -799,8 +803,11 @@ function WidgetEmpty({ icon: Ico, title, text }: { icon: Icon; title: string; te
 /** The add row while editing: the widgets not on the board, each a click away. */
 export function WidgetTray({ items, onAdd, onReset }: { items: WidgetItem[]; onAdd: (type: WidgetType) => void; onReset: () => void }) {
   const missing = missingWidgets(items);
+  // Opening Edit brings the tray into view: below a long board it sat under the panel's edge.
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => { ref.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, []);
   return (
-    <div className="vp-tray">
+    <div ref={ref} className="vp-tray">
       {missing.map((type) => {
         const s = SPEC[type];
         return (

@@ -1439,7 +1439,7 @@ html.viewer-panel-window body::after { display: none; }
 .vp-scroll.more-below { mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent); }
 .vp-scroll.more-above { mask-image: linear-gradient(to top, #000 calc(100% - 28px), transparent); }
 .vp-scroll.more-above.more-below { mask-image: linear-gradient(to bottom, transparent, #000 28px, #000 calc(100% - 28px), transparent); }
-.vp-tray { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 12px; }
+.vp-tray { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 12px; scroll-margin-bottom: 16px; }
 .vp-tray-icon { color: var(--muted); }
 .vp-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; height: 100%; padding: 8px 14px; text-align: center; }
 .vp-empty strong { font-size: 13px; font-weight: 500; }
