@@ -35,10 +35,14 @@ export interface Prefs {
   /** The app's language: Windows' (Spanish if Windows is in Spanish, English otherwise), Spanish or English. */
   lang: LangPref;
   viewerHome: ViewerHomePref;
+  /** The most frames a second the app's animations (holograms, scenes) draw: 0 = as many as the monitor shows. */
+  animFps: number;
+  /** The resolution they draw at, in % of the screen's: less is lighter on the GPU the machines share. */
+  animQuality: number;
 }
 
 const KEY = "gpuvm.prefs";
-const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "keep", service: "app", monitor: "primary", accent: "blue", lang: "system", viewerHome: "keep" };
+const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "keep", service: "app", monitor: "primary", accent: "blue", lang: "system", viewerHome: "keep", animFps: 0, animQuality: 100 };
 const EVENT = "gpuvm-prefs";
 const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
 

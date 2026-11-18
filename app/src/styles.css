@@ -308,6 +308,9 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
 .pref-text strong { font-weight: 500; }
 .pref-text span { color: var(--muted); font-size: 13px; }
 .pref-side { display: flex; align-items: center; gap: 16px; flex: none; }
+.pref-slider { flex: 0 1 300px; min-width: 180px; padding: 0 14px; }
+.pref-row:has(.pref-slider) .pref-text { flex: 1 1 180px; }
+.pref-slider > .slider { flex: 1; }
 .pref-state { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
 .segment-row { display: flex; gap: 8px; flex-wrap: wrap; }
 /* Segmented controls in a row grow to fill it, so stacked rows line up on both edges. */

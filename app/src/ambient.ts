@@ -2,6 +2,7 @@ import { IconCircuitResistor, IconCube, IconLego, type Icon } from "@tabler/icon
 import { drawFigures, mul3, turnY, viewRot, type FigureDraw } from "./decor/figureGL";
 import { t } from "./i18n";
 import * as stamps from "./spriteGL";
+import { animDpr } from "./animBudget";
 
 // Ambients: the place where a space's machines are. Each one is a world drawn behind the cube with the cube's own
 // camera, so turning or zooming the cube turns and zooms the world around it. The ground covers everything in view and
@@ -114,7 +115,7 @@ function frame(v: AmbientView, alpha: number, st: AmbientState): F {
   // No horizon: the ground goes on under the whole view (as an orthographic plane does). Its details fade out as the
   // light falls off with distance, between NEAR and FAR (depths along the view), and nothing is drawn past FAR.
   const yAt = (z1: number) => v.CY - ((FLOOR - 1) * cp - z1 * sp) * v.Sz;
-  return { ...v, p, cy: Math.cos(v.yaw), sy: Math.sin(v.yaw), cp, sp, K, Kv: K * 0.75, hz: Math.max(-80, yAt(-FAR)), yNear: yAt(-NEAR), yFar: yAt(-FAR), a: alpha, st, dpr: window.devicePixelRatio || 1, tod: resolveTime(v.time) };
+  return { ...v, p, cy: Math.cos(v.yaw), sy: Math.sin(v.yaw), cp, sp, K, Kv: K * 0.75, hz: Math.max(-80, yAt(-FAR)), yNear: yAt(-NEAR), yFar: yAt(-FAR), a: alpha, st, dpr: animDpr(), tod: resolveTime(v.time) };
 }
 /** A world point on screen: x, y and its depth (bigger is nearer). */
 function proj(f: F, x: number, y: number, z: number): V3 {

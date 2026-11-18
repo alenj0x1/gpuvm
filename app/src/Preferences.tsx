@@ -3,7 +3,7 @@ import { MachineCube, type CubeMachine } from "./MachineCube";
 import { IconAppWindow, IconBrandWindows, IconDeviceDesktop, IconExternalLink, IconPalette, IconServer, IconHandStop, IconLayoutBottombarCollapse, IconMoon, IconPlayerPlay, IconPlayerStop, IconPlugConnected, IconPlugConnectedX, IconPower, IconSun } from "@tabler/icons-react";
 import { service, type ServiceStatus } from "./api";
 import { ACCENTS, savePrefs, usePrefs, type ClosePref, type ServicePref, type ThemePref, type ViewerHomePref, type VmsOnQuitPref } from "./prefs";
-import { Segmented, humanError } from "./ui";
+import { Segmented, Slider, humanError } from "./ui";
 import { t, type LangPref } from "./i18n";
 import { MonitorPicker, useMonitors } from "./pickers";
 
@@ -95,6 +95,11 @@ function ServicePrefs() {
   );
 }
 
+/** The limits offered for the animations' frames a second, from lightest to none (0: as many as the monitor shows). */
+const ANIM_FPS = [15, 30, 60, 120, 0];
+/** The option a stored limit is shown at: its own, or the nearest one (no limit stays last). */
+const animFpsIndex = (fps: number) => (fps > 0 ? ANIM_FPS.slice(0, -1).reduce((best, f, i) => (Math.abs(f - fps) < Math.abs(ANIM_FPS[best] - fps) ? i : best), 0) : ANIM_FPS.length - 1);
+
 type PrefSection = "look" | "window" | "machines" | "service";
 const prefSections = (): { id: PrefSection; label: string; icon: React.ReactNode }[] => [
   { id: "look", label: t("Apariencia"), icon: <IconPalette size={17} /> },
@@ -167,6 +172,21 @@ export function Preferences() {
                     </svg>
                   </button>
                 ))}
+              </div>
+            </div>
+            <div className="pref-row">
+              <div className="pref-text"><strong>{t("Fluidez de las animaciones")}</strong><span>{t("Cuadros por segundo de hologramas y escenas. Menos dejan más GPU libre para las máquinas.")}</span></div>
+              <div className="pref-side pref-slider">
+                <Slider label={t("Fluidez de las animaciones")} min={0} max={ANIM_FPS.length - 1} marks={ANIM_FPS.map((_, i) => i)}
+                  value={animFpsIndex(prefs.animFps)} format={(i) => (ANIM_FPS[i] ? String(ANIM_FPS[i]) : t("Máx"))}
+                  onChange={(i) => savePrefs({ animFps: ANIM_FPS[i] })} />
+              </div>
+            </div>
+            <div className="pref-row">
+              <div className="pref-text"><strong>{t("Calidad de las animaciones")}</strong><span>{t("La resolución con que se dibujan. Más baja se ve menos nítida y usa menos GPU.")}</span></div>
+              <div className="pref-side pref-slider">
+                <Slider label={t("Calidad de las animaciones")} min={25} max={100} step={25} marks={[25, 50, 75, 100]}
+                  value={prefs.animQuality} format={(v) => `${v} %`} onChange={(animQuality) => savePrefs({ animQuality })} />
               </div>
             </div>
           </>

@@ -6,6 +6,28 @@ All notable changes to GpuVM are documented here. The format follows [Keep a Cha
 
 Changes waiting for the next version sit under **Unreleased** at the top (this section only exists while there are some, and the docs site doesn't show it); `scripts/release.py` turns it into the new version.
 
+## [Unreleased]
+
+### Added
+- **GpuVM's own viewer.** Machines open inside the app, in GpuVM's viewer (built on Moonlight): the machine's cube moves to the center with the steps while it connects, then the picture fills the window under the title bar. **Home** (in the title bar, the side panel or Ctrl+Alt+Shift+H) zooms out to Home and keeps the machine connected, so opening it again goes straight back to its picture; **Settings → Window** can disconnect it instead. A machine set to full screen goes full screen when its picture is ready, and full screen can be toggled from the panel. Switching machines zooms out of one and brings the other to the center, and waits show tips.
+- **Side panel beside the picture.** Ctrl+Alt+Shift+G opens a panel that pushes the picture aside. It is a board of widgets you arrange: machines with their cubes, actions (Home, full screen, stats on the picture, disconnect), the picture's numbers with their history, a clock, a shelf with every machine's figures, the games and the weather. **Edit** adds, removes, moves and resizes them, and the layout is remembered; each widget shows more as it grows. Its edge is dragged to make it wider. The weather stays off until a city is typed, and only the city's name goes to Open-Meteo.
+- **Animation smoothness and quality.** **Settings → Appearance** limits the frames per second of the holograms and scenes (15, 30, 60, 120 or as many as the monitor shows) and the resolution they are drawn at (25 to 100 %), leaving more of the GPU to the machines. By default nothing changes.
+
+### Changed
+- **The app gives the GPU back to the machines.** The holograms and scenes stop while a machine's picture is shown, inside the app or full screen, and draw at 30 frames per second while GpuVM doesn't have the focus. The cube's screen and scan lines cost less to draw.
+- **Lower streaming latency.** NVIDIA machines encode in a single pass, about 1 ms less per frame (input latency from about 13.4 to 11.4 ms on average). Machines already created get it the next time they are opened.
+- **Home loads** as the machines' own cubes joined by lines where light travels, instead of a ring.
+
+### Fixed
+- Changing the virtual display or the audio sink of a machine that captures with Windows Graphics Capture no longer leaves its streaming host stopped, which made the next open fail.
+- Opening a machine whose viewer closed in the meantime opens it again instead of showing a dark screen.
+- The Settings card no longer flashes when switching sections, and Home's cards are no longer cut between 1100 and 1300 px wide.
+
+### Security
+- **The viewer runs isolated.** It reads what the machine's streaming host sends, so it runs at Low integrity with a restricted token (no administrator rights even when GpuVM runs elevated) inside a job: one process, ended with the app, without switching desktops, logging off, changing system parameters or display modes, or writing the clipboard. It can't write your files or registry, open GpuVM's process or message its windows. The app talks to it over a private pipe only your user can open, with a one-time token, and tracks it by its process handle.
+- The viewer's window is used only if it belongs to the viewer's own process, it is brought to the front only right after the app asked for the picture, and one machine opens at a time.
+- Each of the app's windows may call only its own commands: the side panel can't touch the service or relaunch GpuVM as administrator.
+
 ## [0.8.0] - 2026-11-16
 
 ### Added

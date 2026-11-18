@@ -6,6 +6,28 @@ Aquí se documentan los cambios importantes de GpuVM. El formato sigue [Keep a C
 
 Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (esa sección solo existe mientras haya alguno y el sitio de documentación no la muestra); `scripts/release.py` la convierte en la versión nueva.
 
+## [Sin publicar]
+
+### Agregado
+- **Visor propio de GpuVM.** Las máquinas se abren dentro de la app, en el visor de GpuVM (basado en Moonlight): el cubo de la máquina pasa al centro con los pasos mientras se conecta y luego la imagen llena la ventana bajo la barra de título. **Inicio** (en la barra de título, el panel lateral o Ctrl+Alt+Shift+H) se aleja hasta Inicio y deja la máquina conectada, así que al abrirla otra vez vuelve al instante a su imagen; **Ajustes → Ventana** puede desconectarla en su lugar. Una máquina configurada a pantalla completa pasa a pantalla completa cuando su imagen está lista, y la pantalla completa se cambia desde el panel. Cambiar de máquina se aleja de una y trae la otra al centro, y las esperas muestran consejos.
+- **Panel lateral junto a la imagen.** Ctrl+Alt+Shift+G abre un panel que corre la imagen a un lado. Es un tablero de widgets que acomodas: máquinas con sus cubos, acciones (Inicio, pantalla completa, estadísticas sobre la imagen, desconectar), los números de la imagen con su historial, un reloj, un estante con las figuras de cada máquina, los juegos y el clima. **Editar** agrega, quita, mueve y cambia el tamaño de los widgets, y la distribución se recuerda; cada widget muestra más a medida que crece. Su borde se arrastra para ensancharlo. El clima queda apagado hasta escribir una ciudad, y a Open-Meteo solo va el nombre de la ciudad.
+- **Fluidez y calidad de las animaciones.** **Ajustes → Apariencia** limita los cuadros por segundo de los hologramas y escenas (15, 30, 60, 120 o todos los que muestre el monitor) y la resolución con que se dibujan (25 a 100 %), para dejar más GPU a las máquinas. Por defecto nada cambia.
+
+### Cambiado
+- **La app le devuelve la GPU a las máquinas.** Los hologramas y escenas se detienen mientras se ve la imagen de una máquina, dentro de la app o a pantalla completa, y dibujan a 30 cuadros por segundo mientras GpuVM no tiene el foco. La pantalla del cubo y sus líneas de escaneo cuestan menos de dibujar.
+- **Menos latencia en la transmisión.** Las máquinas con NVIDIA codifican en una sola pasada, cerca de 1 ms menos por cuadro (latencia de entrada de unos 13,4 a 11,4 ms en promedio). Las máquinas ya creadas lo reciben la próxima vez que se abren.
+- **Inicio carga** como los cubos de las propias máquinas unidos por líneas por donde viaja la luz, en lugar de un anillo.
+
+### Corregido
+- Cambiar la pantalla virtual o la salida de audio de una máquina que captura con Windows Graphics Capture ya no deja detenido su servidor de transmisión, lo que hacía fallar la siguiente apertura.
+- Abrir una máquina cuyo visor se cerró mientras tanto la abre de nuevo en lugar de mostrar una pantalla oscura.
+- La tarjeta de Ajustes ya no parpadea al cambiar de sección, y las tarjetas de Inicio ya no se cortan entre 1100 y 1300 px de ancho.
+
+### Seguridad
+- **El visor corre aislado.** Lee lo que envía el servidor de transmisión de la máquina, así que corre con integridad baja y un token restringido (sin derechos de administrador aunque GpuVM corra elevada) dentro de un job: un solo proceso, que termina con la app, sin cambiar de escritorio, cerrar sesión, cambiar parámetros del sistema ni modos de pantalla, ni escribir en el portapapeles. No puede escribir tus archivos ni el registro, abrir el proceso de GpuVM ni enviar mensajes a sus ventanas. La app le habla por una tubería privada que solo tu usuario puede abrir, con un token de un solo uso, y lo sigue por el identificador de su proceso.
+- La ventana del visor se usa solo si pertenece a su propio proceso, se trae al frente solo justo después de que la app pidió la imagen, y se abre una máquina a la vez.
+- Cada ventana de la app solo puede llamar a sus propios comandos: el panel lateral no puede tocar el servicio ni reabrir GpuVM como administrador.
+
 ## [0.8.0] - 2026-11-16
 
 ### Agregado

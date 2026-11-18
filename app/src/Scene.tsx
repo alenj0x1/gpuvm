@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { animFps, onAnimBudget } from "./animBudget";
+import { animFps, onAnimBudget, animDpr, paceFrame } from "./animBudget";
 import { hash, machineColor, patternVariant, random } from "./machineIcon";
 
 /** The three banner designs, all made of the logo's four-cell chip. */
@@ -69,7 +69,7 @@ export function Scene({ name, variant, style, state, activity }: Props) {
     // Smoothed activity: numbers arrive every 2 s, the drawing eases toward them.
     const now = { ...target.current };
     let t = 0;
-    let last = performance.now();
+    let last = performance.now(), drawnAt = 0;
     let frame = 0;
     let layout: ReturnType<typeof build> | null = null;
     let size = "";
@@ -111,7 +111,9 @@ export function Scene({ name, variant, style, state, activity }: Props) {
       // the focus.
       const cap = animFps();
       if (cap === 0) { frame = 0; stale = true; return; }
-      if (cap && stamp - last < 1000 / cap - 2) { frame = requestAnimationFrame(draw); return; }
+      const due = paceFrame(stamp, drawnAt, cap);
+      if (due === null) { frame = requestAnimationFrame(draw); return; }
+      drawnAt = due;
       const dt = Math.min(0.1, (stamp - last) / 1000);
       last = stamp;
       const goal = target.current;
@@ -123,7 +125,7 @@ export function Scene({ name, variant, style, state, activity }: Props) {
       const gpu = on ? now.gpu / 100 : 0, cpu = on ? now.cpu / 100 : 0, mem = phase === "off" ? 0 : now.mem / 100;
       if (!reduced && moving) t += dt * (on ? 0.4 + gpu * 2.2 : 0.8);
 
-      const w = canvas.clientWidth, h = canvas.clientHeight, d = window.devicePixelRatio || 1;
+      const w = canvas.clientWidth, h = canvas.clientHeight, d = animDpr();
       if (w && h) {
         if (canvas.width !== Math.round(w * d) || canvas.height !== Math.round(h * d)) {
           canvas.width = Math.round(w * d);

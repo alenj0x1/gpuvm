@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { animFps, onAnimBudget } from "./animBudget";
+import { animFps, onAnimBudget, animDpr, paceFrame } from "./animBudget";
 import type { VmOverview } from "./types";
 import { useDecor, decorColor, colorOfDecor, saveDecor, ledTop, LED_STEP, newId, LED_COLORS, type Decor, type Face } from "./decor/store";
 import { ledColumns } from "./decor/ledFont";
@@ -899,7 +899,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       const k = amp(y);
       if (k <= 0.004) return;
       // Text drawn on the board's plane: one canvas unit is a thousandth of the cube's side.
-      const o = P(x0, y, z0), ux = P(x0 + 1, y, z0), vz = P(x0, y, z0 + 1), dpr = window.devicePixelRatio || 1;
+      const o = P(x0, y, z0), ux = P(x0 + 1, y, z0), vz = P(x0, y, z0 + 1), dpr = animDpr();
       ctx.save();
       ctx.setTransform(dpr * (ux[0] - o[0]) / 1000, dpr * (ux[1] - o[1]) / 1000, dpr * (vz[0] - o[0]) / 1000, dpr * (vz[1] - o[1]) / 1000, dpr * o[0], dpr * o[1]);
       ctx.textBaseline = "alphabetic";
@@ -1253,10 +1253,11 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
 
     const draw = (now: number) => {
       const m = data.current, perPart = colors.current;
-      const dt = Math.min(0.05, (now - last) / 1000);
+      // Up to 0.1 s: at 15 frames a second a frame is 67 ms, and a lower clamp slowed the motion down.
+      const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
       T += reduced ? 0 : dt;
-      const dpr = window.devicePixelRatio || 1;
+      const dpr = animDpr();
       W = cv.clientWidth; H = cv.clientHeight;
       if (!W || !H) return;
       // Each layer checked on its own: a remount keeps the canvas's size but starts a new hologram layer.
@@ -1601,7 +1602,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
     }
 
     function drawStickers(D: Decor, front: boolean) {
-      const dpr = window.devicePixelRatio || 1;
+      const dpr = animDpr();
       for (const s of D.stickers) {
         if (vis(...FRAMES[s.face].n) !== front) continue;
         const img = stickerImage(s.sticker, accent);
@@ -1676,7 +1677,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
         g.beginPath(); ring.forEach((p, i) => { const q = P(...p); if (i) g.lineTo(q[0], q[1]); else g.moveTo(q[0], q[1]); });
         g.setLineDash([4, 4]); g.lineWidth = 1.2; g.strokeStyle = light ? "rgba(28,27,24,.7)" : "rgba(235,232,225,.75)"; g.stroke(); g.setLineDash([]);
       }
-      drawFiguresGL(g, draws, accent, W, H, window.devicePixelRatio || 1, uiAccent);
+      drawFiguresGL(g, draws, accent, W, H, animDpr(), uiAccent);
     }
 
     // Frames a second from the shared budget (animBudget.ts): every frame while someone looks at it, 30 without the
@@ -1685,7 +1686,8 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
     const loop = (now: number) => {
       const cap = animFps();
       if (cap === 0) { frame = 0; return; }
-      if (!cap || now - drawnAt >= 1000 / cap - 2) { drawnAt = now; draw(now); }
+      const due = paceFrame(now, drawnAt, cap);
+      if (due !== null) { drawnAt = due; draw(now); }
       if (visible && !document.hidden && !reduced) frame = requestAnimationFrame(loop);
     };
     const restart = () => { cancelAnimationFrame(frame); last = performance.now(); if (visible && !document.hidden && animFps() !== 0) frame = requestAnimationFrame(loop); };
