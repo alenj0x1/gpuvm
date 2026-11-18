@@ -1013,4 +1013,68 @@ InModuleScope GpuVM {
             $script:DataRoot = $saved
         }
     }
+
+    Describe 'Administrator prompts' {
+        It 'escapes the host item it sends to the guest' {
+            $xml = [xml](ConvertTo-KvpItemText -Key 'GpuVMAdminPromptAnswer' -Value '{"a":"<b>&"}')
+            $xml.SelectSingleNode("/INSTANCE/PROPERTY[@NAME='Data']/VALUE").InnerText | Should Be '{"a":"<b>&"}'
+            $xml.SelectSingleNode("/INSTANCE/PROPERTY[@NAME='Source']/VALUE").InnerText | Should Be '0'
+        }
+
+        It 'reads a prompt from a watcher with or without a one-time code' {
+            Mock Get-VM { [pscustomobject]@{ State = 'Running'; Id = [guid]::NewGuid() } }
+            Mock Get-GuestKvpJson { [pscustomobject]@{ open = $true; id = 42; app = 'cmd'; publisher = 'Microsoft Windows' } }
+            $p = Get-GuestAdminPromptState -Name 'vm'
+            $p.id | Should Be 42
+            $p.nonce | Should Be $null
+            $p.reading | Should Be $false
+            Mock Get-GuestKvpJson { [pscustomobject]@{ open = $true; id = 42; nonce = ('a' * 32); reading = $true } }
+            $p = Get-GuestAdminPromptState -Name 'vm'
+            $p.nonce | Should Be ('a' * 32)
+            $p.reading | Should Be $true
+            # The code never reaches the app.
+            (Get-GuestAdminPrompt -Name 'vm').PSObject.Properties['nonce'] | Should Be $null
+        }
+
+        It 'ignores what the guest sends out of shape' {
+            Mock Get-VM { [pscustomobject]@{ State = 'Running'; Id = [guid]::NewGuid() } }
+            Mock Get-GuestKvpJson { [pscustomobject]@{ open = $true; id = 'x' } }
+            Get-GuestAdminPromptState -Name 'vm' | Should Be $null
+            Mock Get-GuestKvpJson { [pscustomobject]@{ open = $true; id = 7; nonce = 'NOT-HEX'; app = ('z' * 500) } }
+            $p = Get-GuestAdminPromptState -Name 'vm'
+            $p.nonce | Should Be $null
+            $p.app.Length | Should Be 80
+            Mock Get-GuestKvpJson { 'text' }
+            Get-GuestAdminPromptState -Name 'vm' | Should Be $null
+        }
+
+        It 'answers through the data exchange when the prompt has a code, and refuses another prompt' {
+            Mock Get-GuestAdminPromptState { [pscustomobject]@{ id = 42; nonce = ('b' * 32); reading = $false } }
+            Mock Send-GuestAdminPromptAnswer { $script:sent = "$Answer $PromptId $Nonce"; 'done' }
+            Mock Invoke-GuestAdminPromptAnswer { throw 'no debe usar PowerShell Direct' }
+            (Resolve-GpuVMAdminPrompt -Name 'vm' -Answer Allow -PromptId 42)['answer'] | Should Be 'Allow'
+            $script:sent | Should Be "yes 42 $('b' * 32)"
+            Test-Throws { Resolve-GpuVMAdminPrompt -Name 'vm' -Answer Allow -PromptId 43 } | Should Be $true
+        }
+
+        It 'falls back to PowerShell Direct for a watcher without a code' {
+            Mock Get-GuestAdminPromptState { [pscustomobject]@{ id = 42; nonce = $null; reading = $false } }
+            Mock Send-GuestAdminPromptAnswer { throw 'no debe usar la KVP' }
+            Mock Get-GpuVMState { @{ name = 'vm'; guest = @{ user = 'u' } } }
+            Mock Get-GpuVMGuestCredential { [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force)) }
+            Mock Invoke-GuestAdminPromptAnswer { 'done' }
+            (Resolve-GpuVMAdminPrompt -Name 'vm' -Answer Deny -PromptId 42)['answer'] | Should Be 'Deny'
+        }
+
+        It 'counts the watched machines for notices-only mode' {
+            Mock Get-VM { @([pscustomobject]@{ Name = 'a'; State = 'Running' }, [pscustomobject]@{ Name = 'b'; State = 'Running' }) }
+            Mock Get-GpuVMState { @{ streaming = @{ x = 1 } } }
+            Mock Get-GpuVMCaptureMode { 'wgc' }
+            Mock Get-GuestAdminPrompt { if ($Name -eq 'b') { [pscustomobject]@{ id = 5; app = 'cmd'; publisher = 'p'; reading = $false } } }
+            $r = Get-GpuVMAdminPrompt -WithWatched
+            $r['watched'] | Should Be 2
+            @($r['prompts']).Count | Should Be 1
+            @($r['prompts'])[0]['name'] | Should Be 'b'
+        }
+    }
 }

@@ -44,6 +44,12 @@ export default {
   "{name} pide permiso de administrador": "{name} asks for administrator permission",
   "Un programa": "A program",
   "Editor desconocido": "Unknown publisher",
+  "Avisos de administrador después de salir": "Administrator prompts after quitting",
+  "GpuVM se queda junto al reloj, sin ventanas, mientras alguna máquina siga encendida y te muestra cuando pida permiso de administrador.": "GpuVM stays next to the clock, with no windows, while any machine is still on, and shows you when one asks for administrator permission.",
+  "Mostrarlos": "Show them",
+  "Permitiendo": "Allowing",
+  "Rechazando": "Denying",
+  "No mostrarlos": "Don't show them",
   "Rechazar": "Deny",
   "Permitir": "Allow",
 

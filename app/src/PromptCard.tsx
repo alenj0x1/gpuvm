@@ -34,7 +34,7 @@ export function PromptCard() {
     setError("");
     try {
       await api.answerAdminPrompt(prompt.name, choice, prompt.id);
-      await adminPromptAnswered(prompt.id);
+      await adminPromptAnswered(prompt.name, prompt.id);
     }
     catch (e) { setError(humanError(e)); setBusy(null); }
   };
@@ -46,15 +46,17 @@ export function PromptCard() {
         <strong id="prompt-title">{t("{name} pide permiso de administrador", { name: prompt.name })}</strong>
       </div>
       <div className="prompt-app">
-        <span className="prompt-name">{prompt.app ? translateModule(prompt.app) : t("Un programa")}</span>
-        <span className={unknown ? "prompt-publisher unknown" : "prompt-publisher"}>{unknown ? t("Editor desconocido") : prompt.publisher}</span>
+        {prompt.reading ? <><span className="prompt-name skeleton-line" /><span className="prompt-publisher skeleton-line short" /></> : <>
+          <span className="prompt-name">{prompt.app ? translateModule(prompt.app) : t("Un programa")}</span>
+          <span className={unknown ? "prompt-publisher unknown" : "prompt-publisher"}>{unknown ? t("Editor desconocido") : prompt.publisher}</span>
+        </>}
       </div>
       {error && <span className="error-text">{error}</span>}
       <div className="prompt-actions">
-        <button type="button" className="btn ghost" disabled={!!busy} onClick={() => answer("Deny")}>
+        <button type="button" className="btn ghost" disabled={!!busy || !!prompt.reading} onClick={() => answer("Deny")}>
           {busy === "Deny" ? <IconLoader2 size={16} className="spin" /> : <IconX size={16} />}{t("Rechazar")}
         </button>
-        <button type="button" className="primary compact" disabled={!!busy} onClick={() => answer("Allow")}>
+        <button type="button" className="primary compact" disabled={!!busy || !!prompt.reading} onClick={() => answer("Allow")}>
           {busy === "Allow" ? <IconLoader2 size={16} className="spin" /> : <IconCheck size={16} />}{t("Permitir")}
         </button>
       </div>

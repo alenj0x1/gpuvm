@@ -91,10 +91,10 @@ export async function adminPromptsNow(): Promise<AdminPrompt[]> {
   return invoke<AdminPrompt[]>("admin_prompts");
 }
 
-export async function adminPromptAnswered(id: number) {
+export async function adminPromptAnswered(name: string, id: number) {
   if (!inTauri) return;
   const { invoke } = await import("@tauri-apps/api/core");
-  await invoke("admin_prompt_answered", { id });
+  await invoke("admin_prompt_answered", { name, id });
 }
 
 export async function openConsole(name: string) {
