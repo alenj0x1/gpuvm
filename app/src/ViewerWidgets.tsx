@@ -113,7 +113,11 @@ export function loadWidgets(): WidgetItem[] {
   } catch { return defaultWidgets(); }
 }
 export function saveWidgets(items: WidgetItem[]) {
-  try { localStorage.setItem(KEY, JSON.stringify(items.map(({ type, w, h, x, y }) => ({ type, w, h, x, y })))); } catch { /* no storage */ }
+  try {
+    localStorage.setItem(KEY, JSON.stringify(items.map(({ type, w, h, x, y }) => ({ type, w, h, x, y }))));
+    // A board saved from the defaults already had every widget: one taken off later stays off.
+    localStorage.setItem(OFFERED, JSON.stringify(NEWER));
+  } catch { /* no storage */ }
 }
 export const defaultWidgets = () => settle(DEFAULT_SIZES.map(([type, w, h]) => ({ id: type, type, w, h })));
 export const missingWidgets = (items: WidgetItem[]) => ORDER.filter((type) => !items.some((x) => x.type === type));

@@ -244,8 +244,21 @@ fn clean_thumb(v: &Value) -> Value {
 /// The viewer finished a file ("capture"): moved on a worker thread (a long recording takes a moment), then the
 /// panel hears "capture-saved" (or "capture-error").
 pub fn on_file(app: &AppHandle, vm: &str, msg: &Value) {
+    // The viewer is untrusted: a few files are taken at a time, and a flood of messages is dropped instead of
+    // starting a thread for each.
+    static BUSY: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    use std::sync::atomic::Ordering::SeqCst;
+    if BUSY.fetch_add(1, SeqCst) >= 4 {
+        BUSY.fetch_sub(1, SeqCst);
+        return;
+    }
+    struct Done;
+    impl Drop for Done {
+        fn drop(&mut self) { BUSY.fetch_sub(1, SeqCst); }
+    }
     let (app, vm, msg) = (app.clone(), vm.to_string(), msg.clone());
     std::thread::spawn(move || {
+        let _done = Done;
         let name = msg["file"].as_str().unwrap_or("");
         match take(&vm, name) {
             Ok((path, kind)) => {
