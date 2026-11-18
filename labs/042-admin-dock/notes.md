@@ -64,7 +64,9 @@ hardware independent flip at the monitor's rate; the first seconds after a promp
 itself and another session's work); the before/after numbers match lab 041's full-screen baseline.
 
 Tested by hand in the installed app (film in `out/film-dock3`, `out/film-deny`): the dock drops 0.3 s at the top center
-over the darkened picture, a real click on Rechazar closed the prompt and the dock lifted about a second later.
+over the darkened picture, a real click on Rechazar closed the prompt and the dock lifted about a second later. With the
+button fix installed, a real click on Permitir answered it too (the elevated program ran, the prompt closed) and the
+keyboard went back to the viewer (foreground process GpuVMViewer afterwards).
 
 ## 4. Notices-only mode (`notices.ps1`, installed app)
 
