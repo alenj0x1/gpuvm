@@ -14,8 +14,6 @@ async function ps<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T
 export const api = {
   overview: () => ps<VmOverview>("Get-GpuVMOverview"),
   adminPrompts: () => adminPromptsNow(),
-  answerAdminPrompt: (name: string, answer: "Allow" | "Deny", id: number) =>
-    ps("Resolve-GpuVMAdminPrompt", { Name: name, Answer: answer, PromptId: id }),
   home: () => ps<HomeInfo>("Get-GpuVMHome").then((r) => r[0]),
   isos: () => ps<IsoFile>("Get-GpuVMIsoList"),
   hostInfo: () => ps<HostInfo>("Get-GpuVMHostInfo"),
@@ -97,12 +95,6 @@ export async function adminPromptsNow(): Promise<AdminPrompt[]> {
   if (!inTauri) return mock.adminPrompts();
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<AdminPrompt[]>("admin_prompts");
-}
-
-export async function adminPromptAnswered(name: string, id: number) {
-  if (!inTauri) return;
-  const { invoke } = await import("@tauri-apps/api/core");
-  await invoke("admin_prompt_answered", { name, id });
 }
 
 export async function openConsole(name: string) {

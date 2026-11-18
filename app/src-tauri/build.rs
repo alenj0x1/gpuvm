@@ -6,7 +6,7 @@ fn main() {
     // Each window may call only the app commands its capability lists (capabilities/*.json): the viewer's side
     // panel and the admin-prompt card can't, for example, change the service or relaunch the app as administrator.
     let commands = tauri_build::AppManifest::new().commands(&[
-        "ps", "job", "admin_prompts", "admin_prompt_answered",
+        "ps", "job", "admin_prompts", "card_answer",
         "viewer_send", "viewer_is_open", "viewer_home", "viewer_show", "viewer_list", "viewer_reveal", "viewer_covered",
         "viewer_panel_resize", "viewer_panel_close", "viewer_panel_vm",
         "transfer_start", "transfer_cancel", "transfer_list", "viewer_drop_hide", "viewer_drop_state",

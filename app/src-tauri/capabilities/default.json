@@ -6,7 +6,7 @@
   "permissions": [
     "core:default", "dialog:allow-open", "dialog:allow-save", "core:window:allow-start-dragging", "core:window:allow-minimize",
     "core:window:allow-toggle-maximize", "core:window:allow-close",
-    "allow-ps", "allow-job", "allow-admin-prompts", "allow-admin-prompt-answered",
+    "allow-ps", "allow-job", "allow-admin-prompts",
     "allow-viewer-send", "allow-viewer-is-open", "allow-viewer-home", "allow-viewer-show", "allow-viewer-list",
     "allow-viewer-reveal", "allow-viewer-covered", "allow-viewer-panel-resize", "allow-viewer-panel-close", "allow-viewer-panel-vm",
     "allow-transfer-start", "allow-transfer-cancel", "allow-transfer-list",
