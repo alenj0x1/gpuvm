@@ -71,7 +71,7 @@ try {
     Check 'disposable folder gone' $false (Test-Path (Join-Path (& $m { Get-GpuVMDefaultRoot }) $disp))
     $disp = $null
 
-    $t = Timed { Import-GpuVM -Path $exportFile -Name $imp -Credential $cred -Confirm:$false | Out-Null }
+    $t = Timed { Import-GpuVM -Path $exportFile -Name $imp -Credential $cred -Override @{ vm = @{ memoryGB = 4 } } -Confirm:$false | Out-Null }
     Note 'import' @{ s = $t.s }
     $st = & $m { param($n) Get-GpuVMState -Name $n } $imp
     Check 'imported pairing not carried over' '' "$($st['streaming']['pairedClient'])"

@@ -91,10 +91,16 @@ try {
     Check 'manifest has no DPAPI blobs or paths' $false ($manifestText -match 'password|dpapi|01000000d08c9ddf|GpuVM\\\\lab045')
     Check 'source VM still has its point' 1 @((Get-GpuVMRestorePoint -Name $name).points).Count
 
+    # The source VM reserves its disk's full size, which would leave no room for the import: it is removed, and an
+    # empty folder with its name keeps the name taken.
+    Remove-VM -Name $name -Force
+    Get-ChildItem $vmDir -Recurse -File | ForEach-Object { $_.IsReadOnly = $false }
+    Remove-Item $vmDir -Recurse -Force
+    New-Item -ItemType Directory $vmDir | Out-Null
     # Import with the name taken: it must become "<name>-2".
     $sw = [Diagnostics.Stopwatch]::StartNew()
     $cred = [pscredential]::new('gpuvm', (ConvertTo-SecureString 'lab-only' -AsPlainText -Force))
-    $imp = Import-GpuVM -Path $files['NoCompression'] -Credential $cred -Confirm:$false
+    $imp = Import-GpuVM -Path $files['NoCompression'] -Credential $cred -Override @{ vm = @{ memoryGB = 4 } } -Confirm:$false
     $result.importSeconds = [math]::Round($sw.Elapsed.TotalSeconds, 1)
     $newName = "$name-2"; $importedNames.Add($newName)
     Check 'imported under a free name' $true ([bool](Get-VM -Name $newName -ErrorAction SilentlyContinue))
