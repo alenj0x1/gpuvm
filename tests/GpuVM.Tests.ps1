@@ -1298,6 +1298,8 @@ InModuleScope GpuVM {
             Get-InnerError { [GpuVM.UserFiles]::OpenFile($secret, $root) } | Should Match 'no tiene acceso'
             $links = 0
             Get-InnerError { [GpuVM.UserFiles]::List($top, 'Proyecto', $root, [ref]$links) } | Should Match 'no tiene acceso|No se pudo leer'
+            # Back to inherited rights, so the test drive can be deleted afterwards.
+            $null = icacls $top /reset /T /Q
         }
     }
 }
