@@ -52,5 +52,6 @@ function Remove-GpuVMDisposable {
         try { Remove-Item -LiteralPath $dir.FullName -Recurse -Force -ErrorAction Stop; $removed.Add($dir.Name) }
         catch { Write-Warning "No se pudo borrar $($dir.FullName): $($_.Exception.Message)" }
     }
-    , @($removed)
+    # One name per deleted machine (nothing when none): the app reads the list as is.
+    $removed.ToArray()
 }

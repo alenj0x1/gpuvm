@@ -26,7 +26,9 @@ function Import-GpuVM {
         $vmName = if ($Name) { Assert-GpuVMNameFree -Name $Name -Root (Get-GpuVMDefaultRoot); $Name }
             else { Get-FreeGpuVMName -Base $(if ($manifest['name']) { $manifest['name'] } else { 'importada' }) }
         $diskBytes = [int64]$manifest['disk']['bytes']
-        $sizeGB = [math]::Ceiling([math]::Max($diskBytes, [int64]$manifest['diskSizeBytes']) / 1GB)
+        # Profiles ask for at least 64 GB: a smaller disk grows to that when the VM is set up (Windows extends C: on its
+        # next start, as when the disk is enlarged in Options).
+        $sizeGB = [math]::Max(64, [math]::Ceiling([math]::Max($diskBytes, [int64]$manifest['diskSizeBytes']) / 1GB))
         # The disk is the file's: its size and type win over the profile and the override.
         $diskOverride = @{ vm = @{ disk = @{ type = 'Dynamic'; sizeGB = $sizeGB } } }
         $config = Resolve-GpuVMProfile -Name $Profile -Override $(if ($Override) { Merge-Hashtable -Base $Override -Override $diskOverride } else { $diskOverride })
