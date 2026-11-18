@@ -167,6 +167,29 @@ fn viewers() -> std::sync::MutexGuard<'static, Option<HashMap<String, Arc<Viewer
     VIEWERS.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// The app, for telling its pages when a picture covers them.
+static APP: std::sync::OnceLock<AppHandle> = std::sync::OnceLock::new();
+/// What the pages were last told.
+static COVERED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Tells the pages whether any machine's picture is shown now ("viewer-cover"): while one is, they stop their
+/// animations. The VMs share this PC's GPU, and a hologram drawn behind the stream took time from the stream itself
+/// (lab 041).
+fn announce_cover() {
+    let covered = viewers().as_ref().is_some_and(|v| v.values().any(|x| x.visible.load(Ordering::Relaxed)));
+    if COVERED.swap(covered, Ordering::AcqRel) != covered {
+        if let Some(app) = APP.get() {
+            let _ = app.emit("viewer-cover", json!({ "covered": covered }));
+        }
+    }
+}
+
+/// Whether a machine's picture is shown now (asked by a page when it starts).
+#[tauri::command]
+pub fn viewer_covered() -> bool {
+    COVERED.load(Ordering::Relaxed)
+}
+
 fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(Some(0)).collect()
 }
@@ -342,6 +365,7 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
     let mut all = arguments.clone();
     all.extend(["--gpuvm-pipe".into(), pipe_name.clone(), "--gpuvm-token-env".into(), TOKEN_VAR.into()]);
     // At Low integrity (lowbox.rs): the viewer handles what the machine sends.
+    let _ = APP.set(app.clone());
     let child = crate::lowbox::spawn_low(&exe, &all, &[(TOKEN_VAR, token.as_str())])?;
     let pid = child.pid;
 
@@ -427,6 +451,7 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
             all.as_mut().map(|v| v.remove(&vm));
         }
         drop(all);
+        announce_cover();
         let closed = json!({ "type": "closed" });
         if let Some(waiter) = WAITERS.lock().unwrap_or_else(|e| e.into_inner()).as_mut().and_then(|w| w.remove(&vm)) {
             let _ = waiter.send(closed.clone());
@@ -577,6 +602,7 @@ fn take_raise(viewer: &Viewer) -> bool {
 fn reveal(viewer: &Viewer) {
     allow_raise(viewer);
     viewer.visible.store(true, Ordering::Relaxed);
+    announce_cover();
     viewer.revealed.store(true, Ordering::Relaxed);
     allow_foreground(viewer.child.pid);
     send_raw(viewer, &json!({ "type": "reveal", "fullscreen": viewer.full_screen }));
@@ -598,6 +624,7 @@ pub async fn viewer_home(app: AppHandle, vm: String, keep: bool) -> Result<(), S
     crate::overlay::close(&app);
     let viewer = viewers().as_ref().and_then(|v| v.get(&vm).cloned()).ok_or("El visor de esta máquina no está abierto.")?;
     viewer.visible.store(false, Ordering::Relaxed);
+    announce_cover();
     let msg = if keep { json!({ "type": "hide" }) } else { json!({ "type": "quit" }) };
     if send_raw(&viewer, &msg) { Ok(()) } else { Err("El visor no respondió.".into()) }
 }
@@ -619,6 +646,7 @@ pub async fn viewer_show(app: AppHandle, vm: String) -> Result<(), String> {
     }
     viewer.visible.store(true, Ordering::Relaxed);
     viewer.revealed.store(true, Ordering::Relaxed);
+    announce_cover();
     Ok(())
 }
 

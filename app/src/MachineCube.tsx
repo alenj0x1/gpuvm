@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { animFps, onAnimBudget } from "./animBudget";
 import type { VmOverview } from "./types";
 import { useDecor, decorColor, colorOfDecor, saveDecor, ledTop, LED_STEP, newId, LED_COLORS, type Decor, type Face } from "./decor/store";
 import { ledColumns } from "./decor/ledFont";
@@ -1663,15 +1664,17 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       drawFiguresGL(g, draws, accent, W, H, window.devicePixelRatio || 1, uiAccent);
     }
 
-    // A page can cap the frame rate (the website shows several cubes at once, as decoration): frames in between
-    // are skipped. The app itself draws every frame.
+    // Frames a second from the shared budget (animBudget.ts): every frame while someone looks at it, 30 without the
+    // focus, none while a machine's picture covers the app (the VMs share this GPU). The website caps it too.
     let drawnAt = 0;
     const loop = (now: number) => {
-      const cap = (window as { __gpuvmFps?: number }).__gpuvmFps;
+      const cap = animFps();
+      if (cap === 0) { frame = 0; return; }
       if (!cap || now - drawnAt >= 1000 / cap - 2) { drawnAt = now; draw(now); }
       if (visible && !document.hidden && !reduced) frame = requestAnimationFrame(loop);
     };
-    const restart = () => { cancelAnimationFrame(frame); last = performance.now(); if (visible && !document.hidden) frame = requestAnimationFrame(loop); };
+    const restart = () => { cancelAnimationFrame(frame); last = performance.now(); if (visible && !document.hidden && animFps() !== 0) frame = requestAnimationFrame(loop); };
+    const offBudget = onAnimBudget(restart);
     // Only animates while it is on screen and the window is visible.
     const io = new IntersectionObserver(([e]) => { visible = e.isIntersecting; restart(); });
     io.observe(cv);
@@ -1685,6 +1688,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       // (A mount undone at once, as React's development double mount does, leaves the previous space alone.)
       if (performance.now() - mountedAt > 300) lastSpace = { name: space.current.name, yaw: view.yaw, pitch: view.pitch, at: performance.now() };
       cancelAnimationFrame(frame);
+      offBudget();
       io.disconnect();
       document.removeEventListener("visibilitychange", restart);
       cv.removeEventListener("pointerdown", down);

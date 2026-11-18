@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { animFps, onAnimBudget } from "./animBudget";
 import { hash, machineColor, patternVariant, random } from "./machineIcon";
 
 /** The three banner designs, all made of the logo's four-cell chip. */
@@ -106,6 +107,11 @@ export function Scene({ name, variant, style, state, activity }: Props) {
     }
 
     const draw = (stamp: number) => {
+      // The shared budget (animBudget.ts): nothing while a machine's picture covers the app, fewer frames without
+      // the focus.
+      const cap = animFps();
+      if (cap === 0) { frame = 0; stale = true; return; }
+      if (cap && stamp - last < 1000 / cap - 2) { frame = requestAnimationFrame(draw); return; }
       const dt = Math.min(0.1, (stamp - last) / 1000);
       last = stamp;
       const goal = target.current;
@@ -229,8 +235,10 @@ export function Scene({ name, variant, style, state, activity }: Props) {
     const theme = new MutationObserver(restart);
     theme.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     window.addEventListener("gpuvm-palette", restart);
+    const offBudget = onAnimBudget(restart);
     return () => {
       cancelAnimationFrame(frame);
+      offBudget();
       io.disconnect();
       resize.disconnect();
       theme.disconnect();

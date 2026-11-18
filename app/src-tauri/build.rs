@@ -7,7 +7,7 @@ fn main() {
     // panel and the admin-prompt card can't, for example, change the service or relaunch the app as administrator.
     let commands = tauri_build::AppManifest::new().commands(&[
         "ps", "job", "admin_prompts", "admin_prompt_answered",
-        "viewer_send", "viewer_is_open", "viewer_home", "viewer_show", "viewer_list", "viewer_reveal",
+        "viewer_send", "viewer_is_open", "viewer_home", "viewer_show", "viewer_list", "viewer_reveal", "viewer_covered",
         "viewer_panel_resize", "viewer_panel_close", "viewer_panel_vm",
         "open_console", "repair_service", "relaunch_as_admin", "service_status", "start_service", "stop_service",
         "set_service_mode", "set_service_startup", "set_close_to_tray", "set_stop_vms_on_quit", "set_language",
