@@ -134,6 +134,12 @@ export function WidgetBoard({ items, onChange, edit, children }: {
     setWidth(el.clientWidth);
     return () => ro.disconnect();
   }, []);
+  // And on every redraw: a panel resized by its own edge redraws the board, and some browsers (Brave) delivered the
+  // observer's last size late or not at all, leaving the widgets at the old width.
+  useLayoutEffect(() => {
+    const w = ref.current?.clientWidth ?? 0;
+    if (w && w !== width) setWidth(w);
+  });
   useEffect(() => { if (width && !ready) { const f = requestAnimationFrame(() => setReady(true)); return () => cancelAnimationFrame(f); } }, [width, ready]);
 
   const cols = width >= 416 ? 3 : 2;
