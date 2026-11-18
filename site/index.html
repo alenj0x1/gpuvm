@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GpuVM · Tu GPU, dentro de una máquina virtual</title>
-<meta name="description" content="GpuVM crea máquinas virtuales de Windows 10 y 11 que usan tu GPU de verdad, aisladas de tu equipo, y las abre en Moonlight con un clic. Cada una es un holograma que puedes decorar.">
+<meta name="description" content="GpuVM crea máquinas virtuales de Windows 10 y 11 que usan tu GPU de verdad, aisladas de tu equipo, y las abre en su propio visor con un clic. Cada una es un holograma que puedes decorar.">
 <meta property="og:title" content="GpuVM · Tu GPU, dentro de una máquina virtual">
-<meta property="og:description" content="Windows 10 u 11 con tu GPU de verdad, aislado de tu equipo y abierto en Moonlight con un clic.">
+<meta property="og:description" content="Windows 10 u 11 con tu GPU de verdad, aislado de tu equipo y abierto en su propio visor con un clic.">
 <meta property="og:image" content="https://gpuvm.alenj.dev/images/home-es-dark.webp">
 <meta property="og:type" content="website">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
@@ -72,8 +72,8 @@
         <span data-l="en"><span class="line">Your GPU, inside</span> <span class="line">a machine for <span class="rotor" data-words="gaming|work|movies|labs|your agents">gaming</span></span></span>
       </h1>
       <p class="hero-sub">
-        <span data-l="es">Windows 10 u 11 con tu GPU de verdad, aislado de tu equipo y abierto en Moonlight con un clic.</span>
-        <span data-l="en">Windows 10 or 11 with your real GPU, isolated from your PC and opened in Moonlight in one click.</span>
+        <span data-l="es">Windows 10 u 11 con tu GPU de verdad, aislado de tu equipo y abierto en su propio visor con un clic.</span>
+        <span data-l="en">Windows 10 or 11 with your real GPU, isolated from your PC and opened in its own viewer in one click.</span>
       </p>
       <div class="hero-actions">
         <a class="btn primary" data-download href="https://github.com/alenj0x1/gpuvm/releases/latest"><i data-ic="download"></i><span data-l="es">Descargar</span><span data-l="en">Download</span> <span class="ver" data-version></span></a>
@@ -173,13 +173,14 @@
     <div class="wrap chapter-grid stack">
       <div class="chapter-text reveal">
         <h2><span data-l="es">Como si jugaras <em>en tu equipo</em></span><span data-l="en">Like playing <em>on your own PC</em></span></h2>
-        <p class="lead-p"><span data-l="es">Elige para qué usas la máquina y GpuVM ajusta los cuadros, la sincronización y el mouse de Moonlight.</span><span data-l="en">Choose what you use the machine for and GpuVM sets Moonlight's frame rate, sync and mouse.</span></p>
+        <p class="lead-p"><span data-l="es">La máquina se abre dentro de GpuVM, en su propio visor. Elige para qué la usas y GpuVM ajusta los cuadros, la sincronización y el mouse.</span><span data-l="en">The machine opens inside GpuVM, in its own viewer. Choose what you use it for and GpuVM sets the frame rate, sync and mouse.</span></p>
         <div class="stats">
           <div class="stat"><b><span data-count="16.6" data-dec="1">16,6</span><small>ms</small></b><span><span data-l="es">de una tecla a la imagen, a 120 FPS</span><span data-l="en">from a key to the picture, at 120 FPS</span></span></div>
           <div class="stat"><b>7–10<small>s</small></b><span><span data-l="es">para abrir una máquina encendida</span><span data-l="en">to open a running machine</span></span></div>
         </div>
         <ul class="points">
           <li><i data-ic="gauge"></i><span><span data-l="es">Transmite al ritmo de tu monitor: la sincronización vertical no agrega espera.</span><span data-l="en">Streams at your monitor's rate: V-Sync adds no delay.</span></span></li>
+          <li><i data-ic="layout"></i><span><span data-l="es">Un panel al costado de la imagen con tus máquinas, sus números, un reloj y tus juegos, acomodado a tu gusto.</span><span data-l="en">A panel beside the picture with your machines, their numbers, a clock and your games, arranged your way.</span></span></li>
           <li><i data-ic="gamepad"></i><span><span data-l="es">Teclado, mouse y control: tu control llega como uno de Xbox 360.</span><span data-l="en">Keyboard, mouse and gamepad: your pad arrives as an Xbox 360 controller.</span></span></li>
         </ul>
       </div>
@@ -308,13 +309,13 @@
           <div class="sec-text">
             <span class="ic"><i data-ic="lock"></i></span>
             <h3><span data-l="es">Cada permiso, en tus manos</span><span data-l="en">Every permission, in your hands</span></h3>
-            <p><span data-l="es">Cuando Windows en la máquina pide permiso de administrador, GpuVM muestra el programa y su editor encima de Moonlight. Solo tu equipo puede responder.</span><span data-l="en">When Windows in the machine asks for administrator rights, GpuVM shows the program and its publisher over Moonlight. Only your PC can answer.</span></p>
+            <p><span data-l="es">Cuando Windows en la máquina pide permiso de administrador, GpuVM muestra el programa y su editor encima de la imagen. Solo tu equipo puede responder.</span><span data-l="en">When Windows in the machine asks for administrator rights, GpuVM shows the program and its publisher over the picture. Only your PC can answer.</span></p>
           </div>
           <div class="demo prompt-stage" data-demo="prompt" aria-label="Aviso de administrador de GpuVM, la app real con datos de ejemplo"></div>
         </div>
         <div class="card sec reveal"><span class="ic"><i data-ic="network"></i></span><h3><span data-l="es">Sin acceso a tu red</span><span data-l="en">No access to your network</span></h3><p><span data-l="es">Sale a internet, pero no llega a tu equipo ni a tu red local. Las reglas viven en el switch virtual, fuera de la máquina.</span><span data-l="en">It reaches the internet, but not your PC or your local network. The rules live on the virtual switch, outside the machine.</span></p></div>
         <div class="card sec reveal"><span class="ic"><i data-ic="signature"></i></span><h3><span data-l="es">Todo verificado</span><span data-l="en">Everything verified</span></h3><p><span data-l="es">Componentes fijados por SHA-256 y apps solo con la firma de su empresa.</span><span data-l="en">Components pinned by SHA-256 and apps only with their publisher's signature.</span></p></div>
-        <div class="card sec reveal"><span class="ic"><i data-ic="key"></i></span><h3><span data-l="es">Sin permisos de más</span><span data-l="en">No extra rights</span></h3><p><span data-l="es">La app y Moonlight se abren sin administrador. Un servicio que solo atiende a GpuVM hace el trabajo de Hyper-V.</span><span data-l="en">The app and Moonlight run without administrator rights. A service that only answers GpuVM does the Hyper-V work.</span></p></div>
+        <div class="card sec reveal"><span class="ic"><i data-ic="key"></i></span><h3><span data-l="es">Sin permisos de más</span><span data-l="en">No extra rights</span></h3><p><span data-l="es">La app se abre sin administrador y su visor, además, aislado con integridad baja. Un servicio que solo atiende a GpuVM hace el trabajo de Hyper-V.</span><span data-l="en">The app runs without administrator rights and its viewer is also isolated at Low integrity. A service that only answers GpuVM does the Hyper-V work.</span></p></div>
         <div class="card sec reveal"><span class="ic"><i data-ic="clipboard"></i></span><h3><span data-l="es">En un solo sentido</span><span data-l="en">One way only</span></h3><p><span data-l="es">El portapapeles y las copias van de tu equipo a la máquina, nunca al revés.</span><span data-l="en">The clipboard and copies go from your PC to the machine, never back.</span></p></div>
       </div>
     </div>
@@ -343,7 +344,7 @@
       <div class="install-steps">
         <h2><span data-l="es">Listo en <em>tres pasos</em></span><span data-l="en">Ready in <em>three steps</em></span></h2>
         <ol class="steps">
-          <li><span class="num">1</span><div><b><span data-l="es">Descarga el instalador</span><span data-l="en">Download the installer</span></b><span><span data-l="es">Trae su propio PowerShell 7 e instala Moonlight y lo que necesita cada máquina.</span><span data-l="en">It brings its own PowerShell 7 and installs Moonlight and what each machine needs.</span></span></div></li>
+          <li><span class="num">1</span><div><b><span data-l="es">Descarga el instalador</span><span data-l="en">Download the installer</span></b><span><span data-l="es">Trae su propio PowerShell 7, su visor y lo que necesita cada máquina.</span><span data-l="en">It brings its own PowerShell 7, its viewer and what each machine needs.</span></span></div></li>
           <li><span class="num">2</span><div><b><span data-l="es">Crea una máquina</span><span data-l="en">Create a machine</span></b><span><span data-l="es">Elige tu ISO de Windows, un perfil y las apps. Windows se instala solo.</span><span data-l="en">Pick your Windows ISO, a profile and the apps. Windows installs itself.</span></span></div></li>
           <li><span class="num">3</span><div><b><span data-l="es">Encender y abrir</span><span data-l="en">Start and open</span></b><span><span data-l="es">Un clic y estás dentro, con tu GPU.</span><span data-l="en">One click and you're in, with your GPU.</span></span></div></li>
         </ol>
@@ -380,7 +381,7 @@
     <div class="wrap narrow">
       <h2 class="center reveal"><span data-l="es">Preguntas <em>frecuentes</em></span><span data-l="en">Common <em>questions</em></span></h2>
       <div class="faq">
-        <details class="reveal"><summary><span data-l="es">¿Necesito Steam o una cuenta?</span><span data-l="en">Do I need Steam or an account?</span><i data-ic="chevron"></i></summary><p><span data-l="es">No. GpuVM usa Sunshine dentro de la máquina y Moonlight en tu equipo, y trae su propio altavoz virtual para el sonido.</span><span data-l="en">No. GpuVM uses Sunshine inside the machine and Moonlight on your PC, and brings its own virtual speaker for sound.</span></p></details>
+        <details class="reveal"><summary><span data-l="es">¿Necesito Steam o una cuenta?</span><span data-l="en">Do I need Steam or an account?</span><i data-ic="chevron"></i></summary><p><span data-l="es">No. GpuVM usa Sunshine dentro de la máquina y su propio visor, basado en Moonlight, en tu equipo, y trae su propio altavoz virtual para el sonido.</span><span data-l="en">No. GpuVM uses Sunshine inside the machine and its own viewer, built on Moonlight, on your PC, and brings its own virtual speaker for sound.</span></p></details>
         <details class="reveal"><summary><span data-l="es">¿La máquina se lleva toda mi GPU?</span><span data-l="en">Does the machine take my whole GPU?</span><i data-ic="chevron"></i></summary><p><span data-l="es">No: la GPU se comparte. Tu equipo la sigue usando y tú decides qué parte recibe cada máquina.</span><span data-l="en">No: the GPU is shared. Your PC keeps using it and you decide each machine's share.</span></p></details>
         <details class="reveal"><summary><span data-l="es">¿Qué pasa si una máquina se infecta?</span><span data-l="en">What if a machine gets infected?</span><i data-ic="chevron"></i></summary><p><span data-l="es">Sale a internet pero no llega a tu equipo ni a tu red, y nada copia archivos desde ella hacia tu equipo. Bórrala y crea otra desde tu plantilla en segundos.</span><span data-l="en">It reaches the internet but not your PC or your network, and nothing copies files from it to your PC. Delete it and create another from your template in seconds.</span></p></details>
         <details class="reveal"><summary><span data-l="es">¿Cuánto espacio necesito?</span><span data-l="en">How much space do I need?</span><i data-ic="chevron"></i></summary><p><span data-l="es">Unos 40 GB por máquina con disco dinámico. GpuVM cuenta el espacio prometido a las demás máquinas, así que nunca les das más de lo que cabe en el disco.</span><span data-l="en">About 40 GB per machine with a dynamic disk. GpuVM counts the room promised to the other machines, so you never give them more than the drive holds.</span></p></details>
