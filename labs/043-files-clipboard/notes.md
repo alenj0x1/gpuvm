@@ -97,6 +97,29 @@ Both widen what a guest can reach, so neither was adopted (build-approach §4b).
   with the lock held at 11:21, hashes equal (`out/remeasure.jsonl`). A first run at ~10:40 (1.3 s) fell inside a
   stray stream of another lab and was repeated. Before batching, these went one round trip each.
 
+### Security review fixes (`security.ps1`, results in `out/security-*.jsonl`, `out/security-baseline.jsonl`)
+
+1. **Files of this PC were read with the bridge's elevated token.** Before (build installed at 12:07): a dropped folder
+   holding a file only Administrators and SYSTEM can read was copied into the VM, secret included, in 3/3 runs. After
+   (`UserFiles.cs`: everything below the dropped items is listed and opened with the person's rights, a restricted
+   copy of the token with Administrators deny-only and no privileges; each file is opened without following a link
+   at its name, checked with `GetFinalPathNameByHandle` to be under the checked root, and read through that handle):
+   refused 3/3 with "Tu usuario no tiene acceso a …\gpuvm.json". Nothing reached the VM, even though the elevated
+   shell can read the file. The same folder without that file still arrives (3/3). The junction swap after the
+   listing, an admin-only folder, and a chosen item that is a link are refused in `tests/GpuVM.Tests.ps1`
+   ("Files of this PC read with the person's rights"). 1 GB through the parallel lanes, which now open files the same
+   way: 23.4 / 22.9 s (44 MB/s), hash equal.
+2. **Can a taken-over viewer (Low) drop files of the PC onto the app's drop area?** Sources started from Explorer's
+   token: `Low` (restricted and in a job, like the viewer), `LowPlain` (only the Low label, which gets the viewer to
+   report the drag, and the app's drop area appears; screenshot `out/security-LowPlain-*.jpg`), and `Medium`.
+   | Build | Low | LowPlain | Medium |
+   |---|---|---|---|
+   | before (12:07) | 0/2 accepted | 0/2 accepted | 2/2 accepted, 4 items in the VM |
+   | after (this branch) | 0/3 accepted | 0/3 accepted | 3/3 accepted, 4 items in the VM |
+   COM already refuses the call from Low to the Medium drop target (effect None, nothing copied). The drop target now
+   also checks the caller's integrity itself (`CoImpersonateClient`, Medium or above), at the enter and again at
+   the drop, so it doesn't rely on COM's default.
+
 ### Bugs the real run found (all fixed)
 
 - SDL accepts dropped files by default (`DragAcceptFiles`). Windows handed the paths to the viewer through

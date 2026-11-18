@@ -12,7 +12,7 @@ The junction swap after the listing is proved in tests/GpuVM.Tests.ps1 ("refuses
 Needs: win-gpu running, the app installed and showing win-gpu's picture (case 2), the lab lock (taken here).
 Writes only under C:\GpuVM-lab-043sec on the host and Desktop\GpuVM-lab-sec in the guest; both are deleted.
 #>
-param([string]$VMName = 'win-gpu', [int]$X = 960, [int]$Y = 540, [string]$Owner = 'files-clipboard', [int]$Rounds = 3, [switch]$SkipApp)
+param([string]$VMName = 'win-gpu', [int]$X = 960, [int]$Y = 540, [string]$Owner = 'files-clipboard', [int]$Rounds = 3, [switch]$SkipApp, [switch]$SkipModule, [string]$Build = 'this branch')
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lock.ps1')
 $repo = Resolve-Path (Join-Path $PSScriptRoot '..\..')
@@ -31,12 +31,20 @@ try {
         Invoke-Command -VMName $VMName -Credential $cred -ArgumentList $guestFolder {
             param($f) $d = Join-Path ([Environment]::GetFolderPath('Desktop')) $f
             if (Test-Path $d) { @(Get-ChildItem $d -Recurse -Force -ErrorAction SilentlyContinue).Count } else { 0 }
-        }
+        } | ForEach-Object { [int]$_ }
+    }
+    # What the app's own drop puts in the guest: Desktop\Recibidos or Desktop\Received (the app's language).
+    $receivedCount = {
+        [int](Invoke-Command -VMName $VMName -Credential $cred {
+            $n = 0; foreach ($f in 'Recibidos', 'Received') { $d = Join-Path ([Environment]::GetFolderPath('Desktop')) $f; if (Test-Path $d) { $n += @(Get-ChildItem $d -Recurse -Force -ErrorAction SilentlyContinue).Count; Get-Item $d | Remove-Item -Recurse -Force } }; $n
+        })
     }
     $guestClear = { Invoke-Command -VMName $VMName -Credential $cred -ArgumentList $guestFolder { param($f) $d = Join-Path ([Environment]::GetFolderPath('Desktop')) $f; if (Test-Path $d) { Get-Item $d | Remove-Item -Recurse -Force } } }
 
     # ---- 1. module: admin-only file inside a dropped folder
     Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force $work | Out-Null
+    if (-not $SkipModule) {
     $folder = Join-Path $work 'Proyecto'
     New-Item -ItemType Directory -Force $folder | Out-Null
     'mio' | Set-Content (Join-Path $folder 'nota.txt')
@@ -62,6 +70,7 @@ try {
         Write-Row ([ordered]@{ case = 'same folder, plain files'; round = $round; refused = [bool]$err; error = $err; itemsInGuest = (& $guestCount) })
     }
     & $guestClear
+    }
 
     # ---- 2. app: a Low, restricted, jobbed source drops host files on the viewer's picture
     if (-not $SkipApp) {
@@ -72,7 +81,10 @@ try {
         $payload = Join-Path $work 'fotos-del-pc'
         New-Item -ItemType Directory -Force $payload | Out-Null
         1..3 | ForEach-Object { Set-Content (Join-Path $payload "f$_.txt") "archivo $_ del PC" }
-        $order = @('Low', 'Medium') * $Rounds
+        # Low = the viewer's sandbox (restricted, in a job); LowPlain = the person's token at Low only, which gets far
+        # enough for the viewer to report the drag and the app's drop area to be called from Low; Medium = Explorer.
+        $order = @('Low', 'LowPlain', 'Medium') * $Rounds
+        & $receivedCount | Out-Null
         $i = 0
         foreach ($il in $order) {
             $i++
@@ -83,14 +95,18 @@ try {
             New-Item -ItemType Directory -Force $dir | Out-Null
             # The folder (made by this elevated shell) must be writable by a Low process: give it the Low label.
             icacls $dir /setintegritylevel '(OI)(CI)low' | Out-Null
+            @(Get-Process gpuvm, GpuVMViewer -ErrorAction SilentlyContinue | ForEach-Object Id) | Set-Content (Join-Path $dir 'allowed.txt')
             Start-Process $exe -ArgumentList "launch $il `"$exe`" drop-on `"$dir`" $X $Y `"$payload`""
-            Start-Sleep -Seconds 4
+            # Mid-hover: is the app's drop area over the picture for this source?
+            Start-Sleep -Milliseconds 2000
+            & (Join-Path $PSScriptRoot '..\039-viewer-bridge\screen.ps1') shot -Out (Join-Path $out "security-$il-$i.jpg") -Scale 0.4 | Out-Null
+            Start-Sleep -Seconds 2
             $log = Get-Content (Join-Path $dir 'drop-on.log') -ErrorAction SilentlyContinue
             # A copy, if one started, needs a moment to reach the VM.
             Start-Sleep -Seconds 6
             $done = ($log | Select-String ' done ' | Select-Object -First 1).Line
-            Write-Row ([ordered]@{ case = 'drop on the picture'; source = $il; round = $i; integrity = (($log | Select-String 'il=(\S+)').Matches | Select-Object -First 1).Groups[1].Value
-                probe = $done; dropAccepted = [bool]($done -match 'effect=Copy'); itemsInGuest = (& $guestCount) })
+            Write-Row ([ordered]@{ case = 'drop on the picture'; build = $Build; source = $il; round = $i; integrity = (($log | Select-String 'il=(\S+)').Matches | Select-Object -First 1).Groups[1].Value
+                probe = $done; dropAccepted = [bool]($done -match 'effect=Copy'); receivedInGuest = (& $receivedCount) })
         }
         & $guestClear
     }
