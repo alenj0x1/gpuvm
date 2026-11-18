@@ -27,8 +27,10 @@ import {
 } from "@tabler/icons-react";
 import type { HostMonitor, MouseMode, VmOverview } from "./types";
 import appCss from "./styles.css?inline";
+import { Scene, sceneStyle } from "./Scene";
+import { ViewerPanel } from "./ViewerPanel";
 
-type View = "app" | "home" | "cleanup" | "apps" | "shared" | "stream" | "prompt" | "cube" | "machine" | "customize" | "games";
+type View = "app" | "home" | "cleanup" | "apps" | "shared" | "stream" | "prompt" | "cube" | "machine" | "customize" | "games" | "viewer";
 type Theme = "light" | "dark";
 interface Site { lang: Lang; theme: Theme; accent: AccentPref; world: AmbientId; time: AmbientTime; dice: number }
 interface RunningJob extends JobInfo { vm: string; after?: () => void }
@@ -332,6 +334,19 @@ function GamesDemo() {
   );
 }
 
+/** GpuVM's viewer with its side panel: the machine's picture and, beside it, the same board of widgets as in the
+ *  app (Edit moves, resizes, adds and removes them; switching machines and the games work). */
+function ViewerDemo() {
+  const [vm, setVm] = useState("win10");
+  return (
+    <div className="site-viewer">
+      <div className="site-viewer-picture"><Scene key={vm} name={vm} style={sceneStyle(vm)} state="Running" activity={{ cpu: 38, gpu: 72, mem: 55 }} /></div>
+      {/* The machines widget switches the panel's machine; the picture follows it. */}
+      <div className="site-viewer-panel"><ViewerPanel machine="win10" onSwitched={setVm} /></div>
+    </div>
+  );
+}
+
 /* ---------- Mounting ---------- */
 
 /** Everything inside a demo is drawn again when the language changes, as the app does (without starting it over). */
@@ -388,6 +403,12 @@ const scopedCss = appCss
   .site-games { position: relative; height: 100%; border-radius: var(--r-lg); overflow: hidden; background: var(--surface); }
   .site-games .machine-cube { position: absolute; inset: 0; }
   .site-games .space-games { opacity: 1; }
+  .site-viewer { display: grid; grid-template-columns: minmax(0, 1fr) 340px; height: 100%; border-radius: var(--r-lg); overflow: hidden; background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); }
+  .site-viewer-picture { position: relative; min-width: 0; background: #000; }
+  .site-viewer-picture > * { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .site-viewer-panel { position: relative; min-height: 0; }
+  .site-viewer-panel .viewer-panel { position: absolute; }
+  @media (max-width: 760px) { .site-viewer { grid-template-columns: 1fr; grid-template-rows: 220px minmax(0, 1fr); } }
   /* The whole app: drawn at a desktop window's size and scaled to fit. The transform also keeps its dialogs and
      toasts (position: fixed) inside the window instead of the page. */
   .demo-root.full { display: block; transform-origin: 0 0; background: var(--bg); }
@@ -444,6 +465,7 @@ function mount(el: HTMLElement, options: { view: View; vm?: string }) {
   if (view === "machine") { host.classList.add("cube"); render(() => <MachineDemo />); return; }
   if (view === "customize") { host.classList.add("cube"); render(() => <CustomizeDemo />); return; }
   if (view === "games") { host.classList.add("cube"); render(() => <GamesDemo />); return; }
+  if (view === "viewer") { host.classList.add("cube"); render(() => <ViewerDemo />); return; }
   render(() => <Demo view={view} vmName={options.vm ?? "win10"} />);
 }
 

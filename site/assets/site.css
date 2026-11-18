@@ -187,6 +187,7 @@ html:not([data-world="blocks"]) [data-seg="time"] { display: none; }
 .demo.tall { height: 620px; }
 [data-demo="customize"].tall { height: 660px; }
 [data-demo="games"].tall { height: 520px; }
+.viewer-demo { height: 600px; margin-top: 32px; }
 .window { margin-top: 48px; background: var(--surface); border-radius: var(--r-xl); padding: 8px; }
 .app-demo { border-radius: 14px; overflow: hidden; }
 
@@ -325,6 +326,7 @@ html:not([data-world="blocks"]) [data-seg="time"] { display: none; }
   .demo.tall { height: 640px; }
   [data-demo="customize"].tall { height: 900px; }
   [data-demo="games"].tall { height: 760px; }
+  .viewer-demo { height: 820px; }
   .app-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 10px; }
   .sec-grid, .metrics, .bento { grid-template-columns: minmax(0, 1fr); }
   .sec.wide { grid-template-columns: minmax(0, 1fr); }

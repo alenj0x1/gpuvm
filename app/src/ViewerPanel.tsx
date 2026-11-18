@@ -33,8 +33,8 @@ const send = (vm: string, msg: Record<string, unknown>) => invoke("viewer_send",
 /** The panel beside GpuVM's viewer: it slides in from the right while the picture moves aside. A board of widgets
  *  the person arranges (ViewerWidgets.tsx): machines to switch to, the usual actions, the picture's numbers, the time,
  *  the shelf with the machines' figures, games for the waits and, if turned on, the weather. */
-export function ViewerPanel() {
-  const [vm, setVm] = useState<string>(() => new URLSearchParams(location.search).get("vm") ?? "");
+export function ViewerPanel({ machine, onSwitched }: { machine?: string; onSwitched?: (name: string) => void } = {}) {
+  const [vm, setVm] = useState<string>(() => machine ?? new URLSearchParams(location.search).get("vm") ?? "");
   const vmRef = useRef(vm);
   vmRef.current = vm;
   const [open, setOpen] = useState(!inTauri);
@@ -120,6 +120,7 @@ export function ViewerPanel() {
     target.addEventListener("pointercancel", up);
   };
   const goHome = async () => {
+    if (!inTauri) return;
     const { emitTo } = await import("@tauri-apps/api/event");
     await emitTo("main", "viewer-home", { vm });
   };
@@ -148,6 +149,8 @@ export function ViewerPanel() {
 
   const switchTo = async (name: string) => {
     setError("");
+    // The website's sample: switching shows the other machine in the panel.
+    if (!inTauri) { setVm(name); onSwitched?.(name); return; }
     try {
       const { emitTo } = await import("@tauri-apps/api/event");
       await emitTo("main", "viewer-switch", { from: vm, to: name });
