@@ -19,6 +19,9 @@ tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt", "macros", "time"] }
+# Already in the build through Tauri (same versions): PNG for copied images, base64 to send them.
+png = "0.18"
+base64 = "0.23"
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
@@ -27,6 +30,9 @@ windows-sys = { version = "0.61", features = [
     "Win32_Security_Cryptography",
     "Win32_Storage_FileSystem",
     "Win32_System_Com",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
     "Win32_System_IO",
     "Win32_System_JobObjects",
     "Win32_System_Pipes",

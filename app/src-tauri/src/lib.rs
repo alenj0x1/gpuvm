@@ -11,6 +11,7 @@ mod service;
 mod lowbox;
 mod overlay;
 mod dropzone;
+mod clipboard;
 mod viewer;
 #[cfg(debug_assertions)]
 mod direct;
@@ -371,9 +372,10 @@ pub fn run() {
         })
         .setup(|app| {
             prompt::start(app.handle().clone());
+            clipboard::start(app.handle());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![ps, job, prompt::admin_prompts, prompt::admin_prompt_answered, viewer::viewer_send, viewer::viewer_is_open, viewer::viewer_home, viewer::viewer_show, viewer::viewer_list, viewer::viewer_reveal, viewer::viewer_covered, overlay::viewer_panel_resize, overlay::viewer_panel_close, overlay::viewer_panel_vm, dropzone::transfer_start, dropzone::transfer_cancel, dropzone::transfer_list, dropzone::viewer_drop_hide, open_console, repair_service, relaunch_as_admin, service_status, start_service, stop_service, set_service_mode, set_service_startup, set_close_to_tray, set_stop_vms_on_quit, set_language])
+        .invoke_handler(tauri::generate_handler![ps, job, prompt::admin_prompts, prompt::admin_prompt_answered, viewer::viewer_send, viewer::viewer_is_open, viewer::viewer_home, viewer::viewer_show, viewer::viewer_list, viewer::viewer_reveal, viewer::viewer_covered, overlay::viewer_panel_resize, overlay::viewer_panel_close, overlay::viewer_panel_vm, dropzone::transfer_start, dropzone::transfer_cancel, dropzone::transfer_list, dropzone::viewer_drop_hide, clipboard::clipboard_items, clipboard::clipboard_send, clipboard::clipboard_auto, clipboard::clipboard_clear, open_console, repair_service, relaunch_as_admin, service_status, start_service, stop_service, set_service_mode, set_service_startup, set_close_to_tray, set_stop_vms_on_quit, set_language])
         .build(tauri::generate_context!())
         .expect("failed to start GpuVM")
         .run(|app, event| {

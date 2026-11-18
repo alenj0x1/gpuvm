@@ -10,6 +10,7 @@
     "allow-viewer-send", "allow-viewer-is-open", "allow-viewer-home", "allow-viewer-show", "allow-viewer-list",
     "allow-viewer-reveal", "allow-viewer-covered", "allow-viewer-panel-resize", "allow-viewer-panel-close", "allow-viewer-panel-vm",
     "allow-transfer-start", "allow-transfer-cancel", "allow-transfer-list",
+    "allow-clipboard-items", "allow-clipboard-send", "allow-clipboard-auto", "allow-clipboard-clear",
     "allow-open-console", "allow-repair-service", "allow-relaunch-as-admin", "allow-service-status",
     "allow-start-service", "allow-stop-service", "allow-set-service-mode", "allow-set-service-startup",
     "allow-set-close-to-tray", "allow-set-stop-vms-on-quit", "allow-set-language"

@@ -44,6 +44,7 @@
         'Send-GpuVMClipboard'
         'Send-GpuVMFile'
         'Stop-GpuVMTransfer'
+        'Get-GpuVMExplorerSelection'
         'Stop-GpuVMAll'
         'Set-GpuVMCapture'
         'Resolve-GpuVMAdminPrompt'

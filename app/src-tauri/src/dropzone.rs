@@ -92,6 +92,25 @@ pub fn on_drag(app: &AppHandle, vm: &str) {
     });
 }
 
+/// The card in the bottom right corner of the picture (logical size, scaled with the viewer's monitor).
+const CARD: (f64, f64) = (300.0, 76.0);
+const CARD_MARGIN: f64 = 16.0;
+
+fn show_card(app: &AppHandle, vm: &str, id: &str) {
+    zone().shown_at = None;
+    HOVER.store(false, Ordering::Relaxed);
+    let (Some(window), Some(viewer)) = (app.get_webview_window(LABEL), crate::viewer::viewer_hwnd(vm)) else { return hide(app) };
+    let Some((x, y, w, h)) = crate::overlay::picture_rect(viewer, vm) else { return hide(app) };
+    // SAFETY: plain query on the viewer's window.
+    let scale = unsafe { windows_sys::Win32::UI::HiDpi::GetDpiForWindow(viewer as HWND).max(96) } as f64 / 96.0;
+    let (cw, ch, m) = ((CARD.0 * scale) as i32, (CARD.1 * scale) as i32, (CARD_MARGIN * scale) as i32);
+    let _ = window.emit("viewer-drop", json!({ "vm": vm, "state": "card", "id": id }));
+    if let Ok(own) = window.hwnd() {
+        // SAFETY: our window, still owned by the viewer, moved without activation.
+        unsafe { SetWindowPos(own.0 as HWND, HWND_TOP, x + w - cw - m, y + h - ch - m, cw, ch, SWP_SHOWWINDOW | SWP_NOACTIVATE) };
+    }
+}
+
 pub fn hide(app: &AppHandle) {
     zone().shown_at = None;
     HOVER.store(false, Ordering::Relaxed);
@@ -108,15 +127,17 @@ pub fn on_window_event(app: &AppHandle, event: &tauri::WindowEvent) {
         tauri::DragDropEvent::Leave => hide(app),
         tauri::DragDropEvent::Drop { paths, .. } => {
             let vm = zone().vm.clone();
-            hide(app);
             let paths: Vec<String> = paths.iter().map(|p| p.to_string_lossy().into_owned()).collect();
-            if let (Some(vm), false) = (vm, paths.is_empty()) {
-                let folder = if crate::ENGLISH.load(Ordering::Relaxed) { "Received" } else { "Recibidos" };
-                let app = app.clone();
-                tauri::async_runtime::spawn(async move {
-                    let _ = start(&app, vm, paths, None, folder.to_string()).await;
-                });
-            }
+            let (Some(vm), false) = (vm, paths.is_empty()) else { return hide(app) };
+            let folder = if crate::ENGLISH.load(Ordering::Relaxed) { "Received" } else { "Recibidos" };
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                match start(&app, vm.clone(), paths, None, folder.to_string()).await {
+                    // The drop area becomes a small card in the picture's corner with the copy's progress.
+                    Ok(id) => show_card(&app, &vm, &id),
+                    Err(_) => hide(&app),
+                }
+            });
         }
         _ => {}
     }

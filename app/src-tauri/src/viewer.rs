@@ -462,7 +462,12 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
         if all.as_ref().and_then(|v| v.get(&vm)).is_some_and(|v| Arc::ptr_eq(v, &viewer)) {
             all.as_mut().map(|v| v.remove(&vm));
         }
+        // The last machine closed: the clipboard copies kept for it are forgotten.
+        let none_left = all.as_ref().is_none_or(|v| v.is_empty());
         drop(all);
+        if none_left {
+            crate::clipboard::clear();
+        }
         announce_cover();
         let closed = json!({ "type": "closed" });
         if let Some(waiter) = WAITERS.lock().unwrap_or_else(|e| e.into_inner()).as_mut().and_then(|w| w.remove(&vm)) {
@@ -583,6 +588,11 @@ pub fn send_to(vm: &str, msg: &Value) -> Result<(), String> {
 /// Whether a machine's viewer is full screen now.
 pub fn viewer_full_screen(vm: &str) -> bool {
     viewers().as_ref().and_then(|v| v.get(vm)).is_some_and(|v| v.full_now.load(Ordering::Relaxed))
+}
+
+/// A machine is open in a viewer (the clipboard widget only keeps copies meanwhile).
+pub fn any_open() -> bool {
+    viewers().as_ref().is_some_and(|v| !v.is_empty())
 }
 
 pub fn viewer_hwnd(vm: &str) -> Option<isize> {
