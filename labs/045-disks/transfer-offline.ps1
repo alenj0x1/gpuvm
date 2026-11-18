@@ -43,6 +43,8 @@ Enter-LabLock 'disks-backup | lab 045: export/import offline (moves ~20 GB on C:
 try {
     $result.diskQuietMBps = Wait-DiskQuiet
     if (Get-VM -Name $name -ErrorAction SilentlyContinue) { throw "$name already exists." }
+    # Files left by an interrupted run would make Export-GpuVM refuse to overwrite them.
+    if (Test-Path $work) { Remove-Item $work -Recurse -Force }
     New-Item -ItemType Directory -Force $work | Out-Null
     $vmDir = Join-Path $root $name
     $vhd = Join-Path $vmDir "Virtual Hard Disks\$name.vhdx"

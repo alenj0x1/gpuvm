@@ -1,13 +1,15 @@
 # Lab 045: export/import offline, then the real-VM test, in one turn of the shared lock (the queue is not given up
 # between them). Elevated PowerShell 7.
+param([string[]]$Labs = @('transfer-offline.ps1', 'real-vm.ps1'))
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lock.ps1')
-Enter-LabLock 'disks-backup | lab 045: export/import y luego VM real (win-gpu apagada ~40 min, la enciendo al terminar)'
+Enter-LabLock "disks-backup | lab 045: $($Labs -join ', ') (win-gpu apagada mientras corre, la enciendo al terminar)"
 $env:LAB045_LOCK_HELD = '1'
 try {
     # One lab failing doesn't skip the other.
-    try { & (Join-Path $PSScriptRoot 'transfer-offline.ps1') } catch { Write-Warning "transfer-offline: $($_.Exception.Message)" }
-    try { & (Join-Path $PSScriptRoot 'real-vm.ps1') } catch { Write-Warning "real-vm: $($_.Exception.Message)" }
+    foreach ($lab in $Labs) {
+        try { & (Join-Path $PSScriptRoot $lab) } catch { Write-Warning "${lab}: $($_.Exception.Message)" }
+    }
 }
 finally {
     Remove-Item Env:\LAB045_LOCK_HELD -ErrorAction SilentlyContinue
