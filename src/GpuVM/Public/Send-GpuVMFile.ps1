@@ -62,7 +62,9 @@ function Send-GpuVMFile {
                 continue
             }
             Write-TransferBytes -Pipe $pipe -Bytes (New-TarHeader -Name $entry.Rel -Size $entry.Size)
-            $stream = [IO.File]::Open($entry.Full, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+            # With the person's rights, and only if still under the folder that was checked (UserFiles.cs).
+            try { $stream = [GpuVM.UserFiles]::OpenFile($entry.Full, $entry.Root) }
+            catch [Management.Automation.MethodInvocationException] { throw (Get-InnerMessage $_) }
             try {
                 $left = $entry.Size
                 while ($left -gt 0 -and ($n = $stream.Read($buffer, 0, [int][math]::Min($buffer.Length, $left))) -gt 0) {
