@@ -40,9 +40,53 @@ function Start-Lab041App {
     Start-Sleep -Seconds 6
 }
 
+# (Global: the variants' scriptblocks are closures, which don't see this script's own functions.)
+# Sunshine settings in the VM: written in sunshine.conf directly, with the original file kept and put back exactly
+# (keys absent before stay absent), and Sunshine restarted the way GpuVM does it in its capture mode (with WGC it runs
+# from the user's logon task, and Sunshine's own /api/restart leaves it stopped).
+function global:Restart-Lab041Sunshine($vm) {
+    $state = & $vm.Module { param($n) Get-GpuVMState -Name $n } $vm.Name
+    $mode = $state['config']['streaming']['captureMode']; if (-not $mode) { $mode = 'wgc' }
+    $null = & $vm.Module { param($n, $g, $m) Set-GuestCaptureMode -Name $n -Credential $g -Mode $m -Restart } $vm.Name $vm.Guest $mode
+    & $vm.Module { param($a, $c) Wait-SunshineReady -Address $a -Credential $c -TimeoutSec 120 -Message 'Sunshine' } $vm.Address $vm.Sunshine | Out-Null
+    Start-Sleep -Seconds 3
+}
+function global:Set-Lab041Sunshine($vm, [System.Collections.IDictionary]$Settings) {
+    $original = Invoke-Command -VMName $vm.Name -Credential $vm.Guest -ArgumentList ([hashtable]$Settings) -ScriptBlock {
+        param($settings)
+        $conf = 'C:\Program Files\Sunshine\config\sunshine.conf'
+        $before = [IO.File]::ReadAllText($conf)
+        $lines = @($before -split "`r?`n" | Where-Object { $_ -and ($_ -split '=')[0].Trim() -notin $settings.Keys })
+        foreach ($k in $settings.Keys) { $lines += "$k = $($settings[$k])" }
+        [IO.File]::WriteAllLines($conf, [string[]]$lines, (New-Object Text.UTF8Encoding $false))
+        $before
+    }
+    Restart-Lab041Sunshine $vm
+    $original
+}
+function global:Reset-Lab041Sunshine($vm, [string]$Original) {
+    if ($null -eq $Original) { return }
+    Invoke-Command -VMName $vm.Name -Credential $vm.Guest -ArgumentList $Original -ScriptBlock {
+        param($text)
+        [IO.File]::WriteAllText('C:\Program Files\Sunshine\config\sunshine.conf', $text, (New-Object Text.UTF8Encoding $false))
+    }
+    Restart-Lab041Sunshine $vm
+}
+function New-Lab041SunshineVariant([string]$Name, [System.Collections.IDictionary]$Settings) {
+    $keep = @{ original = $null }
+    @{ Name = $Name
+       Setup = { param($vm) $keep.original = Set-Lab041Sunshine $vm $Settings }.GetNewClosure()
+       Undo = { param($vm) Reset-Lab041Sunshine $vm $keep.original; $keep.original = $null }.GetNewClosure() }
+}
+
 function Get-Lab041Variants {
     [ordered]@{
         'baseline'   = @{ Name = 'baseline' }
+        # NVENC without its quarter-resolution first pass (Sunshine's default is quarter_res).
+        'twopass-off' = New-Lab041SunshineVariant 'twopass-off' ([ordered]@{ nvenc_twopass = 'disabled' })
+        # Sunshine re-encodes the last picture up to half the client FPS (90) when nothing new comes: fewer of those.
+        'minfps-20'  = New-Lab041SunshineVariant 'minfps-20' ([ordered]@{ minimum_fps_target = '20' })
+        'sunshine-both' = New-Lab041SunshineVariant 'sunshine-both' ([ordered]@{ nvenc_twopass = 'disabled'; minimum_fps_target = '20' })
         'app-closed' = @{ Name = 'app-closed'; Setup = { param($vm) Stop-Lab041App }; Undo = { param($vm) Start-Lab041App } }
         'app-home'   = @{ Name = 'app-home'; Setup = { param($vm) Start-Lab041App } }
     }

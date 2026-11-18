@@ -24,3 +24,25 @@ lab 040 (its `proc.kill()` ended only the launcher) took ~37 % of it. Closed (an
   frame now and then. Nothing a user sees while it runs; worth removing.
 - Lab 040 now ends its Chrome's whole process tree, also on errors, and sweeps leftovers first (`chrome.mjs`); the
   latency labs stop when the GPU is busy before measuring (`Assert-LatencyGpuIdle`).
+
+## Nov 17, 2026: Sunshine settings (win-gpu, app closed, GPU idle)
+
+`out/run-20261117-203227.json` (2 rounds, 25 samples per kind) and `out/run-20261117-205018.json` (3 rounds, 40).
+The meter counts in host refreshes (5.6 ms), so medians only take 11.1 or 16.6 ms; the mean of many samples (taken
+at random phases) resolves less than a refresh.
+
+| Variant | Host processing, ms | Mean input latency, ms (95 %), run 2 | Per round |
+|---|---|---|---|
+| baseline (Sunshine's defaults) | 3.6-4.0 | 13.4 ± 0.3 | 13.6 / 13.3 / 13.3 |
+| twopass-off (`nvenc_twopass = disabled`) | 2.4-2.9 | **11.4 ± 0.2** | 11.2 / 11.4 / 11.5 |
+| minfps-20 (`minimum_fps_target = 20`) | 3.6-4.1 | 16.8 ± 0.1 | 16.7 / 16.8 / 16.8 |
+
+- NVENC without its quarter-resolution first pass takes ~1.1 ms less from capture to packet in every round, and most
+  inputs then show 2 host refreshes after the key instead of 3. Adopted for new VMs (guest/streaming.ps1) and for
+  existing ones when they open (Set-SunshineVirtualDisplay, in the same restart). Its documented cost (bitrate
+  overshoot on lossy networks) doesn't apply to a local virtual switch with 0 % loss.
+- A lower minimum FPS (fewer re-encodes of an unchanged picture) helps nothing: rejected.
+- All variants moved the GPU-drawn bar ~180 times per second with 0-0.1 % stutter.
+- Found on the way: GpuVM restarted Sunshine through `/api/restart` after changing its config, which with WGC capture
+  (the default; Sunshine runs from the user's logon task) leaves it stopped, so an open could fail with "Sunshine no
+  responde" after the virtual display or the audio sink changed. It now restarts it as GpuVM starts it in that mode.

@@ -1,4 +1,4 @@
-﻿$script:SunshineWebPort = 47990
+$script:SunshineWebPort = 47990
 
 function New-RandomPassword {
     param([int]$Length = 24)
@@ -235,26 +235,35 @@ function Set-SunshineVirtualDisplay {
     param(
         [Parameter(Mandatory)][string]$Address,
         [Parameter(Mandatory)][pscredential]$Credential,
-        [switch]$OnlyDisplay
+        [switch]$OnlyDisplay,
+        # For restarting Sunshine in WGC mode (Update-SunshineConfig).
+        [string]$Name,
+        [pscredential]$GuestCredential
     )
     $lines = (Invoke-SunshineApi -Address $Address -Credential $Credential -Path '/api/logs') -split "`n"
     $vdd = ConvertFrom-SunshineDisplayLog -Lines $lines | Where-Object { $_.edid -and $_.edid.manufacturer_id -eq 'MTT' } | Select-Object -First 1
     if (-not $vdd) { Write-Warning 'Sunshine no ve la pantalla virtual; la imagen puede salir en negro. Revisa C:\GpuVM\setup.log en la VM.'; return }
 
     $mode = if ($OnlyDisplay) { 'disabled' } else { 'ensure_only_display' }
-    $settings = [ordered]@{ output_name = $vdd.device_id; dd_configuration_option = $mode }
-    if (Update-SunshineConfig -Address $Address -Credential $Credential -Settings $settings) {
+    # nvenc_twopass: NVENC without its quarter-resolution first pass, ~1.1 ms less from capture to packet (lab 041);
+    # also for VMs created before it. Other encoders ignore it. Applied in the same restart as the display.
+    $settings = [ordered]@{ output_name = $vdd.device_id; dd_configuration_option = $mode; nvenc_twopass = 'disabled' }
+    if (Update-SunshineConfig -Address $Address -Credential $Credential -Settings $settings -Name $Name -GuestCredential $GuestCredential) {
         Write-Step "Sunshine capturará la pantalla virtual ($($vdd.display_name))"
     }
 }
 
 # Writes keys to sunshine.conf through the API and restarts Sunshine, only if something changes.
 # Returns $true when it changed the configuration.
+# With WGC capture Sunshine runs from the user's logon task, and its own /api/restart leaves it stopped: given the VM's
+# name and guest credential, it is restarted the way GpuVM starts it (Set-GuestCaptureMode -Restart).
 function Update-SunshineConfig {
     param(
         [Parameter(Mandatory)][string]$Address,
         [Parameter(Mandatory)][pscredential]$Credential,
-        [Parameter(Mandatory)][System.Collections.IDictionary]$Settings
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Settings,
+        [string]$Name,
+        [pscredential]$GuestCredential
     )
     $current = Invoke-SunshineApi -Address $Address -Credential $Credential -Path '/api/config'
     # /api/config only returns keys written in sunshine.conf; under StrictMode a missing one cannot be read.
@@ -268,8 +277,15 @@ function Update-SunshineConfig {
     }
     foreach ($key in $Settings.Keys) { $body[$key] = $Settings[$key] }
     Invoke-SunshineApi -Address $Address -Credential $Credential -Method POST -Path '/api/config' -Body $body | Out-Null
-    # Sunshine drops the connection when restarting; the error from that call is expected.
-    try { Invoke-SunshineApi -Address $Address -Credential $Credential -Method POST -Path '/api/restart' -Body @{} | Out-Null } catch { }
+    $wgc = "$($current.PSObject.Properties['capture']?.Value)" -eq 'wgc'
+    if ($wgc -and $Name -and $GuestCredential) {
+        $null = Set-GuestCaptureMode -Name $Name -Credential $GuestCredential -Mode wgc -Restart
+    }
+    else {
+        if ($wgc) { Write-Warning 'Sunshine se reinicia sin la contraseña de Windows de la VM: si no vuelve, reinicia la VM.' }
+        # Sunshine drops the connection when restarting; the error from that call is expected.
+        try { Invoke-SunshineApi -Address $Address -Credential $Credential -Method POST -Path '/api/restart' -Body @{} | Out-Null } catch { }
+    }
     Start-Sleep -Seconds 5
     Wait-SunshineReady -Address $Address -Credential $Credential -TimeoutSec 120 -Message 'Sunshine se reinicia con la configuración nueva'
     $true
@@ -416,7 +432,7 @@ function Set-SunshineAudioSink {
     )
     $sink = Get-GuestAudioSink -Name $Name -Credential $GuestCredential
     if (-not $sink) { Write-Warning 'No se encontró la salida de audio GpuVM Audio en la VM; la imagen se verá sin sonido.'; return }
-    if (Update-SunshineConfig -Address $Address -Credential $Credential -Settings ([ordered]@{ virtual_sink = $sink })) {
+    if (Update-SunshineConfig -Address $Address -Credential $Credential -Settings ([ordered]@{ virtual_sink = $sink }) -Name $Name -GuestCredential $GuestCredential) {
         Write-Step "Sunshine captura el audio de $sink"
     }
 }

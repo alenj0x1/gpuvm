@@ -1,4 +1,4 @@
-﻿# Installs streaming inside the VM: virtual display (VDD), Sunshine and audio. Windows PowerShell 5.1.
+# Installs streaming inside the VM: virtual display (VDD), Sunshine and audio. Windows PowerShell 5.1.
 # Called by setup.ps1 if C:\GpuVM\streaming\streaming-config.json exists.
 
 function Install-GpuVMVirtualDisplay {
@@ -76,7 +76,8 @@ function Install-GpuVMSunshine {
     $gpu = Get-CimInstance Win32_VideoController | Where-Object { $_.Name -like "*$($Config.gpuMatch)*" } | Select-Object -First 1
     if ($gpu) {
         $settings['adapter_name'] = $gpu.Name
-        if ($gpu.Name -match 'NVIDIA') { $settings['encoder'] = 'nvenc' }
+        # NVENC without the quarter-resolution first pass: ~1.1 ms less from capture to packet (lab 041).
+        if ($gpu.Name -match 'NVIDIA') { $settings['encoder'] = 'nvenc'; $settings['nvenc_twopass'] = 'disabled' }
     }
     if ($Config.sunshine) {
         foreach ($prop in $Config.sunshine.PSObject.Properties) { $settings[$prop.Name] = $prop.Value }

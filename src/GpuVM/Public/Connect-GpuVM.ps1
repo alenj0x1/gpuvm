@@ -186,7 +186,7 @@
         $waiting = if ($firstBoot) { 'Esperando a Sunshine (el primer arranque instala Windows y el streaming; puede tardar varios minutos)' } else { 'Esperando a Sunshine' }
         Wait-SunshineReady -Address $address -Credential $credential -Message $waiting
         if ($state['config']['streaming']['virtualDisplay']) {
-            Set-SunshineVirtualDisplay -Address $address -Credential $credential -OnlyDisplay:([bool]$state['config']['streaming']['disableHyperVVideo'])
+            Set-SunshineVirtualDisplay -Address $address -Credential $credential -OnlyDisplay:([bool]$state['config']['streaming']['disableHyperVVideo']) -Name $Name -GuestCredential $guest
         }
 
         $clientName = if ($Viewer) { Get-GpuVMViewerClientName } else { $env:COMPUTERNAME }

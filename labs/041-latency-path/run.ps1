@@ -49,9 +49,10 @@ try {
     for ($round = 1; $round -le $Rounds; $round++) {
         foreach ($variant in $list) {
             Stop-LatencyViewers
-            if ($variant.PSObject.Properties['Setup'] -and $variant.Setup) { & $variant.Setup $vm | Out-Host }
             $row = [ordered]@{ variant = $variant.Name; round = $round; startedAt = (Get-Date).ToString('o') }
             try {
+                # Inside the try: a setup that fails halfway is still undone.
+                if ($variant.PSObject.Properties['Setup'] -and $variant.Setup) { & $variant.Setup $vm | Out-Host }
                 $row.gpuIdlePct = Get-GpuLoad 3
                 $client = [ordered]@{}
                 foreach ($k in $saved.Keys) { $client[$k] = $saved[$k] }
