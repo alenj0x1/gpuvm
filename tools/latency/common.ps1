@@ -225,3 +225,24 @@ function Wait-LatencyViewerFrame {
     }
     -1
 }
+
+# Preflight: the VM shares the host's GPU (GPU-P), so anything else drawing on it (a browser tab, a video, a remote
+# desktop session) takes time from the VM's compositor and encoder. Waits up to -WaitSec for the GPU to be below
+# -MaxPct, then stops the lab, saying what uses it. -Force measures anyway (the result notes the load).
+function Assert-LatencyGpuIdle {
+    param([int]$MaxPct = 10, [int]$WaitSec = 30, [switch]$Force)
+    $smi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
+    if (-not $smi) { return $null }
+    $deadline = (Get-Date).AddSeconds($WaitSec)
+    do {
+        $pct = @(1..5 | ForEach-Object { [int](& $smi --query-gpu=utilization.gpu --format=csv,noheader,nounits | Select-Object -First 1); Start-Sleep -Milliseconds 200 } | Measure-Object -Average).Average
+        if ($pct -le $MaxPct) { return [math]::Round($pct, 1) }
+        Start-Sleep -Seconds 2
+    } while ((Get-Date) -lt $deadline)
+    $users = Get-Counter '\GPU Engine(*engtype_3d)\Utilization Percentage' -ErrorAction SilentlyContinue | ForEach-Object { $_.CounterSamples } |
+        Where-Object CookedValue -gt 1 | ForEach-Object { if ($_.InstanceName -match 'pid_(\d+)_') { [pscustomobject]@{ Pid = [int]$Matches[1]; Pct = $_.CookedValue } } } |
+        Group-Object Pid | ForEach-Object { $p = Get-Process -Id $_.Name -ErrorAction SilentlyContinue; "$(if ($p) { $p.Name } else { $_.Name }) $([math]::Round(($_.Group | Measure-Object Pct -Sum).Sum)) %" }
+    $message = "The host GPU is $([math]::Round($pct)) % busy without a stream ($((@($users) | Select-Object -First 6) -join ', ')). Close what draws on it, or pass -Force."
+    if ($Force) { Write-Warning $message; return [math]::Round($pct, 1) }
+    throw $message
+}

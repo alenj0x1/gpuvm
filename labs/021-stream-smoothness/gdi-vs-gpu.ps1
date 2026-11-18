@@ -8,6 +8,8 @@ param(
     [int]$Rounds = 2,
     [double]$Seconds = 15,
     [ValidateSet('moonlight', 'gpuvm')][string]$Viewer = 'gpuvm',
+    # Measure even if the host GPU is busy (the load is recorded).
+    [switch]$Force,
     [string]$Out = (Join-Path $PSScriptRoot "out\gdi-vs-gpu-$(Get-Date -Format 'yyyyMMdd-HHmmss').json")
 )
 $ErrorActionPreference = 'Stop'
@@ -15,6 +17,8 @@ New-Item -ItemType Directory -Force (Split-Path $Out) | Out-Null
 $tools = Join-Path $PSScriptRoot '..\..\tools\latency'
 . (Join-Path $tools 'common.ps1')
 . (Join-Path $tools 'input-meter.ps1')
+$hostGpuPct = Assert-LatencyGpuIdle -Force:$Force
+"host GPU before: $hostGpuPct %" | Write-Host
 . (Join-Path $tools 'motion-meter.ps1')
 
 # One width every 2 s, from the page's high-resolution clock, as motion-target.ps1 does.

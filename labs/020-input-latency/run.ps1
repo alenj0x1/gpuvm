@@ -17,6 +17,8 @@ param(
     [switch]$SkipLocal,
     [switch]$Pad,
     [int]$PadSamples = 30,
+    # Measure even if the host GPU is busy (the load is recorded).
+    [switch]$Force,
     [string]$Out = (Join-Path $PSScriptRoot "out\run-$(Get-Date -Format 'yyyyMMdd-HHmmss').json")
 )
 $ErrorActionPreference = 'Stop'
@@ -24,6 +26,8 @@ New-Item -ItemType Directory -Force (Split-Path $Out) | Out-Null
 $tools = Join-Path $PSScriptRoot '..\..\tools\latency'
 . (Join-Path $tools 'common.ps1')
 . (Join-Path $tools 'input-meter.ps1')
+$hostGpuPct = Assert-LatencyGpuIdle -Force:$Force
+"host GPU before: $hostGpuPct %" | Write-Host
 
 # Each variant changes the client settings GpuVM saved for the VM (baseline = as GpuVM opens it today).
 $variants = @(
