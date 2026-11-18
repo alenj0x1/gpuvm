@@ -509,8 +509,9 @@ export function GamesWidget({ size, player, fallback, onPlay }: { size: WidgetSi
   // With room (two cells wide and two tall), each game shows its cover: a frame of its own demo, which plays while
   // the pointer is over it.
   if (size.w >= 2 && size.h >= 2) {
-    // Four games: four across when wide, two by two otherwise (a second row when it is tall enough).
-    const cols = size.px >= 500 ? 4 : 2, rows = cols === 2 && size.h >= 3 ? 2 : 1;
+    // Four games: four across when wide, two by two otherwise, always all four inside the widget (a second row that
+    // only showed by scrolling looked cut off).
+    const cols = size.px >= 500 ? 4 : 2, rows = cols === 2 ? 2 : 1;
     const cardW = (size.px - 12 - 8 * (cols - 1)) / cols;
     const cardH = (size.py - 12 - 8 * (rows - 1)) / rows;
     return (

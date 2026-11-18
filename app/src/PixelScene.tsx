@@ -1,0 +1,354 @@
+import { useEffect, useRef } from "react";
+import { animFps, onAnimBudget, paceFrame } from "./animBudget";
+
+// Pixel-art landscapes for the website's viewer demo, one per sample machine so switching machines in the panel shows
+// another picture: cherry trees by a lake at sunset, a misty forest in the morning and the ocean at midday. Drawn at
+// 192 × 108 pixels (ordered dithering for the gradients) and scaled up without smoothing; a few things move (petals,
+// light, waves, birds) at a few frames a second.
+
+export type PixelSceneKind = "sakura" | "forest" | "ocean";
+
+const W = 192, H = 108;
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => (v + 0.5) / 16);
+type RGB = [number, number, number];
+const hex = (h: string): RGB => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+const mix = (a: RGB, b: RGB, t: number): RGB => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+/** A repeatable 0..1 value for a pixel (texture of leaves, sparkles). */
+const hash = (x: number, y: number) => { let h = (x * 374761393 + y * 668265263) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+const solid = (h: string) => { const [r, g, b] = hex(h); return (255 << 24) | (b << 16) | (g << 8) | r; };
+
+/** A gradient through color stops, t from 0 to 1. */
+function ramp(stops: [number, RGB][], t: number): RGB {
+  t = Math.max(0, Math.min(1, t));
+  let i = 0;
+  while (i < stops.length - 2 && t > stops[i + 1][0]) i++;
+  const [t0, c0] = stops[i], [t1, c1] = stops[i + 1];
+  return mix(c0, c1, (t - t0) / (t1 - t0));
+}
+
+/** Stored as the canvas pixel, quantized with ordered dithering so the gradients read as pixel art. */
+function put(buf: Uint32Array, x: number, y: number, c: RGB, step = 22) {
+  const b = BAYER[(y & 3) * 4 + (x & 3)] - 0.5;
+  const q = (v: number) => Math.max(0, Math.min(255, Math.round((v + b * step) / step) * step));
+  buf[y * W + x] = (255 << 24) | (q(c[2]) << 16) | (q(c[1]) << 8) | q(c[0]);
+}
+const inside = (x: number, y: number) => x >= 0 && x < W && y >= 0 && y < H;
+
+interface Scene { build(): Uint32Array; frame(buf: Uint32Array, layer: Uint32Array, T: number): void }
+
+/* ---------- Cherry trees at sunset ---------- */
+
+const sakura: Scene = (() => {
+  const HORIZON = 64, SUN = { x: 112, y: HORIZON - 4, r: 9 };
+  const SKY: [number, RGB][] = [[0, hex("#1b2447")], [0.32, hex("#3f3160")], [0.55, hex("#a4475f")], [0.78, hex("#ea7a48")], [1, hex("#ffc970")]];
+  const skyAt = (x: number, y: number): RGB => {
+    const c = ramp(SKY, y / HORIZON);
+    // The glow around the sun, wider along the horizon.
+    const dx = (x - SUN.x) / 1.6, dy = y - SUN.y, glow = Math.max(0, 1 - Math.sqrt(dx * dx + dy * dy) / 46);
+    return mix(c, hex("#ffd98c"), glow * glow * 0.75);
+  };
+  const far = Array.from({ length: W }, (_, x) => HORIZON - (7 + 5 * Math.sin(x * 0.045 + 0.6) + 3 * Math.sin(x * 0.14 + 2) + 1.5 * Math.sin(x * 0.37)));
+  const near = Array.from({ length: W }, (_, x) => HORIZON - Math.max(0, 5 + 4 * Math.sin(x * 0.07 + 3.4) + 2 * Math.sin(x * 0.21)) * (x < 70 || x > 150 ? 1 : 0.35));
+  const petals = Array.from({ length: 46 }, (_, i) => ({ x: hash(i, 1) * W, y: hash(i, 2) * H, v: 3 + hash(i, 3) * 5, p: hash(i, 4) * 6, big: hash(i, 5) > 0.75 }));
+  const clouds = [{ y: 22, x: 20, w: 46, s: 0.6 }, { y: 31, x: 120, w: 58, s: 0.4 }, { y: 40, x: 70, w: 34, s: 0.8 }, { y: 15, x: 150, w: 30, s: 0.5 }];
+
+  function build() {
+    const layer = new Uint32Array(W * H);
+    const shore = (x: number) => (x < 84 ? 92 + (x / 84) * 18 : x > 150 ? 110 - ((x - 150) / 42) * 20 : 999);
+    for (let x = 0; x < W; x++) for (let y = Math.max(0, Math.floor(shore(x))); y < H; y++) {
+      layer[y * W + x] = solid(y - shore(x) < 1.5 ? "#4a2433" : hash(x, y) < 0.12 ? "#2f1828" : "#25131f");
+    }
+    const trunk = (x0: number, y0: number, x1: number, y1: number, w: number) => {
+      const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0));
+      for (let i = 0; i <= n; i++) {
+        const t = i / n, cx = x0 + (x1 - x0) * t, cy = y0 + (y1 - y0) * t, ww = w * (1 - t * 0.55);
+        for (let dx = -ww; dx <= ww; dx++) {
+          const x = Math.round(cx + dx), y = Math.round(cy);
+          if (inside(x, y)) layer[y * W + x] = solid(dx > ww * 0.3 ? "#5a2c38" : "#2a1520");
+        }
+      }
+    };
+    // Blossom clouds: overlapping blobs with a ragged edge, lit from the sun's side (sunlit petals turn peach).
+    const canopy = (blobs: [number, number, number][]) => {
+      for (const [cx, cy, r] of blobs) {
+        for (let y = Math.floor(cy - r - 2); y <= cy + r + 2; y++) for (let x = Math.floor(cx - r - 2); x <= cx + r + 2; x++) {
+          if (!inside(x, y)) continue;
+          const dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy) / (r * (0.86 + hash(x, y) * 0.24));
+          if (d > 1 || (d > 0.82 && hash(y, x) < 0.35)) continue;
+          const toSun = Math.hypot(SUN.x - cx, SUN.y - cy) || 1;
+          const light = ((dx / r) * (SUN.x - cx) + (dy / r) * (SUN.y - cy)) / toSun - (dy / r) * 0.35;
+          const n = hash(x * 3, y * 7);
+          const color = light > 0.45 && n > 0.25 ? (n > 0.8 ? "#ffe2b8" : "#ffc2a0")
+            : light > 0.05 ? (n > 0.7 ? "#ffc4d6" : "#f59ab6")
+            : light > -0.45 ? (n > 0.75 ? "#e985a6" : "#cf6690")
+            : n > 0.6 ? "#9b3f6a" : "#6f2a52";
+          layer[y * W + x] = solid(color);
+        }
+      }
+    };
+    trunk(26, 108, 30, 58, 3.4); trunk(29, 74, 46, 52, 1.6); trunk(28, 66, 12, 46, 1.4);
+    canopy([[20, 40, 15], [40, 46, 13], [8, 30, 12], [32, 28, 13], [52, 38, 9], [-2, 50, 11], [14, 54, 9]]);
+    trunk(176, 108, 172, 66, 2.8); trunk(173, 80, 160, 62, 1.3);
+    canopy([[170, 56, 12], [184, 50, 12], [158, 60, 8], [192, 64, 9], [176, 44, 9]]);
+    for (const [x, s] of [[62, 3], [70, 4], [77, 3], [138, 3], [145, 4]] as [number, number][]) {
+      trunk(x, HORIZON, x, HORIZON - s, 0.5);
+      canopy([[x, HORIZON - s - 2, s]]);
+    }
+    return layer;
+  }
+
+  function frame(buf: Uint32Array, layer: Uint32Array, T: number) {
+    for (let y = 0; y < HORIZON; y++) for (let x = 0; x < W; x++) put(buf, x, y, skyAt(x, y));
+    for (let y = SUN.y - SUN.r; y < HORIZON; y++) for (let x = SUN.x - SUN.r; x <= SUN.x + SUN.r; x++) {
+      const d = Math.hypot(x - SUN.x, y - SUN.y);
+      if (d <= SUN.r) buf[y * W + x] = solid(d < SUN.r - 3 ? "#fff6d6" : "#ffe08f");
+    }
+    // Clouds: thin bands lit from below by the sun, drifting.
+    for (const c of clouds) {
+      const x0 = ((c.x + T * c.s) % (W + c.w)) - c.w;
+      for (let row = 0; row < 4; row++) {
+        const inset = [6, 2, 0, 4][row], y = c.y + row;
+        for (let x = Math.round(x0 + inset); x < x0 + c.w - inset * 1.5; x++) {
+          if (x < 0 || x >= W) continue;
+          buf[y * W + x] = solid(row >= 2 ? (Math.abs(x - SUN.x) < 50 ? "#ffb98a" : "#e8846a") : "#7e3a5c");
+        }
+      }
+    }
+    for (let x = 0; x < W; x++) {
+      for (let y = Math.ceil(far[x]); y < HORIZON; y++) put(buf, x, y, mix(skyAt(x, y), hex("#5b2f4f"), 0.7));
+      for (let y = Math.ceil(near[x]); y < HORIZON; y++) put(buf, x, y, hex("#3a2038"));
+    }
+    // The lake: the sky mirrored and darker, rippling, with the sun's reflection broken into streaks.
+    for (let y = HORIZON; y < H; y++) {
+      const r = y - HORIZON;
+      for (let x = 0; x < W; x++) {
+        const wx = Math.round(x + Math.sin(r * 0.9 + T * 1.8) * (0.5 + r * 0.04));
+        const my = HORIZON - 1 - Math.floor(r * 1.4);
+        let c: RGB = my >= 0 ? skyAt(wx, my) : hex("#1b2447");
+        if (my >= 0 && wx >= 0 && wx < W && my >= far[wx]) c = mix(c, hex("#4a2742"), 0.75);
+        put(buf, x, y, mix(c, hex("#20223f"), 0.28 + r * 0.006));
+      }
+      const half = Math.max(1, (12 - r * 0.2) * (0.55 + 0.45 * Math.sin(r * 1.3 + T * 3.1)));
+      const cx = SUN.x + Math.sin(r * 0.7 + T * 2.2) * (1 + r * 0.05);
+      if ((r + Math.floor(T * 5)) % 3 === 2 && r > 2) continue;
+      for (let x = Math.round(cx - half); x <= cx + half; x++) {
+        if (x < 0 || x >= W) continue;
+        const edge = Math.abs(x - cx) > half * 0.6;
+        buf[y * W + x] = solid(edge ? "#f2a25a" : r < 10 || hash(x, y + Math.floor(T * 4)) > 0.7 ? "#fff0b8" : "#ffd27a");
+      }
+    }
+    for (let i = 0; i < buf.length; i++) if (layer[i]) buf[i] = layer[i];
+    for (const p of petals) {
+      const y = Math.floor((p.y + T * p.v) % H), x = Math.floor(((p.x - T * p.v * 0.7 + Math.sin(T * 1.3 + p.p) * 3) % W + W) % W);
+      const c = solid(p.big ? "#ffd1df" : "#f6a5bf");
+      buf[y * W + x] = c;
+      if (p.big && x + 1 < W) buf[y * W + x + 1] = c;
+    }
+  }
+  return { build, frame };
+})();
+
+/* ---------- A misty forest in the morning ---------- */
+
+const forest: Scene = (() => {
+  const SUN = { x: 138, y: 22 };
+  const SKY: [number, RGB][] = [[0, hex("#7fbcd6")], [0.45, hex("#bfe0dc")], [0.8, hex("#f3e7b8")], [1, hex("#fff3cf")]];
+  // Rows of pines from far to near: their color fades into the morning haze with distance.
+  const ROWS = [
+    { base: 58, h: 16, gap: 7, color: "#8fb7a6", seed: 1 },
+    { base: 68, h: 22, gap: 9, color: "#5f9180", seed: 2 },
+    { base: 80, h: 30, gap: 12, color: "#3b6b57", seed: 3 },
+    { base: 96, h: 44, gap: 17, color: "#24493a", seed: 4 },
+  ];
+  const motes = Array.from({ length: 34 }, (_, i) => ({ x: hash(i, 11) * W, y: 20 + hash(i, 12) * 80, s: 0.6 + hash(i, 13) * 1.4, p: hash(i, 14) * 6 }));
+
+  function pine(layer: Uint32Array, cx: number, base: number, h: number, color: RGB, lit: RGB) {
+    const top = base - h;
+    for (let y = Math.max(0, Math.floor(top)); y < Math.min(H, base); y++) {
+      const t = (y - top) / h;
+      // Tiers of branches: the outline widens and steps in again, as a pine does.
+      const tier = (t * 4) % 1;
+      const half = (1.2 + t * h * 0.32) * (0.72 + tier * 0.28);
+      for (let x = Math.round(cx - half); x <= cx + half; x++) {
+        if (!inside(x, y)) continue;
+        // The side toward the sun is lit.
+        const c = x > cx + half * 0.35 && hash(x, y) > 0.35 ? lit : color;
+        layer[y * W + x] = (255 << 24) | (Math.round(c[2]) << 16) | (Math.round(c[1]) << 8) | Math.round(c[0]);
+      }
+    }
+    for (let y = base; y < Math.min(H, base + 3); y++) if (inside(Math.round(cx), y)) layer[y * W + Math.round(cx)] = solid("#3a2a20");
+  }
+
+  function build() {
+    // Each row in its own layer value; drawn in order so nearer rows cover farther ones.
+    const layer = new Uint32Array(W * H);
+    for (const r of ROWS) {
+      const c = hex(r.color), lit = mix(c, hex("#f7e3a1"), 0.35);
+      for (let x = -6, i = 0; x < W + 6; x += r.gap * (0.7 + hash(i, r.seed) * 0.6), i++) {
+        pine(layer, x, r.base + hash(i, r.seed + 9) * 3, r.h * (0.7 + hash(i, r.seed + 5) * 0.5), c, lit);
+      }
+      // The ground of that row, under its trees.
+      for (let x = 0; x < W; x++) for (let y = Math.round(r.base); y < H; y++) layer[y * W + x] = (255 << 24) | (Math.round(c[2] * 0.9) << 16) | (Math.round(c[1] * 0.9) << 8) | Math.round(c[0] * 0.9);
+    }
+    // The forest floor up front, with ferns and a few flowers.
+    for (let x = 0; x < W; x++) for (let y = 100; y < H; y++) layer[y * W + x] = solid(hash(x, y) > 0.8 ? "#3f6b36" : "#2c4a2a");
+    for (let i = 0; i < 26; i++) {
+      const x = Math.floor(hash(i, 40) * W), y = 99 + Math.floor(hash(i, 41) * 7);
+      layer[y * W + x] = solid(hash(i, 42) > 0.5 ? "#f4e27a" : "#f1f1e6");
+    }
+    // Two big trunks framing the view.
+    for (const [x0, w] of [[8, 7], [180, 8]]) for (let y = 0; y < H; y++) for (let x = x0 - w / 2; x < x0 + w / 2; x++) {
+      if (!inside(Math.round(x), y)) continue;
+      const side = x > x0 + w * 0.15;
+      layer[y * W + Math.round(x)] = solid(side ? (hash(Math.round(x), y) > 0.7 ? "#7a5636" : "#6b4a2e") : hash(Math.round(x), y) > 0.85 ? "#4a321f" : "#3b2818");
+    }
+    return layer;
+  }
+
+  function frame(buf: Uint32Array, layer: Uint32Array, T: number) {
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const d = Math.hypot((x - SUN.x) / 1.3, y - SUN.y);
+      put(buf, x, y, mix(ramp(SKY, y / 70), hex("#fffbe6"), Math.max(0, 1 - d / 40) ** 2 * 0.9));
+    }
+    for (let y = SUN.y - 5; y <= SUN.y + 5; y++) for (let x = SUN.x - 5; x <= SUN.x + 5; x++) if (Math.hypot(x - SUN.x, y - SUN.y) <= 5) buf[y * W + x] = solid("#fffdf0");
+    for (let i = 0; i < buf.length; i++) if (layer[i]) buf[i] = layer[i];
+    // Light shafts from the sun, slanting down to the left, slowly breathing; and mist drifting between the rows.
+    for (let y = 0; y < 100; y++) for (let x = 0; x < W; x++) {
+      const band = ((x - SUN.x) * 0.55 + (y - SUN.y) * 0.85 + 600) % 23;
+      const shaft = band < 5 && x < SUN.x + 10 ? (0.18 + 0.08 * Math.sin(T * 0.8 + band)) * Math.max(0, 1 - Math.hypot(x - SUN.x, y - SUN.y) / 150) : 0;
+      const mist = [62, 73, 86].reduce((m, my) => m + Math.max(0, 1 - Math.abs(y - my) / 4) * (0.5 + 0.5 * Math.sin(x * 0.05 + T * 0.4 + my)) * 0.22, 0);
+      const k = shaft + mist;
+      if (k < 0.04) continue;
+      const i = y * W + x, v = buf[i];
+      const c: RGB = [v & 255, (v >> 8) & 255, (v >> 16) & 255];
+      put(buf, x, y, mix(c, hex("#fff6d8"), Math.min(0.6, k)), 14);
+    }
+    // Dust and pollen floating in the light.
+    for (const m of motes) {
+      const x = Math.floor(((m.x + Math.sin(T * 0.7 + m.p) * 6 + T * m.s) % W + W) % W), y = Math.floor(m.y + Math.sin(T * 1.1 + m.p) * 3);
+      if (inside(x, y)) buf[y * W + x] = solid(hash(m.p * 100, 1) > 0.5 ? "#fff3b0" : "#fffbe6");
+    }
+  }
+  return { build, frame };
+})();
+
+/* ---------- The ocean at midday ---------- */
+
+const ocean: Scene = (() => {
+  const HORIZON = 56, SUN = { x: 62, y: 16 };
+  const SKY: [number, RGB][] = [[0, hex("#2f6fcf")], [0.55, hex("#5fa6e6")], [1, hex("#bfe6f7")]];
+  const SEA: [number, RGB][] = [[0, hex("#7fc4e4")], [0.15, hex("#2f8fcf")], [0.6, hex("#1b68ad")], [1, hex("#124c88")]];
+  const clouds = [{ x: 30, y: 30, s: 0.9, k: 1 }, { x: 120, y: 20, s: 0.6, k: 1.3 }, { x: 170, y: 38, s: 1.1, k: 0.8 }];
+
+  function build() {
+    const layer = new Uint32Array(W * H);
+    // A rocky islet with a lighthouse on the horizon, inside the middle of the picture (its sides are cut when the
+    // picture is narrower than 16:9).
+    for (let x = 114; x < 150; x++) {
+      const top = HORIZON - Math.max(0, 6 - Math.abs(x - 130) * 0.32) - hash(x, 3) * 1.2;
+      for (let y = Math.floor(top); y < HORIZON + 1; y++) layer[y * W + x] = solid(x < 126 ? "#4f6273" : "#3b4b5a");
+    }
+    for (let y = HORIZON - 17; y < HORIZON - 5; y++) for (let x = 128; x < 132; x++) {
+      layer[y * W + x] = solid(Math.floor((y - (HORIZON - 17)) / 3) % 2 ? "#d9473f" : "#f4f1ea");
+    }
+    for (let x = 127; x < 133; x++) layer[(HORIZON - 18) * W + x] = solid("#2b3540");
+    // The beach up front: sand with a few shells.
+    for (let x = 0; x < W; x++) {
+      const top = 94 + Math.sin(x * 0.04) * 3;
+      for (let y = Math.floor(top); y < H; y++) layer[y * W + x] = solid(hash(x, y) > 0.85 ? "#e6cf98" : hash(x, y) > 0.2 ? "#f0dca8" : "#dcc28a");
+    }
+    for (let i = 0; i < 9; i++) {
+      const x = Math.floor(hash(i, 70) * W), y = 100 + Math.floor(hash(i, 71) * 7);
+      layer[y * W + x] = solid("#fff4e8");
+    }
+    return layer;
+  }
+
+  function cloud(buf: Uint32Array, cx: number, cy: number, k: number) {
+    const blobs: [number, number, number][] = [[0, 0, 6], [7, -2, 7], [14, 0, 5], [-6, 1, 4], [5, 2, 6]];
+    for (const [dx, dy, r0] of blobs) {
+      const r = r0 * k;
+      for (let y = Math.floor(cy + dy - r); y <= cy + dy + r; y++) for (let x = Math.floor(cx + dx * k - r); x <= cx + dx * k + r; x++) {
+        if (!inside(x, y) || y > cy + 3 * k || Math.hypot(x - cx - dx * k, y - cy - dy) > r) continue;
+        buf[y * W + x] = solid(y > cy + 1.5 * k ? "#cfe3f2" : y < cy + dy - r * 0.4 ? "#ffffff" : "#f1f7fb");
+      }
+    }
+  }
+
+  function frame(buf: Uint32Array, layer: Uint32Array, T: number) {
+    for (let y = 0; y < HORIZON; y++) for (let x = 0; x < W; x++) {
+      const glow = Math.max(0, 1 - Math.hypot(x - SUN.x, y - SUN.y) / 34) ** 2;
+      put(buf, x, y, mix(ramp(SKY, y / HORIZON), hex("#fffbe8"), glow * 0.85));
+    }
+    for (let y = SUN.y - 6; y <= SUN.y + 6; y++) for (let x = SUN.x - 6; x <= SUN.x + 6; x++) if (Math.hypot(x - SUN.x, y - SUN.y) <= 6) buf[y * W + x] = solid("#fffdf2");
+    for (const c of clouds) cloud(buf, ((c.x + T * c.s) % (W + 40)) - 20, c.y, c.k);
+    // The sea: deeper toward the front, with wave crests that run sideways and glitter under the sun.
+    for (let y = HORIZON; y < H; y++) {
+      const r = (y - HORIZON) / (H - HORIZON);
+      for (let x = 0; x < W; x++) {
+        let c = ramp(SEA, r);
+        const wave = Math.sin(x * (0.35 - r * 0.22) + y * 1.7 + T * (1.2 + r * 1.5)) + Math.sin(x * 0.11 - T * 0.9 + y);
+        if (wave > 1.55 - r * 0.25) c = mix(c, hex("#d9f2ff"), 0.75);
+        else if (wave < -1.4) c = mix(c, hex("#0d3d70"), 0.4);
+        put(buf, x, y, c, 18);
+        const nearSun = Math.abs(x - SUN.x - (y - HORIZON) * 0.15) < 6 + r * 14;
+        if (nearSun && hash(x, y + Math.floor(T * 6)) > 0.86) buf[y * W + x] = solid("#fffbe0");
+      }
+    }
+    // A sailboat crossing slowly, rocking on the waves.
+    const bx = ((T * 2.2) % (W + 30)) - 15, by = HORIZON + 6 + Math.round(Math.sin(T * 1.6));
+    for (let y = 0; y < 9; y++) for (let x = 0; x <= y * 0.6; x++) if (inside(Math.round(bx + x), by - 10 + y)) buf[(by - 10 + y) * W + Math.round(bx + x)] = solid("#fbfbf7");
+    for (let x = -3; x < 7; x++) if (inside(Math.round(bx + x), by)) buf[by * W + Math.round(bx + x)] = solid("#8a4b2b");
+    for (let x = -2; x < 6; x++) if (inside(Math.round(bx + x), by + 1)) buf[(by + 1) * W + Math.round(bx + x)] = solid("#6b3820");
+    // Gulls gliding.
+    for (let i = 0; i < 3; i++) {
+      const gx = Math.round(((T * (4 + i) + i * 70) % (W + 20)) - 10), gy = Math.round(26 + i * 7 + Math.sin(T * 2 + i) * 2), up = Math.floor(T * 3 + i) % 2;
+      for (const [dx, dy] of [[-2, up ? -1 : 0], [-1, 0], [0, 1], [1, 0], [2, up ? -1 : 0]]) if (inside(gx + dx, gy + dy)) buf[(gy + dy) * W + gx + dx] = solid("#f7f9fb");
+    }
+    for (let i = 0; i < buf.length; i++) if (layer[i]) buf[i] = layer[i];
+    // Foam where the waves reach the sand, coming and going.
+    const reach = 2 + Math.sin(T * 0.9) * 2.5;
+    for (let x = 0; x < W; x++) {
+      const top = Math.floor(94 + Math.sin(x * 0.04) * 3);
+      for (let k = 0; k < reach; k++) {
+        const y = top + Math.floor(k);
+        if (inside(x, y) && hash(x, Math.floor(T * 3) + k) > 0.25) buf[y * W + x] = solid(k > reach - 1.5 ? "#ffffff" : "#bfe8f5");
+      }
+    }
+  }
+  return { build, frame };
+})();
+
+const SCENES: Record<PixelSceneKind, Scene> = { sakura, forest, ocean };
+
+export function PixelScene({ scene }: { scene: PixelSceneKind }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const cv = ref.current!;
+    const g = cv.getContext("2d")!;
+    const img = g.createImageData(W, H);
+    const buf = new Uint32Array(img.data.buffer);
+    const s = SCENES[scene], layer = s.build();
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let raf = 0, drawnAt = 0, visible = true;
+    const start = performance.now();
+    const draw = (now: number) => { s.frame(buf, layer, (now - start) / 1000); g.putImageData(img, 0, 0); };
+    // A few frames a second suit pixel art; the app's budget (and the page's cap) still apply.
+    const loop = (now: number) => {
+      raf = 0;
+      const cap = animFps();
+      if (cap === 0 || !visible) return;
+      const due = paceFrame(now, drawnAt, Math.min(cap ?? 12, 12));
+      if (due !== null) { drawnAt = due; draw(now); }
+      raf = requestAnimationFrame(loop);
+    };
+    const restart = () => { if (!raf && !still) raf = requestAnimationFrame(loop); };
+    draw(start);
+    const io = new IntersectionObserver(([e]) => { visible = e.isIntersecting; if (visible) restart(); });
+    io.observe(cv);
+    const off = onAnimBudget(restart);
+    restart();
+    return () => { cancelAnimationFrame(raf); io.disconnect(); off(); };
+  }, [scene]);
+  return <canvas ref={ref} width={W} height={H} className="pixel-scene" aria-hidden="true" />;
+}

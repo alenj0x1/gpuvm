@@ -33,7 +33,13 @@ const send = (vm: string, msg: Record<string, unknown>) => invoke("viewer_send",
 /** The panel beside GpuVM's viewer: it slides in from the right while the picture moves aside. A board of widgets
  *  the person arranges (ViewerWidgets.tsx): machines to switch to, the usual actions, the picture's numbers, the time,
  *  the shelf with the machines' figures, games for the waits and, if turned on, the weather. */
-export function ViewerPanel({ machine, onSwitched }: { machine?: string; onSwitched?: (name: string) => void } = {}) {
+export function ViewerPanel({ machine, onSwitched, onResize, sample }: {
+  machine?: string; onSwitched?: (name: string) => void;
+  /** The website's sample: adjusts the machines it lists (all on, so they can be switched to). */
+  sample?: (vms: VmOverview[]) => VmOverview[];
+  /** The website's sample: the edge drag reports the width here instead of resizing a window. */
+  onResize?: (width: number) => void;
+} = {}) {
   const [vm, setVm] = useState<string>(() => machine ?? new URLSearchParams(location.search).get("vm") ?? "");
   const vmRef = useRef(vm);
   vmRef.current = vm;
@@ -82,7 +88,7 @@ export function ViewerPanel({ machine, onSwitched }: { machine?: string; onSwitc
   useEffect(() => {
     if (!open) return;
     let alive = true;
-    const load = () => api.overview().then((list) => { if (alive) setVms(list); }).catch(() => {});
+    const load = () => api.overview().then((list) => { if (alive) setVms(sample ? sample(list) : list); }).catch(() => {});
     load();
     const timer = setInterval(load, 4000);
     return () => { alive = false; clearInterval(timer); };
@@ -103,16 +109,18 @@ export function ViewerPanel({ machine, onSwitched }: { machine?: string; onSwitc
   const startResize = (e: React.PointerEvent<HTMLDivElement>) => {
     const target = e.currentTarget;
     target.setPointerCapture(e.pointerId);
-    const startX = e.screenX, startW = window.innerWidth;
+    const startX = e.screenX, startW = inTauri ? window.innerWidth : target.parentElement!.getBoundingClientRect().width;
     let frame = 0, last = startW;
     const move = (ev: PointerEvent) => {
       last = Math.round(startW - (ev.screenX - startX));
+      if (!inTauri) { onResize?.(Math.min(560, Math.max(300, last))); return; }
       if (!frame) frame = requestAnimationFrame(() => { frame = 0; invoke<number>("viewer_panel_resize", { width: last }); });
     };
     const up = () => {
       target.removeEventListener("pointermove", move);
       target.removeEventListener("pointerup", up);
       target.removeEventListener("pointercancel", up);
+      if (!inTauri) return;
       invoke<number>("viewer_panel_resize", { width: last }).then((w) => { try { localStorage.setItem(WIDTH_KEY, String(w ?? last)); } catch { /* no storage */ } });
     };
     target.addEventListener("pointermove", move);
@@ -160,7 +168,7 @@ export function ViewerPanel({ machine, onSwitched }: { machine?: string; onSwitc
 
   return (
     <aside className={`viewer-panel${open ? " open" : ""}`} aria-label={t("Panel del visor")}>
-      <div className="viewer-panel-edge" onPointerDown={startResize} onDoubleClick={() => { invoke("viewer_panel_resize", { width: 340 }); try { localStorage.removeItem(WIDTH_KEY); } catch { /* no storage */ } }} aria-hidden="true" />
+      <div className="viewer-panel-edge" onPointerDown={startResize} onDoubleClick={() => { onResize?.(340); invoke("viewer_panel_resize", { width: 340 }); try { localStorage.removeItem(WIDTH_KEY); } catch { /* no storage */ } }} aria-hidden="true" />
       <div className="viewer-panel-top">
         <span className="viewer-panel-machine"><MachineIcon name={vm} size={20} radius={6} /><span>{vm}</span></span>
         {!game && (
@@ -170,7 +178,11 @@ export function ViewerPanel({ machine, onSwitched }: { machine?: string; onSwitc
         )}
         <button type="button" className="icon-btn" aria-label={t("Cerrar")} title={t("Cerrar")} onClick={() => invoke("viewer_panel_close")}><IconX size={16} /></button>
       </div>
-      <div className="viewer-panel-body">
+      <div className="viewer-panel-body" onScroll={(e) => {
+        // Only up and down: while the panel narrows the board is wider for a moment, and a sideways scroll left the
+        // widgets cut on the left once it widened again.
+        if (e.currentTarget.scrollLeft) e.currentTarget.scrollLeft = 0;
+      }}>
         {game ? (
           <div className="viewer-game"><GameStage game={game} machines={vms.filter((v) => v.streaming).map((v) => v.name)} first={vm} fallback={decor} onClose={() => setGame(null)} /></div>
         ) : (

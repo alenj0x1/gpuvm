@@ -27,7 +27,7 @@ import {
 } from "@tabler/icons-react";
 import type { HostMonitor, MouseMode, VmOverview } from "./types";
 import appCss from "./styles.css?inline";
-import { Scene, sceneStyle } from "./Scene";
+import { PixelScene, type PixelSceneKind } from "./PixelScene";
 import { ViewerPanel } from "./ViewerPanel";
 
 type View = "app" | "home" | "cleanup" | "apps" | "shared" | "stream" | "prompt" | "cube" | "machine" | "customize" | "games" | "viewer";
@@ -336,13 +336,19 @@ function GamesDemo() {
 
 /** GpuVM's viewer with its side panel: the machine's picture and, beside it, the same board of widgets as in the
  *  app (Edit moves, resizes, adds and removes them; switching machines and the games work). */
+// Each sample machine shows its own landscape, so switching machines in the panel changes the picture.
+const VIEWER_SCENES: Record<string, PixelSceneKind> = { win10: "sakura", "win11-pruebas": "forest", estudio: "ocean" };
+// In the demo every sample machine is on and streaming, so the panel can switch between them.
+const allOn = (vms: VmOverview[]) => vms.map((v) => (VIEWER_SCENES[v.name] ? { ...v, state: "Running", streaming: true } : v));
+
 function ViewerDemo() {
   const [vm, setVm] = useState("win10");
+  // Dragged from the panel's edge as in the app (300-560 px), within what the demo leaves for the picture.
+  const [width, setWidth] = useState(340);
   return (
-    <div className="site-viewer">
-      <div className="site-viewer-picture"><Scene key={vm} name={vm} style={sceneStyle(vm)} state="Running" activity={{ cpu: 38, gpu: 72, mem: 55 }} /></div>
-      {/* The machines widget switches the panel's machine; the picture follows it. */}
-      <div className="site-viewer-panel"><ViewerPanel machine="win10" onSwitched={setVm} /></div>
+    <div className="site-viewer" style={{ gridTemplateColumns: `minmax(0, 1fr) ${width}px` }}>
+      <div className="site-viewer-picture"><PixelScene scene={VIEWER_SCENES[vm] ?? "sakura"} /></div>
+      <div className="site-viewer-panel"><ViewerPanel machine="win10" onSwitched={setVm} onResize={setWidth} sample={allOn} /></div>
     </div>
   );
 }
@@ -406,9 +412,10 @@ const scopedCss = appCss
   .site-viewer { display: grid; grid-template-columns: minmax(0, 1fr) 340px; height: 100%; border-radius: var(--r-lg); overflow: hidden; background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); }
   .site-viewer-picture { position: relative; min-width: 0; background: #000; }
   .site-viewer-picture > * { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .pixel-scene { object-fit: cover; image-rendering: pixelated; }
   .site-viewer-panel { position: relative; min-height: 0; }
   .site-viewer-panel .viewer-panel { position: absolute; }
-  @media (max-width: 760px) { .site-viewer { grid-template-columns: 1fr; grid-template-rows: 220px minmax(0, 1fr); } }
+  @media (max-width: 760px) { .site-viewer { grid-template-columns: 1fr !important; grid-template-rows: 220px minmax(0, 1fr); } .site-viewer-panel .viewer-panel-edge { display: none; } }
   /* The whole app: drawn at a desktop window's size and scaled to fit. The transform also keeps its dialogs and
      toasts (position: fixed) inside the window instead of the page. */
   .demo-root.full { display: block; transform-origin: 0 0; background: var(--bg); }
