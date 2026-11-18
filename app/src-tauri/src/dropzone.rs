@@ -1,27 +1,36 @@
 //! Files dropped on the viewer's picture, and the copies into machines (lab 043).
 //!
 //! The viewer runs at Low integrity and talks to a host the guest controls, so it never names files: when something
-//! is dragged over its window it only sends "drag". This app then shows its own window over the picture (owned by
-//! the viewer, so it stays just above it, and shown without taking the focus: activating a window mid-drag makes
-//! Windows cancel the drag). That window takes the drop, and the paths come from Windows itself. A viewer that
-//! sends "drag" on its own only makes the drop area appear for a moment.
+//! is dragged over its window it only sends "drag". This app then shows, over the picture, its drop area (a web view
+//! window that dims the picture and shows where the files go) and above it a native window of its own that is
+//! invisible (alpha 1) and takes the drop: an OLE drop target that reads the paths Windows hands it. Both are owned by
+//! the viewer (kept just above it) and never activated (activating a window mid-drag makes Windows cancel the drag).
+//! The web view can't take the drop itself: wry registers its drop target on the web view's child windows when the
+//! window is built, and this one is built hidden. A viewer that sends "drag" on its own only makes the drop area
+//! appear for 1.5 s.
 //!
 //! The copies run in the GpuVM service (Send-GpuVMFile), which first opens every path as this user, unelevated.
 //! Their state lives here, so the drop window, the side panel and the app all show the same list.
 
 use serde_json::{json, Value};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::ffi::c_void;
+use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
-use windows_sys::Win32::Foundation::HWND;
+use windows_sys::core::GUID;
+use windows_sys::Win32::Foundation::{HWND, POINTL};
+use windows_sys::Win32::System::Com::{FORMATETC, STGMEDIUM};
+use windows_sys::Win32::System::Ole::{OleInitialize, RegisterDragDrop, ReleaseStgMedium, CF_HDROP, DROPEFFECT_COPY, DROPEFFECT_NONE};
+use windows_sys::Win32::UI::Shell::{DragQueryFileW, HDROP};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWLP_HWNDPARENT, GWL_EXSTYLE, HWND_TOP, SWP_NOACTIVATE,
-    SWP_SHOWWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, GetWindowLongPtrW, RegisterClassW, SetLayeredWindowAttributes,
+    SetWindowLongPtrW, SetWindowPos, ShowWindow, GWLP_HWNDPARENT, GWL_EXSTYLE, HWND_TOP, LWA_ALPHA, MSG, SWP_NOACTIVATE,
+    SWP_SHOWWINDOW, SW_HIDE, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 
 pub const LABEL: &str = "viewer-drop";
-/// A "drag" the drop window never confirms (no files came over it) hides it again after this long.
+/// A "drag" no files confirm (nothing came over the drop area) hides it again after this long.
 const UNCONFIRMED: Duration = Duration::from_millis(1500);
 /// Copies kept in the list after they end.
 const KEEP: usize = 20;
@@ -29,13 +38,23 @@ const KEEP: usize = 20;
 struct Zone {
     vm: Option<String>,
     shown_at: Option<Instant>,
+    /// What the page shows: "drag", "over" or "card", and the copy of the card.
+    state: &'static str,
+    id: Option<String>,
 }
-static ZONE: Mutex<Zone> = Mutex::new(Zone { vm: None, shown_at: None });
-/// Files are over the drop window right now (its own drag events).
+static ZONE: Mutex<Zone> = Mutex::new(Zone { vm: None, shown_at: None, state: "drag", id: None });
+/// Files are over the drop area right now.
 static HOVER: AtomicBool = AtomicBool::new(false);
+static APP: Mutex<Option<AppHandle>> = Mutex::new(None);
+/// The native window that takes the drop (made on its own thread, which runs its messages).
+static CATCHER: AtomicIsize = AtomicIsize::new(0);
 
 fn zone() -> std::sync::MutexGuard<'static, Zone> {
     ZONE.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn wide(s: &str) -> Vec<u16> {
+    s.encode_utf16().chain(Some(0)).collect()
 }
 
 fn drop_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
@@ -51,6 +70,7 @@ fn drop_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
         .skip_taskbar(true)
         .focused(false)
         .visible(false)
+        .disable_drag_drop_handler()
         .build()
         .ok()?;
     if let Ok(h) = w.hwnd() {
@@ -63,23 +83,40 @@ fn drop_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
     Some(w)
 }
 
-/// The viewer reported a drag over its picture: cover the picture (not the side panel) with the drop window.
+/// Tells the page what to show, and keeps it for a page that loads later (the first drag builds the window).
+fn tell(app: &AppHandle, state: &'static str, id: Option<&str>) {
+    let vm = {
+        let mut z = zone();
+        z.state = state;
+        z.id = id.map(str::to_string);
+        z.vm.clone()
+    };
+    let _ = app.emit_to(LABEL, "viewer-drop", json!({ "vm": vm, "state": state, "id": id }));
+}
+
+/// The viewer reported a drag over its picture: cover the picture (not the side panel) with the drop area.
 pub fn on_drag(app: &AppHandle, vm: &str) {
     let Some(viewer) = crate::viewer::viewer_hwnd(vm) else { return };
     let Some((x, y, w, h)) = crate::overlay::picture_rect(viewer, vm) else { return };
     let Some(window) = drop_window(app) else { return };
+    let catcher = ensure_catcher(app);
     {
         let mut z = zone();
         z.vm = Some(vm.to_string());
         z.shown_at = Some(Instant::now());
     }
     HOVER.store(false, Ordering::Relaxed);
-    let _ = window.emit("viewer-drop", json!({ "vm": vm, "state": "drag" }));
+    tell(app, "drag", None);
     if let Ok(own) = window.hwnd() {
-        // SAFETY: our window, owned by the viewer's (kept just above it), shown without activation.
+        // SAFETY: our windows: the drop area owned by the viewer (kept just above it) and the catcher owned by the
+        // drop area (just above that), shown without activation.
         unsafe {
             SetWindowLongPtrW(own.0 as HWND, GWLP_HWNDPARENT, viewer);
             SetWindowPos(own.0 as HWND, HWND_TOP, x, y, w, h, SWP_SHOWWINDOW | SWP_NOACTIVATE);
+            if catcher != 0 {
+                SetWindowLongPtrW(catcher as HWND, GWLP_HWNDPARENT, own.0 as isize);
+                SetWindowPos(catcher as HWND, HWND_TOP, x, y, w, h, SWP_SHOWWINDOW | SWP_NOACTIVATE);
+            }
         }
     }
     let app = app.clone();
@@ -99,50 +136,202 @@ const CARD_MARGIN: f64 = 16.0;
 fn show_card(app: &AppHandle, vm: &str, id: &str) {
     zone().shown_at = None;
     HOVER.store(false, Ordering::Relaxed);
+    hide_catcher();
     let (Some(window), Some(viewer)) = (app.get_webview_window(LABEL), crate::viewer::viewer_hwnd(vm)) else { return hide(app) };
     let Some((x, y, w, h)) = crate::overlay::picture_rect(viewer, vm) else { return hide(app) };
     // SAFETY: plain query on the viewer's window.
     let scale = unsafe { windows_sys::Win32::UI::HiDpi::GetDpiForWindow(viewer as HWND).max(96) } as f64 / 96.0;
     let (cw, ch, m) = ((CARD.0 * scale) as i32, (CARD.1 * scale) as i32, (CARD_MARGIN * scale) as i32);
-    let _ = window.emit("viewer-drop", json!({ "vm": vm, "state": "card", "id": id }));
+    tell(app, "card", Some(id));
     if let Ok(own) = window.hwnd() {
         // SAFETY: our window, still owned by the viewer, moved without activation.
         unsafe { SetWindowPos(own.0 as HWND, HWND_TOP, x + w - cw - m, y + h - ch - m, cw, ch, SWP_SHOWWINDOW | SWP_NOACTIVATE) };
     }
 }
 
+fn hide_catcher() {
+    let catcher = CATCHER.load(Ordering::Relaxed);
+    if catcher != 0 {
+        // SAFETY: our own window.
+        unsafe { ShowWindow(catcher as HWND, SW_HIDE) };
+    }
+}
+
+/// Hides the drop area. With Win32, not through Tauri: the window was shown with Win32 (without activation), so
+/// Tauri still takes it for hidden and its hide() did nothing (the drop area stayed over the picture, lab 043).
 pub fn hide(app: &AppHandle) {
     zone().shown_at = None;
     HOVER.store(false, Ordering::Relaxed);
+    hide_catcher();
     if let Some(w) = app.get_webview_window(LABEL) {
-        let _ = w.hide();
-    }
-}
-
-/// The drop window's own drag events (Windows' OLE drop target on its web view).
-pub fn on_window_event(app: &AppHandle, event: &tauri::WindowEvent) {
-    let tauri::WindowEvent::DragDrop(drag) = event else { return };
-    match drag {
-        tauri::DragDropEvent::Enter { .. } | tauri::DragDropEvent::Over { .. } => HOVER.store(true, Ordering::Relaxed),
-        tauri::DragDropEvent::Leave => hide(app),
-        tauri::DragDropEvent::Drop { paths, .. } => {
-            let vm = zone().vm.clone();
-            let paths: Vec<String> = paths.iter().map(|p| p.to_string_lossy().into_owned()).collect();
-            let (Some(vm), false) = (vm, paths.is_empty()) else { return hide(app) };
-            let folder = if crate::ENGLISH.load(Ordering::Relaxed) { "Received" } else { "Recibidos" };
-            let app = app.clone();
-            tauri::async_runtime::spawn(async move {
-                match start(&app, vm.clone(), paths, None, folder.to_string()).await {
-                    // The drop area becomes a small card in the picture's corner with the copy's progress.
-                    Ok(id) => show_card(&app, &vm, &id),
-                    Err(_) => hide(&app),
-                }
-            });
+        if let Ok(own) = w.hwnd() {
+            // SAFETY: our own window.
+            unsafe { ShowWindow(own.0 as HWND, SW_HIDE) };
         }
-        _ => {}
     }
 }
 
+fn dropped(app: &AppHandle, paths: Vec<String>) {
+    let vm = zone().vm.clone();
+    let (Some(vm), false) = (vm, paths.is_empty()) else { return hide(app) };
+    let folder = if crate::ENGLISH.load(Ordering::Relaxed) { "Received" } else { "Recibidos" };
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        match start(&app, vm.clone(), paths, None, folder.to_string()).await {
+            // The drop area becomes a small card in the picture's corner with the copy's progress.
+            Ok(id) => show_card(&app, &vm, &id),
+            Err(_) => hide(&app),
+        }
+    });
+}
+
+// ---------------------------------------------------------------- the native window that takes the drop
+
+/// Its OLE drop target: a static object with IDropTarget's vtable (IUnknown, then DragEnter, DragOver, DragLeave,
+/// Drop), counted as always alive.
+#[repr(C)]
+struct DropTargetVtbl {
+    query_interface: unsafe extern "system" fn(*mut c_void, *const GUID, *mut *mut c_void) -> i32,
+    add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
+    release: unsafe extern "system" fn(*mut c_void) -> u32,
+    drag_enter: unsafe extern "system" fn(*mut c_void, *mut c_void, u32, POINTL, *mut u32) -> i32,
+    drag_over: unsafe extern "system" fn(*mut c_void, u32, POINTL, *mut u32) -> i32,
+    drag_leave: unsafe extern "system" fn(*mut c_void) -> i32,
+    drop: unsafe extern "system" fn(*mut c_void, *mut c_void, u32, POINTL, *mut u32) -> i32,
+}
+#[repr(C)]
+struct DropTarget {
+    vtbl: *const DropTargetVtbl,
+}
+// SAFETY: the object holds only a pointer to a static vtable.
+unsafe impl Sync for DropTarget {}
+
+const IID_IUNKNOWN: GUID = GUID::from_u128(0x00000000_0000_0000_c000_000000000046);
+const IID_IDROPTARGET: GUID = GUID::from_u128(0x00000122_0000_0000_c000_000000000046);
+const E_NOINTERFACE: i32 = 0x8000_4002_u32 as i32;
+
+static VTBL: DropTargetVtbl = DropTargetVtbl { query_interface, add_ref, release, drag_enter, drag_over, drag_leave, drop };
+static TARGET: DropTarget = DropTarget { vtbl: &VTBL };
+
+fn same_guid(a: &GUID, b: &GUID) -> bool {
+    a.data1 == b.data1 && a.data2 == b.data2 && a.data3 == b.data3 && a.data4 == b.data4
+}
+
+unsafe extern "system" fn query_interface(this: *mut c_void, riid: *const GUID, out: *mut *mut c_void) -> i32 {
+    if !riid.is_null() && (same_guid(&*riid, &IID_IUNKNOWN) || same_guid(&*riid, &IID_IDROPTARGET)) {
+        *out = this;
+        return 0;
+    }
+    *out = std::ptr::null_mut();
+    E_NOINTERFACE
+}
+unsafe extern "system" fn add_ref(_: *mut c_void) -> u32 {
+    2
+}
+unsafe extern "system" fn release(_: *mut c_void) -> u32 {
+    1
+}
+unsafe extern "system" fn drag_enter(_: *mut c_void, _: *mut c_void, _: u32, _: POINTL, effect: *mut u32) -> i32 {
+    HOVER.store(true, Ordering::Relaxed);
+    zone().shown_at = None;
+    if let Some(app) = APP.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+        tell(&app, "over", None);
+    }
+    *effect = DROPEFFECT_COPY;
+    0
+}
+unsafe extern "system" fn drag_over(_: *mut c_void, _: u32, _: POINTL, effect: *mut u32) -> i32 {
+    *effect = DROPEFFECT_COPY;
+    0
+}
+unsafe extern "system" fn drag_leave(_: *mut c_void) -> i32 {
+    if let Some(app) = APP.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+        hide(&app);
+    }
+    0
+}
+unsafe extern "system" fn drop(_: *mut c_void, data: *mut c_void, _: u32, _: POINTL, effect: *mut u32) -> i32 {
+    let paths = paths_of(data);
+    *effect = if paths.is_empty() { DROPEFFECT_NONE } else { DROPEFFECT_COPY };
+    if let Some(app) = APP.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+        hide_catcher();
+        dropped(&app, paths);
+    }
+    0
+}
+
+/// The files of a drop: IDataObject::GetData (its fourth method) for CF_HDROP.
+unsafe fn paths_of(data: *mut c_void) -> Vec<String> {
+    if data.is_null() {
+        return Vec::new();
+    }
+    type GetData = unsafe extern "system" fn(*mut c_void, *const FORMATETC, *mut STGMEDIUM) -> i32;
+    let vtbl = *(data as *const *const usize);
+    let get_data: GetData = std::mem::transmute(*vtbl.add(3));
+    let format = FORMATETC { cfFormat: CF_HDROP, ptd: std::ptr::null_mut(), dwAspect: 1, lindex: -1, tymed: 1 };
+    let mut medium: STGMEDIUM = std::mem::zeroed();
+    if get_data(data, &format, &mut medium) != 0 {
+        return Vec::new();
+    }
+    let drop = medium.u.hGlobal as HDROP;
+    let count = DragQueryFileW(drop, u32::MAX, std::ptr::null_mut(), 0).min(1000);
+    let mut paths = Vec::new();
+    for i in 0..count {
+        let len = DragQueryFileW(drop, i, std::ptr::null_mut(), 0) as usize;
+        let mut buf = vec![0u16; len + 1];
+        DragQueryFileW(drop, i, buf.as_mut_ptr(), buf.len() as u32);
+        paths.push(String::from_utf16_lossy(&buf[..len]));
+    }
+    ReleaseStgMedium(&mut medium);
+    paths
+}
+
+/// The catcher window, made once on its own thread (OLE drop targets need a single-threaded apartment that runs
+/// its messages). Its handle, or 0 if it couldn't be made.
+fn ensure_catcher(app: &AppHandle) -> isize {
+    let current = CATCHER.load(Ordering::Relaxed);
+    if current != 0 {
+        return current;
+    }
+    *APP.lock().unwrap_or_else(|e| e.into_inner()) = Some(app.clone());
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        // SAFETY: a window of this thread with OLE set up on it; the loop runs for the life of the process.
+        unsafe {
+            OleInitialize(std::ptr::null_mut());
+            unsafe extern "system" fn proc_(hwnd: HWND, msg: u32, w: usize, l: isize) -> isize {
+                DefWindowProcW(hwnd, msg, w, l)
+            }
+            let class = wide("GpuVMDropCatcher");
+            let wc = WNDCLASSW { lpfnWndProc: Some(proc_), lpszClassName: class.as_ptr(), ..std::mem::zeroed() };
+            RegisterClassW(&wc);
+            let hwnd = CreateWindowExW(WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW, class.as_ptr(), class.as_ptr(), WS_POPUP,
+                0, 0, 0, 0, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null());
+            // Alpha 1: invisible, but it still takes the pointer (a fully transparent one would let it through).
+            if hwnd.is_null() || SetLayeredWindowAttributes(hwnd, 0, 1, LWA_ALPHA) == 0
+                || RegisterDragDrop(hwnd, &TARGET as *const DropTarget as *mut c_void) != 0
+            {
+                let _ = tx.send(0);
+                return;
+            }
+            let _ = tx.send(hwnd as isize);
+            let mut msg: MSG = std::mem::zeroed();
+            while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
+                DispatchMessageW(&msg);
+            }
+        }
+    });
+    let hwnd = rx.recv_timeout(Duration::from_secs(2)).unwrap_or(0);
+    CATCHER.store(hwnd, Ordering::Relaxed);
+    hwnd
+}
+
+/// What the drop window shows, for its page when it loads.
+#[tauri::command]
+pub fn viewer_drop_state() -> Value {
+    let z = zone();
+    json!({ "vm": z.vm, "state": z.state, "id": z.id })
+}
 // ---------------------------------------------------------------- the copies
 
 static TRANSFERS: Mutex<Vec<Value>> = Mutex::new(Vec::new());
