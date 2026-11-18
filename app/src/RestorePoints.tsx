@@ -84,7 +84,7 @@ export function RestorePoints({ vm, busy, startJob, run }: Props) {
             onContextMenu={(e) => { e.preventDefault(); if (!busy) setArmed(p.id); }}>
             <span className="opt-icon"><IconBookmark size={17} /></span>
             <div className="opt-text">
-              <span className="opt-title">{p.label ?? when(p.createdAt)}</span>
+              <span className="opt-title">{(p.label ? translateModule(p.label) : when(p.createdAt))}</span>
               <span className="opt-desc">{[
                 p.label ? when(p.createdAt) : null,
                 p.missing ? t("Falta su disco") : p.sizeGB !== null ? t("Ocupa {size}", { size: gb(p.sizeGB) }) : null,
@@ -125,7 +125,7 @@ function ConfirmGoBack({ vm, point, canSave, onClose, onConfirm }: {
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [onClose]);
-  const title = t("Volver a {point}", { point: point.label ?? when(point.createdAt) });
+  const title = t("Volver a {point}", { point: (point.label ? translateModule(point.label) : when(point.createdAt)) });
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="dialog narrow" role="dialog" aria-modal="true" aria-label={title}>
