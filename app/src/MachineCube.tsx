@@ -1056,7 +1056,14 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
     };
 
     // The machine's screen: a Windows desktop with its apps on the taskbar, or the Windows logo while it starts.
+    // Redrawn at most 30 times a second, or at once when what it shows changes: its waves drift slowly, and redrawing
+    // it on every frame was half of the hologram's GPU time (lab 041). The cube around it still moves every frame.
+    let screenKey = "", screenT = -1;
     const drawScreen = (m: CubeMachine, bootF: number, landscape: false | "day" | "evening" | "night" = false) => {
+      const key = `${bootF >= 1 ? 1 : bootF.toFixed(2)}|${landscape}|${accent}|${light}|${m.apps.join(",")}`;
+      // The landscape is still: only a change redraws it.
+      if (key === screenKey && (landscape || T - screenT < 1 / 30)) return;
+      screenKey = key; screenT = T;
       const w = 480, hh = 270, col = (x: number) => rgba(accent, x);
       s2.clearRect(0, 0, w, hh);
       s2.fillStyle = col(0.07); s2.fillRect(0, 0, w, hh);
@@ -1106,6 +1113,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
     let outside: { x: number; y: number; vx: number; vy: number; life: number; hit: boolean }[] = [];
     let motes: { x: number; y: number; z: number; s: number }[] = [];
     let frame = 0, last = performance.now(), visible = true;
+    let scanPattern: CanvasPattern | null = null;
     const css = getComputedStyle(cv);
 
     // Where each piece sits and the angle that shows it best.
@@ -1453,8 +1461,15 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       if (on && scanY > 0.1 && scanY < 1.95) quad([[-0.98, scanY, -0.98], [0.98, scanY, -0.98], [0.98, scanY, 0.98], [-0.98, scanY, 0.98]], accent, 0.03, 0.22);
       }
       h.globalCompositeOperation = "destination-out";
-      h.fillStyle = "rgba(0,0,0,.22)";
-      for (let y = (T * 12) % 3; y < H; y += 3) h.fillRect(0, y, W, 1);
+      // The scan lines: one row in three, drifting down; one fill with a pattern made once (it was ~130 fills a frame).
+      {
+        if (!scanPattern) {
+          const tile = document.createElement("canvas"); tile.width = 4; tile.height = 3;
+          const tg = tile.getContext("2d")!; tg.fillStyle = "rgba(0,0,0,.22)"; tg.fillRect(0, 0, 4, 1);
+          scanPattern = h.createPattern(tile, "repeat");
+        }
+        if (scanPattern) { const dy = (T * 12) % 3; h.save(); h.translate(0, dy); h.fillStyle = scanPattern; h.fillRect(0, -3, W, H + 3); h.restore(); }
+      }
       h.globalCompositeOperation = "source-over";
       g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = light ? "source-over" : "lighter"; g.drawImage(holo, 0, 0); g.restore();
 

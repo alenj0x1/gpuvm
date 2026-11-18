@@ -17,6 +17,9 @@ param(
     [int]$Samples = 25,
     [switch]$SkipInput,
     [switch]$Force,
+    # PresentMon's console exe (github.com/GameTechDev/PresentMon): when given, each variant also records how the viewer's
+    # frames reach the screen (present mode, Present-to-screen ms) during the motion measurement.
+    [string]$PresentMon,
     [string]$Out = (Join-Path $PSScriptRoot "out\run-$(Get-Date -Format 'yyyyMMdd-HHmmss').json")
 )
 $ErrorActionPreference = 'Stop'
@@ -26,6 +29,8 @@ $tools = Join-Path $PSScriptRoot '..\..\tools\latency'
 . (Join-Path $tools 'input-meter.ps1')
 . (Join-Path $tools 'motion-meter.ps1')
 . (Join-Path $PSScriptRoot 'variants.ps1')
+$hostGpuPct = Assert-LatencyGpuIdle -Force:$Force
+"host GPU before: $hostGpuPct %" | Write-Host
 
 $vm = Get-LatencyVM -Name $Name
 $table = Get-Lab041Variants
@@ -36,6 +41,14 @@ $state = & $vm.Module { param($n) Get-GpuVMState -Name $n } $Name
 $saved = $state['config']['streaming']['client']
 $results = [System.Collections.Generic.List[object]]::new()
 $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+
+# Where the picture is: the viewer letterboxes the stream in its window at the stream's aspect ratio.
+function Get-VideoBounds([IntPtr]$Window, [int]$Width, [int]$Height) {
+    $c = [GpuVMInputMeter]::ClientBounds($Window)
+    $scale = [math]::Min($c[2] / $Width, $c[3] / $Height)
+    $w = [int]($Width * $scale); $h = [int]($Height * $scale)
+    [System.Drawing.Rectangle]::new($c[0] + [int](($c[2] - $w) / 2), $c[1] + [int](($c[3] - $h) / 2), $w, $h)
+}
 
 function Get-GpuLoad([double]$Seconds) {
     $smi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
@@ -70,13 +83,30 @@ try {
                 $window = $session.Process.MainWindowHandle
                 if (-not [GpuVMInputMeter]::BringToFront($window)) { 'the viewer is not in front' | Write-Host }
                 Start-Sleep -Milliseconds 500
+                $sw, $sh = [int[]]("$($client['resolution'])" -split 'x')
+                $video = Get-VideoBounds $window $sw $sh
                 $wait = [Diagnostics.Stopwatch]::StartNew(); $row.pictureSec = -1
                 while ($wait.Elapsed.TotalSeconds -lt 60) {
-                    $probe = Measure-Motion -Bounds $screen -Fps $fps -Seconds 0.5
+                    $probe = Measure-Motion -Bounds $video -Fps $fps -Seconds 0.5
                     if (-not $probe.PSObject.Properties['error']) { $row.pictureSec = [math]::Round(((Get-Date) - $started).TotalSeconds, 1); break }
                 }
                 Start-Sleep -Seconds 2
-                $row.motion = Measure-Motion -Bounds $screen -Fps $fps -Seconds $MotionSeconds
+                $row.motion = Measure-Motion -Bounds $video -Fps $fps -Seconds $MotionSeconds
+                # PresentMon alone, after the motion measurement: run alongside the screen reads it got garbage
+                # timestamps and 1-3 rows.
+                if ($PresentMon) {
+                    $pmCsv = Join-Path (Split-Path $Out) "pm-$($variant.Name)-r$round.csv"
+                    & $PresentMon --process_name GpuVMViewer.exe --output_file $pmCsv --timed 6 --terminate_after_timed --no_console_stats --session_name "GpuVMLab041-$round-$($variant.Name)" --stop_existing_session | Out-Null
+                    $pmRows = @(Import-Csv $pmCsv -ErrorAction SilentlyContinue | Where-Object { $_.SwapChainAddress -ne '0x0' })
+                    $until = @($pmRows | Where-Object { $_.MsUntilDisplayed -ne 'NA' } | ForEach-Object { [double]$_.MsUntilDisplayed } | Sort-Object)
+                    $row.present = [ordered]@{
+                        frames = $pmRows.Count
+                        modes = ($pmRows | Group-Object PresentMode | ForEach-Object { "$($_.Name)=$($_.Count)" }) -join '; '
+                        untilDisplayedMedianMs = if ($until) { $until[[int]($until.Count / 2)] } else { $null }
+                        untilDisplayedMeanMs = if ($until) { [math]::Round(($until | Measure-Object -Average).Average, 2) } else { $null }
+                        untilDisplayedP95Ms = if ($until) { $until[[int]($until.Count * 0.95)] } else { $null }
+                    }
+                }
                 $row.gpuStreamPct = Get-GpuLoad 3
                 $row.stats = Get-LatencyViewerStats $session -LastSeconds ([int]$MotionSeconds)
 
@@ -84,7 +114,7 @@ try {
                     Start-Lab041Target $vm 'input'
                     Start-Sleep -Seconds 3
                     [void][GpuVMInputMeter]::BringToFront($window)
-                    $bounds = [System.Drawing.Rectangle]::new($screen.Left, $screen.Top, $screen.Width, $screen.Height)
+                    $bounds = $video
                     [void][GpuVMInputMeter]::SetCursorPos($bounds.Left + $bounds.Width / 2, $bounds.Top + $bounds.Height / 6)
                     $click = Get-InputSquarePoint -Bounds $bounds -Index 1
                     $w2 = [Diagnostics.Stopwatch]::StartNew()
@@ -102,7 +132,7 @@ try {
             $results.Add([pscustomobject]$row)
             $m = $row.motion; $s = $row.stats
             $in = if ($row.input) { ($row.input | ForEach-Object { "$($_.kind) $($_.medianMs)" }) -join ', ' } else { '-' }
-            "{0} r{1}: gpu idle {2} % stream {3} % | updates/s {4} stutter {5} % | rx {6} fps shown {7} fps host {8} ms decode {9} ms net {10} ms | input {11}" -f $variant.Name, $round, $row.gpuIdlePct, $row.gpuStreamPct, $m.updatesPerSec, $m.stutterPct, $s.receivedFps, $s.renderedFps, $s.hostLatencyMs, $s.decodeMs, $s.networkLatencyMs, $in | Write-Host
+            "{0} r{1}: gpu idle {2} % stream {3} % | updates/s {4} stutter {5} % | rx {6} fps shown {7} fps host {8} ms decode {9} ms net {10} ms | to screen {12} ms ({13}) | input {11}" -f $variant.Name, $round, $row.gpuIdlePct, $row.gpuStreamPct, $m.updatesPerSec, $m.stutterPct, $s.receivedFps, $s.renderedFps, $s.hostLatencyMs, $s.decodeMs, $s.networkLatencyMs, $in, $row.present.untilDisplayedMeanMs, $row.present.modes | Write-Host
         }
     }
 }

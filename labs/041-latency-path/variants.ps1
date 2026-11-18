@@ -87,6 +87,10 @@ function Get-Lab041Variants {
         # Sunshine re-encodes the last picture up to half the client FPS (90) when nothing new comes: fewer of those.
         'minfps-20'  = New-Lab041SunshineVariant 'minfps-20' ([ordered]@{ minimum_fps_target = '20' })
         'sunshine-both' = New-Lab041SunshineVariant 'sunshine-both' ([ordered]@{ nvenc_twopass = 'disabled'; minimum_fps_target = '20' })
+        # The picture in a window (composed by DWM, like inside GpuVM's window) with the viewer's frame queue at 3
+        # (upstream's default) or 1 (tried Nov 17 through GPUVM_FRAME_LATENCY, rejected: no gain; the viewer no longer reads it).
+        'windowed-q3' = @{ Name = 'windowed-q3'; Client = @{ displayMode = 'windowed' }; Setup = { param($vm) $env:GPUVM_FRAME_LATENCY = '3' }; Undo = { param($vm) Remove-Item Env:GPUVM_FRAME_LATENCY -ErrorAction SilentlyContinue } }
+        'windowed' = @{ Name = 'windowed'; Client = @{ displayMode = 'windowed' } }
         'app-closed' = @{ Name = 'app-closed'; Setup = { param($vm) Stop-Lab041App }; Undo = { param($vm) Start-Lab041App } }
         'app-home'   = @{ Name = 'app-home'; Setup = { param($vm) Start-Lab041App } }
     }

@@ -46,3 +46,26 @@ at random phases) resolves less than a refresh.
 - Found on the way: GpuVM restarted Sunshine through `/api/restart` after changing its config, which with WGC capture
   (the default; Sunshine runs from the user's logon task) leaves it stopped, so an open could fail with "Sunshine no
   responde" after the virtual display or the audio sink changed. It now restarts it as GpuVM starts it in that mode.
+
+## Nov 17, 2026: inside GpuVM's window vs full screen (PresentMon 2.6.0, Intel, signed)
+
+PresentMon (`--session_name` of its own, run alone after the motion measurement: alongside the GDI screen reads it
+got garbage timestamps) records how the viewer's frames reach the screen. `out/run-20261117-223559.json`, 3 rounds:
+
+| Variant | Present mode | Present to screen, mean ms |
+|---|---|---|
+| baseline (borderless full screen) | Hardware: Independent Flip (100 %) | 1.15-1.22 |
+| windowed, viewer frame queue 3 (upstream) | Composed: Flip (100 %) | 9.5-10.0 |
+| windowed, frame queue 1 (`SetMaximumFrameLatency(1)`, tried) | Composed: Flip (100 %) | 10.1-10.8 |
+
+- Full screen goes straight to the monitor with tearing allowed (V-Sync off): ~1 ms. A picture that is not full
+  screen (inside GpuVM's window) is composed by DWM: ~9 ms more, the compositor's own delay, not the viewer's queue.
+  Limiting the queue changed nothing: rejected, the viewer keeps upstream's presents. The in-app view costs ~9 ms by
+  nature; for games, full screen (as win-gpu is set).
+- The input meter (GDI screen reads) came out worse for full screen than for windowed in one run (16.6 vs 13.4 ms):
+  reading the screen with GDI may bring DWM back into an independent-flip picture. For the client side, PresentMon is
+  the reference; the input meter compares variants of the same present mode.
+- Same day, the hologram: at 180 FPS its WebView takes ~13 points of GPU above a still page in the preview, about
+  half just to present a new frame 180 times a second (an empty canvas costs 7 points), half for the drawing. The
+  machine's screen on the cube is now redrawn at 30 FPS (it drifts slowly) and the scan lines are one pattern fill:
+  17.0 -> 16.4 % in an interleaved A/B. A desynchronized canvas changed nothing. The only big lever is the frame rate.
