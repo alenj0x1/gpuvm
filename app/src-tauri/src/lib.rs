@@ -153,7 +153,24 @@ async fn job(app: AppHandle, job_id: String, cmd: String, args: Option<Value>) -
             event["jobId"] = json!(job_id);
             let _ = app.emit("job", event);
         };
-        match conn.call(&request, |event| emit(event.clone())) {
+        let mut outcome = conn.call(&request, |event| emit(event.clone()));
+        // A job that destroys data (going back to a restore point, deleting one) waits for a UAC confirmation, as
+        // ps does; the same request goes again with the code.
+        if let Some(code) = outcome.as_ref().ok().and_then(|r| r["consent"].as_str()).map(str::to_string) {
+            let confirmed = std::env::current_exe().map_err(|e| e.to_string()).and_then(|exe| {
+                backend::run_elevated(&exe, &format!("--consent {code}"), "Cancelaste el permiso de administrador; no se borró nada.")
+            });
+            outcome = match confirmed {
+                Ok(0) => {
+                    let mut again = request.clone();
+                    again["consent"] = json!(code);
+                    conn.call(&again, |event| emit(event.clone()))
+                }
+                Ok(_) => Ok(json!({ "type": "result", "ok": false, "error": "No se pudo confirmar el permiso de administrador; no se borró nada." })),
+                Err(error) => Ok(json!({ "type": "result", "ok": false, "error": error })),
+            };
+        }
+        match outcome {
             Ok(result) if with_viewer && result["ok"] == true && viewer::launch_in(&result["data"]).is_some() => {
                 let launch = viewer::launch_in(&result["data"]).unwrap_or_default();
                 let outcome = viewer::open_and_wait(&app, &vm_name, &launch);

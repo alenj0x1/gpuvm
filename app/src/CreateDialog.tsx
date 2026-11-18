@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  IconApps, IconBolt, IconBrandWindows, IconCheck, IconCpu, IconDatabase, IconDeviceFloppy, IconDisc, IconFileImport, IconLayoutGrid, IconLoader2, IconPalette, IconPlus, IconSparkles, IconTag, IconTemplate, IconTopologyStar3, IconUser, IconX,
+  IconApps, IconBolt, IconBrandWindows, IconCheck, IconCpu, IconDatabase, IconDeviceFloppy, IconDisc, IconFileImport, IconFlask, IconLayoutGrid, IconLoader2, IconPalette, IconPlus, IconSparkles, IconTag, IconTemplate, IconTopologyStar3, IconUser, IconX,
 } from "@tabler/icons-react";
 import type { AppInfo, CleanupLevelId, HostInfo, ImportInfo, IsoFile, ProfileInfo, ProfileSettings, TemplateInfo, VmOverview } from "./types";
 import { api, pickIso, pickMachineFile, vmNameError } from "./api";
@@ -29,7 +29,7 @@ interface Props {
   /** The space it goes into at first (the one Home shows). */
   space?: string | null;
   onCreate: (args: {
-    name: string; iso: string | null; template: string | null; file: string | null; profile: string; user: string; password: string;
+    name: string; iso: string | null; template: string | null; file: string | null; disposable: boolean; profile: string; user: string; password: string;
     apps: string[]; cleanup: CleanupLevelId; resources: Resources | null; space: string;
   }) => void;
   onClose: () => void;
@@ -67,6 +67,8 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
   const [template, setTemplate] = useState<string | null>(initialTemplate ?? null);
   // From a file exported with GpuVM: Windows, apps and account come from it; only its password is asked.
   const [file, setFile] = useState<ImportInfo | null>(null);
+  // A copy of the template that is deleted with its disk once it is turned off.
+  const [disposable, setDisposable] = useState(false);
   const [fileError, setFileError] = useState("");
   const [reading, setReading] = useState(false);
   const [nameTouched, setNameTouched] = useState(false);
@@ -175,9 +177,9 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
     const resources = changed ? res : null;
     const decor = draft.get();
     if (decor.color || decor.led || decor.stickers.length || decor.figures.length) saveDecor(name, decor);
-    if (fromTemplate) onCreate({ name, iso: null, template, file: null, profile, user: "", password: "", apps: [], cleanup: "none", resources, space: space.id });
-    else if (fromFile) onCreate({ name, iso: null, template: null, file: file!.path, profile, user: file!.user ?? user, password, apps: [], cleanup: "none", resources, space: space.id });
-    else onCreate({ name, iso, template: null, file: null, profile, user, password, apps, cleanup, resources, space: space.id });
+    if (fromTemplate) onCreate({ name, iso: null, template, file: null, disposable, profile, user: "", password: "", apps: [], cleanup: "none", resources, space: space.id });
+    else if (fromFile) onCreate({ name, iso: null, template: null, file: file!.path, disposable: false, profile, user: file!.user ?? user, password, apps: [], cleanup: "none", resources, space: space.id });
+    else onCreate({ name, iso, template: null, file: null, disposable: false, profile, user, password, apps, cleanup, resources, space: space.id });
   };
   const saveProfile = async () => {
     if (!saving || !settings) return;
@@ -326,6 +328,14 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
                           </span>
                         </button>
                       ))}
+                      <button type="button" role="checkbox" aria-checked={disposable} className={`choice ${disposable ? "on" : ""}`}
+                        onClick={() => { setDisposable((d) => !d); touch(); }}>
+                        <span className="check">{disposable ? <CheckMark /> : <IconFlask size={15} />}</span>
+                        <span className="grow">
+                          <span className="title">{t("Desechable")}</span>
+                          <span className="desc">{t("Se borra con su disco al apagarla. Para probar algo sin tocar tus máquinas.")}</span>
+                        </span>
+                      </button>
                     </div>
                   )}
                   <div className="create-profiles" role="radiogroup" aria-label={t("Perfil")}>

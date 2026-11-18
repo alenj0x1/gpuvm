@@ -130,6 +130,17 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     return () => { alive = false; clearTimeout(timer); document.removeEventListener("visibilitychange", wake); };
   }, [refresh]);
 
+  // Disposable machines are deleted once they ran and are off: when one turns off here, and at start for the ones
+  // that turned off while the app was closed (the module decides which, and never touches a running one).
+  const disposableOff = (vms ?? []).filter((v) => v.disposable && v.state === "Off").map((v) => v.name).join("|");
+  useEffect(() => {
+    api.sweepDisposable().then((gone) => {
+      if (!gone.length) return;
+      refresh();
+      push("ok", gone.length === 1 ? t("{name} se borró al apagarse.", { name: gone[0] }) : t("{n} máquinas desechables se borraron al apagarse.", { n: gone.length }));
+    }).catch(() => {});
+  }, [disposableOff]);
+
   useEffect(() => { api.hostInfo().then((h) => setHost(h[0] ?? null)).catch(() => {}); }, []);
   useEffect(() => { if (!embedded) window.history.replaceState(null, "", selected ? `#${encodeURIComponent(selected)}` : " "); }, [selected, embedded]);
   useEffect(() => {
@@ -573,7 +584,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
         <CreateDialog host={host} existing={vms ?? []} job={createJob} error={createError} template={createTemplate}
           space={createSpace ?? (selected === HOME ? shownSpaceId : current ? null : shownSpaceId)}
           onClose={() => { setCreating(false); setCreateTemplate(null); }}
-          onCreate={({ name, iso, template, file, profile, user, password, apps, cleanup, resources, space }) => {
+          onCreate={({ name, iso, template, file, disposable, profile, user, password, apps, cleanup, resources, space }) => {
             setCreateError(null);
             // The new machine goes into the space picked for it, even before it exists in the list.
             if (space) moveToSpace(name, space);
@@ -582,7 +593,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
             const args = file
               ? { Path: file, Name: name, Profile: profile, ...(resources ? { Override: hw } : {}), Credential: { user, password }, Start: true }
               : template
-              ? { Name: name, Template: template, Profile: profile, ...(resources ? { Override: hw } : {}), Start: true }
+              ? { Name: name, Template: template, Profile: profile, ...(resources ? { Override: hw } : {}), Start: true, ...(disposable ? { Disposable: true } : {}) }
               : { Name: name, IsoPath: iso, Profile: profile, Override: { ...hw, guest: { apps, cleanup } }, Credential: { user, password }, Start: true };
             startJob(NEW_VM, file ? "Import-GpuVM" : "New-GpuVM", args, () => {
               setCreating(false);

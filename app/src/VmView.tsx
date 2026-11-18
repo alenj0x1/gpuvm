@@ -13,6 +13,7 @@ import { machineSource } from "./decor/store";
 import { moveToSpace, showSpace, spaceOf, useSpaceOf, useSpaces } from "./spaces";
 import { ambientInfo } from "./ambient";
 import { SpaceDialog } from "./SpaceDialog";
+import { RestorePoints } from "./RestorePoints";
 import { Scene, nextSceneStyle, sceneStyle } from "./Scene";
 import { CleanupFlow, CleanupItems, LEVEL_LOOK } from "./CleanupFlow";
 import { Sparkline, series } from "./Chart";
@@ -221,6 +222,7 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
         <section className="vm-section" ref={(el) => { sectionRefs.current.machine = el; }}>
           <Options part="machine" vm={vm} host={host} busy={busy} startJob={startJob} run={run} onPreview={(r) => setPreview((p) => ({ ...p, ...r }))} />
           <SharedDisks vm={vm} busy={busy} startJob={startJob} />
+          <RestorePoints vm={vm} busy={busy} startJob={startJob} run={run} />
         </section>
       )}
       {tabs.includes("display") && (

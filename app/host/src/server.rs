@@ -38,7 +38,8 @@ pub const PIPE: &str = r"\\.\pipe\gpuvm";
 // includes FILE_CREATE_PIPE_INSTANCE, which would let any user program serve its own instances of the name.
 const CLIENT_ACCESS: u32 = 0x0010_0083;
 /// Commands that destroy data: they run only after a UAC confirmation.
-const NEEDS_CONSENT: &[&str] = &["Remove-GpuVM", "Remove-GpuVMDisk", "Remove-GpuVMSharedDisk", "Remove-GpuVMTemplate", "Remove-GpuVMBase"];
+const NEEDS_CONSENT: &[&str] = &["Remove-GpuVM", "Remove-GpuVMDisk", "Remove-GpuVMSharedDisk", "Remove-GpuVMTemplate", "Remove-GpuVMBase",
+    "Remove-GpuVMRestorePoint"];
 const CONSENT_TTL: Duration = Duration::from_secs(120);
 
 /// Requests running right now: a stop waits for them.
@@ -121,35 +122,52 @@ fn take_consent(nonce: &str, client_pid: u32, request: &Value) -> bool {
 
 // ---------------------------------------------------------------- paths of this PC in requests
 
-/// Arguments that name a file or folder of this PC, by command: (path, is a folder).
-fn host_paths(request: &Value) -> Vec<(String, bool)> {
+/// Arguments that name a file or folder of this PC, by command, with the access the user must have to it.
+fn host_paths(request: &Value) -> Vec<(String, PathAccess)> {
     let args = &request["args"];
     let mut paths = Vec::new();
-    let mut add = |v: &Value, folder: bool| {
+    let mut add = |v: &Value, kind: PathAccess| {
         if let Some(s) = v.as_str().filter(|s| !s.is_empty()) {
-            paths.push((s.to_string(), folder));
+            paths.push((s.to_string(), kind));
         }
     };
     match request["cmd"].as_str().unwrap_or("") {
-        "New-GpuVM" => add(&args["IsoPath"], false),
-        "Add-GpuVMIso" => add(&args["Path"], false),
-        "Import-GpuVMSharedDisk" => add(&args["Path"], true),
-        "Save-GpuVMProfile" => add(&args["Settings"]["iso"], false),
+        "New-GpuVM" => add(&args["IsoPath"], PathAccess::ReadFile),
+        "Add-GpuVMIso" => add(&args["Path"], PathAccess::ReadFile),
+        "Import-GpuVMSharedDisk" => add(&args["Path"], PathAccess::ListFolder),
+        "Save-GpuVMProfile" => add(&args["Settings"]["iso"], PathAccess::ReadFile),
+        "Import-GpuVM" | "Get-GpuVMImportInfo" => add(&args["Path"], PathAccess::ReadFile),
+        // The export file doesn't exist yet: the user must be able to create files in its folder.
+        "Export-GpuVM" => {
+            if let Some((folder, _)) = args["Path"].as_str().and_then(|p| p.rsplit_once('\\')) {
+                let folder = if folder.len() == 2 { format!("{folder}\\") } else { folder.to_string() };
+                add(&json!(folder), PathAccess::WriteFolder);
+            } else {
+                add(&args["Path"], PathAccess::WriteFolder);
+            }
+        }
         _ => {}
     }
     paths
 }
 
+/// Whether a request destroys data and so waits for a UAC confirmation. Going back to a restore point does only
+/// when it throws away the present (without -SaveCurrent).
+fn needs_consent(request: &Value) -> bool {
+    let cmd = request["cmd"].as_str().unwrap_or("");
+    NEEDS_CONSENT.contains(&cmd) || (cmd == "Restore-GpuVMRestorePoint" && request["args"]["SaveCurrent"] != json!(true))
+}
+
 /// Checks each path as the user on the other end of the pipe (unelevated), then goes back to the service's identity.
 fn check_paths_as_client(pipe: HANDLE, request: &Value) -> Result<(), String> {
-    for (path, folder) in host_paths(request) {
+    for (path, kind) in host_paths(request) {
         if !is_plain_local_path(&path) {
             return Err(format!("{path} no es una ruta de un disco de este equipo."));
         }
         if unsafe { ImpersonateNamedPipeClient(pipe) } == 0 {
             return Err(last_error("ImpersonateNamedPipeClient"));
         }
-        let result = check_access(&path, folder);
+        let result = check_access(&path, kind);
         if unsafe { RevertToSelf() } == 0 {
             // Never keep running as someone else: stop the service rather than continue impersonating.
             log("RevertToSelf falló; el servicio se detiene");
@@ -337,7 +355,7 @@ fn handle(pipe: HANDLE) {
             fail(&mut out, "Petición no válida.".into());
             continue;
         };
-        if NEEDS_CONSENT.contains(&cmd) {
+        if needs_consent(&request) {
             let confirmed = request["consent"].as_str().is_some_and(|n| take_consent(n, client.pid, &request));
             if !confirmed {
                 let nonce = new_consent(client.pid, &client.sid, &request);

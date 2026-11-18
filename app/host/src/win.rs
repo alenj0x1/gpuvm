@@ -134,8 +134,22 @@ pub fn is_plain_local_path(path: &str) -> bool {
 
 /// Opens `path` with the caller's current identity (the service impersonates the app's user before calling it)
 /// and checks it leads where it says: a link anywhere in the path (junction, symbolic link) changes the final path.
-pub fn check_access(path: &str, folder: bool) -> Result<(), String> {
-    let (access, flags) = if folder { (FILE_LIST_DIRECTORY, FILE_FLAG_BACKUP_SEMANTICS) } else { (GENERIC_READ, 0) };
+#[derive(Clone, Copy)]
+pub enum PathAccess {
+    /// A file the user can read.
+    ReadFile,
+    /// A folder the user can list.
+    ListFolder,
+    /// A folder the user can create files in (where GpuVM writes something the user asked for, e.g. an export).
+    WriteFolder,
+}
+
+pub fn check_access(path: &str, kind: PathAccess) -> Result<(), String> {
+    let (access, flags) = match kind {
+        PathAccess::ReadFile => (GENERIC_READ, 0),
+        PathAccess::ListFolder => (FILE_LIST_DIRECTORY, FILE_FLAG_BACKUP_SEMANTICS),
+        PathAccess::WriteFolder => (FILE_ADD_FILE, FILE_FLAG_BACKUP_SEMANTICS),
+    };
     let h = unsafe {
         CreateFileW(wide(path).as_ptr(), access, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, std::ptr::null(),
             OPEN_EXISTING, flags, std::ptr::null_mut())
