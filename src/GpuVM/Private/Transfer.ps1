@@ -49,10 +49,26 @@ function Assert-TransferName {
     }
 }
 
-# What will be sent from this PC: every file and folder under the chosen paths, links skipped (never followed), with
-# names relative to each chosen item's parent. Two chosen items with the same name get " (2)".
+# The person's own rights for everything read from this PC (UserFiles.cs), loaded the first time a copy needs it.
+function Initialize-UserFiles {
+    if (-not ('GpuVM.UserFiles' -as [type])) { Add-Type -Path (Join-Path $PSScriptRoot 'UserFiles.cs') }
+}
+
+# A .NET call's own message (not PowerShell's "Exception calling ... with 2 argument(s)").
+function Get-InnerMessage {
+    param($ErrorRecord)
+    $e = $ErrorRecord.Exception
+    while ($e -is [Management.Automation.MethodInvocationException] -and $e.InnerException) { $e = $e.InnerException }
+    $e.Message
+}
+
+# What will be sent from this PC: every file and folder under the chosen paths, listed with the person's rights
+# (UserFiles.cs): links skipped (never followed), a folder they can't read stops the copy, names relative to each
+# chosen item's parent. Every entry keeps the real path of the item it came from (Root): when it is read, it must
+# still be under it. Two chosen items with the same name get " (2)".
 function Get-HostTransferEntries {
     param([Parameter(Mandatory)][string[]]$Path)
+    Initialize-UserFiles
     $entries = [System.Collections.Generic.List[object]]::new()
     $tops = @{}
     $skipped = 0
@@ -60,30 +76,23 @@ function Get-HostTransferEntries {
         Assert-SendablePath -Path $p
         $full = [IO.Path]::GetFullPath($p).TrimEnd('\')
         $item = Get-Item -LiteralPath $full -Force
+        $isDir = $item -is [IO.DirectoryInfo]
         $top = Get-UniqueName -Name $item.Name -Taken $tops
         $tops[$top] = $true
-        if ($item -is [IO.FileInfo]) { $entries.Add([pscustomobject]@{ Rel = $top; Full = $full; Size = $item.Length; Dir = $false }); continue }
-        $entries.Add([pscustomobject]@{ Rel = $top; Full = $full; Size = 0; Dir = $true })
-        $pending = [System.Collections.Generic.Stack[object]]::new()
-        $pending.Push(@($full, $top))
-        while ($pending.Count) {
-            $dir, $rel = $pending.Pop()
-            try { $children = [IO.DirectoryInfo]::new($dir).GetFileSystemInfos() }
-            catch { throw "No se pudo leer $dir; no se envía nada." }
-            foreach ($child in $children) {
-                if ($child.Attributes -band [IO.FileAttributes]::ReparsePoint) { $skipped++; continue }
-                $childRel = "$rel\$($child.Name)"
-                if ($child -is [IO.DirectoryInfo]) {
-                    $entries.Add([pscustomobject]@{ Rel = $childRel; Full = $child.FullName; Size = 0; Dir = $true })
-                    $pending.Push(@($child.FullName, $childRel))
-                }
-                else { $entries.Add([pscustomobject]@{ Rel = $childRel; Full = $child.FullName; Size = $child.Length; Dir = $false }) }
+        try {
+            $root = [GpuVM.UserFiles]::Root($full, $isDir)
+            if (-not $isDir) { $entries.Add([pscustomobject]@{ Rel = $top; Full = $full; Size = $item.Length; Dir = $false; Root = $root }); continue }
+            $entries.Add([pscustomobject]@{ Rel = $top; Full = $full; Size = 0; Dir = $true; Root = $root })
+            $links = 0
+            foreach ($e in [GpuVM.UserFiles]::List($full, $top, $root, [ref]$links)) {
+                $entries.Add([pscustomobject]@{ Rel = $e.Rel; Full = $e.Full; Size = $e.Size; Dir = $e.Dir; Root = $root })
             }
+            $skipped += $links
         }
+        catch [Management.Automation.MethodInvocationException] { throw (Get-InnerMessage $_) }
     }
     [pscustomobject]@{ Entries = $entries; Skipped = $skipped }
 }
-
 function Get-UniqueName {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][hashtable]$Taken)
     if (-not $Taken.ContainsKey($Name)) { return $Name }
@@ -276,11 +285,11 @@ function Open-TransferSession {
     New-PSSession -VMName $Name -Credential $guest -ErrorAction Stop
 }
 
-# What the source VM has under the chosen paths. The VM answers, so every name and size is checked here: names stay
-# relative and inside the copy (Assert-TransferName), sizes are whole numbers, and the list has a limit.
-function Get-GuestTransferEntries {
+# The source VM's own listing of the chosen paths: each chosen item first, then what is under it. Its answer is
+# checked by Get-GuestTransferEntries.
+function Get-GuestRawEntries {
     param([Parameter(Mandatory)]$Session, [Parameter(Mandatory)][string[]]$Path)
-    $raw = Invoke-Command -Session $Session -ErrorAction Stop -ArgumentList (, $Path) -ScriptBlock {
+    Invoke-Command -Session $Session -ErrorAction Stop -ArgumentList (, $Path) -ScriptBlock {
         param([string[]]$paths)
         $out = [System.Collections.Generic.List[object]]::new()
         $skipped = 0
@@ -303,20 +312,35 @@ function Get-GuestTransferEntries {
         }
         @{ entries = $out.ToArray(); skipped = $skipped }
     }
-    $raw = @($raw)[-1]
+}
+
+# What the source VM has under the chosen paths. The VM answers, so every name and size is checked here: names stay
+# relative and inside the copy (Assert-TransferName), sizes are whole numbers, and the list has a limit.
+function Get-GuestTransferEntries {
+    param([Parameter(Mandatory)]$Session, [Parameter(Mandatory)][string[]]$Path)
+    $raw = @(Get-GuestRawEntries -Session $Session -Path $Path)[-1]
     $list = @($raw['entries'])
     if ($list.Count -gt $script:TransferMaxEntries) { throw "Son más de $($script:TransferMaxEntries) archivos; elige menos." }
     if (-not $list.Count) { throw 'No se encontró nada para enviar en esa máquina.' }
     $entries = [System.Collections.Generic.List[object]]::new()
-    $tops = @{}
+    $tops = @{}; $topFrom = $null; $topTo = $null
     foreach ($e in $list) {
         $rel = [string]$e['rel']
         Assert-TransferName -Name $rel
         $size = $e['size']
         if ($size -isnot [int64] -and $size -isnot [int32]) { throw 'La máquina de origen dio un tamaño que no es válido.' }
         if ($size -lt 0) { throw 'La máquina de origen dio un tamaño que no es válido.' }
-        $top = $rel.Split('\')[0]
-        $tops[$top] = $true
+        # Each chosen item comes first, then what is under it: two items with the same name get " (2)", like from
+        # this PC (otherwise the second would overwrite the first in the other VM).
+        $parts = $rel.Split('\')
+        if ($parts.Count -eq 1) {
+            $topFrom = $rel
+            $topTo = Get-UniqueName -Name $rel -Taken $tops
+            $tops[$topTo] = $true
+            $rel = $topTo
+        }
+        elseif ($parts[0] -eq $topFrom) { $rel = $topTo + $rel.Substring($topFrom.Length) }
+        else { throw "El nombre $rel no es válido; no se copia." }
         $entries.Add([pscustomobject]@{ Rel = $rel; Full = [string]$e['full']; Size = [int64]$size; Dir = [bool]$e['dir'] })
     }
     [pscustomobject]@{ Entries = $entries; Skipped = [int]$raw['skipped'] }
@@ -386,7 +410,8 @@ function Copy-TransferBigFiles {
                 $local = $null
                 try {
                     Invoke-Command -Session $t -ErrorAction Stop -ArgumentList $using:dest -ScriptBlock { param($p) $global:lane = [IO.File]::Open($p, 'Open', 'Write', 'ReadWrite') }
-                    if (-not $src) { $local = [IO.File]::Open($entry.Full, 'Open', 'Read', 'ReadWrite') }
+                    # This PC's files: with the person's rights, and only if still under the folder that was checked.
+                    if (-not $src) { $local = [GpuVM.UserFiles]::OpenFile($entry.Full, $entry.Root) }
                     $buf = [byte[]]::new($size)
                     for ($at = [int64]$lane * $size; $at -lt $entry.Size; $at += [int64]$count * $size) {
                         if ($state.error -or (Test-Path -LiteralPath $stop)) { break }
@@ -424,7 +449,7 @@ function Copy-TransferBigFiles {
                         try { $state.bytes += $want } finally { [Threading.Monitor]::Exit($state.SyncRoot) }
                     }
                 }
-                catch { if (-not $state.error) { $state.error = "$_" } }
+                catch { if (-not $state.error) { $e = $_.Exception; while ($e.InnerException -and $e -is [Management.Automation.MethodInvocationException]) { $e = $e.InnerException }; $state.error = $e.Message } }
                 finally {
                     if ($local) { $local.Dispose() }
                     Invoke-Command -Session $t -ErrorAction SilentlyContinue -ScriptBlock { if ($global:lane) { $global:lane.Dispose() } }

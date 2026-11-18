@@ -183,6 +183,9 @@ static class P
     static int DropOn(int x, int y, string[] files)
     {
         var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "gpuvm", "GpuVMViewer", "DropProbe" };
+        var allowedPids = new HashSet<int>();
+        var pidFile = Path.Combine(dir, "allowed.txt");
+        if (File.Exists(pidFile)) foreach (var line in File.ReadAllLines(pidFile)) { int v; if (int.TryParse(line.Trim(), out v)) allowedPids.Add(v); }
         var start = new Point(x - 300, y);
         var end = new Point(x, y);
         var form = new Form { ShowInTaskbar = false, TopMost = true, FormBorderStyle = FormBorderStyle.None, StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(start.X - 20, start.Y - 20, 40, 40), BackColor = Color.Orange };
@@ -191,6 +194,8 @@ static class P
         Func<Point, string> owner = p =>
         {
             uint pid; GetWindowThreadProcessId(GetAncestor(WindowFromPoint(p), 2), out pid);
+            // From Low a Medium process can't be opened to read its name: the caller lists GpuVM's PIDs.
+            if (allowedPids.Contains((int)pid)) return "gpuvm";
             try { return Process.GetProcessById((int)pid).ProcessName; } catch { return "?"; }
         };
         form.MouseDown += (s, e) =>
@@ -287,7 +292,14 @@ static class P
         var user = UserToken();
         var token = user;
         IntPtr job = IntPtr.Zero;
-        if (a[1] == "Low")
+        if (a[1] == "LowPlain")
+        {
+            // The person's token at Low integrity, nothing else changed: closest to what a process can do from Low.
+            IntPtr il; ConvertStringSidToSid("S-1-16-4096", out il);
+            var label = new TOKEN_MANDATORY_LABEL { Label = new SID_AND_ATTRIBUTES { Sid = il, Attributes = 0x20 } };
+            if (!SetTokenInformation(token, 25, ref label, Marshal.SizeOf(label) + GetLengthSid(il))) throw new Exception("label " + Marshal.GetLastWin32Error());
+        }
+        else if (a[1] == "Low")
         {
             IntPtr admins; ConvertStringSidToSid("S-1-5-32-544", out admins);
             if (!CreateRestrictedToken(user, 1, 1, new[] { new SID_AND_ATTRIBUTES { Sid = admins } }, 0, IntPtr.Zero, 0, IntPtr.Zero, out token)) throw new Exception("restricted " + Marshal.GetLastWin32Error());

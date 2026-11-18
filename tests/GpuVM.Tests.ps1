@@ -1234,3 +1234,96 @@ InModuleScope GpuVM {
         }
     }
 }
+InModuleScope GpuVM {
+    Describe 'Files of this PC read with the person''s rights' {
+        Initialize-UserFiles
+        $elevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+        function global:Get-InnerError([scriptblock]$Block) { try { & $Block | Out-Null; '' } catch { $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }; $e.Message } }
+
+        It 'lists and reads a plain folder, skipping links' {
+            $top = Join-Path $TestDrive 'uf1\Proyecto'
+            New-Item -ItemType Directory -Force (Join-Path $top 'sub') | Out-Null
+            'hola' | Set-Content (Join-Path $top 'sub\a.txt')
+            New-Item -ItemType Junction -Path (Join-Path $top 'fuera') -Target $env:SystemRoot | Out-Null
+            $root = [GpuVM.UserFiles]::Root($top, $true)
+            $links = 0
+            $list = [GpuVM.UserFiles]::List($top, 'Proyecto', $root, [ref]$links)
+            $links | Should Be 1
+            @($list | ForEach-Object Rel) -contains 'Proyecto\sub\a.txt' | Should Be $true
+            $s = [GpuVM.UserFiles]::OpenFile((Join-Path $top 'sub\a.txt'), $root)
+            try { [IO.StreamReader]::new($s).ReadToEnd().Trim() | Should Be 'hola' } finally { $s.Dispose() }
+        }
+
+        It 'refuses a folder swapped for a junction after the listing' {
+            $top = Join-Path $TestDrive 'uf2\Proyecto'
+            $outside = Join-Path $TestDrive 'uf2-admin'
+            New-Item -ItemType Directory -Force (Join-Path $top 'sub'), $outside | Out-Null
+            'mio' | Set-Content (Join-Path $top 'sub\a.txt')
+            'secreto' | Set-Content (Join-Path $outside 'a.txt')
+            $root = [GpuVM.UserFiles]::Root($top, $true)
+            $links = 0
+            $null = [GpuVM.UserFiles]::List($top, 'Proyecto', $root, [ref]$links)
+            # The swap: sub becomes a junction to another folder, keeping the same names below it.
+            Remove-Item (Join-Path $top 'sub') -Recurse -Force
+            New-Item -ItemType Junction -Path (Join-Path $top 'sub') -Target $outside | Out-Null
+            Get-InnerError { [GpuVM.UserFiles]::OpenFile((Join-Path $top 'sub\a.txt'), $root) } | Should Match 'fuera de la carpeta elegida'
+        }
+
+        It 'refuses a chosen item that is a link or goes through one' {
+            $real = Join-Path $TestDrive 'uf3-real'; New-Item -ItemType Directory -Force $real | Out-Null
+            $link = Join-Path $TestDrive 'uf3-link'; New-Item -ItemType Junction -Path $link -Target $real | Out-Null
+            'x' | Set-Content (Join-Path $real 'b.txt')
+            Get-InnerError { [GpuVM.UserFiles]::Root($link, $true) } | Should Not Be ''
+            Get-InnerError { [GpuVM.UserFiles]::Root((Join-Path $link 'b.txt'), $false) } | Should Match 'enlace'
+        }
+
+        It 'refuses a file or a folder only administrators can read, even from an elevated bridge' {
+            if (-not $elevated) { Set-ItResult -Inconclusive -Because 'needs an elevated shell to make an admin-only file'; return }
+            $top = Join-Path $TestDrive 'uf4\Proyecto'
+            New-Item -ItemType Directory -Force (Join-Path $top 'cerrada') | Out-Null
+            $secret = Join-Path $top 'gpuvm.json'; 'clave' | Set-Content $secret
+            'x' | Set-Content (Join-Path $top 'cerrada\c.txt')
+            foreach ($target in $secret, (Join-Path $top 'cerrada')) {
+                $acl = Get-Acl $target
+                $acl.SetAccessRuleProtection($true, $false)
+                @($acl.Access) | ForEach-Object { $null = $acl.RemoveAccessRule($_) }
+                foreach ($sid in 'S-1-5-32-544', 'S-1-5-18') {
+                    $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]$sid, 'FullControl', 'Allow'))
+                }
+                Set-Acl $target $acl
+            }
+            # The elevated process itself can read it (that was the hole).
+            [IO.File]::ReadAllText($secret).Trim() | Should Be 'clave'
+            $root = [GpuVM.UserFiles]::Root($top, $true)
+            Get-InnerError { [GpuVM.UserFiles]::OpenFile($secret, $root) } | Should Match 'no tiene acceso'
+            $links = 0
+            Get-InnerError { [GpuVM.UserFiles]::List($top, 'Proyecto', $root, [ref]$links) } | Should Match 'no tiene acceso|No se pudo leer'
+        }
+    }
+}
+
+InModuleScope GpuVM {
+    Describe 'Names of a copy' {
+        It 'gives two chosen items of another VM with the same name " (2)", and keeps what is under each with it' {
+            Mock Get-GuestRawEntries { @{ skipped = 0; entries = @(
+                @{ rel = 'x.txt'; full = 'C:\a\x.txt'; size = [int64]1; dir = $false }
+                @{ rel = 'x.txt'; full = 'C:\b\x.txt'; size = [int64]2; dir = $false }
+                @{ rel = 'Fotos'; full = 'C:\a\Fotos'; size = [int64]0; dir = $true }
+                @{ rel = 'Fotos\1.jpg'; full = 'C:\a\Fotos\1.jpg'; size = [int64]3; dir = $false }
+                @{ rel = 'Fotos'; full = 'C:\b\Fotos'; size = [int64]0; dir = $true }
+                @{ rel = 'Fotos\1.jpg'; full = 'C:\b\Fotos\1.jpg'; size = [int64]4; dir = $false }
+            ) } }
+            $list = Get-GuestTransferEntries -Session 'sesion-de-prueba' -Path 'C:\a\x.txt', 'C:\b\x.txt'
+            ($list.Entries | ForEach-Object Rel) -join '|' | Should Be 'x.txt|x (2).txt|Fotos|Fotos\1.jpg|Fotos (2)|Fotos (2)\1.jpg'
+        }
+
+        It 'refuses a destination folder that is "." or "..", or ends in a dot or space' {
+            foreach ($bad in '.', '..', 'Recibidos.', 'Recibidos ', 'a\b') {
+                Test-Throws { Send-GpuVMFile -Name x -Path 'C:\x' -Folder $bad } | Should Be $true
+                Test-Throws { Send-GpuVMClipboard -Name x -Files 'C:\x' -Folder $bad } | Should Be $true
+            }
+            Mock Assert-Admin { throw 'llegó' }
+            (Get-InnerError { Send-GpuVMFile -Name x -Path 'C:\x' -Folder 'Recibidos' }) | Should Be 'llegó'
+        }
+    }
+}

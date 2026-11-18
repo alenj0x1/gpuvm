@@ -231,7 +231,46 @@ unsafe extern "system" fn add_ref(_: *mut c_void) -> u32 {
 unsafe extern "system" fn release(_: *mut c_void) -> u32 {
     1
 }
+/// Whether the program dragging onto the drop area runs at Medium integrity or above (Explorer, a normal app). The
+/// viewer runs at Low: if the stream took it over, it could drag files of this PC onto the drop area itself and have
+/// them copied into the VM. The OLE call arrives through COM from the source's process, so its token is read by
+/// impersonating the caller. Without a COM caller (a drag from this app's own windows) it is allowed.
+static SOURCE_OK: AtomicBool = AtomicBool::new(false);
+
+unsafe fn source_trusted() -> bool {
+    use windows_sys::Win32::Security::{GetSidSubAuthority, GetSidSubAuthorityCount, GetTokenInformation, TokenIntegrityLevel, TOKEN_MANDATORY_LABEL, TOKEN_QUERY};
+    use windows_sys::Win32::System::Com::{CoImpersonateClient, CoRevertToSelf};
+    use windows_sys::Win32::System::Threading::{GetCurrentThread, OpenThreadToken};
+    // RPC_E_CALL_COMPLETE / no call context: not a call from another process.
+    if CoImpersonateClient() != 0 {
+        return true;
+    }
+    let mut level = 0u32;
+    let mut token = std::ptr::null_mut();
+    if OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, 1, &mut token) != 0 {
+        let mut buf = [0u8; 128];
+        let mut len = 0u32;
+        if GetTokenInformation(token, TokenIntegrityLevel, buf.as_mut_ptr().cast(), buf.len() as u32, &mut len) != 0 {
+            let label = &*(buf.as_ptr() as *const TOKEN_MANDATORY_LABEL);
+            let count = *GetSidSubAuthorityCount(label.Label.Sid);
+            if count > 0 {
+                level = *GetSidSubAuthority(label.Label.Sid, count as u32 - 1);
+            }
+        }
+        windows_sys::Win32::Foundation::CloseHandle(token);
+    }
+    CoRevertToSelf();
+    // SECURITY_MANDATORY_MEDIUM_RID
+    level >= 0x2000
+}
+
 unsafe extern "system" fn drag_enter(_: *mut c_void, _: *mut c_void, _: u32, _: POINTL, effect: *mut u32) -> i32 {
+    let trusted = source_trusted();
+    SOURCE_OK.store(trusted, Ordering::Relaxed);
+    if !trusted {
+        *effect = DROPEFFECT_NONE;
+        return 0;
+    }
     HOVER.store(true, Ordering::Relaxed);
     zone().shown_at = None;
     if let Some(app) = APP.lock().unwrap_or_else(|e| e.into_inner()).clone() {
@@ -241,7 +280,7 @@ unsafe extern "system" fn drag_enter(_: *mut c_void, _: *mut c_void, _: u32, _: 
     0
 }
 unsafe extern "system" fn drag_over(_: *mut c_void, _: u32, _: POINTL, effect: *mut u32) -> i32 {
-    *effect = DROPEFFECT_COPY;
+    *effect = if SOURCE_OK.load(Ordering::Relaxed) { DROPEFFECT_COPY } else { DROPEFFECT_NONE };
     0
 }
 unsafe extern "system" fn drag_leave(_: *mut c_void) -> i32 {
@@ -251,6 +290,14 @@ unsafe extern "system" fn drag_leave(_: *mut c_void) -> i32 {
     0
 }
 unsafe extern "system" fn drop(_: *mut c_void, data: *mut c_void, _: u32, _: POINTL, effect: *mut u32) -> i32 {
+    // Checked again at the drop itself (not only at the enter): a source below Medium never names files here.
+    if !SOURCE_OK.swap(false, Ordering::Relaxed) || !source_trusted() {
+        *effect = DROPEFFECT_NONE;
+        if let Some(app) = APP.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+            hide(&app);
+        }
+        return 0;
+    }
     let paths = paths_of(data);
     *effect = if paths.is_empty() { DROPEFFECT_NONE } else { DROPEFFECT_COPY };
     if let Some(app) = APP.lock().unwrap_or_else(|e| e.into_inner()).clone() {
