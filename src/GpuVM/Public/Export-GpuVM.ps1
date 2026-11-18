@@ -87,7 +87,7 @@ function Export-GpuVM {
         # A file that didn't finish is deleted through its handle.
         Close-GpuVMNewFile -Stream $file -Discard:(-not $ok)
         if (Test-Path -LiteralPath $temp) {
-            if ((Get-VHD -Path $temp -ErrorAction SilentlyContinue).Attached) { Dismount-VHD -Path $temp -ErrorAction SilentlyContinue }
+            $vhdInfo = Get-VHD -Path $temp -ErrorAction SilentlyContinue; if ($vhdInfo -and $vhdInfo.Attached) { Dismount-VHD -Path $temp -ErrorAction SilentlyContinue }
         }
         Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
     }

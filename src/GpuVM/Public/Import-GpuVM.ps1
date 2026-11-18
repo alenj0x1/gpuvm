@@ -99,7 +99,7 @@ function Import-GpuVM {
             Write-Step 'La importación falló; limpiando lo que se alcanzó a crear'
             if (Get-VM -Name $vmName -ErrorAction SilentlyContinue) { Remove-VM -Name $vmName -Force -ErrorAction SilentlyContinue }
             $disk = Join-Path $vmDir "Virtual Hard Disks\$vmName.vhdx"
-            if ((Get-VHD -Path $disk -ErrorAction SilentlyContinue).Attached) { Dismount-VHD -Path $disk -ErrorAction SilentlyContinue }
+            $vhdInfo = Get-VHD -Path $disk -ErrorAction SilentlyContinue; if ($vhdInfo -and $vhdInfo.Attached) { Dismount-VHD -Path $disk -ErrorAction SilentlyContinue }
             Remove-Item -LiteralPath $vmDir -Recurse -Force -ErrorAction SilentlyContinue
         }
         throw

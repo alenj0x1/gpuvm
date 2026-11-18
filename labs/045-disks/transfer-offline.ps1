@@ -128,6 +128,8 @@ try {
     Check 'apps came along' 'vlc' ($st['installedApps'] -join ',')
     Check 'renamed on first open' $true $st['pendingRename']
 
+    # The first import reserves its disk's full size: it goes first, so the next refusal can only be the fingerprint.
+    Remove-GpuVM -Name $newName -DeleteDisk -Confirm:$false
     # Tampered file: the manifest's fingerprint no longer matches the disk.
     $bad = Join-Path $work 'tampered.gpuvm'
     Copy-Item $files['Fastest'] $bad
