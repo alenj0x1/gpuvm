@@ -285,11 +285,11 @@ function Open-TransferSession {
     New-PSSession -VMName $Name -Credential $guest -ErrorAction Stop
 }
 
-# What the source VM has under the chosen paths. The VM answers, so every name and size is checked here: names stay
-# relative and inside the copy (Assert-TransferName), sizes are whole numbers, and the list has a limit.
-function Get-GuestTransferEntries {
+# The source VM's own listing of the chosen paths: each chosen item first, then what is under it. Its answer is
+# checked by Get-GuestTransferEntries.
+function Get-GuestRawEntries {
     param([Parameter(Mandatory)]$Session, [Parameter(Mandatory)][string[]]$Path)
-    $raw = Invoke-Command -Session $Session -ErrorAction Stop -ArgumentList (, $Path) -ScriptBlock {
+    Invoke-Command -Session $Session -ErrorAction Stop -ArgumentList (, $Path) -ScriptBlock {
         param([string[]]$paths)
         $out = [System.Collections.Generic.List[object]]::new()
         $skipped = 0
@@ -312,20 +312,35 @@ function Get-GuestTransferEntries {
         }
         @{ entries = $out.ToArray(); skipped = $skipped }
     }
-    $raw = @($raw)[-1]
+}
+
+# What the source VM has under the chosen paths. The VM answers, so every name and size is checked here: names stay
+# relative and inside the copy (Assert-TransferName), sizes are whole numbers, and the list has a limit.
+function Get-GuestTransferEntries {
+    param([Parameter(Mandatory)]$Session, [Parameter(Mandatory)][string[]]$Path)
+    $raw = @(Get-GuestRawEntries -Session $Session -Path $Path)[-1]
     $list = @($raw['entries'])
     if ($list.Count -gt $script:TransferMaxEntries) { throw "Son más de $($script:TransferMaxEntries) archivos; elige menos." }
     if (-not $list.Count) { throw 'No se encontró nada para enviar en esa máquina.' }
     $entries = [System.Collections.Generic.List[object]]::new()
-    $tops = @{}
+    $tops = @{}; $topFrom = $null; $topTo = $null
     foreach ($e in $list) {
         $rel = [string]$e['rel']
         Assert-TransferName -Name $rel
         $size = $e['size']
         if ($size -isnot [int64] -and $size -isnot [int32]) { throw 'La máquina de origen dio un tamaño que no es válido.' }
         if ($size -lt 0) { throw 'La máquina de origen dio un tamaño que no es válido.' }
-        $top = $rel.Split('\')[0]
-        $tops[$top] = $true
+        # Each chosen item comes first, then what is under it: two items with the same name get " (2)", like from
+        # this PC (otherwise the second would overwrite the first in the other VM).
+        $parts = $rel.Split('\')
+        if ($parts.Count -eq 1) {
+            $topFrom = $rel
+            $topTo = Get-UniqueName -Name $rel -Taken $tops
+            $tops[$topTo] = $true
+            $rel = $topTo
+        }
+        elseif ($parts[0] -eq $topFrom) { $rel = $topTo + $rel.Substring($topFrom.Length) }
+        else { throw "El nombre $rel no es válido; no se copia." }
         $entries.Add([pscustomobject]@{ Rel = $rel; Full = [string]$e['full']; Size = [int64]$size; Dir = [bool]$e['dir'] })
     }
     [pscustomobject]@{ Entries = $entries; Skipped = [int]$raw['skipped'] }

@@ -15,7 +15,7 @@ function Send-GpuVMFile {
         [Parameter(Mandatory)][string[]]$Path,
         [string]$FromVM,
         # Folder on the VM's desktop.
-        [ValidatePattern('^[^\\/:*?"<>|\x00-\x1f]{1,60}$')][string]$Folder = 'Recibidos',
+        [ValidatePattern('^(?!\.{1,2}$)(?!.*[. ]$)[^\\/:*?"<>|\x00-\x1f]{1,60}$')][string]$Folder = 'Recibidos',
         # Lets Stop-GpuVMTransfer cancel it.
         [ValidatePattern('^[a-f0-9]{8,32}$')][string]$TransferId = ([guid]::NewGuid().ToString('n'))
     )

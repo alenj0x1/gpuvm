@@ -1301,3 +1301,29 @@ InModuleScope GpuVM {
         }
     }
 }
+
+InModuleScope GpuVM {
+    Describe 'Names of a copy' {
+        It 'gives two chosen items of another VM with the same name " (2)", and keeps what is under each with it' {
+            Mock Get-GuestRawEntries { @{ skipped = 0; entries = @(
+                @{ rel = 'x.txt'; full = 'C:\a\x.txt'; size = [int64]1; dir = $false }
+                @{ rel = 'x.txt'; full = 'C:\b\x.txt'; size = [int64]2; dir = $false }
+                @{ rel = 'Fotos'; full = 'C:\a\Fotos'; size = [int64]0; dir = $true }
+                @{ rel = 'Fotos\1.jpg'; full = 'C:\a\Fotos\1.jpg'; size = [int64]3; dir = $false }
+                @{ rel = 'Fotos'; full = 'C:\b\Fotos'; size = [int64]0; dir = $true }
+                @{ rel = 'Fotos\1.jpg'; full = 'C:\b\Fotos\1.jpg'; size = [int64]4; dir = $false }
+            ) } }
+            $list = Get-GuestTransferEntries -Session 'sesion-de-prueba' -Path 'C:\a\x.txt', 'C:\b\x.txt'
+            ($list.Entries | ForEach-Object Rel) -join '|' | Should Be 'x.txt|x (2).txt|Fotos|Fotos\1.jpg|Fotos (2)|Fotos (2)\1.jpg'
+        }
+
+        It 'refuses a destination folder that is "." or "..", or ends in a dot or space' {
+            foreach ($bad in '.', '..', 'Recibidos.', 'Recibidos ', 'a\b') {
+                Test-Throws { Send-GpuVMFile -Name x -Path 'C:\x' -Folder $bad } | Should Be $true
+                Test-Throws { Send-GpuVMClipboard -Name x -Files 'C:\x' -Folder $bad } | Should Be $true
+            }
+            Mock Assert-Admin { throw 'llegó' }
+            (Get-InnerError { Send-GpuVMFile -Name x -Path 'C:\x' -Folder 'Recibidos' }) | Should Be 'llegó'
+        }
+    }
+}

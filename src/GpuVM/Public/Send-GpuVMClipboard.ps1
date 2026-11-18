@@ -17,7 +17,7 @@ function Send-GpuVMClipboard {
         # A PNG, as base64 (the app reads it from the clipboard).
         [Parameter(Mandatory, ParameterSetName = 'Image')][string]$Image,
         [Parameter(Mandatory, ParameterSetName = 'Files')][string[]]$Files,
-        [Parameter(ParameterSetName = 'Files')][ValidatePattern('^[^\\/:*?"<>|\x00-\x1f]{1,60}$')][string]$Folder = 'Recibidos'
+        [Parameter(ParameterSetName = 'Files')][ValidatePattern('^(?!\.{1,2}$)(?!.*[. ]$)[^\\/:*?"<>|\x00-\x1f]{1,60}$')][string]$Folder = 'Recibidos'
     )
     Assert-Admin
     $payload = $null
