@@ -597,3 +597,16 @@ fn closing_stdin_ends_waits_at_once() {
     assert!(started.elapsed() < Duration::from_secs(5), "finish waited {:?}", started.elapsed());
     assert!(h.fake.with(|s| s.connections.is_empty()), "the session was closed");
 }
+
+#[test]
+fn ready_when_the_signed_in_event_came_after_a_stale_snapshot() {
+    let mut h = H::new(false);
+    h.fake.with(|s| s.machines.iter_mut().find(|x| x.name == "work-pc").unwrap().stale_snapshot = true);
+    let started = Instant::now();
+    let t = h.ok("take_machine", json!({ "machine": "work-pc", "waitSeconds": 20 }));
+    assert!(t.contains("its agent is ready") && started.elapsed() < Duration::from_secs(5), "{t}");
+    // No screen in the snapshot: the screenshot asks the agent itself.
+    assert!(H::text(&h.tool("screenshot", json!({ "machine": "work-pc" }))).contains("desktop 1920x1080"));
+    // Nobody signed in (no event): not ready.
+    h.fake.with(|s| s.machines.iter_mut().find(|x| x.name == "work-pc").unwrap().stale_snapshot = false);
+}

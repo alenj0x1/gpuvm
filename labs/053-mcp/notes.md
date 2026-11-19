@@ -148,3 +148,26 @@ the module's own Suspend/Resume-GpuVMAgent (what the app calls); session B is a 
 | session B: cancel_request on A's machine | refused (B has no request of A's: the tool takes no request id, so a session can't name another's) |
 | session B: take A's machine | refused: "being used by another agent connection" |
 | A withdraws, destroy | deleted; the VM was gone from Hyper-V 3 s later |
+
+## Part 6: the security fixes on the installed build (main 7b0b170, agent 0.4.2, 2026-11-19 08:07-08:18)
+
+`security-real.ps1` -> `security.py`, direct MCP client, one disposable (cpu 2, 4 GB); the person's side through
+the module, as the app does. 14 of 14 cases passed:
+
+| Case | Result |
+| --- | --- |
+| create_disposable with only cpu/memoryGB | created (no Profile or other override sent) |
+| screenshot, click, run | 1279x719 of 1366x768; click done; `echo lab053` exit 0 |
+| open_viewer on a machine that isn't ours (win-gpu) | refused |
+| send_file of a 1 MB file | a pending `send` request with the service's own title ("Send <path> to '<machine>': 1 file, 1.0 MB") and measure (1 file, 1,048,576 bytes); nothing copied while it waited |
+| the person says no | "The person said no in GpuVM to: Copy … Don't try again"; the file isn't in the machine |
+| destroy while the person has control | refused ("The person took control"); the VM still exists |
+| after the person hands it back, destroy | deleted; gone from Hyper-V within 3 s |
+
+Findings: (1) the broker's `agent` snapshot is taken when the agent connects and isn't refreshed by later events:
+`signedIn:false`, `screen:null` stayed after the `signed_in` event (AGENT-BASEgent) 10 s later, so
+create_disposable waited its full 600 s for "ready". Fixed in the MCP: it also accepts a `signed_in` event with a
+user newer than the connection (agent-broker should refresh the snapshot). (2) With the app in the tray, nothing
+appeared on screen while the `send` request waited 25 s (no window, no notification): the person wouldn't know they
+were being asked (agent-ui).
+
