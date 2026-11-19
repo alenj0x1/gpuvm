@@ -56,6 +56,8 @@ pub type Result<T> = std::result::Result<T, BrokerError>;
 /// - `human.request {connection, name, message}` → `{requestId}` (pauses the agent on that machine)
 /// - `approval.request {connection, name, kind, title, reason, timeoutSec}` → `{requestId, expiresAt}`;
 ///   `approval.get {connection, name, requestId}` → `{state: pending|allowed|denied|expired}` (the person answers in GpuVM)
+/// - `request.revoke {connection, name, requestId}` → `{id, state: withdrawn, resumed?}`: withdraws this connection's own
+///   pending request (an approval, or its human request, which also resumes the machine)
 pub trait Broker: Send + Sync {
     fn call(&self, op: &str, args: Value) -> Result<Reply>;
     /// Operations that take minutes (creating a machine) run on their own pipe connection.
@@ -235,6 +237,7 @@ impl Broker for PipeBroker {
                 Ok(Reply::default())
             }
             "human.request" => self.cmd("Request-GpuVMHuman", json!({ "Name": name, "Connection": connection, "Message": s(&args, "message") })),
+            "request.revoke" => self.cmd("Revoke-GpuVMAgentRequest", json!({ "Id": s(&args, "requestId"), "Connection": connection })),
             "viewer.open" => open_viewer(name.as_str().unwrap_or("")),
             _ => Err(BrokerError::new("internal", format!("Unknown operation {op}."))),
         }
