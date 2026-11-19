@@ -2123,3 +2123,46 @@ InModuleScope GpuVM {
         }
     }
 }
+
+InModuleScope GpuVM {
+    Describe 'One GPU machine changes power at a time' {
+        BeforeEach {
+            $script:GpuPowerMutexName = "Global\GpuVM.GpuPower.Test.$([guid]::NewGuid().ToString('n'))"
+            Mock Write-PowerLog { }
+        }
+        It 'waits while another process holds the GPU power lock' {
+            Mock Test-GpuPartitioned { $true }
+            $name = $script:GpuPowerMutexName
+            $job = Start-ThreadJob -ArgumentList $name {
+                param($n)
+                $m = [Threading.Mutex]::new($false, $n)
+                [void]$m.WaitOne()
+                Start-Sleep -Milliseconds 1500
+                $m.ReleaseMutex()
+            }
+            Start-Sleep -Milliseconds 300
+            $w = [Diagnostics.Stopwatch]::StartNew()
+            Invoke-GpuPowerTransition -Name a -Do { $script:ran = $true }
+            $w.Elapsed.TotalMilliseconds | Should BeGreaterThan 900
+            $script:ran | Should Be $true
+            $job | Wait-Job | Remove-Job
+        }
+        It 'a machine without a GPU partition never waits' {
+            Mock Test-GpuPartitioned { $false }
+            $m = [Threading.Mutex]::new($true, $script:GpuPowerMutexName)
+            $w = [Diagnostics.Stopwatch]::StartNew()
+            Invoke-GpuPowerTransition -Name a -Do { 1 } | Should Be 1
+            $w.Elapsed.TotalMilliseconds | Should BeLessThan 500
+            $m.ReleaseMutex(); $m.Dispose()
+        }
+        It 'a start keeps the lock until Windows answers' {
+            Mock Test-GpuPartitioned { $true }
+            Mock Get-VM { [pscustomobject]@{ State = 'Running' } }
+            $script:beats = 0
+            Mock Test-GuestHeartbeat { $script:beats++; $script:beats -ge 3 }
+            Mock Start-Sleep { }
+            Invoke-GpuPowerTransition -Name a -UntilUp -Do { }
+            $script:beats | Should Be 3
+        }
+    }
+}
