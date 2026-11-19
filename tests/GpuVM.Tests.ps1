@@ -287,6 +287,9 @@ InModuleScope GpuVM {
 
     Describe 'Labs' {
         $env:GPUVM_LABS_ROOT = Join-Path $TestDrive 'labs'
+        # An elevated module ignores the variable (by design), so the folder is also redirected here: an elevated run
+        # never writes labs into the repository.
+        Mock Get-LabRoot { Join-Path $TestDrive 'labs' }
 
         It 'creates, records and compares' {
             $lab = New-GpuVMLab -Title 'CPU test' -Hypothesis 'More threads, more FPS'
@@ -316,6 +319,8 @@ InModuleScope GpuVM {
 
     Describe 'Streaming components' {
         $env:GPUVM_CACHE_ROOT = Join-Path $TestDrive 'cache'
+        # Elevated, the module ignores the variable (by design): the cache is redirected here as well.
+        Mock Get-ComponentCacheRoot { Join-Path $TestDrive 'cache' }
 
         It 'the manifest pins version, GitHub URL and SHA-256 of each component' {
             $m = Get-ComponentManifest
