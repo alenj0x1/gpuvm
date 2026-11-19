@@ -373,6 +373,7 @@ struct Broker {
     clients: Mutex<HashMap<String, Client>>,
     offers: Mutex<Vec<Offer>>,
     requests: Mutex<Vec<Request>>,
+    claims: Mutex<HashMap<String, String>>,
     listener: Mutex<Value>,
     pre_auth: AtomicUsize,
     serial: AtomicU64,
@@ -386,6 +387,7 @@ fn broker() -> &'static Broker {
         clients: Mutex::new(HashMap::new()),
         offers: Mutex::new(Vec::new()),
         requests: Mutex::new(Vec::new()),
+        claims: Mutex::new(HashMap::new()),
         listener: Mutex::new(json!({ "listening": false, "error": "starting" })),
         pre_auth: AtomicUsize::new(0),
         serial: AtomicU64::new(1),
@@ -863,6 +865,7 @@ pub fn command(cmd: &str, args: &Value, ctx: &mut Ctx) -> Result<Value, CmdError
             let (name, id) = (need(s("Name"), "Name")?, need(s("Connection"), "Connection")?);
             own_client(id, ctx)?;
             let reg = find_reg(name)?;
+            let _ = owner_of_name(&reg.name);
             let mut machines = lock(&broker().machines);
             let m = machines.entry(reg.vm_id.clone()).or_default();
             match cmd {
@@ -1098,10 +1101,14 @@ const AGENT_COMMANDS: &[(&str, Option<&str>)] = &[
 /// Checks a module command from the service pipe before it reaches PowerShell. For an agent session: only the
 /// commands above, on machines it took (or a new disposable copy), with an allowed request of the right kind
 /// (`Approval: <request id>`) where one is needed. The `Approval` argument is removed before the bridge sees it.
-pub fn gate(request: &mut Value, pid: u32) -> Result<(), CmdError> {
-    let approval = request["args"].as_object_mut().and_then(|a| a.remove("Approval"));
-    if !lock(&broker().clients).values().any(|c| c.pid == pid) {
-        return Ok(());
+pub fn gate(request: &mut Value, pid: u32) -> Result<Option<Claim>, CmdError> {
+    let (approval, connection) = match request["args"].as_object_mut() {
+        Some(a) => (a.remove("Approval"), a.remove("Connection")),
+        None => (None, None),
+    };
+    let mine: Vec<String> = lock(&broker().clients).iter().filter(|(_, c)| c.pid == pid).map(|(id, _)| id.clone()).collect();
+    if mine.is_empty() {
+        return Ok(None);
     }
     let cmd = request["cmd"].as_str().unwrap_or("").to_string();
     let Some((_, kind)) = AGENT_COMMANDS.iter().find(|(c, _)| *c == cmd) else {
@@ -1109,22 +1116,27 @@ pub fn gate(request: &mut Value, pid: u32) -> Result<(), CmdError> {
     };
     let args = &request["args"];
     let name = args["Name"].as_str().unwrap_or("");
-    if cmd == "New-GpuVM" && (args["Disposable"] != json!(true) || args["Template"].as_str().is_none_or(str::is_empty)) {
-        return err("denied", "An agent session can only create disposable copies of a template.");
-    }
-    if !cmd.starts_with("Get-") && cmd != "New-GpuVM" && cmd != "Remove-GpuVMDisposable" && !name.is_empty() {
-        let mine: Vec<String> = lock(&broker().clients).iter().filter(|(_, c)| c.pid == pid).map(|(id, _)| id.clone()).collect();
-        if let Some(reg) = reg_by_name(name) {
-            let m = lock(&broker().machines);
-            match m.get(&reg.vm_id).and_then(|m| m.taken_by.clone()) {
-                Some(t) if mine.contains(&t) => {}
-                // Installing the agent comes before taking a new copy; a machine someone else took stays theirs.
-                None if cmd == "Install-GpuVMAgent" => {}
-                Some(_) => return err("taken", format!("'{name}' is in use by another agent session.")),
-                None => return err("not_taken", format!("Take '{name}' first.")),
-            }
-        } else if cmd != "Install-GpuVMAgent" {
-            return err("not_taken", format!("Take '{name}' first."));
+    let mut claim = None;
+    if cmd == "New-GpuVM" {
+        if args["Disposable"] != json!(true) || args["Template"].as_str().is_none_or(str::is_empty) {
+            return err("denied", "An agent session can only create disposable copies of a template.");
+        }
+        // The new copy belongs to the session that makes it from the moment it exists (create + take at once).
+        let id = match connection.as_ref().and_then(Value::as_str) {
+            Some(c) if mine.iter().any(|m| m == c) => c.to_string(),
+            Some(_) => return err("not_found", "Unknown agent connection."),
+            None if mine.len() == 1 => mine[0].clone(),
+            None => return err("bad_request", "Connection is required."),
+        };
+        if name.is_empty() {
+            return err("bad_request", "Name is required.");
+        }
+        claim = Some(Claim { name: name.to_string(), connection: id });
+    } else if !cmd.starts_with("Get-") && cmd != "Remove-GpuVMDisposable" && !name.is_empty() {
+        match owner_of_name(name) {
+            Some(t) if mine.contains(&t) => {}
+            Some(_) => return err("taken", format!("'{name}' is in use by another agent session.")),
+            None => return err("not_taken", format!("Take '{name}' first.")),
         }
     }
     if let Some(kind) = kind {
@@ -1141,7 +1153,39 @@ pub fn gate(request: &mut Value, pid: u32) -> Result<(), CmdError> {
         };
         r.used = true;
     }
-    Ok(())
+    Ok(claim)
+}
+
+/// A disposable copy an agent session is making: it is that session's from the moment New-GpuVM succeeds.
+pub struct Claim {
+    name: String,
+    connection: String,
+}
+
+/// Called by the service once New-GpuVM succeeded for an agent session (only then: a failed one leaves nothing).
+pub fn claim(c: Claim) {
+    if lock(&broker().clients).contains_key(&c.connection) {
+        lock(&broker().claims).insert(c.name.to_lowercase(), c.connection);
+    }
+}
+
+/// Who holds a machine: the session that took it, or the one that created it while its agent isn't registered yet
+/// (the claim becomes the machine's taker as soon as it is).
+fn owner_of_name(name: &str) -> Option<String> {
+    let key = name.to_lowercase();
+    match reg_by_name(name) {
+        Some(reg) => {
+            let mut machines = lock(&broker().machines);
+            let m = machines.entry(reg.vm_id.clone()).or_default();
+            if let Some(c) = lock(&broker().claims).remove(&key) {
+                if m.taken_by.is_none() && lock(&broker().clients).contains_key(&c) {
+                    m.taken_by = Some(c);
+                }
+            }
+            m.taken_by.clone()
+        }
+        None => lock(&broker().claims).get(&key).cloned(),
+    }
 }
 
 fn get_agents(name: Option<&str>) -> Value {
@@ -1307,6 +1351,7 @@ fn own_client(id: &str, ctx: &Ctx) -> Result<(), CmdError> {
 }
 
 fn release_and_cancel(id: &str, code: &str, message: &str) {
+    lock(&broker().claims).retain(|_, c| c != id);
     for m in lock(&broker().machines).values_mut() {
         if m.taken_by.as_deref() == Some(id) {
             m.taken_by = None;
@@ -1339,6 +1384,7 @@ fn admit(id: &str, vm_id: &str, name: &str, ctx: &Ctx) -> Result<(), CmdError> {
         }
         c.steps += 1;
     }
+    let _ = owner_of_name(name);
     let machines = lock(&broker().machines);
     let m = machines.get(vm_id);
     match m.and_then(|m| m.taken_by.as_deref()) {
@@ -1642,8 +1688,17 @@ pub(crate) mod tests {
         // What an agent session may run through the service: its machine only, deletions and reverts with approval.
         let gate_code = |cmd: &str, args: Value, pid: u32| {
             let mut r = json!({ "cmd": cmd, "args": args });
-            match gate(&mut r, pid) { Ok(()) => "ok".to_string(), Err(e) => e.code }
+            match gate(&mut r, pid) { Ok(_) => "ok".to_string(), Err(e) => e.code }
         };
+        // A disposable copy an agent session makes is its own at once: only it may install the agent there and take it.
+        let mut r = json!({ "cmd": "New-GpuVM", "args": { "Name": "Copy1", "Template": "t", "Disposable": true, "Connection": id } });
+        let c = gate(&mut r, 100).unwrap().unwrap();
+        assert!(r["args"].get("Connection").is_none());
+        assert_eq!(gate_code("Install-GpuVMAgent", json!({ "Name": "Copy1" }), 100), "not_taken"); // New-GpuVM didn't finish yet
+        claim(c);
+        assert_eq!(gate_code("Install-GpuVMAgent", json!({ "Name": "Copy1" }), 100), "ok");
+        assert_eq!(gate_code("Install-GpuVMAgent", json!({ "Name": "Copy1" }), 200), "taken");
+        assert_eq!(gate_code("Install-GpuVMAgent", json!({ "Name": "Test1" }), 200), "taken");
         assert_eq!(gate_code("Remove-GpuVMDisk", json!({ "Name": "Test1" }), 100), "denied");
         assert_eq!(gate_code("Get-GpuVMTemplate", json!({}), 100), "ok");
         assert_eq!(gate_code("New-GpuVM", json!({ "Name": "x" }), 100), "denied");

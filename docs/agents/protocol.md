@@ -123,8 +123,10 @@ here): `Get-GpuVM`, `Get-GpuVMOverview`, `Get-GpuVMTemplate`, `Get-GpuVMProfile`
 `New-GpuVMRestorePoint`, `New-GpuVM` (only `-Disposable` with `-Template`), `Install-GpuVMAgent`, `Invoke-GpuVMPower`,
 `Send-GpuVMFile`, `Remove-GpuVMDisposable`, `Connect-GpuVM`; with an allowed request passed as `Approval: <requestId>`
 (same machine, same kind, used once unless allowed `ForTask`, 10 minutes): `Restore-GpuVMRestorePoint` (`revert`),
-`Remove-GpuVM` (`delete`). Commands naming a machine need it taken by the session (Install-GpuVMAgent may come first,
-on a machine nobody took). Destructive ones still need the person's UAC consent as before.
+`Remove-GpuVM` (`delete`). Commands naming a machine need it held by the session. `New-GpuVM -Disposable -Template
+-Name X` (with `Connection`, removed before PowerShell sees it; optional when the process has one session) makes X
+that session's the moment it succeeds: only it may `Install-GpuVMAgent` there and `Lock-GpuVMAgent` it, and the claim
+becomes the lock once the agent is registered. Destructive ones still need the person's UAC consent as before.
 
 **Installing the agent** (`Install-GpuVMAgent`): new 32-byte K kept host-side with DPAPI (machine scope, GpuVM entropy)
 in `ProgramData\GpuVM\agents\<vmid>\secret`, SYSTEM-only; over PowerShell Direct, `gpuvm-agent.exe` goes with

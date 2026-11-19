@@ -387,10 +387,13 @@ fn handle(pipe: HANDLE) {
         // An agent session (the MCP server acting for a model) may run only some commands, some with the person's
         // approval; the person's app is never limited here.
         let mut request = request;
-        if let Err(e) = crate::agent::gate(&mut request, client.pid) {
-            send(&mut out, &json!({ "id": id, "type": "result", "ok": false, "error": e.message, "code": e.code }));
-            continue;
-        }
+        let mut claim = match crate::agent::gate(&mut request, client.pid) {
+            Ok(c) => c,
+            Err(e) => {
+                send(&mut out, &json!({ "id": id, "type": "result", "ok": false, "error": e.message, "code": e.code }));
+                continue;
+            }
+        };
         if needs_consent(&request) {
             let confirmed = request["consent"].as_str().is_some_and(|n| take_consent(n, client.pid, &request));
             if !confirmed {
@@ -438,6 +441,12 @@ fn handle(pipe: HANDLE) {
             }
             let parsed = serde_json::from_str::<Value>(&event).unwrap_or(Value::Null);
             if parsed["type"] == "result" && parsed["id"] == id {
+                // An agent session's new disposable copy is its own from now on.
+                if parsed["ok"] == json!(true) {
+                    if let Some(c) = claim.take() {
+                        crate::agent::claim(c);
+                    }
+                }
                 break;
             }
         }
