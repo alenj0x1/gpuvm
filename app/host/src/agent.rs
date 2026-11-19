@@ -942,6 +942,8 @@ const COMMANDS: &[(&str, &[&str])] = &[
     ("New-GpuVMAgentRequest", &["Name", "Connection", "Kind", "Title", "Reason", "TimeoutSec"]),
     ("Get-GpuVMAgentRequest", &["Id"]),
     ("Resolve-GpuVMAgentRequest", &["Id", "Allow", "ForTask"]),
+    // A session withdraws its own pending request (an approval or a call for a human); never the person's pause.
+    ("Revoke-GpuVMAgentRequest", &["Id", "Connection"]),
     ("New-GpuVMAgentOffer", &["Name", "Path", "Note", "Connection"]),
     ("Get-GpuVMAgentOffer", &["Id", "Name"]),
     ("Resolve-GpuVMAgentOffer", &["Id", "Accept"]),
@@ -1148,6 +1150,50 @@ pub fn command(cmd: &str, args: &Value, ctx: &mut Ctx) -> Result<Value, CmdError
                 vm_log(&reg, json!({ "event": "request_resolved", "id": id, "kind": kind, "state": state, "via": ctx.label() }));
             }
             Ok(out)
+        }
+        "Revoke-GpuVMAgentRequest" => {
+            // A session withdraws only what it asked for and is still waiting: its approval request, or its call for
+            // a human (which then resumes the machine). Never the person's pause or take-control, nor another
+            // session's request.
+            let (id, conn) = (need(s("Id"), "Id")?, need(s("Connection"), "Connection")?);
+            own_client(conn, ctx)?;
+            {
+                let mut list = lock(&broker().requests);
+                expire(&mut list);
+                if let Some(r) = list.iter_mut().find(|r| r.id == id) {
+                    if r.connection != conn {
+                        return err("denied", "Only the session that asked can withdraw a request.");
+                    }
+                    if r.state != "pending" {
+                        return err("bad_request", format!("This request is already {}.", r.state));
+                    }
+                    r.state = "withdrawn".into();
+                    r.resolved = Some(now_ms());
+                    let (out, vm) = (r.to_json(), r.vm_id.clone());
+                    drop(list);
+                    if let Some(reg) = reg_by_id(&vm) {
+                        vm_log(&reg, json!({ "event": "request_withdrawn", "id": id, "connection": conn }));
+                    }
+                    return Ok(out);
+                }
+            }
+            let mut machines = lock(&broker().machines);
+            let found = machines.iter_mut().find(|(_, m)| m.paused.as_ref().is_some_and(|p| p["requestId"].as_str() == Some(id)));
+            let Some((vm, m)) = found else {
+                return err("not_found", "No such request is waiting.");
+            };
+            let p = m.paused.as_ref().cloned().unwrap_or_default();
+            if p["by"] != "agent" || p["reason"] != "human" || p["connection"].as_str() != Some(conn) {
+                return err("denied", "Only the session that asked can withdraw a request.");
+            }
+            m.paused = None;
+            m.resumed_at = Some(now_ms());
+            let vm = vm.clone();
+            drop(machines);
+            if let Some(reg) = reg_by_id(&vm) {
+                vm_log(&reg, json!({ "event": "resumed", "via": "request_withdrawn", "id": id, "connection": conn }));
+            }
+            Ok(json!({ "id": id, "state": "withdrawn", "resumed": true }))
         }
         "New-GpuVMAgentOffer" => {
             let (name, path) = (need(s("Name"), "Name")?, need(s("Path"), "Path")?);
@@ -1966,6 +2012,26 @@ pub(crate) mod tests {
         assert_eq!(get_agents(Some("Test1"))[0]["paused"]["by"], "agent");
         assert_eq!(invoke(&mut mcp, Some(&id)), "paused"); // step 4
         command("Resume-GpuVMAgent", &json!({ "Name": "Test1" }), &mut app).unwrap();
+        // A session withdraws only its own waiting request; withdrawing a call for a human resumes the machine.
+        let revoke = |ctx: &mut Ctx, rid: &str, conn: &str| code(command("Revoke-GpuVMAgentRequest", &json!({ "Id": rid, "Connection": conn }), ctx));
+        let human = command("Request-GpuVMHuman", &json!({ "Name": "Test1", "Connection": id, "Message": "help" }), &mut mcp).unwrap()["requestId"].as_str().unwrap().to_string();
+        assert_eq!(revoke(&mut other, &human, &id2), "denied"); // another session's call
+        assert_eq!(revoke(&mut mcp, &human, &id2), "not_found"); // a connection that isn't the caller's
+        assert_eq!(revoke(&mut mcp, &human, &id), "ok");
+        assert!(get_agents(Some("Test1"))[0]["paused"].is_null());
+        assert_eq!(revoke(&mut mcp, &human, &id), "not_found"); // already withdrawn
+        // The person's pause is never withdrawn, not even when it replaced the session's call for a human.
+        let human = command("Request-GpuVMHuman", &json!({ "Name": "Test1", "Connection": id, "Message": "help" }), &mut mcp).unwrap()["requestId"].as_str().unwrap().to_string();
+        command("Suspend-GpuVMAgent", &json!({ "Name": "Test1", "Reason": "control" }), &mut app).unwrap();
+        assert_eq!(revoke(&mut mcp, &human, &id), "not_found");
+        assert_eq!(get_agents(Some("Test1"))[0]["paused"]["by"], "person");
+        command("Resume-GpuVMAgent", &json!({ "Name": "Test1" }), &mut app).unwrap();
+        // An approval request: only its session withdraws it, once, and the person can't answer it afterwards.
+        let ask = command("New-GpuVMAgentRequest", &json!({ "Name": "Test1", "Connection": id, "Kind": "network" }), &mut mcp).unwrap()["requestId"].as_str().unwrap().to_string();
+        assert_eq!(revoke(&mut other, &ask, &id2), "denied");
+        assert_eq!(revoke(&mut mcp, &ask, &id), "ok");
+        assert_eq!(revoke(&mut mcp, &ask, &id), "bad_request");
+        assert_eq!(code(command("Resolve-GpuVMAgentRequest", &json!({ "Id": ask, "Allow": true }), &mut app)), "bad_request");
         assert_eq!(invoke(&mut mcp, Some(&id)), "off"); // step 5
         assert_eq!(invoke(&mut mcp, Some(&id)), "off"); // step 6
         assert_eq!(invoke(&mut mcp, Some(&id)), "budget");
