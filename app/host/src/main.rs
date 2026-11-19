@@ -124,22 +124,30 @@ fn state(svc: &ScHandle) -> u32 {
 }
 
 fn stop_and_wait(svc: &ScHandle) {
+    let process_info = || {
+        let mut info: SERVICE_STATUS_PROCESS = unsafe { std::mem::zeroed() };
+        let mut needed = 0;
+        let ok = unsafe {
+            QueryServiceStatusEx(svc.0, SC_STATUS_PROCESS_INFO, &mut info as *mut _ as *mut u8, std::mem::size_of::<SERVICE_STATUS_PROCESS>() as u32, &mut needed)
+        };
+        (ok != 0).then_some(info)
+    };
+    // The process asked to stop: a service started again meanwhile (another process id) is never touched.
+    let asked = process_info().map(|i| i.dwProcessId).unwrap_or(0);
     let mut status: SERVICE_STATUS = unsafe { std::mem::zeroed() };
     unsafe { ControlService(svc.0, SERVICE_CONTROL_STOP, &mut status) };
     // The installer (and install/uninstall) waits 30 s for what is running to finish, then ends the service's
     // process: its job object takes every bridge with it. An upgrade never hangs on a stuck PowerShell.
     for _ in 0..300 {
-        if state(svc) == SERVICE_STOPPED {
-            return;
+        match process_info() {
+            Some(i) if i.dwCurrentState == SERVICE_STOPPED || i.dwProcessId != asked => return,
+            None => return,
+            _ => {}
         }
         std::thread::sleep(Duration::from_millis(100));
     }
-    let mut info: SERVICE_STATUS_PROCESS = unsafe { std::mem::zeroed() };
-    let mut needed = 0;
-    let ok = unsafe {
-        QueryServiceStatusEx(svc.0, SC_STATUS_PROCESS_INFO, &mut info as *mut _ as *mut u8, std::mem::size_of::<SERVICE_STATUS_PROCESS>() as u32, &mut needed)
-    };
-    if ok != 0 && info.dwProcessId != 0 {
+    let info = process_info().filter(|i| i.dwProcessId == asked && i.dwCurrentState != SERVICE_STOPPED);
+    if let Some(info) = info.filter(|i| i.dwProcessId != 0) {
         use windows_sys::Win32::System::Threading::{OpenProcess, TerminateProcess, PROCESS_TERMINATE};
         let process = unsafe { OpenProcess(PROCESS_TERMINATE, 0, info.dwProcessId) };
         if !process.is_null() {

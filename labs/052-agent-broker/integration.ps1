@@ -9,6 +9,7 @@
 # Run elevated. Only the copies this script makes are touched, and they are deleted at the end.
 param([string]$Session = 'agent-broker', [string]$Name = 'agent052a', [string]$Template = 'agent-tpl', [int]$Rounds = 2,
     [string[]]$Steps = @('swap', 'install', 'parts', 'service', 'two', 'stop', 'mcp'),
+    [string[]]$Leftovers = @(),
     [string]$RunParts = "'latency','parallel','timeout','attacks','offers','restart'")
 $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
@@ -33,6 +34,9 @@ function Remove-Copies {
     $made.Clear()
 }
 try {
+    # Machines an earlier run of this lab left behind (named by the caller).
+    foreach ($v in $Leftovers) { if (Get-VM -Name $v -ErrorAction SilentlyContinue) { $made.Add($v) } }
+    if ($made.Count) { Import-Module $modulePath -Force; Remove-Copies }
     if ('swap' -in $Steps) {
         # This branch's service and module agent code replace the installed ones for the whole run (put back in the
         # finally): the run tests the latest broker, the secret stored by the service, and the bounded stop.
@@ -214,7 +218,8 @@ try {
         }
         Start-Sleep -Seconds 2
         $w = [Diagnostics.Stopwatch]::StartNew()
-        & $installedHost install
+        # gpuvm-host is a windowless (GUI-subsystem) exe: PowerShell doesn't wait for it by itself.
+        Start-Process $installedHost -ArgumentList 'install' -Wait -WindowStyle Hidden
         $installMs = [math]::Round($w.Elapsed.TotalMilliseconds)
         $state = (Get-Service GpuVM).Status
         $request = $job | Wait-Job -Timeout 90 | Receive-Job
@@ -232,7 +237,10 @@ try {
         Remove-Copies
         $exe = Join-Path $env:ProgramFiles 'GpuVM\gpuvm.exe'
         $drive = Join-Path $root 'labs\053-mcp\drive.py'
+        $before = @(Get-VM | ForEach-Object Name)
         $text = & python $drive --exe $exe --template $Template --phases latency --rounds 3 2>&1
+        # A disposable the MCP made in this step and didn't destroy (a failed run) goes too.
+        foreach ($v in @(Get-VM | Where-Object { $_.Name -notin $before -and $_.Name -like "$Template-*" } | ForEach-Object Name)) { $made.Add($v) }
         $result['mcpPath'] = @($text | Select-Object -Last 25 | ForEach-Object { "$_" })
         $text | Select-Object -Last 25 | ForEach-Object { Line "mcp: $_" }
         $result['mcpRegistrations'] = @(Get-ChildItem (Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'GpuVM\agents') -Directory |
