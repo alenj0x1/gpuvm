@@ -644,9 +644,10 @@ fn sc_secure(lab: &mut Lab, c: &mut Conn) {
     let probe = refusal_probe(c, 100.0, 100.0);
     let since2 = Instant::now();
     let kill = lab.psd("Stop-Process -Name consent -Force -ErrorAction SilentlyContinue; 'killed'");
-    let off = c.wait_event(since2, Duration::from_secs(10), |v| v["event"] == "secure_desktop" && v["data"]["on"] == false);
+    let off = c.wait_event(since2, Duration::from_secs(30), |v| v["event"] == "secure_desktop" && v["data"]["on"] == false);
+    let events: Vec<Value> = c.events.iter().filter(|(t, _)| *t >= since).map(|(t, v)| json!({"ms": (*t - since).as_millis() as u64, "evt": v["event"], "data": v["data"]})).collect();
     let after = need(c.call("screen.capture", json!({})));
-    lab.out.rec("secure-desktop", json!({"exec": r.result, "eventOnMs": on.map(|x| x.0), "probe": probe, "psd": kill, "eventOffMs": off.map(|x| x.0), "captureAfter": after.ok}));
+    lab.out.rec("secure-desktop", json!({"exec": r.result, "eventOnMs": on.map(|x| x.0), "probe": probe, "psd": kill, "eventOffMs": off.map(|x| x.0), "captureAfter": after.ok, "events": events}));
 }
 
 fn sc_elevated(lab: &mut Lab, c: &mut Conn) {
@@ -677,6 +678,9 @@ fn sc_errorbox(lab: &mut Lab, c: &mut Conn) {
     let since = Instant::now();
     let r = exec(c, "C:\\ProgramData\\GpuVMLab051\\harness.exe", &["guest-errorbox"], 3000);
     let ev = c.wait_event(since, Duration::from_secs(10), |v| v["event"] == "error_box");
+    if let Some(b) = need(c.call("screen.capture", json!({}))).blob {
+        let _ = std::fs::write(lab.out.dir.join("errorbox.webp"), b);
+    }
     let probe = refusal_probe(c, 960.0, 540.0);
     std::thread::sleep(Duration::from_secs(2));
     let still = need(c.call("screen.state", json!({})));
@@ -785,6 +789,8 @@ fn sc_reboot(lab: &mut Lab, c: Conn) {
             let first = need(c.call("agent.info", json!({})));
             let signed = c.wait_event(t, Duration::from_secs(180), |v| v["event"] == "signed_in" && v["data"]["user"].is_string());
             let signed_ms = signed.as_ref().map(|_| t.elapsed().as_secs_f64() * 1e3);
+            let seen: Vec<Value> = c.events.iter().map(|(_, v)| json!([v["event"], v["data"]])).collect();
+            lab.out.rec("reboot-events", json!(seen));
             let mut cap_ms = None;
             let tc = Instant::now();
             while tc.elapsed() < Duration::from_secs(120) {

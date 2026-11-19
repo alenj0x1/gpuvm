@@ -41,3 +41,56 @@ person must act: elevated windows, the secure desktop, system error boxes. Proto
     kind, unannounced blob, blob hash mismatch, heartbeat silence; soft errors that must not close.
   - `acl`: the secret made readable by Users -> the service must stop dialing; reverted -> it reconnects.
   - `reboot`: restart from inside; drop noticed, reconnection, `signed_in`, first screenshot.
+
+## Results so far (Nov 18)
+
+The harness scenarios (capture, latency, UIA, refusals, abuse, reboot) could not run: GpuVM's broker under test held
+`HV_GUID_CHILDREN:{service id}` almost the whole time, and the coordinator then asked to measure through the broker
+(the real host side). A host listener on `HV_GUID_CHILDREN` also blocks a bind to one VM's id (10048), so two host
+programs can't share the name: good for security (nothing else can squat it), one listener per host. The harness
+stays for the abuse cases the broker won't exercise. What was measured:
+
+| step | result |
+| --- | --- |
+| New-GpuVM from the ISO to a signed-in desktop | 4.5 min |
+| install.ps1, first full run over PowerShell Direct | 6.7 s (2.2 s on a re-run) |
+| install.ps1, the broker's contract (`-FilePath`, staging, secret in place), version change | 1.7 s |
+| same version again (fast path: new password, restart service) | 0.46 s |
+| restart -> signed in as `agent` | 15 s |
+| service start -> helper running as `AGENT051\agent`, medium, session 1 | < 1 s |
+| New-GpuVMTemplate (64 GB dynamic disk) | 90 s |
+
+- **Hard reset loses the install.** The first `prepare.ps1` restarted with `Restart-VM -Force` seconds after
+  install.ps1: the files (exe, log) survived, the registry (service, Winlogon) didn't. Restart from inside.
+- **Execution policy:** guests keep Restricted; install.ps1 goes as a script block or `Invoke-Command -FilePath`.
+- **StrictMode leaked** from install.ps1 into the caller's remote session (removed).
+- **Autologon cycle** (`install-cycle.ps1`): agent -> previous -> agent restores Winlogon exactly (AutoAdminLogon,
+  DefaultUserName, DefaultDomainName, AutoLogonCount 9999997) and the person's password moves between LSA secrets
+  without ever being a plain registry value.
+- **VmId:** `getsockname` on the guest side does not return the VM's id that the host sees in `accept()`; the guest
+  takes it from KVP `VirtualMachineId` (equal to `Get-VM` Id). The first harness connection failed the handshake
+  until this was fixed.
+- **Mutual authentication with a foreign host listener:** the broker under test (another secret) closed before the
+  challenge; with the harness's wrong secret the guest logged "the host's proof is wrong" and never sent a proof.
+- **Display:** in the agent's session the primary monitor reads 1024x768 while WMI reports the virtual display at
+  1920x1080; GpuVM's set-resolution runs in the user's session when the viewer connects, so it must run in the
+  `agent` session in Agent mode (open, for the broker/app). Input coordinates are now read from the primary monitor
+  on every request and the capture reopens when the primary display changes.
+
+### Security review (independent reviewer agent) and fixes, verified in the VM (`security-check.ps1`)
+
+| finding | fix | check in agent051 |
+| --- | --- | --- |
+| H1 helper pipes inherited by every exec.run child; any `agent` process could open the helper | stdio not inheritable, exec handle list, helper DACL: own user query+synchronize only | as `agent`: all/dupHandle/vmRead/vmWrite/suspend/terminate/writeDac **denied**, queryLimited/synchronize allowed |
+| H2 a user could plant `ProgramData\GpuVM(\Agent\logs)` as a junction before install | foreign/link folders removed without following; no recursion through links; service logs only in a checked folder | junction at `logs` -> removed, target folder untouched, log written in the real folder |
+| M1 a stalled helper could block the SYSTEM service | bounded queue + writer thread; helper killed after 10 s not reading | (code) |
+| M2 person's plain autologon password would land in a Users-readable backup | LSA secret; backup key SYSTEM+Admins | backup key ACL: SYSTEM, Administradores only |
+| M3, L1-L4 | seq not consumed by oversized frames; blob size before announcing; cancelable stdin; escaped JSON size; re-checks | (code) |
+| L5 one session key for both directions | proposed to the coordinator (protocol change) | — |
+
+## Security impact
+
+The agent adds a SYSTEM service and a standard user to the guest, never touches UAC or the person's account, keeps
+the agent's password only as the autologon LSA secret (the host has the copy, DPAPI), and the person's previous
+autologon is restored exactly. Everything ran in a disposable VM; the host only got the service GUID registered
+(removed again: `service.ps1 -Remove`).
