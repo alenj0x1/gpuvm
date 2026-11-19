@@ -28,6 +28,16 @@ Driver: `drive.py` (a minimal MCP client over stdio, both eras; phases `latency`
   `secure_desktop`, kill switch (later calls fail without reaching the broker), destroyed machine, budget used up and
   someone else's machine: covered by the tests with the broker's codes.
 
+- **Real model, fake machine** (after the `claude` sign-in; `claude -p` with only the gpuvm server, 2026-11-18):
+  asked to create a disposable, screenshot, click the centre, type, run a command, write and offer a file. 9 turns,
+  24.5 s, USD 0.25, every call succeeded first time. Claude Code loaded the tools through its tool search
+  (`select:mcp__gpuvm__…`), passed the image content to the model (it described the fake desktop's colours and grid
+  correctly, so image results reach the model), clicked (640, 360) on the 1280x720 screenshot = the centre, and
+  wrote the offer note itself. The only odd result it reported was the fake's `run`, which echoes the command line
+  instead of running it (expected for the fake).
+- **Protocol updates from main** (typed actions, exec output in the blob, timeouts as results, ranged reads) are
+  followed since 3a8a950; tests cover the blob output and a timed-out command.
+
 ## Part 2: real machines (pending integration)
 
 Needs the broker (claude/agent-broker-*), the guest agent and a template with it, in an installed build. Plan:
