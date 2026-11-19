@@ -37,13 +37,15 @@ mcp.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initiali
 // `template:<name>`: a disposable of our own from that template (create_disposable installs the agent and takes it),
 // destroyed at the end. Otherwise an existing machine of ours, taken.
 const disposable = machine.startsWith("template:");
+// A name of its own each run: a folder left by an earlier run that couldn't be deleted never blocks the next.
+const runName = `lab054-${new Date().toISOString().slice(11, 19).replace(/:/g, "")}`;
 if (disposable) {
   // Light (2 threads, LAB054_MEMORY_GB or 2 GB): the PC keeps its memory, and the measurement doesn't need more.
-  const made = await tool("create_disposable", { template: machine.slice(9), name: "lab054-tc", task: "Lab 054: take-control latency", cpu: 2, memoryGB: Number(process.env.LAB054_MEMORY_GB ?? 2) });
+  const made = await tool("create_disposable", { template: machine.slice(9), name: runName, task: "Lab 054: take-control latency", cpu: 2, memoryGB: Number(process.env.LAB054_MEMORY_GB ?? 2) });
   console.log("create_disposable:", text(made).slice(0, 300));
   // Fail fast: without the machine there is nothing to measure (lab-craft).
   if (made?.isError) { clearTimeout(guard); mcp.kill(); process.exit(4); }
-  machine = "lab054-tc";
+  machine = runName;
 } else {
   const took = await tool("take_machine", { machine, task: "Lab 054: take-control latency" });
   console.log("take_machine:", text(took).slice(0, 200));
