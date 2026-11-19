@@ -4,12 +4,15 @@
 # and repairs tried in order (Hyper-V Video on again; the virtual display's device off and on), each followed by
 # agent.info, to learn which one brings the screen back. Every copy is deleted. Under the shared lab lock. Elevated.
 param([string]$Template = 'agent-tpl', [string]$Session = 'agent-broker', [int]$Copies = 10, [int]$WatchSec = 90,
-    [int]$RepairAfterSec = 60, [int]$StopAfterFailures = 0)
+    [int]$RepairAfterSec = 60, [int]$StopAfterFailures = 0,
+    # -Branch: this worktree's module (Install-GpuVMAgent power cycles), with the installed agent package read-only.
+    [switch]$Branch)
 $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 $out = Join-Path $PSScriptRoot 'out'
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$module = Join-Path $env:ProgramFiles 'GpuVM\gpuvm\src\GpuVM\GpuVM.psd1'
+$installedRoot = Join-Path $env:ProgramFiles 'GpuVM\gpuvm'
+$module = if ($Branch) { Join-Path $root 'src\GpuVM\GpuVM.psd1' } else { Join-Path $installedRoot 'src\GpuVM\GpuVM.psd1' }
 function Line($what) { Write-Host "$(Get-Date -Format HH:mm:ss.fff) $what" }
 $runs = [System.Collections.Generic.List[object]]::new()
 $adapters = { @(Get-PnpDevice -Class Display -ErrorAction SilentlyContinue | ForEach-Object { "$($_.FriendlyName): $($_.Status) [$($_.ConfigManagerErrorCode)]" }) }
@@ -31,6 +34,13 @@ if ($LASTEXITCODE) { throw 'no lock' }
 try {
     Import-Module $module -Force
     $m = Get-Module GpuVM
+    if ($Branch) {
+        & $m {
+            param($dist)
+            $script:LabDist = $dist
+            function script:Get-RepoPath { param($Relative) if ($Relative -eq 'guest\agent') { $script:LabDist } else { Join-Path $script:RepoRoot $Relative } }
+        } (Join-Path $installedRoot 'guest\agent')
+    }
     for ($i = 1; $i -le $Copies; $i++) {
         $vmName = "agent052r$i"
         $run = [ordered]@{ n = $i; name = $vmName; events = [System.Collections.Generic.List[string]]::new() }
@@ -52,9 +62,17 @@ try {
             $first = $null
             $repairs = [System.Collections.Generic.List[string]]::new()
             $tried = 0
+            $lastState = ''
             while (((Get-Date) - $t0).TotalSeconds -lt $WatchSec + 60 * $tried) {
                 $d = Get-Displays $vmName
                 $sec = [math]::Round(((Get-Date) - $t0).TotalSeconds)
+                # What the service says (asking it is also what starts its automatic repair).
+                $ga = try { @(Get-GpuVMAgent -Name $vmName)[0] } catch { $null }
+                if ($ga -and "$($ga.state)" -ne $lastState) {
+                    $lastState = "$($ga.state)"
+                    Note "service: $lastState $(if ($ga.lastError) { "- $($ga.lastError)" })"
+                    $run['states'] = @($run['states']) + "$sec s: $lastState"
+                }
                 if ($d -and $d.Count) { $first = $sec; Note "displays after $sec s: $(($d | ForEach-Object { "$($_.adapter) $($_.rect -join ',')" }) -join '; ')"; break }
                 if ($sec -ge $RepairAfterSec + 30 * $tried -and $tried -lt 3) {
                     $guestNow = try { @(Invoke-Command -VMName $vmName -Credential $cred $adapters) } catch { @("unreachable: $($_.Exception.Message)") }
