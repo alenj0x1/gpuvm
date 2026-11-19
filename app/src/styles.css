@@ -552,6 +552,8 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .scene-head .head-info { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 14px 16px 16px; }
 .scene-head .actions { padding: 14px 16px 16px; }
 .scene-head .head-text { min-width: 0; }
+/* The machine's name: one line at every width, an ellipsis (and its tooltip) when it doesn't fit. */
+.scene-head .head-text h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .scene-head .specs { display: contents; }
 /* A narrow header (small window, or the cube's panel open): icon, name and state on the left, the buttons on the
    same row, and what the machine is in a row of its own underneath, at full width. */
@@ -566,6 +568,15 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
   .scene-head .actions { grid-area: actions; padding: 14px 16px 0 12px; }
   .scene-head .specs { grid-area: specs; display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 16px 16px; }
   .scene-head .warn-text { grid-area: warn; margin: -8px 16px 16px; }
+  /* The name keeps one line (an ellipsis when long) and the buttons their place: the main button only takes what its
+     label needs here (its 260 px for the job's steps left the name 0 px wide at 620 px, under the buttons). */
+  .scene-head .actions { display: flex; align-items: center; min-width: 0; max-width: 100%; }
+  .card.head.scene-head .actions .primary { width: auto; min-width: 0; max-width: 220px; flex: 0 1 auto; }
+}
+/* Narrower still: the main button goes to its icon alone, so the row never breaks and the name keeps room. */
+@container vmmain (max-width: 480px) {
+  .card.head.scene-head .actions .primary:not(.busy) { width: var(--control); padding: 0; justify-content: center; }
+  .card.head.scene-head .actions .primary:not(.busy) > span { display: none; }
 }
 .machine-icon { display: block; flex: none; }
 .tab-body { display: flex; flex-direction: column; gap: 16px; }

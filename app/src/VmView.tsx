@@ -668,7 +668,7 @@ function Header({ vm, vms = [], busy, variant, startJob, run, onRemoved, onRenam
         <MachineIcon name={vm.name} variant={variant} size={48} radius={12} />
       </button>
       <div className="head-text">
-        <h1>{vm.name}</h1>
+        <h1 title={vm.name}>{vm.name}</h1>
         <div className="meta">
           <span className="state-pill"><span className={`dot ${vm.state}`} />{stateText(vm.state)}</span>
           {/* What the machine is, as small labeled pieces: its Windows, its GPU and the profile it was made from. In a
@@ -695,10 +695,12 @@ function Header({ vm, vms = [], busy, variant, startJob, run, onRemoved, onRenam
           </button>
         )}
         <button className="icon-btn" aria-label={t("More options")} aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((m) => !m)}><IconDots size={18} /></button>
+        {/* In a narrow header the main button shows its icon alone (its label stays its name and tooltip); a job's
+            steps always show. */}
         {working ? (
           <span className="primary busy" role="status" title={working}><IconLoader2 size={17} className="spin" /><span className="ellipsis">{working}</span></span>
         ) : (
-          <button className="primary" onClick={primary.onClick} disabled={primary.disabled} title={primary.title}>{primary.icon}<span className="ellipsis">{primary.label}</span></button>
+          <button className="primary" onClick={primary.onClick} disabled={primary.disabled} title={primary.title ?? primary.label} aria-label={primary.label}>{primary.icon}<span className="ellipsis">{primary.label}</span></button>
         )}
         {menu && (
           <div className="menu" role="menu">
