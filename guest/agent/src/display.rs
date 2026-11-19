@@ -7,7 +7,7 @@
 use crate::util::{wide, wstr};
 use serde_json::{json, Value};
 use windows::core::PCWSTR;
-use windows::Win32::Foundation::HWND;
+use windows::Win32::Foundation::{HANDLE, HWND};
 use windows::Win32::Graphics::Gdi::*;
 
 const MIN_W: u32 = 1280;
@@ -146,6 +146,60 @@ fn change(dev: Option<&str>, dm: Option<&DEVMODEW>, flags: CDS_TYPE) -> i32 {
     }
 }
 
+/// The last result of ensure(), for agent.info's diagnosis.
+pub static LAST_ENSURE: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+/// What this process sees of the displays, for diagnosis (lab 051/052: some copies reported no display at all while
+/// Windows said the adapters were up): every display device with its state flags, the active CCD paths (or the
+/// error), the window station and desktop of this thread, and the last ensure() result.
+pub fn diag() -> Value {
+    use windows::Win32::Devices::Display::*;
+    use windows::Win32::System::StationsAndDesktops::*;
+    let mut devs = Vec::new();
+    unsafe {
+        for i in 0..16 {
+            let mut dd = DISPLAY_DEVICEW { cb: std::mem::size_of::<DISPLAY_DEVICEW>() as u32, ..Default::default() };
+            if !EnumDisplayDevicesW(PCWSTR::null(), i, &mut dd, 0).as_bool() {
+                break;
+            }
+            devs.push(json!({"name": wstr(&dd.DeviceName), "adapter": wstr(&dd.DeviceString), "flags": format!("{:#x}", dd.StateFlags.0)}));
+        }
+    }
+    let qdc = unsafe {
+        let (mut np, mut nm) = (0u32, 0u32);
+        let r = GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &mut np, &mut nm);
+        if r.is_err() {
+            json!({"sizes": r.0})
+        } else {
+            let mut paths = vec![DISPLAYCONFIG_PATH_INFO::default(); np as usize];
+            let mut modes = vec![DISPLAYCONFIG_MODE_INFO::default(); nm as usize];
+            let q = QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &mut np, paths.as_mut_ptr(), &mut nm, modes.as_mut_ptr(), None);
+            let mut names = Vec::new();
+            for p in paths.iter().take(np as usize) {
+                let mut req = DISPLAYCONFIG_SOURCE_DEVICE_NAME::default();
+                req.header.r#type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+                req.header.size = std::mem::size_of::<DISPLAYCONFIG_SOURCE_DEVICE_NAME>() as u32;
+                req.header.adapterId = p.sourceInfo.adapterId;
+                req.header.id = p.sourceInfo.id;
+                let r = DisplayConfigGetDeviceInfo(&mut req.header);
+                names.push(if r == 0 { wstr(&req.viewGdiDeviceName) } else { format!("err {r}") });
+            }
+            json!({"query": q.0, "paths": np, "modes": nm, "sources": names})
+        }
+    };
+    let station = unsafe {
+        let name = |h: HANDLE| {
+            let mut b = [0u16; 64];
+            let mut need = 0u32;
+            if GetUserObjectInformationW(h, UOI_NAME, Some(b.as_mut_ptr() as *mut _), (b.len() * 2) as u32, Some(&mut need)).is_ok() { wstr(&b) } else { "?".into() }
+        };
+        let ws = GetProcessWindowStation().map(|w| name(HANDLE(w.0))).unwrap_or("?".into());
+        let dk = GetThreadDesktop(windows::Win32::System::Threading::GetCurrentThreadId()).map(|d| name(HANDLE(d.0))).unwrap_or("?".into());
+        format!("{ws}\\{dk}")
+    };
+    json!({"devices": devs, "ccd": qdc, "desktop": station, "lastEnsure": LAST_ENSURE.lock().unwrap().clone()})
+}
+
 /// True when the virtual display (if any) is the only attached display, at 0,0.
 pub fn settled() -> bool {
     let devs = devices();
@@ -157,6 +211,17 @@ pub fn settled() -> bool {
 /// Makes the virtual display the only (hence primary) display and at least MIN_W x MIN_H. Returns what it did
 /// (None when nothing had to change), or an error text.
 pub fn ensure() -> Result<Option<Value>, String> {
+    let r = ensure_inner();
+    let text = match &r {
+        Ok(Some(v)) => format!("{} changed: {v}", crate::util::iso_now()),
+        Ok(None) => format!("{} nothing to change", crate::util::iso_now()),
+        Err(e) => format!("{} error: {e}", crate::util::iso_now()),
+    };
+    *LAST_ENSURE.lock().unwrap() = text;
+    r
+}
+
+fn ensure_inner() -> Result<Option<Value>, String> {
     // only in the agent user's own session (security review): never rearrange the person's displays
     if !crate::token::is_agent_process() {
         return Ok(None);

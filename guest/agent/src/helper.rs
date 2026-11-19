@@ -59,7 +59,7 @@ fn info() -> Value {
            "integrity": crate::token::il_name(state::own_integrity()), "agentUser": crate::files::root().is_ok(),
            // the profile folder files.* paths are relative to (normally C:\Users\agent, but Windows may pick another name)
            "home": std::env::var("USERPROFILE").unwrap_or_default(),
-           "displays": capture::displays_json()})
+           "displays": capture::displays_json(), "diag": crate::display::diag()})
 }
 
 fn dispatch(method: &str, p: &Value, blob: Option<Vec<u8>>, id: u64) -> CallResult {
@@ -89,7 +89,36 @@ pub fn refresh() -> Value {
     use windows::Win32::Graphics::Gdi::*;
     let t = Instant::now();
     let ok = unsafe { RedrawWindow(None, None, None, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN | RDW_UPDATENOW).as_bool() };
-    json!({"ok": ok, "ms": (t.elapsed().as_secs_f64() * 1e4).round() / 10.0})
+    // a repaint of identical pixels barely helped (agent-ui: 3/10 vs 1/10 pictures on open): add a REAL pixel change
+    // nobody can see or touch
+    let blipped = blip();
+    json!({"ok": ok || blipped, "blip": blipped, "ms": (t.elapsed().as_secs_f64() * 1e4).round() / 10.0})
+}
+
+/// A 1x1 window at the screen's top-left corner, alpha 1/255, for ~50 ms: the compositor has a changed pixel to
+/// present, so a duplication-based stream sends a frame of a still desktop. Never activated, never takes focus or
+/// input (WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW, SW_SHOWNOACTIVATE), destroyed right after.
+fn blip() -> bool {
+    use windows::core::PCWSTR;
+    use windows::Win32::UI::WindowsAndMessaging::*;
+    unsafe {
+        let class = crate::util::wide("STATIC");
+        let ex = WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+        let (x, y) = capture::output_rect().map(|r| (r.left, r.top)).unwrap_or((0, 0));
+        let Ok(h) = CreateWindowExW(ex, PCWSTR(class.as_ptr()), PCWSTR::null(), WS_POPUP, x, y, 1, 1, None, None, None, None) else { return false };
+        let _ = SetLayeredWindowAttributes(h, windows::Win32::Foundation::COLORREF(0), 1, LWA_ALPHA);
+        let _ = ShowWindow(h, SW_SHOWNOACTIVATE);
+        let mut msg = MSG::default();
+        let t = Instant::now();
+        while t.elapsed() < Duration::from_millis(50) {
+            while PeekMessageW(&mut msg, Some(h), 0, 0, PM_REMOVE).as_bool() {
+                let _ = DispatchMessageW(&msg);
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let _ = DestroyWindow(h);
+        true
+    }
 }
 
 fn reply(out: &Out, id: u64, r: CallResult) {
