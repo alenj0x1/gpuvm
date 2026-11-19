@@ -184,18 +184,29 @@ impl PipeBroker {
         }
         let created = self.cmd_long("New-GpuVM", new)?;
         let name = created.data["name"].as_str().unwrap_or(&name).to_string();
+        // A machine this call created but couldn't hand over is deleted again (turned off, then swept).
+        self.finish_create(args, &name).inspect_err(|_| {
+            let _ = self.cmd_long("Invoke-GpuVMPower", json!({ "Name": name, "Action": "TurnOff" }));
+            let _ = self.cmd_long("Remove-GpuVMDisposable", json!({}));
+        })
+    }
+
+    fn finish_create(&self, args: &Value, name: &str) -> Result<Reply> {
         // Errors that retrying can't fix: someone else has it, the session ended, or it isn't allowed.
         let fatal = |e: &BrokerError| matches!(e.code.as_str(), "unavailable" | "taken" | "not_taken" | "killed" | "denied" | "bad_request");
         // PowerShell Direct answers once Windows has started: retry the install for a few minutes.
+        // The same failure three times in a row won't change by waiting (lab 053: an access error repeated for 5 min).
         let end = Instant::now() + Duration::from_secs(300);
+        let mut last = (String::new(), 0);
         loop {
             match self.cmd_long("Install-GpuVMAgent", json!({ "Name": name })) {
                 Ok(_) => break,
-                Err(e) if Instant::now() < end && !fatal(&e) => {
+                Err(e) if Instant::now() < end && !fatal(&e) && !(last.0 == e.message && last.1 >= 2) => {
+                    last = if last.0 == e.message { (last.0, last.1 + 1) } else { (e.message.clone(), 1) };
                     super::server::log(&format!("installing the agent in {name}: {} (retrying)", e.message));
                     std::thread::sleep(Duration::from_secs(10));
                 }
-                Err(e) => return Err(BrokerError::new(&e.code, format!("{name} was created but its agent couldn't be installed: {}", e.message))),
+                Err(e) => return Err(BrokerError::new(&e.code, format!("{name} was created but its agent couldn't be installed, so it was deleted again: {}", e.message))),
             }
         }
         // The claim becomes the lock once the agent inside has registered (it may restart Windows first).
@@ -204,7 +215,7 @@ impl PipeBroker {
             match self.cmd("Lock-GpuVMAgent", json!({ "Name": name, "Connection": s(args, "connection"), "Task": s(args, "task") })) {
                 Ok(_) => break,
                 Err(e) if Instant::now() < end && !fatal(&e) => std::thread::sleep(Duration::from_secs(3)),
-                Err(e) => return Err(BrokerError::new(&e.code, format!("{name} was created but couldn't be taken: {}", e.message))),
+                Err(e) => return Err(BrokerError::new(&e.code, format!("{name} was created but couldn't be taken, so it was deleted again: {}", e.message))),
             }
         }
         Ok(Reply::of(json!({ "name": name })))

@@ -40,6 +40,8 @@ const disposable = machine.startsWith("template:");
 if (disposable) {
   const made = await tool("create_disposable", { template: machine.slice(9), name: "lab054-tc", task: "Lab 054: take-control latency" });
   console.log("create_disposable:", text(made).slice(0, 300));
+  // Fail fast: without the machine there is nothing to measure (lab-craft).
+  if (made?.isError) { clearTimeout(guard); mcp.kill(); process.exit(4); }
   machine = "lab054-tc";
 } else {
   const took = await tool("take_machine", { machine, task: "Lab 054: take-control latency" });
@@ -78,7 +80,8 @@ for (let r = 0; r < rounds; r++) {
   // Keep the session working (activity in the last 15 s), then the person moves the mouse over the picture.
   await tool("screenshot", { machine, maxWidth: 320, maxHeight: 200 });
   await sleep(1500);
-  const t0 = Number(execFileSync("pwsh", ["-NoProfile", "-File", join(here, "input.ps1")]).toString().trim());
+  let t0;
+  try { t0 = Number(execFileSync("pwsh", ["-NoProfile", "-File", join(here, "input.ps1")]).toString().trim()); } catch { t0 = NaN; }
   if (!Number.isFinite(t0)) { console.error("no viewer window"); break; }
   let t1 = null;
   for (let i = 0; i < 400 && t1 === null; i++) { if (await paused()) t1 = Date.now(); else await sleep(5); }

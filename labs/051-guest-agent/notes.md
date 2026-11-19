@@ -44,11 +44,44 @@ person must act: elevated windows, the secure desktop, system error boxes. Proto
 
 ## Results so far (Nov 18)
 
-The harness scenarios (capture, latency, UIA, refusals, abuse, reboot) could not run: GpuVM's broker under test held
-`HV_GUID_CHILDREN:{service id}` almost the whole time, and the coordinator then asked to measure through the broker
-(the real host side). A host listener on `HV_GUID_CHILDREN` also blocks a bind to one VM's id (10048), so two host
-programs can't share the name: good for security (nothing else can squat it), one listener per host. The harness
-stays for the abuse cases the broker won't exercise. What was measured:
+The harness ran once in a 30-min slot the broker gave (`out/run-20261118-220543`, agent 0.3.0). A host listener on
+`HV_GUID_CHILDREN` blocks a bind to one VM's id too (10048): one listener per host, nothing else can squat it. Capture
+failed in that run (see "regression" below), so capture, action -> screen latency and the Edge checks are still to be
+measured, through the broker (`Invoke-GpuVMAgent`) once the installed build bundles 0.3.1.
+
+| harness case (agent 0.3.0, n) | result |
+| --- | --- |
+| agent.info round trip (200) | p50 0.29 / p95 0.40 ms |
+| screen.state round trip (200) | p50 0.24 / p95 0.32 ms |
+| exec.run `cmd /c echo hi` (40) | p50 26.6 / p95 42.1 ms |
+| exec.run whoami | `agent051\agent`, Medium (S-1-16-8192) |
+| exec.run stdin / timeout 1.5 s / 1 MiB output / missing program | ok / `timedOut` + partial output at 1.51 s / blob, truncated / `not_found` |
+| ui.tree, warm (5): Notepad, Settings, Explorer | 18.5 / 22.7 / 163 ms (17 / 19 / 186 interactive nodes) |
+| UAC credential prompt raised by `agent` | `secure_desktop` event 1.8 s after; capture, click, type, ui.tree all refused `secure_desktop` |
+| SYSTEM notepad on the agent's desktop, Alt+Tab to it | click, type, ui.tree refused `blocked_elevated` |
+| wrong challenge MAC | no proof sent, closed |
+| wrong frame MAC, replayed seq, no MAC, JSON > 64 KiB, blob > 16 MiB, unknown kind, unannounced blob, blob hash mismatch | closed in <= 0.2 ms |
+| heartbeat silence | closed at 7.0 s |
+| unknown method, params not an object, click outside the screen | `bad_request`, connection kept |
+| secret readable by Users | no dialing (15 s); reverted -> reconnected in 1.9 s |
+| restart from inside | drop seen in 3.3 s; reconnected 14.7 s after the call (7.0 s after boot) |
+
+Not conclusive: the csrss error box (NtRaiseHardError from the agent user) produced no `error_box` event and no
+visible box was found; the `secure_desktop{on:false}` event didn't arrive within 10 s after consent.exe was killed;
+`signed_in` after the restart was logged by the guest but not seen by the harness. All three need screenshots, i.e.
+the 0.3.1 capture, and are re-checked through the broker.
+
+**Regression found by the harness:** the security fix that restricted the helper's process DACL (own user: query and
+wait only) made Windows.Graphics.Capture fail with E_ACCESSDENIED (the process opens itself by id). Reverted in 0.3.1;
+the handle-inheritance part of that fix stays.
+
+**Real sign-in cycle on a fresh VM** (`signin-cycle.ps1`, agent 0.3.1): install -> signed in as `agent` 23 s after the
+restart call; `-SignInAs previous` -> the person (`gpuvm`) 45 s; `-SignInAs agent` (fast path) -> `agent` 47 s;
+profile `C:\Users\agent`. On the first VM the person's sign-in did NOT come back: its first install had been
+hard-reset (below), which left an orphan `C:\Users\agent` (profile became `agent.000`) and a wrong password backup.
+install.ps1 now moves an orphan folder aside; agent.info returns `home`.
+
+Other measurements:
 
 | step | result |
 | --- | --- |
@@ -58,7 +91,7 @@ stays for the abuse cases the broker won't exercise. What was measured:
 | same version again (fast path: new password, restart service) | 0.46 s |
 | restart -> signed in as `agent` | 15 s |
 | service start -> helper running as `AGENT051\agent`, medium, session 1 | < 1 s |
-| New-GpuVMTemplate (64 GB dynamic disk) | 90 s |
+| New-GpuVMTemplate (64 GB dynamic disk) | 27-90 s; `agent-tpl` = 14.4 GB |
 
 - **Hard reset loses the install.** The first `prepare.ps1` restarted with `Restart-VM -Force` seconds after
   install.ps1: the files (exe, log) survived, the registry (service, Winlogon) didn't. Restart from inside.
@@ -81,7 +114,7 @@ stays for the abuse cases the broker won't exercise. What was measured:
 
 | finding | fix | check in agent051 |
 | --- | --- | --- |
-| H1 helper pipes inherited by every exec.run child; any `agent` process could open the helper | stdio not inheritable, exec handle list, helper DACL: own user query+synchronize only | as `agent`: all/dupHandle/vmRead/vmWrite/suspend/terminate/writeDac **denied**, queryLimited/synchronize allowed |
+| H1 helper pipes inherited by every exec.run child; any `agent` process could open the helper | stdio not inheritable, exec handle list (kept); helper DACL own-user query+synchronize only (**reverted in 0.3.1**: broke WGC) | 0.3.0: as `agent` all/dupHandle/vmRead/vmWrite/suspend denied. Residual: programs run as `agent` can open the helper (same user); they no longer inherit its pipes |
 | H2 a user could plant `ProgramData\GpuVM(\Agent\logs)` as a junction before install | foreign/link folders removed without following; no recursion through links; service logs only in a checked folder | junction at `logs` -> removed, target folder untouched, log written in the real folder |
 | M1 a stalled helper could block the SYSTEM service | bounded queue + writer thread; helper killed after 10 s not reading | (code) |
 | M2 person's plain autologon password would land in a Users-readable backup | LSA secret; backup key SYSTEM+Admins | backup key ACL: SYSTEM, Administradores only |

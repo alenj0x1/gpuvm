@@ -30,9 +30,73 @@ pub struct Output {
 
 unsafe impl Send for Output {}
 
-/// The output the person sees: attached, primary (contains 0,0), on a hardware adapter (GPU-P shows several
-/// adapters; only one has the virtual display, lab 048).
+/// One display attached to the desktop, as GDI sees it (physical pixels, independent of DPI awareness).
+#[derive(Clone, Debug)]
+pub struct Display {
+    pub device: String,
+    pub adapter: String,
+    pub rect: RECT,
+    pub primary: bool,
+    pub monitor: HMONITOR,
+}
+
+pub fn displays() -> Vec<Display> {
+    use windows::Win32::Graphics::Gdi::*;
+    let mut v = Vec::new();
+    unsafe {
+        let mut i = 0;
+        loop {
+            let mut dd = DISPLAY_DEVICEW { cb: std::mem::size_of::<DISPLAY_DEVICEW>() as u32, ..Default::default() };
+            if !EnumDisplayDevicesW(windows::core::PCWSTR::null(), i, &mut dd, 0).as_bool() {
+                break;
+            }
+            i += 1;
+            if (dd.StateFlags & DISPLAY_DEVICE_ATTACHED_TO_DESKTOP).0 == 0 {
+                continue;
+            }
+            let mut dm = DEVMODEW { dmSize: std::mem::size_of::<DEVMODEW>() as u16, ..Default::default() };
+            if !EnumDisplaySettingsW(windows::core::PCWSTR(dd.DeviceName.as_ptr()), ENUM_CURRENT_SETTINGS, &mut dm).as_bool() {
+                continue;
+            }
+            let pos = dm.Anonymous1.Anonymous2.dmPosition;
+            let rect = RECT { left: pos.x, top: pos.y, right: pos.x + dm.dmPelsWidth as i32, bottom: pos.y + dm.dmPelsHeight as i32 };
+            let center = POINT { x: (rect.left + rect.right) / 2, y: (rect.top + rect.bottom) / 2 };
+            v.push(Display {
+                device: wstr(&dd.DeviceName),
+                adapter: wstr(&dd.DeviceString),
+                rect,
+                primary: (dd.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE).0 != 0,
+                monitor: MonitorFromPoint(center, MONITOR_DEFAULTTONEAREST),
+            });
+        }
+    }
+    v
+}
+
+/// The display the agent works on: the one GpuVM streams (its virtual display driver), else the primary one.
+/// With the agent's session a Hyper-V video display (1024x768) can be the primary while the person sees the
+/// virtual display (broker finding, Nov 18).
+pub fn target_display() -> Option<Display> {
+    let all = displays();
+    let vdd = |d: &&Display| {
+        let a = d.adapter.to_ascii_lowercase();
+        a.contains("virtual display") || a.contains("iddsample") || a.contains("mttvdd")
+    };
+    all.iter().find(vdd).or_else(|| all.iter().find(|d| d.primary)).or(all.first()).cloned()
+}
+
+pub fn displays_json() -> Value {
+    let t = target_display().map(|d| d.device);
+    json!(displays()
+        .iter()
+        .map(|d| json!({"device": d.device, "adapter": d.adapter, "rect": [d.rect.left, d.rect.top, d.rect.right - d.rect.left, d.rect.bottom - d.rect.top],
+                         "primary": d.primary, "target": Some(&d.device) == t.as_ref()}))
+        .collect::<Vec<_>>())
+}
+
+/// The DXGI output of the target display (for the capture device); the old primary/hardware heuristic as fallback.
 pub fn primary_output() -> Option<Output> {
+    let target = target_display();
     let mut best: Option<(u8, Output)> = None;
     unsafe {
         let factory: IDXGIFactory1 = CreateDXGIFactory1().ok()?;
@@ -50,7 +114,8 @@ pub fn primary_output() -> Option<Output> {
                 }
                 let r = od.DesktopCoordinates;
                 let primary = r.left <= 0 && r.top <= 0 && r.right > 0 && r.bottom > 0;
-                let score = (primary as u8) * 2 + (!software as u8);
+                let is_target = target.as_ref().is_some_and(|t| t.device.eq_ignore_ascii_case(&wstr(&od.DeviceName)) || t.monitor == od.Monitor);
+                let score = (is_target as u8) * 4 + (primary as u8) * 2 + (!software as u8);
                 if best.as_ref().map_or(true, |(s, _)| score > *s) {
                     best = Some((score, Output { adapter: adapter.clone(), adapter_name: wstr(&d.Description), device: wstr(&od.DeviceName), rect: r, monitor: od.Monitor }));
                 }
@@ -279,15 +344,7 @@ pub fn encode_webp(rgb: &[u8], w: u32, h: u32) -> Vec<u8> {
 /// The captured display's rect on the virtual desktop (where protocol coordinates start), read fresh every time
 /// (the mode can change under us, e.g. when the viewer connects): the primary monitor, as primary_output() picks.
 pub fn output_rect() -> Option<RECT> {
-    use windows::Win32::Graphics::Gdi::*;
-    unsafe {
-        let m = MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY);
-        let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
-        if GetMonitorInfoW(m, &mut mi).as_bool() {
-            return Some(mi.rcMonitor);
-        }
-    }
-    primary_output().map(|o| o.rect)
+    target_display().map(|d| d.rect).or_else(|| primary_output().map(|o| o.rect))
 }
 
 pub type CallResult = Result<(Value, Option<Vec<u8>>), (&'static str, String)>;
@@ -306,9 +363,9 @@ pub fn screen_capture(p: &Value) -> CallResult {
     }
     let mut g = CAPTURE.lock().unwrap();
     let mut open_ms = 0.0;
-    // the primary display changed (topology change): capture the new one
-    let primary = unsafe { windows::Win32::Graphics::Gdi::MonitorFromPoint(POINT { x: 0, y: 0 }, windows::Win32::Graphics::Gdi::MONITOR_DEFAULTTOPRIMARY) };
-    if g.as_ref().is_some_and(|w| w.output.monitor != primary) {
+    // the target display changed (topology change, viewer connected): capture the new one
+    let target = target_display().map(|d| d.monitor);
+    if g.as_ref().is_some_and(|w| Some(w.output.monitor) != target) {
         *g = None;
     }
     if g.is_none() {

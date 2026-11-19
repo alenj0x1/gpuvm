@@ -58,7 +58,8 @@ fn info() -> Value {
     json!({"version": VERSION, "os": os, "lang": lang, "user": user, "session": session, "screen": screen, "signedIn": true,
            "integrity": crate::token::il_name(state::own_integrity()), "agentUser": crate::files::root().is_ok(),
            // the profile folder files.* paths are relative to (normally C:\Users\agent, but Windows may pick another name)
-           "home": std::env::var("USERPROFILE").unwrap_or_default()})
+           "home": std::env::var("USERPROFILE").unwrap_or_default(),
+           "displays": capture::displays_json()})
 }
 
 fn dispatch(method: &str, p: &Value, blob: Option<Vec<u8>>, id: u64) -> CallResult {
