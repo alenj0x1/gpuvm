@@ -94,6 +94,7 @@ pub fn show(app: &AppHandle, prompt: Value) {
     let _ = crate::viewer::send_to(&vm, &json!({ "type": "capture", "on": false }));
     let _ = window.show();
     crate::overlay::mark_taskbar(&window, crate::viewer::viewer_full_screen(&vm));
+    crate::status::dock_changed(app);
     if let Ok(own) = window.hwnd() {
         // The keyboard comes to the dock too: nothing typed meanwhile goes on into the machine (and there is no key
         // that answers, so a stray Enter approves nothing).
@@ -104,6 +105,7 @@ pub fn show(app: &AppHandle, prompt: Value) {
 /// The dock goes away: it lifts (page) and closes, and the picture gets the mouse and keyboard back.
 pub fn hide(app: &AppHandle) {
     let Some(d) = dock().take() else { return };
+    crate::status::dock_changed(app);
     if let Some(window) = app.get_webview_window(LABEL) {
         let _ = window.emit("prompt-dock", json!({ "prompt": Value::Null }));
         let had_focus = window.is_focused().unwrap_or(false);

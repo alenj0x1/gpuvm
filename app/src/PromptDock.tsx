@@ -5,6 +5,7 @@ import { humanError } from "./ui";
 import { t, translateModule } from "./i18n";
 import type { AdminPrompt } from "./types";
 import * as mock from "./mock";
+import { useReportDockSize } from "./dockSize";
 
 /** Time after the dock lands before its buttons take clicks: a click meant for the picture never answers it. */
 const ARM_MS = 450;
@@ -21,6 +22,8 @@ export function PromptDock() {
   const [busy, setBusy] = useState<"Allow" | "Deny" | null>(null);
   const [error, setError] = useState("");
   const armTimer = useRef<number>(0);
+  const dockRef = useRef<HTMLDivElement>(null);
+  useReportDockSize(dockRef, shown);
 
   useEffect(() => {
     let off: (() => void) | undefined;
@@ -72,7 +75,7 @@ export function PromptDock() {
   return (
     <div className="dock-stage">
       <div className={shown ? "dock-veil on" : "dock-veil"} />
-      <div className={shown ? "dock on" : "dock"} role="alertdialog" aria-labelledby="dock-app" aria-describedby="dock-publisher">
+      <div ref={dockRef} className={shown ? "dock on" : "dock"} role="alertdialog" aria-labelledby="dock-app" aria-describedby="dock-publisher">
         <span className="dock-icon"><IconShieldLock size={18} /></span>
         <div className="dock-text">
           {prompt.reading ? <><span className="dock-skeleton" /><span className="dock-skeleton short" /></> : <>

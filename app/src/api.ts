@@ -69,6 +69,46 @@ export const api = {
   keepDisposable: (name: string) => ps("Set-GpuVMDisposable", { Name: name, Keep: true }),
 };
 
+/** Agents (docs/agents/protocol.md): the clients connected over MCP, their requests and the files they offer. The
+ *  broker decides everything; the app only shows it and passes on the person's answers. */
+// The broker's own shapes (times in ms, the client is a "connection"); agentStore.ts turns them into the app's types.
+type Raw = Record<string, unknown>;
+export const agents = {
+  /** The agent sessions: who, on which machine, doing what, how far into the budget, its last steps. */
+  clients: () => ps<Raw>("Get-GpuVMAgentClient"),
+  requests: () => ps<Raw>("Get-GpuVMAgentRequest"),
+  offers: (machine?: string) => ps<Raw>("Get-GpuVMAgentOffer", machine ? { Name: machine } : {}),
+  settings: () => ps<{ clients?: Record<string, { clientApprovals?: boolean }> }>("Get-GpuVMAgentSettings").then((r) => r[0] ?? null),
+  broker: () => ps<{ listening: boolean; error?: string | null }>("Get-GpuVMAgentBroker").then((r) => r[0] ?? null),
+  /** Recordings of agents' work (agent.rs keeps them while the app runs). */
+  recordings: async (): Promise<Record<string, unknown>[]> => {
+    if (!inTauri) return mock.agentRecordings();
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke<Record<string, unknown>[]>("agent_recordings");
+  },
+  /** Opens a recording (only files GpuVM saved this run, capture.rs). */
+  openRecording: async (path: string) => {
+    if (!inTauri) return;
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("capture_open", { path });
+  },
+  /** An action's screenshot, kept by the broker for the last 10 steps. */
+  capture: (connection: string, action: number) => ps<{ format: string; data: string }>("Get-GpuVMAgentCapture", { Connection: connection, Action: action }).then((r) => r[0] ?? null),
+  /** "control": the person took control over the picture (the viewer saw their input). */
+  pause: (connection: string, reason: "person" | "control" = "person") =>
+    ps("Suspend-GpuVMAgent", { Connection: connection, Reason: reason, Message: reason === "control" ? "You took control" : "Paused by you" }),
+  resume: (connection: string) => ps("Resume-GpuVMAgent", { Connection: connection }),
+  /** The kill switch: one session, or every one with "*". */
+  stop: (connection: string) => ps("Stop-GpuVMAgentClient", connection === "*" ? { All: true } : { Connection: connection }),
+  /** Per client (by its name, so it stays for its next sessions): low-risk approvals from the client itself. */
+  setClientApprovals: (clientName: string, on: boolean) => ps("Set-GpuVMAgentClient", { Name: clientName, ClientApprovals: on }),
+  /** forTask: allowed again for the rest of this task (never forever). */
+  answer: (id: string, allow: boolean, forTask = false) => ps("Resolve-GpuVMAgentRequest", { Id: id, Allow: allow, ...(forTask ? { ForTask: true } : {}) }),
+  resolveOffer: (id: string, accept: boolean) => ps("Resolve-GpuVMAgentOffer", { Id: id, Accept: accept }),
+  setUser: (machine: string, user: "agent" | "own") => ps("Set-GpuVMAgentUser", { Name: machine, User: user }),
+  setUse: (machine: string, use: "agent" | null) => ps("Set-GpuVMUse", { Name: machine, Use: use ?? "none" }),
+};
+
 /** What is wrong with a new machine name, as New-GpuVM and Rename-GpuVM check it, or "" when it can be used.
  * `current` is the machine being renamed: its own name, even in another case, is not taken. */
 export function vmNameError(name: string, vms: { name: string }[], current?: string): string {

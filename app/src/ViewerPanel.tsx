@@ -15,6 +15,8 @@ import {
   defaultWidgets, forgetWeather, loadWidgets, newWidget, saveWidgets, type CaptureState, type SavedCapture, type ViewerStats, type WidgetItem,
 } from "./ViewerWidgets";
 import { usePrefs } from "./prefs";
+import { AgentWidget } from "./Agents";
+import { PanelStatus } from "./StatusNotch";
 
 const WIDTH_KEY = "gpuvm.viewerPanelWidth";
 
@@ -230,6 +232,7 @@ export function ViewerPanel({ machine, onSwitched, onResize, sample }: {
           <div className="viewer-game"><GameStage game={game} machines={vms.filter((v) => v.streaming).map((v) => v.name)} first={vm} fallback={decor} onClose={() => setGame(null)} /></div>
         ) : (
           <>
+            <PanelStatus vm={vm} />
             {items.length === 0 && !edit ? (
               <div className="vp-board-empty">
                 <span className="vp-empty-icon"><IconLayoutGrid size={20} /></span>
@@ -267,6 +270,7 @@ export function ViewerPanel({ machine, onSwitched, onResize, sample }: {
                           onReveal={(f) => invoke("capture_reveal", { path: f.path }).catch((e) => showError(vm, humanError(e)))} />
                       );
                     }
+                    case "agent": return <AgentWidget machine={vm} size={size} />;
                     case "stats": return <StatsWidget stats={stats} history={history} size={size} />;
                     case "clock": return <ClockWidget size={size} />;
                     case "shelf": return <ShelfWidget vms={vms} size={size} />;
