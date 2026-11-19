@@ -125,11 +125,11 @@ fn legacy_handshake_and_tool_list() {
     let mut h = H::new(false);
     let r = h.rpc("tools/list", json!({}));
     let tools = r["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 25);
+    assert_eq!(tools.len(), 26);
     let mut names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     names.sort();
     names.dedup();
-    assert_eq!(names.len(), 25);
+    assert_eq!(names.len(), 26);
     for t in tools {
         assert_eq!(t["inputSchema"]["type"], "object");
         let a = &t["annotations"];
@@ -288,6 +288,7 @@ fn guest_and_broker_states() {
     let paused = h.err("click", json!({ "machine": m, "x": 1, "y": 1 }));
     assert!(paused.contains("took control") && paused.contains("fresh screenshot"), "{paused}");
     assert!(h.ok("list_machines", json!({})).contains("paused: the person took control"));
+    assert!(h.err("click", json!({ "machine": m, "x": 1, "y": 1 })).contains("took control"));
     h.fake.with(|s| s.machines.iter_mut().find(|x| x.name == m).unwrap().paused = false);
     // Someone else's machine.
     h.fake.with(|s| s.machines.iter_mut().find(|x| x.name == "work-pc").unwrap().taken_by = Some("other".into()));
@@ -326,8 +327,9 @@ fn commands_files_and_offers() {
     assert!(o.contains("offer o"), "{o}");
     let id = h.fake.with(|s| s.offers.keys().next().unwrap().clone());
     assert!(h.ok("offer_status", json!({ "machine": m, "offerId": id })).contains("still waiting"));
-    h.fake.with(|s| s.offers.get_mut(&id).unwrap().1 = "approved".into());
-    assert!(h.ok("offer_status", json!({ "machine": m, "offerId": id })).contains("approved"));
+    h.fake.with(|s| s.offers.get_mut(&id).unwrap().1 = "accepted".into());
+    assert!(h.ok("offer_status", json!({ "machine": m, "offerId": id })).contains("accepted"));
+    assert!(h.err("offer_file", json!({ "machine": m, "path": "C:\\Users\\agent\\Desktop\\Outbox\\sub\\x.txt", "note": "n" })).contains("directly inside"));
     // Restore points: not on disposable machines (turning them off deletes them), only on taken normal ones.
     assert!(h.err("restore_point_create", json!({ "machine": m })).contains("is disposable"));
     assert!(h.ok("open_viewer", json!({ "machine": m })).contains("viewer"));
@@ -341,6 +343,16 @@ fn commands_files_and_offers() {
     let p = h.ok("restore_point_create", json!({ "machine": "work-pc", "label": "clean" }));
     assert!(p.contains("clean"));
     assert!(h.ok("restore_point_revert", json!({ "machine": "work-pc", "point": "clean" })).contains("back at clean"));
+    // The person says no in GpuVM: nothing happens.
+    h.fake.with(|s| s.approval_answer = "denied".into());
+    assert!(h.err("restore_point_revert", json!({ "machine": "work-pc", "point": "clean" })).contains("said no"));
+    assert!(h.err("request_approval", json!({ "machine": "work-pc", "kind": "network", "title": "Open the network", "reason": "Download a tool" })).contains("said no"));
+    h.fake.with(|s| s.approval_answer = "allowed".into());
+    assert!(h.ok("request_approval", json!({ "machine": "work-pc", "kind": "admin", "title": "Install as admin", "reason": "Test the installer" })).contains("allowed"));
+    assert!(h.err("request_approval", json!({ "machine": "work-pc", "kind": "delete", "title": "x", "reason": "y" })).contains("admin, network or other"));
+    h.fake.with(|s| s.approval_answer = "pending".into());
+    assert!(h.err("request_approval", json!({ "machine": "work-pc", "kind": "other", "title": "x", "reason": "y", "waitSeconds": 0 })).contains("hasn't answered"));
+    h.fake.with(|s| s.approval_answer = "allowed".into());
     assert!(h.err("click", json!({ "machine": "work-pc", "x": 1, "y": 1 })).contains("Take a screenshot"), "revert forgets old screenshots");
     assert!(h.err("restore_point_revert", json!({ "machine": "work-pc", "point": "nope" })).contains("no restore point"));
     assert!(h.err("destroy", json!({ "machine": "work-pc" })).contains("isn't disposable"));

@@ -15,7 +15,7 @@ pub struct Machine {
     pub screen: (u32, u32),
     pub taken_by: Option<String>,
     pub paused: bool,
-    /// "person" (took control) or "agent" (request_human).
+    /// Pause reason: "control" (the person took over), "human" (request_human) or "person".
     pub paused_by: String,
     pub off: bool,
     pub elevated_foreground: bool,
@@ -34,6 +34,9 @@ pub struct State {
     pub elicitation: bool,
     pub max_steps: u64,
     pub offers: HashMap<String, (String, String)>,
+    /// Answer the fake person gives to approval requests ("allowed", "denied" or "pending").
+    pub approval_answer: String,
+    pub approvals: HashMap<String, (String, String)>,
     pub calls: Vec<String>,
     next: u32,
 }
@@ -44,7 +47,7 @@ pub struct FakeBroker {
 
 impl FakeBroker {
     pub fn new() -> Self {
-        let mut state = State { max_steps: 500, ..Default::default() };
+        let mut state = State { max_steps: 500, approval_answer: "allowed".into(), ..Default::default() };
         state.machines.push(machine("work-pc", false, ""));
         FakeBroker { state: Mutex::new(state) }
     }
@@ -69,7 +72,7 @@ fn machine(name: &str, disposable: bool, template: &str) -> Machine {
         screen: (1920, 1080),
         taken_by: None,
         paused: false,
-        paused_by: "person".into(),
+        paused_by: "control".into(),
         off: false,
         elevated_foreground: false,
         secure_desktop: false,
@@ -118,8 +121,8 @@ impl Broker for FakeBroker {
                     "name": m.name, "state": if m.off { "off" } else { "ready" }, "disposable": m.disposable, "template": m.template,
                     "agent": if m.off { Value::Null } else { json!({ "version": "fake", "screen": { "w": m.screen.0, "h": m.screen.1 }, "signedIn": true }) },
                     "desktop": if m.secure_desktop { "secure" } else { "default" },
-                    "takenBy": m.taken_by.as_ref().map(|c| json!({ "connection": c, "client": "fake client" })),
-                    "paused": if m.paused { json!({ "by": m.paused_by, "message": "" }) } else { Value::Null } })).collect();
+                    "takenBy": m.taken_by.as_ref().map(|c| json!({ "connection": c, "client": { "name": "fake client", "version": "1" } })),
+                    "paused": if m.paused { json!({ "by": if m.paused_by == "human" { "agent" } else { "person" }, "reason": m.paused_by, "message": "" }) } else { Value::Null } })).collect();
                 return Ok(Reply::of(Value::Array(list)));
             }
             "machine.create" => {
@@ -137,6 +140,13 @@ impl Broker for FakeBroker {
                 st.machines.push(m);
                 return Ok(Reply::of(json!({ "name": name })));
             }
+            "approval.get" => {
+                let id = s(&args, "requestId");
+                return match st.approvals.get(id) {
+                    Some((_, state)) => Ok(Reply::of(json!({ "id": id, "state": state }))),
+                    None => Err(err("not_found", "There is no such request.")),
+                };
+            }
             "offer.get" => {
                 let id = s(&args, "offerId");
                 return match st.offers.get(id) {
@@ -152,6 +162,14 @@ impl Broker for FakeBroker {
             .ok_or_else(|| err("not_found", &format!("There is no machine named {name}.")))?;
         let max_steps = st.max_steps;
         let steps = st.calls.iter().filter(|c| c.starts_with("agent.")).count() as u64;
+        let st_approvals = st.approvals.clone();
+        if op == "approval.request" {
+            st.next += 1;
+            let id = format!("r{}", st.next);
+            let answer = st.approval_answer.clone();
+            st.approvals.insert(id.clone(), (s(&args, "kind").to_string(), answer));
+            return Ok(Reply::of(json!({ "requestId": id, "expiresAt": "later" })));
+        }
         let m = &mut st.machines[idx];
         match op {
             "machine.take" => {
@@ -214,6 +232,10 @@ impl Broker for FakeBroker {
             }
             "restore.revert" => {
                 let point = s(&args, "point");
+                match st_approvals.get(s(&args, "approval")) {
+                    Some((kind, state)) if kind == "revert" && state == "allowed" => {}
+                    _ => return Err(err("needs_approval", "Going back needs the person's approval.")),
+                }
                 if !m.restore_points.iter().any(|p| p == point) {
                     return Err(err("not_found", &format!("There is no restore point named {point}.")));
                 }
@@ -229,7 +251,7 @@ impl Broker for FakeBroker {
             }
             "human.request" => {
                 m.paused = true;
-                m.paused_by = "agent".into();
+                m.paused_by = "human".into();
                 Ok(Reply::of(json!({ "requestId": "h1" })))
             }
             _ => Err(err("internal", &format!("Unknown operation {op}."))),

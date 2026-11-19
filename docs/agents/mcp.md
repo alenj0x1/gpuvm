@@ -49,8 +49,11 @@ The command must point at the installed `gpuvm.exe`: the GpuVM service only acce
 | do: input | `click`, `type`, `key`, `scroll`, `drag`, `act` (batch, ≤50) — all take `screenshot` (id) and `screenshotAfter` | not destructive |
 | do: UI | `ui_tree`, `ui_invoke` | read-only / not destructive |
 | do: commands, files | `run` (PowerShell, cmd or a program, as the standard user `agent`), `read_file`, `write_file` (under `C:\Users\agent`), `send_file` (host → `Desktop\Received`), `offer_file` + `offer_status` (Outbox → the person approves) | `run` and `write_file` destructive; `run` open-world |
-| do: lifetime | `restore_point_create`, `restore_point_revert` (normal machines only, current state kept first), `destroy` (disposables only) | revert and destroy destructive |
-| see / take control | `open_viewer`, `request_human` | – |
+| do: lifetime | `restore_point_create`, `restore_point_revert` (normal machines only; the person allows it in GpuVM; current state kept first), `destroy` (disposables only) | revert and destroy destructive |
+| see / take control | `open_viewer`, `request_human` (human-only steps), `request_approval` (admin, network, other: answered in GpuVM) | – |
+
+`create_disposable` and `take_machine` take an optional `task` (shown to the person); every guest request carries a
+note (the tool and its arguments, file contents summarized) for the session's action list in the app.
 
 Screenshots: WebP (PNG on request) as MCP image content, sized inside a `maxWidth`×`maxHeight` box (default
 1280×800) and always within Anthropic's limits (long edge ≤ 2576 px, ≤ 3.75 MP). Each screenshot gets an id and
@@ -70,7 +73,9 @@ Wait until they hand it back ("Return to agent" in GpuVM), then take a fresh scr
 - **Approvals.** Off by default for every connection. When the person turns them on for a connection, only the
   low-risk confirmations go through the client (`run`, `write_file`, `send_file`); the state of an approval is a
   random, single-use, 10-minute nonce bound to the tool and its exact arguments. High-risk and human-only actions
-  never go through MCP.
+  never go through MCP: high-risk ones are requests the person answers in GpuVM (`New-GpuVMAgentRequest`, kinds
+  admin/network/revert/delete/other, within the person's approval timeout); a revert passes the allowed request to
+  `Restore-GpuVMRestorePoint` as `Approval`, which the service checks (same machine and kind, once, 10 minutes).
 - **Pause / take control.** The broker refuses calls on a paused machine; the server turns that into the sentence
   above. `request_human` pauses on purpose and can wait (cancellable) until the person hands the machine back.
 - **Budgets.** Steps and minutes per machine come from the connection's settings; the server counts them and the

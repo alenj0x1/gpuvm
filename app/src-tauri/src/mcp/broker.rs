@@ -54,6 +54,8 @@ pub type Result<T> = std::result::Result<T, BrokerError>;
 /// - `machine.destroy {connection, name}` (disposable: turned off, then deleted)
 /// - `viewer.open {connection, name}`
 /// - `human.request {connection, name, message}` → `{requestId}` (pauses the agent on that machine)
+/// - `approval.request {connection, name, kind, title, reason, timeoutSec}` → `{requestId, expiresAt}`;
+///   `approval.get {connection, name, requestId}` → `{state: pending|allowed|denied|expired}` (the person answers in GpuVM)
 pub trait Broker: Send + Sync {
     fn call(&self, op: &str, args: Value) -> Result<Reply>;
     /// Operations that take minutes (creating a machine) run on their own pipe connection.
@@ -108,7 +110,11 @@ impl PipeBroker {
     fn run(conn: &mut crate::backend::Conn, request: &Value) -> Result<Reply> {
         let event = conn.call(request, |_| {}).map_err(|e| BrokerError::new("unavailable", e))?;
         if event["ok"] != true {
-            return Err(parse_error(&event["error"]));
+            // The service: {"ok":false,"error":"<English>","code":"<code>"}; older errors are text only.
+            return Err(match event["code"].as_str() {
+                Some(code) => BrokerError::new(code, event["error"].as_str().unwrap_or("")),
+                None => parse_error(&event["error"]),
+            });
         }
         // The service sends a list of what the command wrote; commands here write one object.
         let data = match &event["data"] {
@@ -180,7 +186,7 @@ impl PipeBroker {
                 Err(e) => return Err(BrokerError::new(&e.code, format!("{name} was created but its agent couldn't be installed: {}", e.message))),
             }
         }
-        self.cmd("Lock-GpuVMAgent", json!({ "Name": name, "Connection": s(args, "connection") }))?;
+        self.cmd("Lock-GpuVMAgent", json!({ "Name": name, "Connection": s(args, "connection"), "Task": s(args, "task") }))?;
         Ok(Reply::of(json!({ "name": name })))
     }
 
@@ -192,8 +198,10 @@ impl PipeBroker {
             .or_else(|| points.iter().rev().find(|p| p["label"].as_str().is_some_and(|l| l.eq_ignore_ascii_case(point))))
             .ok_or_else(|| BrokerError::new("not_found", format!("There is no restore point {point}; points: {}.",
                 points.iter().map(|p| format!("{} ({})", p["id"].as_str().unwrap_or("?"), p["label"].as_str().unwrap_or(""))).collect::<Vec<_>>().join(", "))))?;
-        // -SaveCurrent: how the machine is now becomes a point first, so nothing is lost.
-        self.cmd_long("Restore-GpuVMRestorePoint", json!({ "Name": name, "Id": found["id"], "SaveCurrent": true, "ShutdownIfRunning": true }))?;
+        // -SaveCurrent: how the machine is now becomes a point first, so nothing is lost. `Approval`: the person's
+        // allowed `revert` request (the service checks and strips it).
+        self.cmd_long("Restore-GpuVMRestorePoint", json!({ "Name": name, "Id": found["id"], "SaveCurrent": true, "ShutdownIfRunning": true,
+            "Approval": s(args, "approval") }))?;
         Ok(Reply::of(json!({ "point": found["id"] })))
     }
 }
@@ -208,11 +216,18 @@ impl Broker for PipeBroker {
             "templates.list" => self.templates(),
             "machine.create" => self.create(&args),
             "machines.list" => self.cmd("Get-GpuVMAgent", json!({})).map(|r| Reply::of(Value::Array(list(r.data)))),
-            "machine.take" => self.cmd("Lock-GpuVMAgent", json!({ "Name": name, "Connection": connection })),
+            "machine.take" => self.cmd("Lock-GpuVMAgent", json!({ "Name": name, "Connection": connection, "Task": s(&args, "task") })),
             "machine.start" => self.cmd_long("Invoke-GpuVMPower", json!({ "Name": name, "Action": "Start" })),
             "machine.release" =>self.cmd("Unlock-GpuVMAgent", json!({ "Name": name, "Connection": connection })),
             "agent.invoke" => self.cmd("Invoke-GpuVMAgent", json!({ "Name": name, "Method": s(&args, "method"), "Params": s(&args, "params"),
-                "TimeoutSec": s(&args, "timeoutSec"), "Connection": connection, "Blob": s(&args, "blob") })),
+                "TimeoutSec": s(&args, "timeoutSec"), "Connection": connection, "Blob": s(&args, "blob"), "Note": s(&args, "note") })),
+            "approval.request" => self.cmd("New-GpuVMAgentRequest", json!({ "Name": name, "Connection": connection, "Kind": s(&args, "kind"),
+                "Title": s(&args, "title"), "Reason": s(&args, "reason"), "TimeoutSec": s(&args, "timeoutSec") })),
+            "approval.get" => {
+                let id = s(&args, "requestId");
+                list(self.cmd("Get-GpuVMAgentRequest", json!({ "Id": id }))?.data).into_iter().find(|r| r["id"] == id).map(Reply::of)
+                    .ok_or_else(|| BrokerError::new("not_found", "There is no such request."))
+            }
             "file.send" => {
                 let host = args["hostPath"].as_str().unwrap_or("");
                 self.cmd_long("Send-GpuVMFile", json!({ "Name": name, "Path": [host] }))?;

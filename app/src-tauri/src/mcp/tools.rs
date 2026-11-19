@@ -29,6 +29,8 @@ pub struct Settings {
     pub elicitation: bool,
     pub max_steps: u64,
     pub max_minutes: u64,
+    /// How long a request to the person (approval) stays open.
+    pub approval_timeout: u64,
 }
 
 #[derive(Default)]
@@ -98,6 +100,7 @@ impl Ctx {
             elicitation: s["elicitation"].as_bool().unwrap_or(false),
             max_steps: s["maxSteps"].as_u64().unwrap_or(500),
             max_minutes: s["maxMinutes"].as_u64().unwrap_or(60),
+            approval_timeout: s["approvalTimeoutSec"].as_u64().unwrap_or(300),
         };
         let id = reply.data["connection"].as_str().unwrap_or("").to_string();
         if id.is_empty() {
@@ -246,13 +249,13 @@ pub fn definitions() -> Vec<Value> {
         tool("create_disposable", "Create a disposable Windows machine from a template, start it and take it (it is deleted when it shuts down). Waits until the agent inside is ready. Takes a few minutes.",
             schema(json!({ "template": { "type": "string" }, "name": { "type": "string", "description": "Optional name (letters, digits, -)." },
                 "profile": { "type": "string", "description": "Size profile from list_templates." },
-                "cpu": { "type": "integer", "minimum": 1, "maximum": 16 }, "memoryGB": { "type": "integer", "minimum": 2, "maximum": 64 } }), &["template"]),
+                "cpu": { "type": "integer", "minimum": 1, "maximum": 16 }, "memoryGB": { "type": "integer", "minimum": 2, "maximum": 64 }, "task": { "type": "string", "description": "What you are going to do with it, in a few words (shown to the person in GpuVM)." } }), &["template"]),
             ann("Create disposable machine", false, false, false, false)),
         // get
         tool("list_machines", "List GpuVM machines with their state, whether an agent can use them, who has them and whether the person paused the agent.",
             schema(json!({}), &[]), ann("List machines", true, false, true, false)),
         tool("take_machine", "Take a machine for this connection (one connection per machine), starting it if needed, and wait until its agent is ready.",
-            schema(json!({ "machine": m(), "waitSeconds": { "type": "integer", "minimum": 0, "maximum": 900, "description": "Default 180." } }), &["machine"]),
+            schema(json!({ "machine": m(), "waitSeconds": { "type": "integer", "minimum": 0, "maximum": 900, "description": "Default 180." }, "task": { "type": "string", "description": "What you are going to do with it, in a few words (shown to the person in GpuVM)." } }), &["machine"]),
             ann("Take machine", false, false, true, false)),
         tool("release_machine", "Release a machine you took so the person or another agent can use it.",
             schema(json!({ "machine": m() }), &["machine"]), ann("Release machine", false, false, true, false)),
@@ -325,8 +328,8 @@ pub fn definitions() -> Vec<Value> {
         tool("restore_point_create", "Save a restore point of a normal (not disposable) machine you took, to go back to later. The machine restarts for it.",
             schema(json!({ "machine": m(), "label": { "type": "string" } }), &["machine"]),
             ann("Create restore point", false, false, false, false)),
-        tool("restore_point_revert", "Return a normal machine you took to a restore point (by id or label). How it is now is kept as a new restore point first. The machine restarts.",
-            schema(json!({ "machine": m(), "point": { "type": "string" } }), &["machine", "point"]),
+        tool("restore_point_revert", "Return a normal machine you took to a restore point (by id or label). The person must allow it in GpuVM first (this waits for them); how it is now is kept as a new restore point. The machine restarts.",
+            schema(json!({ "machine": m(), "point": { "type": "string" }, "reason": { "type": "string", "description": "Why, shown to the person." } }), &["machine", "point"]),
             ann("Revert to restore point", false, true, false, false)),
         tool("destroy", "Shut down and delete a disposable machine you created; everything in it is lost. Other machines can't be destroyed by an agent.",
             schema(json!({ "machine": m() }), &["machine"]),
@@ -334,6 +337,12 @@ pub fn definitions() -> Vec<Value> {
         // see / take control
         tool("open_viewer", "Open the machine in GpuVM's viewer on this PC so the person can watch and take over.",
             schema(json!({ "machine": m() }), &["machine"]), ann("Open viewer", false, false, true, false)),
+        tool("request_approval", "Ask the person, in GpuVM (not in this chat), to allow something high-risk in a machine you took: administrator rights, network access, or something else. Waits for their answer. Restore point reverts ask on their own.",
+            schema(json!({ "machine": m(), "kind": { "type": "string", "enum": ["admin", "network", "other"] },
+                "title": { "type": "string", "description": "Short title, e.g. 'Install GpuVM as administrator'." },
+                "reason": { "type": "string", "description": "Why, in one or two sentences." },
+                "waitSeconds": { "type": "integer", "minimum": 0, "maximum": 1800, "description": "Default: the person's approval timeout." } }), &["machine", "kind", "title", "reason"]),
+            ann("Ask for approval", false, false, false, false)),
         tool("request_human", "Pause and ask the person to do something only a human may do in the machine (a UAC prompt, the lock screen, a password, a payment, a CAPTCHA). The agent stays paused until they press \"Return to agent\"; optionally wait for that.",
             schema(json!({ "machine": m(), "message": { "type": "string", "description": "What you need them to do, in one or two sentences." },
                 "waitSeconds": { "type": "integer", "minimum": 0, "maximum": 1800, "description": "Default 0 (return at once)." } }), &["machine", "message"]),
@@ -403,7 +412,7 @@ pub fn call(ctx: &Ctx, name: &str, call: &Call) -> Value {
             Approval::Reply(v) => return v,
         }
     }
-    let t = Tool { ctx, connection: &connection, settings: &settings, args: call.args, cancelled: call.cancelled };
+    let t = Tool { ctx, name, connection: &connection, settings: &settings, args: call.args, cancelled: call.cancelled };
     let result = match name {
         "list_templates" => t.list_templates(),
         "create_disposable" => t.create_disposable(),
@@ -425,6 +434,7 @@ pub fn call(ctx: &Ctx, name: &str, call: &Call) -> Value {
         "destroy" => t.destroy(),
         "open_viewer" => t.open_viewer(),
         "request_human" => t.request_human(),
+        "request_approval" => t.request_approval(),
         _ => Err(format!("There is no tool named {name}.")),
     };
     result.unwrap_or_else(tool_error)
@@ -491,6 +501,7 @@ fn approve(ctx: &Ctx, name: &str, call: &Call) -> Approval {
 
 struct Tool<'a> {
     ctx: &'a Ctx,
+    name: &'a str,
     connection: &'a str,
     settings: &'a Settings,
     args: &'a Value,
@@ -549,7 +560,21 @@ impl Tool<'_> {
         self.step(machine)?;
         extra["method"] = json!(method);
         extra["params"] = params;
+        extra["note"] = json!(self.note());
         self.broker("agent.invoke", machine, extra)
+    }
+
+    /// What this step does, for the person's view of the session in GpuVM: the tool and its arguments.
+    fn note(&self) -> String {
+        let mut args = self.args.clone();
+        if let Some(map) = args.as_object_mut() {
+            map.remove("machine");
+            if let Some(Value::String(c)) = map.get_mut("content") {
+                *c = format!("({} characters)", c.chars().count());
+            }
+        }
+        let text = if args.as_object().is_some_and(|m| m.is_empty()) { self.name.to_string() } else { format!("{} {args}", self.name) };
+        cap_to(text, 160)
     }
 
     /// The machine as the broker lists it, which must be taken by this connection.
@@ -618,8 +643,8 @@ impl Tool<'_> {
         }
         let cpu = opt_int(self.args, "cpu", 1, 16)?;
         let mem = opt_int(self.args, "memoryGB", 2, 64)?;
-        let r = self.broker("machine.create", "", json!({ "template": template, "machine": null, "name": name,
-            "profile": opt_str(self.args, "profile")?, "cpu": cpu, "memoryGB": mem }))?;
+        let r = self.broker("machine.create", "", json!({ "template": template, "name": name,
+            "profile": opt_str(self.args, "profile")?, "cpu": cpu, "memoryGB": mem, "task": self.task()? }))?;
         let created = r.data["name"].as_str().ok_or("GpuVM didn't say which machine it created.")?.to_string();
         let ready = self.wait_ready(&created, 600)?;
         Ok(text(format!("Created disposable machine {created} from {template}; {ready}")))
@@ -636,13 +661,14 @@ impl Tool<'_> {
             let mut flags = vec![m["state"].as_str().unwrap_or("?").to_string()];
             if m["disposable"] == true { flags.push("disposable".into()); }
             match paused_by(m) {
-                Some("agent") => flags.push("paused: waiting for the person (request_human)".into()),
-                Some(_) => flags.push("paused: the person took control".into()),
+                Some("human") => flags.push("paused: waiting for the person (request_human)".into()),
+                Some("control") => flags.push("paused: the person took control".into()),
+                Some(_) => flags.push("paused by the person".into()),
                 None => {}
             }
             match taken_by(m) {
                 Some(c) if c == self.connection => flags.push("taken by you".into()),
-                Some(_) => flags.push(format!("taken by another agent ({})", m["takenBy"]["client"].as_str().unwrap_or("?"))),
+                Some(_) => flags.push(format!("taken by another agent ({})", m["takenBy"]["client"]["name"].as_str().unwrap_or("?"))),
                 None => {}
             }
             if let Some(d) = m["desktop"].as_str().filter(|d| *d != "default") {
@@ -674,6 +700,10 @@ impl Tool<'_> {
         Ok(format!("its agent is ready{}. Next: screenshot.", size.map(|(w, h)| format!(" (screen {w}x{h})")).unwrap_or_default()))
     }
 
+    fn task(&self) -> Result<Option<String>, String> {
+        Ok(opt_str(self.args, "task")?.map(|t| cap_to(t.to_string(), 200)))
+    }
+
     fn take_machine(&self) -> Out {
         let machine = self.machine()?;
         let wait = opt_int(self.args, "waitSeconds", 0, 900)?.unwrap_or(180) as u64;
@@ -681,7 +711,7 @@ impl Tool<'_> {
         if m["state"] == "no-agent" {
             return Err(explain(machine, &BrokerError::new("no_agent", "")));
         }
-        self.broker("machine.take", machine, json!({}))?;
+        self.broker("machine.take", machine, json!({ "task": self.task()? }))?;
         if m["state"] == "off" {
             self.broker("machine.start", machine, json!({}))?;
         }
@@ -1035,8 +1065,10 @@ impl Tool<'_> {
     fn offer_file(&self) -> Out {
         let machine = self.machine()?;
         let path = arg_str(self.args, "path")?.replace('/', "\\");
-        if !path.to_ascii_lowercase().starts_with(&OUTBOX.to_ascii_lowercase()) || path.split('\\').any(|p| p == "..") {
-            return Err(format!("Only files inside {OUTBOX} can be offered; write or copy the file there first."));
+        let lower = path.to_ascii_lowercase();
+        let outbox = OUTBOX.to_ascii_lowercase();
+        if !lower.starts_with(&outbox) || lower[outbox.len()..].contains('\\') || path.split('\\').any(|p| p == "..") {
+            return Err(format!("Only files directly inside {OUTBOX} can be offered; write or copy the file there first."));
         }
         let note = arg_str(self.args, "note")?;
         let wait = opt_int(self.args, "waitSeconds", 0, 900)?.unwrap_or(0) as u64;
@@ -1049,7 +1081,7 @@ impl Tool<'_> {
         let mut last = Value::Null;
         self.wait(wait, || {
             last = self.broker("offer.get", machine, json!({ "offerId": id }))?.data;
-            Ok(last["state"] != "pending")
+            Ok(!matches!(last["state"].as_str(), Some("pending" | "copying")))
         })?;
         Ok(text(offer_text(&id, &last)))
     }
@@ -1062,6 +1094,38 @@ impl Tool<'_> {
     }
 
     // -------- restore points and lifetime
+
+    /// Asks the person in GpuVM (never through the client) and waits for their answer; the allowed request's id.
+    fn approval(&self, machine: &str, kind: &str, title: &str, reason: &str, wait: u64) -> Result<String, String> {
+        let r = self.broker("approval.request", machine, json!({ "kind": kind, "title": cap_to(title.to_string(), 120),
+            "reason": cap_to(reason.to_string(), 500), "timeoutSec": wait.max(30) }))?;
+        let id = r.data["requestId"].as_str().ok_or("GpuVM didn't return a request id.")?.to_string();
+        let mut state = String::from("pending");
+        self.wait(wait, || {
+            state = self.broker("approval.get", machine, json!({ "requestId": id }))?.data["state"].as_str().unwrap_or("pending").to_string();
+            Ok(state != "pending")
+        })?;
+        match state.as_str() {
+            "allowed" => Ok(id),
+            "denied" => Err("The person said no in GpuVM. Don't try again; ask them what to do instead.".into()),
+            "pending" => Err(format!("The person hasn't answered in GpuVM yet (request {id}); try again later.")),
+            _ => Err("The request expired without an answer.".into()),
+        }
+    }
+
+    fn request_approval(&self) -> Out {
+        let machine = self.machine()?;
+        let kind = arg_str(self.args, "kind")?;
+        if !["admin", "network", "other"].contains(&kind) {
+            return Err("`kind` must be admin, network or other.".into());
+        }
+        let title = arg_str(self.args, "title")?;
+        let reason = arg_str(self.args, "reason")?;
+        let wait = opt_int(self.args, "waitSeconds", 0, 1800)?.map(|w| w as u64).unwrap_or(self.settings.approval_timeout);
+        self.mine(machine)?;
+        let id = self.approval(machine, kind, title, reason, wait)?;
+        Ok(text(format!("The person allowed it (request {id}).")))
+    }
 
     /// Restore points need the machine off for a moment, which deletes a disposable machine: refused for those.
     fn restorable(&self, machine: &str) -> Result<(), String> {
@@ -1090,7 +1154,9 @@ impl Tool<'_> {
         let point = arg_str(self.args, "point")?;
         self.restorable(machine)?;
         self.step(machine)?;
-        self.broker("restore.revert", machine, json!({ "point": point }))?;
+        let approval = self.approval(machine, "revert", &format!("Go back to restore point {point}"),
+            opt_str(self.args, "reason")?.unwrap_or("The agent wants to return the machine to an earlier state."), self.settings.approval_timeout)?;
+        self.broker("restore.revert", machine, json!({ "point": point, "approval": approval }))?;
         self.ctx.shots.lock().unwrap().retain(|s| s.machine != machine);
         let ready = self.wait_ready(machine, 300)?;
         Ok(text(format!("{machine} is back at {point} (how it was before is kept as a new restore point); {ready}")))
@@ -1137,8 +1203,9 @@ fn screen(m: &Value) -> Option<(u32, u32)> {
     Some((s["w"].as_u64()? as u32, s["h"].as_u64()? as u32))
 }
 
+/// Why the machine is paused: "human" (request_human), "control" (the person took over) or "person".
 fn paused_by(m: &Value) -> Option<&str> {
-    m["paused"].is_object().then(|| m["paused"]["by"].as_str().unwrap_or("person"))
+    m["paused"].is_object().then(|| m["paused"]["reason"].as_str().unwrap_or("person"))
 }
 
 fn taken_by(m: &Value) -> Option<&str> {
@@ -1159,9 +1226,12 @@ fn run_output(d: &Value, blob: Option<&[u8]>) -> (String, String) {
 
 fn offer_text(id: &str, d: &Value) -> String {
     match d["state"].as_str() {
-        Some("approved") => format!("Offer {id} approved{}.", d["hostPath"].as_str().map(|p| format!("; the file is at {p} on this PC")).unwrap_or_default()),
-        Some("declined") => format!("The person declined offer {id}."),
+        Some("accepted") => format!("The person accepted offer {id}{}.", d["savedTo"].as_str().map(|p| format!("; the file is at {p} on this PC")).unwrap_or_default()),
+        Some("refused") => format!("The person refused offer {id}."),
         Some("pending") => format!("Offer {id} is still waiting for the person."),
+        Some("copying") => format!("Offer {id} was accepted and is being copied."),
+        Some("expired") => format!("Offer {id} expired without an answer."),
+        Some("failed") => format!("Offer {id} failed: {}", d["error"].as_str().unwrap_or("unknown error")),
         other => format!("Offer {id}: {}", other.unwrap_or("unknown")),
     }
 }
