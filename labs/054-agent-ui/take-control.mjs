@@ -173,9 +173,89 @@ for (let r = 0; r < rounds; r++) {
   execFileSync("pwsh", ["-NoProfile", "-Command", `Import-Module 'C:\\Program Files\\GpuVM\\gpuvm\\src\\GpuVM' -ErrorAction Stop; Resume-GpuVMAgent -Name '${machine}' | Out-Null`], { stdio: "ignore" });
   await sleep(2500);
 }
+/** A module command through the GpuVM service (as the person), its JSON. */
+const mod = (command) => {
+  try {
+    const out = execFileSync("pwsh", ["-NoProfile", "-Command", `Import-Module 'C:\\Program Files\\GpuVM\\gpuvm\\src\\GpuVM' -ErrorAction Stop; ${command} | ConvertTo-Json -Depth 6 -Compress`]).toString().trim();
+    return out ? JSON.parse(out) : null;
+  } catch (e) { return { error: String(e.message).slice(0, 200) }; }
+};
+const agentState = () => { const c = [mod("Get-GpuVMAgentClient")].flat().find((x) => x && x.machine === machine); return c?.state ?? null; };
+/** The person's move over the picture, then whether the broker says "control" within `ms`. */
+const takeOver = async (ms = 5000) => {
+  try { execFileSync("pwsh", ["-NoProfile", "-File", join(here, "input.ps1")]); } catch { return "no-viewer"; }
+  const until = Date.now() + ms;
+  while (Date.now() < until) { const s = agentState(); if (s === "control") return "control"; await sleep(200); }
+  return agentState();
+};
+const giveBack = async () => { mod(`Resume-GpuVMAgent -Name '${machine}'`); await sleep(2000); };
+
+// Take control while the agent thinks (idle: 18 s without a step) and while it waits for an answer (code review:
+// before, only "working" was watched and these missed).
+const idleRounds = [];
+for (let r = 0; r < 3; r++) {
+  await sleep(18000);
+  const before = agentState();
+  idleRounds.push({ before, after: await takeOver() });
+  await giveBack();
+}
+console.log("idle rounds:", JSON.stringify(idleRounds));
+const waitingRounds = [];
+for (let r = 0; r < 3; r++) {
+  const asked = tool("request_approval", { machine, kind: "network", title: `Lab 054 round ${r + 1}`, reason: "Measuring take control while the agent waits", waitSeconds: 60 });
+  await sleep(3000);
+  const before = agentState();
+  if (r === 0) shot("installed-waiting-dock");
+  waitingRounds.push({ before, after: await takeOver() });
+  // The request ends when the person takes control (the broker cancels the session's pending calls); refuse it
+  // anyway if it is still there.
+  for (const q of [mod("Get-GpuVMAgentRequest")].flat().filter((x) => x && x.machine === machine && x.state === "pending")) mod(`Resolve-GpuVMAgentRequest -Id '${q.id}' -Allow:$false`);
+  await asked;
+  await giveBack();
+}
+console.log("waiting rounds:", JSON.stringify(waitingRounds));
+
+// The dock of a copy from this PC (send_file): a screenshot, then refused.
+const sending = tool("send_file", { machine, hostPath: join(here, "README.md"), reason: "Lab 054: the dock of a copy from the PC" });
+await sleep(3500);
+shot("installed-send-dock");
+const sendRequest = [mod("Get-GpuVMAgentRequest")].flat().find((x) => x && x.machine === machine && x.kind === "send" && x.state === "pending");
+if (sendRequest) mod(`Resolve-GpuVMAgentRequest -Id '${sendRequest.id}' -Allow:$false`);
+await sending;
+const send = sendRequest ? { paths: sendRequest.paths, files: sendRequest.files, bytes: sendRequest.bytes, title: sendRequest.title } : null;
+console.log("send request:", JSON.stringify(send));
+
+// A delivery accepted: "Copying…" on the notch, then saved. A file of the lab's own, deleted from Downloads after.
+const content = "Lab 054 delivery\n".repeat(20000);
+await tool("write_file", { machine, path: "Desktop\\Outbox\\lab054-delivery.txt", content });
+const offered = await tool("offer_file", { machine, path: "Desktop\\Outbox\\lab054-delivery.txt", note: "Lab 054: a delivery to watch copying" });
+console.log("offer_file:", text(offered).slice(0, 160));
+await sleep(2500);
+const offer = [mod("Get-GpuVMAgentOffer")].flat().find((x) => x && x.machine === machine && x.state === "pending");
+let copy = null;
+if (offer) {
+  const tAccept = Date.now();
+  mod(`Resolve-GpuVMAgentOffer -Id '${offer.id}' -Accept:$true`);
+  shot("installed-copying-notch");
+  let final = null;
+  while (Date.now() - tAccept < 60000 && !final) {
+    const o = [mod(`Get-GpuVMAgentOffer -Id '${offer.id}'`)].flat()[0];
+    if (o && (o.state === "accepted" || o.state === "failed")) final = o; else await sleep(300);
+  }
+  await sleep(1500);
+  shot("installed-copy-result-notch");
+  copy = { state: final?.state ?? "timeout", ms: Date.now() - tAccept, savedTo: final?.savedTo ?? final?.hostPath ?? null, error: final?.error ?? null };
+  if (copy.savedTo && /lab054-delivery\.txt$/i.test(copy.savedTo)) { try { execFileSync("pwsh", ["-NoProfile", "-Command", `Remove-Item -LiteralPath '${copy.savedTo}' -ErrorAction SilentlyContinue`]); } catch { /* left */ } }
+}
+console.log("copy:", JSON.stringify(copy));
+// Home's "not paired" on this copy (it streams): must not be there.
+const home = mod("Get-GpuVMHome");
+const homePairing = (home?.attention ?? []).filter((a) => a.vm === machine && a.kind === "pairing").length;
+
 const ok = samples.filter((s) => s !== null).sort((a, b) => a - b);
 const pct = (p) => ok[Math.min(ok.length - 1, Math.floor(p * ok.length))];
-const report = { machine, rounds, hiddenOpened, hiddenGpu, hiddenRecording, shownGpu, firstFrame, samples, p50: pct(0.5), p95: pct(0.95), misses: samples.filter((s) => s === null).length };
+const report = { machine, rounds, hiddenOpened, hiddenGpu, hiddenRecording, shownGpu, firstFrame, samples, p50: pct(0.5), p95: pct(0.95), misses: samples.filter((s) => s === null).length,
+  idleRounds, waitingRounds, send, copy, homePairing };
 // The copy streams, so the module must say it is paired (Home showed "Moonlight isn't paired" on 2026-11-19).
 try {
   report.paired = execFileSync("pwsh", ["-NoProfile", "-Command", `Import-Module 'C:\\Program Files\\GpuVM\\gpuvm\\src\\GpuVM' -ErrorAction Stop; (Get-GpuVMOverview | Where-Object name -eq '${machine}').paired`]).toString().trim();
