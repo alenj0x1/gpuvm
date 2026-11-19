@@ -384,7 +384,63 @@ fn ensure_tray(app: &AppHandle, notices: bool) -> tauri::Result<()> {
         tray = tray.icon(icon.clone());
     }
     tray.build(app)?;
+    apply_tray_mark(app);
     Ok(())
+}
+
+/// How many agents' requests wait for the person (agent.rs): the tray icon carries a dot and says how many.
+static TRAY_WAITING: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+pub(crate) fn set_tray_waiting(app: &AppHandle, count: u32) {
+    TRAY_WAITING.store(count, Ordering::Relaxed);
+    apply_tray_mark(app);
+}
+
+fn apply_tray_mark(app: &AppHandle) {
+    let Some(tray) = app.tray_by_id(TRAY_ID) else { return };
+    let Some(icon) = app.default_window_icon() else { return };
+    let count = TRAY_WAITING.load(Ordering::Relaxed);
+    let en = ENGLISH.load(Ordering::Relaxed);
+    if count == 0 {
+        let _ = tray.set_icon(Some(icon.clone()));
+        let base = if notices::active() { if en { "GpuVM · Watching administrator prompts" } else { "GpuVM · Vigilando avisos de administrador" } } else { "GpuVM" };
+        let _ = tray.set_tooltip(Some(base));
+        return;
+    }
+    let marked = tauri::image::Image::new_owned(with_dot(icon.rgba(), icon.width(), icon.height()), icon.width(), icon.height());
+    let _ = tray.set_icon(Some(marked));
+    let text = match (count, en) {
+        (1, true) => "GpuVM · An agent waits for you".to_string(),
+        (n, true) => format!("GpuVM · {n} agent requests wait for you"),
+        (1, false) => "GpuVM · Un agente te espera".to_string(),
+        (n, false) => format!("GpuVM · {n} solicitudes de agentes te esperan"),
+    };
+    let _ = tray.set_tooltip(Some(text));
+}
+
+/// The icon with a round amber dot in its bottom-right corner, ringed in dark so it reads on any taskbar.
+fn with_dot(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
+    let mut out = rgba.to_vec();
+    let size = width.min(height) as f32;
+    let r = size * 0.24;
+    let (cx, cy) = (width as f32 - r - 0.5, height as f32 - r - 0.5);
+    for y in 0..height {
+        for x in 0..width {
+            let d = ((x as f32 + 0.5 - cx).powi(2) + (y as f32 + 0.5 - cy).powi(2)).sqrt();
+            let i = ((y * width + x) * 4) as usize;
+            if i + 3 >= out.len() {
+                continue;
+            }
+            let px = if d <= r - size * 0.06 { Some([0xE7, 0xB4, 0x5E]) } else if d <= r { Some([0x1C, 0x1C, 0x1C]) } else { None };
+            if let Some([red, g, b]) = px {
+                out[i] = red;
+                out[i + 1] = g;
+                out[i + 2] = b;
+                out[i + 3] = 0xFF;
+            }
+        }
+    }
+    out
 }
 
 const TRAY_ID: &str = "main";
@@ -503,6 +559,24 @@ pub fn run() {
         });
 }
 
+
+#[cfg(test)]
+mod tray_tests {
+    use super::with_dot;
+
+    #[test]
+    fn the_mark_is_a_dot_in_the_corner_and_leaves_the_rest() {
+        let (w, h) = (32u32, 32u32);
+        let icon = vec![10u8; (w * h * 4) as usize];
+        let out = with_dot(&icon, w, h);
+        let px = |x: u32, y: u32| { let i = ((y * w + x) * 4) as usize; [out[i], out[i + 1], out[i + 2], out[i + 3]] };
+        assert_eq!(px(0, 0), [10, 10, 10, 10]); // top-left untouched
+        assert_eq!(px(w - 8, h - 8), [0xE7, 0xB4, 0x5E, 0xFF]); // inside the dot
+        assert_eq!(out.len(), icon.len());
+        // A short buffer never panics.
+        assert_eq!(with_dot(&[0u8; 8], 32, 32).len(), 8);
+    }
+}
 
 #[cfg(test)]
 mod ps_tests {

@@ -230,25 +230,46 @@ fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Ve
         None => hide_dock(app),
     }
 
-    // A notification for each new request whose machine isn't in view (once each; not for the docked one).
+    // A Windows notification for every new request (once each), wherever GpuVM is: in front, minimized, in the tray or
+    // in notices-only mode. Only the one dropping as the dock over the picture the person looks at goes without.
+    // (agent-mcp, 2026-11-19: a request that came while GpuVM was in front was marked as announced without a
+    // notification, and with GpuVM then in the tray the person never learned of it.)
     let shown_id = lock(&DOCKED).as_ref().map(|d| d.request["id"].clone());
-    let mut notified = lock(&NOTIFIED);
-    let notified = notified.get_or_insert_with(HashSet::new);
-    for r in &waiting {
-        let id = r["id"].as_str().unwrap_or("").to_string();
-        if id.is_empty() || notified.contains(&id) || Some(&r["id"]) == shown_id.as_ref() {
-            continue;
-        }
-        notified.insert(id);
-        // What only the person can do is always announced (the person may be in GpuVM but not looking at that machine);
-        // a request to answer, when GpuVM isn't in front.
-        if r["human"].as_bool() == Some(true) || !main_in_front(app) {
+    {
+        let mut notified = lock(&NOTIFIED);
+        let notified = notified.get_or_insert_with(HashSet::new);
+        for r in &waiting {
+            let id = r["id"].as_str().unwrap_or("").to_string();
+            if id.is_empty() || notified.contains(&id) || Some(&r["id"]) == shown_id.as_ref() {
+                continue;
+            }
+            notified.insert(id);
             notify(app, r);
         }
+        let live: HashSet<String> = waiting.iter().filter_map(|r| r["id"].as_str().map(str::to_string)).collect();
+        notified.retain(|id| live.contains(id));
+        lock(&ANSWERED).retain(|id| live.contains(id));
     }
-    let live: HashSet<String> = waiting.iter().filter_map(|r| r["id"].as_str().map(str::to_string)).collect();
-    notified.retain(|id| live.contains(id));
-    lock(&ANSWERED).retain(|id| live.contains(id));
+    // The mark: the tray icon (a dot and the count in its tooltip) and, with the window out of front, its taskbar
+    // button flashing once per new request.
+    mark_waiting(app, waiting.len());
+}
+
+/// How many requests waited at the last poll (the tray's mark changes only when it changes).
+static WAITING: AtomicU32 = AtomicU32::new(0);
+
+fn mark_waiting(app: &AppHandle, count: usize) {
+    let count = count as u32;
+    let before = WAITING.swap(count, Ordering::Relaxed);
+    if before == count {
+        return;
+    }
+    crate::set_tray_waiting(app, count);
+    if count > before && !main_in_front(app) {
+        if let Some(w) = app.get_webview_window("main") {
+            let _ = w.request_user_attention(Some(tauri::UserAttentionType::Informational));
+        }
+    }
 }
 
 /// The agent holds a machine and may act on it now or at any moment (working, thinking between steps, or waiting for
@@ -820,8 +841,11 @@ fn notify(app: &AppHandle, request: &Value) {
     };
     let view = tr("View", "Ver");
     let app2 = app.clone();
+    // View: what only the person can do is done in the machine (its picture); a request to answer opens GpuVM on
+    // Agents, where its card waits with Allow and Refuse (the dock drops there too once its picture is open).
+    let target = if human { vm } else { String::new() };
     let _ = app.run_on_main_thread(move || {
-        if let Err(e) = toast::show(&title, &body, &view, move || open_viewer(&app2, &vm)) {
+        if let Err(e) = toast::show(&title, &body, &view, move || open_viewer(&app2, &target)) {
             eprintln!("agent notification: {e}");
         }
     });
