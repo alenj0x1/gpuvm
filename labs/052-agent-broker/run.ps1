@@ -7,7 +7,10 @@ param(
     [int]$Rounds = 2,
     [string]$Session = 'agent-broker',
     # No VM: the stub runs on this PC over Hyper-V's loopback as the registered machine 'loopback052' (loopback.ps1).
-    [switch]$Loopback
+    [switch]$Loopback,
+    # The real guest agent instead of the stub: a checkout of the guest agent's branch (install.ps1 and the built
+    # target\release\gpuvm-agent.exe are used from there; the stub only plays the attacker, copied into the guest).
+    [string]$AgentFrom
 )
 $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
@@ -35,6 +38,16 @@ $outboxDir = if ($Loopback) { $env:STUB052_OUTBOX } else { 'C:\Users\agent\Deskt
 # One hostile behaviour of the stub, in the guest (as an administrator, who can read the secret like SYSTEM) or here.
 function Invoke-StubAttack([string]$case) {
     if ($Loopback) { return & $stub attack $case --secret "$loopDir\secret.raw" --vm-id $loopId }
+    if ($AgentFrom) {
+        if (-not $script:stubInGuest) {
+            $s = New-PSSession -VMName $Name -Credential $cred
+            Invoke-Command -Session $s { New-Item -ItemType Directory -Force 'C:\Windows\Temp\GpuVMLab052' | Out-Null }
+            Copy-Item $stub -ToSession $s -Destination 'C:\Windows\Temp\GpuVMLab052\stub052.exe' -Force
+            Remove-PSSession $s
+            $script:stubInGuest = $true
+        }
+        return Invoke-Guest { param($c) & 'C:\Windows\Temp\GpuVMLab052\stub052.exe' attack $c --secret 'C:\ProgramData\GpuVM\Agent\secret' } @($case)
+    }
     Invoke-Guest { param($c) & 'C:\ProgramData\GpuVM\Agent\stub052.exe' attack $c } @($case)
 }
 function Set-RealAgent([bool]$Running) {
@@ -43,6 +56,11 @@ function Set-RealAgent([bool]$Running) {
             $script:stubProcess = Start-Process $stub -ArgumentList 'run', '--secret', "$loopDir\secret.raw", '--vm-id', $loopId, '--log', "$loopDir\stub.log" -PassThru -WindowStyle Hidden
         }
         else { Stop-Process -Id $script:stubProcess.Id -Force; Start-Sleep -Milliseconds 300 }
+        return
+    }
+    if ($AgentFrom) {
+        Invoke-Guest { param($on) if ($on) { Start-Service GpuVMAgent } else { Stop-Service GpuVMAgent -Force } } @($Running)
+        Start-Sleep -Milliseconds 300
         return
     }
     Invoke-Guest {
@@ -117,14 +135,15 @@ foreach ($part in $Parts) {
     "== $part"
     switch ($part) {
         'install' {
-            # Guest stand-in: the stub and the lab installer play guest\agent\{dist,install.ps1} while the real ones
-            # aren't in this branch. Removed again at the end (only what the lab created).
+            # The real guest agent from its branch's checkout plays guest\agent\{install.ps1,dist} while it isn't
+            # merged here; removed again at the end (only what the lab created).
             $agentDir = Join-Path $root 'guest\agent'
             $created = -not (Test-Path (Join-Path $agentDir 'install.ps1'))
             if ($created) {
+                if (-not $AgentFrom) { throw 'install needs -AgentFrom (the guest agent checkout)' }
                 New-Item -ItemType Directory -Force (Join-Path $agentDir 'dist') | Out-Null
-                Copy-Item (Join-Path $PSScriptRoot 'guest-install.ps1') (Join-Path $agentDir 'install.ps1')
-                Copy-Item (Join-Path $PSScriptRoot 'stub\target\release\stub052.exe') (Join-Path $agentDir 'dist')
+                Copy-Item (Join-Path $AgentFrom 'guest\agent\install.ps1') (Join-Path $agentDir 'install.ps1')
+                Copy-Item (Join-Path $AgentFrom 'guest\agent\target\release\gpuvm-agent.exe') (Join-Path $agentDir 'dist')
             }
             try {
                 $gsiBefore = (Get-VMIntegrationService -VMName $Name | Where-Object { $_.Id -like '*6C09BB55-D683-4DA0-8931-C9BF705F6480' }).Enabled
@@ -132,7 +151,13 @@ foreach ($part in $Parts) {
                 $sw = [Diagnostics.Stopwatch]::StartNew()
                 $r = Install-GpuVMAgent -Name $Name
                 $installMs = $sw.Elapsed.TotalMilliseconds
-                $readyMs = Wait-AgentReady 30 $t0
+                $readyMs = Wait-AgentReady 240 $t0
+                # Again: the same build is already there (what a copy of a template gets).
+                $t1 = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+                $sw.Restart()
+                $r2 = Install-GpuVMAgent -Name $Name
+                $again = [ordered]@{ ms = $r2.ms; fastPath = $r2.fastPath; restarted = $r2.restarted; totalMs = [math]::Round($sw.Elapsed.TotalMilliseconds)
+                    readyMs = Wait-AgentReady 240 $t1 }
                 $gsiAfter = (Get-VMIntegrationService -VMName $Name | Where-Object { $_.Id -like '*6C09BB55-D683-4DA0-8931-C9BF705F6480' }).Enabled
                 $secretFile = Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) "GpuVM\agents\$($r.vmId)\secret"
                 $adminCanRead = try { [IO.File]::ReadAllBytes($secretFile) | Out-Null; $true } catch { $false }
@@ -143,7 +168,8 @@ foreach ($part in $Parts) {
                         kvp = @(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Virtual Machine\External' -ErrorAction SilentlyContinue).Count }
                 }
                 $agent = Get-AgentState
-                $result = [ordered]@{ installMs = [math]::Round($installMs); readyAfterInstallMs = $readyMs; gsiBefore = $gsiBefore; gsiAfter = $gsiAfter
+                $result = [ordered]@{ install = $r; installMs = [math]::Round($installMs); readyAfterInstallMs = $readyMs; again = $again
+                    gsiBefore = $gsiBefore; gsiAfter = $gsiAfter
                     hostSecretReadableByAdmin = $adminCanRead; guestSecret = $guest; agent = $agent }
                 $result | ConvertTo-Json -Depth 5 -Compress
                 Save-Result 'install' $result
@@ -156,12 +182,20 @@ foreach ($part in $Parts) {
             # End to end through the broker's module pipe: raw line (instrument), the cmdlet, and blob sizes.
             $raw = Open-Raw
             $samples = @{}
-            $cases = [ordered]@{
+            $cases = if ($AgentFrom) {
+                [ordered]@{
+                    'agent.info raw'          = @{ Method = 'agent.info'; Params = @{} }
+                    'screen.state'            = @{ Method = 'screen.state'; Params = @{} }
+                    'screen.capture 1280x800' = @{ Method = 'screen.capture'; Params = @{ maxW = 1280; maxH = 800 } }
+                    'input.act move'          = @{ Method = 'input.act'; Params = @{ actions = @(@{ type = 'move'; x = 400; y = 300 }) } }
+                    'ui.tree'                 = @{ Method = 'ui.tree'; Params = @{} }
+                }
+            } else { [ordered]@{
                 'agent.info raw'         = @{ Method = 'agent.info'; Params = @{} }
                 'screen.capture 257KB'   = @{ Method = 'screen.capture'; Params = @{ bytes = 257000 } }
                 'screen.capture 1MB'     = @{ Method = 'screen.capture'; Params = @{ bytes = 1MB } }
                 'screen.capture 4MB'     = @{ Method = 'screen.capture'; Params = @{ bytes = 4MB } }
-            }
+            } }
             foreach ($k in @($cases.Keys) + 'agent.info cmdlet' + 'agent.info broker-ms') { $samples[$k] = [System.Collections.Generic.List[double]]::new() }
             for ($round = 0; $round -lt $Rounds; $round++) {
                 for ($i = 0; $i -lt 60; $i++) {
