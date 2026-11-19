@@ -593,7 +593,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
         <CreateDialog host={host} existing={vms ?? []} job={createJob} error={createError} template={createTemplate}
           space={createSpace ?? (selected === HOME ? shownSpaceId : current ? null : shownSpaceId)}
           onClose={() => { setCreating(false); setCreateTemplate(null); }}
-          onCreate={({ name, iso, template, file, disposable, profile, user, password, apps, cleanup, resources, space }) => {
+          onCreate={({ name, iso, template, file, disposable, profile, user, password, apps, cleanup, resources, space, agents }) => {
             setCreateError(null);
             // The new machine goes into the space picked for it, even before it exists in the list.
             if (space) moveToSpace(name, space);
@@ -604,7 +604,9 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
               : template
               ? { Name: name, Template: template, Profile: profile, ...(resources ? { Override: hw } : {}), Start: true, ...(disposable ? { Disposable: true } : {}) }
               : { Name: name, IsoPath: iso, Profile: profile, Override: { ...hw, guest: { apps, cleanup } }, Credential: { user, password }, Start: true };
-            startJob(NEW_VM, file ? "Import-GpuVM" : "New-GpuVM", args, () => {
+            // Made for agents: the module sets the use (1280x800, isolated network, recording) and installs the agent.
+            const withAgents = agents ? { ...args, Use: "agent", AgentUser: agents.user } : args;
+            startJob(NEW_VM, file ? "Import-GpuVM" : "New-GpuVM", withAgents, () => {
               setCreating(false);
               setCreateTemplate(null);
               // Open the new machine once the list has it; before that, the route would fall back to Home.

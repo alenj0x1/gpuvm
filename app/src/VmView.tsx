@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  IconAdjustments, IconBrandWindows, IconAlertTriangle, IconAppWindow, IconApps, IconArrowsMaximize, IconBolt, IconCheck, IconChevronRight, IconClipboardText, IconClock, IconCpu, IconDeviceDesktop, IconDeviceFloppy, IconDeviceGamepad2, IconDots, IconDownload, IconExternalLink, IconFileExport, IconFolders, IconGauge, IconKey, IconLayoutBoard, IconLayoutGrid, IconLink, IconList, IconLoader2, IconNetwork, IconPalette, IconPencil, IconPlayerPause, IconPlayerPlay, IconPlayerTrackNext, IconPlugConnected, IconPlugOff, IconPlus, IconPointer, IconPower, IconRectangle, IconRefresh, IconRotate360, IconRefreshAlert, IconScreenShare, IconSearch, IconShieldCheck, IconSparkles, IconTemplate, IconTopologyStar3, IconTrash, IconWaveSine, IconWorld,
+  IconAdjustments, IconBrandWindows, IconAlertTriangle, IconAppWindow, IconApps, IconArrowsMaximize, IconBolt, IconCheck, IconChevronRight, IconClipboardText, IconClock, IconCpu, IconDeviceDesktop, IconDeviceFloppy, IconDeviceGamepad2, IconDots, IconDownload, IconExternalLink, IconFileExport, IconFolders, IconGauge, IconKey, IconLayoutBoard, IconLayoutGrid, IconLink, IconList, IconLoader2, IconNetwork, IconPalette, IconPencil, IconPlayerPause, IconPlayerPlay, IconPlayerTrackNext, IconPlugConnected, IconPlugOff, IconPlus, IconPointer, IconPower, IconRectangle, IconRefresh, IconRotate360, IconRefreshAlert, IconScreenShare, IconSearch, IconShieldCheck, IconSparkles, IconTemplate, IconTopologyStar3, IconTrash, IconWaveSine, IconWorld, IconUser, IconUserShield,
 } from "@tabler/icons-react";
 import type { AppInfo, CleanupLevelId, DiskBudget, SharedDiskInfo, DisplayMode, HostInfo, MouseMode, Sample, StreamSettings, VmOverview } from "./types";
 import { usePrefs } from "./prefs";
-import { AppLogo, FpsPicker, MonitorPicker, resolveMonitor, useMonitors, CODECS, RESOLUTIONS, USES, streamUseOf, useCleanupLevels, profileLabel } from "./pickers";
+import { AGENT_USE, AppLogo, FpsPicker, MonitorPicker, resolveMonitor, useMonitors, CODECS, RESOLUTIONS, USES, streamUseOf, useCleanupLevels, profileLabel } from "./pickers";
 import { MachineIcon, patternClick, patternVariant, setPatternVariant } from "./machineIcon";
 import { CLEANUP_REMOVED, MachineCube, cubeOf, type CubeView } from "./MachineCube";
 import { Customize, useDecorEdit } from "./Customize";
@@ -18,7 +18,7 @@ import { Scene, nextSceneStyle, sceneStyle } from "./Scene";
 import { CleanupFlow, CleanupItems, LEVEL_LOOK } from "./CleanupFlow";
 import { Sparkline, series } from "./Chart";
 import { CheckMark, Dropdown, Segmented, Slider, formatUptime, portalRoot, scrollToSection, stateText, useScrollFade } from "./ui";
-import { api, openConsole, pickExportFile, vmNameError } from "./api";
+import { agents, api, openConsole, pickExportFile, vmNameError } from "./api";
 import { locale, t, tn, translateModule } from "./i18n";
 
 export interface JobInfo {
@@ -1013,6 +1013,8 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
     networkIsolation: vm.options!.networkIsolation ?? true,
     // "default": the monitor chosen in Preferences.
     monitor: vm.client?.monitor ?? "default",
+    forAgents: vm.forAgents ?? false,
+    agentUser: vm.agent?.user ?? "agent",
   };
   const [draft, setDraft] = useState(initial);
   const [saved, setSaved] = useState(false);
@@ -1043,6 +1045,7 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
   const captureDirty = draft.captureMode !== initial.captureMode;
   const networkDirty = draft.networkIsolation !== initial.networkIsolation;
   const monitorDirty = draft.monitor !== initial.monitor;
+  const agentDirty = draft.forAgents !== initial.forAgents || draft.agentUser !== initial.agentUser;
   const monitors = useMonitors();
   const prefs = usePrefs();
   const off = vm.state === "Off";
@@ -1052,6 +1055,10 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
     if (captureDirty && !(await run(vm.name, t("Changing capture"), () => api.setCapture(vm.name, draft.captureMode)))) return;
     if (networkDirty && !(await run(vm.name, t("Changing network"), () => api.setNetworkIsolation(vm.name, draft.networkIsolation)))) return;
     if (monitorDirty && !(await run(vm.name, t("Saving"), () => api.setMonitor(vm.name, draft.monitor)))) return;
+    if (draft.forAgents !== initial.forAgents && !(await run(vm.name, t("Saving"), () => agents.setUse(vm.name, draft.forAgents ? "agent" : null)))) return;
+    if (draft.agentUser !== initial.agentUser && !(await run(vm.name, t("Saving"), () => agents.setUser(vm.name, draft.agentUser)))) return;
+    // A machine made for agents without the guest agent gets it now (its own job, with its steps on the button).
+    if (draft.forAgents && !initial.forAgents && !vm.agent?.installed) { startJob(vm.name, "Install-GpuVMAgent", { Name: vm.name, User: draft.agentUser }); return; }
     if (!vmDirty) { setSaved(true); return; }
     const override = {
       vm: { cpu: { count: draft.cpu }, memoryGB: draft.memoryGB, disk: { sizeGB: draft.diskGB } },
@@ -1095,14 +1102,27 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
         {part === "display" && (
           <>
         {vm.streaming && (
+          // Five uses: a list with each one's icon and what it's for (a row of five doesn't fit).
           <OptionRow icon={<IconDeviceGamepad2 size={17} />} title={t("Use|machine")} section
-            desc={shownUse ? USES.find((u) => u.id === shownUse)!.description : t("Set by hand. Pick a use to go back to its values.")}>
-            <Segmented value={shownUse ?? "custom"} onChange={(id) => {
-              if (id === "custom") { setCustomUse(true); return; }
+            desc={draft.forAgents ? AGENT_USE.description : shownUse ? USES.find((u) => u.id === shownUse)!.description : t("Set by hand. Pick a use to go back to its values.")}>
+            <Dropdown<string> short label={t("Use|machine")} value={draft.forAgents ? AGENT_USE.id : shownUse ?? "custom"} onChange={(id) => {
+              if (id === "custom") { setCustomUse(true); setDraft({ ...draft, forAgents: false }); return; }
               setCustomUse(false);
-              setDraft({ ...draft, ...USES.find((u) => u.id === id)!.client });
-            }} options={[...USES.map((u) => ({ value: u.id as string, label: <><u.icon size={15} />{u.label}</> })),
-              { value: "custom", label: <><IconAdjustments size={15} />{t("Custom")}</> }]} />
+              if (id === AGENT_USE.id) setDraft({ ...draft, ...AGENT_USE.client, resolution: AGENT_USE.resolution, networkIsolation: true, forAgents: true });
+              else setDraft({ ...draft, ...USES.find((u) => u.id === id)!.client, forAgents: false });
+            }} options={[...USES.map((u) => ({ value: u.id as string, label: u.label, detail: u.description, icon: <u.icon size={16} /> })),
+              { value: AGENT_USE.id, label: AGENT_USE.label, detail: AGENT_USE.description, icon: <AGENT_USE.icon size={16} /> },
+              { value: "custom", label: t("Custom"), detail: t("Set by hand. Pick a use to go back to its values."), icon: <IconAdjustments size={16} /> }]} />
+          </OptionRow>
+        )}
+        {vm.streaming && draft.forAgents && (
+          <OptionRow sub icon={<IconUser size={17} />} title={t("Agents' Windows user")} desc={draft.agentUser === "agent"
+            ? t("Agents work as a standard user of their own. Your files and sessions stay out of their reach.")
+            : t("Agents work as you, with your files, saved passwords and open sessions. Use it only on a machine with nothing of yours.")}>
+            <Segmented value={draft.agentUser} onChange={(agentUser) => setDraft({ ...draft, agentUser })} options={[
+              { value: "agent", label: <><IconUserShield size={15} />{t("A user of their own")}</> },
+              { value: "own", label: <><IconUser size={15} />{t("My user")}</> },
+            ]} />
           </OptionRow>
         )}
         {vm.streaming && (
@@ -1146,7 +1166,7 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
         {vm.streaming && (
           <OptionRow icon={<IconDeviceDesktop size={17} />} title={t("Resolution")} desc={t("Size of the machine's picture")}>
             <Segmented value={draft.resolution} onChange={(resolution) => setDraft({ ...draft, resolution })}
-              options={RESOLUTIONS.map((r) => ({ value: r, label: r.split("x")[1] + "p" }))} />
+              options={(RESOLUTIONS.includes(draft.resolution) ? RESOLUTIONS : [draft.resolution, ...RESOLUTIONS]).map((r) => ({ value: r, label: r.split("x")[1] + "p" }))} />
           </OptionRow>
         )}
         {vm.streaming && (
@@ -1194,9 +1214,9 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
           </>
         )}
       </div>
-      {(vmDirty || clientDirty || captureDirty || networkDirty || monitorDirty || saved) && (
+      {(vmDirty || clientDirty || captureDirty || networkDirty || monitorDirty || agentDirty || saved) && (
         <div className="options-foot">
-          {saved && !vmDirty && !clientDirty && !captureDirty && !networkDirty && !monitorDirty ? (
+          {saved && !vmDirty && !clientDirty && !captureDirty && !networkDirty && !monitorDirty && !agentDirty ? (
             <span className="saved"><IconCheck size={16} />{t("Saved|settings")}</span>
           ) : (
             <>

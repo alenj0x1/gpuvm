@@ -1,5 +1,5 @@
 import {
-  IconAdjustments, IconAlertTriangle, IconApps, IconDeviceDesktop, IconDeviceDesktopOff, IconDeviceDesktopStar, IconBriefcase, IconCheck, IconDeviceGamepad2, IconDisc, IconDots, IconFolderOpen, IconMovie, IconWaveSawTool, IconWaveSine, IconRefresh, IconSearch, IconTrash, IconX,
+  IconAdjustments, IconAlertTriangle, IconApps, IconDeviceDesktop, IconDeviceDesktopOff, IconDeviceDesktopStar, IconBriefcase, IconCheck, IconDeviceGamepad2, IconDisc, IconDots, IconFolderOpen, IconMovie, IconWaveSawTool, IconWaveSine, IconRefresh, IconRobot, IconSearch, IconTrash, IconX,
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -39,6 +39,15 @@ export const USES: StreamUseInfo[] = [
     get description() { return t("The whole monitor smooth, with a free mouse like remote desktop."); },
     client: { fps: MONITOR_FPS, vsync: true, framePacing: false, mouse: "absolute" } },
 ];
+
+/** The use for AI agents: more than the picture. The machine gets the guest agent, its picture is the size agents see
+ *  best (1280x800), recording runs while an agent works and the network stays isolated. Not a profile's use. */
+export const AGENT_USE = {
+  id: "agent" as const, get label() { return t("Agent"); }, icon: IconRobot,
+  get description() { return t("For AI agents. A 1280x800 picture, recorded while an agent works, on an isolated network."); },
+  resolution: "1280x800",
+  client: { fps: 60, vsync: true, framePacing: false, mouse: "absolute" as MouseMode },
+};
 
 /** The use whose settings match exactly, or null when they were changed by hand. */
 export function streamUseOf(c: { fps: number; vsync: boolean; framePacing: boolean; mouse: MouseMode }) {

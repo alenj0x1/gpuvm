@@ -1,5 +1,6 @@
 import type { BaseInfo, DiskInfo, SharedDiskInfo, TemplateInfo, DisplayMode, IsoFile, JobEvent, MouseMode, ProfileInfo, ProfileSettings, RestorePointList, VmOverview } from "./types";
 import catalog from "../../apps/catalog.json";
+import { agentCommand, agentMachines } from "./mockAgents";
 
 // Sample data for designing in the browser (there is no Hyper-V outside the app).
 const params = new URLSearchParams(location.search);
@@ -39,6 +40,13 @@ const vms: VmOverview[] = [
     options: { cpu: 8, memoryGB: 6, gpuPercent: 100, diskGB: 128, diskType: "Differencing", diskFreeGB: 232, captureMode: "wgc", networkIsolation: true, cleanup: "none", diskBudget: null },
   },
 ];
+
+// The machines agents work on (mockAgents.ts): made for agents, 1280x800, isolated, disposable, with the agent installed.
+for (const name of agentMachines) {
+  vms.push({ ...vms[3], id: `agent-${name}`, name, edition: "Windows 11 Pro", disposable: name === "win-agent", forAgents: true, uptimeSeconds: 380,
+    agent: { installed: true, connected: true, version: "0.1.0", user: "agent" },
+    client: { app: "Desktop", resolution: "1280x800", fps: 60, bitrateKbps: 0, codec: "auto", vsync: true, framePacing: false, mouse: "absolute" } });
+}
 
 const restorePoints: Record<string, RestorePointList> = {
   "win11-pruebas": {
@@ -237,8 +245,18 @@ export async function ps(cmd: string, args: Record<string, unknown>): Promise<un
     case "Set-GpuVMGuestCredential":
       vms.find((v) => v.name === args.Name)!.guestCredential = true;
       return [];
-    default:
+    case "Set-GpuVMAgentUser": {
+      const vm = vms.find((v) => v.name === args.Name)!;
+      vm.agent = { ...(vm.agent ?? { installed: false, connected: false, version: null }), user: args.User === "own" ? "own" : "agent" };
       return [];
+    }
+    case "Set-GpuVMUse": {
+      const vm = vms.find((v) => v.name === args.Name)!;
+      vm.forAgents = args.Use === "agent";
+      return [];
+    }
+    default:
+      return agentCommand(cmd, args) ?? [];
   }
 }
 
@@ -327,7 +345,9 @@ export async function job(jobId: string, cmd: string, args: Record<string, unkno
     try { renameVm(String(args.Name), String(args.NewName)); }
     catch (err) { emit({ type: "result", ok: false, error: (err as Error).message }); return; }
   } else if (cmd === "New-GpuVM") {
-    vms.push({ ...vms[1], id: String(Date.now()), name: String(args.Name), state: "Running", paired: false });
+    const agent = args.Use === "agent";
+    vms.push({ ...vms[1], id: String(Date.now()), name: String(args.Name), state: "Running", paired: false, disposable: !!args.Disposable,
+      ...(agent ? { forAgents: true, agent: { installed: true, connected: false, version: "0.1.0", user: args.AgentUser === "own" ? "own" : "agent" } } : {}) });
   } else {
     const vm = vms.find((v) => v.name === args.Name);
     if (vm) vm.state = cmd === "Invoke-GpuVMPower" ? "Off" : "Running";

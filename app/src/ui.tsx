@@ -109,8 +109,10 @@ export interface DropdownOption<T extends string> {
 
 /** The app's own drop-down list (never the system one): the chosen option with its detail, and a floating list with
  *  every option. Closes on any press outside it, Escape, or a choice; arrows move through the list. */
-export function Dropdown<T extends string>({ value, options, onChange, label }: {
+export function Dropdown<T extends string>({ value, options, onChange, label, short }: {
   value: T; options: DropdownOption<T>[]; onChange: (v: T) => void; label: string;
+  /** The button shows only the chosen name (its detail is already the row's description); the list keeps them. */
+  short?: boolean;
 }) {
   const [open, setOpen] = useState<{ x: number; y: number; width: number; room: number } | null>(null);
   const [active, setActive] = useState(0);
@@ -125,7 +127,10 @@ export function Dropdown<T extends string>({ value, options, onChange, label }: 
     const need = options.length * 48 + 12;
     const roomBelow = window.innerHeight - r.bottom - 18, roomAbove = r.top - 18 - 32;
     const below = roomBelow >= need || roomBelow >= roomAbove;
-    setOpen({ x: r.left, y: below ? r.bottom + 6 : -(window.innerHeight - r.top + 6), width: r.width, room: below ? roomBelow : roomAbove });
+    // Never past the window's right edge: a short button near it gets a list aligned to its right side instead.
+    const width = Math.max(r.width, 260);
+    const x = r.left + width > window.innerWidth - 8 ? Math.max(8, r.right - width) : r.left;
+    setOpen({ x, y: below ? r.bottom + 6 : -(window.innerHeight - r.top + 6), width: r.width, room: below ? roomBelow : roomAbove });
     setActive(Math.max(0, options.findIndex((o) => o.value === value)));
   };
   useEffect(() => {
@@ -165,7 +170,7 @@ export function Dropdown<T extends string>({ value, options, onChange, label }: 
         {chosen?.icon && <span className={`dropdown-icon${chosen.tone ? ` tone-${chosen.tone}` : ""}`}>{chosen.icon}</span>}
         <span className="dropdown-text">
           <span className="dropdown-label">{chosen?.label}</span>
-          {chosen?.detail && <span className="dropdown-detail">{chosen.detail}</span>}
+          {chosen?.detail && !short && <span className="dropdown-detail">{chosen.detail}</span>}
         </span>
         <IconChevronDown size={16} className="dropdown-chevron" />
       </button>

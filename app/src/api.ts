@@ -1,4 +1,4 @@
-import type { AppInfo, InstalledApp, BaseInfo, CleanupLevel, HomeInfo, SharedDiskInfo, TemplateInfo, DiskInfo, DisplayMode, HostInfo, IsoFile, JobEvent, ProfileInfo, ProfileSettings, StreamSettings, VmOverview, AdminPrompt, HostMonitor, RestorePointList, ImportInfo } from "./types";
+import type { AppInfo, InstalledApp, BaseInfo, CleanupLevel, HomeInfo, SharedDiskInfo, TemplateInfo, DiskInfo, DisplayMode, HostInfo, IsoFile, JobEvent, ProfileInfo, ProfileSettings, StreamSettings, VmOverview, AdminPrompt, HostMonitor, RestorePointList, ImportInfo, AgentClient, AgentRequest, AgentOffer } from "./types";
 import * as mock from "./mock";
 import { t } from "./i18n";
 
@@ -67,6 +67,24 @@ export const api = {
   sweepDisposable: () => ps<string>("Remove-GpuVMDisposable", { Confirm: false }),
   importInfo: (path: string) => ps<ImportInfo>("Get-GpuVMImportInfo", { Path: path }).then((r) => r[0]),
   keepDisposable: (name: string) => ps("Set-GpuVMDisposable", { Name: name, Keep: true }),
+};
+
+/** Agents (docs/agents/protocol.md): the clients connected over MCP, their requests and the files they offer. The
+ *  broker decides everything; the app only shows it and passes on the person's answers. */
+export const agents = {
+  clients: () => ps<AgentClient>("Get-GpuVMAgent"),
+  requests: () => ps<AgentRequest>("Get-GpuVMAgentRequest"),
+  offers: (machine?: string) => ps<AgentOffer>("Get-GpuVMAgentOffer", machine ? { Name: machine } : {}),
+  /** "control": the person took control over the picture (the viewer saw their input). id "*" = every client. */
+  pause: (id: string, reason: "person" | "control" = "person") => ps("Suspend-GpuVMAgent", { Id: id, Reason: reason }),
+  resume: (id: string) => ps("Resume-GpuVMAgent", { Id: id }),
+  stop: (id: string) => ps("Stop-GpuVMAgent", { Id: id }),
+  setClientApprovals: (id: string, on: boolean) => ps("Set-GpuVMAgentClient", { Id: id, ClientApprovals: on }),
+  /** forTask: allowed again for the rest of this task (never forever). */
+  answer: (id: string, allow: boolean, forTask = false) => ps("Resolve-GpuVMAgentRequest", { Id: id, Allow: allow, ...(forTask ? { ForTask: true } : {}) }),
+  resolveOffer: (id: string, accept: boolean) => ps("Resolve-GpuVMAgentOffer", { Id: id, Accept: accept }),
+  setUser: (machine: string, user: "agent" | "own") => ps("Set-GpuVMAgentUser", { Name: machine, User: user }),
+  setUse: (machine: string, use: "agent" | null) => ps("Set-GpuVMUse", { Name: machine, Use: use ?? "none" }),
 };
 
 /** What is wrong with a new machine name, as New-GpuVM and Rename-GpuVM check it, or "" when it can be used.
