@@ -152,3 +152,8 @@ export function agentCommand(cmd: string, args: Record<string, unknown>): unknow
 }
 /** The machines the agents work on, so their pages exist in the mock. */
 export const agentMachines = scenario === "none" ? [] : scenario === "many" ? ["win-agent", "lab-02", "lab-03", "lab-04", "lab-05"] : ["win-agent"];
+
+/** Recordings of the agents' work in the mock (agent.rs keeps the real ones). */
+export const agentRecordings = () => scenario === "none" ? [] : [
+  { machine: "win-agent", client: "c1", clientName: "Claude Code", path: "C:\\Users\\demo\\Videos\\GpuVM\\win-agent\\win-agent 2026-11-18 21.40.02.mp4", name: "win-agent 2026-11-18 21.40.02.mp4", durationMs: 412000, bytes: 96_000_000, at: Date.now() - 3600e3 },
+];

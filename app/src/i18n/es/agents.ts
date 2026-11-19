@@ -50,6 +50,8 @@ export default {
   "No deliveries": "Sin entregas",
   "Saved in {path}": "Guardado en {path}",
   "Refused": "Rechazado",
+  "Recordings": "Grabaciones",
+  "Play|video": "Reproducir",
   "Copying to Downloads…": "Copiando a Descargas…",
   "Expired|offer": "Vencido",
 

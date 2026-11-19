@@ -1,12 +1,14 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { agents, inTauri } from "./api";
-import type { AgentAction, AgentClient, AgentOffer, AgentRequest, AgentState } from "./types";
+import type { AgentAction, AgentClient, AgentOffer, AgentRecording, AgentRequest, AgentState } from "./types";
 
 /** What every agent screen shows, read once for all of them (one poll, however many components look). */
 export interface AgentSnapshot {
   clients: AgentClient[]; requests: AgentRequest[]; offers: AgentOffer[];
   /** The broker's channel: null while unknown; `error` when another program holds its name (lab 050). */
   broker: { listening: boolean; error?: string | null } | null;
+  /** Recordings of agents' work (agent.rs): machine, session, file. */
+  recordings: AgentRecording[];
   loaded: boolean; error: string | null;
 }
 
@@ -15,6 +17,7 @@ export interface BrokerState {
   clients: Record<string, unknown>[]; requests: Record<string, unknown>[]; offers: Record<string, unknown>[];
   settings?: { clients?: Record<string, { clientApprovals?: boolean }> } | null;
   broker?: { listening: boolean; error?: string | null } | null;
+  recordings?: Record<string, unknown>[];
 }
 
 const iso = (v: unknown) => (typeof v === "number" ? new Date(v).toISOString() : typeof v === "string" ? v : new Date().toISOString());
@@ -63,10 +66,14 @@ export function fromBroker(raw: BrokerState): Omit<AgentSnapshot, "loaded" | "er
     state: (["pending", "copying", "accepted", "refused", "expired", "failed"].includes(String(o.state)) ? o.state : "failed") as AgentOffer["state"],
     savedTo: str(o.savedTo ?? o.hostPath), error: str(o.error),
   }));
-  return { clients, requests, offers, broker: raw.broker ?? null };
+  const recordings: AgentRecording[] = (raw.recordings ?? []).map((r) => ({
+    machine: String(r.machine ?? ""), client: String(r.client ?? ""), clientName: str(r.clientName) ?? "Agent", path: String(r.path ?? ""),
+    name: String(r.name ?? ""), durationMs: num(r.durationMs), bytes: num(r.bytes), at: iso(r.at),
+  })).reverse();
+  return { clients, requests, offers, broker: raw.broker ?? null, recordings };
 }
 
-let snap: AgentSnapshot = { clients: [], requests: [], offers: [], broker: null, loaded: false, error: null };
+let snap: AgentSnapshot = { clients: [], requests: [], offers: [], broker: null, recordings: [], loaded: false, error: null };
 let json = "";
 const subs = new Set<() => void>();
 let users = 0;
@@ -88,9 +95,9 @@ if (inTauri) {
 
 async function read() {
   try {
-    const [clients, requests, offers, settings, broker] = await Promise.all([
-      agents.clients(), agents.requests(), agents.offers(), agents.settings().catch(() => null), agents.broker().catch(() => null)]);
-    take({ clients, requests, offers, settings, broker });
+    const [clients, requests, offers, settings, broker, recordings] = await Promise.all([
+      agents.clients(), agents.requests(), agents.offers(), agents.settings().catch(() => null), agents.broker().catch(() => null), agents.recordings().catch(() => [])]);
+    take({ clients, requests, offers, settings, broker, recordings });
   } catch (e) {
     snap = { ...snap, loaded: true, error: String(e) };
     subs.forEach((f) => f());

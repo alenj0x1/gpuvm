@@ -80,6 +80,18 @@ export const agents = {
   offers: (machine?: string) => ps<Raw>("Get-GpuVMAgentOffer", machine ? { Name: machine } : {}),
   settings: () => ps<{ clients?: Record<string, { clientApprovals?: boolean }> }>("Get-GpuVMAgentSettings").then((r) => r[0] ?? null),
   broker: () => ps<{ listening: boolean; error?: string | null }>("Get-GpuVMAgentBroker").then((r) => r[0] ?? null),
+  /** Recordings of agents' work (agent.rs keeps them while the app runs). */
+  recordings: async (): Promise<Record<string, unknown>[]> => {
+    if (!inTauri) return mock.agentRecordings();
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke<Record<string, unknown>[]>("agent_recordings");
+  },
+  /** Opens a recording (only files GpuVM saved this run, capture.rs). */
+  openRecording: async (path: string) => {
+    if (!inTauri) return;
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("capture_open", { path });
+  },
   /** An action's screenshot, kept by the broker for the last 10 steps. */
   capture: (connection: string, action: number) => ps<{ format: string; data: string }>("Get-GpuVMAgentCapture", { Connection: connection, Action: action }).then((r) => r[0] ?? null),
   /** "control": the person took control over the picture (the viewer saw their input). */

@@ -121,7 +121,7 @@ fn offer_request(o: &Value) -> Value {
 fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Vec<Value>, settings: &Value, broker: &Value) {
     // Every page that shows agents takes this instead of asking the service again (agentStore.ts turns it into the
     // app's shapes).
-    let _ = app.emit("agents-state", json!({ "clients": clients, "requests": requests, "offers": offers, "settings": settings, "broker": broker }));
+    let _ = app.emit("agents-state", json!({ "clients": clients, "requests": requests, "offers": offers, "settings": settings, "broker": broker, "recordings": recordings() }));
     *lock(&CLIENTS) = clients.clone();
     let answered = lock(&ANSWERED).clone();
     // What only the person can do (a password, UAC) is the agent's state, not a request: shown without buttons.
@@ -160,6 +160,8 @@ fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Ve
 
     // The status notch: "You took control" or "<client> paused" on the machine's picture.
     sync_status(app, &clients);
+    // Recording while an agent works on a machine.
+    sync_recordings(app, &clients);
 
     // The dock: the oldest request of a machine in view, unless its administrator dock is down already.
     let docked = waiting.iter().find(|r| {
@@ -447,6 +449,136 @@ pub fn on_viewer(app: &AppHandle, vm: &str, msg: &Value) {
         }
         _ => {}
     }
+}
+
+/* ---------- recording an agent's work ---------- */
+
+/// A machine an agent works on is recorded from when it takes it until it lets it go (The person's option B): with the
+/// person's viewer if it is open, else a viewer GpuVM opens hidden (viewer::open_background). The file goes to the
+/// usual Videos\GpuVM\<machine> and is linked from the agent's session.
+struct Rec {
+    client: String,
+    client_name: Value,
+    /// GpuVM opened that viewer for this: it closes it afterwards if the person never opened the machine.
+    ours: bool,
+    /// The agent let go: waiting for the file, then (ours, still hidden) the viewer closes.
+    stopping: Option<Instant>,
+    opening: bool,
+}
+static RECS: Mutex<Option<HashMap<String, Rec>>> = Mutex::new(None);
+/// Recordings of agents' work, newest last: what the Agents page and the machine's Agent section link to.
+static RECORDINGS: Mutex<Vec<Value>> = Mutex::new(Vec::new());
+
+fn sync_recordings(app: &AppHandle, clients: &[Value]) {
+    let taken: HashMap<String, (String, Value)> = clients.iter()
+        .filter(|c| !matches!(c["state"].as_str(), Some("idle") | Some("stopped") | None))
+        .filter_map(|c| Some((c["machine"].as_str()?.to_string(), (c["id"].as_str().unwrap_or("").to_string(), c["name"].clone()))))
+        .collect();
+    let mut recs = lock(&RECS);
+    let recs = recs.get_or_insert_with(HashMap::new);
+    // The agent let go (or its session ended): recording stops; the file links when it arrives (on_capture_saved).
+    for (vm, rec) in recs.iter_mut().filter(|(vm, r)| !taken.contains_key(*vm) && r.stopping.is_none() && !r.opening) {
+        let _ = crate::viewer::send_to(vm, &json!({ "type": "record", "on": false }));
+        rec.stopping = Some(Instant::now());
+    }
+    // A stopping one whose file never came (no viewer any more, a failure): forgotten after a while, its viewer closed.
+    let late: Vec<String> = recs.iter().filter(|(_, r)| r.stopping.is_some_and(|t| t.elapsed() > Duration::from_secs(20))).map(|(vm, _)| vm.clone()).collect();
+    for vm in late {
+        if let Some(r) = recs.remove(&vm) {
+            close_if_ours(&vm, r.ours);
+        }
+    }
+    // A viewer the person closed while the agent still works: it opens again (a new file) next round.
+    recs.retain(|vm, r| r.opening || r.stopping.is_some() || crate::viewer::viewer_is_open(vm.clone()));
+    for (vm, (client, name)) in taken {
+        if recs.contains_key(&vm) {
+            continue;
+        }
+        recs.insert(vm.clone(), Rec { client, client_name: name, ours: false, stopping: None, opening: true });
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move { start_recording(&app, &vm).await });
+    }
+}
+
+async fn start_recording(app: &AppHandle, vm: &str) {
+    let mut ours = false;
+    if !crate::viewer::viewer_is_open(vm.to_string()) {
+        // The machine's own opening (Connect-GpuVM, as its Open button), without showing anything.
+        let vm2 = vm.to_string();
+        let app2 = app.clone();
+        let opened = tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+            let mut conn = crate::backend::connect()?;
+            let request = json!({ "id": format!("agent-rec-{vm2}"), "cmd": "Connect-GpuVM", "args": { "Name": vm2, "Viewer": true } });
+            let result = conn.call(&request, |_| {})?;
+            if result["ok"] != true {
+                return Err(result["error"].as_str().unwrap_or("Couldn't open the machine.").to_string());
+            }
+            let launch = crate::viewer::launch_in(&result["data"]).ok_or("The machine didn't say how to open it.")?;
+            crate::viewer::open_background(&app2, &vm2, &launch)
+        }).await.map_err(|e| e.to_string()).and_then(|r| r);
+        if let Err(e) = opened {
+            eprintln!("agent recording {vm}: couldn't open the viewer: {e}");
+            lock(&RECS).as_mut().map(|r| r.remove(vm));
+            return;
+        }
+        ours = true;
+    }
+    let started = crate::viewer::send_to(vm, &json!({ "type": "record", "on": true })).is_ok();
+    let mut recs = lock(&RECS);
+    if let Some(r) = recs.as_mut().and_then(|r| r.get_mut(vm)) {
+        r.ours = ours;
+        r.opening = false;
+        if !started {
+            r.stopping = Some(Instant::now());
+        }
+    }
+}
+
+fn close_if_ours(vm: &str, ours: bool) {
+    // Only a viewer GpuVM opened and the person never brought out.
+    if ours && crate::viewer::background(vm) && !crate::viewer::viewer_visible(vm) {
+        let _ = crate::viewer::send_to(vm, &json!({ "type": "quit" }));
+    }
+}
+
+/// A capture of a machine was saved (capture.rs): a recording of an agent's work links to its session, and the
+/// viewer GpuVM opened for it closes.
+pub fn on_capture_saved(app: &AppHandle, vm: &str, saved: &Value) {
+    if saved["kind"] != "recording" && saved["kind"] != "clip" {
+        return;
+    }
+    let rec = {
+        let mut recs = lock(&RECS);
+        let recs = recs.get_or_insert_with(HashMap::new);
+        match recs.get(vm) {
+            Some(r) if r.stopping.is_some() => recs.remove(vm),
+            // Still working: a file cut by the viewer (the stream changed) links too, and recording goes on.
+            Some(r) => Some(Rec { client: r.client.clone(), client_name: r.client_name.clone(), ours: false, stopping: None, opening: false }),
+            None => None,
+        }
+    };
+    let Some(rec) = rec else { return };
+    let mut list = lock(&RECORDINGS);
+    list.push(json!({ "machine": vm, "client": rec.client, "clientName": rec.client_name, "path": saved["path"], "name": saved["name"],
+        "durationMs": saved["durationMs"], "bytes": saved["bytes"], "at": saved["at"] }));
+    if list.len() > 50 {
+        list.remove(0);
+    }
+    drop(list);
+    if rec.stopping.is_some() {
+        close_if_ours(vm, rec.ours);
+    }
+    let _ = app.emit("agents-changed", json!({}));
+}
+
+/// The recordings of agents' work, for the pages (agents-state carries them too).
+#[tauri::command]
+pub fn agent_recordings() -> Value {
+    recordings()
+}
+
+pub fn recordings() -> Value {
+    Value::Array(lock(&RECORDINGS).clone())
 }
 
 /* ---------- preferences ---------- */

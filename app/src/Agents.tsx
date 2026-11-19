@@ -2,14 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   IconCheck, IconCopy, IconDeviceDesktop, IconFile, IconFileDownload, IconFileText, IconFileZip, IconHandFinger, IconHandStop, IconHistory, IconLoader2,
-  IconLock, IconPhoto, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconPlugConnectedX, IconRobot, IconShieldLock, IconTerminal2, IconTrash, IconWorld, IconX, type Icon,
+  IconLock, IconPhoto, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconPlugConnectedX, IconRobot, IconShieldLock, IconTerminal2, IconTrash, IconVideo, IconWorld, IconX, type Icon,
 } from "@tabler/icons-react";
 import { agents, inTauri } from "./api";
 import { actionThumb, bytes, clientOn, refreshAgents, useAgents } from "./agentStore";
 import { MachineIcon } from "./machineIcon";
 import { CheckMark, humanError, portalRoot } from "./ui";
 import { locale, t, tn, translateModule } from "./i18n";
-import type { AgentAction, AgentClient, AgentOffer, AgentRequest, AgentRequestKind, AgentState } from "./types";
+import type { AgentAction, AgentClient, AgentOffer, AgentRecording, AgentRequest, AgentRequestKind, AgentState } from "./types";
 
 // Everything the app shows of agents: the Agents page, an agent's live state (machine page and the viewer's widget),
 // its requests and the files it offers from the machine's Outbox. The broker decides; this only shows and answers.
@@ -276,6 +276,31 @@ export function OutboxList({ offers, showMachine = true, limit }: { offers: Agen
   return <div className="ag-offers">{shown.map((o) => <OfferRow key={o.id} o={o} showMachine={showMachine} />)}</div>;
 }
 
+/* ---------- recordings ---------- */
+
+const duration = (ms: number) => { const s = Math.round(ms / 1000); return s < 60 ? t("{n} s", { n: s }) : t("{n} min", { n: Math.round(s / 60) }); };
+
+/** Recordings of an agent's work (one per time it took the machine), each opened in the person's own player. */
+export function RecordingList({ list, showMachine }: { list: AgentRecording[]; showMachine?: boolean }) {
+  const [error, setError] = useState("");
+  if (!list.length) return null;
+  return (
+    <div className="ag-recordings">
+      {list.map((r) => (
+        <div className="ag-offer" key={r.path}>
+          <span className="ag-offer-icon"><IconVideo size={17} /></span>
+          <div className="ag-offer-text">
+            <strong className="ellipsis" title={r.name}>{r.name}</strong>
+            <span className="ellipsis">{[duration(r.durationMs), bytes(r.bytes, locale()), showMachine ? r.machine : r.clientName, since(r.at)].join(" · ")}</span>
+          </div>
+          <button type="button" className="btn ghost compact" onClick={() => agents.openRecording(r.path).catch((e) => setError(humanError(e)))}><IconPlayerPlay size={15} />{t("Play|video")}</button>
+        </div>
+      ))}
+      {error && <span className="error-text">{error}</span>}
+    </div>
+  );
+}
+
 /* ---------- connecting a client ---------- */
 
 /** The command that adds GpuVM to Claude Code, with this PC's own path to gpuvm.exe. */
@@ -305,7 +330,7 @@ function CopyCommand() {
 /* ---------- the Agents page ---------- */
 
 /** One connected client: who it is, the machine it uses, its state and budget, and the person's controls. */
-function ClientCard({ c, onOpenVm }: { c: AgentClient; onOpenVm: (name: string) => void }) {
+function ClientCard({ c, onOpenVm, recordings }: { c: AgentClient; onOpenVm: (name: string) => void; recordings: AgentRecording[] }) {
   const [approvals, setApprovals] = useState(c.clientApprovals);
   const [error, setError] = useState("");
   useEffect(() => setApprovals(c.clientApprovals), [c.clientApprovals]);
@@ -332,6 +357,7 @@ function ClientCard({ c, onOpenVm }: { c: AgentClient; onOpenVm: (name: string) 
           <span className="desc">{t("Low-risk requests only. The rest are always answered in GpuVM.")}</span>
         </span>
       </button>
+      <RecordingList list={recordings} showMachine />
       {error && <span className="error-text">{error}</span>}
     </div>
   );
@@ -381,7 +407,7 @@ export function AgentsView({ onOpenVm }: { onOpenVm: (name: string) => void }) {
                 <button type="button" className="btn compact danger-fill" disabled={stopping} onClick={stopAll}>{stopping ? <IconLoader2 size={15} className="spin" /> : <IconHandStop size={15} />}{tn(active.length, "Stop {n} agent", "Stop {n} agents")}</button></div>
             : <button type="button" className="btn compact" onClick={() => setConfirm(true)}><IconHandStop size={15} />{t("Stop all")}</button>))}
         {snap.clients.length
-          ? <div className="ag-clients">{snap.clients.map((c) => <ClientCard key={c.id} c={c} onOpenVm={onOpenVm} />)}</div>
+          ? <div className="ag-clients">{snap.clients.map((c) => <ClientCard key={c.id} c={c} onOpenVm={onOpenVm} recordings={snap.recordings.filter((r) => r.client === c.id)} />)}</div>
           : (
             <div className="card ag-empty">
               <span className="empty-small-icon"><IconRobot size={18} /></span>
@@ -441,6 +467,7 @@ export function MachineAgent({ machine }: { machine: string }) {
   const client = clientOn(snap, machine);
   const requests = snap.requests.filter((r) => r.machine === machine);
   const offers = snap.offers.filter((o) => o.machine === machine);
+  const recordings = snap.recordings.filter((r) => r.machine === machine);
   return (
     <>
       <div className="card ag-machine-live">
@@ -453,6 +480,7 @@ export function MachineAgent({ machine }: { machine: string }) {
       </div>
       {requests.length > 0 && <div className="card ag-requests">{requests.map((r) => <RequestRow key={r.id} r={r} showMachine={false} />)}</div>}
       <div className="card"><div className="ag-card-title"><IconFileDownload size={16} />{t("Deliveries")}</div><OutboxList offers={offers} showMachine={false} /></div>
+      {recordings.length > 0 && <div className="card"><div className="ag-card-title"><IconVideo size={16} />{t("Recordings")}</div><RecordingList list={recordings} /></div>}
     </>
   );
 }

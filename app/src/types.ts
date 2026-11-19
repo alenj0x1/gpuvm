@@ -316,6 +316,9 @@ export interface AgentOffer {
   error?: string | null;
 }
 
+/** A recording of an agent's work on a machine (in Videos\GpuVM\<machine>). */
+export interface AgentRecording { machine: string; client: string; clientName: string; path: string; name: string; durationMs: number; bytes: number; at: string }
+
 /** Get-GpuVMRestorePoint: a machine's restore points, oldest first. */
 export interface RestorePoint { id: string; label: string | null; createdAt: string; sizeGB: number | null; missing: boolean; current: boolean }
 export interface RestorePointList { points: RestorePoint[]; max: number; changesGB: number | null; restoredFrom: { id: string; at: string } | null }
