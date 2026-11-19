@@ -100,7 +100,8 @@ pub fn start(app: AppHandle) {
             }
             round += 1;
             update(&app, clients, requests, offers, &settings, &broker);
-            let busy = lock(&CLIENTS).iter().any(|c| c["state"].as_str().is_some_and(|s| s != "idle"));
+            // An agent holding a machine counts even while idle (thinking): its viewer must be watched without lag.
+            let busy = lock(&CLIENTS).iter().any(|c| c["state"].as_str().is_some_and(|s| s != "idle" && s != "stopped") || holds(c));
             tokio::time::sleep(Duration::from_millis(if viewing && busy { 1000 } else if busy { 2000 } else { 5000 })).await;
         }
     });
@@ -137,10 +138,12 @@ fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Ve
         .collect();
     waiting.sort_by(|a, b| a["createdAt"].as_f64().unwrap_or(0.0).total_cmp(&b["createdAt"].as_f64().unwrap_or(0.0)));
 
-    // Which viewers report input: those whose machine has an agent working, with take control on input.
+    // Which viewers report input: those whose machine an agent holds and may act on (working, or idle between two
+    // actions), with take control on input. Only "working" missed the person's first move after the agent had been
+    // idle 15 s (lab 054: round 1 missed in every run).
     let on_input = TAKE_ON_INPUT.load(Ordering::Relaxed);
     let working: HashSet<String> = clients.iter()
-        .filter(|c| c["state"] == "working")
+        .filter(|c| holds(c))
         .filter_map(|c| c["machine"].as_str().map(str::to_string))
         .filter(|vm| on_input && crate::viewer::viewer_is_open(vm.clone()))
         .collect();
@@ -192,6 +195,11 @@ fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Ve
     let live: HashSet<String> = waiting.iter().filter_map(|r| r["id"].as_str().map(str::to_string)).collect();
     notified.retain(|id| live.contains(id));
     lock(&ANSWERED).retain(|id| live.contains(id));
+}
+
+/// The agent holds a machine and may act on it now or at any moment: the person's input there takes control.
+fn holds(c: &Value) -> bool {
+    c["machine"].is_string() && matches!(c["state"].as_str(), Some("working") | Some("idle"))
 }
 
 fn main_in_front(app: &AppHandle) -> bool {
@@ -427,7 +435,7 @@ pub fn on_input(app: &AppHandle, vm: &str) {
         }
         at.insert(vm.to_string(), Instant::now());
     }
-    let Some(client) = lock(&CLIENTS).iter().find(|c| c["machine"].as_str() == Some(vm) && c["state"] == "working").cloned() else { return };
+    let Some(client) = lock(&CLIENTS).iter().find(|c| c["machine"].as_str() == Some(vm) && holds(c)).cloned() else { return };
     // The viewer stops reporting at once (nothing to pause until it is given back).
     let _ = crate::viewer::send_to(vm, &json!({ "type": "agent-watch", "on": false }));
     lock(&WATCHING).as_mut().map(|w| w.remove(vm));
@@ -483,14 +491,19 @@ struct Rec {
     /// The agent let go: waiting for the file, then (ours, still hidden) the viewer closes.
     stopping: Option<Instant>,
     opening: bool,
+    /// The viewer said it records. Until then "record" is sent again each round: a viewer just opened has no picture
+    /// yet and refuses it ("no-stream"), which left the hidden viewer recording nothing (lab 054, 2026-11-19).
+    confirmed: bool,
 }
 static RECS: Mutex<Option<HashMap<String, Rec>>> = Mutex::new(None);
 /// Recordings of agents' work, newest last: what the Agents page and the machine's Agent section link to.
 static RECORDINGS: Mutex<Vec<Value>> = Mutex::new(Vec::new());
 
 fn sync_recordings(app: &AppHandle, clients: &[Value]) {
+    // Held, idle included: an agent thinking for 15 s used to cut the recording and close the hidden viewer, which
+    // then took minutes to open again (lab 054: three files per run).
     let taken: HashMap<String, (String, Value)> = clients.iter()
-        .filter(|c| !matches!(c["state"].as_str(), Some("idle") | Some("stopped") | None))
+        .filter(|c| !matches!(c["state"].as_str(), Some("stopped") | None))
         .filter_map(|c| Some((c["machine"].as_str()?.to_string(), (c["id"].as_str().unwrap_or("").to_string(), c["name"].clone()))))
         .collect();
     let mut recs = lock(&RECS);
@@ -509,11 +522,19 @@ fn sync_recordings(app: &AppHandle, clients: &[Value]) {
     }
     // A viewer the person closed while the agent still works: it opens again (a new file) next round.
     recs.retain(|vm, r| r.opening || r.stopping.is_some() || crate::viewer::viewer_is_open(vm.clone()));
+    // Not recording yet (no picture when asked): ask again.
+    for (vm, rec) in recs.iter_mut().filter(|(_, r)| !r.opening && r.stopping.is_none() && !r.confirmed) {
+        if crate::capture::is_recording(vm) {
+            rec.confirmed = true;
+        } else {
+            let _ = crate::viewer::send_to(vm, &json!({ "type": "record", "on": true }));
+        }
+    }
     for (vm, (client, name)) in taken {
         if recs.contains_key(&vm) {
             continue;
         }
-        recs.insert(vm.clone(), Rec { client, client_name: name, ours: false, stopping: None, opening: true });
+        recs.insert(vm.clone(), Rec { client, client_name: name, ours: false, stopping: None, opening: true, confirmed: false });
         let app = app.clone();
         tauri::async_runtime::spawn(async move { start_recording(&app, &vm).await });
     }
@@ -572,7 +593,7 @@ pub fn on_capture_saved(app: &AppHandle, vm: &str, saved: &Value) {
         match recs.get(vm) {
             Some(r) if r.stopping.is_some() => recs.remove(vm),
             // Still working: a file cut by the viewer (the stream changed) links too, and recording goes on.
-            Some(r) => Some(Rec { client: r.client.clone(), client_name: r.client_name.clone(), ours: false, stopping: None, opening: false }),
+            Some(r) => Some(Rec { client: r.client.clone(), client_name: r.client_name.clone(), ours: false, stopping: None, opening: false, confirmed: true }),
             None => None,
         }
     };

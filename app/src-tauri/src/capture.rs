@@ -64,6 +64,11 @@ pub fn on_recording(vm: &str, on: bool) {
     with_state(vm, |s| s.recording_since = if on { s.recording_since.or(Some(now_ms())) } else { None });
 }
 
+/// Whether the machine's viewer said it is recording (agent.rs asks again until it does).
+pub fn is_recording(vm: &str) -> bool {
+    with_state(vm, |s| s.recording_since.is_some())
+}
+
 /// What the panel shows for a machine: the newest file and the recording's start.
 #[tauri::command]
 pub fn capture_state(vm: String) -> Value {

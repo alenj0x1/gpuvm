@@ -21,7 +21,7 @@ import { VmView, type JobInfo } from "./VmView";
 import { CreateDialog } from "./CreateDialog";
 import { TitleBar } from "./TitleBar";
 import { ViewerStage, ZOOM_MS, type ViewerPhase } from "./ViewerStage";
-import { leaveViewer, showViewer } from "./viewerStore";
+import { closeGoneViewers, leaveViewer, showViewer } from "./viewerStore";
 import { Toasts, humanError, stateText, useToasts, useScrollFade } from "./ui";
 import { t, translateModule } from "./i18n";
 import { AgentsView } from "./Agents";
@@ -117,6 +117,8 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       }
       const json = JSON.stringify(list);
       if (json !== lastJson.current) { lastJson.current = json; setVms(list); }
+      // Only from a list the module did give: a failed read never closes anything.
+      void closeGoneViewers(list.map((v) => v.name));
       setBlocked(null);
       setReadError(null);
     } catch (e) {

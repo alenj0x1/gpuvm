@@ -100,6 +100,15 @@ const hiddenGpu = await new Promise((ok) => {
   let o = ""; const p = spawn("pwsh", ["-NoProfile", "-Command", ps]); p.stdout.on("data", (d) => (o += d)); p.on("exit", () => ok(o.trim()));
 });
 busy = false; await busyLoop;
+// Recording B: the hidden viewer must be writing its file (a .part in the viewer's Captures folder that grows).
+// 2026-11-19: it recorded nothing while hidden (the "record" sent before the first picture was refused).
+const partBytes = () => Number(execFileSync("pwsh", ["-NoProfile", "-Command",
+  "$d = Join-Path $env:USERPROFILE 'AppData\\LocalLow\\GpuVM\\Viewer\\Captures'; $p = Get-ChildItem $d -Filter *.part -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if ($p) { $p.Length } else { -1 }"]).toString().trim());
+const part0 = partBytes();
+await tool("key", { machine, keys: "win" }); await sleep(3000); await tool("key", { machine, keys: "escape" }); await sleep(3000);
+const part1 = partBytes();
+const hiddenRecording = { firstBytes: part0, laterBytes: part1, grows: part0 >= 0 && part1 > part0 };
+console.log("hidden recording:", JSON.stringify(hiddenRecording));
 console.log("hidden viewer GPU %:", hiddenGpu);
 /** A screenshot of the GpuVM window's area (what's on screen there: the app, the picture and its notch). */
 const shot = (name) => { try { console.log(name, execFileSync("pwsh", ["-NoProfile", "-File", join(here, "window-shot.ps1"), "-Out", join(out, `${name}.png`)]).toString().trim()); } catch (e) { console.log(name, "failed"); } };
@@ -166,10 +175,23 @@ for (let r = 0; r < rounds; r++) {
 }
 const ok = samples.filter((s) => s !== null).sort((a, b) => a - b);
 const pct = (p) => ok[Math.min(ok.length - 1, Math.floor(p * ok.length))];
-const report = { machine, rounds, hiddenOpened, hiddenGpu, shownGpu, firstFrame, samples, p50: pct(0.5), p95: pct(0.95), misses: samples.filter((s) => s === null).length };
+const report = { machine, rounds, hiddenOpened, hiddenGpu, hiddenRecording, shownGpu, firstFrame, samples, p50: pct(0.5), p95: pct(0.95), misses: samples.filter((s) => s === null).length };
+// The copy streams, so the module must say it is paired (Home showed "Moonlight isn't paired" on 2026-11-19).
+try {
+  report.paired = execFileSync("pwsh", ["-NoProfile", "-Command", `Import-Module 'C:\\Program Files\\GpuVM\\gpuvm\\src\\GpuVM' -ErrorAction Stop; (Get-GpuVMOverview | Where-Object name -eq '${machine}').paired`]).toString().trim();
+} catch (e) { report.paired = "failed: " + String(e.message).slice(0, 160); }
+await tool(disposable ? "destroy" : "release_machine", { machine });
+// Destroyed with its viewer open: the viewer closes at once (it kept a black picture ~2 min on 2026-11-19).
+if (disposable) {
+  const tGone = Date.now(); let closedMs = null;
+  while (Date.now() - tGone < 180000 && closedMs === null) {
+    const n = Number(execFileSync("pwsh", ["-NoProfile", "-Command", "@(Get-Process GpuVMViewer -ErrorAction SilentlyContinue).Count"]).toString().trim());
+    if (n === 0) closedMs = Date.now() - tGone; else await sleep(500);
+  }
+  report.viewerClosedAfterDestroyMs = closedMs;
+}
 writeFileSync(join(out, "take-control.json"), JSON.stringify(report, null, 1));
 console.log(JSON.stringify(report));
-await tool(disposable ? "destroy" : "release_machine", { machine });
 clearTimeout(guard);
 mcp.kill();
 process.exit(0);
