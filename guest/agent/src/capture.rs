@@ -117,6 +117,10 @@ impl Wgc {
                 self.pool.Recreate(&self.d3d, DirectXPixelFormat::B8G8R8A8UIntNormalized, 2, cs)?;
                 let _ = frame.Close();
                 self.latest = None;
+                // the display mode changed: its rect on the desktop (used to place input) too
+                if let Some(o) = primary_output().filter(|o| o.monitor == self.output.monitor) {
+                    self.output.rect = o.rect;
+                }
                 continue;
             }
             let access: IDirect3DDxgiInterfaceAccess = frame.Surface()?.cast()?;
@@ -272,10 +276,16 @@ pub fn encode_webp(rgb: &[u8], w: u32, h: u32) -> Vec<u8> {
     buf
 }
 
-/// The output's rect on the virtual desktop (where protocol coordinates start), from the open capture or DXGI.
+/// The captured display's rect on the virtual desktop (where protocol coordinates start), read fresh every time
+/// (the mode can change under us, e.g. when the viewer connects): the primary monitor, as primary_output() picks.
 pub fn output_rect() -> Option<RECT> {
-    if let Some(w) = CAPTURE.lock().unwrap().as_ref() {
-        return Some(w.output.rect);
+    use windows::Win32::Graphics::Gdi::*;
+    unsafe {
+        let m = MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY);
+        let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+        if GetMonitorInfoW(m, &mut mi).as_bool() {
+            return Some(mi.rcMonitor);
+        }
     }
     primary_output().map(|o| o.rect)
 }
@@ -296,6 +306,11 @@ pub fn screen_capture(p: &Value) -> CallResult {
     }
     let mut g = CAPTURE.lock().unwrap();
     let mut open_ms = 0.0;
+    // the primary display changed (topology change): capture the new one
+    let primary = unsafe { windows::Win32::Graphics::Gdi::MonitorFromPoint(POINT { x: 0, y: 0 }, windows::Win32::Graphics::Gdi::MONITOR_DEFAULTTOPRIMARY) };
+    if g.as_ref().is_some_and(|w| w.output.monitor != primary) {
+        *g = None;
+    }
     if g.is_none() {
         let o = primary_output().ok_or(("internal", "no display output to capture".to_string()))?;
         let w = Wgc::open(o).map_err(|e| ("internal", format!("can't open the screen capture: {e}")))?;

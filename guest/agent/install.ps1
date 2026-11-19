@@ -37,7 +37,6 @@ param(
     [switch]$RemoveUser
 )
 $ErrorActionPreference = 'Stop'
-Set-StrictMode -Version 2
 
 $AppDir = 'C:\Program Files\GpuVM Agent'
 $DataDir = 'C:\ProgramData\GpuVM\Agent'

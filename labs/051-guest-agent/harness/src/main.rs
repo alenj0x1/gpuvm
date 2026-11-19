@@ -812,7 +812,9 @@ fn serve(a: &[String]) {
     std::fs::create_dir_all(&dir).unwrap();
     let psd = arg(a, "--psd").unwrap_or_default();
     let scen = arg(a, "--scenarios").unwrap_or_else(|| "info,capture,latency,uia,exec,files,secure,elevated,abuse,acl,errorbox,reboot".into());
-    let l = match HvListener::bind(HV_GUID_CHILDREN, SERVICE_ID) {
+    // bound to this VM's id (not HV_GUID_CHILDREN) so a broker listening for all VMs can run at the same time
+    let bind_vm = if vm.is_empty() { HV_GUID_CHILDREN } else { guid_u128(&parse_guid(&vm).expect("--vm")) };
+    let l = match HvListener::bind(bind_vm, SERVICE_ID) {
         Ok(l) => l,
         Err(e) => {
             eprintln!("can't listen on the agent service id ({e}): is GpuVM's broker (or another harness) holding it?");
