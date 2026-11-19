@@ -169,6 +169,11 @@ pub fn fg_json(f: &Fg) -> Value {
 pub fn block_message(code: &str, f: &Fg) -> String {
     match code {
         "secure_desktop" => "a secure desktop (UAC prompt, lock or sign-in screen) has the input: only the person can act there".into(),
+        // a system error box (csrss) in front: say so, and whether it is out of the agent's view (lab 051)
+        "blocked_elevated" if !f.hwnd.0.is_null() && csrss_pids().contains(&window_pid(f.hwnd)) => {
+            let where_ = if window_on_screen(f.hwnd) { "" } else { " outside the visible screen (the agent's screenshot doesn't show it)" };
+            format!("a system error box '{}' is open{where_}: only the person can close it; ask the person", f.title)
+        }
         "blocked_elevated" => format!("the window '{}' ({}) runs elevated: the agent can't act on it; ask the person", f.title, f.process),
         _ => {
             let boxes = error_boxes();
@@ -177,6 +182,18 @@ pub fn block_message(code: &str, f: &Fg) -> String {
                 None => "there is no foreground window".into(),
             }
         }
+    }
+}
+
+/// Whether any part of the window lies on the agent's screen.
+pub fn window_on_screen(h: HWND) -> bool {
+    let mut rc = windows::Win32::Foundation::RECT::default();
+    if unsafe { GetWindowRect(h, &mut rc) }.is_err() {
+        return false;
+    }
+    match crate::capture::output_rect() {
+        Some(s) => rc.right > s.left && rc.left < s.right && rc.bottom > s.top && rc.top < s.bottom,
+        None => true,
     }
 }
 
@@ -194,7 +211,7 @@ pub fn screen_state() -> Value {
             unsafe {
                 let _ = GetWindowRect(HWND(*h as _), &mut rc);
             }
-            json!({"title": t, "bbox": [rc.left - origin.0, rc.top - origin.1, rc.right - rc.left, rc.bottom - rc.top]})
+            json!({"title": t, "bbox": [rc.left - origin.0, rc.top - origin.1, rc.right - rc.left, rc.bottom - rc.top], "onScreen": window_on_screen(HWND(*h as _))})
         })
         .collect();
     let screen = crate::capture::output_rect().map(|r| json!({"w": r.right - r.left, "h": r.bottom - r.top}));
