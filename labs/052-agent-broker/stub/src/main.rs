@@ -79,7 +79,11 @@ struct Out {
 impl Out {
     fn send(&self, v: Value, blob: Option<&[u8]>) -> std::io::Result<()> {
         let mut sealer = self.sealer.lock().unwrap();
-        let frame = sealer.seal(obj(v));
+        let mut o = obj(v);
+        if let Some(b) = blob {
+            wire::describe_blob(&mut o, b);
+        }
+        let frame = sealer.seal(o);
         let mut w = &*self.sock;
         wire::write_frame(&mut w, wire::KIND_JSON, &frame)?;
         if let Some(b) = blob {
@@ -357,7 +361,7 @@ fn attack(case: &str, args: &[String]) -> Value {
                 }
                 json!({ "closedMs": closed(&sock) })
             }
-            "big-json" | "big-blob" | "unsigned" | "malformed" | "stray-res" | "stray-blob" | "silent" | "frame-flood" | "event-flood" => {
+            "big-json" | "big-blob" | "unsigned" | "malformed" | "stray-res" | "stray-blob" | "bad-blob-hash" | "silent" | "frame-flood" | "event-flood" => {
                 let (sock, mut session) = authed(&k, &vm)?;
                 let mut w = &sock;
                 let sent = Instant::now();
@@ -369,6 +373,21 @@ fn attack(case: &str, args: &[String]) -> Value {
                     "malformed" => wire::write_frame(&mut w, 1, b"{not json at all, but long enough to have a tail.....................}").map_err(|e| e.to_string())?,
                     "stray-res" => wire::write_frame(&mut w, 1, &session.sealer.seal(obj(json!({ "t": "res", "id": 999999, "ok": true })))).map_err(|e| e.to_string())?,
                     "stray-blob" => wire::write_frame(&mut w, 2, &[0u8; 100]).map_err(|e| e.to_string())?,
+                    "bad-blob-hash" => {
+                        // Answers the host's first request (agent.info) with a blob that isn't the one its frame announces.
+                        let mut r = &sock;
+                        let id = loop {
+                            let Frame::Json(p) = wire::read_frame(&mut r, wire::MAX_JSON)? else { return Err("blob".into()) };
+                            let m = session.opener.open(&p)?;
+                            if m.get("t").and_then(Value::as_str) == Some("req") {
+                                break m["id"].clone();
+                            }
+                        };
+                        let mut res = obj(json!({ "t": "res", "id": id, "ok": true, "result": {} }));
+                        wire::describe_blob(&mut res, b"the announced bytes");
+                        wire::write_frame(&mut w, 1, &session.sealer.seal(res)).map_err(|e| e.to_string())?;
+                        wire::write_frame(&mut w, 2, b"other bytes, same size").map_err(|e| e.to_string())?;
+                    }
                     "frame-flood" => {
                         while sent.elapsed() < Duration::from_secs(3) {
                             if wire::write_frame(&mut w, 1, &session.sealer.seal(obj(json!({ "t": "ping" })))).is_err() {

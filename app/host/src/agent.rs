@@ -210,7 +210,10 @@ struct Conn {
 impl Conn {
     /// Sends one signed JSON frame, and its blob right after it (under the same lock, so nothing comes between).
     fn send(&self, obj: Value, blob: Option<&[u8]>) -> Result<(), String> {
-        let Value::Object(obj) = obj else { return Err("not an object".into()) };
+        let Value::Object(mut obj) = obj else { return Err("not an object".into()) };
+        if let Some(b) = blob {
+            wire::describe_blob(&mut obj, b);
+        }
         let mut sealer = self.out.lock().unwrap_or_else(|e| e.into_inner());
         let frame = sealer.seal(obj);
         let mut w = &self.sock;
@@ -576,7 +579,11 @@ fn read_loop(conn: &Conn, opener: &mut Opener) -> String {
                 }
                 let blob = if msg.get("blob") == Some(&json!(true)) {
                     match wire::read_frame(&mut stream, wire::MAX_JSON) {
-                        Ok(Frame::Blob(b)) => Some(b),
+                        // The blob carries no MAC itself: its length and SHA-256 are in the signed frame before it.
+                        Ok(Frame::Blob(b)) => match wire::check_blob(&msg, &b) {
+                            Ok(()) => Some(b),
+                            Err(e) => return e,
+                        },
                         Ok(_) => return "missing blob".into(),
                         Err(e) => return e,
                     }

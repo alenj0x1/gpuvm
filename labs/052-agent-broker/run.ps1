@@ -253,7 +253,7 @@ foreach ($part in $Parts) {
             # Each hostile behaviour runs in the guest as an administrator (who can read the secret, like SYSTEM).
             # After each one: the real agent must still be (or get back to) connected and the broker must answer.
             $cases = 'wrong-secret', 'wrong-vm', 'replay', 'big-hello', 'bad-kind', 'garbage-hello', 'slow-hello', 'big-json', 'big-blob',
-                'unsigned', 'malformed', 'stray-res', 'stray-blob', 'silent', 'frame-flood', 'event-flood', 'conn-flood', 'good'
+                'unsigned', 'malformed', 'stray-res', 'stray-blob', 'bad-blob-hash', 'silent', 'frame-flood', 'event-flood', 'conn-flood', 'good'
             $rows = foreach ($case in $cases) {
                 $before = Get-AgentState
                 # These two need the attacker's connection to stay the newest one: the real agent pauses meanwhile

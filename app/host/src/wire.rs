@@ -32,6 +32,32 @@ pub fn hmac(key: &[u8], data: &[u8]) -> [u8; 32] {
     out
 }
 
+pub fn sha256(data: &[u8]) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    let status = unsafe { BCryptHash(BCRYPT_SHA256_ALG_HANDLE, std::ptr::null(), 0, data.as_ptr(), data.len() as u32, out.as_mut_ptr(), 32) };
+    assert!(status == 0, "BCryptHash failed: {status:#x}");
+    out
+}
+
+/// What the signed frame before a blob says about it (protocol: "blob", "blobLen", "blobSha256").
+pub fn describe_blob(obj: &mut Map<String, Value>, blob: &[u8]) {
+    obj.insert("blob".into(), json!(true));
+    obj.insert("blobLen".into(), json!(blob.len()));
+    obj.insert("blobSha256".into(), json!(hex(&sha256(blob))));
+}
+
+/// The blob must be exactly what its signed frame announced.
+pub fn check_blob(obj: &Map<String, Value>, blob: &[u8]) -> Result<(), String> {
+    if obj.get("blobLen").and_then(Value::as_u64) != Some(blob.len() as u64) {
+        return Err("blob length differs from its frame".into());
+    }
+    let want = obj.get("blobSha256").and_then(Value::as_str).unwrap_or("");
+    if !is_hex(want, 64) || !ct_eq(want.as_bytes(), hex(&sha256(blob)).as_bytes()) {
+        return Err("blob hash differs from its frame".into());
+    }
+    Ok(())
+}
+
 pub fn random<const N: usize>() -> [u8; N] {
     let mut bytes = [0u8; N];
     let status = unsafe { BCryptGenRandom(std::ptr::null_mut(), bytes.as_mut_ptr(), N as u32, BCRYPT_USE_SYSTEM_PREFERRED_RNG) };
@@ -302,6 +328,17 @@ mod tests {
     fn hmac_known_vector() {
         // RFC 4231 test case 2.
         assert_eq!(hex(&hmac(b"Jefe", b"what do ya want for nothing?")), "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843");
+    }
+
+    #[test]
+    fn blob_description() {
+        assert_eq!(hex(&sha256(b"abc")), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        let mut obj = Map::new();
+        describe_blob(&mut obj, b"hello");
+        assert!(check_blob(&obj, b"hello").is_ok());
+        assert!(check_blob(&obj, b"hellO").is_err());
+        assert!(check_blob(&obj, b"hello!").is_err());
+        assert!(check_blob(&Map::new(), b"").is_err());
     }
 
     #[test]
