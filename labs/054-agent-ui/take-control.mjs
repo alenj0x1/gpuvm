@@ -79,12 +79,31 @@ console.log("hidden viewer GPU %:", hiddenGpu);
 /** A screenshot of the GpuVM window's area (what's on screen there: the app, the picture and its notch). */
 const shot = (name) => { try { console.log(name, execFileSync("pwsh", ["-NoProfile", "-File", join(here, "window-shot.ps1"), "-Out", join(out, `${name}.png`)]).toString().trim()); } catch (e) { console.log(name, "failed"); } };
 shot("installed-app-recording-hidden");
+// First frame: from open_viewer until the viewer's window shows and until its picture isn't black. With ddx a still
+// desktop may stay black until something on screen changes: after 20 s black, the agent opens Start (key win) once.
+const tOpen = Date.now();
 await tool("open_viewer", { machine });
-const windowed = await viewerUp(120, true);
+const luma = () => { try { return execFileSync("pwsh", ["-NoProfile", "-File", join(here, "luma.ps1")]).toString().trim(); } catch { return "none"; } };
+let tWindow = null, tPicture = null, poked = null;
+while (Date.now() - tOpen < 180000 && tPicture === null) {
+  const l = luma();
+  if (l !== "none") {
+    if (tWindow === null) tWindow = Date.now();
+    if (Number(l) > 12) tPicture = Date.now();
+    else if (!poked && Date.now() - tWindow > 20000) { poked = Date.now(); await tool("key", { machine, keys: "win" }); }
+  } else {
+    await tool("screenshot", { machine, maxWidth: 320, maxHeight: 200 });
+  }
+  if (tPicture === null) await sleep(500);
+}
+if (poked) await tool("key", { machine, keys: "escape" });
+const firstFrame = { windowMs: tWindow && tWindow - tOpen, pictureMs: tPicture && tPicture - tOpen, blackUntilChange: !!poked, pictureAfterChangeMs: poked && tPicture ? tPicture - poked : null };
+console.log("first frame:", JSON.stringify(firstFrame));
+const windowed = tWindow !== null;
 console.log("viewer window:", windowed);
 if (!windowed) {
   // Nothing to measure without the picture (Sunshine not answering in the machine, 2026-11-19): say it and clean up.
-  writeFileSync(join(out, "take-control.json"), JSON.stringify({ machine, error: "no viewer opened in 2 min", hiddenOpened, hiddenGpu }, null, 1));
+  writeFileSync(join(out, "take-control.json"), JSON.stringify({ machine, error: "no viewer opened in 3 min", hiddenOpened, hiddenGpu, firstFrame }, null, 1));
   await tool(disposable ? "destroy" : "release_machine", { machine });
   clearTimeout(guard); mcp.kill(); process.exit(5);
 }
@@ -121,7 +140,7 @@ for (let r = 0; r < rounds; r++) {
 }
 const ok = samples.filter((s) => s !== null).sort((a, b) => a - b);
 const pct = (p) => ok[Math.min(ok.length - 1, Math.floor(p * ok.length))];
-const report = { machine, rounds, hiddenGpu, shownGpu, samples, p50: pct(0.5), p95: pct(0.95), misses: samples.filter((s) => s === null).length };
+const report = { machine, rounds, hiddenOpened, hiddenGpu, shownGpu, firstFrame, samples, p50: pct(0.5), p95: pct(0.95), misses: samples.filter((s) => s === null).length };
 writeFileSync(join(out, "take-control.json"), JSON.stringify(report, null, 1));
 console.log(JSON.stringify(report));
 await tool(disposable ? "destroy" : "release_machine", { machine });
