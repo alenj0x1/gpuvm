@@ -51,6 +51,8 @@ pub struct State {
     pub timeouts: Vec<Option<u64>>,
     /// The next approval.get answers "pending" once (the answer arrives right at the deadline).
     pub answer_late: bool,
+    /// The sent path changed after the person allowed it (the service re-measures and says needs_approval).
+    pub send_changed: bool,
     next: u32,
 }
 
@@ -196,6 +198,7 @@ impl Broker for FakeBroker {
         let max_steps = st.max_steps;
         let steps = st.calls.iter().filter(|c| c.starts_with("agent.")).count() as u64;
         let st_approvals = st.approvals.clone();
+        let send_changed = st.send_changed;
         if op == "approval.request" {
             st.next += 1;
             let id = format!("r{}", st.next);
@@ -263,7 +266,7 @@ impl Broker for FakeBroker {
             "file.send" => {
                 // Like the service: only with the person's allowed `send` request.
                 match st_approvals.get(s(&args, "approval")) {
-                    Some((kind, state)) if kind == "send" && state == "allowed" => {}
+                    Some((kind, state)) if kind == "send" && state == "allowed" && !send_changed => {}
                     _ => return Err(err("needs_approval", "Sending files needs the person's approval.")),
                 }
                 let host = s(&args, "hostPath");

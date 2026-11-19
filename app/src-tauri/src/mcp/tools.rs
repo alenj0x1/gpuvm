@@ -1151,16 +1151,22 @@ impl Tool<'_> {
             return Err("`hostPath` must be a full path on this PC.".into());
         }
         self.mine(machine)?;
-        // Data leaves this PC for an untrusted machine: the person allows it in GpuVM first, for this exact path, size
-        // and number of files (the service checks the approval against them).
+        // Data leaves this PC for an untrusted machine: the person allows it in GpuVM first. Only the path goes with
+        // the request: the service measures it as the person, writes the title the person sees, and re-measures
+        // when the copy uses the approval (once, exactly that path). The local measure only words the messages here.
         let (bytes, files) = host_size(p)?;
         let what = if files == 1 && p.is_file() { human_size(bytes) } else { format!("{files} files, {}", human_size(bytes)) };
         let title = format!("Copy {} ({what}) from this PC into {machine}", p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| host.to_string()));
         let reason = opt_str(self.args, "reason")?.unwrap_or("The agent wants to use this file in the machine.");
-        let approval = self.approval_with(machine, "send", &title, reason, self.settings.approval_timeout,
-            json!({ "path": host, "sizeBytes": bytes, "files": files }))?;
+        let approval = self.approval_with(machine, "send", &title, reason, self.settings.approval_timeout, json!({ "path": host }))?;
         self.step(machine)?;
-        let sent = self.broker("file.send", machine, json!({ "hostPath": host, "approval": approval }))?;
+        let sent = match self.ctx.broker.call_long("file.send", json!({ "connection": self.connection, "name": machine, "hostPath": host, "approval": approval })) {
+            Ok(r) => r,
+            // The path changed after the person allowed it (re-measured): their answer was for something else.
+            Err(e) if e.code == "needs_approval" => return Err(format!(
+                "{} changed after the person allowed it, so it wasn't sent; call send_file again to ask them about it as it is now.", p.display())),
+            Err(e) => return Err(self.fail(machine, e)),
+        };
         // Check it arrived instead of trusting the copy's "done" (lab 053: a 106 MB installer was reported copied
         // and never reached the machine), at the name it got there (never overwriting: `name (2).ext`).
         let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
@@ -1231,6 +1237,10 @@ impl Tool<'_> {
             "reason": cap_to(reason.to_string(), 500), "timeoutSec": wait.max(30) });
         if let (Some(a), Value::Object(e)) = (args.as_object_mut(), extra) {
             a.extend(e);
+            // For a send the service writes the title the person sees from its own measure.
+            if kind == "send" {
+                a.remove("title");
+            }
         }
         let r = self.broker("approval.request", machine, args)?;
         let id = r.data["requestId"].as_str().ok_or("GpuVM didn't return a request id.")?.to_string();

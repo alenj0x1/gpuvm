@@ -97,19 +97,21 @@ Wait until they hand it back ("Return to agent" in GpuVM), then take a fresh scr
   as a standard user in a VM, files leave only through the person's approval, UAC/lock screen/passwords are refused
   (`blocked_elevated`, `secure_desktop`), and the person can pause or kill at any time.
 - **Host files into the VM.** Copying data from this PC into an untrusted machine needs the person's approval in
-  GpuVM, every time: `send_file` measures the path (bytes and number of files, folders walked without following links),
-  asks with a `send` request showing them, and passes the allowed request to `Send-GpuVMFile` as `Approval`, which the
-  service checks against the exact path, size and file count (and reads the files as the person). An injected model
-  can't move host files without the person seeing what and how much.
+  GpuVM, every time: `send_file` asks with a `send` request carrying only the path; the service measures it as the
+  person (refusing links and more than 100,000 entries) and shows "Send <paths> to '<machine>': N files, <size>".
+  The allowed request goes to `Send-GpuVMFile` as `Approval`: used once, for exactly that path, re-measured (if it
+  changed, `needs_approval` and the model is told to ask again). An injected model can't move host files without the
+  person seeing what and how much.
 - **Viewer.** `open_viewer` works only on machines this connection took (the viewer can start or resume a machine)
   and starts `gpuvm.exe --view <name>` with a validated machine name only.
 - **What the app shows and logs.** Every step's note has the tool and its arguments, with anything the model wrote
   (file contents, commands, typed text, values, stdin) replaced by its length. Accepted offers tell the model the
   file's name and "the person's Downloads\GpuVM folder", never the person's absolute path.
-- **Extra connections.** Long operations use their own pipe connection; each one starts with `Hello-GpuVMAgent
-  {Connection}` so the service applies the session's limits to it (ignored by services that predate it).
+- **Connections.** Every pipe connection the server opens starts with `Register-GpuVMAgentPipe`: the shared one before
+  its session exists, and the extra ones (module work, guest requests over 20 s) with `{Connection}`, so the service
+  applies the session's limits to all of them; long calls never queue in front of `cancel_request` or screenshots.
 - **Names.** `list_machines` shows every GpuVM machine's name and state (not their contents) so the model can ask for
   one; machines without the agent can't be used.
-- **Open risks.** One pipe connection serializes the calls of a client (a 60 s `run` delays a parallel screenshot);
-  a service restart drops the registration, so machines must be taken again (the error says so); creation from a
+- **Open risks.** Short calls of a client share one connection (one at a time); a service restart drops the
+  registration, so machines must be taken again (the error says so); creation from a
   template relies on `Install-GpuVMAgent` succeeding in the clone.

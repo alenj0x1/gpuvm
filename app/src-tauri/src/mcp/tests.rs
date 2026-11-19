@@ -340,19 +340,25 @@ fn commands_files_and_offers() {
     h.fake.with(|s| s.approval_answer = "allowed".into());
     // A real host file is checked inside the machine after the copy, by size.
     assert!(h.ok("send_file", json!({ "machine": m, "hostPath": host_path })).contains("1000 bytes, checked"));
+    // Only the path goes with the request (agent-broker's contract): the service measures it and writes the title.
     let asked = h.fake.with(|s| s.last_approval.clone());
-    assert_eq!((asked["kind"].as_str(), asked["path"].as_str(), asked["sizeBytes"].as_u64(), asked["files"].as_u64()),
-        (Some("send"), Some(host_path.as_str()), Some(1000), Some(1)));
-    assert!(asked["title"].as_str().unwrap().contains("1000 bytes"));
-    // A folder: all its files counted.
+    assert_eq!((asked["kind"].as_str(), asked["path"].as_str()), (Some("send"), Some(host_path.as_str())));
+    assert!(asked.get("sizeBytes").is_none() && asked.get("files").is_none() && asked.get("title").is_none(), "{asked}");
+    // A folder works the same; the local measure only words the refusal.
     let dir = std::env::temp_dir().join(format!("gpuvm-mcp-dir-{}", std::process::id()));
     std::fs::create_dir_all(dir.join("sub")).unwrap();
     std::fs::write(dir.join("a.txt"), b"12345").unwrap();
     std::fs::write(dir.join("sub").join("b.txt"), b"678").unwrap();
+    h.fake.with(|s| s.approval_answer = "denied".into());
+    let no = h.err("send_file", json!({ "machine": m, "hostPath": dir.to_string_lossy() }));
+    assert!(no.contains("2 files, 8 bytes"), "{no}");
+    h.fake.with(|s| s.approval_answer = "allowed".into());
     h.ok("send_file", json!({ "machine": m, "hostPath": dir.to_string_lossy() }));
-    let asked = h.fake.with(|s| s.last_approval.clone());
-    assert_eq!((asked["sizeBytes"].as_u64(), asked["files"].as_u64()), (Some(8), Some(2)));
     let _ = std::fs::remove_dir_all(&dir);
+    // Changed after the person allowed it: the service says needs_approval; the agent is told to ask again.
+    h.fake.with(|s| s.send_changed = true);
+    assert!(h.err("send_file", json!({ "machine": m, "hostPath": host_path })).contains("changed after the person allowed it"));
+    h.fake.with(|s| s.send_changed = false);
     h.fake.with(|s| s.machines.iter_mut().find(|x| x.name == m).unwrap().drop_sends = true);
     std::fs::write(host.with_extension("lost"), b"x").unwrap();
     assert!(h.err("send_file", json!({ "machine": m, "hostPath": host.with_extension("lost").to_string_lossy() })).contains("wasn't delivered"));

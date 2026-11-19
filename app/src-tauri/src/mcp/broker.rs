@@ -76,8 +76,8 @@ pub struct PipeBroker {
     session: Mutex<Option<String>>,
 }
 
-/// The first request on an extra pipe connection: which agent session it belongs to (name proposed to agent-broker).
-pub const HELLO: &str = "Hello-GpuVMAgent";
+/// The first request on every pipe connection this process opens (agent-broker's contract, ff9d55d).
+pub const HELLO: &str = "Register-GpuVMAgentPipe";
 
 impl Default for PipeBroker {
     fn default() -> Self {
@@ -143,28 +143,35 @@ impl PipeBroker {
 
     /// One command, with its warnings: on the shared connection (the service answers one request at a time per
     /// connection), or on a connection of its own for minutes-long module work (`long`).
+    /// A new pipe connection, announced as an agent's (agent-broker's `Register-GpuVMAgentPipe`, the first line of
+    /// every connection): the shared one before its session exists (no arguments), an extra one with the session's id
+    /// so the service applies that session's limits to it.
+    fn open(&self, session: Option<String>) -> Result<crate::backend::Conn> {
+        let mut conn = crate::backend::connect().map_err(|e| BrokerError::new("unavailable", e))?;
+        let args = session.map(|id| json!({ "Connection": id })).unwrap_or(json!({}));
+        let hello = self.request(HELLO, args);
+        if let Err(e) = Self::run(&mut conn, &hello) {
+            // A service from before the hello: nothing to announce to.
+            let older = e.message.contains(HELLO) && ["not allowed", "Unknown", "can't run"].iter().any(|t| e.message.contains(t));
+            if !older {
+                return Err(e);
+            }
+        }
+        Ok(conn)
+    }
+
     fn exec(&self, cmd: &str, args: Value, long: bool) -> Result<(Reply, Vec<String>)> {
         let request = self.request(cmd, args);
         if long {
-            let mut conn = crate::backend::connect().map_err(|e| BrokerError::new("unavailable", e))?;
-            // A second pipe connection of this process says first which agent session it belongs to, so the service
-            // applies the session's limits to it too (agent-broker's "hello as agent"). The shared connection is the
-            // session's own; when it breaks, tools.rs registers a new session on the next call instead.
-            if let Some(id) = self.session.lock().unwrap_or_else(|e| e.into_inner()).clone() {
-                let hello = self.request(HELLO, json!({ "Connection": id }));
-                if let Err(e) = Self::run(&mut conn, &hello) {
-                    // A service from before the hello: nothing to announce to.
-                    let older = e.message.contains(HELLO) && ["not allowed", "Unknown", "can't run"].iter().any(|t| e.message.contains(t));
-                    if !older {
-                        return Err(e);
-                    }
-                }
-            }
+            let session = self.session.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            let mut conn = self.open(session)?;
             return Self::run(&mut conn, &request);
         }
         let mut guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         if guard.is_none() {
-            *guard = Some(crate::backend::connect().map_err(|e| BrokerError::new("unavailable", e))?);
+            // The shared connection is the session's own (Connect-GpuVMAgentClient registers on it); when it breaks,
+            // tools.rs registers a new session on the next call.
+            *guard = Some(self.open(None)?);
         }
         let result = Self::run(guard.as_mut().unwrap(), &request);
         if matches!(&result, Err(e) if e.code == "unavailable") {
@@ -242,7 +249,7 @@ impl Broker for PipeBroker {
             }
             "approval.request" => self.cmd("New-GpuVMAgentRequest", json!({ "Name": name, "Connection": connection, "Kind": s(&args, "kind"),
                 "Title": s(&args, "title"), "Reason": s(&args, "reason"), "TimeoutSec": s(&args, "timeoutSec"),
-                "Path": s(&args, "path"), "SizeBytes": s(&args, "sizeBytes"), "Files": s(&args, "files") })),
+                "Path": s(&args, "path") })),
             "approval.get" => {
                 let id = s(&args, "requestId");
                 list(self.cmd("Get-GpuVMAgentRequest", json!({ "Id": id }))?.data).into_iter().find(|r| r["id"] == id).map(Reply::of)
