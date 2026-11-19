@@ -37,6 +37,11 @@ function Install-GpuVMAgent {
     $timing = [ordered]@{}
     $sw = [Diagnostics.Stopwatch]::StartNew()
 
+    # Windows' first-time setup (optimizations, streaming) runs at the first sign-in of the machine's own account.
+    # Switching the sign-in to `agent` before it ran would skip it for good (and for every copy of a template made
+    # from this machine), so it is waited for first.
+    Wait-GuestReady -Name $Name -Credential $credential
+    $timing['firstSetup'] = $sw.ElapsedMilliseconds
     $signInAs = if ($User -eq 'own') { 'previous' } else { 'agent' }
     $secret = [byte[]]::new(32)
     [Security.Cryptography.RandomNumberGenerator]::Fill($secret)

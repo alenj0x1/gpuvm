@@ -8,7 +8,7 @@
 #      machine's log holding only its own requests.
 # Run elevated. Only the copies this script makes are touched, and they are deleted at the end.
 param([string]$Session = 'agent-broker', [string]$Name = 'agent052a', [string]$Template = 'agent-tpl', [int]$Rounds = 2,
-    [string[]]$Steps = @('swap', 'install', 'parts', 'service', 'two', 'stop', 'mcp'),
+    [string[]]$Steps = @('install', 'parts', 'service', 'stop', 'mcp'),
     [string[]]$Leftovers = @(),
     [string]$RunParts = "'latency','parallel','timeout','attacks','offers','restart'")
 $ErrorActionPreference = 'Stop'
@@ -24,10 +24,6 @@ function Line($what) { "$(Get-Date -Format HH:mm:ss) $what" }
 if ($LASTEXITCODE) { throw 'no lock' }
 $made = [System.Collections.Generic.List[string]]::new()
 $installedHost = Join-Path $env:ProgramFiles 'GpuVM\gpuvm-host.exe'
-$installedAgentPs1 = Join-Path $env:ProgramFiles 'GpuVM\gpuvm\src\GpuVM\Private\Agent.ps1'
-$backupDir = 'C:\GpuVM\lab052\installed'
-# This branch's gpuvm-host, copied where only administrators can write, runs the bounded stop.
-$boundedStop = 'C:\GpuVM\lab052\gpuvm-host-stop.exe'
 function Remove-Copies {
     foreach ($n in @($made)) {
         try { Stop-VM -Name $n -TurnOff -Force -ErrorAction SilentlyContinue; Remove-GpuVM -Name $n -DeleteDisk -Confirm:$false -ErrorAction Stop; Line "$n deleted" }
@@ -39,25 +35,9 @@ try {
     # Machines an earlier run of this lab left behind (named by the caller).
     foreach ($v in $Leftovers) { if (Get-VM -Name $v -ErrorAction SilentlyContinue) { $made.Add($v) } }
     if ($made.Count) { Import-Module $modulePath -Force; Remove-Copies }
-    if ('swap' -in $Steps) {
-        # This branch's service and module agent code replace the installed ones for the whole run (put back in the
-        # finally): the run tests the latest broker, the secret stored by the service, and the bounded stop.
-        & cargo build --release --manifest-path (Join-Path $root 'app\host\Cargo.toml') 2>&1 | Select-Object -Last 1
-        if ($LASTEXITCODE) { throw 'build failed' }
-        New-Item -ItemType Directory -Force $backupDir | Out-Null
-        Copy-Item (Join-Path $root 'app\host\target\release\gpuvm-host.exe') $boundedStop -Force
-        Copy-Item $installedHost, $installedAgentPs1 $backupDir -Force
-        $script:swapped = $true
-        # This branch's bounded stop (30 s, then the process): the installed one can wait up to 10 minutes.
-        $w = [Diagnostics.Stopwatch]::StartNew()
-        Start-Process $boundedStop -ArgumentList 'stop' -Wait -WindowStyle Hidden
-        $result['swapStopMs'] = [math]::Round($w.Elapsed.TotalMilliseconds)
-        Line "installed service stopped in $($result['swapStopMs']) ms ($((Get-Service GpuVM).Status))"
-        Copy-Item (Join-Path $root 'app\host\target\release\gpuvm-host.exe') $installedHost -Force
-        Copy-Item (Join-Path $root 'src\GpuVM\Private\Agent.ps1') $installedAgentPs1 -Force
-        Start-Service GpuVM
-        Line 'this branch''s gpuvm-host.exe and Agent.ps1 in place'
-    }
+    # The installed build is tested as it is: lab scripts never replace or restore installed files (they once put
+    # an older Agent.ps1 back over a build someone else had just installed).
+    # First-time setup check (setup.done.json) is reported for each copy in the install step.
     # common.ps1 imports this checkout's module: loaded first, then replaced by the installed one (one GpuVM module).
     . (Join-Path $root 'tools\latency\common.ps1')
     Get-Module GpuVM | Remove-Module -Force
@@ -97,6 +77,13 @@ try {
         while ($sw.Elapsed.TotalMinutes -lt 10) { try { & $guest { 1 } | Out-Null; break } catch { Start-Sleep -Milliseconds 500 } }
         $result['psDirectAfterStartMs'] = [math]::Round($sw.Elapsed.TotalMilliseconds)
         Line "PowerShell Direct after $($result['psDirectAfterStartMs']) ms"
+        # The copy's first-time setup marker and who Windows signs in as (the agent-tpl 30-minute wait).
+        $result['firstSetup'] = & $guest {
+            $winlogon = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+            [ordered]@{ setupDone = Test-Path 'C:\GpuVM\setup.done.json'; setupLog = Test-Path 'C:\GpuVM\setup.log'
+                autoLogonUser = $winlogon.DefaultUserName; consoleUser = (Get-CimInstance Win32_ComputerSystem).UserName }
+        }
+        Line "first-time setup in the copy: $($result['firstSetup'] | ConvertTo-Json -Compress)"
         $t0 = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
         $r = Install-GpuVMAgent -Name $Name
         $result['install'] = [ordered]@{ result = $r; readyMs = (Wait-Ready $Name 300 $t0) }
@@ -256,17 +243,6 @@ try {
 }
 finally {
     Remove-Copies
-    if ($script:swapped) {
-        # The installed service and module go back exactly as they were.
-        try {
-            Start-Process $boundedStop -ArgumentList 'stop' -Wait -WindowStyle Hidden
-            Copy-Item (Join-Path $backupDir 'gpuvm-host.exe') $installedHost -Force
-            Copy-Item (Join-Path $backupDir 'Agent.ps1') $installedAgentPs1 -Force
-            Start-Service GpuVM
-            Line 'installed gpuvm-host.exe and Agent.ps1 put back'
-        }
-        catch { Line "COULDN'T PUT BACK THE INSTALLED FILES: $($_.Exception.Message)" }
-    }
     $result['finished'] = (Get-Date).ToString('o')
     Save
     Remove-Item 'C:\GpuVM\.lab-lock' -Force -ErrorAction SilentlyContinue

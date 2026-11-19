@@ -71,7 +71,11 @@ busy: the tails, not the medians, carry that).
   open (error 32), and the copy stayed unmarked in Downloads. Now the handle is closed first, and a file that can't be
   marked is deleted.
 
-## The real GpuVM service, release build (`real-service.ps1`, under the lab lock, original put back after)
+## The real GpuVM service, release build (a `real-service.ps1` since removed: it swapped installed files)
+
+**Lesson:** a lab must never replace or put back installed files. Its "original" backup came from an older build and
+was restored over a build the coordinator had installed meanwhile. Test the installed build as it is, or install a
+whole build and say so; `integration.ps1` now only tests what is installed.
 
 This branch's `gpuvm-host.exe` replaced the installed one for one run; `gpuvm-host install` (what the installer
 runs) registered the service id (`ElementName = GpuVM agent`); the service listened 40 ms after start.
