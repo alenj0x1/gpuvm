@@ -26,6 +26,8 @@ $made = [System.Collections.Generic.List[string]]::new()
 $installedHost = Join-Path $env:ProgramFiles 'GpuVM\gpuvm-host.exe'
 $installedAgentPs1 = Join-Path $env:ProgramFiles 'GpuVM\gpuvm\src\GpuVM\Private\Agent.ps1'
 $backupDir = 'C:\GpuVM\lab052\installed'
+# This branch's gpuvm-host, copied where only administrators can write, runs the bounded stop.
+$boundedStop = 'C:\GpuVM\lab052\gpuvm-host-stop.exe'
 function Remove-Copies {
     foreach ($n in @($made)) {
         try { Stop-VM -Name $n -TurnOff -Force -ErrorAction SilentlyContinue; Remove-GpuVM -Name $n -DeleteDisk -Confirm:$false -ErrorAction Stop; Line "$n deleted" }
@@ -43,10 +45,14 @@ try {
         & cargo build --release --manifest-path (Join-Path $root 'app\host\Cargo.toml') 2>&1 | Select-Object -Last 1
         if ($LASTEXITCODE) { throw 'build failed' }
         New-Item -ItemType Directory -Force $backupDir | Out-Null
+        Copy-Item (Join-Path $root 'app\host\target\release\gpuvm-host.exe') $boundedStop -Force
         Copy-Item $installedHost, $installedAgentPs1 $backupDir -Force
         $script:swapped = $true
-        Stop-Service GpuVM -ErrorAction SilentlyContinue
-        (Get-Service GpuVM).WaitForStatus('Stopped', '00:02:00')
+        # This branch's bounded stop (30 s, then the process): the installed one can wait up to 10 minutes.
+        $w = [Diagnostics.Stopwatch]::StartNew()
+        Start-Process $boundedStop -ArgumentList 'stop' -Wait -WindowStyle Hidden
+        $result['swapStopMs'] = [math]::Round($w.Elapsed.TotalMilliseconds)
+        Line "installed service stopped in $($result['swapStopMs']) ms ($((Get-Service GpuVM).Status))"
         Copy-Item (Join-Path $root 'app\host\target\release\gpuvm-host.exe') $installedHost -Force
         Copy-Item (Join-Path $root 'src\GpuVM\Private\Agent.ps1') $installedAgentPs1 -Force
         Start-Service GpuVM
@@ -253,8 +259,7 @@ finally {
     if ($script:swapped) {
         # The installed service and module go back exactly as they were.
         try {
-            Stop-Service GpuVM -ErrorAction SilentlyContinue
-            (Get-Service GpuVM).WaitForStatus('Stopped', '00:02:00')
+            Start-Process $boundedStop -ArgumentList 'stop' -Wait -WindowStyle Hidden
             Copy-Item (Join-Path $backupDir 'gpuvm-host.exe') $installedHost -Force
             Copy-Item (Join-Path $backupDir 'Agent.ps1') $installedAgentPs1 -Force
             Start-Service GpuVM
