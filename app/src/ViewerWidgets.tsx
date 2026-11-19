@@ -3,7 +3,7 @@ import {
   IconCamera, IconFolder, IconHistory, IconPhoto, IconVideo,
   IconActivity, IconArrowsMaximize, IconArrowsMinimize, IconBooks, IconBolt, IconChartLine, IconClock, IconCloud, IconCloudFog,
   IconCloudRain, IconCloudSnow, IconCloudStorm, IconDeviceDesktop, IconDeviceGamepad2, IconHome, IconMinus, IconMoon,
-  IconPlayerPlay, IconPlugConnectedX, IconPlus, IconSun, IconTrophy, IconCloudSearch, IconFiles, IconClipboard, type Icon,
+  IconPlayerPlay, IconPlugConnectedX, IconPlus, IconSun, IconTrophy, IconCloudSearch, IconFiles, IconClipboard, IconRobot, type Icon,
 } from "@tabler/icons-react";
 import { MiniCube } from "./MiniCube";
 import { miniOf } from "./HomeLoading";
@@ -20,7 +20,7 @@ import type { VmOverview } from "./types";
 // order without leaving holes. Dragging one moves it among the others, which slide aside while it passes; its corner
 // resizes it in whole cells, each kind within its own limits. The layout is remembered.
 
-export type WidgetType = "machines" | "actions" | "capture" | "stats" | "clock" | "shelf" | "games" | "weather" | "files" | "clipboard";
+export type WidgetType = "machines" | "actions" | "capture" | "agent" | "stats" | "clock" | "shelf" | "games" | "weather" | "files" | "clipboard";
 /** A widget on the board: its kind, its size in cells and the cell of its top left corner. */
 export interface WidgetItem { id: string; type: WidgetType; w: number; h: number; x: number; y: number }
 interface Spec { icon: Icon; name: () => string; minW: number; maxW: number; minH: number; maxH: number; w: number; h: number }
@@ -31,6 +31,8 @@ export const SPEC: Record<WidgetType, Spec> = {
   machines: { icon: IconDeviceDesktop, name: () => t("Machines"), minW: 1, maxW: 3, minH: 1, maxH: 6, w: 2, h: 2 },
   actions: { icon: IconBolt, name: () => t("Actions"), minW: 1, maxW: 3, minH: 1, maxH: 2, w: 2, h: 1 },
   capture: { icon: IconCamera, name: () => t("Capture"), minW: 1, maxW: 3, minH: 1, maxH: 2, w: 2, h: 2 },
+  // One row: who and what it did last; from two, its budget and controls; each row more shows more actions.
+  agent: { icon: IconRobot, name: () => t("Agent"), minW: 2, maxW: 3, minH: 1, maxH: 4, w: 2, h: 2 },
   stats: { icon: IconActivity, name: () => t("Picture"), minW: 1, maxW: 3, minH: 1, maxH: 3, w: 1, h: 2 },
   clock: { icon: IconClock, name: () => t("Clock"), minW: 1, maxW: 3, minH: 1, maxH: 2, w: 1, h: 1 },
   shelf: { icon: IconBooks, name: () => t("Shelf"), minW: 1, maxW: 3, minH: 1, maxH: 4, w: 2, h: 2 },
@@ -39,7 +41,7 @@ export const SPEC: Record<WidgetType, Spec> = {
   files: { icon: IconFiles, name: () => t("Files"), minW: 2, maxW: 3, minH: 2, maxH: 5, w: 2, h: 2 },
   clipboard: { icon: IconClipboard, name: () => t("Clipboard"), minW: 2, maxW: 3, minH: 2, maxH: 5, w: 2, h: 3 },
 };
-const ORDER: WidgetType[] = ["machines", "actions", "capture", "stats", "clock", "files", "clipboard", "shelf", "games", "weather"];
+const ORDER: WidgetType[] = ["machines", "actions", "capture", "agent", "stats", "clock", "files", "clipboard", "shelf", "games", "weather"];
 // The shelf and the games ask for the whole width: two columns in a narrow panel, three in a wide one (no empty
 // column beside them). Placed in this order, the first free cell each.
 const DEFAULT_SIZES: [WidgetType, number, number][] = [["machines", 2, 2], ["stats", 1, 2], ["clock", 1, 2], ["actions", 2, 2], ["capture", 3, 2], ["files", 2, 2], ["clipboard", 2, 3], ["shelf", 3, 2], ["games", 3, 2]];

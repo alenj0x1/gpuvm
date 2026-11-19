@@ -4,6 +4,8 @@ import { PromptCard } from "./PromptCard";
 import { PromptDock } from "./PromptDock";
 import { ViewerPanel } from "./ViewerPanel";
 import { DropZone } from "./DropZone";
+import { AgentDock } from "./AgentDock";
+import { StatusNotch } from "./StatusNotch";
 import { initPrefs, usePrefs } from "./prefs";
 import { resolveLang } from "./i18n";
 // Fonts load with the app, not from styles.css, so the website demos can reuse the stylesheet without them.
@@ -44,10 +46,18 @@ const isDropZone = "__TAURI_INTERNALS__" in window
   ? (window as unknown as { __TAURI_INTERNALS__: { metadata: { currentWindow: { label: string } } } }).__TAURI_INTERNALS__.metadata.currentWindow.label === "viewer-drop"
   : new URLSearchParams(location.search).has("viewer-drop");
 if (isDropZone) document.documentElement.classList.add("drop-window");
+// The agent's dock and the status notch over a machine's picture (labels "agent-dock" and "status-notch";
+// "?agent-dock" and "?status-notch" in the browser), drawn dark like the administrator dock.
+const label = (name: string) => "__TAURI_INTERNALS__" in window
+  ? (window as unknown as { __TAURI_INTERNALS__: { metadata: { currentWindow: { label: string } } } }).__TAURI_INTERNALS__.metadata.currentWindow.label === name
+  : new URLSearchParams(location.search).has(name);
+const isAgentDock = label("agent-dock"), isStatusNotch = label("status-notch");
+if (isAgentDock) document.documentElement.classList.add("agent-dock-window");
+if (isStatusNotch) document.documentElement.classList.add("status-notch-window");
 // A change of language draws the app again (the root re-renders everything under it) without starting it over: a
 // remount reset the panels' sizes and left the scenes and cards gray until their data came back.
 function Root() {
   resolveLang(usePrefs().lang);
-  return isPromptDock ? <PromptDock /> : isPrompt ? <PromptCard /> : isViewerPanel ? <ViewerPanel /> : isDropZone ? <DropZone /> : <App />;
+  return isAgentDock ? <AgentDock /> : isStatusNotch ? <StatusNotch /> : isPromptDock ? <PromptDock /> : isPrompt ? <PromptCard /> : isViewerPanel ? <ViewerPanel /> : isDropZone ? <DropZone /> : <App />;
 }
 createRoot(document.getElementById("root")!).render(<Root />);

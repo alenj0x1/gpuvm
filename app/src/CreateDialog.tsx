@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  IconApps, IconBolt, IconBrandWindows, IconCheck, IconCpu, IconDatabase, IconDeviceFloppy, IconDisc, IconFileImport, IconFlask, IconLayoutGrid, IconLoader2, IconPalette, IconPlus, IconSparkles, IconTag, IconTemplate, IconTopologyStar3, IconUser, IconX,
+  IconApps, IconBolt, IconBrandWindows, IconCheck, IconCpu, IconDatabase, IconDeviceFloppy, IconDisc, IconFileImport, IconFlask, IconLayoutGrid, IconLoader2, IconPalette, IconPlus, IconSparkles, IconTag, IconTemplate, IconTopologyStar3, IconUser, IconUserShield, IconRobot, IconX,
 } from "@tabler/icons-react";
 import type { AppInfo, CleanupLevelId, HostInfo, ImportInfo, IsoFile, ProfileInfo, ProfileSettings, TemplateInfo, VmOverview } from "./types";
 import { api, pickIso, pickMachineFile, vmNameError } from "./api";
@@ -33,6 +33,8 @@ interface Props {
   onCreate: (args: {
     name: string; iso: string | null; template: string | null; file: string | null; disposable: boolean; profile: string; user: string; password: string;
     apps: string[]; cleanup: CleanupLevelId; resources: Resources | null; space: string;
+    /** Made for AI agents (usage type Agent), and the Windows user agents work as. */
+    agents: { user: "agent" | "own" } | null;
   }) => void;
   onClose: () => void;
 }
@@ -76,6 +78,8 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
   const [file, setFile] = useState<ImportInfo | null>(null);
   // A copy of the template that is deleted with its disk once it is turned off.
   const [disposable, setDisposable] = useState(false);
+  const [forAgents, setForAgents] = useState(false);
+  const [agentUser, setAgentUser] = useState<"agent" | "own">("agent");
   const [fileError, setFileError] = useState("");
   const [reading, setReading] = useState(false);
   const [nameTouched, setNameTouched] = useState(false);
@@ -184,9 +188,10 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
     const resources = changed ? res : null;
     const decor = draft.get();
     if (decor.color || decor.led || decor.stickers.length || decor.figures.length) saveDecor(name, decor);
-    if (fromTemplate) onCreate({ name, iso: null, template, file: null, disposable, profile, user: "", password: "", apps: [], cleanup: "none", resources, space: space.id });
-    else if (fromFile) onCreate({ name, iso: null, template: null, file: file!.path, disposable: false, profile, user: file!.user ?? user, password, apps: [], cleanup: "none", resources, space: space.id });
-    else onCreate({ name, iso, template: null, file: null, disposable: false, profile, user, password, apps, cleanup, resources, space: space.id });
+    const agents = forAgents ? { user: agentUser } : null;
+    if (fromTemplate) onCreate({ name, iso: null, template, file: null, disposable, profile, user: "", password: "", apps: [], cleanup: "none", resources, space: space.id, agents });
+    else if (fromFile) onCreate({ name, iso: null, template: null, file: file!.path, disposable: false, profile, user: file!.user ?? user, password, apps: [], cleanup: "none", resources, space: space.id, agents });
+    else onCreate({ name, iso, template: null, file: null, disposable: false, profile, user, password, apps, cleanup, resources, space: space.id, agents });
   };
   const saveProfile = async () => {
     if (!saving || !settings) return;
@@ -348,6 +353,32 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
                       </button>
                     </div>
                   )}
+                  <div className="choice-list">
+                    <button type="button" role="checkbox" aria-checked={forAgents} className={`choice ${forAgents ? "on" : ""}`}
+                      onClick={() => { const on = !forAgents; setForAgents(on); if (on) setDisposable(true); touch(); }}>
+                      <span className="check">{forAgents ? <CheckMark /> : <IconRobot size={15} />}</span>
+                      <span className="grow">
+                        <span className="title">{t("For AI agents")}</span>
+                        <span className="desc">{fromTemplate
+                          ? t("With the GpuVM agent, a 1280x800 picture recorded while an agent works and an isolated network. Disposable unless you uncheck it.")
+                          : t("With the GpuVM agent, a 1280x800 picture recorded while an agent works and an isolated network.")}</span>
+                      </span>
+                    </button>
+                  </div>
+                  {forAgents && (
+                    <div className="field">
+                      <div className="field-top"><span>{t("Agents' Windows user")}</span></div>
+                      <div className="segment-row">
+                        <Segmented value={agentUser} onChange={(v) => { setAgentUser(v); touch(); }} options={[
+                          { value: "agent", label: <><IconUserShield size={15} />{t("A user of their own")}</> },
+                          { value: "own", label: <><IconUser size={15} />{t("My user")}</> },
+                        ]} />
+                      </div>
+                      <span className="hint">{agentUser === "agent"
+                        ? t("Agents work as a standard user of their own. Your files and sessions stay out of their reach.")
+                        : t("Agents work as you, with your files, saved passwords and open sessions. Use it only on a machine with nothing of yours.")}</span>
+                    </div>
+                  )}
                   <div className="create-profiles" role="radiogroup" aria-label={t("Profile")}>
                     {profiles.map((p) => (
                       <button type="button" role="radio" aria-checked={profile === p.Name} key={p.Name} className={`create-profile${profile === p.Name ? " on" : ""}`}
@@ -462,6 +493,9 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
                   <span className="create-summary-line"><IconApps size={14} /><span>{apps.length ? apps.map((id) => catalog.find((a) => a.id === id)?.name ?? id).join(", ") : t("No apps")}</span></span>
                   <span className="create-summary-line"><IconSparkles size={14} /><span>{level ?? t("Normal")}</span></span>
                 </>
+              )}
+              {forAgents && (
+                <span className="create-summary-line"><IconRobot size={14} /><span>{agentUser === "agent" ? t("For agents, with a user of their own") : t("For agents, with your user")}</span></span>
               )}
               {changed && settings && (saving ? (
                 <div className="create-save">

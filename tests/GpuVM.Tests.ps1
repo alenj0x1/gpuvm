@@ -1539,3 +1539,24 @@ InModuleScope GpuVM {
         }
     }
 }
+
+InModuleScope GpuVM {
+    Describe 'Disposable machines just created' {
+        It 'keeps a machine created a moment ago, whatever form its date has after reading the JSON' {
+            $now = Get-Date
+            foreach ($created in @($now, $now.ToString('o'), (Get-Date).ToUniversalTime().ToString('o'))) {
+                $state = @{ disposable = @{ createdAt = $created } }
+                Mock Test-GpuVMDisposable { $true }
+                Test-GpuVMDisposableDone -State $state -VMState 'Off' | Should Be $false
+            }
+        }
+        It 'keeps a machine whose date can''t be read' {
+            Mock Test-GpuVMDisposable { $true }
+            Test-GpuVMDisposableDone -State @{ disposable = @{ createdAt = 'not a date' } } -VMState 'Off' | Should Be $false
+        }
+        It 'deletes one that already ran and is off' {
+            Mock Test-GpuVMDisposable { $true }
+            Test-GpuVMDisposableDone -State @{ disposable = @{ createdAt = (Get-Date).ToString('o'); startedAt = (Get-Date).ToString('o') } } -VMState 'Off' | Should Be $true
+        }
+    }
+}

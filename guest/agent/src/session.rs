@@ -67,56 +67,12 @@ fn pipe() -> Result<(HANDLE, HANDLE), String> {
     }
 }
 
-/// The user's SID as text (S-1-5-21-...).
-fn user_sid(tok: HANDLE) -> Result<String, String> {
-    unsafe {
-        let mut len = 0u32;
-        let _ = GetTokenInformation(tok, TokenUser, None, 0, &mut len);
-        let mut buf = vec![0u8; len.max(1) as usize];
-        GetTokenInformation(tok, TokenUser, Some(buf.as_mut_ptr() as *mut _), len, &mut len).map_err(|e| format!("token user {e}"))?;
-        let tu = &*(buf.as_ptr() as *const TOKEN_USER);
-        let mut s = PWSTR::null();
-        windows::Win32::Security::Authorization::ConvertSidToStringSidW(tu.User.Sid, &mut s).map_err(|e| format!("sid {e}"))?;
-        let r = s.to_string().unwrap_or_default();
-        let _ = LocalFree(Some(HLOCAL(s.0 as _)));
-        Ok(r)
-    }
-}
-
-/// A security descriptor from SDDL, freed on drop.
-struct Sd(PSECURITY_DESCRIPTOR);
-impl Drop for Sd {
-    fn drop(&mut self) {
-        unsafe {
-            let _ = LocalFree(Some(HLOCAL(self.0 .0)));
-        }
-    }
-}
-fn sd(sddl: &str) -> Result<Sd, String> {
-    let w = wide(sddl);
-    let mut p = PSECURITY_DESCRIPTOR::default();
-    unsafe {
-        windows::Win32::Security::Authorization::ConvertStringSecurityDescriptorToSecurityDescriptorW(
-            PCWSTR(w.as_ptr()),
-            windows::Win32::Security::Authorization::SDDL_REVISION_1,
-            &mut p,
-            None,
-        )
-        .map_err(|e| format!("SDDL {e}"))?;
-    }
-    Ok(Sd(p))
-}
-
 pub fn launch(exe: &std::path::Path, session: u32) -> Result<Helper, String> {
     let tok = user_token(session)?;
-    // The helper's process and thread objects: full access for SYSTEM; the user (and so every program the agent runs
-    // as that user) may only wait on it and query basic information, never read/write its memory or duplicate its
-    // handles; OWNER RIGHTS removes the owner's implicit WRITE_DAC (security review H1).
-    let sid = user_sid(tok.0)?;
-    let proc_sd = sd(&format!("D:P(A;;GA;;;SY)(A;;0x101000;;;{sid})(A;;0x100000;;;OW)"))?;
-    let thread_sd = sd(&format!("D:P(A;;GA;;;SY)(A;;0x100800;;;{sid})(A;;0x100000;;;OW)"))?;
-    let proc_sa = SECURITY_ATTRIBUTES { nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32, lpSecurityDescriptor: proc_sd.0 .0, bInheritHandle: FALSE };
-    let thread_sa = SECURITY_ATTRIBUTES { nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32, lpSecurityDescriptor: thread_sd.0 .0, bInheritHandle: FALSE };
+    // The helper keeps its user's default process DACL: a restricted one (only query/wait for the user) broke
+    // Windows.Graphics.Capture with E_ACCESSDENIED (the process opens itself by id), lab 051. Programs the agent
+    // runs as the same user can therefore still open the helper; they don't inherit its pipes (handle lists), and
+    // the host treats everything from the guest as untrusted.
     unsafe {
         let (in_r, in_w) = pipe()?; // service writes in_w, helper reads in_r
         let (out_r, out_w) = pipe()?; // helper writes out_w, service reads out_r
@@ -172,8 +128,8 @@ pub fn launch(exe: &std::path::Path, session: u32) -> Result<Helper, String> {
             Some(tok.0),
             PCWSTR(exe_w.as_ptr()),
             Some(PWSTR(cmd.as_mut_ptr())),
-            Some(&proc_sa),
-            Some(&thread_sa),
+            None,
+            None,
             true,
             EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW | CREATE_SUSPENDED | if have_env { CREATE_UNICODE_ENVIRONMENT } else { PROCESS_CREATION_FLAGS(0) },
             if have_env { Some(env as *const _) } else { None },

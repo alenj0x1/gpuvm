@@ -34,9 +34,13 @@ const PANEL_GAP: Duration = Duration::from_millis(250);
 /// Messages the viewer may send.
 const FROM_VIEWER: &[&str] = &["hello", "stage", "stage-failed", "connected", "error", "app-running", "window", "first-frame", "stats", "panel", "home", "ended", "drag",
     // Screenshots and recordings (capture.rs).
-    "capture", "capture-error", "recording"];
+    "capture", "capture-error", "recording",
+    // The person moved the mouse or pressed a key over the picture while an agent works (agent.rs): nothing more.
+    "input",
+    // A status notice for the status notch (status.rs): a fixed key only, the texts are the app's.
+    "notice"];
 /// Commands this app may send.
-const TO_VIEWER: &[&str] = &["inset", "capture", "fullscreen", "stats", "quit", "focus", "screenshot", "record", "replay-save"];
+const TO_VIEWER: &[&str] = &["inset", "capture", "fullscreen", "stats", "quit", "focus", "screenshot", "record", "replay-save", "agent-watch"];
 
 struct Pipe(HANDLE);
 // SAFETY: a pipe handle can be used from any thread; reads and writes are overlapped, each with its own event.
@@ -436,6 +440,11 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
                 }
                 continue;
             }
+            // Input over the picture: only agent.rs hears it (take control), never the pages.
+            if kind == "input" {
+                crate::agent::on_input(&app, &vm);
+                continue;
+            }
             if kind == "recording" {
                 crate::capture::on_recording(&vm, msg["on"].as_bool().unwrap_or(false));
             }
@@ -455,8 +464,15 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
             let _ = app.emit("viewer", json!({ "vm": vm, "msg": msg }));
             crate::overlay::on_viewer(&app, &vm, &msg);
             crate::dock::on_viewer(&app, &vm, &msg);
+            crate::agent::on_viewer(&app, &vm, &msg);
+            crate::status::on_viewer(&app, &vm, &msg);
             // The first picture: the app zooms into the machine and then reveals the viewer (viewer_reveal). If the
             // page doesn't (hidden, busy), the viewer comes out on its own a moment later.
+            // A viewer opened only to record an agent's work (agent.rs) never comes out by itself: it hides, connected.
+            if kind == "first-frame" && background(&vm) && !viewer.first_frame.swap(true, Ordering::AcqRel) {
+                viewer.visible.store(false, Ordering::Relaxed);
+                send_raw(&viewer, &json!({ "type": "hide" }));
+            }
             if kind == "first-frame" && viewer.embed && !viewer.first_frame.swap(true, Ordering::AcqRel) {
                 let late = viewer.clone();
                 std::thread::spawn(move || {
@@ -472,6 +488,7 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
                 }
             }
         }
+        set_background(&vm, false);
         let mut all = viewers();
         if all.as_ref().and_then(|v| v.get(&vm)).is_some_and(|v| Arc::ptr_eq(v, &viewer)) {
             all.as_mut().map(|v| v.remove(&vm));
@@ -658,6 +675,8 @@ fn reveal(viewer: &Viewer) {
 #[tauri::command]
 pub async fn viewer_reveal(vm: String) -> Result<(), String> {
     let viewer = viewers().as_ref().and_then(|v| v.get(&vm).cloned()).ok_or("This machine's viewer isn't open.")?;
+    // The person opened it: a viewer that recorded in the background is theirs now.
+    set_background(&vm, false);
     if !viewer.visible.load(Ordering::Relaxed) {
         reveal(&viewer);
     }
@@ -679,6 +698,7 @@ pub async fn viewer_home(app: AppHandle, vm: String, keep: bool) -> Result<(), S
 #[tauri::command]
 pub async fn viewer_show(app: AppHandle, vm: String) -> Result<(), String> {
     let viewer = viewers().as_ref().and_then(|v| v.get(&vm).cloned()).ok_or("This machine's viewer isn't open.")?;
+    set_background(&vm, false);
     if viewer.embed {
         if let Some((_, x, y, w, h)) = content_rect(&app) {
             send_raw(&viewer, &json!({ "type": "place", "x": x, "y": y, "w": w, "h": h }));
@@ -694,6 +714,30 @@ pub async fn viewer_show(app: AppHandle, vm: String) -> Result<(), String> {
     viewer.revealed.store(true, Ordering::Relaxed);
     announce_cover();
     Ok(())
+}
+
+/// Machines whose viewer GpuVM opened in the background (to record an agent's work): hidden until the person opens
+/// the machine, which reveals that same viewer and its recording goes on.
+static BACKGROUND: Mutex<Option<std::collections::HashSet<String>>> = Mutex::new(None);
+
+pub fn background(vm: &str) -> bool {
+    BACKGROUND.lock().unwrap_or_else(|e| e.into_inner()).as_ref().is_some_and(|s| s.contains(vm))
+}
+
+pub fn set_background(vm: &str, on: bool) {
+    let mut s = BACKGROUND.lock().unwrap_or_else(|e| e.into_inner());
+    let s = s.get_or_insert_with(Default::default);
+    if on { s.insert(vm.to_string()); } else { s.remove(vm); }
+}
+
+/// Opens a machine's viewer hidden (agent.rs): the same opening as its Open button, without ever showing the picture.
+pub fn open_background(app: &AppHandle, vm: &str, launch: &Value) -> Result<(), String> {
+    set_background(vm, true);
+    let result = open_and_wait(app, vm, launch);
+    if result.is_err() {
+        set_background(vm, false);
+    }
+    result
 }
 
 /// Whether a machine's viewer is open and its picture shown (not hidden while the person is in Home).

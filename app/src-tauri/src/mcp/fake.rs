@@ -119,7 +119,7 @@ impl Broker for FakeBroker {
             "machines.list" => {
                 let list: Vec<Value> = st.machines.iter().map(|m| json!({
                     "name": m.name, "state": if m.off { "off" } else { "ready" }, "disposable": m.disposable, "template": m.template,
-                    "agent": if m.off { Value::Null } else { json!({ "version": "fake", "screen": { "w": m.screen.0, "h": m.screen.1 }, "signedIn": true }) },
+                    "agent": if m.off { Value::Null } else { json!({ "version": "fake", "home": r"C:\Users\agent", "screen": { "w": m.screen.0, "h": m.screen.1 }, "signedIn": true }) },
                     "desktop": if m.secure_desktop { "secure" } else { "default" },
                     "takenBy": m.taken_by.as_ref().map(|c| json!({ "connection": c, "client": { "name": "fake client", "version": "1" } })),
                     "paused": if m.paused { json!({ "by": if m.paused_by == "human" { "agent" } else { "person" }, "reason": m.paused_by, "message": "" }) } else { Value::Null } })).collect();
@@ -216,7 +216,7 @@ impl Broker for FakeBroker {
                 Ok(Reply::of(json!({ "path": path })))
             }
             "offer.create" => {
-                let path = s(&args, "path").to_string();
+                let path = resolve(s(&args, "path"));
                 if !path.to_ascii_lowercase().starts_with(r"c:\users\agent\desktop\outbox\") {
                     return Err(err("denied", "Only files in the Outbox folder can be offered."));
                 }
@@ -257,6 +257,11 @@ impl Broker for FakeBroker {
             _ => Err(err("internal", &format!("Unknown operation {op}."))),
         }
     }
+}
+
+/// A guest path: relative ones are inside the agent's home.
+fn resolve(path: &str) -> String {
+    if path.contains(':') { path.to_string() } else { format!(r"C:\Users\agent\{path}") }
 }
 
 fn guest(m: &mut Machine, method: &str, p: &Value) -> Result<Reply> {
@@ -330,13 +335,14 @@ fn guest(m: &mut Machine, method: &str, p: &Value) -> Result<Reply> {
             Ok(Reply::of(json!({ "exitCode": 0, "stdout": format!("{file} {}\r\n", args.join(" ")), "stderr": "", "truncated": false })))
         }
         "files.read" => {
-            let path = p["path"].as_str().unwrap_or("");
+            let path = resolve(p["path"].as_str().unwrap_or(""));
+            let path = path.as_str();
             let len = p["length"].as_u64().unwrap_or(u64::MAX) as usize;
             m.files.get(path).map(|b| Reply { data: json!({ "size": b.len() }), blob: Some(b[..b.len().min(len)].to_vec()) })
                 .ok_or_else(|| err("not_found", "No such file."))
         }
         "files.write" => {
-            let path = p["path"].as_str().unwrap_or("").to_string();
+            let path = resolve(p["path"].as_str().unwrap_or(""));
             if !path.to_ascii_lowercase().starts_with(r"c:\users\agent\") || path.contains("..") {
                 return Err(err("denied", "Outside the agent's profile."));
             }

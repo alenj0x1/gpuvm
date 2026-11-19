@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { MachineCube, type CubeMachine } from "./MachineCube";
-import { IconAppWindow, IconCamera, IconFolder, IconFolderOpen, IconHistory, IconHistoryOff, IconBrandWindows, IconDeviceDesktop, IconExternalLink, IconPalette, IconServer, IconHandStop, IconLayoutBottombarCollapse, IconMoon, IconPlayerPlay, IconPlayerStop, IconPlugConnected, IconPlugConnectedX, IconPower, IconShieldLock, IconShieldOff, IconSun } from "@tabler/icons-react";
+import { IconAppWindow, IconCamera, IconFolder, IconFolderOpen, IconHistory, IconHistoryOff, IconBrandWindows, IconDeviceDesktop, IconExternalLink, IconPalette, IconServer, IconHandStop, IconLayoutBottombarCollapse, IconMoon, IconPlayerPlay, IconPlayerStop, IconPlugConnected, IconPlugConnectedX, IconPower, IconShieldLock, IconShieldOff, IconSun, IconRobot, IconMouse, IconHandFinger, IconLayoutBottombar, IconLayoutNavbar, IconBoxAlignTopLeft, IconBoxAlignTopRight, IconLayoutSidebarRight } from "@tabler/icons-react";
 import { inTauri, service, type ServiceStatus } from "./api";
-import { ACCENTS, savePrefs, usePrefs, type ClosePref, type ServicePref, type ThemePref, type ViewerHomePref, type VmsOnQuitPref } from "./prefs";
-import { Segmented, Slider, humanError } from "./ui";
+import { ACCENTS, savePrefs, usePrefs, type ClosePref, type ServicePref, type StatusPlacementPref, type TakeControlPref, type ThemePref, type ViewerHomePref, type VmsOnQuitPref } from "./prefs";
+import { Dropdown, Segmented, Slider, humanError } from "./ui";
 import { t, type LangPref } from "./i18n";
 import { MonitorPicker, useMonitors } from "./pickers";
 
@@ -100,11 +100,49 @@ const ANIM_FPS = [15, 30, 60, 120, 0];
 /** The option a stored limit is shown at: its own, or the nearest one (no limit stays last). */
 const animFpsIndex = (fps: number) => (fps > 0 ? ANIM_FPS.slice(0, -1).reduce((best, f, i) => (Math.abs(f - fps) < Math.abs(ANIM_FPS[best] - fps) ? i : best), 0) : ANIM_FPS.length - 1);
 
-type PrefSection = "look" | "window" | "machines" | "captures" | "service";
+/** How long an agent's request waits for an answer before it is refused by itself, in seconds. */
+const APPROVAL_TIMEOUTS = [30, 60, 120, 300, 600];
+const timeoutIndex = (s: number) => APPROVAL_TIMEOUTS.reduce((best, v, i) => (Math.abs(v - s) < Math.abs(APPROVAL_TIMEOUTS[best] - s) ? i : best), 0);
+const timeoutLabel = (s: number) => (s < 60 ? t("{n} s", { n: s }) : t("{n} min", { n: s / 60 }));
+
+/** "Agents": how the person takes control from an agent, and how long its requests wait for an answer. */
+function AgentPrefs() {
+  const prefs = usePrefs();
+  return (
+    <>
+      <div className="pref-row">
+        <div className="pref-text">
+          <strong>{t("Take control")}</strong>
+          <span>{prefs.takeControl === "input"
+            ? t("Moving the mouse or pressing a key over the machine's picture pauses the agent until you give it back.")
+            : t("The agent keeps working while you move the mouse. It only pauses with Take control.")}</span>
+        </div>
+        <Segmented<TakeControlPref> value={prefs.takeControl} onChange={(takeControl) => savePrefs({ takeControl })} options={[
+          { value: "input", label: <><IconMouse size={15} />{t("Mouse or keyboard")}</> },
+          { value: "button", label: <><IconHandFinger size={15} />{t("Button only")}</> },
+        ]} />
+      </div>
+      <div className="pref-row">
+        <div className="pref-text">
+          <strong>{t("Time to answer")}</strong>
+          <span>{t("An agent's request with no answer is refused by itself after this time.")}</span>
+        </div>
+        <div className="pref-side pref-slider">
+          <Slider label={t("Time to answer")} min={0} max={APPROVAL_TIMEOUTS.length - 1} marks={APPROVAL_TIMEOUTS.map((_, i) => i)}
+            value={timeoutIndex(prefs.approvalTimeout)} format={(i) => timeoutLabel(APPROVAL_TIMEOUTS[i])}
+            onChange={(i) => savePrefs({ approvalTimeout: APPROVAL_TIMEOUTS[i] })} />
+        </div>
+      </div>
+    </>
+  );
+}
+
+type PrefSection = "look" | "window" | "machines" | "agents" | "captures" | "service";
 const prefSections = (): { id: PrefSection; label: string; icon: React.ReactNode }[] => [
   { id: "look", label: t("Appearance"), icon: <IconPalette size={17} /> },
   { id: "window", label: t("Window"), icon: <IconAppWindow size={17} /> },
   { id: "machines", label: t("Machines"), icon: <IconDeviceDesktop size={17} /> },
+  { id: "agents", label: t("Agents"), icon: <IconRobot size={17} /> },
   { id: "captures", label: t("Captures"), icon: <IconCamera size={17} /> },
   { id: "service", label: t("Service"), icon: <IconServer size={17} /> },
 ];
@@ -255,6 +293,18 @@ export function Preferences() {
               </div>
             </div>
             <div className="pref-row">
+              <div className="pref-text"><strong>{t("Status notices")}</strong><span>{t("Recording, saved captures and you took control, over the machine's picture. Requests always drop from the top.")}</span></div>
+              <div className="pref-side">
+                <Dropdown<StatusPlacementPref> label={t("Status notices")} value={prefs.statusPlacement} onChange={(statusPlacement) => savePrefs({ statusPlacement })} options={[
+                  { value: "bottom", label: t("Bottom center"), detail: t("From the picture's bottom edge"), icon: <IconLayoutBottombar size={16} /> },
+                  { value: "top", label: t("Top center"), detail: t("Under a request when one is open"), icon: <IconLayoutNavbar size={16} /> },
+                  { value: "top-left", label: t("Top left corner"), detail: t("Out of the way of requests"), icon: <IconBoxAlignTopLeft size={16} /> },
+                  { value: "top-right", label: t("Top right corner"), detail: t("Out of the way of requests"), icon: <IconBoxAlignTopRight size={16} /> },
+                  { value: "panel", label: t("Only in the side panel"), detail: t("Nothing over the picture"), icon: <IconLayoutSidebarRight size={16} /> },
+                ]} />
+              </div>
+            </div>
+            <div className="pref-row">
               <div className="pref-text"><strong>{t("Animation smoothness")}</strong><span>{t("Frames per second of holograms and scenes. Fewer leave more GPU free for the machines.")}</span></div>
               <div className="pref-side pref-slider">
                 <Slider label={t("Animation smoothness")} min={0} max={ANIM_FPS.length - 1} marks={ANIM_FPS.map((_, i) => i)}
@@ -313,6 +363,7 @@ export function Preferences() {
             </div>
           </div>
         ))}
+        {section("agents", <AgentPrefs />)}
         {section("captures", <CapturePrefs />)}
         {section("service", <ServicePrefs />)}
       </div>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { IconAlertTriangle, IconHome, IconLoader2, IconPlugConnected, IconPlus, IconRefresh, IconSettings, IconShieldLock, IconStack2 } from "@tabler/icons-react";
+import { IconAlertTriangle, IconHome, IconLoader2, IconPlugConnected, IconPlus, IconRefresh, IconRobot, IconSettings, IconShieldLock, IconStack2 } from "@tabler/icons-react";
 import { Preferences } from "./Preferences";
 import { Library, type LibraryTab } from "./Library";
 import { EmptyHome, Home, HomeSkeleton } from "./Home";
@@ -24,6 +24,8 @@ import { ViewerStage, ZOOM_MS, type ViewerPhase } from "./ViewerStage";
 import { leaveViewer, showViewer } from "./viewerStore";
 import { Toasts, humanError, stateText, useToasts, useScrollFade } from "./ui";
 import { t, translateModule } from "./i18n";
+import { AgentsView } from "./Agents";
+import { refreshAgents, useAgents } from "./agentStore";
 
 const NEW_VM = "__new__";
 // Route of the preferences screen in the URL hash, shaped so it doesn't look like a VM name.
@@ -31,6 +33,22 @@ const PREFS = ":settings";
 const LIBRARY = ":library";
 // The home screen, where the app opens.
 const HOME = ":home";
+const AGENTS = ":agents";
+
+/** Agents in the sidebar: a dot while one works, the warning tone while one waits for the person. */
+function AgentsNavItem({ active, onClick }: { active: boolean; onClick: () => void }) {
+  const snap = useAgents();
+  const waiting = snap.requests.filter((r) => !r.human).length + snap.offers.filter((o) => o.state === "pending").length;
+  const working = snap.clients.some((c) => c.state === "working");
+  const needs = waiting > 0 || snap.clients.some((c) => c.state === "human");
+  return (
+    <button className={`side-item side-home ${active ? "active" : ""}`} onClick={onClick} title={t("Agents")}>
+      <span className="add-icon"><IconRobot size={16} /></span><span className="name">{t("Agents")}</span>
+      {needs ? <span className="side-meta side-count" title={t("Waiting for you")}>{waiting || "!"}</span>
+        : working ? <span className="side-meta"><span className="ag-dot side-working" /></span> : null}
+    </button>
+  );
+}
 const libraryTab = (route: string): LibraryTab | null => {
   if (!route.startsWith(LIBRARY)) return null;
   const tab = route.slice(LIBRARY.length + 1);
@@ -183,8 +201,36 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     // A machine just renamed keeps its page until the list brings it under the new name.
     if (renamed.current && vms?.some((v) => v.name === renamed.current!.to)) renamed.current = null;
     if (renamed.current?.to === selected) return;
-    if (selected !== PREFS && selected !== HOME && !libraryTab(selected) && vms && vms.length && !vms.some((v) => v.name === selected)) setSelected(HOME);
+    if (selected !== PREFS && selected !== HOME && selected !== AGENTS && !libraryTab(selected) && vms && vms.length && !vms.some((v) => v.name === selected)) setSelected(HOME);
   }, [vms, selected]);
+
+  // `gpuvm.exe --view <name>` (an agent's open_viewer): that machine's page, and its picture opened like its Open
+  // button does. A name that isn't one of the machines, or one busy with a job, does nothing.
+  const openFromAgent = (name: string) => {
+    if (!vmsRef.current?.some((v) => v.name === name) || Object.values(jobsRef.current).some((j) => j.vm === name)) return;
+    setSelected(name);
+    startJobRef.current?.(name, "Connect-GpuVM", { Name: name });
+  };
+  // GpuVM started by that command: it opens once the machines are known.
+  const loaded = vms !== null;
+  useEffect(() => {
+    if (!inTauri || !loaded) return;
+    import("@tauri-apps/api/core").then(({ invoke }) => invoke<string | null>("pending_view")).then((name) => { if (name) openFromAgent(name); }).catch(() => {});
+  }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A Windows notification of an agent's request opens Agents (agent.rs); answers there are read again at once.
+  useEffect(() => {
+    if (!inTauri) return;
+    const offs: Promise<() => void>[] = [];
+    import("@tauri-apps/api/event").then(({ listen }) => {
+      offs.push(listen<string>("open-route", (e) => { if (e.payload === AGENTS) setSelected(AGENTS); }));
+      offs.push(listen("agents-changed", () => { refreshAgents(); }));
+      // `gpuvm.exe --view <name>` (an agent's open_viewer): that machine's page, and its picture opened like its Open
+      // button does. A name that isn't one of the machines, or one busy with a job, does nothing.
+      offs.push(listen<string>("open-viewer", (e) => openFromAgent(e.payload)));
+    });
+    return () => { offs.forEach((p) => p.then((off) => off())); };
+  }, []);
 
   // "Another pattern" is reflected instantly in the sidebar too.
   const [, repaint] = useState(0);
@@ -447,6 +493,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
           <button className={`side-item side-home ${libraryTab(selected) ? "active" : ""}`} onClick={() => setSelected(LIBRARY)} title={t("Profiles, disks and ISOs")}>
             <span className="add-icon"><IconStack2 size={16} /></span><span className="name">{t("Library")}</span>
           </button>
+          <AgentsNavItem active={selected === AGENTS} onClick={() => setSelected(AGENTS)} />
           {/* With one space the list is just "Machines"; with several, each space heads its own machines and opens it in Home. */}
           {(() => {
             // The groups as shown: the spaces in their (previewed) order, each with its machines, and the dragged
@@ -575,6 +622,8 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
           <Home vms={vms} busyFor={busyFor} startJob={startJob} onOpenVm={setSelected} onRoute={setSelected} onCreate={(space) => { setCreateError(null); setCreateSpace(space ?? null); setCreating(true); }} />
         ) : selected === PREFS ? (
           <Preferences />
+        ) : selected === AGENTS ? (
+          <AgentsView onOpenVm={setSelected} />
         ) : libraryTab(selected) ? (
           <Library tab={libraryTab(selected)!} onTab={(tab) => setSelected(`${LIBRARY}:${tab}`)} host={host} startJob={startJob}
             busy={(name) => !!busyFor(name)} progress={(key) => busyFor(key)?.message ?? null} notify={push} onOpenVm={setSelected}
@@ -593,7 +642,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
         <CreateDialog host={host} existing={vms ?? []} job={createJob} error={createError} template={createTemplate}
           space={createSpace ?? (selected === HOME ? shownSpaceId : current ? null : shownSpaceId)}
           onClose={() => { setCreating(false); setCreateTemplate(null); }}
-          onCreate={({ name, iso, template, file, disposable, profile, user, password, apps, cleanup, resources, space }) => {
+          onCreate={({ name, iso, template, file, disposable, profile, user, password, apps, cleanup, resources, space, agents }) => {
             setCreateError(null);
             // The new machine goes into the space picked for it, even before it exists in the list.
             if (space) moveToSpace(name, space);
@@ -604,7 +653,9 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
               : template
               ? { Name: name, Template: template, Profile: profile, ...(resources ? { Override: hw } : {}), Start: true, ...(disposable ? { Disposable: true } : {}) }
               : { Name: name, IsoPath: iso, Profile: profile, Override: { ...hw, guest: { apps, cleanup } }, Credential: { user, password }, Start: true };
-            startJob(NEW_VM, file ? "Import-GpuVM" : "New-GpuVM", args, () => {
+            // Made for agents: the module sets the use (1280x800, isolated network, recording) and installs the agent.
+            const withAgents = agents ? { ...args, Use: "agent", AgentUser: agents.user } : args;
+            startJob(NEW_VM, file ? "Import-GpuVM" : "New-GpuVM", withAgents, () => {
               setCreating(false);
               setCreateTemplate(null);
               // Open the new machine once the list has it; before that, the route would fall back to Home.

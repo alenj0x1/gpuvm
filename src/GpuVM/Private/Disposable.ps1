@@ -36,8 +36,14 @@ function Test-GpuVMDisposableDone {
     if (-not (Test-GpuVMDisposable -State $State)) { return $false }
     if ($VMState -and $VMState -ne 'Off') { return $false }
     if ($State['disposable']['startedAt']) { return $true }
+    # ConvertFrom-Json already turns the ISO text into a DateTime; [string] of that follows the system's culture and
+    # didn't parse back on en-GB, so a just-created machine read as "used" and was deleted. A date that can't be read
+    # keeps the machine: deleting is the step that can't be undone.
+    $value = $State['disposable']['createdAt']
     $created = [datetime]::MinValue
-    if (-not [datetime]::TryParse([string]$State['disposable']['createdAt'], [ref]$created)) { return $true }
+    if ($value -is [datetime]) { $created = $value }
+    elseif (-not [datetime]::TryParse([string]$value, [Globalization.CultureInfo]::InvariantCulture,
+            [Globalization.DateTimeStyles]::RoundtripKind, [ref]$created)) { return $false }
     ((Get-Date) - $created).TotalMinutes -ge $script:DisposableGraceMinutes
 }
 

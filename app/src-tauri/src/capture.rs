@@ -272,7 +272,8 @@ pub fn on_file(app: &AppHandle, vm: &str, msg: &Value) {
                     "at": now_ms(),
                 });
                 with_state(&vm, |s| s.last = Some(saved.clone()));
-                let _ = app.emit("capture-saved", saved);
+                let _ = app.emit("capture-saved", saved.clone());
+                crate::agent::on_capture_saved(&app, &vm, &saved);
             }
             Err(reason) => {
                 let _ = app.emit("viewer", json!({ "vm": vm, "msg": { "type": "capture-error", "kind": "move", "reason": reason } }));
