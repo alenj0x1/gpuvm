@@ -276,6 +276,14 @@ fn main() {
         Some("stop") => stop(),
         Some("startup") => startup(std::env::args().nth(2).as_deref()),
         Some("uninstall") => uninstall(),
+        // Removes the agent registrations and secrets of VMs that no longer exist (what the service does at start
+        // and every hour), from an elevated prompt.
+        Some("sweep-agents") => {
+            for vm in agent::sweep_registrations() {
+                server::log(&format!("sweep-agents: {vm}"));
+            }
+            Ok(())
+        }
         // Debug builds only (lab 052): the agent broker alone, run as SYSTEM next to an installed service that
         // doesn't have it yet. Release builds don't have this command.
         #[cfg(debug_assertions)]

@@ -466,8 +466,83 @@ pub fn start() {
     std::thread::spawn(crate::agent_pipe::serve);
 }
 
+// ---------------------------------------------------------------- sweeping registrations of deleted VMs
+
+/// Registrations (and so per-VM secrets) younger than this are left alone: an install may be writing one.
+const SWEEP_MIN_AGE: Duration = Duration::from_secs(600);
+
+/// The VmIds Hyper-V knows now, from Get-VM in GpuVM's own PowerShell (administrators-only folder). None when that
+/// can't be told for sure: then nothing is deleted.
+fn hyperv_vm_ids() -> Option<Vec<String>> {
+    let local = crate::server::install_dir().join("pwsh").join("pwsh.exe");
+    let installed = PathBuf::from(std::env::var("ProgramFiles").unwrap_or(r"C:\Program Files".into())).join("GpuVM").join("pwsh").join("pwsh.exe");
+    let pwsh = [local, installed].into_iter().find(|p| p.is_file())?;
+    let script = "$ErrorActionPreference='Stop'; Import-Module Hyper-V; $ids = @(Get-VM).Id.Guid; 'OK:' + ($ids -join ',')";
+    let output = std::process::Command::new(pwsh)
+        .args(["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    parse_vm_ids(&String::from_utf8_lossy(&output.stdout))
+}
+
+/// `OK:<id>,<id>` (the last line); anything else means the list isn't known.
+fn parse_vm_ids(text: &str) -> Option<Vec<String>> {
+    let line = text.lines().rev().find(|l| !l.trim().is_empty())?.trim();
+    let list = line.strip_prefix("OK:")?;
+    let mut ids = Vec::new();
+    for part in list.split(',').filter(|p| !p.is_empty()) {
+        ids.push(hv::fmt_guid(hv::parse_guid(part)?));
+    }
+    Some(ids)
+}
+
+/// The registration folders to delete: named after a VmId Hyper-V doesn't have, and older than the minimum age.
+fn orphans(folders: &[(String, Duration)], existing: &[String]) -> Vec<String> {
+    folders.iter()
+        .filter(|(name, age)| hv::parse_guid(name).is_some() && *age >= SWEEP_MIN_AGE && !existing.contains(&name.to_lowercase()))
+        .map(|(name, _)| name.clone())
+        .collect()
+}
+
+/// Deletes the registrations (agent.json and the DPAPI secret) of VMs that no longer exist: a secret never outlives
+/// its machine. At the service's start and every hour; logged.
+pub fn sweep_registrations() -> Vec<String> {
+    let Some(existing) = hyperv_vm_ids() else {
+        log("agent: sweep skipped (Hyper-V's machines couldn't be listed)");
+        return Vec::new();
+    };
+    let Ok(entries) = std::fs::read_dir(agents_dir()) else { return Vec::new() };
+    let folders: Vec<(String, Duration)> = entries.flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+        .map(|e| {
+            let age = e.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).unwrap_or_default();
+            (e.file_name().to_string_lossy().to_string(), age)
+        })
+        .collect();
+    let mut removed = Vec::new();
+    for name in orphans(&folders, &existing) {
+        match std::fs::remove_dir_all(agents_dir().join(&name)) {
+            Ok(()) => {
+                log(&format!("agent: removed the registration and secret of VM {name} (it no longer exists)"));
+                lock(&broker().machines).remove(&name.to_lowercase());
+                removed.push(name);
+            }
+            Err(e) => log(&format!("agent: couldn't remove the registration of VM {name}: {e}")),
+        }
+    }
+    removed
+}
+
 fn listen_loop() {
     hv::startup();
+    std::thread::spawn(|| loop {
+        sweep_registrations();
+        std::thread::sleep(Duration::from_secs(3600));
+    });
     if let Err(e) = register_service_id() {
         log(&format!("agent: couldn't register the service id: {e}"));
     }
@@ -1876,6 +1951,22 @@ pub(crate) mod tests {
         assert!(safe_file_name("...").is_none());
         assert_eq!(safe_file_name("COMMON.txt").as_deref(), Some("COMMON.txt"));
         assert_eq!(safe_file_name("x\u{202e}y\u{7}").as_deref(), Some("xy"));
+    }
+
+    #[test]
+    fn sweep_choices() {
+        let a = "0b5d1f53-1e33-4b7e-9f0a-2c4d6e8f0a1b";
+        let b = "4e9fa79e-58b4-4638-a98b-c7a0e3e78256";
+        assert_eq!(parse_vm_ids("WARNING: x\nOK:0B5D1F53-1E33-4B7E-9F0A-2C4D6E8F0A1B\n"), Some(vec![a.to_string()]));
+        assert_eq!(parse_vm_ids("OK:"), Some(vec![]));
+        // Anything but a clean list means "don't know": nothing may be deleted then.
+        assert_eq!(parse_vm_ids(""), None);
+        assert_eq!(parse_vm_ids("Get-VM: access denied"), None);
+        assert_eq!(parse_vm_ids("OK:not-a-guid"), None);
+        let old = Duration::from_secs(3600);
+        let folders = vec![(a.to_string(), old), (b.to_string(), old), (b.to_uppercase(), Duration::from_secs(5)), ("blobs".to_string(), old)];
+        // The VM that exists stays; a young folder stays (an install may be writing it); other folders stay.
+        assert_eq!(orphans(&folders, &[a.to_string()]), vec![b.to_string()]);
     }
 
     #[test]
