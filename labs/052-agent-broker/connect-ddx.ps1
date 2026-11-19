@@ -1,8 +1,10 @@
-# Lab 052: Open on a copy of agent-tpl with this branch's module (agent machines capture with ddx). Checks that
-# Connect-GpuVM -Viewer finishes and Sunshine runs as SYSTEM, then opens GpuVM's viewer -Opens times and times, from
-# its window (PrintWindow, so a covering window doesn't matter), when the first non-black picture shows. Sunshine's
-# log around each session says how often DDX restarted its capture. The installed viewer and agent package are used
-# read-only (this worktree has neither); nothing installed is changed. The copy (3 GB) is deleted at the end.
+# Lab 052: Open on a copy of agent-tpl with this branch's module (a standard user signed in: Sunshine captures as a
+# service, ddx). Checks that Connect-GpuVM finishes and Sunshine runs as SYSTEM, then opens Moonlight (windowed) -Opens
+# times and follows its window's brightness (PrintWindow, so a covering window doesn't matter) next to Moonlight's
+# "Video stream is" (first frame received) and Sunshine's log, to see whether DDX's first picture stays black.
+# GpuVM's viewer can't be used from here: it gets its pairing identity from the app over a pipe (run 3 showed its
+# "not paired" dialog). Moonlight talks to the same Sunshine. The installed agent package is used read-only (this
+# worktree has none); nothing installed is changed. The copy (3 GB) is deleted at the end.
 # Under the shared lab lock. Run elevated.
 param([string]$Template = 'agent-tpl', [string]$Name = 'agent052d', [string]$Session = 'agent-broker', [int]$Opens = 3,
     [int]$ConnectLimitSec = 420, [int]$PictureLimitSec = 40)
@@ -13,11 +15,12 @@ $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $module = Join-Path $root 'src\GpuVM\GpuVM.psd1'
 $installed = Join-Path $env:ProgramFiles 'GpuVM\gpuvm'
 $viewerExe = Join-Path $installed 'viewer\GpuVMViewer.exe'
+$moonlightExe = Join-Path $env:ProgramFiles 'Moonlight Game Streaming\Moonlight.exe'
 function Line($what) { Write-Host "$(Get-Date -Format HH:mm:ss.fff) $what" }
 if (-not (Test-Path $viewerExe)) { throw "no installed viewer at $viewerExe" }
-# Viewers already open (the person's) are never touched: only the ones this lab starts are closed.
-$theirs = @(Get-Process GpuVMViewer -ErrorAction SilentlyContinue | ForEach-Object Id)
-function Get-LabViewer { @(Get-Process GpuVMViewer -ErrorAction SilentlyContinue | Where-Object { $_.Id -notin $theirs }) }
+# Moonlight windows already open (the person's) are never touched: only the ones this lab starts are closed.
+$theirs = @(Get-Process Moonlight -ErrorAction SilentlyContinue | ForEach-Object Id)
+function Get-LabViewer { @(Get-Process Moonlight -ErrorAction SilentlyContinue | Where-Object { $_.Id -notin $theirs }) }
 # Plain GDI (System.Drawing isn't loadable from Add-Type in this PowerShell).
 Add-Type -TypeDefinition @'
 using System; using System.Runtime.InteropServices;
@@ -86,7 +89,7 @@ try {
         # The steps go to a queue the lab reads, never to the output: Write-Step runs inside Connect-GpuVM, and output
         # there would end up in its variables (lab 052: "drive STEP 04 not found").
         $global:GpuVMProgressSink = { param($message) $steps.Enqueue("STEP $(Get-Date -Format HH:mm:ss.fff) $message") }.GetNewClosure()
-        try { Connect-GpuVM -Name $n -Viewer 3>&1 | ForEach-Object { if ($_ -is [System.Management.Automation.WarningRecord]) { "WARN $($_.Message)" } elseif ($_ -is [string]) { $_ } else { "RESULT $($_ | ConvertTo-Json -Compress -Depth 5)" } } }
+        try { Connect-GpuVM -Name $n 3>&1 | ForEach-Object { if ($_ -is [System.Management.Automation.WarningRecord]) { "WARN $($_.Message)" } elseif ($_ -is [string]) { $_ } else { "RESULT $($_ | ConvertTo-Json -Compress -Depth 5)" } } }
         catch { "ERROR $($_.Exception.Message)" }
     }
     $lines = [System.Collections.Generic.List[string]]::new()
@@ -100,10 +103,13 @@ try {
     $result['connectSec'] = [math]::Round(((Get-Date) - $t0).TotalSeconds, 1)
     $result['connectLines'] = @($lines)
     if (-not $result['connectFinished']) { Stop-Job $job; throw "Connect-GpuVM still running after $ConnectLimitSec s" }
-    $launch = ($lines | Where-Object { $_ -like 'RESULT *' } | Select-Object -Last 1)
-    if (-not $launch) { throw 'Connect-GpuVM returned no viewer launch' }
-    $arguments = @(($launch.Substring(7) | ConvertFrom-Json).viewerLaunch.arguments)
+    if ($lines | Where-Object { $_ -like 'ERROR *' }) { throw "Connect-GpuVM failed" }
     $state = & $m { param($n) Get-GpuVMState -Name $n } $Name
+    $address = & $m { param($n) Get-GpuVMAddress -Name $n -TimeoutSec 30 } $Name
+    $arguments = @(& $m { param($a, $c) Get-MoonlightStreamArguments -Address $a -Client $c } $address $state['config']['streaming']['client']) + @('--display-mode', 'windowed')
+    $result['arguments'] = $arguments
+    Start-Sleep -Seconds 5
+    Get-LabViewer | Stop-Process -Force
     $cred = & $m { param($s) Get-GpuVMGuestCredential -State $s } $state
     $probe = {
         [ordered]@{
@@ -122,7 +128,7 @@ try {
         Get-LabViewer | Stop-Process -Force
         $logBefore = Invoke-Command -VMName $Name -Credential $cred { (Get-Content 'C:\Program Files\Sunshine\config\sunshine.log').Count }
         $started = Get-Date
-        & $m { param($f, $a) Start-UnelevatedProcess -FilePath $f -ArgumentList $a } $viewerExe $arguments | Out-Null
+        & $m { param($f, $a) Start-UnelevatedProcess -FilePath $f -ArgumentList $a } $moonlightExe $arguments | Out-Null
         # The whole brightness trace (time, value, window title) is kept: the viewer's own "connecting" screen is not
         # black either, so the picture is read from the trace and Sunshine's log, not from a single threshold.
         $open = [ordered]@{ n = $i; windowSec = $null; samples = 0; unreadable = 0; trace = [System.Collections.Generic.List[string]]::new() }
@@ -143,12 +149,14 @@ try {
             Start-Sleep -Milliseconds 250
         }
         $open['trace'] = @($open['trace'])
+        # Moonlight's own log: when the first frame arrived (black or not) and anything that went wrong.
+        $mlog = Get-ChildItem $env:TEMP -Filter 'Moonlight-*.log' | Where-Object LastWriteTime -ge $started | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        $open['moonlightLog'] = if ($mlog) { @(Get-Content $mlog.FullName | Where-Object { $_ -match 'Video stream is|Critical|error|fail|IDR|resolution|Launch' } | Select-Object -First 30) } else { @('no log') }
         Start-Sleep -Seconds 3
         $open['sunshineLog'] = @(Invoke-Command -VMName $Name -Credential $cred -ArgumentList $logBefore {
-                param($from) Get-Content 'C:\Program Files\Sunshine\config\sunshine.log' | Select-Object -Skip $from |
-                    Where-Object { $_ -match 'CLIENT CONNECTED|Executing|Desktop resolution|Capture format|Error|restart|Duplicat' } | Select-Object -First 60 })
+                param($from) Get-Content 'C:\Program Files\Sunshine\config\sunshine.log' | Select-Object -Skip $from | Select-Object -First 120 })
         $open['captureRestarts'] = @($open['sunshineLog'] | Where-Object { $_ -match 'Desktop resolution' }).Count
-        Line "open ${i}: window $($open['windowSec']) s, $($open['samples']) samples ($($open['unreadable']) unreadable), capture restarts $($open['captureRestarts'])"; $open['trace'] | ForEach-Object { Line "  $_" }
+        Line "open ${i}: window $($open['windowSec']) s, $($open['samples']) samples ($($open['unreadable']) unreadable), capture restarts $($open['captureRestarts']), sunshine lines $($open['sunshineLog'].Count)"; $open['trace'] | ForEach-Object { Line "  $_" }; $open['moonlightLog'] | ForEach-Object { Line "  moonlight: $_" }
         $result['opens'] += $open
         Get-LabViewer | Stop-Process -Force
         Start-Sleep -Seconds 5
