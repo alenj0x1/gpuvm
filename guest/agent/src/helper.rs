@@ -59,7 +59,7 @@ fn info() -> Value {
            "integrity": crate::token::il_name(state::own_integrity()), "agentUser": crate::files::root().is_ok(),
            // the profile folder files.* paths are relative to (normally C:\Users\agent, but Windows may pick another name)
            "home": std::env::var("USERPROFILE").unwrap_or_default(),
-           "displays": capture::displays_json(), "diag": crate::display::diag()})
+           "displays": capture::displays_json(), "noDisplay": crate::display::no_display(), "diag": crate::display::diag()})
 }
 
 fn dispatch(method: &str, p: &Value, blob: Option<Vec<u8>>, id: u64) -> CallResult {
@@ -168,7 +168,15 @@ fn events(out: Out) {
             match crate::display::ensure() {
                 Ok(Some(did)) => hlog(&out, &format!("displays arranged again: {did}")),
                 Ok(None) => {}
-                Err(e) => hlog(&out, &format!("displays: {e}")),
+                // once per new error, not every 5 s (a machine with no display at all logged it 12 times a minute)
+                Err(e) => {
+                    static LAST: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+                    let mut last = LAST.lock().unwrap();
+                    if *last != e {
+                        hlog(&out, &format!("displays: {e}"));
+                        *last = e;
+                    }
+                }
             }
         }
         // the agent's screen changed size (display arranged, viewer connected): clients recapture
