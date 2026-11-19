@@ -126,7 +126,7 @@ Error codes (`code`, or `error.code` of a guest request) on top of the guest's: 
 **What a session may run through the service** (everything else is `denied` for it; the person's app is never limited
 here): `Get-GpuVM`, `Get-GpuVMOverview`, `Get-GpuVMTemplate`, `Get-GpuVMProfile`, `Get-GpuVMRestorePoint`,
 `New-GpuVMRestorePoint`, `New-GpuVM` (only `-Disposable` with `-Template`), `Install-GpuVMAgent`, `Invoke-GpuVMPower`,
-`Send-GpuVMFile`, `Remove-GpuVMDisposable`, `Connect-GpuVM`; with an allowed request passed as `Approval: <requestId>`
+`Send-GpuVMFile`, `Remove-GpuVMDisposable` (the sweep; with `-Name` only a disposable copy this session made, deleted at once if it is off), `Connect-GpuVM`; with an allowed request passed as `Approval: <requestId>`
 (same machine, same kind, used once unless allowed `ForTask`, 10 minutes): `Restore-GpuVMRestorePoint` (`revert`),
 `Remove-GpuVM` (`delete`). Commands naming a machine need it held by the session. `New-GpuVM -Disposable -Template
 -Name X` (with `Connection`, removed before PowerShell sees it; optional when the process has one session) makes X

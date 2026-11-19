@@ -4,12 +4,28 @@ function Remove-GpuVMDisposable {
     Deletes the disposable machines that were used and are off, with their disks, and the folders of disposable
     machines left behind (Hyper-V no longer knows them). Running ones are never touched. The app runs it when a
     disposable machine turns off and when it starts.
+    With -Name, only that machine, at once (without the grace a disposable machine that never started gets): it must
+    be disposable and off; anything else is refused. An agent session may only name a copy it made itself (the
+    GpuVM service checks that before this runs).
     .EXAMPLE
     Remove-GpuVMDisposable
+    .EXAMPLE
+    Remove-GpuVMDisposable -Name agent-tpl-1a2b3c
     #>
     [CmdletBinding(SupportsShouldProcess)]
-    param()
+    param([ValidatePattern('^[\w-]{1,40}$')][string]$Name)
     Assert-Admin
+    if ($Name) {
+        $vm = Get-VM -Name $Name -ErrorAction SilentlyContinue
+        if (-not $vm) { throw "There's no machine called '$Name'." }
+        $state = try { Get-GpuVMState -Name $Name } catch { $null }
+        if (-not (Test-GpuVMDisposable -State $state)) { throw "'$Name' isn't a disposable machine; it isn't deleted this way." }
+        if ($vm.State -ne 'Off') { throw "'$Name' is $($vm.State.ToString().ToLowerInvariant()): turn it off first." }
+        if (-not $PSCmdlet.ShouldProcess($Name, 'Delete the disposable machine')) { return }
+        Write-Step "Deleting the disposable machine '$Name'"
+        Invoke-GpuVMBackend -Backend $state['backend'] -Operation Remove -Arguments $Name, $state, $true
+        return $Name
+    }
     $root = Get-GpuVMDefaultRoot
     $removed = [System.Collections.Generic.List[string]]::new()
     $known = @{}

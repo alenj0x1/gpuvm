@@ -1599,3 +1599,35 @@ InModuleScope GpuVM {
         }
     }
 }
+
+InModuleScope GpuVM {
+    Describe 'Remove-GpuVMDisposable -Name' {
+        BeforeEach {
+            Mock Assert-Admin { }
+            Mock Write-Step { }
+            Mock Get-VM { [pscustomobject]@{ Name = $Name; State = 'Off' } }
+            Mock Get-GpuVMState { @{ backend = 'hyperv-gpup'; disposable = @{ createdAt = 'x'; startedAt = $null } } }
+            Mock Invoke-GpuVMBackend { }
+        }
+        It 'deletes that disposable machine at once when it is off (no grace for a never-started copy)' {
+            Remove-GpuVMDisposable -Name copy1 -Confirm:$false | Should Be 'copy1'
+            Assert-MockCalled Invoke-GpuVMBackend -Times 1 -Scope It -ParameterFilter { $Operation -eq 'Remove' -and $Arguments[0] -eq 'copy1' -and $Arguments[2] -eq $true }
+        }
+        It 'refuses a machine that isn''t disposable' {
+            Mock Get-GpuVMState { @{ backend = 'hyperv-gpup' } }
+            Test-Throws { Remove-GpuVMDisposable -Name win-gpu -Confirm:$false } | Should Be $true
+            Assert-MockCalled Invoke-GpuVMBackend -Times 0 -Scope It
+        }
+        It 'refuses a running one' {
+            Mock Get-VM { [pscustomobject]@{ Name = $Name; State = 'Running' } }
+            Test-Throws { Remove-GpuVMDisposable -Name copy1 -Confirm:$false } | Should Be $true
+            Assert-MockCalled Invoke-GpuVMBackend -Times 0 -Scope It
+        }
+        It 'refuses a name that isn''t a machine' {
+            Mock Get-VM { $null }
+            Test-Throws { Remove-GpuVMDisposable -Name nope -Confirm:$false } | Should Be $true
+            Test-Throws { Remove-GpuVMDisposable -Name '..\x' -Confirm:$false } | Should Be $true
+            Assert-MockCalled Invoke-GpuVMBackend -Times 0 -Scope It
+        }
+    }
+}
