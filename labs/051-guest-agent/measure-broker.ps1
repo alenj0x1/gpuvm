@@ -7,8 +7,8 @@ $repo = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 $outDir = Join-Path $PSScriptRoot ('out\broker-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 New-Item -ItemType Directory -Force $outDir | Out-Null
 Import-Module 'C:\Program Files\GpuVM\gpuvm\src\GpuVM\GpuVM.psd1' -Force
-$R = [ordered]@{}
-function Rec($k, $v) { $R[$k] = $v; "$k : $($v | ConvertTo-Json -Compress -Depth 6)" | Out-Host }
+$Results = [ordered]@{}
+function Rec($k, $v) { $Results[$k] = $v; "$k : $($v | ConvertTo-Json -Compress -Depth 6)" | Out-Host }
 function Stats([double[]]$v) {
     if (-not $v.Count) { return $null }
     $s = $v | Sort-Object
@@ -80,9 +80,9 @@ try {
             Start-Sleep -Milliseconds (20 + (Get-Random -Maximum 60))
         }
     }
-    $R.capture = [ordered]@{}
-    foreach ($k in $cells.Keys) { $c = $cap[$k]; $R.capture[$k] = [ordered]@{ hostMs = Stats $c.host; brokerMs = Stats $c.broker; guestMs = Stats $c.guest; kb = Stats $c.kb; scaleMs = Stats $c.scale; encodeMs = Stats $c.encode; errors = $c.err; lastError = $c.lastError; first = $c.first } }
-    Rec 'capture-summary' ($R.capture.Keys | ForEach-Object { "$_ host p50 $($R.capture[$_].hostMs.p50) guest p50 $($R.capture[$_].guestMs.p50) kb $($R.capture[$_].kb.p50) err $($R.capture[$_].errors)" })
+    $Results.capture = [ordered]@{}
+    foreach ($k in $cells.Keys) { $c = $cap[$k]; $Results.capture[$k] = [ordered]@{ hostMs = Stats $c.host; brokerMs = Stats $c.broker; guestMs = Stats $c.guest; kb = Stats $c.kb; scaleMs = Stats $c.scale; encodeMs = Stats $c.encode; errors = $c.err; lastError = $c.lastError; first = $c.first } }
+    Rec 'capture-summary' ($Results.capture.Keys | ForEach-Object { "$_ host p50 $($Results.capture[$_].hostMs.p50) guest p50 $($Results.capture[$_].guestMs.p50) kb $($Results.capture[$_].kb.p50) err $($Results.capture[$_].errors)" })
 
     # --- action -> screen (Notepad) ------------------------------------------------------------------------------
     Exec 'cmd.exe' @('/c', 'start', '', 'notepad.exe') | Out-Null
@@ -172,7 +172,7 @@ try {
     Rec 'error-box' ([ordered]@{ upload = $hw.ok; state = $st; captureOk = $shot.ok; click = $click.error })
 }
 finally {
-    $R | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $outDir 'results.json')
+    $Results | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $outDir 'results.json')
     if ($Existing) { Stop-VM -Name $Name -ErrorAction SilentlyContinue }   # clean shutdown, the VM stays
     elseif (Get-VM -Name $Name -ErrorAction SilentlyContinue) { Stop-VM -Name $Name -TurnOff -Force -ErrorAction SilentlyContinue }
     Remove-Item 'C:\GpuVM\.lab-lock' -Force -ErrorAction SilentlyContinue

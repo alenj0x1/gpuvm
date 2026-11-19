@@ -42,7 +42,7 @@ pub const METHODS: &[&str] = &[
     "agent.info", "screen.capture", "screen.state", "input.act", "ui.tree", "ui.invoke", "exec.run", "files.list", "files.read",
     "files.write",
 ];
-const HELPER_EVENTS: &[&str] = &["secure_desktop", "foreground", "error_box"];
+const HELPER_EVENTS: &[&str] = &["secure_desktop", "foreground", "error_box", "screen"];
 const MAX_PENDING: usize = 32;
 
 struct HostLink {

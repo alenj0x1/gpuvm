@@ -98,6 +98,14 @@ fn change(dev: Option<&str>, dm: Option<&DEVMODEW>, flags: CDS_TYPE) -> i32 {
     }
 }
 
+/// True when the virtual display (if any) is the only attached display, at 0,0.
+pub fn settled() -> bool {
+    let devs = devices();
+    let Some(vdd) = devs.iter().find(|d| is_vdd(&d.adapter)) else { return true };
+    let alone = devs.iter().all(|d| d.name == vdd.name || !d.attached);
+    alone && current(&vdd.name).is_some_and(|c| unsafe { c.Anonymous1.Anonymous2.dmPosition.x == 0 && c.Anonymous1.Anonymous2.dmPosition.y == 0 })
+}
+
 /// Makes the virtual display the only (hence primary) display and at least MIN_W x MIN_H. Returns what it did
 /// (None when nothing had to change), or an error text.
 pub fn ensure() -> Result<Option<Value>, String> {
