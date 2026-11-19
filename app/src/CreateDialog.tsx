@@ -14,7 +14,9 @@ import { Customize, useDecorEdit } from "./Customize";
 import { draftSource, saveDecor, useSource, type DecorSource } from "./decor/store";
 import { useSpaces } from "./spaces";
 import { ambientInfo } from "./ambient";
-import { Dropdown as SpaceDropdown } from "./ui";
+import { Dropdown as SpaceDropdown, portalRoot } from "./ui";
+import { createPortal } from "react-dom";
+import { SpaceDialog } from "./SpaceDialog";
 import { locale, t, tn, translateModule } from "./i18n";
 
 export interface Resources { cpu: number; memoryGB: number; gpuPercent: number; diskGB: number }
@@ -36,6 +38,7 @@ interface Props {
 }
 
 const MIN_PASSWORD = 6;
+const NEW_SPACE = "__new__";
 // Windows local account names: up to 20 characters, none of these, and not one Windows keeps for itself.
 const RESERVED_USERS = ["administrator", "administrador", "guest", "invitado", "defaultaccount", "wdagutilityaccount", "system"];
 type Section = "name" | "start" | "resources" | "windows" | "apps" | "cleanup" | "custom";
@@ -46,6 +49,10 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
   const spaces = useSpaces();
   const [spaceId, setSpaceId] = useState(() => (spaces.some((x) => x.id === initialSpace) ? initialSpace! : spaces[0].id));
   const space = spaces.find((x) => x.id === spaceId) ?? spaces[0];
+  // A new space is made in its own dialog over this one, so nothing set here is lost.
+  const [creatingSpace, setCreatingSpace] = useState(false);
+  const creatingSpaceRef = useRef(false);
+  creatingSpaceRef.current = creatingSpace;
   const [name, setName] = useState(() => {
     for (let i = 1; ; i++) { const n = i === 1 ? "win-gpu" : `win-gpu-${i}`; if (!existing.some((v) => v.name === n)) return n; }
   });
@@ -108,7 +115,7 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
   }, []);
   useEffect(() => { if (!busy) nameRef.current?.focus(); }, [busy]);
   useEffect(() => {
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") { if (creatingSpaceRef.current) setCreatingSpace(false); else onClose(); } };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [onClose]);
@@ -261,7 +268,7 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
 
             <div ref={bodyRef} className="create-body">
               {section("name", t("Nombre y espacio"), t("Cómo se llama en GpuVM y en Hyper-V, y el espacio donde va a estar."), (
-                <div className="create-account">
+                <div className="create-account pair">
                   <div className="field">
                     <label className="field-top" htmlFor="vm-name"><span>{t("Nombre")}</span></label>
                     <input id="vm-name" ref={nameRef} className="text-input" aria-label={t("Nombre")} value={name} onChange={(e) => { setName(e.target.value); setNameTouched(true); touch(); }} />
@@ -269,8 +276,10 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
                   </div>
                   <div className="field">
                     <div className="field-top"><span>{t("Espacio")}</span></div>
-                    <SpaceDropdown label={t("Espacio")} value={space.id} onChange={(v) => { setSpaceId(v); touch(); }}
-                      options={spaces.map((x) => { const I = ambientInfo(x.ambient).icon; return { value: x.id, label: x.name, detail: ambientInfo(x.ambient).name, icon: <I size={16} /> }; })} />
+                    <SpaceDropdown label={t("Espacio")} value={space.id} onChange={(v) => { if (v === NEW_SPACE) setCreatingSpace(true); else { setSpaceId(v); touch(); } }}
+                      options={[...spaces.map((x) => { const I = ambientInfo(x.ambient).icon; return { value: x.id, label: x.name, detail: ambientInfo(x.ambient).name, icon: <I size={16} /> }; }),
+                        { value: NEW_SPACE, label: t("Nuevo espacio"), detail: t("Con un ambiente propio"), icon: <IconPlus size={16} /> }]} />
+                    {creatingSpace && createPortal(<SpaceDialog vms={[]} onSaved={(s) => { setSpaceId(s.id); touch(); }} onClose={() => setCreatingSpace(false)} />, portalRoot())}
                   </div>
                 </div>
               ))}

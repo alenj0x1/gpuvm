@@ -43,6 +43,7 @@ export default {
   "Equipo": "This PC",
   "Editar {name}": "Edit {name}",
   "Nuevo espacio": "New space",
+  "Con un ambiente propio": "With its own ambience",
   "Nueva máquina": "New machine",
   "perfil listo": "profile ready",
   "perfiles listos": "profiles ready",
