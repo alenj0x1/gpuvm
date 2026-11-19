@@ -1780,6 +1780,14 @@ html.viewer-panel-window body::after { display: none; }
 }
 .side-count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; display: inline-grid; place-items: center; font-size: 11px; font-weight: 600; background: var(--warn-bg); color: var(--warn); }
 .side-working { display: block; background: var(--accent); animation: ag-pulse 1.6s ease-in-out infinite; }
+/* Collapsed sidebar: the names and counts hide, but "an agent needs you" can't (lab 054 on the installed app, with the
+   notification banner held by Windows): the count stays as a small badge on the icon's corner, the working dot too. */
+.side-item:has(> .side-count), .side-item:has(.side-working) { position: relative; }
+.app.collapsed .side-item .side-meta.side-count,
+.app.collapsed .side-item .side-meta:has(.side-working) {
+  opacity: 1; width: auto; flex: none; position: absolute; top: 3px; right: 3px; pointer-events: none;
+}
+.app.collapsed .side-item .side-meta.side-count { min-width: 15px; height: 15px; padding: 0 4px; font-size: 10px; border-radius: 8px; }
 .ag-widget { display: flex; flex-direction: column; justify-content: center; gap: 8px; height: 100%; min-height: 0; overflow: hidden; padding: 10px 14px; }
 .ag-widget .ag-live.compact { gap: 8px; }
 .ag-widget .ag-live .btn.compact { height: 28px; padding: 0 10px; font-size: 12px; }

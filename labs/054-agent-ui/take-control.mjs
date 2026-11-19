@@ -16,6 +16,15 @@ const exe = "C:\\Program Files\\GpuVM\\gpuvm.exe";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const out = join(here, "out"); mkdirSync(out, { recursive: true });
 
+// The hidden viewer (option B) is opened by the GpuVM app: without it open there is nothing to measure (2026-11-19: the
+// first run had the app closed, and open_viewer started it cold, 40 s). Open it first if it isn't running.
+const appUp = () => Number(execFileSync("pwsh", ["-NoProfile", "-Command", "@(Get-Process gpuvm -ErrorAction SilentlyContinue | Where-Object MainWindowHandle -ne 0).Count"]).toString().trim()) > 0;
+if (!appUp()) {
+  spawn(exe, [], { detached: true, stdio: "ignore" }).unref();
+  for (let i = 0; i < 60 && !appUp(); i++) await sleep(1000);
+  console.log("app opened by the lab:", appUp());
+  await sleep(5000);
+}
 // The MCP client: newline-delimited JSON-RPC over the server's stdio.
 const mcp = spawn(exe, ["--mcp"], { stdio: ["pipe", "pipe", "inherit"] });
 let buf = "", next = 1; const waiting = new Map();
@@ -78,7 +87,19 @@ const hiddenOpened = await viewerUp(240);
 console.log("hidden viewer up after ms:", Date.now() - hiddenStart);
 console.log("hidden viewer opened:", hiddenOpened);
 await sleep(8000);
-const hiddenGpu = viewerGpu(20);
+// With ddx a still desktop sends no frames (0 % on 2026-11-19): measure while the agent works, opening and closing
+// Start every second during the 20 s sample (measured in another process, so this loop keeps going).
+let busy = true;
+const busyLoop = (async () => { while (busy) { await tool("key", { machine, keys: "win" }); await sleep(1000); } await tool("key", { machine, keys: "escape" }); })();
+const hiddenGpu = await new Promise((ok) => {
+  const ps = `$ids = (Get-Process GpuVMViewer -ErrorAction SilentlyContinue).Id; if (-not $ids) { 'none'; exit }
+    $s = Get-Counter '\\GPU Engine(*)\\Utilization Percentage' -SampleInterval 1 -MaxSamples 20 -ErrorAction SilentlyContinue
+    $v = foreach ($x in $s.CounterSamples) { if ($ids | Where-Object { $x.InstanceName -like "pid_$($_)_*" }) { $x } }
+    $byTime = $v | Group-Object Timestamp | ForEach-Object { ($_.Group | Measure-Object CookedValue -Sum).Sum }
+    [math]::Round(($byTime | Measure-Object -Average).Average, 2)`;
+  let o = ""; const p = spawn("pwsh", ["-NoProfile", "-Command", ps]); p.stdout.on("data", (d) => (o += d)); p.on("exit", () => ok(o.trim()));
+});
+busy = false; await busyLoop;
 console.log("hidden viewer GPU %:", hiddenGpu);
 /** A screenshot of the GpuVM window's area (what's on screen there: the app, the picture and its notch). */
 const shot = (name) => { try { console.log(name, execFileSync("pwsh", ["-NoProfile", "-File", join(here, "window-shot.ps1"), "-Out", join(out, `${name}.png`)]).toString().trim()); } catch (e) { console.log(name, "failed"); } };
@@ -89,7 +110,8 @@ const tOpen = Date.now();
 await tool("open_viewer", { machine });
 const luma = () => { try { return execFileSync("pwsh", ["-NoProfile", "-File", join(here, "luma.ps1")]).toString().trim(); } catch { return "none"; } };
 let tWindow = null, tPicture = null, poked = null;
-while (Date.now() - tOpen < 180000 && tPicture === null) {
+// Up to 5 min: a fresh copy's first connection took ~3.5 min on 2026-11-19.
+while (Date.now() - tOpen < 300000 && tPicture === null) {
   const l = luma();
   if (l !== "none") {
     if (tWindow === null) tWindow = Date.now();
@@ -107,7 +129,7 @@ const windowed = tWindow !== null;
 console.log("viewer window:", windowed);
 if (!windowed) {
   // Nothing to measure without the picture (Sunshine not answering in the machine, 2026-11-19): say it and clean up.
-  writeFileSync(join(out, "take-control.json"), JSON.stringify({ machine, error: "no viewer opened in 3 min", hiddenOpened, hiddenGpu, firstFrame }, null, 1));
+  writeFileSync(join(out, "take-control.json"), JSON.stringify({ machine, error: "no viewer picture in 5 min", hiddenOpened, hiddenGpu, firstFrame }, null, 1));
   await tool(disposable ? "destroy" : "release_machine", { machine });
   clearTimeout(guard); mcp.kill(); process.exit(5);
 }
@@ -119,9 +141,9 @@ console.log("shown viewer GPU %:", shownGpu);
 /** Whether the person paused this machine's agent, as list_machines says. */
 const paused = async () => {
   const r = await tool("list_machines", {});
-  const all = JSON.stringify(r?.structuredContent ?? text(r));
-  const i = all.indexOf(`"${machine}"`);
-  return i >= 0 && /"by":\s*"person"|paused by the person|person/i.test(all.slice(i, i + 600));
+  // The text answer, one line per machine: "…paused: the person took control" (tools.rs list_machines).
+  const line = text(r).split("\n").find((l) => l.includes(machine)) ?? "";
+  return /paused/i.test(line);
 };
 
 const samples = [];
@@ -137,7 +159,7 @@ for (let r = 0; r < rounds; r++) {
   samples.push(t1 === null ? null : t1 - t0);
   console.log(`round ${r + 1}: ${t1 === null ? "not paused in 2 s" : `${t1 - t0} ms`}`);
   // The notch "You took control" over the picture, once (agent.rs shows it with the broker's answer).
-  if (r === 0) { await sleep(1500); shot("installed-take-control"); }
+  if (t1 !== null && !samples.slice(0, -1).some((s) => s !== null)) { await sleep(1500); shot("installed-take-control"); }
   // Back to the agent for the next round: the person's Resume, as the notch's button does.
   execFileSync("pwsh", ["-NoProfile", "-Command", `Import-Module 'C:\\Program Files\\GpuVM\\gpuvm\\src\\GpuVM' -ErrorAction Stop; Resume-GpuVMAgent -Name '${machine}' | Out-Null`], { stdio: "ignore" });
   await sleep(2500);
