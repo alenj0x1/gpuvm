@@ -60,14 +60,28 @@ const viewerGpu = (seconds) => {
 };
 // Option B: with the session working and no viewer open, GpuVM opens one hidden and records. Its GPU cost, then the
 // person opens the machine (open_viewer) and that same viewer comes out.
-for (let i = 0; i < 4; i++) { await tool("screenshot", { machine, maxWidth: 320, maxHeight: 200 }); await sleep(3000); }
+/** Waits (keeping the session working) until a viewer process is up, or `seconds` pass; true when it is. */
+const viewerUp = async (seconds, windowed = false) => {
+  for (let i = 0; i < seconds / 3; i++) {
+    const up = execFileSync("pwsh", ["-NoProfile", "-Command", `@(Get-Process GpuVMViewer -ErrorAction SilentlyContinue${windowed ? " | Where-Object MainWindowHandle -ne 0" : ""}).Count`]).toString().trim();
+    if (Number(up) > 0) return true;
+    await tool("screenshot", { machine, maxWidth: 320, maxHeight: 200 });
+    await sleep(2000);
+  }
+  return false;
+};
+// Opening a machine takes a while the first time (Sunshine's first session): up to 2 minutes.
+const hiddenOpened = await viewerUp(120);
+console.log("hidden viewer opened:", hiddenOpened);
+await sleep(8000);
 const hiddenGpu = viewerGpu(20);
 console.log("hidden viewer GPU %:", hiddenGpu);
 /** A screenshot of the GpuVM window's area (what's on screen there: the app, the picture and its notch). */
 const shot = (name) => { try { console.log(name, execFileSync("pwsh", ["-NoProfile", "-File", join(here, "window-shot.ps1"), "-Out", join(out, `${name}.png`)]).toString().trim()); } catch (e) { console.log(name, "failed"); } };
 shot("installed-app-recording-hidden");
 await tool("open_viewer", { machine });
-await sleep(8000);
+console.log("viewer window:", await viewerUp(120, true));
+await sleep(6000);
 shot("installed-picture-working");
 const shownGpu = viewerGpu(10);
 console.log("shown viewer GPU %:", shownGpu);
