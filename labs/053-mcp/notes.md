@@ -112,3 +112,22 @@ viewer), `out/20261119-013727-modern-first.webp` (800x600 right after ready).
 - ui_tree is all guest time (UI Automation), 17-34 ms p50 here; the 174 ms p95 of part 2 depended on the window in front.
 - Destroy check: right after the MCP's `destroy`, the disposable was already gone from Hyper-V (Remove-GpuVMDisposable
   -Name, no fallback to the 30-minute sweep).
+
+## Part 4: the installer demo again (installed main 10c7525, 2026-11-19 05:04-05:22)
+
+`part2.ps1 -Template agent-tpl -ModelOnly -HumanWaitSeconds 600`; Claude Code, 11 turns, 1,054 s (most of it waiting
+for the person), USD 0.60. Steps: create `lab053-demo` (4 GB, task set) → open the viewer → `send_file` of the 106 MB
+installer: "Copied … (106755484 bytes, checked)", i.e. it arrived (the send fix works) → `run Start-Process` started
+it; the call timed out at 60 s because Start-Process waits while the UAC prompt is up → `screenshot` refused with
+`secure_desktop` (the agent can't see UAC, by design) → `request_human` with an exact instruction ("Pulsa Sí … y
+después Return to agent"), waited 600 s, nobody answered → it stopped installing, tried to write the report
+(refused: the machine stays paused for the person), asked again for 300 s, then ended without destroying the machine
+because the person might be mid-install, and asked what to do. The lab's cleanup deleted it.
+
+Findings: (1) the viewer opened by `open_viewer` showed "Sunshine is restarting with the new settings" and fell back
+to the app's machine page within ~40 s, never streaming, so the person couldn't see the UAC prompt without pressing
+Open (`out/demo2-viewer-sunshine-restarting.png`); (2) while the agent waited, the app's machine page showed nothing
+saying the agent was asking for help (`out/demo2-app-while-agent-waits.png`); (3) a machine paused by the agent's own
+`request_human` stays paused after the agent gives up, so it can't even write its report: a way for a session to
+withdraw its own pending human request (not the person's take-control) would help (broker); (4) the MCP said "the
+person took control" for that pause: now it says the machine is waiting for the person to do what was asked.

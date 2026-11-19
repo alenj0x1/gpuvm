@@ -530,6 +530,15 @@ impl Tool<'_> {
             self.ctx.connection.lock().unwrap().take();
             self.ctx.shots.lock().unwrap().clear();
         }
+        // Paused because the agent itself asked the person (request_human), not because they took over (lab 053: the
+        // model was told "the person took control" while it was the one waiting for them).
+        if e.code == "paused" && !machine.is_empty() {
+            if let Ok(Some(m)) = self.find(machine) {
+                if paused_by(&m) == Some("human") {
+                    return format!("{machine} is waiting for the person to do what you asked with request_human; nothing can be done in it until they press \"Return to agent\". If they don't answer, stop and tell the user what is pending.");
+                }
+            }
+        }
         explain(machine, &e)
     }
 

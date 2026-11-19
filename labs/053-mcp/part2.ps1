@@ -17,7 +17,9 @@ param(
     [int]$HumanWaitSeconds = 180,
     [switch]$SkipModel,
     # The caller already took the lock as 'agent-mcp' (it is still released at the end).
-    [switch]$HaveLock
+    [switch]$HaveLock,
+    # Only the real-model demo (the measurements were taken already).
+    [switch]$ModelOnly
 )
 $ErrorActionPreference = 'Stop'
 $me = 'agent-mcp'
@@ -49,12 +51,14 @@ try {
     Log "gpuvm.exe $version"
 
     $drive = Join-Path $PSScriptRoot 'drive.py'
+    if (-not $ModelOnly) {
     Log 'modern era: create, latency, coords, misuse, finale'
     python $drive --exe $Exe --era modern --template $Template --memory $MemoryGB --phases latency,coords,misuse,finale --rounds $Rounds --samples $Samples 2>&1 | Tee-Object -FilePath (Join-Path $outDir "part2-$stamp-modern.txt")
     # Fail fast: if the first disposable couldn't be made, the others won't be either.
     if (Select-String -Path (Join-Path $outDir "part2-$stamp-modern.txt") -Pattern '^no machine' -Quiet) { throw 'The first disposable machine could not be created; see the modern run above.' }
     Log 'legacy era: create, latency, finale'
     python $drive --exe $Exe --era legacy --template $Template --memory $MemoryGB --phases latency,finale --rounds ([math]::Max(10, [int]($Rounds / 4))) 2>&1 | Tee-Object -FilePath (Join-Path $outDir "part2-$stamp-legacy.txt")
+    }
 
     if (-not $SkipModel) {
         $config = Join-Path $outDir "mcp-installed.json"

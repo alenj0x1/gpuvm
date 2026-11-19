@@ -392,7 +392,9 @@ fn budgets_and_human_requests() {
     let mut h = H::new(false);
     let m = h.machine();
     assert!(h.ok("request_human", json!({ "machine": m, "message": "Please accept the UAC prompt." })).contains("paused"));
-    assert!(h.err("click", json!({ "machine": m, "x": 1, "y": 1 })).contains("took control"));
+    // Paused by its own request: the error says so, not "the person took control".
+    let waiting = h.err("click", json!({ "machine": m, "x": 1, "y": 1 }));
+    assert!(waiting.contains("waiting for the person to do what you asked") && !waiting.contains("took control"), "{waiting}");
     // Waiting: handed back during the wait.
     let fake = h.fake.clone();
     let name = m.clone();
