@@ -1,12 +1,12 @@
 function Resolve-GpuVMAgentOffer {
     <#
     .SYNOPSIS
-    Approves or declines an offered file. Approved files are copied as you into Downloads\GpuVM\<machine>, marked as downloaded from the internet, never overwriting.
+    Accepts or refuses an offered file. Accepted files are copied as you into Downloads\GpuVM\<machine>, marked as downloaded from the internet, never overwriting.
     #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$Id,
-        [Parameter(Mandatory)][ValidateSet('approve', 'decline')][string]$Answer
+        [Parameter(Mandatory)][bool]$Accept
     )
     Invoke-AgentBroker -Command 'Resolve-GpuVMAgentOffer' -Arguments (ConvertTo-AgentArguments $PSBoundParameters)
 }

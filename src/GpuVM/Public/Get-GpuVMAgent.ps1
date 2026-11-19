@@ -1,7 +1,7 @@
 function Get-GpuVMAgent {
     <#
     .SYNOPSIS
-    Machines with GpuVM's agent and their state: ready (connected), starting, off or no-agent; who drives them; paused or not.
+    Machines with GpuVM's agent and their state: ready (connected), starting, off or no-agent; who took them; paused or not.
     #>
     [CmdletBinding()]
     param(

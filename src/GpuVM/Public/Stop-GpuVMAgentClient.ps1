@@ -1,7 +1,7 @@
 function Stop-GpuVMAgentClient {
     <#
     .SYNOPSIS
-    Kill switch: stops one agent session (or all), cancels what it is doing and frees its machines.
+    Kill switch: stops one agent session (or '*' all), cancels what it is doing and frees its machines.
     #>
     [CmdletBinding()]
     param(

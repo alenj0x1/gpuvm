@@ -1,7 +1,7 @@
 function New-GpuVMAgentOffer {
     <#
     .SYNOPSIS
-    Offers a file of the agent's Desktop\Outbox to the person; it leaves the machine only after Resolve-GpuVMAgentOffer -Answer approve.
+    Offers a file of the agent's Desktop\Outbox to the person; it leaves the machine only after Resolve-GpuVMAgentOffer -Accept $true.
     #>
     [CmdletBinding()]
     param(

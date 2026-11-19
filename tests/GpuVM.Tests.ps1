@@ -1363,7 +1363,9 @@ InModuleScope GpuVM {
             $accepted.Count | Should BeGreaterThan 10
             $common = [System.Management.Automation.Cmdlet]::CommonParameters + [System.Management.Automation.Cmdlet]::OptionalCommonParameters
             $wrappers = 'Get-GpuVMAgent', 'Get-GpuVMAgentBroker', 'Invoke-GpuVMAgent', 'Suspend-GpuVMAgent', 'Resume-GpuVMAgent',
-                'Stop-GpuVMAgentClient', 'New-GpuVMAgentOffer', 'Get-GpuVMAgentOffer', 'Resolve-GpuVMAgentOffer'
+                'Stop-GpuVMAgentClient', 'New-GpuVMAgentOffer', 'Get-GpuVMAgentOffer', 'Resolve-GpuVMAgentOffer', 'Get-GpuVMAgentClient',
+                'Get-GpuVMAgentCapture', 'Get-GpuVMAgentRequest', 'Resolve-GpuVMAgentRequest', 'Get-GpuVMAgentSettings', 'Set-GpuVMAgentSettings',
+                'Set-GpuVMAgentClient'
             foreach ($name in $wrappers) {
                 $accepted.ContainsKey($name) | Should Be $true
                 foreach ($p in (Get-Command $name).Parameters.Keys | Where-Object { $_ -notin $common -and $_ -ne 'BlobPath' }) {
@@ -1377,9 +1379,11 @@ InModuleScope GpuVM {
             $r.Command | Should Be 'Stop-GpuVMAgentClient'
             $r.Arguments['All'] | Should Be $true
             $r.Arguments.ContainsKey('Verbose') | Should Be $false
-            $r = Resolve-GpuVMAgentOffer -Id 'ab' -Answer approve
-            $r.Arguments['Answer'] | Should BeExactly 'approve'
-            Test-Throws { Resolve-GpuVMAgentOffer -Id 'ab' -Answer 'yes' } | Should Be $true
+            $r = Resolve-GpuVMAgentOffer -Id 'ab' -Accept $true
+            $r.Arguments['Accept'] | Should Be $true
+            $r = Suspend-GpuVMAgent -Connection '*' -Reason control
+            $r.Arguments['Reason'] | Should BeExactly 'control'
+            Test-Throws { Suspend-GpuVMAgent -Name x -Reason 'nap' } | Should Be $true
         }
         It 'Invoke-GpuVMAgent sends a host file as base64 and refuses big ones' {
             Mock Invoke-AgentBroker { $Arguments }
@@ -1440,7 +1444,7 @@ InModuleScope GpuVM {
                     $script:calls.Add('setup')
                     return [pscustomobject]@{ Dir = 'C:\Windows\Temp\GpuVMAgentSetup-1'; Same = $script:sameBuild; Installed = 'C:\Program Files\GpuVM Agent\gpuvm-agent.exe' }
                 }
-                if ($a.Count -eq 3) {
+                if ($a.Count -eq 4) {
                     $script:calls.Add('install')
                     $script:sentSecret = [byte[]]$a[2].Clone()   # over PowerShell Direct it is a copy
                     return [pscustomobject]@{ ok = $true; password = 'S3cret!'; version = '0.1.0'; rebootNeeded = $true }

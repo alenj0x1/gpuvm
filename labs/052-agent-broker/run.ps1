@@ -295,7 +295,7 @@ foreach ($part in $Parts) {
                     $o = New-GpuVMAgentOffer -Name $Name -Path "C:\Users\agent\Desktop\Outbox\$f" -Note 'lab 052'
                     $pending = Get-GpuVMAgentOffer -Id $o.offerId
                     $sw = [Diagnostics.Stopwatch]::StartNew()
-                    $done = Resolve-GpuVMAgentOffer -Id $o.offerId -Answer approve
+                    $done = Resolve-GpuVMAgentOffer -Id $o.offerId -Accept $true
                     $ms = $sw.Elapsed.TotalMilliseconds
                     $made.Add($done.hostPath)
                     $zone = Get-Content -Raw -LiteralPath $done.hostPath -Stream Zone.Identifier
@@ -304,8 +304,8 @@ foreach ($part in $Parts) {
                         owner = (Get-Acl $done.hostPath).Owner }
                 }
                 $declined = New-GpuVMAgentOffer -Name $Name -Path 'C:\Users\agent\Desktop\Outbox\report.txt'
-                $rows['decline'] = (Resolve-GpuVMAgentOffer -Id $declined.offerId -Answer decline).state
-                $rows['answer twice'] = try { Resolve-GpuVMAgentOffer -Id $declined.offerId -Answer approve; 'accepted!' } catch { $_.Exception.Message }
+                $rows['decline'] = (Resolve-GpuVMAgentOffer -Id $declined.offerId -Accept $false).state
+                $rows['answer twice'] = try { Resolve-GpuVMAgentOffer -Id $declined.offerId -Accept $true; 'accepted!' } catch { $_.Exception.Message }
                 foreach ($bad in 'C:\Users\agent\secret.txt', 'C:\Users\agent\Desktop\Outbox\..\..\secret.txt', 'C:\Users\agent\Desktop\Outbox\sub\x.txt', 'C:\Windows\win.ini') {
                     $rows["refused $bad"] = try { New-GpuVMAgentOffer -Name $Name -Path $bad | Out-Null; 'ACCEPTED' } catch { "$($_.Exception.Data['code']): $($_.Exception.Message)" }
                 }

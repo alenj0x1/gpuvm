@@ -370,16 +370,23 @@ fn handle(pipe: HANDLE) {
             fail(&mut out, "The GpuVM service is stopping.".into());
             return;
         }
-        let Some(cmd) = request["cmd"].as_str() else {
+        let Some(cmd) = request["cmd"].as_str().map(str::to_string) else {
             fail(&mut out, "Invalid request.".into());
             continue;
         };
-        if crate::agent::is_command(cmd) {
+        if crate::agent::is_command(&cmd) {
             let _busy = Busy::start();
-            let reply = crate::agent::result_line(&id, crate::agent::command(cmd, &request["args"], &mut agent_ctx));
+            let reply = crate::agent::result_line(&id, crate::agent::command(&cmd, &request["args"], &mut agent_ctx));
             if !send(&mut out, &reply) {
                 return;
             }
+            continue;
+        }
+        // An agent session (the MCP server acting for a model) may run only some commands, some with the person's
+        // approval; the person's app is never limited here.
+        let mut request = request;
+        if let Err(e) = crate::agent::gate(&mut request, client.pid) {
+            send(&mut out, &json!({ "id": id, "type": "result", "ok": false, "error": e.message, "code": e.code }));
             continue;
         }
         if needs_consent(&request) {

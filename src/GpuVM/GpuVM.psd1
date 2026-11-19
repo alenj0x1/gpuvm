@@ -84,6 +84,13 @@
         'New-GpuVMAgentOffer'
         'Get-GpuVMAgentOffer'
         'Resolve-GpuVMAgentOffer'
+        'Get-GpuVMAgentClient'
+        'Get-GpuVMAgentCapture'
+        'Get-GpuVMAgentRequest'
+        'Resolve-GpuVMAgentRequest'
+        'Get-GpuVMAgentSettings'
+        'Set-GpuVMAgentSettings'
+        'Set-GpuVMAgentClient'
     )
     CmdletsToExport   = @()
     AliasesToExport   = @()

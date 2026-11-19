@@ -185,17 +185,12 @@ fn copy(job: &OfferJob, ctx: &Ctx) -> Result<String, String> {
     }
 }
 
-pub fn resolve(id: &str, answer: &str, ctx: &Ctx) -> Result<Value, CmdError> {
-    let approve = match answer {
-        "approve" => true,
-        "decline" => false,
-        _ => return Err(CmdError { code: "bad_request".into(), message: "Answer is approve or decline.".into() }),
-    };
-    let Some(job) = agent::take_offer(id, approve)? else {
-        return Ok(agent::finish_offer(id, "declined", None, None));
+pub fn resolve(id: &str, accept: bool, ctx: &Ctx) -> Result<Value, CmdError> {
+    let Some(job) = agent::take_offer(id, accept)? else {
+        return Ok(agent::finish_offer(id, "refused", None, None));
     };
     match copy(&job, ctx) {
-        Ok(path) => Ok(agent::finish_offer(id, "approved", Some(path), None)),
+        Ok(path) => Ok(agent::finish_offer(id, "accepted", Some(path), None)),
         // The offer keeps what happened ("failed", error); the call fails too so the app shows it.
         Err(e) => {
             agent::finish_offer(id, "failed", None, Some(e.clone()));

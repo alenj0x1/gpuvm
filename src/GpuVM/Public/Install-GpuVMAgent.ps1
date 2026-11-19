@@ -15,7 +15,11 @@ function Install-GpuVMAgent {
     restarts from inside the guest (Restart-VM right after it lost the service and sign-in changes).
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory)][string]$Name)
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        # Who Windows signs in as: the agent's own standard user (default), or the person's user as configured before.
+        [ValidateSet('agent', 'own')][string]$User = 'agent'
+    )
     Assert-Admin
     $state = Get-GpuVMState -Name $Name
     $vm = Get-VM -Name $Name -ErrorAction Stop
@@ -30,6 +34,7 @@ function Install-GpuVMAgent {
     $timing = [ordered]@{}
     $sw = [Diagnostics.Stopwatch]::StartNew()
 
+    $signInAs = if ($User -eq 'own') { 'previous' } else { 'agent' }
     $secret = [byte[]]::new(32)
     [Security.Cryptography.RandomNumberGenerator]::Fill($secret)
     $session = New-PSSession -VMName $Name -Credential $credential -ErrorAction Stop
@@ -61,8 +66,8 @@ function Install-GpuVMAgent {
             $timing['copy'] = $sw.ElapsedMilliseconds
             Write-Step 'Installing the agent and its user'
             $code = Get-Content -Raw -LiteralPath $package.Install
-            $output = @(Invoke-InAgentSession $session -ArgumentList $code, $setup.Dir, $secret -ScriptBlock {
-                param($code, $dir, $secret) & ([scriptblock]::Create($code)) -Source $dir -Secret $secret
+            $output = @(Invoke-InAgentSession $session -ArgumentList $code, $setup.Dir, $secret, $signInAs -ScriptBlock {
+                param($code, $dir, $secret, $signInAs) & ([scriptblock]::Create($code)) -Source $dir -Secret $secret -SignInAs $signInAs
             })
             $timing['install'] = $sw.ElapsedMilliseconds
         }
@@ -83,6 +88,7 @@ function Install-GpuVMAgent {
         password    = ConvertTo-SecureString ([string]$result.password) -AsPlainText -Force | ConvertFrom-SecureString
         vmId        = $vmId
         version     = $version
+        signInAs    = $User
         installedAt = (Get-Date).ToString('o')
     }
     Save-GpuVMState $state

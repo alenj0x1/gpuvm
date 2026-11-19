@@ -1,7 +1,7 @@
 function Get-GpuVMAgentOffer {
     <#
     .SYNOPSIS
-    Files offered from machines' Outbox and their state (pending, approved, declined, failed).
+    Files offered from machines' Outbox and their state (pending, accepted, refused, expired, failed).
     #>
     [CmdletBinding()]
     param(
