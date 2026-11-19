@@ -4,10 +4,10 @@
 
 function Get-GpuVMCaptureMode {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$State)
-    $streaming = $State['config']['streaming']
     # An agent machine always uses the service (SYSTEM): WGC runs Sunshine as the signed-in user, which there is the
     # agent's standard account. It can't run Sunshine (no picture: lab 052) and must never own it.
     if ([string]$State['use'] -eq 'agent') { return 'ddx' }
+    $streaming = if ($State['config'] -is [System.Collections.IDictionary]) { $State['config']['streaming'] }
     if ($streaming -and $streaming.Contains('captureMode') -and $streaming['captureMode'] -eq 'ddx') { 'ddx' } else { 'wgc' }
 }
 

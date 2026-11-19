@@ -141,6 +141,9 @@ function New-GpuVMFromTemplate {
         throw ("This PC doesn't pass the check: " + (($failed | ForEach-Object { "$($_.Name): $($_.Detail)" }) -join '; '))
     }
     $config = New-TemplateCloneConfig -Config (Resolve-GpuVMProfile -Name $Profile -Override $Override) -Template $base
+    $agentCopy = [string]$base['use'] -eq 'agent'
+    # An agent machine is always isolated (as Set-GpuVMUse agent does): an explicit false goes back to the default.
+    if ($agentCopy) { Set-AgentNetworkIsolation -Config $config }
 
     $context = @{ Name = $Name; Config = $config; Template = $base }
     $state = @(Invoke-GpuVMBackend -Backend $config['backend'] -Operation Clone -Arguments (, $context)) |
@@ -154,6 +157,12 @@ function New-GpuVMFromTemplate {
     $state['pendingApps'] = @(if ($base.Contains('pendingApps')) { $base['pendingApps'] })
     $state['installedApps'] = @(if ($base.Contains('installedApps')) { $base['installedApps'] })
     if ($Disposable) { $state['disposable'] = [ordered]@{ createdAt = (Get-Date).ToString('o'); startedAt = $null } }
+    if ($agentCopy) {
+        # Born an agent machine; the agent itself (a new secret, a new password) is installed when it is first opened
+        # (Connect-GpuVM) or claimed (Install-GpuVMAgent): the template never carries one.
+        $state['use'] = 'agent'
+        $state['agent'] = [ordered]@{ pending = $true; signInAs = $(if ($base['agentSignInAs'] -eq 'own') { 'own' } else { 'agent' }) }
+    }
     Save-GpuVMState $state
 
     Write-Step "VM '$Name' is ready, based on the template '$Template'."
@@ -230,4 +239,13 @@ function Get-TemplateMachineOverride {
     }
     $copy['vm'] = $vm
     $copy
+}
+
+# An agent machine's network is isolated: an explicit "isolation = false" in its config goes back to the default (on).
+function Set-AgentNetworkIsolation {
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Config)
+    $vm = $Config['vm']
+    if (-not ($vm -is [System.Collections.IDictionary])) { return }
+    $network = $vm['network']
+    if ($network -is [System.Collections.IDictionary] -and $network.Contains('isolation') -and $network['isolation'] -eq $false) { $network['isolation'] = $true }
 }
