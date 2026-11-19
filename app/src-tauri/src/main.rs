@@ -6,5 +6,9 @@ fn main() {
     if let (Some("--consent"), Some(code)) = (args.get(1).map(String::as_str), args.get(2)) {
         std::process::exit(gpuvm_lib::consent(code));
     }
+    // `gpuvm.exe --mcp [--fake]`: the MCP server for agent clients, over stdin/stdout (no window).
+    if args.get(1).map(String::as_str) == Some("--mcp") {
+        std::process::exit(gpuvm_lib::mcp(args.get(2).map(String::as_str) == Some("--fake")));
+    }
     gpuvm_lib::run()
 }

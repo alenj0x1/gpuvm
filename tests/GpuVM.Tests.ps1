@@ -508,7 +508,7 @@ InModuleScope GpuVM {
             Mock Save-GpuVMComponent { 'C:\cache\usbip\USBip-0.9.8.0-x64.exe' }
             Mock New-PSSession { [Runtime.Serialization.FormatterServices]::GetUninitializedObject([System.Management.Automation.Runspaces.PSSession]) }
             Mock Copy-Item { $script:copied += @($LiteralPath) }
-            Mock Remove-PSSession { }
+            Mock Close-AgentSession { }
             Mock Write-Step { }
             $script:copied = @()
             Install-GuestAudio -Name 'vm' -Credential $cred | Should Be $true
@@ -1347,6 +1347,198 @@ InModuleScope GpuVM {
             @(Remove-GpuVMDisposable -Confirm:$false -WarningAction SilentlyContinue).Count | Should Be 0
             Assert-MockCalled Remove-Item -Times 0
             Assert-MockCalled Get-ChildItem -Times 0
+        }
+    }
+}
+
+InModuleScope GpuVM {
+    Describe 'Agent broker commands' {
+        It 'module commands send exactly the names and arguments the service accepts' {
+            # The service's list (app/host/src/agent.rs COMMANDS) is the contract: exact case, no extra arguments.
+            $source = Get-Content -Raw (Get-RepoPath 'app\host\src\agent.rs')
+            $accepted = @{}
+            foreach ($m in [regex]::Matches($source, '\("([A-Za-z-]+)", &\[([^\]]*)\]\)')) {
+                $accepted[$m.Groups[1].Value] = @([regex]::Matches($m.Groups[2].Value, '"(\w+)"') | ForEach-Object { $_.Groups[1].Value })
+            }
+            $accepted.Count | Should BeGreaterThan 10
+            $common = [System.Management.Automation.Cmdlet]::CommonParameters + [System.Management.Automation.Cmdlet]::OptionalCommonParameters
+            $wrappers = 'Get-GpuVMAgent', 'Get-GpuVMAgentBroker', 'Invoke-GpuVMAgent', 'Suspend-GpuVMAgent', 'Resume-GpuVMAgent',
+                'Stop-GpuVMAgentClient', 'New-GpuVMAgentOffer', 'Get-GpuVMAgentOffer', 'Resolve-GpuVMAgentOffer', 'Get-GpuVMAgentClient',
+                'Get-GpuVMAgentCapture', 'Get-GpuVMAgentRequest', 'Resolve-GpuVMAgentRequest', 'Get-GpuVMAgentSettings', 'Set-GpuVMAgentSettings',
+                'Set-GpuVMAgentClient'
+            foreach ($name in $wrappers) {
+                $accepted.ContainsKey($name) | Should Be $true
+                foreach ($p in (Get-Command $name).Parameters.Keys | Where-Object { $_ -notin $common -and $_ -ne 'BlobPath' }) {
+                    "$name $p $($accepted[$name] -ccontains $p)" | Should Be "$name $p True"
+                }
+            }
+        }
+        It 'wrappers drop common parameters and send switches as booleans' {
+            Mock Invoke-AgentBroker { [pscustomobject]@{ Command = $Command; Arguments = $Arguments } }
+            $r = Stop-GpuVMAgentClient -All -Verbose:$false
+            $r.Command | Should Be 'Stop-GpuVMAgentClient'
+            $r.Arguments['All'] | Should Be $true
+            $r.Arguments.ContainsKey('Verbose') | Should Be $false
+            $r = Resolve-GpuVMAgentOffer -Id 'ab' -Accept $true
+            $r.Arguments['Accept'] | Should Be $true
+            $r = Suspend-GpuVMAgent -Connection '*' -Reason control
+            $r.Arguments['Reason'] | Should BeExactly 'control'
+            Test-Throws { Suspend-GpuVMAgent -Name x -Reason 'nap' } | Should Be $true
+        }
+        It 'Invoke-GpuVMAgent sends a host file as base64 and refuses big ones' {
+            Mock Invoke-AgentBroker { $Arguments }
+            $f = Join-Path $TestDrive 'a.bin'
+            [IO.File]::WriteAllBytes($f, [byte[]](1, 2, 3))
+            $a = Invoke-GpuVMAgent -Name vm -Method files.write -Params @{ path = 'C:\Users\agent\x' } -BlobPath $f
+            $a['Blob'] | Should Be 'AQID'
+            $a['TimeoutSec'] | Should Be 30
+            $big = Join-Path $TestDrive 'big.bin'
+            $s = [IO.File]::Create($big); $s.SetLength(16MB + 1); $s.Dispose()
+            Test-Throws { Invoke-GpuVMAgent -Name vm -Method files.write -BlobPath $big } | Should Be $true
+        }
+        It 'a registration is removed only inside the agents folder' {
+            Mock Get-GpuVMAgentRoot { Join-Path $TestDrive 'agents' }
+            $id = '0B5D1F53-1E33-4B7E-9F0A-2C4D6E8F0A1B'
+            $dir = Join-Path $TestDrive "agents\$($id.ToLowerInvariant())"
+            New-Item -ItemType Directory $dir -Force | Out-Null
+            Remove-GpuVMAgentRegistration -VMId $id
+            Test-Path $dir | Should Be $false
+        }
+        It 'the secret file is DPAPI-protected and readable by SYSTEM only' {
+            $dir = Join-Path $TestDrive 'secret-test'
+            New-Item -ItemType Directory $dir -Force | Out-Null
+            Write-AgentSecret -Folder $dir -Secret ([byte[]](1..32))
+            $acl = Get-Acl (Join-Path $dir 'secret')
+            $acl.AreAccessRulesProtected | Should Be $true
+            $sids = @($acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value })
+            ($sids -join ',') | Should Be 'S-1-5-18'
+            Test-Path (Join-Path $dir 'secret.new') | Should Be $false
+        }
+    }
+
+    Describe 'Install-GpuVMAgent' {
+        BeforeEach {
+            $script:calls = [System.Collections.Generic.List[string]]::new()
+            $script:sentSecret = $null
+            $script:sameBuild = $false
+            Mock Assert-Admin { }
+            Mock Get-GpuVMState { @{ statePath = 'D:\GpuVM\vm1\gpuvm.json'; guest = @{ user = 'u' } } }
+            Mock Get-VM { [pscustomobject]@{ State = 'Running'; Id = [guid]'0b5d1f53-1e33-4b7e-9f0a-2c4d6e8f0a1b' } }
+            Mock Get-GpuVMGuestCredential { [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force)) }
+            Mock Get-GpuVMAgentRoot { Join-Path $TestDrive 'agents' }
+            Mock Initialize-AgentFolder { New-Item -ItemType Directory -Path $Path -Force | Out-Null }
+            Mock Get-AgentPackage {
+                [IO.File]::WriteAllText("$TestDrive\install.ps1", 'param($Source, $Secret) "installed"')
+                [IO.File]::WriteAllText("$TestDrive\gpuvm-agent.exe", 'x'); [IO.File]::WriteAllText("$TestDrive\VERSION", '0.1.0')
+                [pscustomobject]@{ Install = "$TestDrive\install.ps1"; Exe = "$TestDrive\gpuvm-agent.exe"; Version = '0.1.0'; Hash = 'ABC'
+                    Files = @(Get-Item "$TestDrive\gpuvm-agent.exe", "$TestDrive\VERSION") }
+            }
+            Mock New-PSSession { [pscustomobject]@{ Name = 'fake' } }
+            Mock Close-AgentSession { }
+            Mock Copy-ToAgentSession { $script:calls.Add("copy-to-session $Destination") }
+            # Which guest call it is, by its arguments: setup (hash), fast-path copy (2 paths), installer (text, dir,
+            # secret), cleanup (dir), restart (none).
+            Mock Invoke-InAgentSession { Invoke-FakeGuest $ArgumentList }
+            Mock Invoke-Command { Invoke-FakeGuest $ArgumentList }
+            function script:Invoke-FakeGuest($ArgumentList) {
+                $a = @($ArgumentList)
+                if ($a.Count -eq 1 -and $a[0] -eq 'ABC') {
+                    $script:calls.Add('setup')
+                    return [pscustomobject]@{ Dir = 'C:\Windows\Temp\GpuVMAgentSetup-1'; Same = $script:sameBuild; Installed = 'C:\Program Files\GpuVM Agent\gpuvm-agent.exe' }
+                }
+                if ($a.Count -eq 4) {
+                    $script:calls.Add('install')
+                    $script:sentSecret = [byte[]]$a[2].Clone()   # over PowerShell Direct it is a copy
+                    return [pscustomobject]@{ ok = $true; password = 'S3cret!'; version = '0.1.0'; rebootNeeded = $true }
+                }
+                if ($a.Count -eq 3) { $script:calls.Add('fast-copy'); return }
+                if ($a.Count -eq 1) { $script:calls.Add('cleanup'); return }
+                $script:calls.Add('restart')
+            }
+            Mock Write-AgentSecret { $script:storedSecret = [byte[]]$Secret.Clone() }
+            Mock Save-GpuVMState { $script:saved = $State }
+            Mock Write-JsonFile { $script:registration = $Data }
+            Mock Write-Step { }
+        }
+        It 'sends the exe and a new 32-byte secret, keeps the password encrypted and restarts Windows from inside' {
+            $r = Install-GpuVMAgent -Name vm1
+            $r.vmId | Should Be '0b5d1f53-1e33-4b7e-9f0a-2c4d6e8f0a1b'
+            $r.exeSent | Should Be $true
+            ($script:calls -join ',') | Should Be 'setup,copy-to-session C:\Windows\Temp\GpuVMAgentSetup-1\gpuvm-agent.exe,copy-to-session C:\Windows\Temp\GpuVMAgentSetup-1\VERSION,install,cleanup,restart'
+            $script:sentSecret.GetType().Name | Should Be 'Byte[]'
+            $script:sentSecret.Length | Should Be 32
+            Assert-MockCalled Write-AgentSecret -Times 1 -Scope It
+            # The host keeps exactly what the guest got (the local copy is wiped afterwards).
+            ([Convert]::ToBase64String($script:storedSecret)) | Should Be ([Convert]::ToBase64String($script:sentSecret))
+            $script:saved['agent']['password'] | Should Not Be 'S3cret!'
+            (ConvertTo-SecureString $script:saved['agent']['password'] | ConvertFrom-SecureString -AsPlainText) | Should Be 'S3cret!'
+            $script:registration['name'] | Should Be 'vm1'
+            $script:registration['folder'] | Should Be 'D:\GpuVM\vm1'
+        }
+        It 'a copy of a template with the same build skips sending the exe' {
+            $script:sameBuild = $true
+            $r = Install-GpuVMAgent -Name vm1
+            $r.exeSent | Should Be $false
+            ($script:calls -join ',') | Should Be 'setup,fast-copy,install,cleanup,restart'
+        }
+        It 'a failed install keeps the old secret' {
+            Mock Copy-ToAgentSession { throw 'copy failed' }
+            Test-Throws { Install-GpuVMAgent -Name vm1 } | Should Be $true
+            Assert-MockCalled Write-AgentSecret -Times 0 -Scope It
+            $script:calls -contains 'cleanup' | Should Be $true
+        }
+        It 'refuses a machine that is off' {
+            Mock Get-VM { [pscustomobject]@{ State = 'Off'; Id = [guid]::NewGuid() } }
+            Test-Throws { Install-GpuVMAgent -Name vm1 } | Should Be $true
+            Assert-MockCalled New-PSSession -Times 0 -Scope It
+        }
+    }
+
+    Describe 'Templates never carry an agent secret' {
+        It 'removes the secret from a mounted guest disk and refuses a planted link' {
+            $root = Join-Path $TestDrive 'win'
+            New-Item -ItemType Directory "$root\ProgramData\GpuVM\Agent" -Force | Out-Null
+            [IO.File]::WriteAllBytes("$root\ProgramData\GpuVM\Agent\secret", [byte[]](1..32))
+            Remove-GuestAgentSecret -WindowsRoot $root
+            Test-Path "$root\ProgramData\GpuVM\Agent\secret" | Should Be $false
+            Remove-GuestAgentSecret -WindowsRoot $root   # nothing there: no error
+        }
+    }
+}
+
+InModuleScope GpuVM {
+    Describe 'Set-GpuVMUse' {
+        BeforeEach {
+            $script:st = @{ statePath = 'D:\GpuVM\vm1\gpuvm.json'; config = @{ vm = @{ network = @{ isolation = $false } } } }
+            Mock Assert-Admin { }
+            Mock Get-GpuVMState { $script:st }
+            Mock Save-GpuVMState { $script:st = $State }
+            Mock Update-GpuVMNetworkIsolation { }
+            Mock Install-GpuVMAgent { [pscustomobject]@{ restarted = $true; user = $User } }
+            Mock Uninstall-GpuVMAgent { }
+            Mock Write-Warning { }
+        }
+        It 'an agent machine is always isolated; off, the agent waits for the next start' {
+            Mock Get-VM { [pscustomobject]@{ State = 'Off' } }
+            $r = Set-GpuVMUse -Name vm1 -Use agent
+            $r.pending | Should Be $true
+            $script:st['use'] | Should Be 'agent'
+            $script:st['config']['vm']['network']['isolation'] | Should Be $true
+            $script:st['agent']['pending'] | Should Be $true
+            Assert-MockCalled Update-GpuVMNetworkIsolation -Times 1 -Scope It
+            Assert-MockCalled Install-GpuVMAgent -Times 0 -Scope It
+        }
+        It 'running, it installs the agent with the chosen sign-in user' {
+            Mock Get-VM { [pscustomobject]@{ State = 'Running' } }
+            $script:st['agent'] = @{ signInAs = 'own' }
+            Set-GpuVMUse -Name vm1 -Use agent | Out-Null
+            Assert-MockCalled Install-GpuVMAgent -Times 1 -Scope It -ParameterFilter { $User -eq 'own' }
+        }
+        It 'none removes the agent and the use' {
+            $script:st['use'] = 'agent'; $script:st['agent'] = @{ version = '0.3.0' }
+            Set-GpuVMUse -Name vm1 -Use none | Out-Null
+            Assert-MockCalled Uninstall-GpuVMAgent -Times 1 -Scope It
+            $script:st.Contains('use') | Should Be $false
         }
     }
 }

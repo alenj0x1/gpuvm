@@ -1,0 +1,3 @@
+# A clean Windows has no Visual C++ runtime: link it statically so the agent is one self-contained exe.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

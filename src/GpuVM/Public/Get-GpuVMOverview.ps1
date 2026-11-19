@@ -60,6 +60,9 @@ function Get-GpuVMOverview {
             paired         = [bool]($state -and $state['streaming'] -and $state['streaming']['pairedClient'])
             guestCredential = [bool]($state -and $state['guest'])
             disposable     = Test-GpuVMDisposable -State $state
+            # agent: the machine is for GpuVM's agent (Set-GpuVMUse); agentUser: who Windows signs in as there.
+            use            = if ($state -and $state.Contains('use')) { $state['use'] } else { $null }
+            agentUser      = if ($state -and $state['agent'] -and $state['agent']['signInAs']) { $state['agent']['signInAs'] } else { $null }
             restorePoints  = if ($state -and $state.Contains('restorePoints')) { @($state['restorePoints']).Count } else { 0 }
             address        = $address
             # A Windows administrator prompt open in the VM (WGC can't stream it; the app offers Allow / Deny).

@@ -39,7 +39,7 @@ pub const PIPE: &str = r"\\.\pipe\gpuvm";
 const CLIENT_ACCESS: u32 = 0x0010_0083;
 /// Commands that destroy data: they run only after a UAC confirmation.
 const NEEDS_CONSENT: &[&str] = &["Remove-GpuVM", "Remove-GpuVMDisk", "Remove-GpuVMSharedDisk", "Remove-GpuVMTemplate", "Remove-GpuVMBase",
-    "Remove-GpuVMRestorePoint"];
+    "Remove-GpuVMRestorePoint", "Uninstall-GpuVMAgent"];
 const CONSENT_TTL: Duration = Duration::from_secs(120);
 
 /// Requests running right now: a stop waits for them.
@@ -172,6 +172,8 @@ fn host_paths(request: &Value) -> Vec<(String, PathAccess)> {
 fn needs_consent(request: &Value) -> bool {
     let cmd = request["cmd"].as_str().unwrap_or("");
     NEEDS_CONSENT.contains(&cmd) || (cmd == "Restore-GpuVMRestorePoint" && request["args"]["SaveCurrent"] != json!(true))
+        // Taking a machine back from the agent removes its user and profile.
+        || (cmd == "Set-GpuVMUse" && request["args"]["Use"] == json!("none"))
 }
 
 /// Checks each path as the user on the other end of the pipe (unelevated), then goes back to the service's identity.
@@ -284,9 +286,9 @@ fn spawn_bridge(token: &Handle) -> Result<Bridge, String> {
 // ---------------------------------------------------------------- one connection
 
 /// Counts a request as running while it lives.
-struct Busy;
+pub struct Busy;
 impl Busy {
-    fn start() -> Self {
+    pub fn start() -> Self {
         BUSY.fetch_add(1, Ordering::SeqCst);
         Busy
     }
@@ -336,6 +338,9 @@ fn handle(pipe: HANDLE) {
     let mut out: &File = &file;
     let mut reader = BufReader::new(&*file);
     let mut bridge: Option<Bridge> = None;
+    // Agent commands are answered by the broker in this process (no PowerShell in the way: they are the MCP
+    // server's hot path). Its connections registered on this pipe end with it.
+    let mut agent_ctx = crate::agent::Ctx::new(pipe, client.pid, false);
     let mut line = String::new();
     // One request at a time, as the app sends them: the synchronous pipe is never read and written at once.
     loop {
@@ -367,9 +372,27 @@ fn handle(pipe: HANDLE) {
             fail(&mut out, "The GpuVM service is stopping.".into());
             return;
         }
-        let Some(cmd) = request["cmd"].as_str() else {
+        let Some(cmd) = request["cmd"].as_str().map(str::to_string) else {
             fail(&mut out, "Invalid request.".into());
             continue;
+        };
+        if crate::agent::is_command(&cmd) {
+            let _busy = Busy::start();
+            let reply = crate::agent::result_line(&id, crate::agent::command(&cmd, &request["args"], &mut agent_ctx));
+            if !send(&mut out, &reply) {
+                return;
+            }
+            continue;
+        }
+        // An agent session (the MCP server acting for a model) may run only some commands, some with the person's
+        // approval; the person's app is never limited here.
+        let mut request = request;
+        let mut claim = match crate::agent::gate(&mut request, client.pid) {
+            Ok(c) => c,
+            Err(e) => {
+                send(&mut out, &json!({ "id": id, "type": "result", "ok": false, "error": e.message, "code": e.code }));
+                continue;
+            }
         };
         if needs_consent(&request) {
             let confirmed = request["consent"].as_str().is_some_and(|n| take_consent(n, client.pid, &request));
@@ -418,6 +441,12 @@ fn handle(pipe: HANDLE) {
             }
             let parsed = serde_json::from_str::<Value>(&event).unwrap_or(Value::Null);
             if parsed["type"] == "result" && parsed["id"] == id {
+                // An agent session's new disposable copy is its own from now on.
+                if parsed["ok"] == json!(true) {
+                    if let Some(c) = claim.take() {
+                        crate::agent::claim(c);
+                    }
+                }
                 break;
             }
         }
@@ -428,6 +457,7 @@ fn handle(pipe: HANDLE) {
 }
 
 pub fn serve() {
+    crate::agent::start();
     // SYSTEM and Administrators: full access. Users signed in at this PC: read and write only. Network: denied.
     let sddl = format!("D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x{CLIENT_ACCESS:08x};;;IU)(D;;GA;;;NU)");
     let mut sd = std::ptr::null_mut();

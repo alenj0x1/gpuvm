@@ -20,7 +20,7 @@ import { Sparkline, series } from "./Chart";
 import { CheckMark, Dropdown, Segmented, Slider, formatUptime, portalRoot, scrollToSection, stateText, useScrollFade } from "./ui";
 import { MachineAgent } from "./Agents";
 import { useAgents } from "./agentStore";
-import { agents, api, openConsole, pickExportFile, vmNameError } from "./api";
+import { api, openConsole, pickExportFile, vmNameError } from "./api";
 import { locale, t, tn, translateModule } from "./i18n";
 
 export interface JobInfo {
@@ -72,7 +72,7 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
   if (vm.managed && vm.options) tabs.push("machine");
   // A machine made for agents, or one an agent works on now, shows its Agent section right after Machine.
   const agentHere = useAgents().clients.some((c) => c.machine === vm.name);
-  if (vm.forAgents || agentHere) tabs.push("agent");
+  if (vm.use === "agent" || vm.forAgents || agentHere) tabs.push("agent");
   if (vm.managed && vm.options && vm.streaming) tabs.push("display");
   if (vm.managed && vm.guestCredential) tabs.push("windows");
   if (vm.managed && vm.options) tabs.push("custom");
@@ -1023,8 +1023,8 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
     networkIsolation: vm.options!.networkIsolation ?? true,
     // "default": the monitor chosen in Preferences.
     monitor: vm.client?.monitor ?? "default",
-    forAgents: vm.forAgents ?? false,
-    agentUser: vm.agent?.user ?? "agent",
+    forAgents: vm.use === "agent" || (vm.forAgents ?? false),
+    agentUser: (vm.agentUser ?? vm.agent?.user ?? "agent") as "agent" | "own",
   };
   const [draft, setDraft] = useState(initial);
   const [saved, setSaved] = useState(false);
@@ -1065,10 +1065,15 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
     if (captureDirty && !(await run(vm.name, t("Changing capture"), () => api.setCapture(vm.name, draft.captureMode)))) return;
     if (networkDirty && !(await run(vm.name, t("Changing network"), () => api.setNetworkIsolation(vm.name, draft.networkIsolation)))) return;
     if (monitorDirty && !(await run(vm.name, t("Saving"), () => api.setMonitor(vm.name, draft.monitor)))) return;
-    if (draft.forAgents !== initial.forAgents && !(await run(vm.name, t("Saving"), () => agents.setUse(vm.name, draft.forAgents ? "agent" : null)))) return;
-    if (draft.agentUser !== initial.agentUser && !(await run(vm.name, t("Saving"), () => agents.setUser(vm.name, draft.agentUser)))) return;
-    // A machine made for agents without the guest agent gets it now (its own job, with its steps on the button).
-    if (draft.forAgents && !initial.forAgents && !vm.agent?.installed) { startJob(vm.name, "Install-GpuVMAgent", { Name: vm.name, User: draft.agentUser }); return; }
+    // The use and the agents' user install or remove the guest agent (Set-GpuVMUse, Set-GpuVMAgentUser): jobs, with
+    // their steps on the button (back to a person's machine asks for administrator, like a deletion).
+    if (draft.forAgents !== initial.forAgents) {
+      const user = draft.agentUser;
+      startJob(vm.name, "Set-GpuVMUse", { Name: vm.name, Use: draft.forAgents ? "agent" : "none" },
+        () => { if (draft.forAgents && user !== "agent") startJob(vm.name, "Set-GpuVMAgentUser", { Name: vm.name, User: user }); });
+      return;
+    }
+    if (draft.agentUser !== initial.agentUser) { startJob(vm.name, "Set-GpuVMAgentUser", { Name: vm.name, User: draft.agentUser }); return; }
     if (!vmDirty) { setSaved(true); return; }
     const override = {
       vm: { cpu: { count: draft.cpu }, memoryGB: draft.memoryGB, disk: { sizeGB: draft.diskGB } },

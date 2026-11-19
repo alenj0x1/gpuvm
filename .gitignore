@@ -38,3 +38,6 @@ tools/screenshots/out/
 # GpuVM viewer build (fork of Moonlight, repo gpuvm-viewer); the installer bundles it
 /viewer/
 labs/040-viewer-widgets/report.json
+guest/agent/target/
+guest/agent/dist/
+app/guest-agent-target/

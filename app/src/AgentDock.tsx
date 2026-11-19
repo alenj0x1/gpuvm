@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { IconCheck, IconFileDownload, IconHistory, IconLoader2, IconLock, IconShieldLock, IconTrash, IconWorld, IconX, type Icon } from "@tabler/icons-react";
+import { IconCheck, IconFileDownload, IconHistory, IconLoader2, IconLock, IconRobot, IconShieldLock, IconTrash, IconWorld, IconX, type Icon } from "@tabler/icons-react";
 import { inTauri } from "./api";
 import { bytes } from "./agentStore";
 import { humanError } from "./ui";

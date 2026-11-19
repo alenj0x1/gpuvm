@@ -77,6 +77,9 @@ export interface VmOverview {
   agent?: { installed: boolean; connected: boolean; version: string | null; user: "agent" | "own" } | null;
   /** Made for agents (usage type Agent): 1280x800, always recording while an agent works, isolated network. */
   forAgents?: boolean;
+  /** Get-GpuVMOverview: "agent" for a machine made for agents, and who Windows signs in as there. */
+  use?: string | null;
+  agentUser?: "agent" | "own" | null;
   client: ClientSettings | null;
   options: { cpu: number; memoryGB: number; gpuPercent: number; diskGB: number; diskType: string; diskFreeGB: number; captureMode: "ddx" | "wgc"; networkIsolation: boolean; cleanup: CleanupLevelId; diskBudget?: DiskBudget | null } | null;
 }

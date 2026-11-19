@@ -43,7 +43,7 @@ const vms: VmOverview[] = [
 
 // The machines agents work on (mockAgents.ts): made for agents, 1280x800, isolated, disposable, with the agent installed.
 for (const name of agentMachines) {
-  vms.push({ ...vms[3], id: `agent-${name}`, name, edition: "Windows 11 Pro", disposable: name === "win-agent", forAgents: true, uptimeSeconds: 380,
+  vms.push({ ...vms[3], id: `agent-${name}`, name, edition: "Windows 11 Pro", disposable: name === "win-agent", forAgents: true, use: "agent", agentUser: "agent", uptimeSeconds: 380,
     agent: { installed: true, connected: true, version: "0.1.0", user: "agent" },
     client: { app: "Desktop", resolution: "1280x800", fps: 60, bitrateKbps: 0, codec: "auto", vsync: true, framePacing: false, mouse: "absolute" } });
 }
@@ -340,6 +340,13 @@ export async function job(jobId: string, cmd: string, args: Record<string, unkno
   for (const message of steps) {
     emit({ type: "progress", message });
     await wait(900);
+  }
+  if (cmd === "Set-GpuVMUse" || cmd === "Set-GpuVMAgentUser") {
+    const vm = vms.find((v) => v.name === args.Name);
+    if (vm && cmd === "Set-GpuVMUse") { vm.use = args.Use === "agent" ? "agent" : null; vm.forAgents = args.Use === "agent"; }
+    if (vm && cmd === "Set-GpuVMAgentUser") vm.agentUser = args.User === "own" ? "own" : "agent";
+    emit({ type: "result", ok: true, data: [] });
+    return;
   }
   if (cmd === "Rename-GpuVM") {
     try { renameVm(String(args.Name), String(args.NewName)); }

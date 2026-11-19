@@ -9,8 +9,13 @@
 
 #![windows_subsystem = "windows"]
 
+mod agent;
+mod agent_pipe;
+mod hv;
+mod offer;
 mod server;
 mod win;
+mod wire;
 
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicPtr, Ordering};
@@ -174,6 +179,8 @@ fn install() -> Result<(), String> {
         return Err(last_error("SetServiceObjectSecurity"));
     }
     unsafe { LocalFree(sd) };
+    // The agent channel's Hyper-V socket name (guests can only dial registered names). The service checks it too.
+    agent::register_service_id()?;
     Ok(())
 }
 
@@ -206,6 +213,7 @@ fn uninstall() -> Result<(), String> {
             return Err(last_error("DeleteService"));
         }
     }
+    agent::unregister_service_id();
     Ok(())
 }
 
@@ -223,6 +231,15 @@ fn main() {
         Some("stop") => stop(),
         Some("startup") => startup(std::env::args().nth(2).as_deref()),
         Some("uninstall") => uninstall(),
+        // Debug builds only (lab 052): the agent broker alone, run as SYSTEM next to an installed service that
+        // doesn't have it yet. Release builds don't have this command.
+        #[cfg(debug_assertions)]
+        Some("broker") => {
+            agent::start();
+            loop {
+                std::thread::sleep(Duration::from_secs(3600));
+            }
+        }
         _ => Err("usage: gpuvm-host install | stop | uninstall".into()),
     };
     if let Err(e) = result {
