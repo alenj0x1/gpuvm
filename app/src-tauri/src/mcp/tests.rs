@@ -328,12 +328,37 @@ fn commands_files_and_offers() {
     assert!(h.ok("read_file", json!({ "machine": m, "path": "C:\\Users\\agent\\b.bin" })).contains("binary file (4 bytes)"));
     h.ok("write_file", json!({ "machine": m, "path": "C:\\Users\\agent\\u16.txt", "content": "//5oAGkA", "encoding": "base64" }));
     assert!(h.ok("read_file", json!({ "machine": m, "path": "C:\\Users\\agent\\u16.txt" })).ends_with("hi"));
-    assert!(h.ok("send_file", json!({ "machine": m, "hostPath": "C:\\Builds\\GpuVM-setup.exe" })).contains("Received\\GpuVM-setup.exe"));
-    // A real host file is checked inside the machine after the copy, by size.
+    // send_file: the person allows it in GpuVM first, for the exact path, size and number of files.
+    assert!(h.err("send_file", json!({ "machine": m, "hostPath": "C:\\Builds\\missing.exe" })).contains("can't be read"));
     let host = std::env::temp_dir().join(format!("gpuvm-mcp-test-{}.bin", std::process::id()));
     std::fs::write(&host, vec![7u8; 1000]).unwrap();
     let host_path = host.to_string_lossy().to_string();
+    h.fake.with(|s| s.approval_answer = "denied".into());
+    let no = h.err("send_file", json!({ "machine": m, "hostPath": host_path, "reason": "test" }));
+    assert!(no.contains("said no") && no.contains("Copy gpuvm-mcp-test"), "{no}");
+    assert!(h.fake.with(|s| !s.calls.iter().any(|c| c == "file.send")), "nothing is sent without the approval");
+    h.fake.with(|s| s.approval_answer = "allowed".into());
+    // A real host file is checked inside the machine after the copy, by size.
     assert!(h.ok("send_file", json!({ "machine": m, "hostPath": host_path })).contains("1000 bytes, checked"));
+    // Only the path goes with the request (agent-broker's contract): the service measures it and writes the title.
+    let asked = h.fake.with(|s| s.last_approval.clone());
+    assert_eq!((asked["kind"].as_str(), asked["path"].as_str()), (Some("send"), Some(host_path.as_str())));
+    assert!(asked.get("sizeBytes").is_none() && asked.get("files").is_none() && asked.get("title").is_none(), "{asked}");
+    // A folder works the same; the local measure only words the refusal.
+    let dir = std::env::temp_dir().join(format!("gpuvm-mcp-dir-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("sub")).unwrap();
+    std::fs::write(dir.join("a.txt"), b"12345").unwrap();
+    std::fs::write(dir.join("sub").join("b.txt"), b"678").unwrap();
+    h.fake.with(|s| s.approval_answer = "denied".into());
+    let no = h.err("send_file", json!({ "machine": m, "hostPath": dir.to_string_lossy() }));
+    assert!(no.contains("2 files, 8 bytes"), "{no}");
+    h.fake.with(|s| s.approval_answer = "allowed".into());
+    h.ok("send_file", json!({ "machine": m, "hostPath": dir.to_string_lossy() }));
+    let _ = std::fs::remove_dir_all(&dir);
+    // Changed after the person allowed it: the service says needs_approval; the agent is told to ask again.
+    h.fake.with(|s| s.send_changed = true);
+    assert!(h.err("send_file", json!({ "machine": m, "hostPath": host_path })).contains("changed after the person allowed it"));
+    h.fake.with(|s| s.send_changed = false);
     h.fake.with(|s| s.machines.iter_mut().find(|x| x.name == m).unwrap().drop_sends = true);
     std::fs::write(host.with_extension("lost"), b"x").unwrap();
     assert!(h.err("send_file", json!({ "machine": m, "hostPath": host.with_extension("lost").to_string_lossy() })).contains("wasn't delivered"));
@@ -348,11 +373,20 @@ fn commands_files_and_offers() {
     let refused = h.err("destroy", json!({ "machine": m }));
     assert!(refused.contains("still waiting") && refused.contains("force"), "{refused}");
     h.fake.with(|s| s.offers.get_mut(&id).unwrap().1 = "accepted".into());
-    assert!(h.ok("offer_status", json!({ "machine": m, "offerId": id })).contains("accepted"));
+    // Accepted: the file's name and where in general, never the person's absolute path.
+    let acc = h.ok("offer_status", json!({ "machine": m, "offerId": id }));
+    assert!(acc.contains("accepted") && acc.contains("(report.md)") && acc.contains("Downloads\\GpuVM") && !acc.contains("C:\\Users\\person"), "{acc}");
     assert!(h.err("offer_file", json!({ "machine": m, "path": "C:\\Users\\agent\\Desktop\\Outbox\\sub\\x.txt", "note": "n" })).contains("directly inside"));
     // Restore points: not on disposable machines (turning them off deletes them), only on taken normal ones.
     assert!(h.err("restore_point_create", json!({ "machine": m })).contains("is disposable"));
     assert!(h.ok("open_viewer", json!({ "machine": m })).contains("viewer"));
+    // Only machines this connection took: the viewer can start or resume one.
+    assert!(h.err("open_viewer", json!({ "machine": "work-pc" })).contains("Take work-pc first"));
+    // Step notes never carry what the model wrote, only its length.
+    h.ok("type", json!({ "machine": m, "text": "secret-password-123" }));
+    h.ok("run", json!({ "machine": m, "command": "echo top-secret", "stdin": "more-secret" }));
+    let notes = h.fake.with(|s| s.notes.join("\n"));
+    assert!(!notes.contains("secret") && notes.contains("(19 characters)"), "{notes}");
     assert!(h.err("destroy", json!({ "machine": "work-pc" })).contains("Take work-pc first"));
     assert!(h.err("restore_point_create", json!({ "machine": "work-pc" })).contains("Take work-pc first"));
     // A normal machine that is off: take starts it.
@@ -495,4 +529,71 @@ fn approvals_off_by_default_and_legacy_elicitation() {
         let r = h.wait_for(id)["result"].clone();
         assert_eq!(r["isError"] != true, expect_ok, "{r}");
     }
+}
+
+#[test]
+fn approvals_fail_closed_when_the_client_cannot_ask() {
+    // Modern client without elicitation, approvals on: refused, nothing runs.
+    let mut h = H::with(true, json!({}));
+    h.fake.with(|s| s.elicitation = true);
+    let m = h.machine();
+    let e = h.err("run", json!({ "machine": m, "command": "whoami" }));
+    assert!(e.contains("can't show the question"), "{e}");
+    assert!(h.fake.with(|s| s.notes.iter().all(|n| !n.starts_with("run"))), "the command never reached the machine");
+    // Legacy client without elicitation: the same.
+    let mut h = H::with(false, json!({}));
+    h.fake.with(|s| s.elicitation = true);
+    h.server.ctx.disconnect();
+    let m = h.machine();
+    assert!(h.err("write_file", json!({ "machine": m, "path": "Desktop\\x.txt", "content": "x" })).contains("can't show the question"));
+    // Tools outside the confirmation list are unaffected.
+    h.ok("key", json!({ "machine": m, "keys": "enter" }));
+}
+
+
+#[test]
+fn review_three_fixes() {
+    let mut h = H::new(false);
+    let m = h.machine();
+    // (7) The screen changed size after the screenshot: coordinates from it are refused, a new one works.
+    h.fake.with(|s| s.machines.iter_mut().find(|x| x.name == m).unwrap().screen_changed_at = Some(1_000));
+    let stale = h.err("click", json!({ "machine": m, "x": 1, "y": 1 }));
+    assert!(stale.contains("changed size after screenshot"), "{stale}");
+    h.ok("screenshot", json!({ "machine": m }));
+    h.ok("click", json!({ "machine": m, "x": 1, "y": 1 }));
+    // (11) act: the broker waits as long as the actions can take.
+    h.ok("act", json!({ "machine": m, "actions": (0..12).map(|_| json!({ "type": "wait", "ms": 5000 })).collect::<Vec<_>>() }));
+    let t = h.fake.with(|s| *s.timeouts.last().unwrap());
+    assert!(t.unwrap() >= 12 * 6, "{t:?}");
+    h.ok("key", json!({ "machine": m, "keys": "enter" }));
+    assert_eq!(h.fake.with(|s| *s.timeouts.last().unwrap()), Some(30));
+    // (14) run: at most 580 s, the broker waits 20 s more.
+    assert!(h.err("run", json!({ "machine": m, "command": "x", "timeoutSeconds": 600 })).contains("1 to 580"));
+    h.ok("run", json!({ "machine": m, "command": "x", "timeoutSeconds": 580 }));
+    assert_eq!(h.fake.with(|s| *s.timeouts.last().unwrap()), Some(600));
+    // (8) A second copy gets "name (2).ext" in the machine: that's the name checked and reported.
+    let host = std::env::temp_dir().join(format!("gpuvm-mcp-twice-{}.txt", std::process::id()));
+    std::fs::write(&host, b"twice").unwrap();
+    let hp = host.to_string_lossy().to_string();
+    h.ok("send_file", json!({ "machine": m, "hostPath": hp }));
+    let second = h.ok("send_file", json!({ "machine": m, "hostPath": hp }));
+    assert!(second.contains(&format!("gpuvm-mcp-twice-{} (2).txt", std::process::id())) && second.contains("5 bytes, checked"), "{second}");
+    let _ = std::fs::remove_file(&host);
+    // (15) The person allows just as the wait ends: the answer counts, not "hasn't answered".
+    let mut h2 = H::new(false);
+    h2.ok("take_machine", json!({ "machine": "work-pc" }));
+    h2.fake.with(|s| s.answer_late = true);
+    assert!(h2.ok("request_approval", json!({ "machine": "work-pc", "kind": "other", "title": "x", "reason": "y", "waitSeconds": 0 })).contains("allowed"));
+}
+
+#[test]
+fn closing_stdin_ends_waits_at_once() {
+    let mut h = H::new(false);
+    let m = h.machine();
+    let started = Instant::now();
+    h.send("tools/call", json!({ "name": "request_human", "arguments": { "machine": m, "message": "x", "waitSeconds": 1800 } }));
+    std::thread::sleep(Duration::from_millis(50));
+    h.server.finish();
+    assert!(started.elapsed() < Duration::from_secs(5), "finish waited {:?}", started.elapsed());
+    assert!(h.fake.with(|s| s.connections.is_empty()), "the session was closed");
 }

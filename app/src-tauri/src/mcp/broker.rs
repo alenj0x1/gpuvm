@@ -28,11 +28,13 @@ impl BrokerError {
 pub struct Reply {
     pub data: Value,
     pub blob: Option<Vec<u8>>,
+    /// What came next to an Invoke-GpuVMAgent `result`: `screenChangedAt`, `screen`, `ms`.
+    pub meta: Value,
 }
 
 impl Reply {
     pub fn of(data: Value) -> Self {
-        Reply { data, blob: None }
+        Reply { data, blob: None, meta: Value::Null }
     }
 }
 
@@ -71,6 +73,9 @@ pub struct PipeBroker {
     conn: Mutex<Option<crate::backend::Conn>>,
     next: std::sync::atomic::AtomicU64,
 }
+
+/// The first request on every pipe connection this process opens (agent-broker's contract, ff9d55d).
+pub const HELLO: &str = "Register-GpuVMAgentPipe";
 
 impl Default for PipeBroker {
     fn default() -> Self {
@@ -136,15 +141,33 @@ impl PipeBroker {
 
     /// One command, with its warnings: on the shared connection (the service answers one request at a time per
     /// connection), or on a connection of its own for minutes-long module work (`long`).
+    /// A new pipe connection, announced as an agent's (agent-broker's `Register-GpuVMAgentPipe`, the first line of
+    /// every connection, with no arguments: the service ties the connection to this process's session itself and
+    /// limits it like an agent's from then on).
+    fn open(&self) -> Result<crate::backend::Conn> {
+        let mut conn = crate::backend::connect().map_err(|e| BrokerError::new("unavailable", e))?;
+        let hello = self.request(HELLO, json!({}));
+        if let Err(e) = Self::run(&mut conn, &hello) {
+            // A service from before the hello: nothing to announce to.
+            let older = e.message.contains(HELLO) && ["not allowed", "Unknown", "can't run"].iter().any(|t| e.message.contains(t));
+            if !older {
+                return Err(e);
+            }
+        }
+        Ok(conn)
+    }
+
     fn exec(&self, cmd: &str, args: Value, long: bool) -> Result<(Reply, Vec<String>)> {
         let request = self.request(cmd, args);
         if long {
-            let mut conn = crate::backend::connect().map_err(|e| BrokerError::new("unavailable", e))?;
+            let mut conn = self.open()?;
             return Self::run(&mut conn, &request);
         }
         let mut guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         if guard.is_none() {
-            *guard = Some(crate::backend::connect().map_err(|e| BrokerError::new("unavailable", e))?);
+            // The shared connection is the session's own (Connect-GpuVMAgentClient registers on it); when it breaks,
+            // tools.rs registers a new session on the next call.
+            *guard = Some(self.open()?);
         }
         let result = Self::run(guard.as_mut().unwrap(), &request);
         if matches!(&result, Err(e) if e.code == "unavailable") {
@@ -198,7 +221,11 @@ impl Broker for PipeBroker {
         let name = s(&args, "name");
         let connection = s(&args, "connection");
         match op {
-            "client.connect" => self.cmd("Connect-GpuVMAgentClient", json!({ "Client": s(&args, "client") })),
+            "client.connect" => {
+                // A new session lives on a fresh shared connection (the old one's session ended with it).
+                *self.conn.lock().unwrap_or_else(|e| e.into_inner()) = None;
+                self.cmd("Connect-GpuVMAgentClient", json!({ "Client": s(&args, "client") }))
+            }
             "client.disconnect" => self.cmd("Disconnect-GpuVMAgentClient", json!({ "Connection": connection })),
             "templates.list" => self.templates(),
             "machine.create" => create_disposable(&self.runner(), &args, &std::thread::sleep),
@@ -206,10 +233,17 @@ impl Broker for PipeBroker {
             "machine.take" => self.cmd("Lock-GpuVMAgent", json!({ "Name": name, "Connection": connection, "Task": s(&args, "task") })),
             "machine.start" => self.cmd_long("Invoke-GpuVMPower", json!({ "Name": name, "Action": "Start" })),
             "machine.release" =>self.cmd("Unlock-GpuVMAgent", json!({ "Name": name, "Connection": connection })),
-            "agent.invoke" => self.cmd("Invoke-GpuVMAgent", json!({ "Name": name, "Method": s(&args, "method"), "Params": s(&args, "params"),
-                "TimeoutSec": s(&args, "timeoutSec"), "Connection": connection, "Blob": s(&args, "blob"), "Note": s(&args, "note") })),
+            "agent.invoke" => {
+                // Longer than a few seconds (a command, a long act): its own pipe connection (with the session's
+                // hello), so cancel_request, list_machines or a screenshot never wait behind it on the shared one.
+                let long = args["timeoutSec"].as_u64().is_some_and(|t| t > 20);
+                self.exec("Invoke-GpuVMAgent", json!({ "Name": name, "Method": s(&args, "method"), "Params": s(&args, "params"),
+                    "TimeoutSec": s(&args, "timeoutSec"), "Connection": connection, "Blob": s(&args, "blob"), "Note": s(&args, "note") }), long)
+                    .map(|r| r.0)
+            }
             "approval.request" => self.cmd("New-GpuVMAgentRequest", json!({ "Name": name, "Connection": connection, "Kind": s(&args, "kind"),
-                "Title": s(&args, "title"), "Reason": s(&args, "reason"), "TimeoutSec": s(&args, "timeoutSec") })),
+                "Title": s(&args, "title"), "Reason": s(&args, "reason"), "TimeoutSec": s(&args, "timeoutSec"),
+                "Path": s(&args, "path") })),
             "approval.get" => {
                 let id = s(&args, "requestId");
                 list(self.cmd("Get-GpuVMAgentRequest", json!({ "Id": id }))?.data).into_iter().find(|r| r["id"] == id).map(Reply::of)
@@ -217,9 +251,12 @@ impl Broker for PipeBroker {
             }
             "file.send" => {
                 let host = args["hostPath"].as_str().unwrap_or("");
-                self.cmd_long("Send-GpuVMFile", json!({ "Name": name, "Path": [host] }))?;
-                let file = host.rsplit(['\\', '/']).next().unwrap_or(host);
-                Ok(Reply::of(json!({ "path": format!(r"C:\Users\agent\Desktop\Received\{file}") })))
+                // {path: the guest folder, items: [names as saved], files, bytes}; the module checks the arrival.
+                let r = self.cmd_long("Send-GpuVMFile", json!({ "Name": name, "Path": [host], "Approval": s(&args, "approval") }))?;
+                let folder = r.data["path"].as_str().unwrap_or(r"Desktop\Received").trim_end_matches('\\').to_string();
+                let item = r.data["items"].as_array().and_then(|a| a.first()).and_then(Value::as_str)
+                    .map(str::to_string).unwrap_or_else(|| host.rsplit(['\\', '/']).next().unwrap_or(host).to_string());
+                Ok(Reply::of(json!({ "path": format!("{folder}\\{item}"), "files": r.data["files"], "bytes": r.data["bytes"] })))
             }
             "offer.create" => self.cmd("New-GpuVMAgentOffer", json!({ "Name": name, "Path": s(&args, "path"), "Note": s(&args, "note"), "Connection": connection })),
             "offers.list" => self.cmd("Get-GpuVMAgentOffer", json!({ "Name": name })).map(|r| Reply::of(Value::Array(list(r.data)))),
@@ -233,7 +270,7 @@ impl Broker for PipeBroker {
                 .map(|r| Reply::of(json!({ "name": r.data["id"].as_str().or(r.data["label"].as_str()).unwrap_or("saved") }))),
             "restore.revert" => self.revert(&args),
             "machine.destroy" => {
-                remove_disposable(&self.runner(), name.as_str().unwrap_or(""));
+                remove_disposable(&self.runner(), name.as_str().unwrap_or(""))?;
                 Ok(Reply::default())
             }
             "human.request" => self.cmd("Request-GpuVMHuman", json!({ "Name": name, "Connection": connection, "Message": s(&args, "message") })),
@@ -286,7 +323,7 @@ pub fn create_disposable(run: &Run, args: &Value, pause: &dyn Fn(Duration)) -> R
     // with the figures: stop here instead of waiting for an agent that can't come.
     let d = &created.data;
     if d["started"] == false {
-        remove_disposable(run, &name);
+        let cleanup = remove_disposable(run, &name).err().map(|e| format!(" {}", e.message)).unwrap_or_default();
         let (needed, free) = (d["neededGB"].as_f64(), d["freeGB"].as_f64());
         let reason = match (needed, free) {
             (Some(n), Some(f)) => format!("it needs {n:.1} GB of memory free and there are {f:.1} GB"),
@@ -294,19 +331,23 @@ pub fn create_disposable(run: &Run, args: &Value, pause: &dyn Fn(Duration)) -> R
         };
         let memory = needed.is_some();
         return Err(BrokerError::new(if memory { "no_memory" } else { "failed" }, format!(
-            "{name} couldn't start: {reason}. It was deleted again.{}",
+            "{name} couldn't start: {reason}. {}{}",
+            if cleanup.is_empty() { "It was deleted again." } else { cleanup.trim() },
             if memory { " Ask for less memoryGB (4 is enough for most tests), or ask the person to free memory." } else { "" })));
     }
     // Modules before `started` only warn.
     if let Some(w) = warnings.iter().find(|w| w.contains("couldn't turn on")) {
-        remove_disposable(run, &name);
+        let _ = remove_disposable(run, &name);
         let reason = w.split_once(": ").map(|(_, r)| r).unwrap_or(w).trim_end_matches('.');
         let memory = reason.contains("GB free");
         return Err(BrokerError::new(if memory { "no_memory" } else { "failed" }, format!(
             "{name} couldn't start: {reason}. It was deleted again.{}",
             if memory { " Ask for less memoryGB (4 is enough for most tests), or ask the person to free memory." } else { "" })));
     }
-    finish_create(run, args, &name, pause).inspect_err(|_| remove_disposable(run, &name))
+    finish_create(run, args, &name, pause).map_err(|e| match remove_disposable(run, &name) {
+        Ok(()) => e,
+        Err(left) => BrokerError::new(&e.code, format!("{} ({})", e.message, left.message)),
+    })
 }
 
 fn finish_create(run: &Run, args: &Value, name: &str, pause: &dyn Fn(Duration)) -> Result<Reply> {
@@ -342,16 +383,31 @@ fn finish_create(run: &Run, args: &Value, name: &str, pause: &dyn Fn(Duration)) 
 /// Deletes one disposable machine now: turned off, then `Remove-GpuVMDisposable -Name` (that machine, without the
 /// grace a never-started disposable gets). An older module without `-Name` gets the general sweep instead.
 /// (`Remove-GpuVM -DeleteDisk` isn't used: for an agent session it needs a `delete` approval and a UAC prompt.)
-pub fn remove_disposable(run: &Run, name: &str) {
+pub fn remove_disposable(run: &Run, name: &str) -> Result<()> {
+    // Already off is fine; anything else shows up below as "still there".
     let _ = run("Invoke-GpuVMPower", json!({ "Name": name, "Action": "TurnOff" }), true);
+    let mut swept = false;
     if let Err(e) = run("Remove-GpuVMDisposable", json!({ "Name": name }), true) {
         if e.message.contains("Argument not allowed") {
             super::server::log(&format!("this GpuVM has no Remove-GpuVMDisposable -Name: {name} goes with the next sweep"));
             let _ = run("Remove-GpuVMDisposable", json!({}), true);
+            swept = true;
         } else {
             super::server::log(&format!("couldn't delete the disposable {name}: {}", e.message));
+            return Err(BrokerError::new(&e.code, format!("{name} couldn't be deleted: {}", e.message)));
         }
     }
+    // Only "done" when the machine is really gone.
+    let left = list(run("Get-GpuVM", json!({}), false)?.0.data).iter()
+        .any(|m| [&m["Name"], &m["name"]].iter().any(|n| n.as_str().is_some_and(|n| n.eq_ignore_ascii_case(name))));
+    if left {
+        return Err(BrokerError::new("failed", if swept {
+            format!("{name} is off but still there: this GpuVM deletes it with its next sweep (within 30 minutes).")
+        } else {
+            format!("{name} is still there after deleting it; ask the person to delete it in GpuVM.")
+        }));
+    }
+    Ok(())
 }
 
 /// Shows the machine in GpuVM's viewer: `gpuvm.exe --view <name>`, which the running app receives (single
@@ -398,10 +454,12 @@ pub fn unwrap_reply(mut data: Value) -> Result<Reply> {
             }
         }
         if map.contains_key("ok") && map.contains_key("result") {
-            return Ok(Reply { data: map.remove("result").unwrap_or(Value::Null), blob });
+            let result = map.remove("result").unwrap_or(Value::Null);
+            map.remove("ok");
+            return Ok(Reply { data: result, blob, meta: Value::Object(std::mem::take(map)) });
         }
     }
-    Ok(Reply { data, blob })
+    Ok(Reply { data, blob, meta: Value::Null })
 }
 
 #[cfg(test)]
@@ -449,7 +507,7 @@ mod tests {
         let e = create_disposable(&run, &json!({ "template": "agent-tpl", "name": "x1", "connection": "c1" }), NO_PAUSE).unwrap_err();
         assert_eq!(e.code, "no_memory");
         assert!(e.message.contains("x1 couldn't start: The VM needs 8.3 GB free and there are 3.6 GB") && e.message.contains("deleted again"), "{}", e.message);
-        assert_eq!(names(&calls), ["New-GpuVM", "Invoke-GpuVMPower", "Remove-GpuVMDisposable"]);
+        assert_eq!(names(&calls), ["New-GpuVM", "Invoke-GpuVMPower", "Remove-GpuVMDisposable", "Get-GpuVM"]);
         assert_eq!(calls.lock().unwrap()[2].1, json!({ "Name": "x1" }));
         assert_eq!(calls.lock().unwrap()[0].1["Connection"], "c1");
     }
@@ -464,7 +522,7 @@ mod tests {
         let e = create_disposable(&run, &json!({ "template": "agent-tpl", "name": "x2" }), NO_PAUSE).unwrap_err();
         assert_eq!(e.code, "no_memory");
         assert!(e.message.starts_with("x2 couldn't start: it needs 8.3 GB of memory free and there are 3.6 GB. It was deleted again."), "{}", e.message);
-        assert_eq!(names(&calls), ["New-GpuVM", "Invoke-GpuVMPower", "Remove-GpuVMDisposable"]);
+        assert_eq!(names(&calls), ["New-GpuVM", "Invoke-GpuVMPower", "Remove-GpuVMDisposable", "Get-GpuVM"]);
         assert_eq!(calls.lock().unwrap()[2].1, json!({ "Name": "x2" }));
         // Another reason, without figures.
         let (_, run) = script(|cmd, args| match cmd {
@@ -493,7 +551,7 @@ mod tests {
         assert!(e.message.contains("couldn't be installed, so it was deleted again"));
         let n = names(&calls);
         assert_eq!(n.iter().filter(|c| *c == "Install-GpuVMAgent").count(), 3);
-        assert_eq!(&n[n.len() - 2..], ["Invoke-GpuVMPower", "Remove-GpuVMDisposable"]);
+        assert_eq!(&n[n.len() - 3..], ["Invoke-GpuVMPower", "Remove-GpuVMDisposable", "Get-GpuVM"]);
         // A generated name: the template and 6 hex digits, valid for New-GpuVM.
         let name = calls.lock().unwrap()[0].1["Name"].as_str().unwrap().to_string();
         assert!(name.starts_with("agent-tpl-") && name.len() == 16, "{name}");
@@ -515,9 +573,41 @@ mod tests {
             "Remove-GpuVMDisposable" if args.get("Name").is_some() => Err(BrokerError::new("failed", "Argument not allowed: Name")),
             _ => Ok((Reply::default(), vec![])),
         });
-        remove_disposable(&run, "old1");
-        assert_eq!(names(&calls), ["Invoke-GpuVMPower", "Remove-GpuVMDisposable", "Remove-GpuVMDisposable"]);
+        remove_disposable(&run, "old1").unwrap();
+        assert_eq!(names(&calls), ["Invoke-GpuVMPower", "Remove-GpuVMDisposable", "Remove-GpuVMDisposable", "Get-GpuVM"]);
         assert_eq!(calls.lock().unwrap()[2].1, json!({}));
+    }
+
+    #[test]
+    fn destroy_reports_a_machine_that_is_still_there() {
+        // Deleted: Get-GpuVM no longer lists it.
+        let (_, run) = script(|cmd, _| match cmd {
+            "Get-GpuVM" => Ok((Reply::of(json!([{ "Name": "other" }])), vec![])),
+            _ => Ok((Reply::default(), vec![])),
+        });
+        remove_disposable(&run, "d1").unwrap();
+        // Still listed after deleting: an error, not "done".
+        let (_, run) = script(|cmd, _| match cmd {
+            "Get-GpuVM" => Ok((Reply::of(json!([{ "Name": "D1" }])), vec![])),
+            _ => Ok((Reply::default(), vec![])),
+        });
+        assert!(remove_disposable(&run, "d1").unwrap_err().message.contains("still there"));
+        // The delete itself refused: its reason, not success.
+        let (calls, run) = script(|cmd, _| match cmd {
+            "Remove-GpuVMDisposable" => Err(BrokerError::new("denied", "Only a disposable copy this session made.")),
+            _ => Ok((Reply::default(), vec![])),
+        });
+        let e = remove_disposable(&run, "d1").unwrap_err();
+        assert_eq!(e.code, "denied");
+        assert!(!names(&calls).contains(&"Get-GpuVM".to_string()));
+        // A machine that couldn't be created and also couldn't be deleted: both reasons reach the model.
+        let (_, run) = script(|cmd, args| match cmd {
+            "New-GpuVM" => Ok((Reply::of(json!({ "name": args["Name"], "started": false, "neededGB": 8.0, "freeGB": 2.0 })), vec![])),
+            "Get-GpuVM" => Ok((Reply::of(json!([{ "Name": "x9" }])), vec![])),
+            _ => Ok((Reply::default(), vec![])),
+        });
+        let e = create_disposable(&run, &json!({ "template": "t", "name": "x9" }), NO_PAUSE).unwrap_err();
+        assert!(e.message.contains("couldn't start") && e.message.contains("still there"), "{}", e.message);
     }
 
     #[test]

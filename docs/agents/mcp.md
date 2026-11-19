@@ -71,8 +71,9 @@ Wait until they hand it back ("Return to agent" in GpuVM), then take a fresh scr
 - **Identity.** The client's name and version (from `initialize` or `_meta` clientInfo) register the connection with
   the broker (`Connect-GpuVMAgentClient`); the app shows it. The registration ends with the pipe.
 - **Approvals.** Off by default for every connection. When the person turns them on for a connection, only the
-  low-risk confirmations go through the client (`run`, `write_file`, `send_file`); the state of an approval is a
-  random, single-use, 10-minute nonce bound to the tool and its exact arguments. High-risk and human-only actions
+  low-risk confirmations go through the client (`run`, `write_file`); the state of an approval is a
+  random, single-use, 10-minute nonce bound to the tool and its exact arguments. If the client can't ask (no MCP
+  elicitation), those calls are refused with an explanation: approvals fail closed. High-risk and human-only actions
   never go through MCP: high-risk ones are requests the person answers in GpuVM (`New-GpuVMAgentRequest`, kinds
   admin/network/revert/delete/other, within the person's approval timeout); a revert passes the allowed request to
   `Restore-GpuVMRestorePoint` as `Approval`, which the service checks (same machine and kind, once, 10 minutes).
@@ -95,11 +96,23 @@ Wait until they hand it back ("Return to agent" in GpuVM), then take a fresh scr
 - **Prompt injection from the guest.** Screen text and command output reach the model. Mitigations: the agent runs
   as a standard user in a VM, files leave only through the person's approval, UAC/lock screen/passwords are refused
   (`blocked_elevated`, `secure_desktop`), and the person can pause or kill at any time.
-- **Host files into the VM.** `send_file` reads a host path the person's account can read (the service checks it
-  as that user). Anything a client could already read can be copied into a VM; nothing leaves a VM without approval.
-- **Viewer.** `open_viewer` starts `gpuvm.exe --view <name>` with a validated machine name only.
+- **Host files into the VM.** Copying data from this PC into an untrusted machine needs the person's approval in
+  GpuVM, every time: `send_file` asks with a `send` request carrying only the path; the service measures it as the
+  person (refusing links and more than 100,000 entries) and shows "Send <paths> to '<machine>': N files, <size>".
+  The allowed request goes to `Send-GpuVMFile` as `Approval`: used once, for exactly that path, re-measured (if it
+  changed, `needs_approval` and the model is told to ask again). An injected model can't move host files without the
+  person seeing what and how much.
+- **Viewer.** `open_viewer` works only on machines this connection took (the viewer can start or resume a machine)
+  and starts `gpuvm.exe --view <name>` with a validated machine name only.
+- **What the app shows and logs.** Every step's note has the tool and its arguments, with anything the model wrote
+  (file contents, commands, typed text, values, stdin) replaced by its length. Accepted offers tell the model the
+  file's name and "the person's Downloads\GpuVM folder", never the person's absolute path.
+- **Connections.** Every pipe connection the server opens starts with `Register-GpuVMAgentPipe` (no arguments): the
+  shared one before its session exists and the extra ones (module work, guest requests over 20 s); from then on the
+  service treats each as an agent's and applies the session's limits. Long calls never queue in front of
+  `cancel_request` or screenshots.
 - **Names.** `list_machines` shows every GpuVM machine's name and state (not their contents) so the model can ask for
   one; machines without the agent can't be used.
-- **Open risks.** One pipe connection serializes the calls of a client (a 60 s `run` delays a parallel screenshot);
-  a service restart drops the registration, so machines must be taken again (the error says so); creation from a
+- **Open risks.** Short calls of a client share one connection (one at a time); a service restart drops the
+  registration, so machines must be taken again (the error says so); creation from a
   template relies on `Install-GpuVMAgent` succeeding in the clone.

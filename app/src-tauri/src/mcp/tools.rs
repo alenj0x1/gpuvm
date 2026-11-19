@@ -23,7 +23,7 @@ const PROFILE: &str = r"C:\Users\agent\";
 const OUTBOX: &str = r"desktop\outbox\";
 const APPROVAL_TTL: Duration = Duration::from_secs(600);
 /// Tools that ask the person through the client first when the connection's "approvals" setting is on.
-const CONFIRM: &[&str] = &["run", "write_file", "send_file"];
+const CONFIRM: &[&str] = &["run", "write_file"];
 
 #[derive(Clone, Debug)]
 pub struct Settings {
@@ -59,6 +59,11 @@ pub struct Ctx {
     pending: Mutex<HashMap<String, Pending>>,
     /// This connection's pending request_human per machine (lowercase name → request id), for cancel_request.
     human_requests: Mutex<HashMap<String, String>>,
+    /// Set when the client closed stdin: waits return at once so the process can end.
+    pub shutting_down: std::sync::atomic::AtomicBool,
+    /// Per machine (lowercase): the latest `screenChangedAt` seen; per screenshot id: the value when it was taken.
+    screen_changed: Mutex<HashMap<String, u64>>,
+    shot_epoch: Mutex<HashMap<u32, u64>>,
     /// Poll interval while waiting (machine ready, person, offers); short in tests.
     pub poll_ms: std::sync::atomic::AtomicU64,
 }
@@ -76,6 +81,9 @@ impl Ctx {
             uses: Mutex::new(HashMap::new()),
             pending: Mutex::new(HashMap::new()),
             human_requests: Mutex::new(HashMap::new()),
+            shutting_down: Default::default(),
+            screen_changed: Mutex::new(HashMap::new()),
+            shot_epoch: Mutex::new(HashMap::new()),
             poll_ms: std::sync::atomic::AtomicU64::new(1000),
         }
     }
@@ -308,7 +316,7 @@ pub fn definitions() -> Vec<Value> {
         tool("run", "Run a command in the machine as the standard user `agent` (never administrator) and return its exit code and output. By default `command` is a PowerShell command line; with shell 'none' it is a program and `args` its arguments.",
             schema(json!({ "machine": m(), "command": { "type": "string" }, "shell": { "type": "string", "enum": ["powershell", "cmd", "none"] },
                 "args": { "type": "array", "items": { "type": "string" } }, "cwd": { "type": "string" },
-                "timeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 600, "description": "Default 60." }, "stdin": { "type": "string" } }), &["machine", "command"]),
+                "timeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 580, "description": "Default 60." }, "stdin": { "type": "string" } }), &["machine", "command"]),
             ann("Run command", false, true, false, true)),
         tool("read_file", "Read a file in the agent's home folder in the machine (a path relative to it, like Desktop\\Received\\x.txt, or a full one): text comes back as text, images as an image.",
             schema(json!({ "machine": m(), "path": { "type": "string" } }), &["machine", "path"]),
@@ -317,8 +325,9 @@ pub fn definitions() -> Vec<Value> {
             schema(json!({ "machine": m(), "path": { "type": "string" }, "content": { "type": "string" },
                 "encoding": { "type": "string", "enum": ["utf8", "base64"], "description": "Default utf8." } }), &["machine", "path", "content"]),
             ann("Write file", false, true, true, false)),
-        tool("send_file", "Copy a file from this PC into the machine's Desktop\\Received folder.",
-            schema(json!({ "machine": m(), "hostPath": { "type": "string", "description": "Full path of a file on this PC." } }), &["machine", "hostPath"]),
+        tool("send_file", "Copy a file or folder from this PC into the machine's Desktop\\Received folder. The person must allow it in GpuVM first (this waits for their answer).",
+            schema(json!({ "machine": m(), "hostPath": { "type": "string", "description": "Full path of a file or folder on this PC." },
+                "reason": { "type": "string", "description": "Why you need it in the machine, shown to the person." } }), &["machine", "hostPath"]),
             ann("Send file to machine", false, false, true, false)),
         tool("offer_file", "Offer a file from the machine's Desktop\\Outbox folder to the person; it reaches this PC only if they approve it in GpuVM. Optionally wait for their answer.",
             schema(json!({ "machine": m(), "path": { "type": "string", "description": "A file directly in Desktop\\Outbox, e.g. Desktop\\Outbox\\report.md." },
@@ -468,18 +477,22 @@ fn approve(ctx: &Ctx, name: &str, call: &Call) -> Approval {
     let what = match name {
         "run" => format!("run `{}` in {machine}", call.args["command"].as_str().unwrap_or("")),
         "write_file" => format!("write {} in {machine}", call.args["path"].as_str().unwrap_or("")),
-        "send_file" => format!("copy {} from this PC into {machine}", call.args["hostPath"].as_str().unwrap_or("")),
         _ => name.to_string(),
     };
     let message = format!("Allow the agent to {}?", cap_to(what, 400));
+    // The person turned approvals on for this client: without a way to ask, the answer is no (never go ahead unasked).
+    let cannot_ask = || Approval::Reply(tool_error(format!(
+        "The person asked GpuVM to confirm each {name} from this client, but this client can't show the question (no MCP elicitation). \
+Ask the person to answer it another way: turn off approvals for this client in GpuVM's Agents settings, or use a client that supports them.")));
     if call.client.legacy {
         return match (call.ask_legacy)(&message) {
+            Some(true) => Approval::Go,
             Some(false) => Approval::Reply(tool_error("The person declined this. Don't retry it; ask them what to do instead.")),
-            _ => Approval::Go,
+            None => cannot_ask(),
         };
     }
     if !call.client.elicitation {
-        return Approval::Go;
+        return cannot_ask();
     }
     let args = call.args.to_string();
     if let Some(state) = call.request_state {
@@ -578,7 +591,32 @@ impl Tool<'_> {
         extra["method"] = json!(method);
         extra["params"] = params;
         extra["note"] = json!(self.note());
-        self.broker("agent.invoke", machine, extra)
+        let r = self.broker("agent.invoke", machine, extra)?;
+        self.saw_screen_change(machine, r.meta["screenChangedAt"].as_u64());
+        Ok(r)
+    }
+
+    fn saw_screen_change(&self, machine: &str, at: Option<u64>) {
+        if let Some(at) = at {
+            let mut seen = self.ctx.screen_changed.lock().unwrap();
+            let e = seen.entry(machine.to_ascii_lowercase()).or_insert(0);
+            *e = (*e).max(at);
+        }
+    }
+
+    /// A screenshot taken before the machine's screen last changed size can't be used for coordinates.
+    fn fresh(&self, shot: &Shot) -> Result<(), String> {
+        // The broker's current view first (one in-process call), then what replies already told us.
+        if let Ok(Some(m)) = self.find(&shot.machine) {
+            self.saw_screen_change(&shot.machine, m["screenChangedAt"].as_u64());
+        }
+        let latest = self.ctx.screen_changed.lock().unwrap().get(&shot.machine.to_ascii_lowercase()).copied().unwrap_or(0);
+        let taken = self.ctx.shot_epoch.lock().unwrap().get(&shot.id).copied().unwrap_or(0);
+        if latest > taken {
+            self.ctx.screens.lock().unwrap().remove(&shot.machine);
+            return Err(format!("The screen of {} changed size after screenshot {}; take a new screenshot and use its pixels.", shot.machine, shot.id));
+        }
+        Ok(())
     }
 
     /// What this step does, for the person's view of the session in GpuVM: the tool and its arguments.
@@ -586,8 +624,13 @@ impl Tool<'_> {
         let mut args = self.args.clone();
         if let Some(map) = args.as_object_mut() {
             map.remove("machine");
-            if let Some(Value::String(c)) = map.get_mut("content") {
-                *c = format!("({} characters)", c.chars().count());
+            redact(map);
+            if let Some(Value::Array(actions)) = map.get_mut("actions") {
+                for a in actions.iter_mut() {
+                    if let Some(m) = a.as_object_mut() {
+                        redact(m);
+                    }
+                }
             }
         }
         let text = if args.as_object().is_some_and(|m| m.is_empty()) { self.name.to_string() } else { format!("{} {args}", self.name) };
@@ -609,7 +652,7 @@ impl Tool<'_> {
             if done()? {
                 return Ok(true);
             }
-            if Instant::now() >= end || (self.cancelled)() {
+            if Instant::now() >= end || (self.cancelled)() || self.ctx.shutting_down.load(std::sync::atomic::Ordering::Relaxed) {
                 return Ok(false);
             }
             let poll = Duration::from_millis(self.ctx.poll_ms.load(std::sync::atomic::Ordering::Relaxed));
@@ -813,6 +856,10 @@ impl Tool<'_> {
             self.ctx.screens.lock().unwrap().insert(machine.to_string(), now);
         }
         let shot = self.ctx.add_shot(Shot { id: 0, machine: machine.into(), screen, origin, region, sent: (w, h), zoom: zoom.is_some() });
+        // The screen change this picture already includes.
+        let epoch = reply.meta["screenChangedAt"].as_u64().unwrap_or(0)
+            .max(self.ctx.screen_changed.lock().unwrap().get(&machine.to_ascii_lowercase()).copied().unwrap_or(0));
+        self.ctx.shot_epoch.lock().unwrap().insert(shot.id, epoch);
         let mime = match reply.data["format"].as_str().unwrap_or(format) { "png" => "image/png", _ => "image/webp" };
         let image = json!({ "type": "image", "data": base64::engine::general_purpose::STANDARD.encode(&blob), "mimeType": mime });
         Ok((shot, image))
@@ -822,10 +869,12 @@ impl Tool<'_> {
 
     fn reference(&self, machine: &str) -> Result<Shot, String> {
         let id = opt_int(self.args, "screenshot", 0, u32::MAX as i64)?.map(|v| v as u32);
-        self.ctx.latest_shot(machine, id).ok_or_else(|| match id {
+        let shot = self.ctx.latest_shot(machine, id).ok_or_else(|| match id {
             Some(id) => format!("Screenshot {id} isn't known for {machine} (too old, or of another machine); take a new one."),
             None => format!("Take a screenshot of {machine} first; coordinates are in its pixels."),
-        })
+        })?;
+        self.fresh(&shot)?;
+        Ok(shot)
     }
 
     fn point(shot: &Shot, a: &Value, kx: &str, ky: &str) -> Result<(i32, i32), String> {
@@ -901,7 +950,10 @@ impl Tool<'_> {
         let converted = actions.iter().enumerate()
             .map(|(i, a)| self.convert(shot.as_ref(), a, machine).map_err(|e| if name == "act" { format!("Action {}: {e}", i + 1) } else { e }))
             .collect::<Result<Vec<_>, _>>()?;
-        let reply = self.invoke(machine, "input.act", json!({ "actions": converted, "stopOnError": true }))?;
+        // The broker's wait covers the actions: their own waits, typing (~1 ms a character) and 1 s each.
+        let budget_ms: u64 = converted.iter().map(|a| 1000 + a["ms"].as_u64().unwrap_or(0) + a["text"].as_str().map_or(0, |t| t.chars().count() as u64)).sum();
+        let reply = self.invoke_with(machine, "input.act", json!({ "actions": converted, "stopOnError": true }),
+            json!({ "timeoutSec": (budget_ms / 1000 + 10).clamp(30, 600) }))?;
         let done = reply.data["done"].as_u64().unwrap_or(converted.len() as u64);
         let mut summary = if name == "act" { format!("Done {done} of {} actions.", converted.len()) } else { "Done.".to_string() };
         if let Some(s) = &shot {
@@ -989,9 +1041,10 @@ impl Tool<'_> {
         if shell != "none" && !extra.is_empty() {
             return Err("`args` only goes with shell 'none'; put everything in `command` otherwise.".into());
         }
-        let timeout = opt_int(self.args, "timeoutSeconds", 1, 600)?.unwrap_or(60);
+        // At most 580 s: the broker waits up to 600 s and must see the command end before its own deadline.
+        let timeout = opt_int(self.args, "timeoutSeconds", 1, 580)?.unwrap_or(60);
         let reply = self.invoke_with(machine, "exec.run", json!({ "file": file, "args": args, "cwd": opt_str(self.args, "cwd")?,
-            "timeoutMs": timeout * 1000, "stdin": opt_str(self.args, "stdin")? }), json!({ "timeoutSec": (timeout + 10).min(600) }))?;
+            "timeoutMs": timeout * 1000, "stdin": opt_str(self.args, "stdin")? }), json!({ "timeoutSec": (timeout + 20).min(600) }))?;
         let d = &reply.data;
         let (out, err) = run_output(d, reply.blob.as_deref());
         let mut t = if d["timedOut"] == true {
@@ -1097,12 +1150,27 @@ impl Tool<'_> {
         if !p.is_absolute() {
             return Err("`hostPath` must be a full path on this PC.".into());
         }
+        self.mine(machine)?;
+        // Data leaves this PC for an untrusted machine: the person allows it in GpuVM first. Only the path goes with
+        // the request: the service measures it as the person, writes the title the person sees, and re-measures
+        // when the copy uses the approval (once, exactly that path). The local measure only words the messages here.
+        let (bytes, files) = host_size(p)?;
+        let what = if files == 1 && p.is_file() { human_size(bytes) } else { format!("{files} files, {}", human_size(bytes)) };
+        let title = format!("Copy {} ({what}) from this PC into {machine}", p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| host.to_string()));
+        let reason = opt_str(self.args, "reason")?.unwrap_or("The agent wants to use this file in the machine.");
+        let approval = self.approval_with(machine, "send", &title, reason, self.settings.approval_timeout, json!({ "path": host }))?;
         self.step(machine)?;
-        self.broker("file.send", machine, json!({ "hostPath": host }))?;
+        let sent = match self.ctx.broker.call_long("file.send", json!({ "connection": self.connection, "name": machine, "hostPath": host, "approval": approval })) {
+            Ok(r) => r,
+            // The path changed after the person allowed it (re-measured): their answer was for something else.
+            Err(e) if e.code == "needs_approval" => return Err(format!(
+                "{} changed after the person allowed it, so it wasn't sent; call send_file again to ask them about it as it is now.", p.display())),
+            Err(e) => return Err(self.fail(machine, e)),
+        };
         // Check it arrived instead of trusting the copy's "done" (lab 053: a 106 MB installer was reported copied
-        // and never reached the machine). Folders are only checked for existence.
+        // and never reached the machine), at the name it got there (never overwriting: `name (2).ext`).
         let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-        let inside = format!("Desktop\\Received\\{name}");
+        let inside = sent.data["path"].as_str().map(str::to_string).unwrap_or_else(|| format!("Desktop\\Received\\{name}"));
         let expected = std::fs::metadata(p).ok().filter(|m| m.is_file()).map(|m| m.len());
         if expected.is_some() {
             let missing = || format!("GpuVM reported the copy as done, but {inside} isn't in {machine}: the file wasn't delivered. Don't retry in a loop; tell the person.");
@@ -1160,8 +1228,21 @@ impl Tool<'_> {
 
     /// Asks the person in GpuVM (never through the client) and waits for their answer; the allowed request's id.
     fn approval(&self, machine: &str, kind: &str, title: &str, reason: &str, wait: u64) -> Result<String, String> {
-        let r = self.broker("approval.request", machine, json!({ "kind": kind, "title": cap_to(title.to_string(), 120),
-            "reason": cap_to(reason.to_string(), 500), "timeoutSec": wait.max(30) }))?;
+        self.approval_with(machine, kind, title, reason, wait, json!({}))
+    }
+
+    /// `extra`: what the request is about, checked by the service when the approval is used (send: path, sizeBytes, files).
+    fn approval_with(&self, machine: &str, kind: &str, title: &str, reason: &str, wait: u64, extra: Value) -> Result<String, String> {
+        let mut args = json!({ "kind": kind, "title": cap_to(title.to_string(), 120),
+            "reason": cap_to(reason.to_string(), 500), "timeoutSec": wait.max(30) });
+        if let (Some(a), Value::Object(e)) = (args.as_object_mut(), extra) {
+            a.extend(e);
+            // For a send the service writes the title the person sees from its own measure.
+            if kind == "send" {
+                a.remove("title");
+            }
+        }
+        let r = self.broker("approval.request", machine, args)?;
         let id = r.data["requestId"].as_str().ok_or("GpuVM didn't return a request id.")?.to_string();
         let mut state = String::from("pending");
         self.wait(wait, || {
@@ -1170,13 +1251,18 @@ impl Tool<'_> {
         })?;
         match state.as_str() {
             "allowed" => Ok(id),
-            "denied" => Err("The person said no in GpuVM. Don't try again; ask them what to do instead.".into()),
+            "denied" => Err(format!("The person said no in GpuVM to: {title}. Don't try again; ask them what to do instead.")),
             "pending" => {
                 // Withdrawn so the person isn't asked later about something nobody waits for; a request answered in
                 // the meantime keeps its answer (the broker refuses to withdraw it).
                 match self.broker("request.revoke", machine, json!({ "requestId": id })) {
                     Ok(_) => Err(format!("The person didn't answer in GpuVM in time, so the request ({id}) was withdrawn. Ask again later if you still need it, or tell the user.")),
-                    Err(_) => Err(format!("The person hasn't answered in GpuVM yet (request {id}); try again later.")),
+                    // Refused: answered in the meantime (just as the wait ended). Read the answer instead of guessing.
+                    Err(_) => match self.broker("approval.get", machine, json!({ "requestId": id }))?.data["state"].as_str() {
+                        Some("allowed") => Ok(id),
+                        Some("denied") => Err(format!("The person said no in GpuVM to: {title}. Don't try again; ask them what to do instead.")),
+                        _ => Err(format!("The person hasn't answered in GpuVM yet (request {id}); try again later.")),
+                    },
                 }
             }
             _ => Err("The request expired without an answer.".into()),
@@ -1257,6 +1343,8 @@ impl Tool<'_> {
 
     fn open_viewer(&self) -> Out {
         let machine = self.machine()?;
+        // Only a machine this connection took: the viewer can start or resume a machine (lab 053 security review).
+        self.mine(machine)?;
         self.broker("viewer.open", machine, json!({}))?;
         Ok(text(format!("GpuVM's viewer shows {machine} to the person now.")))
     }
@@ -1322,6 +1410,58 @@ impl Tool<'_> {
     }
 }
 
+/// Text the model wrote (file contents, commands, typed text, values, stdin) never goes into the step notes the app
+/// shows and logs: only its length.
+fn redact(map: &mut serde_json::Map<String, Value>) {
+    for key in ["content", "command", "text", "value", "stdin"] {
+        if let Some(Value::String(c)) = map.get_mut(key) {
+            *c = format!("({} characters)", c.chars().count());
+        }
+    }
+}
+
+/// What a host path holds: total bytes and number of files (folders walked without following links; capped so a
+/// huge tree can't stall the call).
+fn host_size(p: &std::path::Path) -> Result<(u64, u64), String> {
+    let meta = std::fs::symlink_metadata(p).map_err(|_| format!("{} can't be read from this PC.", p.display()))?;
+    if meta.is_file() {
+        return Ok((meta.len(), 1));
+    }
+    if !meta.is_dir() {
+        return Err(format!("{} isn't a file or folder.", p.display()));
+    }
+    let (mut bytes, mut files, mut seen) = (0u64, 0u64, 0u32);
+    let mut stack = vec![p.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).map_err(|_| format!("{} can't be read from this PC.", dir.display()))?.flatten() {
+            seen += 1;
+            if seen > 100_000 {
+                return Err(format!("{} has too many files to send at once.", p.display()));
+            }
+            let Ok(m) = entry.metadata() else { continue };
+            if m.file_type().is_symlink() {
+                continue;
+            }
+            if m.is_dir() {
+                stack.push(entry.path());
+            } else {
+                bytes += m.len();
+                files += 1;
+            }
+        }
+    }
+    Ok((bytes, files))
+}
+
+fn human_size(bytes: u64) -> String {
+    match bytes {
+        b if b >= 1 << 30 => format!("{:.1} GB", b as f64 / (1u64 << 30) as f64),
+        b if b >= 1 << 20 => format!("{:.1} MB", b as f64 / (1u64 << 20) as f64),
+        b if b >= 1 << 10 => format!("{:.0} KB", b as f64 / 1024.0),
+        b => format!("{b} bytes"),
+    }
+}
+
 /// Fields of a machine as the broker lists it.
 fn screen(m: &Value) -> Option<(u32, u32)> {
     let s = &m["agent"]["screen"];
@@ -1351,7 +1491,8 @@ fn run_output(d: &Value, blob: Option<&[u8]>) -> (String, String) {
 
 fn offer_text(id: &str, d: &Value) -> String {
     match d["state"].as_str() {
-        Some("accepted") => format!("The person accepted offer {id}{}.", d["savedTo"].as_str().map(|p| format!("; the file is at {p} on this PC")).unwrap_or_default()),
+        Some("accepted") => format!("The person accepted offer {id}{}; it is saved in the person's Downloads\\GpuVM folder.",
+            d["savedTo"].as_str().and_then(|p| p.rsplit(['\\', '/']).next()).map(|n| format!(" ({n})")).unwrap_or_default()),
         Some("refused") => format!("The person refused offer {id}."),
         Some("pending") => format!("Offer {id} is still waiting for the person."),
         Some("copying") => format!("Offer {id} was accepted and is being copied."),
