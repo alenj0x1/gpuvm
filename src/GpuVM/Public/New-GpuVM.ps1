@@ -40,8 +40,8 @@ function New-GpuVM {
         $made = New-GpuVMFromTemplate -Name $Name -Template $Template -Profile $Profile -Override $Override -Start:$Start -Disposable:$Disposable
         if (-not $Use) { return $made }
         Initialize-GpuVMAgentUse -Name $Name -User $AgentUser
-        $startError = if ($made -and $made.PSObject.Properties['StartError']) { $made.StartError }
-        return Add-StartError -Info (Get-GpuVM -Name $Name) -StartError $startError
+        $start = if ($made -and $made.PSObject.Properties['Started']) { @{ started = $made.Started; startError = $made.StartError; neededGB = $made.NeededGB; freeGB = $made.FreeGB } }
+        return Add-StartResult -Info (Get-GpuVM -Name $Name) -Start $start
     }
 
     $failed = @(Test-GpuVMHost -Profile $Profile -Override $Override | Where-Object Status -eq 'Fail')
@@ -100,9 +100,9 @@ function New-GpuVM {
 
     Write-Step "VM '$Name' is ready. The first time, Windows finishes setting itself up (a few minutes)."
     if ($state['streaming']) { Write-Step "To see it with the GPU: ./gpuvm.ps1 connect -Name $Name" }
-    $startError = if ($Start) { Start-NewGpuVM -Name $Name }
+    $start = if ($Start) { Start-NewGpuVM -Name $Name }
     if ($Use) { Initialize-GpuVMAgentUse -Name $Name -User $AgentUser }
-    Add-StartError -Info (Get-GpuVM -Name $Name) -StartError $startError
+    Add-StartResult -Info (Get-GpuVM -Name $Name) -Start $start
 }
 
 function New-GpuVMFromTemplate {
@@ -150,34 +150,41 @@ function New-GpuVMFromTemplate {
     Save-GpuVMState $state
 
     Write-Step "VM '$Name' is ready, based on the template '$Template'."
-    $startError = if ($Start) { Start-NewGpuVM -Name $Name -State $state }
-    if ($startError -and $Disposable) {
-        # A throwaway copy that can't turn on is of no use to anyone: it goes, and the reason is the error (the MCP
-        # server and the app show it as is).
-        try { Remove-GpuVM -Name $Name -DeleteDisk -Confirm:$false | Out-Null } catch { Write-Warning "Couldn't delete '$Name': $($_.Exception.Message)" }
-        throw "The disposable copy of '$Template' couldn't turn on: $startError"
-    }
-    Add-StartError -Info (Get-GpuVM -Name $Name) -StartError $startError
+    $start = if ($Start) { Start-NewGpuVM -Name $Name -State $state }
+    Add-StartResult -Info (Get-GpuVM -Name $Name) -Start $start
 }
 
-# Starts a machine just made; returns why it couldn't (null when it runs). Disposable copies are marked as started.
+# Starts a machine just made: {started, startError, neededGB, freeGB} (the figures when memory was short). Disposable
+# copies are marked as started. A machine that can't turn on is kept (the caller decides: the MCP server deletes its
+# disposable copy, the app shows the reason); the warning stays for older callers.
 function Start-NewGpuVM {
     param([Parameter(Mandatory)][string]$Name, [System.Collections.IDictionary]$State)
     try {
         Assert-VMCanStart -Name $Name
         Start-VM -Name $Name -ErrorAction Stop
         if ($State) { Set-GpuVMDisposableStarted -State $State }
-        $null
+        @{ started = $true; startError = $null; neededGB = $null; freeGB = $null }
     }
     catch {
-        Write-Warning "The VM was created but couldn't turn on: $($_.Exception.Message)"
-        $_.Exception.Message
+        $message = $_.Exception.Message
+        Write-Warning "The VM was created but couldn't turn on: $message"
+        $needed = $null
+        $free = $null
+        if ($message -match 'needs ([\d.,]+) GB free and there are ([\d.,]+) GB') {
+            $needed = [double]($Matches[1] -replace ',', '.')
+            $free = [double]($Matches[2] -replace ',', '.')
+        }
+        @{ started = $false; startError = $message; neededGB = $needed; freeGB = $free }
     }
 }
 
-# The machine's info, with startError (why it couldn't turn on) when it was asked to and couldn't.
-function Add-StartError {
-    param($Info, [string]$StartError)
-    if ($StartError -and $Info) { $Info | Add-Member -NotePropertyName StartError -NotePropertyValue $StartError -Force }
+# The machine's info with how its start went (started, startError, neededGB, freeGB), when it was asked to start.
+function Add-StartResult {
+    param($Info, [System.Collections.IDictionary]$Start)
+    if ($Start -and $Info) {
+        foreach ($k in 'started', 'startError', 'neededGB', 'freeGB') {
+            $Info | Add-Member -NotePropertyName $k -NotePropertyValue $Start[$k] -Force
+        }
+    }
     $Info
 }

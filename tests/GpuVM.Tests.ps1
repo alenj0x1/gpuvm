@@ -1567,21 +1567,34 @@ InModuleScope GpuVM {
 
 InModuleScope GpuVM {
     Describe 'A new machine that can''t turn on' {
-        It 'says why (StartError) instead of only warning' {
-            Mock Assert-VMCanStart { throw 'The VM needs 8.3 GB free and there are 7.3 GB.' }
+        It 'says why, with the memory figures, in fields the MCP reads (not only a warning)' {
+            Mock Assert-VMCanStart { throw 'The VM needs 8.3 GB free and there are 7.3 GB. Close programs or lower its memory to 7 GB in Options.' }
             Mock Start-VM { }
             Mock Write-Warning { }
-            Start-NewGpuVM -Name vm1 | Should Be 'The VM needs 8.3 GB free and there are 7.3 GB.'
+            $s = Start-NewGpuVM -Name vm1
+            $s.started | Should Be $false
+            $s.neededGB | Should Be 8.3
+            $s.freeGB | Should Be 7.3
+            $s.startError | Should Match 'needs 8.3 GB'
             Assert-MockCalled Start-VM -Times 0 -Scope It
-            $info = Add-StartError -Info ([pscustomobject]@{ Name = 'vm1' }) -StartError 'no memory'
-            $info.StartError | Should Be 'no memory'
-            (Add-StartError -Info ([pscustomobject]@{ Name = 'vm1' }) -StartError $null).PSObject.Properties['StartError'] | Should Be $null
+            Assert-MockCalled Write-Warning -Times 1 -Scope It
+            $info = Add-StartResult -Info ([pscustomobject]@{ Name = 'vm1' }) -Start $s
+            ($info | ConvertTo-Json -Compress) | Should Match '"started":false,"startError":"The VM needs 8.3 GB'
+            ($info | ConvertTo-Json -Compress) | Should Match '"neededGB":8.3,"freeGB":7.3'
+            (Add-StartResult -Info ([pscustomobject]@{ Name = 'vm1' }) -Start $null).PSObject.Properties['started'] | Should Be $null
         }
-        It 'returns nothing when it runs, and marks a disposable copy as started' {
+        It 'any other reason has no figures' {
+            Mock Assert-VMCanStart { }
+            Mock Start-VM { throw 'GPU partition unavailable' }
+            Mock Write-Warning { }
+            $s = Start-NewGpuVM -Name vm1
+            "$($s.started) $($s.startError) $($s.neededGB)" | Should Be 'False GPU partition unavailable '
+        }
+        It 'started, and a disposable copy marked as started' {
             Mock Assert-VMCanStart { }
             Mock Start-VM { }
             Mock Set-GpuVMDisposableStarted { }
-            Start-NewGpuVM -Name vm1 -State @{ disposable = @{} } | Should Be $null
+            (Start-NewGpuVM -Name vm1 -State @{ disposable = @{} }).started | Should Be $true
             Assert-MockCalled Set-GpuVMDisposableStarted -Times 1 -Scope It
         }
     }
