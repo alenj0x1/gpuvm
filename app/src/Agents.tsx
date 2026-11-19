@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  IconCheck, IconCopy, IconDeviceDesktop, IconFile, IconFileDownload, IconFileText, IconFileZip, IconHandFinger, IconHandStop, IconHistory, IconLoader2,
+  IconCheck, IconCopy, IconDeviceDesktop, IconFile, IconFileDownload, IconFileText, IconFileUpload, IconFileZip, IconHandFinger, IconHandStop, IconHistory, IconLoader2,
   IconLock, IconPhoto, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconPlugConnectedX, IconRobot, IconShieldLock, IconTerminal2, IconTrash, IconVideo, IconWorld, IconX, type Icon,
 } from "@tabler/icons-react";
 import { agents, inTauri } from "./api";
@@ -100,9 +100,9 @@ export function AgentLive({ client, size = "full", actions = 3, onTakeControl }:
   const controls = (
     <div className="ag-controls">
       {client.state === "control"
-        ? <button type="button" className="btn compact" disabled={!!busy} onClick={() => act("resume", () => agents.resume(client.id))}>{spin("resume", IconRobot)}{t("Return to agent")}</button>
+        ? <button type="button" className="btn compact" disabled={!!busy} onClick={() => act("resume", () => agents.resume(client.id, client.machine ?? ""))}>{spin("resume", IconRobot)}{t("Return to agent")}</button>
         : paused
-          ? <button type="button" className="btn compact" disabled={!!busy} onClick={() => act("resume", () => agents.resume(client.id))}>{spin("resume", IconPlayerPlay)}{t("Resume")}</button>
+          ? <button type="button" className="btn compact" disabled={!!busy} onClick={() => act("resume", () => agents.resume(client.id, client.machine ?? ""))}>{spin("resume", IconPlayerPlay)}{t("Resume")}</button>
           : <button type="button" className="btn compact" disabled={!!busy || client.state === "idle"} onClick={() => act("pause", () => agents.pause(client.id))}>{spin("pause", IconPlayerPause)}{t("Pause|agent")}</button>}
       {client.state !== "control" && (
         <button type="button" className="btn ghost compact" disabled={!!busy || client.state === "idle"}
@@ -114,8 +114,8 @@ export function AgentLive({ client, size = "full", actions = 3, onTakeControl }:
   );
   if (size === "tiny") {
     // One line: who, what it did last, its state and the one control that fits (pause, resume or give it back).
-    const [label, I, run] = client.state === "control" ? [t("Return to agent"), IconRobot, () => agents.resume(client.id)] as const
-      : paused ? [t("Resume"), IconPlayerPlay, () => agents.resume(client.id)] as const
+    const [label, I, run] = client.state === "control" ? [t("Return to agent"), IconRobot, () => agents.resume(client.id, client.machine ?? "")] as const
+      : paused ? [t("Resume"), IconPlayerPlay, () => agents.resume(client.id, client.machine ?? "")] as const
       : [t("Pause|agent"), IconPlayerPause, () => agents.pause(client.id)] as const;
     return (
       <div className="ag-live tiny">
@@ -156,7 +156,7 @@ export function AgentLive({ client, size = "full", actions = 3, onTakeControl }:
 
 /* ---------- requests ---------- */
 
-const REQUEST_ICON: Record<AgentRequestKind, Icon> = { deliver: IconFileDownload, admin: IconShieldLock, network: IconWorld, revert: IconHistory, delete: IconTrash, other: IconRobot };
+const REQUEST_ICON: Record<AgentRequestKind, Icon> = { deliver: IconFileDownload, admin: IconShieldLock, network: IconWorld, revert: IconHistory, delete: IconTrash, send: IconFileUpload, other: IconRobot };
 
 /** Seconds left before a request is refused by itself. */
 const left = (r: AgentRequest, now: number) => Math.max(0, Math.round((new Date(r.expiresAt).getTime() - now) / 1000));
@@ -176,13 +176,21 @@ export function RequestRow({ r, showMachine = true, onView }: { r: AgentRequest;
     try { await agents.answer(r.id, kind !== "deny", kind === "task"); await refreshAgents(); } catch (e) { setError(humanError(e)); setBusy(null); }
   };
   const sec = left(r, now);
+  // A copy from this PC: who and where to, then the exact path whole, its size and files. Allowed one at a time.
+  const send = r.kind === "send" ? r.send ?? null : null;
+  const canAllow = r.kind !== "send" || !!send;
   return (
     <div className={`ag-request${r.kind === "revert" || r.kind === "delete" ? " risky" : ""}${r.human ? " human" : ""}`}
       onContextMenu={(e) => { if (r.human) return; e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY }); }}>
       <span className="ag-request-icon"><I size={17} /></span>
       <div className="ag-request-text">
-        <strong className="ellipsis">{translateModule(r.title)}{r.file && <span className="ag-request-size">{bytes(r.file.sizeBytes, locale())}</span>}</strong>
-        <span className="ellipsis">{[showMachine ? `${r.clientName} · ${r.machine}` : r.clientName, r.reason].filter(Boolean).join(" · ")}</span>
+        {r.kind === "send"
+          ? <strong className="ellipsis">{t("{name} wants to copy to {machine}", { name: r.clientName, machine: r.machine })}</strong>
+          : <strong className="ellipsis">{translateModule(r.title)}{r.file && <span className="ag-request-size">{bytes(r.file.sizeBytes, locale())}</span>}</strong>}
+        {send && <span className="ag-request-path" title={send.path}>{send.path}</span>}
+        <span className="ellipsis">{send
+          ? [send.files > 1 ? t("{n} files", { n: send.files }) : null, bytes(send.sizeBytes, locale()), r.reason].filter(Boolean).join(" · ")
+          : [showMachine ? `${r.clientName} · ${r.machine}` : r.clientName, r.reason].filter(Boolean).join(" · ")}</span>
         {error && <span className="error-text">{error}</span>}
       </div>
       {r.human
@@ -190,7 +198,7 @@ export function RequestRow({ r, showMachine = true, onView }: { r: AgentRequest;
         ? <div className="ag-request-actions">
             {onView && <button type="button" className="btn ghost compact" onClick={() => onView(r.machine)}><IconDeviceDesktop size={15} />{t("View")}</button>}
             <button type="button" className="btn compact" disabled={!!busy}
-              onClick={async () => { setBusy("allow"); setError(""); try { await agents.resume(r.client); await refreshAgents(); } catch (e) { setError(humanError(e)); setBusy(null); } }}>
+              onClick={async () => { setBusy("allow"); setError(""); try { await agents.resume(r.client, r.machine); await refreshAgents(); } catch (e) { setError(humanError(e)); setBusy(null); } }}>
               {busy ? <IconLoader2 size={15} className="spin" /> : <IconRobot size={15} />}{t("Return to agent")}
             </button>
           </div>
@@ -198,12 +206,13 @@ export function RequestRow({ r, showMachine = true, onView }: { r: AgentRequest;
             <span className="ag-request-left" title={t("Refused by itself when the time runs out")}>{sec < 60 ? t("{n} s", { n: sec }) : t("{n} min", { n: Math.ceil(sec / 60) })}</span>
             <div className="ag-request-actions">
               <button type="button" className="btn ghost compact" disabled={!!busy} onClick={() => answer("deny")}>{busy === "deny" ? <IconLoader2 size={15} className="spin" /> : <IconX size={15} />}{t("Refuse")}</button>
-              <button type="button" className="btn compact" disabled={!!busy} onClick={() => answer("allow")}>{busy === "allow" || busy === "task" ? <IconLoader2 size={15} className="spin" /> : <IconCheck size={15} />}{r.kind === "deliver" ? t("Accept") : t("Allow")}</button>
+              <button type="button" className="btn compact" disabled={!!busy || !canAllow} onClick={() => answer("allow")}>{busy === "allow" || busy === "task" ? <IconLoader2 size={15} className="spin" /> : <IconCheck size={15} />}{r.kind === "deliver" ? t("Accept") : t("Allow")}</button>
             </div>
           </>}
       {menu && <Menu at={menu} onClose={() => setMenu(null)} items={[
-        { icon: IconCheck, label: r.kind === "deliver" ? t("Accept") : t("Allow"), run: () => answer("allow") },
-        { icon: IconHistory, label: t("Allow for this task"), run: () => answer("task") },
+        ...(canAllow ? [{ icon: IconCheck, label: r.kind === "deliver" ? t("Accept") : t("Allow"), run: () => answer("allow") }] : []),
+        // A copy from the PC names one exact path: never allowed ahead for the rest of the task.
+        ...(r.kind !== "send" ? [{ icon: IconHistory, label: t("Allow for this task"), run: () => answer("task") }] : []),
         { icon: IconX, label: t("Refuse"), run: () => answer("deny") },
       ]} />}
     </div>

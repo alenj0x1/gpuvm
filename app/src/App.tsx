@@ -207,28 +207,41 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     if (selected !== PREFS && selected !== HOME && selected !== AGENTS && !libraryTab(selected) && vms && vms.length && !vms.some((v) => v.name === selected)) setSelected(HOME);
   }, [vms, selected]);
 
-  // `gpuvm.exe --view <name>` (an agent's open_viewer): that machine's page, and its picture opened like its Open
-  // button does. A machine not in the list yet (an agent just created it) waits for it, for up to 3 minutes; one
-  // busy with a job does nothing.
+  // `gpuvm.exe --view <name>` (an agent's open_viewer), released by agent.rs only when a live agent session holds that
+  // machine: its page and its picture, like its Open button, but only on a machine that is already running (this path
+  // never starts or resumes a machine) and not busy with a job. Not running or not listed yet (an agent just created
+  // it): it waits for up to 3 minutes. GpuVM doesn't come forward for it (agent.rs flashes the taskbar).
   const waitingView = useRef<{ name: string; until: number } | null>(null);
-  const openFromAgent = (name: string) => {
-    if (!vmsRef.current?.some((v) => v.name === name)) { waitingView.current = { name, until: Date.now() + 180000 }; return; }
+  const openForAgent = (name: string) => {
+    const vm = vmsRef.current?.find((v) => v.name.toLowerCase() === name.toLowerCase());
+    if (!vm || vm.state !== "Running") {
+      if (!waitingView.current || waitingView.current.name !== name) waitingView.current = { name, until: Date.now() + 180000 };
+      return;
+    }
     waitingView.current = null;
-    if (Object.values(jobsRef.current).some((j) => j.vm === name)) return;
-    setSelected(name);
-    startJobRef.current?.(name, "Connect-GpuVM", { Name: name });
+    if (Object.values(jobsRef.current).some((j) => j.vm === vm.name)) return;
+    setSelected(vm.name);
+    startJobRef.current?.(vm.name, "Connect-GpuVM", { Name: vm.name });
+  };
+  // A notification's View (the person's own click, agent.rs): that machine's picture, as its Open button.
+  const openFromNotification = (name: string) => {
+    const vm = vmsRef.current?.find((v) => v.name === name);
+    if (!vm) return;
+    setSelected(vm.name);
+    if (Object.values(jobsRef.current).some((j) => j.vm === vm.name)) return;
+    startJobRef.current?.(vm.name, "Connect-GpuVM", { Name: vm.name });
   };
   useEffect(() => {
     const w = waitingView.current;
     if (!w) return;
     if (Date.now() > w.until) { waitingView.current = null; return; }
-    if (vms?.some((v) => v.name === w.name)) openFromAgent(w.name);
+    openForAgent(w.name);
   }, [vms]); // eslint-disable-line react-hooks/exhaustive-deps
-  // GpuVM started by that command: it opens once the machines are known.
+  // GpuVM started by that command: it opens once the machines are known and agent.rs released it.
   const loaded = vms !== null;
   useEffect(() => {
     if (!inTauri || !loaded) return;
-    import("@tauri-apps/api/core").then(({ invoke }) => invoke<string | null>("pending_view")).then((name) => { if (name) openFromAgent(name); }).catch(() => {});
+    import("@tauri-apps/api/core").then(({ invoke }) => invoke<string | null>("pending_agent_view")).then((name) => { if (name) openForAgent(name); }).catch(() => {});
   }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // A Windows notification of an agent's request opens Agents (agent.rs); answers there are read again at once.
@@ -238,9 +251,13 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     import("@tauri-apps/api/event").then(({ listen }) => {
       offs.push(listen<string>("open-route", (e) => { if (e.payload === AGENTS) setSelected(AGENTS); }));
       offs.push(listen("agents-changed", () => { refreshAgents(); }));
-      // `gpuvm.exe --view <name>` (an agent's open_viewer): that machine's page, and its picture opened like its Open
-      // button does. A name that isn't one of the machines, or one busy with a job, does nothing.
-      offs.push(listen<string>("open-viewer", (e) => openFromAgent(e.payload)));
+      // An agent's `--view`, once agent.rs checked a live session holds that machine.
+      offs.push(listen<string>("agent-view", (e) => {
+        import("@tauri-apps/api/core").then(({ invoke }) => invoke("agent_view_taken")).catch(() => {});
+        openForAgent(e.payload);
+      }));
+      // A notification's View (the person clicked it).
+      offs.push(listen<string>("open-viewer", (e) => openFromNotification(e.payload)));
     });
     return () => { offs.forEach((p) => p.then((off) => off())); };
   }, []);
@@ -647,7 +664,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
         ) : selected === PREFS ? (
           <Preferences />
         ) : selected === AGENTS ? (
-          <AgentsView onOpenVm={setSelected} onViewMachine={openFromAgent} />
+          <AgentsView onOpenVm={setSelected} onViewMachine={openFromNotification} />
         ) : libraryTab(selected) ? (
           <Library tab={libraryTab(selected)!} onTab={(tab) => setSelected(`${LIBRARY}:${tab}`)} host={host} startJob={startJob}
             busy={(name) => !!busyFor(name)} progress={(key) => busyFor(key)?.message ?? null} notify={push} onOpenVm={setSelected}

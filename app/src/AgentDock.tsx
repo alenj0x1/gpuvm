@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { IconCheck, IconFileDownload, IconHistory, IconLoader2, IconLock, IconRobot, IconShieldLock, IconTrash, IconWorld, IconX, type Icon } from "@tabler/icons-react";
+import { IconCheck, IconFileDownload, IconFileUpload, IconHistory, IconLoader2, IconLock, IconRobot, IconShieldLock, IconTrash, IconWorld, IconX, type Icon } from "@tabler/icons-react";
 import { inTauri } from "./api";
-import { bytes } from "./agentStore";
+import { bytes, sendOf } from "./agentStore";
 import { humanError } from "./ui";
 import { useReportDockSize } from "./dockSize";
 import { locale, t, translateModule } from "./i18n";
@@ -12,7 +12,7 @@ import type { AgentRequest, AgentRequestKind } from "./types";
 // - the agent dock: what the agent asks, dropped from the top like the administrator dock (dock B), answered only here;
 // The viewer (Low integrity, it draws what the guest sends) can't click either window (UIPI).
 
-const ICON: Record<AgentRequestKind, Icon> = { deliver: IconFileDownload, admin: IconShieldLock, network: IconWorld, revert: IconHistory, delete: IconTrash, other: IconRobot };
+const ICON: Record<AgentRequestKind, Icon> = { deliver: IconFileDownload, admin: IconShieldLock, network: IconWorld, revert: IconHistory, delete: IconTrash, send: IconFileUpload, other: IconRobot };
 /** Like the administrator dock: a click meant for the picture never answers it. */
 const ARM_MS = 450;
 
@@ -29,6 +29,8 @@ function sample(kind: string | null): AgentRequest | null {
     case "deliver": return { ...base, kind: "deliver", title: "Deliver report.md", reason: "Results of the installer test", file: { name: "report.md", sizeBytes: 18432 } };
     case "revert": return { ...base, kind: "revert", title: "Go back to the restore point Before installing", reason: "The installer left the machine broken" };
     case "human": return { ...base, kind: "admin", title: "Windows asks for a password", reason: null, human: true };
+    case "send": return { ...base, kind: "send", title: "", reason: "The installer to test", send: { path: "C:\\Users\\you\\Downloads\\GpuVM_0.9.0_x64-setup.exe", sizeBytes: 48_234_496, files: 1 } };
+    case "send-folder": return { ...base, kind: "send", title: "", reason: null, send: { path: "C:\\Users\\you\\Desktop\\gpu-vm\\labs\\054-agent-ui\\out\\a-very-long-folder-name-for-the-test", sizeBytes: 1_288_490_188, files: 342 } };
     default: return { ...base, kind: "network", title: "Connect to github.com", reason: "Download the latest release of GpuVM" };
   }
 }
@@ -81,11 +83,17 @@ export function AgentDock() {
     try {
       if (!inTauri) { await new Promise((r) => setTimeout(r, 400)); setShown(false); return; }
       // Only which button: the request is the one GpuVM put in this dock (agent.rs).
-      await invoke("agent_dock_answer", { allow: kind !== "deny", forTask: kind === "task" });
+      await invoke("agent_dock_answer", { id: request.id, allow: kind !== "deny", forTask: kind === "task" });
     } catch (e) { setError(humanError(e)); setBusy(null); }
   };
-  const title = translateModule(request.title);
-  const detail = [request.clientName, request.reason, request.file && bytes(request.file.sizeBytes, locale())].filter(Boolean).join(" · ");
+  // A copy from this PC into the machine: who, where to, and exactly what (path, size, files). Without a path there is
+  // nothing to allow (agent.rs refuses it too).
+  const send = request.kind === "send" ? (request.send ?? sendOf(request as unknown as Record<string, unknown>)) : null;
+  const title = request.kind === "send" ? t("{name} wants to copy to {machine}", { name: request.clientName, machine: request.machine }) : translateModule(request.title);
+  const detail = send
+    ? [send.files > 1 ? t("{n} files", { n: send.files }) : null, bytes(send.sizeBytes, locale()), request.reason].filter(Boolean).join(" · ")
+    : [request.clientName, request.reason, request.file && bytes(request.file.sizeBytes, locale())].filter(Boolean).join(" · ");
+  const canAllow = request.kind !== "send" || !!send;
 
   if (request.human) {
     // Only the person can do it, in the machine itself: no veil, the picture stays usable; once done, the agent goes on.
@@ -93,7 +101,7 @@ export function AgentDock() {
       setBusy("allow"); setError("");
       try {
         if (!inTauri) { await new Promise((r) => setTimeout(r, 400)); setShown(false); return; }
-        await invoke("agent_dock_resume");
+        await invoke("agent_dock_resume", { id: request.id });
       } catch (e) { setError(humanError(e)); setBusy(null); }
     };
     return (
@@ -118,11 +126,12 @@ export function AgentDock() {
   return (
     <div className="dock-stage" onContextMenu={(e) => e.preventDefault()}>
       <div className={shown ? "dock-veil on" : "dock-veil"} />
-      <div ref={dockRef} className={shown ? "dock on ag-dock" : "dock ag-dock"} role="alertdialog" aria-labelledby="ag-dock-title" aria-describedby="ag-dock-detail"
+      <div ref={dockRef} className={`dock ag-dock${send ? " ag-dock-send" : ""}${shown ? " on" : ""}`} role="alertdialog" aria-labelledby="ag-dock-title" aria-describedby="ag-dock-detail"
         onContextMenu={(e) => { e.preventDefault(); if (ready) setMenu({ x: e.clientX, y: e.clientY }); }}>
         <span className={`dock-icon${risky ? " ag-dock-risky" : request.kind === "network" ? " ag-dock-warn" : ""}`}><I size={18} /></span>
         <div className="dock-text">
-          <strong id="ag-dock-title">{title}</strong>
+          <strong id="ag-dock-title" title={title}>{title}</strong>
+          {send && <span className="ag-dock-path" title={send.path}>{send.path}</span>}
           <span id="ag-dock-detail">{detail}</span>
           {error && <span className="dock-error">{error}</span>}
         </div>
@@ -131,7 +140,7 @@ export function AgentDock() {
           <button type="button" className="dock-btn dock-deny" disabled={!ready && busy !== "deny"} aria-busy={busy === "deny"} onClick={() => answer("deny")}>
             {busy === "deny" ? <IconLoader2 size={15} className="spin" /> : <IconX size={15} />}{t("Refuse")}
           </button>
-          <button type="button" className="dock-btn dock-allow" disabled={!ready && busy !== "allow" && busy !== "task"} aria-busy={busy === "allow" || busy === "task"} onClick={() => answer("allow")}>
+          <button type="button" className="dock-btn dock-allow" disabled={!canAllow || (!ready && busy !== "allow" && busy !== "task")} aria-busy={busy === "allow" || busy === "task"} onClick={() => answer("allow")}>
             {busy === "allow" || busy === "task" ? <IconLoader2 size={15} className="spin" /> : <IconCheck size={15} />}{request.kind === "deliver" ? t("Accept") : t("Allow")}
           </button>
         </div>
@@ -139,8 +148,9 @@ export function AgentDock() {
       {menu && createPortal(
         <div className="menu floating ag-dock-menu" style={{ left: Math.min(menu.x, window.innerWidth - 208), top: menu.y }} role="menu"
           onPointerDown={(e) => e.stopPropagation()}>
-          <button type="button" role="menuitem" onClick={() => answer("allow")}><IconCheck size={15} />{request.kind === "deliver" ? t("Accept") : t("Allow")}</button>
-          <button type="button" role="menuitem" onClick={() => answer("task")}><IconHistory size={15} />{t("Allow for this task")}</button>
+          {canAllow && <button type="button" role="menuitem" onClick={() => answer("allow")}><IconCheck size={15} />{request.kind === "deliver" ? t("Accept") : t("Allow")}</button>}
+          {/* A copy from the PC names one exact path: never allowed ahead for the rest of the task. */}
+          {request.kind !== "send" && <button type="button" role="menuitem" onClick={() => answer("task")}><IconHistory size={15} />{t("Allow for this task")}</button>}
           <button type="button" role="menuitem" onClick={() => answer("deny")}><IconX size={15} />{t("Refuse")}</button>
         </div>, document.body)}
       {menu && <div className="ag-dock-menu-catch" onPointerDown={() => setMenu(null)} />}

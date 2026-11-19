@@ -268,9 +268,11 @@ pub fn status_state() -> Value {
 /// A notice's button: "Return to agent" (control) or "Resume" (paused). Only the ones this app put there.
 #[tauri::command]
 pub async fn status_action(app: AppHandle, id: String) -> Result<(), String> {
-    let item = with(|s| s.items.values().flatten().find(|i| i["id"] == id.as_str()).cloned()).ok_or("That notice already went.")?;
+    // The machine is the one the notice is on: only that machine goes back to its agent.
+    let (vm, item) = with(|s| s.items.iter().find_map(|(vm, list)| list.iter().find(|i| i["id"] == id.as_str()).map(|i| (vm.clone(), i.clone()))))
+        .ok_or("That notice already went.")?;
     match item["kind"].as_str().unwrap_or("") {
-        "control" | "paused" => crate::agent::resume(&app, item["client"].as_str().unwrap_or("")).await,
+        "control" | "paused" => crate::agent::resume(&app, item["client"].as_str().unwrap_or(""), &vm).await,
         _ => Err("This notice has no action.".into()),
     }
 }

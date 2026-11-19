@@ -123,9 +123,31 @@ pub(crate) fn into_data(result: Value) -> Result<Value, String> {
     }
 }
 
+/// What the viewer's side panel may run through `ps` (it sits over the picture of a machine an agent may drive): what it
+/// shows (the machine, the Explorer selection to send, the agent's state and screenshots) and the agent's three
+/// controls. Nothing that creates, deletes, changes a machine or answers a request (security review, 2026-11-19).
+const PANEL_PS: &[&str] = &[
+    "Get-GpuVMOverview", "Get-GpuVMExplorerSelection",
+    "Get-GpuVMAgentClient", "Get-GpuVMAgentRequest", "Get-GpuVMAgentOffer", "Get-GpuVMAgentSettings", "Get-GpuVMAgentBroker",
+    "Get-GpuVMAgentCapture", "Suspend-GpuVMAgent", "Resume-GpuVMAgent", "Stop-GpuVMAgentClient",
+];
+
+/// Which window may run which module function: the main window everything (it is the app), the side panel its list,
+/// any other window nothing (their capabilities don't grant `ps`; this holds even if one did by mistake).
+fn ps_allowed(window: &str, cmd: &str) -> bool {
+    match window {
+        "main" => true,
+        overlay::LABEL => PANEL_PS.contains(&cmd),
+        _ => false,
+    }
+}
+
 /// Runs a module function and returns its result (list of objects).
 #[tauri::command]
-async fn ps(state: State<'_, AppState>, cmd: String, args: Option<Value>) -> Result<Value, String> {
+async fn ps(webview: tauri::WebviewWindow, state: State<'_, AppState>, cmd: String, args: Option<Value>) -> Result<Value, String> {
+    if !ps_allowed(webview.label(), &cmd) {
+        return Err("This window can't do that.".into());
+    }
     let args = args.unwrap_or(json!({}));
     let result = query(&state, json!({ "id": next_id(&state), "cmd": cmd, "args": args })).await?;
     let Some(code) = result["consent"].as_str().map(str::to_string) else { return into_data(result) };
@@ -286,13 +308,6 @@ fn view_arg(args: &[String]) -> Option<String> {
     (!name.is_empty() && name.len() <= 40 && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')).then(|| name.clone())
 }
 
-/// A `--view` GpuVM was started with (no instance was running): the page takes it once it can open machines.
-static PENDING_VIEW: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
-
-#[tauri::command]
-fn pending_view() -> Option<String> {
-    PENDING_VIEW.lock().unwrap_or_else(|e| e.into_inner()).take()
-}
 
 /// The app's language for the few texts drawn by Rust (the tray menu): false Spanish, true English.
 pub(crate) static ENGLISH: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -424,13 +439,12 @@ pub fn run() {
     tauri::Builder::default()
         // A second launch (e.g. from the Start menu while GpuVM is in the tray) shows the open window instead.
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-            show_main(app);
-            // `gpuvm.exe --view <name>` (the MCP server's open_viewer) while GpuVM runs: open that machine's picture.
-            if let Some(name) = view_arg(&args) {
-                use tauri::Manager;
-                if let Some(w) = app.get_webview_window("main") {
-                    let _ = w.emit("open-viewer", name);
-                }
+            // `gpuvm.exe --view <name>` (the MCP server's open_viewer) while GpuVM runs: that machine's picture, only
+            // if a live agent session holds it, and without taking the focus (agent.rs request_view). Any other second
+            // launch shows the window.
+            match view_arg(&args) {
+                Some(name) => agent::request_view(app, &name),
+                None => show_main(app),
             }
         }))
         .plugin(tauri_plugin_dialog::init())
@@ -459,11 +473,13 @@ pub fn run() {
             prompt::start(app.handle().clone());
             agent::start(app.handle().clone());
             status::start(app.handle());
-            *PENDING_VIEW.lock().unwrap_or_else(|e| e.into_inner()) = view_arg(&std::env::args().collect::<Vec<_>>());
+            if let Some(name) = view_arg(&std::env::args().collect::<Vec<_>>()) {
+                agent::request_view(app.handle(), &name);
+            }
             clipboard::start(app.handle());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![ps, job, prompt::admin_prompts, prompt::card_answer, dock::dock_prompt, dock::dock_answer, agent::agent_dock_request, agent::agent_dock_answer, agent::agent_dock_resume, status::status_resize, status::status_state, status::status_action, status::set_status_prefs, agent::set_agent_prefs, agent::mcp_exe_path, agent::agent_recordings, pending_view, viewer::viewer_send, viewer::viewer_is_open, viewer::viewer_home, viewer::viewer_show, viewer::viewer_list, viewer::viewer_gone, viewer::viewer_reveal, viewer::viewer_covered, overlay::viewer_panel_resize, overlay::viewer_panel_close, overlay::viewer_panel_vm, dropzone::transfer_start, dropzone::transfer_cancel, dropzone::transfer_list, dropzone::viewer_drop_hide, dropzone::viewer_drop_state, clipboard::clipboard_items, clipboard::clipboard_send, clipboard::clipboard_auto, clipboard::clipboard_clear, capture::set_capture_prefs, capture::capture_folders, capture::capture_open, capture::capture_reveal, capture::capture_open_folder, capture::capture_state, capture::capture_get_hevc, open_console, repair_service, relaunch_as_admin, service_status, start_service, stop_service, set_service_mode, set_service_startup, set_close_to_tray, set_stop_vms_on_quit, set_language, notices::set_notices_after_quit])
+        .invoke_handler(tauri::generate_handler![ps, job, prompt::admin_prompts, prompt::card_answer, dock::dock_prompt, dock::dock_answer, agent::agent_dock_request, agent::agent_dock_answer, agent::agent_dock_resume, status::status_resize, status::status_state, status::status_action, status::set_status_prefs, agent::set_agent_prefs, agent::mcp_exe_path, agent::agent_recordings, agent::pending_agent_view, agent::agent_view_taken, viewer::viewer_send, viewer::viewer_is_open, viewer::viewer_home, viewer::viewer_show, viewer::viewer_list, viewer::viewer_gone, viewer::viewer_reveal, viewer::viewer_covered, overlay::viewer_panel_resize, overlay::viewer_panel_close, overlay::viewer_panel_vm, dropzone::transfer_start, dropzone::transfer_cancel, dropzone::transfer_list, dropzone::viewer_drop_hide, dropzone::viewer_drop_state, clipboard::clipboard_items, clipboard::clipboard_send, clipboard::clipboard_auto, clipboard::clipboard_clear, capture::set_capture_prefs, capture::capture_folders, capture::capture_open, capture::capture_reveal, capture::capture_open_folder, capture::capture_state, capture::capture_get_hevc, open_console, repair_service, relaunch_as_admin, service_status, start_service, stop_service, set_service_mode, set_service_startup, set_close_to_tray, set_stop_vms_on_quit, set_language, notices::set_notices_after_quit])
         .build(tauri::generate_context!())
         .expect("failed to start GpuVM")
         .run(|app, event| {
@@ -485,4 +501,31 @@ pub fn run() {
                 }
             }
         });
+}
+
+
+#[cfg(test)]
+mod ps_tests {
+    use super::ps_allowed;
+
+    #[test]
+    fn each_window_runs_only_its_commands() {
+        assert!(ps_allowed("main", "Remove-GpuVM"));
+        assert!(ps_allowed("main", "Resolve-GpuVMAgentRequest"));
+        // The side panel: what it shows and the agent's three controls.
+        assert!(ps_allowed("viewer-panel", "Get-GpuVMOverview"));
+        assert!(ps_allowed("viewer-panel", "Suspend-GpuVMAgent"));
+        assert!(ps_allowed("viewer-panel", "Resume-GpuVMAgent"));
+        assert!(!ps_allowed("viewer-panel", "Remove-GpuVM"));
+        assert!(!ps_allowed("viewer-panel", "Start-GpuVM"));
+        assert!(!ps_allowed("viewer-panel", "Connect-GpuVM"));
+        assert!(!ps_allowed("viewer-panel", "Resolve-GpuVMAgentRequest"));
+        assert!(!ps_allowed("viewer-panel", "Resolve-GpuVMAgentOffer"));
+        assert!(!ps_allowed("viewer-panel", "Invoke-GpuVMAgent"));
+        assert!(!ps_allowed("viewer-panel", "get-gpuvmoverview "));
+        // Any other window: nothing.
+        for w in ["agent-dock", "status-notch", "prompt-dock", "drop-zone", ""] {
+            assert!(!ps_allowed(w, "Get-GpuVMOverview"), "{w}");
+        }
+    }
 }

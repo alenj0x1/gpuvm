@@ -1559,6 +1559,34 @@ InModuleScope GpuVM {
 }
 
 InModuleScope GpuVM {
+    Describe 'Home says "not paired" only where the person pairs' {
+        BeforeEach {
+            Mock Assert-Admin { }
+            Mock Get-CimInstance { [pscustomobject]@{ FreePhysicalMemory = 8MB; TotalVisibleMemorySize = 16MB } }
+            Mock Get-GpuVMDefaultRoot { 'D:\GpuVM' }
+            Mock Get-DriveFreeGB { 500 }
+            Mock Get-FittingMemoryGB { 4 }
+            Mock Get-HostGpu { $null }
+            Mock Get-Process { @() }
+            Mock Get-VM { @([pscustomobject]@{ Name = 'own'; State = 'Off'; MemoryStartup = 4GB }, [pscustomobject]@{ Name = 'agent1'; State = 'Off'; MemoryStartup = 4GB },
+                    [pscustomobject]@{ Name = 'copy1'; State = 'Off'; MemoryStartup = 4GB }) }
+            Mock Test-GpuVMDisposable { $State['disposable'] -ne $null }
+            Mock Get-GpuVMState {
+                $s = @{ guest = @{ user = 'u' }; streaming = @{ pairedClient = $null }; config = @{ gpu = @{ match = 'x' } } }
+                if ($Name -eq 'agent1') { $s['use'] = 'agent' }
+                if ($Name -eq 'copy1') { $s['disposable'] = @{ createdAt = (Get-Date).ToString('o') } }
+                $s
+            }
+        }
+        It 'warns on the person''s machine, never on agent machines or disposable copies (GpuVM pairs those itself)' {
+            $pairing = @((Get-GpuVMHome).attention | Where-Object { $_['kind'] -eq 'pairing' })
+            $pairing.Count | Should Be 1
+            $pairing[0]['vm'] | Should Be 'own'
+        }
+    }
+}
+
+InModuleScope GpuVM {
     Describe 'Disposable machines just created' {
         It 'keeps a machine created a moment ago, whatever form its date has after reading the JSON' {
             $now = Get-Date

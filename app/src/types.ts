@@ -275,7 +275,8 @@ export interface AgentClient {
   clientApprovals: boolean;
 }
 
-export type AgentRequestKind = "deliver" | "admin" | "network" | "revert" | "delete" | "other";
+/** "send": the agent wants to copy a file or folder from this PC into its machine (one exact path each time). */
+export type AgentRequestKind = "deliver" | "admin" | "network" | "revert" | "delete" | "send" | "other";
 
 /** Something the agent asked that needs the person's approval (dock + Windows notification). Deliveries don't come
  *  here: they are the pending AgentOffers (the dock shows them as "deliver" requests). */
@@ -294,6 +295,8 @@ export interface AgentRequest {
   expiresAt: string;
   /** A delivery: the file waiting in the machine's Outbox. */
   file?: { name: string; sizeBytes: number } | null;
+  /** A copy into the machine: the exact path on this PC, its size and how many files (a folder counts its files). */
+  send?: { path: string; sizeBytes: number; files: number } | null;
   /** "human": only the person can do it in the viewer (no buttons). */
   human?: boolean;
 }

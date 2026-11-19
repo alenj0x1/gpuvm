@@ -32,6 +32,15 @@ const methodText = (m: string) => ({
   "files.list": "Listed a folder", "outbox.offer": "Offered a file",
 })[m] ?? m;
 
+/** A copy from this PC into the machine: the broker's fields at the top level or under `send`. Without a path it
+ *  can't be shown for what it is, so it isn't offered as one (the page shows nothing to allow). */
+export function sendOf(r: Record<string, unknown>): AgentRequest["send"] {
+  const s = (r.send && typeof r.send === "object" ? r.send : r) as Record<string, unknown>;
+  const path = str(s.path ?? s.hostPath);
+  if (!path) return null;
+  return { path, sizeBytes: num(s.sizeBytes ?? s.size), files: Math.max(1, num(s.fileCount ?? s.files ?? 1)) };
+}
+
 /** One shape for every page, whatever sent it (the broker's poll in agent.rs, a direct read, the browser's mock). */
 export function fromBroker(raw: BrokerState): Omit<AgentSnapshot, "loaded" | "error"> {
   const approvals = raw.settings?.clients ?? {};
@@ -52,8 +61,9 @@ export function fromBroker(raw: BrokerState): Omit<AgentSnapshot, "loaded" | "er
   });
   const requests: AgentRequest[] = (raw.requests ?? []).filter((r) => (r.state ?? "pending") === "pending").map((r) => ({
     id: String(r.id), client: String(r.connection ?? r.client ?? ""), clientName: str(r.clientName) ?? "Agent", machine: String(r.machine ?? ""),
-    kind: (["admin", "network", "revert", "delete", "deliver", "other"].includes(String(r.kind)) ? r.kind : "other") as AgentRequest["kind"],
+    kind: (["admin", "network", "revert", "delete", "deliver", "send", "other"].includes(String(r.kind)) ? r.kind : "other") as AgentRequest["kind"],
     title: String(r.title ?? ""), reason: str(r.reason), createdAt: iso(r.createdAt), expiresAt: iso(r.expiresAt),
+    send: r.kind === "send" ? sendOf(r) : null,
   }));
   // What only the person can do (a password, UAC, the lock screen) comes as the agent's state, not as a request.
   for (const c of clients.filter((x) => x.state === "human" && x.machine)) {

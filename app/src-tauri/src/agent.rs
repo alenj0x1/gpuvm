@@ -52,6 +52,55 @@ static NOTIFIED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 /// Answered here: hidden at once, before the next poll stops listing them.
 static ANSWERED: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
+/// `gpuvm.exe --view <name>` from an agent (the MCP server's open_viewer): waits here until that machine is held by
+/// a live agent session, for up to VIEW_WAIT (an agent that just made it isn't listed yet). Never anything else: the
+/// person's own machines don't open (or power on) because some process ran `--view` (security review, 2026-11-19).
+static AGENT_VIEW: Mutex<Option<(String, Instant)>> = Mutex::new(None);
+/// Released: the page opens it when it is running (pending_agent_view, for a page that isn't loaded yet).
+static AGENT_VIEW_READY: Mutex<Option<String>> = Mutex::new(None);
+const VIEW_WAIT: Duration = Duration::from_secs(180);
+
+/// A `--view` arrived: checked against the sessions now and on each poll.
+pub fn request_view(app: &AppHandle, name: &str) {
+    *lock(&AGENT_VIEW) = Some((name.to_string(), Instant::now()));
+    let clients = lock(&CLIENTS).clone();
+    release_view(app, &clients);
+}
+
+/// Whether a live agent session holds that machine (any state but stopped).
+fn held_by_agent(clients: &[Value], name: &str) -> bool {
+    clients.iter().any(|c| c["machine"].as_str().is_some_and(|m| m.eq_ignore_ascii_case(name)) && c["state"].as_str().is_some_and(|s| s != "stopped"))
+}
+
+fn release_view(app: &AppHandle, clients: &[Value]) {
+    let name = {
+        let mut pending = lock(&AGENT_VIEW);
+        match pending.as_ref() {
+            Some((_, at)) if at.elapsed() > VIEW_WAIT => { *pending = None; return; }
+            Some((name, _)) if held_by_agent(clients, name) => { let n = name.clone(); *pending = None; n }
+            _ => return,
+        }
+    };
+    *lock(&AGENT_VIEW_READY) = Some(name.clone());
+    if let Some(w) = app.get_webview_window("main") {
+        // No focus taken: the taskbar button flashes, the person looks when they want.
+        let _ = w.request_user_attention(Some(tauri::UserAttentionType::Informational));
+        let _ = w.emit("agent-view", name);
+    }
+}
+
+/// The page, once it can open machines: an agent's `--view` released before it loaded.
+#[tauri::command]
+pub fn pending_agent_view() -> Option<String> {
+    lock(&AGENT_VIEW_READY).take()
+}
+
+/// The page took the released name (it opens it or decides not to).
+#[tauri::command]
+pub fn agent_view_taken() {
+    *lock(&AGENT_VIEW_READY) = None;
+}
+
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
@@ -124,6 +173,7 @@ fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Ve
     // app's shapes).
     let _ = app.emit("agents-state", json!({ "clients": clients, "requests": requests, "offers": offers, "settings": settings, "broker": broker, "recordings": recordings() }));
     *lock(&CLIENTS) = clients.clone();
+    release_view(app, &clients);
     let answered = lock(&ANSWERED).clone();
     // What only the person can do (a password, UAC) is the agent's state, not a request: shown without buttons.
     let human = clients.iter().filter(|c| c["state"] == "human" && c["machine"].is_string()).map(|c| json!({
@@ -320,20 +370,51 @@ fn hide_dock(app: &AppHandle) {
     });
 }
 
-/// Allow / Refuse (and, from its right click, Allow for this task) in the dock. Only which button: the request is
-/// the one this app put there.
+/// The dock's answer is for the request its page shows (`id`), which must still be the one docked: a newer request
+/// that replaced it between the page's draw and the click is never answered by that click (security review).
+fn docked_request(id: &str) -> Result<(Value, String, Instant), String> {
+    let d = lock(&DOCKED);
+    let d = d.as_ref().ok_or("The request already closed.")?;
+    if id.is_empty() || d.request["id"].as_str() != Some(id) {
+        return Err("That request changed. Look again before answering.".into());
+    }
+    Ok((d.request.clone(), d.vm.clone(), d.shown))
+}
+
+/// Allow for this task covers later requests of the same kind; a copy from the PC names one exact path, so it is
+/// answered one at a time.
+fn task_allowed(request: &Value) -> bool {
+    request["kind"].as_str() != Some("send")
+}
+
+/// A copy from the PC is allowed only when its exact path was there to show (the page shows it, the person reads it).
+fn send_shown(request: &Value) -> bool {
+    if request["kind"].as_str() != Some("send") {
+        return true;
+    }
+    let path = request["path"].as_str().or_else(|| request["send"]["path"].as_str()).or_else(|| request["hostPath"].as_str());
+    path.is_some_and(|p| !p.trim().is_empty())
+}
+
+/// Allow / Refuse (and, from its right click, Allow for this task) in the dock. Only which button, for the request
+/// whose id the page shows: the request is the one this app put there.
 #[tauri::command]
-pub async fn agent_dock_answer(app: AppHandle, allow: bool, for_task: bool) -> Result<(), String> {
+pub async fn agent_dock_answer(app: AppHandle, id: String, allow: bool, for_task: bool) -> Result<(), String> {
     let request = {
-        let d = lock(&DOCKED);
-        let d = d.as_ref().ok_or("The request already closed.")?;
-        if d.request["human"].as_bool() == Some(true) {
+        let (request, _, shown) = docked_request(&id)?;
+        if request["human"].as_bool() == Some(true) {
             return Err("Only you can do this, in the machine.".into());
         }
-        if d.shown.elapsed() < ARM {
+        if shown.elapsed() < ARM {
             return Err("The request just appeared.".into());
         }
-        d.request.clone()
+        if for_task && !task_allowed(&request) {
+            return Err("This one is answered on its own.".into());
+        }
+        if allow && !send_shown(&request) {
+            return Err("It doesn't say what it would copy.".into());
+        }
+        request
     };
     answer(&app, &request, allow, for_task).await?;
     lock(&ANSWERED).push(request["id"].as_str().unwrap_or("").to_string());
@@ -358,16 +439,15 @@ async fn answer(app: &AppHandle, request: &Value, allow: bool, for_task: bool) -
 /// Return to agent, from the dock of what only the person could do (request_human): they did it in the machine, the
 /// agent goes on.
 #[tauri::command]
-pub async fn agent_dock_resume(app: AppHandle) -> Result<(), String> {
-    let client = {
-        let d = lock(&DOCKED);
-        let d = d.as_ref().ok_or("The request already closed.")?;
-        if d.request["human"].as_bool() != Some(true) {
+pub async fn agent_dock_resume(app: AppHandle, id: String) -> Result<(), String> {
+    let (client, vm) = {
+        let (request, vm, _) = docked_request(&id)?;
+        if request["human"].as_bool() != Some(true) {
             return Err("Answer it with its buttons.".into());
         }
-        d.request["client"].as_str().unwrap_or("").to_string()
+        (request["client"].as_str().unwrap_or("").to_string(), vm)
     };
-    resume(&app, &client).await?;
+    resume(&app, &client, &vm).await?;
     hide_dock(&app);
     Ok(())
 }
@@ -407,19 +487,22 @@ pub fn docked_vm() -> Option<String> {
     lock(&DOCKED).as_ref().map(|d| d.vm.clone())
 }
 
-/// Return to agent / Resume, from the status notch: the broker gives it the machine back, with a fresh screenshot and a
-/// note that the person had control.
-pub async fn resume(app: &AppHandle, client: &str) -> Result<(), String> {
-    if client.is_empty() {
+/// Return to agent / Resume, from the status notch or the dock: the broker gives that one machine back (Name and
+/// Connection: a session holding several machines gets back only this one, never the one the person still has), with
+/// a fresh screenshot and a note that the person had control.
+pub async fn resume(app: &AppHandle, client: &str, vm: &str) -> Result<(), String> {
+    if client.is_empty() || vm.is_empty() {
         return Err("The agent isn't valid.".into());
     }
-    call(app, "Resume-GpuVMAgent", json!({ "Connection": client })).await?;
-    lock(&STATUS).as_mut().map(|s| s.retain(|_, (_, id)| id != client));
-    if let Some(vm) = lock(&CLIENTS).iter().find(|c| c["id"].as_str() == Some(client)).and_then(|c| c["machine"].as_str().map(str::to_string)) {
-        crate::status::set(app, &vm, "agent", None);
-    }
+    call(app, "Resume-GpuVMAgent", resume_args(client, vm)).await?;
+    lock(&STATUS).as_mut().map(|s| s.remove(vm));
+    crate::status::set(app, vm, "agent", None);
     let _ = app.emit("agents-changed", json!({}));
     Ok(())
+}
+
+fn resume_args(client: &str, vm: &str) -> Value {
+    json!({ "Name": vm, "Connection": client })
 }
 
 /// The viewer saw the person's input over the picture: the agent working there pauses (take control).
@@ -659,9 +742,13 @@ fn notify(app: &AppHandle, request: &Value) {
     let what = request["title"].as_str().unwrap_or("");
     let vm = request["machine"].as_str().unwrap_or("").to_string();
     let human = request["human"].as_bool() == Some(true);
+    let send_path = request["path"].as_str().or_else(|| request["send"]["path"].as_str());
     let (title, body) = if human {
         // The agent's own words: what it needs the person to do.
         (tr(&format!("{who} needs you"), &format!("{who} te necesita")), format!("{} · {vm}", spanish_or(what)))
+    } else if request["kind"].as_str() == Some("send") {
+        // What it would copy from this PC, by its exact path (answered only in GpuVM).
+        (tr(&format!("{who} wants to copy to {vm}"), &format!("{who} quiere copiar a {vm}")), send_path.unwrap_or("").to_string())
     } else if english() {
         (format!("{who} asks: {what}"), format!("{vm} · Waiting for your answer"))
     } else {
@@ -756,5 +843,64 @@ mod toast {
 
     thread_local! {
         static KEEP: std::cell::RefCell<Vec<ToastNotification>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn client(machine: &str, state: &str) -> Value {
+        json!({ "id": "c1", "name": "lab", "machine": machine, "state": state })
+    }
+
+    #[test]
+    fn view_opens_only_machines_a_live_session_holds() {
+        let clients = vec![client("lab054-1", "idle"), client("win-gpu-x", "stopped")];
+        assert!(held_by_agent(&clients, "lab054-1"));
+        assert!(held_by_agent(&clients, "LAB054-1"));
+        // A stopped session, another name, no session at all: never.
+        assert!(!held_by_agent(&clients, "win-gpu-x"));
+        assert!(!held_by_agent(&clients, "win-gpu"));
+        assert!(!held_by_agent(&[], "lab054-1"));
+        assert!(!held_by_agent(&[json!({ "id": "c2", "machine": null, "state": "working" })], "lab054-1"));
+    }
+
+    #[test]
+    fn take_control_watches_working_and_idle_only() {
+        assert!(holds(&client("m", "working")));
+        assert!(holds(&client("m", "idle")));
+        for s in ["control", "paused", "human", "waiting", "stopped"] {
+            assert!(!holds(&client("m", s)), "{s}");
+        }
+        assert!(!holds(&json!({ "machine": null, "state": "working" })));
+    }
+
+    #[test]
+    fn dock_answers_only_the_request_it_shows() {
+        *lock(&DOCKED) = Some(Docked { vm: "m".into(), request: json!({ "id": "r2", "kind": "network" }), shown: Instant::now() });
+        assert!(docked_request("r2").is_ok());
+        assert!(docked_request("r1").is_err()); // the page drew r1, r2 replaced it
+        assert!(docked_request("").is_err());
+        *lock(&DOCKED) = None;
+        assert!(docked_request("r2").is_err());
+    }
+
+    #[test]
+    fn a_copy_from_the_pc_is_answered_one_at_a_time_and_only_with_its_path() {
+        let send = json!({ "id": "s", "kind": "send", "path": "C:\\Users\\a\\file.zip", "sizeBytes": 10 });
+        assert!(!task_allowed(&send));
+        assert!(send_shown(&send));
+        assert!(send_shown(&json!({ "kind": "send", "send": { "path": "C:\\x" } })));
+        assert!(!send_shown(&json!({ "kind": "send" })));
+        assert!(!send_shown(&json!({ "kind": "send", "path": "  " })));
+        assert!(task_allowed(&json!({ "kind": "network" })));
+        assert!(send_shown(&json!({ "kind": "network" })));
+    }
+
+    #[test]
+    fn return_to_agent_names_the_machine() {
+        assert_eq!(resume_args("c1", "lab054-1"), json!({ "Name": "lab054-1", "Connection": "c1" }));
     }
 }

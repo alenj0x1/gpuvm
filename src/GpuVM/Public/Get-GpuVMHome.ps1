@@ -45,7 +45,10 @@ function Get-GpuVMHome {
         if (-not $state['guest']) {
             & $issue 'password' 'Its Windows password is missing, so things inside it can''t be fixed' 'Save password' $null $null
         }
-        elseif ($state['streaming'] -and -not $state['streaming']['pairedClient']) {
+        # Machines for agents and disposable copies: GpuVM pairs them itself the first time it opens them (the agent's
+        # viewer, quietly), so "not paired" before that was a false alarm on copies that then streamed (lab 054).
+        elseif ($state['streaming'] -and -not $state['streaming']['pairedClient'] -and
+            -not ($state.Contains('use') -and $state['use'] -eq 'agent') -and -not (Test-GpuVMDisposable -State $state)) {
             & $issue 'pairing' 'Moonlight isn''t paired with it yet' 'Pair' 'Connect-GpuVM' @{ Name = $vm.Name; Pair = $true }
         }
         $pending = @(if ($state.Contains('pendingApps')) { $state['pendingApps'] | Where-Object { $_ } })

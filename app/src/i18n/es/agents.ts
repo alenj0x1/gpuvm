@@ -38,6 +38,8 @@ export default {
   "An agent waits for your answer. With no answer, it's refused.": "Un agente espera tu respuesta. Sin respuesta, se rechaza.",
   "View": "Ver",
   "{name} needs you": "{name} te necesita",
+  "{name} wants to copy to {machine}": "{name} quiere copiar a {machine}",
+  "{n} files": "{n} archivos",
   "Refused by itself when the time runs out": "Se rechaza sola cuando se acaba el tiempo",
   "Refuse": "Rechazar",
   "Accept": "Aceptar",

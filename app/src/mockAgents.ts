@@ -62,7 +62,10 @@ switch (scenario) {
   case "waiting":
     clients = [claude({ state: "waiting", reason: "Waiting for your approval" })];
     requests = [{ id: "r-net", client: "c1", clientName: "Claude Code", machine: "win-agent", kind: "network", title: "Connect to github.com",
-      reason: "Download the latest release of GpuVM to test it", createdAt: ago(6), expiresAt: later(54) }];
+      reason: "Download the latest release of GpuVM to test it", createdAt: ago(6), expiresAt: later(54) },
+      // A copy from this PC into the machine (broker's "send"): the exact path, its size and files.
+      { id: "r-send", client: "c1", clientName: "Claude Code", machine: "win-agent", kind: "send", title: "", reason: "The installer to test",
+        createdAt: ago(3), expiresAt: later(57), send: { path: "C:\\Users\\you\\Downloads\\GpuVM_0.9.0_x64-setup.exe", sizeBytes: 48_234_496, files: 1 } }];
     offers = [deliver("o1", "report.md", 18_432, "Results of the installer test, with 6 screenshots", 40)];
     break;
   case "many":
@@ -126,7 +129,8 @@ export function agentCommand(cmd: string, args: Record<string, unknown>): unknow
       clients = clients.map((c) => want(args)(c) && c.state !== "idle" ? { ...c, state: args.Reason === "control" ? "control" : "paused", reason: String(args.Message ?? "Paused by you") } : c);
       return [];
     case "Resume-GpuVMAgent":
-      clients = clients.map((c) => want(args)(c) && (c.state === "paused" || c.state === "control" || c.state === "human") ? { ...c, state: "working", reason: null } : c);
+      // Name and Connection: only that machine of the session (the service's contract after the security review).
+      clients = clients.map((c) => want(args)(c) && (!args.Name || c.machine === args.Name) && (c.state === "paused" || c.state === "control" || c.state === "human") ? { ...c, state: "working", reason: null } : c);
       requests = requests.filter((r) => !(r.human && clients.some((c) => c.id === r.client && c.state === "working")));
       return [];
     case "Stop-GpuVMAgentClient":
