@@ -18,6 +18,7 @@ pub struct Machine {
     /// Pause reason: "control" (the person took over), "human" (request_human) or "person".
     pub paused_by: String,
     pub off: bool,
+    pub drop_sends: bool,
     pub elevated_foreground: bool,
     pub secure_desktop: bool,
     pub files: HashMap<String, Vec<u8>>,
@@ -74,6 +75,7 @@ fn machine(name: &str, disposable: bool, template: &str) -> Machine {
         paused: false,
         paused_by: "control".into(),
         off: false,
+        drop_sends: false,
         elevated_foreground: false,
         secure_desktop: false,
         files: HashMap::new(),
@@ -147,6 +149,10 @@ impl Broker for FakeBroker {
                     None => Err(err("not_found", "There is no such request.")),
                 };
             }
+            "offers.list" => {
+                let list: Vec<Value> = st.offers.iter().map(|(id, (path, state))| json!({ "id": id, "path": path, "state": state })).collect();
+                return Ok(Reply::of(Value::Array(list)));
+            }
             "offer.get" => {
                 let id = s(&args, "offerId");
                 return match st.offers.get(id) {
@@ -212,7 +218,11 @@ impl Broker for FakeBroker {
                 let host = s(&args, "hostPath");
                 let file = host.rsplit(['\\', '/']).next().unwrap_or("file").to_string();
                 let path = format!(r"C:\Users\agent\Desktop\Received\{file}");
-                m.files.insert(path.clone(), b"from host".to_vec());
+                // The real file's size when it exists; `drop_sends` loses it like lab 053's transfer did.
+                let size = std::fs::metadata(host).map(|m| m.len() as usize).unwrap_or(9);
+                if !m.drop_sends {
+                    m.files.insert(path.clone(), vec![b'x'; size]);
+                }
                 Ok(Reply::of(json!({ "path": path })))
             }
             "offer.create" => {
