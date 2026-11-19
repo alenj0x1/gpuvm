@@ -274,7 +274,8 @@ export interface AgentClient {
 
 export type AgentRequestKind = "deliver" | "admin" | "network" | "revert" | "delete";
 
-/** Something the agent asked that needs the person's approval (dock + Windows notification). */
+/** Something the agent asked that needs the person's approval (dock + Windows notification). Deliveries don't come
+ *  here: they are the pending AgentOffers (the dock shows them as "deliver" requests). */
 export interface AgentRequest {
   id: string;
   client: string;

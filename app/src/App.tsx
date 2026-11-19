@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { IconAlertTriangle, IconHome, IconLoader2, IconPlugConnected, IconPlus, IconRefresh, IconSettings, IconShieldLock, IconStack2 } from "@tabler/icons-react";
+import { IconAlertTriangle, IconHome, IconLoader2, IconPlugConnected, IconPlus, IconRefresh, IconRobot, IconSettings, IconShieldLock, IconStack2 } from "@tabler/icons-react";
 import { Preferences } from "./Preferences";
 import { Library, type LibraryTab } from "./Library";
 import { EmptyHome, Home, HomeSkeleton } from "./Home";
@@ -24,6 +24,8 @@ import { ViewerStage, ZOOM_MS, type ViewerPhase } from "./ViewerStage";
 import { leaveViewer, showViewer } from "./viewerStore";
 import { Toasts, humanError, stateText, useToasts, useScrollFade } from "./ui";
 import { t, translateModule } from "./i18n";
+import { AgentsView } from "./Agents";
+import { useAgents } from "./agentStore";
 
 const NEW_VM = "__new__";
 // Route of the preferences screen in the URL hash, shaped so it doesn't look like a VM name.
@@ -31,6 +33,22 @@ const PREFS = ":settings";
 const LIBRARY = ":library";
 // The home screen, where the app opens.
 const HOME = ":home";
+const AGENTS = ":agents";
+
+/** Agents in the sidebar: a dot while one works, the warning tone while one waits for the person. */
+function AgentsNavItem({ active, onClick }: { active: boolean; onClick: () => void }) {
+  const snap = useAgents();
+  const waiting = snap.requests.filter((r) => !r.human).length + snap.offers.filter((o) => o.state === "pending").length;
+  const working = snap.clients.some((c) => c.state === "working");
+  const needs = waiting > 0 || snap.clients.some((c) => c.state === "human");
+  return (
+    <button className={`side-item side-home ${active ? "active" : ""}`} onClick={onClick} title={t("Agents")}>
+      <span className="add-icon"><IconRobot size={16} /></span><span className="name">{t("Agents")}</span>
+      {needs ? <span className="side-meta side-count" title={t("Waiting for you")}>{waiting || "!"}</span>
+        : working ? <span className="side-meta"><span className="ag-dot side-working" /></span> : null}
+    </button>
+  );
+}
 const libraryTab = (route: string): LibraryTab | null => {
   if (!route.startsWith(LIBRARY)) return null;
   const tab = route.slice(LIBRARY.length + 1);
@@ -183,7 +201,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     // A machine just renamed keeps its page until the list brings it under the new name.
     if (renamed.current && vms?.some((v) => v.name === renamed.current!.to)) renamed.current = null;
     if (renamed.current?.to === selected) return;
-    if (selected !== PREFS && selected !== HOME && !libraryTab(selected) && vms && vms.length && !vms.some((v) => v.name === selected)) setSelected(HOME);
+    if (selected !== PREFS && selected !== HOME && selected !== AGENTS && !libraryTab(selected) && vms && vms.length && !vms.some((v) => v.name === selected)) setSelected(HOME);
   }, [vms, selected]);
 
   // "Another pattern" is reflected instantly in the sidebar too.
@@ -447,6 +465,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
           <button className={`side-item side-home ${libraryTab(selected) ? "active" : ""}`} onClick={() => setSelected(LIBRARY)} title={t("Profiles, disks and ISOs")}>
             <span className="add-icon"><IconStack2 size={16} /></span><span className="name">{t("Library")}</span>
           </button>
+          <AgentsNavItem active={selected === AGENTS} onClick={() => setSelected(AGENTS)} />
           {/* With one space the list is just "Machines"; with several, each space heads its own machines and opens it in Home. */}
           {(() => {
             // The groups as shown: the spaces in their (previewed) order, each with its machines, and the dragged
@@ -575,6 +594,8 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
           <Home vms={vms} busyFor={busyFor} startJob={startJob} onOpenVm={setSelected} onRoute={setSelected} onCreate={(space) => { setCreateError(null); setCreateSpace(space ?? null); setCreating(true); }} />
         ) : selected === PREFS ? (
           <Preferences />
+        ) : selected === AGENTS ? (
+          <AgentsView onOpenVm={setSelected} />
         ) : libraryTab(selected) ? (
           <Library tab={libraryTab(selected)!} onTab={(tab) => setSelected(`${LIBRARY}:${tab}`)} host={host} startJob={startJob}
             busy={(name) => !!busyFor(name)} progress={(key) => busyFor(key)?.message ?? null} notify={push} onOpenVm={setSelected}

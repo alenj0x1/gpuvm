@@ -18,6 +18,8 @@ import { Scene, nextSceneStyle, sceneStyle } from "./Scene";
 import { CleanupFlow, CleanupItems, LEVEL_LOOK } from "./CleanupFlow";
 import { Sparkline, series } from "./Chart";
 import { CheckMark, Dropdown, Segmented, Slider, formatUptime, portalRoot, scrollToSection, stateText, useScrollFade } from "./ui";
+import { MachineAgent } from "./Agents";
+import { useAgents } from "./agentStore";
 import { agents, api, openConsole, pickExportFile, vmNameError } from "./api";
 import { locale, t, tn, translateModule } from "./i18n";
 
@@ -44,7 +46,7 @@ interface Props {
 
 const transitionText = (state: string): string | undefined => ({ Starting: t("Starting"), Stopping: t("Shutting down"), Saving: t("Saving"), Pausing: t("Pausing"), Resuming: t("Resuming") } as Record<string, string>)[state];
 
-type VmTab = "machine" | "display" | "windows" | "custom";
+type VmTab = "machine" | "agent" | "display" | "windows" | "custom";
 // The cube's column: dragged anywhere between the two edges. Near the right edge the cube folds into a thin rail
 // (0 is stored); near the left one it takes the whole width and the options fold (FULL is stored). In between, both
 // keep a usable width.
@@ -53,7 +55,7 @@ const readCubeW = () => { try { return Number(localStorage.getItem(CUBE_KEY)) ||
 /** Where the last machine page was left, to open the next one at the same place. */
 let lastPlace: { section: VmTab; offset: number; at: number } | null = null;
 const NEW_SPACE = "__new__";
-const tabLabel = (tab: VmTab) => ({ machine: t("Machine"), display: t("Picture and control"), windows: t("Windows"), custom: t("Customize") })[tab];
+const tabLabel = (tab: VmTab) => ({ machine: t("Machine"), agent: t("Agent"), display: t("Picture and control"), windows: t("Windows"), custom: t("Customize") })[tab];
 
 export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRemoved, onRenamed }: Props) {
   const [variant, setVariant] = useState(() => patternVariant(vm.name));
@@ -68,6 +70,9 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
   const off = vm.state === "Off";
   const tabs: VmTab[] = [];
   if (vm.managed && vm.options) tabs.push("machine");
+  // A machine made for agents, or one an agent works on now, shows its Agent section right after Machine.
+  const agentHere = useAgents().clients.some((c) => c.machine === vm.name);
+  if (vm.forAgents || agentHere) tabs.push("agent");
   if (vm.managed && vm.options && vm.streaming) tabs.push("display");
   if (vm.managed && vm.guestCredential) tabs.push("windows");
   if (vm.managed && vm.options) tabs.push("custom");
@@ -223,6 +228,11 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
           <Options part="machine" vm={vm} host={host} busy={busy} startJob={startJob} run={run} onPreview={(r) => setPreview((p) => ({ ...p, ...r }))} />
           <SharedDisks vm={vm} busy={busy} startJob={startJob} />
           <RestorePoints vm={vm} busy={busy} startJob={startJob} run={run} />
+        </section>
+      )}
+      {tabs.includes("agent") && (
+        <section className="vm-section" ref={(el) => { sectionRefs.current.agent = el; }}>
+          <MachineAgent machine={vm.name} />
         </section>
       )}
       {tabs.includes("display") && (

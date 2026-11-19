@@ -27,7 +27,7 @@ const SCRIPT: [string, string][] = [
 
 let nextAction = 1;
 const action = (k: number, secondsAgo: number, ok = true): AgentAction => {
-  const [method, text] = SCRIPT[k % SCRIPT.length];
+  const [method, text] = SCRIPT[((k % SCRIPT.length) + SCRIPT.length) % SCRIPT.length];
   return { id: nextAction++, method, text, ok, at: ago(secondsAgo), thumb: null };
 };
 const history = (from: number, n: number) => Array.from({ length: n }, (_, i) => action(from - i, 2 + i * 7));
@@ -76,7 +76,6 @@ switch (scenario) {
     ];
     requests = [
       { id: "r1", client: "c2", clientName: "Claude Code", machine: "lab-02", kind: "admin", title: "Install Visual Studio Build Tools as administrator", reason: "The build needs MSVC", createdAt: ago(8), expiresAt: later(52) },
-      { id: "r2", client: "c1", clientName: "Claude Code", machine: "win-agent", kind: "deliver", title: "Deliver installer-test-screenshots.zip", reason: "Screenshots of every step", createdAt: ago(3), expiresAt: later(117), file: { name: "installer-test-screenshots.zip", sizeBytes: 4_831_221 } },
       { id: "r3", client: "c2", clientName: "Claude Code", machine: "lab-02", kind: "revert", title: "Go back to the restore point Before installing", reason: "The build tools left the machine broken", createdAt: ago(1), expiresAt: later(119) },
     ];
     offers = [
