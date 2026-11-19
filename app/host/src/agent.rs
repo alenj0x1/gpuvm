@@ -432,6 +432,8 @@ struct Broker {
     offers: Mutex<Vec<Offer>>,
     requests: Mutex<Vec<Request>>,
     claims: Mutex<HashMap<String, String>>,
+    /// Disposable copies each agent session made (lowercase name → connection): only it may delete one at once.
+    made: Mutex<HashMap<String, String>>,
     listener: Mutex<Value>,
     pre_auth: AtomicUsize,
     serial: AtomicU64,
@@ -446,6 +448,7 @@ fn broker() -> &'static Broker {
         offers: Mutex::new(Vec::new()),
         requests: Mutex::new(Vec::new()),
         claims: Mutex::new(HashMap::new()),
+        made: Mutex::new(HashMap::new()),
         listener: Mutex::new(json!({ "listening": false, "error": "starting" })),
         pre_auth: AtomicUsize::new(0),
         serial: AtomicU64::new(1),
@@ -1297,7 +1300,13 @@ pub fn gate(request: &mut Value, pid: u32) -> Result<Option<Claim>, CmdError> {
             return err("bad_request", "Name is required.");
         }
         claim = Some(Claim { name: name.to_string(), connection: id });
-    } else if !cmd.starts_with("Get-") && cmd != "Remove-GpuVMDisposable" && !name.is_empty() {
+    } else if cmd == "Remove-GpuVMDisposable" {
+        // Deleting one disposable machine at once (no grace, no approval, no UAC): only a copy this very session made
+        // (the module also checks it is disposable and off). The general sweep (no Name) stays allowed.
+        if !name.is_empty() && !lock(&broker().made).get(&name.to_lowercase()).is_some_and(|c| mine.contains(c)) {
+            return err("denied", format!("An agent session can only delete the disposable machines it made, and '{name}' isn't one."));
+        }
+    } else if !cmd.starts_with("Get-") && !name.is_empty() {
         match owner_of_name(name) {
             Some(t) if mine.contains(&t) => {}
             Some(_) => return err("taken", format!("'{name}' is in use by another agent session.")),
@@ -1330,6 +1339,7 @@ pub struct Claim {
 /// Called by the service once New-GpuVM succeeded for an agent session (only then: a failed one leaves nothing).
 pub fn claim(c: Claim) {
     if lock(&broker().clients).contains_key(&c.connection) {
+        lock(&broker().made).insert(c.name.to_lowercase(), c.connection.clone());
         lock(&broker().claims).insert(c.name.to_lowercase(), c.connection);
     }
 }
@@ -1519,6 +1529,7 @@ fn own_client(id: &str, ctx: &Ctx) -> Result<(), CmdError> {
 
 fn release_and_cancel(id: &str, code: &str, message: &str) {
     lock(&broker().claims).retain(|_, c| c != id);
+    lock(&broker().made).retain(|_, c| c != id);
     for m in lock(&broker().machines).values_mut() {
         if m.taken_by.as_deref() == Some(id) {
             m.taken_by = None;
@@ -1889,6 +1900,14 @@ pub(crate) mod tests {
         assert_eq!(gate_code("Install-GpuVMAgent", json!({ "Name": "Copy1" }), 100), "ok");
         assert_eq!(gate_code("Install-GpuVMAgent", json!({ "Name": "Copy1" }), 200), "taken");
         assert_eq!(gate_code("Install-GpuVMAgent", json!({ "Name": "Test1" }), 200), "taken");
+        // Deleting a disposable at once: only the copy this session made; another session's copy, a machine it only
+        // took, or any other name is refused. The general sweep (no Name) stays allowed.
+        assert_eq!(gate_code("Remove-GpuVMDisposable", json!({ "Name": "Copy1" }), 100), "ok");
+        assert_eq!(gate_code("Remove-GpuVMDisposable", json!({ "Name": "copy1" }), 100), "ok");
+        assert_eq!(gate_code("Remove-GpuVMDisposable", json!({ "Name": "Copy1" }), 200), "denied");
+        assert_eq!(gate_code("Remove-GpuVMDisposable", json!({ "Name": "Test1" }), 100), "denied");
+        assert_eq!(gate_code("Remove-GpuVMDisposable", json!({ "Name": "win-gpu" }), 100), "denied");
+        assert_eq!(gate_code("Remove-GpuVMDisposable", json!({}), 200), "ok");
         assert_eq!(gate_code("Remove-GpuVMDisk", json!({ "Name": "Test1" }), 100), "denied");
         assert_eq!(gate_code("Get-GpuVMTemplate", json!({}), 100), "ok");
         assert_eq!(gate_code("New-GpuVM", json!({ "Name": "x" }), 100), "denied");
