@@ -141,6 +141,15 @@ Through the module pipe (n=120, 2 rounds; pipe alone 0.065 ms):
 - Two machines at once: not run on real VMs: GpuVM's disk check refused the second 64 GB copy (112 GB already set
   aside, 21 GB at most). Over loopback the routing by VmId was checked; left for a run with more room.
 
+### Readiness of an agent-tpl copy (`readiness.ps1`, this checkout's module, installed service, Nov 19)
+
+The copy had `C:\GpuVM\setup.log` but no `setup.done.json`, signed in as `agent`: the template's source machine got
+the agent (sign-in switched to `agent`, Windows restarted) while its first-sign-in setup was still running, so the
+setup never finished, and every copy inherited that. Before: Wait-GuestReady waited its full 30 minutes on every
+copy. Now: 2.0 s (it stops, with a warning, when `agent` is signed in and the marker can't appear any more);
+Install-GpuVMAgent 7.8 s (1.9 s of it the same check), agent connected 1.1 s after. Install-GpuVMAgent now waits for
+the first-time setup before switching the sign-in, so new templates don't get this.
+
 ### Found and fixed in these runs
 
 1. `Install-GpuVMAgent` from the bridge (elevated user, not SYSTEM) couldn't store the secret: the module made
