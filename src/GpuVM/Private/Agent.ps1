@@ -115,7 +115,13 @@ function Remove-GuestAgentSecret {
     if (-not (Test-Path -LiteralPath $dir)) { return }
     foreach ($item in @(Get-ChildItem -LiteralPath $dir -Force)) {
         if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "$($item.Name) on the disk is a link; nothing is deleted through it." }
-        if ($item.Name -eq 'secret' -or $item.Name -like '*.log' -or $item.Name -eq 'staging') { Remove-Item -LiteralPath $item.FullName -Recurse -Force }
+        if ($item.Name -eq 'secret' -or $item.Name -like '*.log' -or $item.Name -eq 'staging') {
+            # A folder written by the guest: a link anywhere inside it would send the deletion to this PC's files.
+            if ($item.PSIsContainer -and @(Get-ChildItem -LiteralPath $item.FullName -Recurse -Force -Attributes ReparsePoint -ErrorAction Stop).Count) {
+                throw "$($item.Name) on the disk holds a link; nothing is deleted through it."
+            }
+            Remove-Item -LiteralPath $item.FullName -Recurse -Force
+        }
     }
 }
 
@@ -205,6 +211,35 @@ function Update-GpuVMAgentIfStale {
         Start-Sleep -Seconds 2
     }
     $true
+}
+
+# The agent's removal inside a running machine (install.ps1 -Uninstall -RemoveUser): its last result.
+function Invoke-GuestAgentRemoval {
+    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential)
+    # The script's text runs with named arguments (switches never bind by position; guests are Restricted).
+    $code = Get-Content -Raw -LiteralPath (Get-RepoPath 'guest\agent\install.ps1')
+    Invoke-Command -VMName $Name -Credential $Credential -ErrorAction Stop -ArgumentList $code -ScriptBlock {
+        param($code) & ([scriptblock]::Create($code)) -Uninstall -RemoveUser
+    } | Select-Object -Last 1
+}
+
+# After the restart the removal asked for: waits for the new Windows (BootBefore = the boot it replaces; empty when
+# the machine was opened later) and runs the removal again, which now deletes the `agent` user and its profile.
+# $true when nothing is left to do.
+function Complete-GuestAgentRemoval {
+    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential, [string]$BootBefore = '', [int]$TimeoutSec = 600)
+    if ($BootBefore) {
+        $deadline = (Get-Date).AddSeconds($TimeoutSec)
+        while ((Get-Date) -lt $deadline) {
+            $now = try { Get-GuestBootTime -Name $Name -Credential $Credential } catch { $null }
+            if ($now -and $now -ne $BootBefore) { break }
+            Start-Sleep -Seconds 2
+        }
+        Wait-GuestReady -Name $Name -Credential $Credential -BootMessage 'Waiting for Windows'
+    }
+    $r = try { Invoke-GuestAgentRemoval -Name $Name -Credential $Credential } catch { Write-Warning "Couldn't finish removing the agent inside '$Name': $($_.Exception.Message)"; return $false }
+    # Still signed in as `agent` (the person's sign-in didn't take): left for the next open.
+    -not ($r -and $r.PSObject.Properties['rebootNeeded'] -and $r.rebootNeeded -and @($r.notes) -match 'signed in')
 }
 
 # Once a stream is up on an agent machine: the agent repaints the whole desktop (screen.refresh, agent 0.3.8), so
