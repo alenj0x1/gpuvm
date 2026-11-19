@@ -38,7 +38,8 @@ mcp.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initiali
 // destroyed at the end. Otherwise an existing machine of ours, taken.
 const disposable = machine.startsWith("template:");
 if (disposable) {
-  const made = await tool("create_disposable", { template: machine.slice(9), name: "lab054-tc", task: "Lab 054: take-control latency" });
+  // Light (2 threads, LAB054_MEMORY_GB or 2 GB): the PC keeps its memory, and the measurement doesn't need more.
+  const made = await tool("create_disposable", { template: machine.slice(9), name: "lab054-tc", task: "Lab 054: take-control latency", cpu: 2, memoryGB: Number(process.env.LAB054_MEMORY_GB ?? 2) });
   console.log("create_disposable:", text(made).slice(0, 300));
   // Fail fast: without the machine there is nothing to measure (lab-craft).
   if (made?.isError) { clearTimeout(guard); mcp.kill(); process.exit(4); }
@@ -59,11 +60,36 @@ const viewerGpu = (seconds) => {
 };
 // Option B: with the session working and no viewer open, GpuVM opens one hidden and records. Its GPU cost, then the
 // person opens the machine (open_viewer) and that same viewer comes out.
-for (let i = 0; i < 4; i++) { await tool("screenshot", { machine, maxWidth: 320, maxHeight: 200 }); await sleep(3000); }
+/** Waits (keeping the session working) until a viewer process is up, or `seconds` pass; true when it is. */
+const viewerUp = async (seconds, windowed = false) => {
+  for (let i = 0; i < seconds / 3; i++) {
+    const up = execFileSync("pwsh", ["-NoProfile", "-Command", `@(Get-Process GpuVMViewer -ErrorAction SilentlyContinue${windowed ? " | Where-Object MainWindowHandle -ne 0" : ""}).Count`]).toString().trim();
+    if (Number(up) > 0) return true;
+    await tool("screenshot", { machine, maxWidth: 320, maxHeight: 200 });
+    await sleep(2000);
+  }
+  return false;
+};
+// Opening a machine takes a while the first time (Sunshine's first session): up to 2 minutes.
+const hiddenOpened = await viewerUp(120);
+console.log("hidden viewer opened:", hiddenOpened);
+await sleep(8000);
 const hiddenGpu = viewerGpu(20);
 console.log("hidden viewer GPU %:", hiddenGpu);
+/** A screenshot of the GpuVM window's area (what's on screen there: the app, the picture and its notch). */
+const shot = (name) => { try { console.log(name, execFileSync("pwsh", ["-NoProfile", "-File", join(here, "window-shot.ps1"), "-Out", join(out, `${name}.png`)]).toString().trim()); } catch (e) { console.log(name, "failed"); } };
+shot("installed-app-recording-hidden");
 await tool("open_viewer", { machine });
-await sleep(8000);
+const windowed = await viewerUp(120, true);
+console.log("viewer window:", windowed);
+if (!windowed) {
+  // Nothing to measure without the picture (Sunshine not answering in the machine, 2026-11-19): say it and clean up.
+  writeFileSync(join(out, "take-control.json"), JSON.stringify({ machine, error: "no viewer opened in 2 min", hiddenOpened, hiddenGpu }, null, 1));
+  await tool(disposable ? "destroy" : "release_machine", { machine });
+  clearTimeout(guard); mcp.kill(); process.exit(5);
+}
+await sleep(6000);
+shot("installed-picture-working");
 const shownGpu = viewerGpu(10);
 console.log("shown viewer GPU %:", shownGpu);
 
@@ -87,6 +113,8 @@ for (let r = 0; r < rounds; r++) {
   for (let i = 0; i < 400 && t1 === null; i++) { if (await paused()) t1 = Date.now(); else await sleep(5); }
   samples.push(t1 === null ? null : t1 - t0);
   console.log(`round ${r + 1}: ${t1 === null ? "not paused in 2 s" : `${t1 - t0} ms`}`);
+  // The notch "You took control" over the picture, once (agent.rs shows it with the broker's answer).
+  if (r === 0) { await sleep(1500); shot("installed-take-control"); }
   // Back to the agent for the next round: the person's Resume, as the notch's button does.
   execFileSync("pwsh", ["-NoProfile", "-Command", `Import-Module 'C:\\Program Files\\GpuVM\\gpuvm\\src\\GpuVM' -ErrorAction Stop; Resume-GpuVMAgent -Name '${machine}' | Out-Null`], { stdio: "ignore" });
   await sleep(2500);
