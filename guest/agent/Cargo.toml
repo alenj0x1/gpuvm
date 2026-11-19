@@ -1,6 +1,6 @@
 [package]
 name = "gpuvm-agent"
-version = "0.3.3"
+version = "0.3.4"
 edition = "2021"
 publish = false
 description = "GpuVM guest agent: a SYSTEM service that dials the host over Hyper-V sockets and a session helper that captures the screen, drives input and UI Automation for AI agents (docs/agents/protocol.md)"

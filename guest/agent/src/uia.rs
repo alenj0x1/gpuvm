@@ -13,6 +13,8 @@ use windows::Win32::UI::Accessibility::*;
 thread_local! {
     static AUTO: RefCell<Option<IUIAutomation>> = const { RefCell::new(None) };
     static LAST: RefCell<Vec<IUIAutomationElement>> = const { RefCell::new(Vec::new()) };
+    /// Chromium windows already queried twice (their accessibility tree exists from then on, lab 049)
+    static WARM: RefCell<Vec<isize>> = const { RefCell::new(Vec::new()) };
 }
 
 fn automation() -> Result<IUIAutomation, (&'static str, String)> {
@@ -141,6 +143,21 @@ pub fn ui_tree(p: &Value) -> CallResult {
         oy: origin.1,
     };
     let chromium = window_class(f.hwnd).starts_with("Chrome_WidgetWin");
+    // query twice only the first time a Chromium window is seen (each query of Edge took ~150 ms in lab 051)
+    let twice = chromium
+        && WARM.with(|w| {
+            let mut w = w.borrow_mut();
+            let h = f.hwnd.0 as isize;
+            if w.contains(&h) {
+                false
+            } else {
+                if w.len() > 64 {
+                    w.clear();
+                }
+                w.push(h);
+                true
+            }
+        });
     let mut queries = 0;
     unsafe {
         let cr = auto.CreateCacheRequest().map_err(|e| ("internal", e.to_string()))?;
@@ -158,7 +175,7 @@ pub fn ui_tree(p: &Value) -> CallResult {
         let _ = cr.SetAutomationElementMode(AutomationElementMode_Full);
         let mut root = None;
         let mut first_total = 0;
-        for _ in 0..if chromium { 2 } else { 1 } {
+        for _ in 0..if twice { 2 } else { 1 } {
             queries += 1;
             let r = auto.ElementFromHandleBuildCache(f.hwnd, &cr).map_err(|e| ("internal", format!("UI Automation: {e}")))?;
             let mut n = 0usize;

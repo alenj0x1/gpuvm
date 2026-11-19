@@ -139,3 +139,20 @@ it offers of 1280x800, 1366x768, ... only while it is below 1280x720 (a viewer's
 one display, 1366x768 (the virtual display offers no 1280x800), Notepad at [78,78] fully inside the screenshot
 (`after.png`). First version re-applied 1366x768 every 5 s (768 < 800): fixed, a change makes Sunshine re-test its
 encoders. Template build with the installed broker: clone ready + agent connected in 37-38 s.
+
+### Through the real host side (installed broker, `measure-broker.ps1`, disposable from agent-tpl, agent 0.3.3)
+
+`out/broker-20261119-013616` (results.json lost the capture stats to a `$R`/`$r` name clash, fixed; the p50s are in
+`measure-broker.log`). Clone created + agent ready: 35 s / 36.5 s. Screen 1366x768 (virtual display only).
+
+| | result |
+| --- | --- |
+| screen.capture WebP fit 1280x800 (n=40) | host p50 20.9 ms (guest 17.7 ms), 200 KB |
+| screen.capture PNG fit 1280x800 | host p50 19.5 ms (guest 15.7 ms), 254 KB |
+| screen.capture WebP native 1366x768 | host p50 13.8 ms (guest 10.5 ms, no scaling), 197 KB |
+| screen.capture WebP region 400x300 | host p50 6.5 ms (guest 3.9 ms), 5 KB |
+| action -> screen (type `m` / Backspace in Notepad, host polls a 320x60 PNG region, n=40) | **p50 19.8 / p95 29.7 ms**, max 43, 3 captures per sample, 0 timeouts |
+| Edge, local page: click+type (with ñ), key repeat, ui.invoke on a button, click, ui.invoke setValue, scroll | all 6 confirmed through the page title |
+| ui.tree Edge | ~300 ms per call (queried twice every time: 0.3.4 queries twice only the first time a window is seen, not yet measured) |
+| UAC prompt from `agent` | desktop `secure` seen 2.5 s after exec; capture/click/type/ui.tree all refused `secure_desktop`; default again 2 ms after consent.exe was killed; capture works after |
+| csrss hard-error box from `agent` | its window comes to the front (title "GpuVM lab 051", owner unreadable) and a click is refused `blocked_elevated`; not visible in the screenshot and not listed in `errorBoxes` (open) |
