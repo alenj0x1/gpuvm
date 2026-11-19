@@ -16,6 +16,7 @@ function Set-GpuVMUse {
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][ValidateSet('agent', 'none')][string]$Use
     )
+    $ErrorActionPreference = 'Stop'
     Assert-Admin
     $state = Get-GpuVMState -Name $Name
     if ($Use -eq 'none') {

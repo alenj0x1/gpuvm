@@ -7,6 +7,7 @@ function Uninstall-GpuVMAgent {
     #>
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Name)
+    $ErrorActionPreference = 'Stop'
     Assert-Admin
     $state = Get-GpuVMState -Name $Name
     $vm = Get-VM -Name $Name -ErrorAction Stop
