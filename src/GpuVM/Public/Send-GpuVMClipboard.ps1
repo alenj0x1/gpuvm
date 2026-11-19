@@ -42,13 +42,16 @@ function Send-GpuVMClipboard {
     if ((Get-VM -Name $Name).State -ne 'Running') { throw "The VM '$Name' is off." }
 
     $received = @()
+    $receivedIn = ''
     if ($kind -eq 'files') {
         $sent = Send-GpuVMFile -Name $Name -Path $Files -Folder $Folder
         $received = @($sent['items'])
+        # The folder the copy measured its files in (the signed-in person's Desktop\<Folder>).
+        $receivedIn = [string]$sent['path']
     }
 
-    $raw = Invoke-Command -VMName $Name -Credential $guest -ErrorAction Stop -ArgumentList $kind, $payload, $Folder, $received -ScriptBlock {
-        param($kind, [byte[]]$payload, $folder, [string[]]$received)
+    $raw = Invoke-Command -VMName $Name -Credential $guest -ErrorAction Stop -ArgumentList $kind, $payload, $receivedIn, $received -ScriptBlock {
+        param($kind, [byte[]]$payload, $receivedIn, [string[]]$received)
         # The clipboard belongs to the user's desktop session, so a task in that session sets it.
         $dir = 'C:\GpuVM'
         $file = Join-Path $dir 'clipboard.bin'
@@ -59,12 +62,8 @@ function Send-GpuVMClipboard {
         $user = (Get-CimInstance Win32_ComputerSystem).UserName
         if (-not $user) { return 'nosession' }
         if ($kind -eq 'files') {
-            # The received items, by full path in the signed-in user's Desktop\<folder>.
-            $sid = ([Security.Principal.NTAccount]$user).Translate([Security.Principal.SecurityIdentifier]).Value
-            $profile = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$sid").ProfileImagePath
-            $shell = (Get-ItemProperty "Registry::HKEY_USERS\$sid\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" -ErrorAction SilentlyContinue).Desktop
-            $desktop = if ($shell) { $shell -replace '%USERPROFILE%', $profile } else { Join-Path $profile 'Desktop' }
-            $paths = $received | ForEach-Object { Join-Path (Join-Path $desktop $folder) $_ }
+            # The received items, by full path in the folder the copy put them in.
+            $paths = $received | ForEach-Object { Join-Path $receivedIn $_ }
             [IO.File]::WriteAllLines($list, [string[]]$paths, [Text.UTF8Encoding]::new($false))
         }
         else { [IO.File]::WriteAllBytes($file, $payload) }
