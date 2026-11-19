@@ -2097,10 +2097,29 @@ InModuleScope GpuVM {
             Test-GpuVMDisposableDone -State $script:st -VMState 'Off' | Should Be $true
         }
         It 'turns it off when Windows doesn''t shut down in time' {
-            Mock Stop-VM { $script:calls.Add("stop $([bool]$TurnOff)"); [pscustomobject]@{} }
-            Mock Get-VM { [pscustomobject]@{ State = 'Running' } }
+            Mock Write-Warning { }
+            Mock Stop-VM { $script:calls.Add("stop $([bool]$TurnOff)"); if ($TurnOff) { $script:offNow = $true }; [pscustomobject]@{} }
+            $script:offNow = $false
+            Mock Get-VM { [pscustomobject]@{ State = $(if ($script:offNow) { 'Off' } else { 'Running' }); Id = [guid]::Empty } }
             Restart-GpuVMCold -Name c -ShutdownTimeoutSec 0
             ($script:calls -join ',') | Should Be 'stop False,stop True,start'
+        }
+        It 'ends its worker process when Hyper-V won''t turn it off, and says so when even that fails' {
+            Mock Write-Warning { }
+            Mock Stop-VM { $script:calls.Add("stop $([bool]$TurnOff)"); [pscustomobject]@{} }
+            $script:offNow = $false
+            $script:vmId = [guid]'12039a8d-294d-4b80-a677-40d70914339e'
+            Mock Get-VM { [pscustomobject]@{ State = $(if ($script:offNow) { 'Off' } else { 'Running' }); Id = $script:vmId } }
+            Mock Get-CimInstance { @([pscustomobject]@{ ProcessId = 42; CommandLine = "vmwp.exe 12039a8d-294d-4b80-a677-40d70914339e" }, [pscustomobject]@{ ProcessId = 7; CommandLine = 'vmwp.exe another' }) }
+            Mock Stop-Process { $script:calls.Add("kill $Id"); $script:offNow = $true }
+            Restart-GpuVMCold -Name c -ShutdownTimeoutSec 0 -TurnOffTimeoutSec 0
+            ($script:calls -join ',') | Should Be 'stop False,stop True,kill 42,start'
+            Mock Stop-Process { }
+            $script:offNow = $false
+            $script:calls.Clear()
+            Test-Throws { Restart-GpuVMCold -Name c -ShutdownTimeoutSec 0 -TurnOffTimeoutSec 0 } | Should Be $true
+            $script:calls -contains 'start' | Should Be $false
+            Test-GpuVMDisposableDone -State $script:st -VMState 'Off' | Should Be $true # the mark is cleared even then
         }
     }
 }
