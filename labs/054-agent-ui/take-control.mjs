@@ -80,7 +80,14 @@ console.log("hidden viewer GPU %:", hiddenGpu);
 const shot = (name) => { try { console.log(name, execFileSync("pwsh", ["-NoProfile", "-File", join(here, "window-shot.ps1"), "-Out", join(out, `${name}.png`)]).toString().trim()); } catch (e) { console.log(name, "failed"); } };
 shot("installed-app-recording-hidden");
 await tool("open_viewer", { machine });
-console.log("viewer window:", await viewerUp(120, true));
+const windowed = await viewerUp(120, true);
+console.log("viewer window:", windowed);
+if (!windowed) {
+  // Nothing to measure without the picture (Sunshine not answering in the machine, 2026-11-19): say it and clean up.
+  writeFileSync(join(out, "take-control.json"), JSON.stringify({ machine, error: "no viewer opened in 2 min", hiddenOpened, hiddenGpu }, null, 1));
+  await tool(disposable ? "destroy" : "release_machine", { machine });
+  clearTimeout(guard); mcp.kill(); process.exit(5);
+}
 await sleep(6000);
 shot("installed-picture-working");
 const shownGpu = viewerGpu(10);
