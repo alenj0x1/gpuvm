@@ -85,10 +85,10 @@ function Send-GpuVMFile {
         if ($big.Count) { Copy-TransferBigFiles -Name $Name -FromVM $FromVM -Big $big.ToArray() -Staging $receiver.Staging -Pipe $pipe }
         $receiving = $false
         $done = Close-GuestReceiver -Session $target -Id $TransferId
-        if (-not $done.Ok) { throw "The machine couldn't save the files. $($done.Error)" }
+        Assert-TransferArrived -Done $done -Bytes $total -Files $files -Name $Name
         Write-Step "Ready on $Name's desktop, in $Folder"
         if ($list.Skipped) { Write-Warning "$($list.Skipped) links (shortcuts to other folders) were skipped." }
-        [ordered]@{ name = $Name; from = $FromVM; folder = $Folder; items = @($done.Names); files = $files; bytes = $total }
+        [ordered]@{ name = $Name; from = $FromVM; folder = $Folder; path = $done.Dest; items = @($done.Names); files = $files; bytes = $total }
     }
     catch [OperationCanceledException] {
         throw 'Copy cancelled.'
