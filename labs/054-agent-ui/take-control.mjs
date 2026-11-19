@@ -71,7 +71,9 @@ const viewerUp = async (seconds, windowed = false) => {
   return false;
 };
 // Opening a machine takes a while the first time (Sunshine's first session): up to 2 minutes.
-const hiddenOpened = await viewerUp(120);
+const hiddenStart = Date.now();
+const hiddenOpened = await viewerUp(240);
+console.log("hidden viewer up after ms:", Date.now() - hiddenStart);
 console.log("hidden viewer opened:", hiddenOpened);
 await sleep(8000);
 const hiddenGpu = viewerGpu(20);
