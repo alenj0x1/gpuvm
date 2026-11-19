@@ -51,5 +51,8 @@ if (!existsSync(stamp) || readFileSync(stamp, "utf8") !== pwsh.version) {
   writeFileSync(stamp, pwsh.version);
 }
 
+// The guest agent, into guest/agent/dist (shipped with guest/); its build output stays in app/guest-agent-target.
+execFileSync("pwsh", ["-NoProfile", "-File", join(app, "..", "guest", "agent", "build.ps1")], { stdio: "inherit" });
+
 // The service, always into host/target (where tauri.conf.json takes it from), whatever CARGO_TARGET_DIR says.
 execFileSync("cargo", ["build", "--release", "--manifest-path", join(app, "host", "Cargo.toml"), "--target-dir", join(app, "host", "target")], { stdio: "inherit" });

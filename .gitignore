@@ -40,3 +40,4 @@ tools/screenshots/out/
 labs/040-viewer-widgets/report.json
 guest/agent/target/
 guest/agent/dist/
+app/guest-agent-target/
