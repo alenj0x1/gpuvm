@@ -1820,3 +1820,37 @@ InModuleScope GpuVM {
         }
     }
 }
+
+InModuleScope GpuVM {
+    Describe 'A template of an agent machine makes agent machines' {
+        It 'the template records the use and who signs in' {
+            (Get-TemplateAgentUse -State @{ use = 'agent'; agent = @{ signInAs = 'own' } }).agentSignInAs | Should Be 'own'
+            (Get-TemplateAgentUse -State @{ use = 'agent'; agent = @{ version = '0.3.7' } }).agentSignInAs | Should Be 'agent'
+            (Get-TemplateAgentUse -State @{ use = 'agent' }).use | Should Be 'agent'
+            (Get-TemplateAgentUse -State @{ agent = @{ signInAs = 'agent' } }).use | Should Be $null
+        }
+        It 'a copy is born an agent machine, isolated, with its agent pending; other copies are untouched' {
+            Mock Assert-Admin { }
+            Mock Assert-GpuVMNameFree { }
+            Mock Test-GpuVMHost { @() }
+            Mock Resolve-GpuVMProfile { @{ backend = 'hyperv-gpup' } }
+            Mock New-TemplateCloneConfig { @{ backend = 'hyperv-gpup'; vm = @{ network = @{ isolation = $false } } } }
+            Mock Invoke-GpuVMBackend { $script:cloneConfig = $Arguments[0].Config; [ordered]@{ name = 'copy1' } }
+            Mock Save-GpuVMState { $script:saved = $State }
+            Mock Write-Step { }
+            Mock Get-GpuVM { [pscustomobject]@{ Name = 'copy1' } }
+            Mock Read-GpuVMTemplate { @{ name = 't'; sizeGB = 64; edition = 'Pro'; streaming = @{}; guest = @{}; vhdPath = 'x'; config = @{ vm = @{} }; use = 'agent'; agentSignInAs = 'agent' } }
+            New-GpuVM -Name copy1 -Template t -Confirm:$false | Out-Null
+            $script:saved['use'] | Should Be 'agent'
+            $script:saved['agent']['pending'] | Should Be $true
+            $script:saved['agent']['signInAs'] | Should Be 'agent'
+            $script:cloneConfig['vm']['network']['isolation'] | Should Be $true
+            Get-GpuVMCaptureMode -State $script:saved | Should Be 'ddx'
+
+            Mock Read-GpuVMTemplate { @{ name = 't'; sizeGB = 64; edition = 'Pro'; streaming = @{}; guest = @{}; vhdPath = 'x'; config = @{ vm = @{} } } }
+            New-GpuVM -Name copy1 -Template t -Confirm:$false | Out-Null
+            $script:saved.Contains('use') | Should Be $false
+            $script:cloneConfig['vm']['network']['isolation'] | Should Be $false
+        }
+    }
+}

@@ -76,6 +76,10 @@ function New-GpuVMTemplate {
                 pendingApps = @(if ($state.Contains('pendingApps')) { $state['pendingApps'] })
                 # Apps already in its Windows: its copies show them as installed before their first check.
                 installedApps = @(if ($state.Contains('installedApps')) { $state['installedApps'] })
+                # A template of an agent machine makes agent machines: isolated, Sunshine as a service, its agent
+                # installed (with its own secret) the first time each copy is opened or claimed.
+                use           = (Get-TemplateAgentUse -State $state)['use']
+                agentSignInAs = (Get-TemplateAgentUse -State $state)['agentSignInAs']
             })
     }
     catch {
@@ -91,4 +95,12 @@ function New-GpuVMTemplate {
     }
     Write-Step "Template '$Name' is ready ($([math]::Round((Get-Item -LiteralPath $target).Length / 1GB, 1)) GB)"
     Get-GpuVMTemplate | Where-Object { $_['name'] -eq $Name }
+}
+
+# What a template records about its source's use: an agent machine's template makes agent machines.
+function Get-TemplateAgentUse {
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$State)
+    if ([string]$State['use'] -ne 'agent') { return @{ use = $null; agentSignInAs = $null } }
+    $signIn = if ($State['agent'] -is [System.Collections.IDictionary] -and [string]$State['agent']['signInAs'] -eq 'own') { 'own' } else { 'agent' }
+    @{ use = 'agent'; agentSignInAs = $signIn }
 }
