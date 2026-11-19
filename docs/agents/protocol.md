@@ -65,8 +65,10 @@ the guest stops it and replies `ok:false` with code `cancelled`. Error codes: `b
 | `ui.tree` | `{scope?:"foreground", maxNodes?:300, visibleOnly?:true, interactiveOnly?:true}` | `{nodes:[{id,role,name,bbox:[x,y,w,h],enabled,patterns:[…]}]}` (UIA control view, CacheRequest; queries Chromium twice) |
 | `ui.invoke` | `{id, action:"invoke"\|"toggle"\|"select"\|"expand"\|"setValue", value?}` | `{}` |
 | `exec.run` | `{file, args?:[…], cwd?, timeoutMs?≤600000, stdin?}` | `{exitCode, stdout, stderr, truncated}` (each capped at 1 MiB). Runs as the signed-in standard user `agent`, never elevated. |
-| `files.list` / `files.read` / `files.write` | `{path}` under `C:\Users\agent` only (no links, no `..`) | list / blob / `{}` |
-| `outbox.offer` | `{path, note}` (path inside `Desktop\Outbox`) | `{offerId}` — the host asks the person; files leave only after approval |
+| `files.list` / `files.read` / `files.write` | `{path}` under `C:\Users\agent` only (no links, no `..`); `files.read` also takes `offset?`, `length?` | list / `{size}` (whole file) + blob of the bytes from `offset` (≤ `length`, ≤ 16 MiB; without them the whole file, ≤ 16 MiB) / `{}` |
+
+Outbox deliveries are resolved by the host (`New-GpuVMAgentOffer`): it lists `Desktop\Outbox` and, once the person
+approves, reads the file with `files.read` in 8 MiB pieces. The guest never pushes files to the host.
 
 Guest events: `secure_desktop{on}`, `signed_in{user}`, `foreground{…}` (rate-limited to 4/s), `error_box{title}`
 (a system error dialog blocks input, lab 049).
