@@ -1429,7 +1429,9 @@ InModuleScope GpuVM {
             Mock Initialize-AgentFolder { New-Item -ItemType Directory -Path $Path -Force | Out-Null }
             Mock Get-AgentPackage {
                 [IO.File]::WriteAllText("$TestDrive\install.ps1", 'param($Source, $Secret) "installed"')
-                [pscustomobject]@{ Install = "$TestDrive\install.ps1"; Exe = "$TestDrive\gpuvm-agent.exe"; Version = '0.1.0'; Hash = 'ABC' }
+                [IO.File]::WriteAllText("$TestDrive\gpuvm-agent.exe", 'x'); [IO.File]::WriteAllText("$TestDrive\VERSION", '0.1.0')
+                [pscustomobject]@{ Install = "$TestDrive\install.ps1"; Exe = "$TestDrive\gpuvm-agent.exe"; Version = '0.1.0'; Hash = 'ABC'
+                    Files = @(Get-Item "$TestDrive\gpuvm-agent.exe", "$TestDrive\VERSION") }
             }
             Mock New-PSSession { [pscustomobject]@{ Name = 'fake' } }
             Mock Close-AgentSession { }
@@ -1449,7 +1451,7 @@ InModuleScope GpuVM {
                     $script:sentSecret = [byte[]]$a[2].Clone()   # over PowerShell Direct it is a copy
                     return [pscustomobject]@{ ok = $true; password = 'S3cret!'; version = '0.1.0'; rebootNeeded = $true }
                 }
-                if ($a.Count -eq 2) { $script:calls.Add('fast-copy'); return }
+                if ($a.Count -eq 3) { $script:calls.Add('fast-copy'); return }
                 if ($a.Count -eq 1) { $script:calls.Add('cleanup'); return }
                 $script:calls.Add('restart')
             }
@@ -1461,8 +1463,8 @@ InModuleScope GpuVM {
         It 'sends the exe and a new 32-byte secret, keeps the password encrypted and restarts Windows from inside' {
             $r = Install-GpuVMAgent -Name vm1
             $r.vmId | Should Be '0b5d1f53-1e33-4b7e-9f0a-2c4d6e8f0a1b'
-            $r.fastPath | Should Be $false
-            ($script:calls -join ',') | Should Be 'setup,copy-to-session C:\Windows\Temp\GpuVMAgentSetup-1\gpuvm-agent.exe,install,cleanup,restart'
+            $r.exeSent | Should Be $true
+            ($script:calls -join ',') | Should Be 'setup,copy-to-session C:\Windows\Temp\GpuVMAgentSetup-1\gpuvm-agent.exe,copy-to-session C:\Windows\Temp\GpuVMAgentSetup-1\VERSION,install,cleanup,restart'
             $script:sentSecret.GetType().Name | Should Be 'Byte[]'
             $script:sentSecret.Length | Should Be 32
             Assert-MockCalled Write-AgentSecret -Times 1 -Scope It
@@ -1476,7 +1478,7 @@ InModuleScope GpuVM {
         It 'a copy of a template with the same build skips sending the exe' {
             $script:sameBuild = $true
             $r = Install-GpuVMAgent -Name vm1
-            $r.fastPath | Should Be $true
+            $r.exeSent | Should Be $false
             ($script:calls -join ',') | Should Be 'setup,fast-copy,install,cleanup,restart'
         }
         It 'a failed install keeps the old secret' {

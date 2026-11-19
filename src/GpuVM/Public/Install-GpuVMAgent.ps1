@@ -54,20 +54,24 @@ function Install-GpuVMAgent {
         }
         try {
             if ($setup.Same) {
-                # Fast path (a copy of a template with this build): the installed exe goes back in as the source.
-                Invoke-InAgentSession $session -ArgumentList $setup.Installed, $setup.Dir -ScriptBlock {
-                    param($from, $dir) Copy-Item -LiteralPath $from -Destination $dir
+                # A copy of a template with this build: the installed exe goes back in as the source, nothing crosses.
+                Invoke-InAgentSession $session -ArgumentList $setup.Installed, $setup.Dir, ([string]$package.Version) -ScriptBlock {
+                    param($from, $dir, $version)
+                    Copy-Item -LiteralPath $from -Destination $dir
+                    if ($version) { [IO.File]::WriteAllText((Join-Path $dir 'VERSION'), $version) }
                 }
             }
             else {
                 Write-Step 'Copying the agent into the machine'
-                Copy-ToAgentSession $session -Path $package.Exe -Destination (Join-Path $setup.Dir 'gpuvm-agent.exe')
+                foreach ($file in $package.Files) {
+                    Copy-ToAgentSession $session -Path $file.FullName -Destination (Join-Path $setup.Dir $file.Name)
+                }
             }
             $timing['copy'] = $sw.ElapsedMilliseconds
             Write-Step 'Installing the agent and its user'
             $code = Get-Content -Raw -LiteralPath $package.Install
             $output = @(Invoke-InAgentSession $session -ArgumentList $code, $setup.Dir, $secret, $signInAs -ScriptBlock {
-                param($code, $dir, $secret, $signInAs) & ([scriptblock]::Create($code)) -Source $dir -Secret $secret -SignInAs $signInAs
+                param($code, $dir, $secret, $signInAs) & ([scriptblock]::Create($code)) -Staging $dir -Secret $secret -SignInAs $signInAs
             })
             $timing['install'] = $sw.ElapsedMilliseconds
         }
@@ -105,5 +109,5 @@ function Install-GpuVMAgent {
         Invoke-Command -VMName $Name -Credential $credential -ScriptBlock { Restart-Computer -Force } -ErrorAction SilentlyContinue
     }
     $timing['total'] = $sw.ElapsedMilliseconds
-    [ordered]@{ name = $Name; vmId = $vmId; version = $version; fastPath = [bool]$setup.Same; restarted = $restart; ms = $timing }
+    [ordered]@{ name = $Name; vmId = $vmId; version = $version; fastPath = [bool]($result.PSObject.Properties['fastPath'] -and $result.fastPath); exeSent = -not $setup.Same; restarted = $restart; ms = $timing }
 }

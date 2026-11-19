@@ -95,19 +95,30 @@ function Write-AgentSecret {
 function Get-AgentPackage {
     $root = Get-RepoPath 'guest\agent'
     $install = Join-Path $root 'install.ps1'
-    $exe = @((Join-Path $root 'dist\gpuvm-agent.exe'), (Join-Path $root 'target\release\gpuvm-agent.exe')) |
-        Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-    if (-not (Test-Path -LiteralPath $install) -or -not $exe) { throw "The guest agent isn't in this GpuVM build ($root)." }
-    $version = try { (& $exe version 2>$null | Out-String).Trim() } catch { $null }
-    [pscustomobject]@{ Install = $install; Exe = $exe; Version = $version; Hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash }
+    # guest\agent\build.ps1 puts what goes into a guest in dist\: gpuvm-agent.exe and VERSION.
+    $dist = Join-Path $root 'dist'
+    $exe = Join-Path $dist 'gpuvm-agent.exe'
+    if (-not (Test-Path -LiteralPath $install) -or -not (Test-Path -LiteralPath $exe)) {
+        throw "The guest agent isn't in this GpuVM build ($dist; a developer's copy builds it with guest\agent\build.ps1)."
+    }
+    $versionFile = Join-Path $dist 'VERSION'
+    $version = if (Test-Path -LiteralPath $versionFile) { (Get-Content -Raw -LiteralPath $versionFile).Trim() } else { $null }
+    [pscustomobject]@{ Install = $install; Exe = $exe; Version = $version; Hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
+        Files = @(Get-ChildItem -LiteralPath $dist -File) }
 }
 
 # Deletes the agent's secret from a mounted guest disk (a template or a copy of one): copies never share a secret.
 function Remove-GuestAgentSecret {
     param([Parameter(Mandatory)][string]$WindowsRoot)
-    $path = Join-Path $WindowsRoot 'ProgramData\GpuVM\Agent\secret'
-    Assert-NoReparsePoint -Root $WindowsRoot -Path $path
-    if (Test-Path -LiteralPath $path) { [IO.File]::Delete($path) }
+    # Done on the disk copy, not in the running source VM (install.ps1 -PrepareTemplate would also take the source
+    # machine's agent offline). The same as -PrepareTemplate: the secret, the logs and a leftover staging folder.
+    $dir = Join-Path $WindowsRoot 'ProgramData\GpuVM\Agent'
+    Assert-NoReparsePoint -Root $WindowsRoot -Path (Join-Path $dir 'secret')
+    if (-not (Test-Path -LiteralPath $dir)) { return }
+    foreach ($item in @(Get-ChildItem -LiteralPath $dir -Force)) {
+        if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "$($item.Name) on the disk is a link; nothing is deleted through it." }
+        if ($item.Name -eq 'secret' -or $item.Name -like '*.log' -or $item.Name -eq 'staging') { Remove-Item -LiteralPath $item.FullName -Recurse -Force }
+    }
 }
 
 # Called when a VM is deleted or renamed: the service finds agents by these registrations.

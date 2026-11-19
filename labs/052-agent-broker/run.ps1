@@ -143,7 +143,7 @@ foreach ($part in $Parts) {
                 if (-not $AgentFrom) { throw 'install needs -AgentFrom (the guest agent checkout)' }
                 New-Item -ItemType Directory -Force (Join-Path $agentDir 'dist') | Out-Null
                 Copy-Item (Join-Path $AgentFrom 'guest\agent\install.ps1') (Join-Path $agentDir 'install.ps1')
-                Copy-Item (Join-Path $AgentFrom 'guest\agent\target\release\gpuvm-agent.exe') (Join-Path $agentDir 'dist')
+                Copy-Item (Join-Path $AgentFrom 'guest\agent\dist\*') (Join-Path $agentDir 'dist')
             }
             try {
                 $gsiBefore = (Get-VMIntegrationService -VMName $Name | Where-Object { $_.Id -like '*6C09BB55-D683-4DA0-8931-C9BF705F6480' }).Enabled
