@@ -630,7 +630,11 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .opt-row.sub { padding: 8px 12px; border-top: 0 !important; background: color-mix(in srgb, var(--text) 2%, transparent); }
 .opt-row.section + .opt-row.sub { border-radius: var(--r) var(--r) 0 0; padding-top: 12px; }
 .opt-row.sub:has(+ .opt-row:not(.sub)), .opt-row.sub:last-child { border-radius: 0 0 var(--r) var(--r); padding-bottom: 12px; margin-bottom: 8px; }
-.opt-row.sub .opt-icon { width: 28px; height: 28px; background: transparent; color: var(--muted); }
+.opt-row.sub .opt-icon { width: 20px; height: 28px; background: transparent; color: var(--muted); }
+/* The sub-options' box keeps 12 px on both sides, and its narrower icon column (20 + 12 = 32) puts their titles on
+   the same line as the option above them. */
+.opt-row.sub { grid-template-columns: 20px minmax(0, 1fr) minmax(0, 360px); }
+@media (max-width: 900px) { .opt-row.sub { grid-template-columns: 20px minmax(0, 1fr); } }
 .opt-row.section { grid-template-columns: 32px minmax(0, 1fr) auto; }
 
 
@@ -1140,7 +1144,7 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 /* Inside Crear máquina the column is narrower: each control goes under its text. */
 .create-section .customize .opt-row { grid-template-columns: 32px minmax(0, 1fr); }
 .create-section .customize .opt-ctl { grid-column: 2 / -1; justify-content: flex-start; }
-.create-section .customize .opt-row.sub { padding-left: 0; }
+.create-section .customize .opt-row.sub { grid-template-columns: 20px minmax(0, 1fr); }
 
 /* Games in the space of machines */
 .space-games { position: absolute; top: 12px; right: 12px; z-index: 2; opacity: 0; transition: opacity 0.15s; }
@@ -1344,6 +1348,7 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
    goes under it, using the whole row, instead of squeezing the text into a strip. */
 @container (max-width: 640px) {
   .opt-row, .opt-row.section { grid-template-columns: 32px minmax(0, 1fr); }
+  .opt-row.sub { grid-template-columns: 20px minmax(0, 1fr); }
   .opt-row > .opt-ctl { grid-column: 1 / -1; justify-content: flex-start; max-width: none; }
   .opt-row > .opt-ctl > .segmented, .opt-row > .opt-ctl > .dropdown, .opt-row > .opt-ctl > .slider { width: 100%; max-width: none; }
 }

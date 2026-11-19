@@ -383,7 +383,7 @@ export function Customize({ source, ops, selected, setSelected, openMenu, bare, 
               <div className="opt-text"><span className="opt-title">{t("Altura")}</span><span className="opt-desc">{t("También se sube o se baja arrastrándolo en el cubo.")}</span></div>
               <div className="opt-ctl">
                 <Slider label={t("Altura")} value={Math.round((led.y ?? 0) * 100)} min={0} max={100} step={5} marks={[0, 50, 100]}
-                  format={(v) => (v === 0 ? t("Abajo") : v === 100 ? t("Arriba") : `${v} %`)} onChange={(v) => save({ led: { ...led, y: v / 100 } })} />
+                  format={(v) => `${v} %`} onChange={(v) => save({ led: { ...led, y: v / 100 } })} />
               </div>
             </div>
             <div className="opt-row sub">
