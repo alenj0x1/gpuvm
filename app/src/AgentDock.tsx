@@ -88,14 +88,27 @@ export function AgentDock() {
   const detail = [request.clientName, request.reason, request.file && bytes(request.file.sizeBytes, locale())].filter(Boolean).join(" · ");
 
   if (request.human) {
-    // Only the person can do it, in the machine itself: no veil and no buttons, the picture stays usable.
+    // Only the person can do it, in the machine itself: no veil, the picture stays usable; once done, the agent goes on.
+    const back = async () => {
+      setBusy("allow"); setError("");
+      try {
+        if (!inTauri) { await new Promise((r) => setTimeout(r, 400)); setShown(false); return; }
+        await invoke("agent_dock_resume");
+      } catch (e) { setError(humanError(e)); setBusy(null); }
+    };
     return (
       <div className="dock-stage">
-        <div ref={dockRef} className={shown ? "dock on ag-dock-human" : "dock ag-dock-human"} role="status">
+        <div ref={dockRef} className={shown ? "dock on ag-dock-human" : "dock ag-dock-human"} role="alertdialog" aria-labelledby="ag-dock-title">
           <span className="dock-icon ag-dock-warn"><I size={18} /></span>
           <div className="dock-text">
-            <strong>{title}</strong>
-            <span>{t("{name} waits until you do it", { name: request.clientName })}</span>
+            <strong id="ag-dock-title">{t("{name} needs you", { name: request.clientName })}</strong>
+            <span title={title}>{title}</span>
+            {error && <span className="dock-error">{error}</span>}
+          </div>
+          <div className="dock-actions">
+            <button type="button" className="dock-btn dock-allow" disabled={!!busy} onClick={back}>
+              {busy ? <IconLoader2 size={15} className="spin" /> : <IconRobot size={15} />}{t("Return to agent")}
+            </button>
           </div>
         </div>
       </div>

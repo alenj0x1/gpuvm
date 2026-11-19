@@ -14,7 +14,7 @@ fn main() {
         "open_console", "repair_service", "relaunch_as_admin", "service_status", "start_service", "stop_service",
         "set_service_mode", "set_service_startup", "set_close_to_tray", "set_stop_vms_on_quit", "set_language",
         "set_notices_after_quit", "dock_prompt", "dock_answer",
-        "agent_dock_request", "agent_dock_answer", "status_resize", "status_state", "status_action", "set_status_prefs", "set_agent_prefs", "mcp_exe_path", "agent_recordings", "pending_view",
+        "agent_dock_request", "agent_dock_answer", "agent_dock_resume", "status_resize", "status_state", "status_action", "set_status_prefs", "set_agent_prefs", "mcp_exe_path", "agent_recordings", "pending_view",
         "set_capture_prefs", "capture_folders", "capture_open", "capture_reveal", "capture_open_folder", "capture_state", "capture_get_hevc",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().windows_attributes(windows).app_manifest(commands))

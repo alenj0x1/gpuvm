@@ -183,7 +183,9 @@ fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Ve
             continue;
         }
         notified.insert(id);
-        if !main_in_front(app) {
+        // What only the person can do is always announced (the person may be in GpuVM but not looking at that machine);
+        // a request to answer, when GpuVM isn't in front.
+        if r["human"].as_bool() == Some(true) || !main_in_front(app) {
             notify(app, r);
         }
     }
@@ -207,7 +209,7 @@ fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str, rect: Rect) -
     let (px, py, pw, ph) = match rect {
         Rect::Picture => (x, y, w, h),
         Rect::Top => {
-            let bw = ((440.0 * scale) as i32).min(w);
+            let bw = ((560.0 * scale) as i32).min(w);
             (x + (w - bw) / 2, y, bw, (72.0 * scale) as i32)
         }
     };
@@ -343,6 +345,23 @@ async fn answer(app: &AppHandle, request: &Value, allow: bool, for_task: bool) -
         }
         call(app, "Resolve-GpuVMAgentRequest", args).await.map(|_| ())
     }
+}
+
+/// Return to agent, from the dock of what only the person could do (request_human): they did it in the machine, the
+/// agent goes on.
+#[tauri::command]
+pub async fn agent_dock_resume(app: AppHandle) -> Result<(), String> {
+    let client = {
+        let d = lock(&DOCKED);
+        let d = d.as_ref().ok_or("The request already closed.")?;
+        if d.request["human"].as_bool() != Some(true) {
+            return Err("Answer it with its buttons.".into());
+        }
+        d.request["client"].as_str().unwrap_or("").to_string()
+    };
+    resume(&app, &client).await?;
+    hide_dock(&app);
+    Ok(())
 }
 
 /// The request the dock shows, for its page when it loads.
@@ -611,21 +630,54 @@ pub fn mcp_exe_path() -> Result<String, String> {
 
 /* ---------- Windows notifications ---------- */
 
-/// A Windows notification that a request waits. Its only action opens GpuVM's main window on Agents: answering is
-/// done there (a GpuVM window), never from the notification.
+/// A Windows notification that a request waits, or that the agent needs the person (request_human). Its only action,
+/// View, opens that machine's picture in GpuVM, where the request drops as its dock: answering is done there (a GpuVM
+/// window), never from the notification.
 fn notify(app: &AppHandle, request: &Value) {
     let who = request["clientName"].as_str().unwrap_or("An agent");
     let what = request["title"].as_str().unwrap_or("");
-    let vm = request["machine"].as_str().unwrap_or("");
-    let title = if english() { format!("{who} asks: {what}") } else { format!("{who} pide: {}", spanish_title(what)) };
-    let body = format!("{vm} · {}", tr("Waiting for your answer", "Espera tu respuesta"));
-    let review = tr("Review", "Revisar");
+    let vm = request["machine"].as_str().unwrap_or("").to_string();
+    let human = request["human"].as_bool() == Some(true);
+    let (title, body) = if human {
+        // The agent's own words: what it needs the person to do.
+        (tr(&format!("{who} needs you"), &format!("{who} te necesita")), format!("{} · {vm}", spanish_or(what)))
+    } else if english() {
+        (format!("{who} asks: {what}"), format!("{vm} · Waiting for your answer"))
+    } else {
+        (format!("{who} pide: {}", spanish_title(what)), format!("{vm} · Espera tu respuesta"))
+    };
+    let view = tr("View", "Ver");
     let app2 = app.clone();
     let _ = app.run_on_main_thread(move || {
-        if let Err(e) = toast::show(&title, &body, &review, move || open_agents(&app2)) {
+        if let Err(e) = toast::show(&title, &body, &view, move || open_viewer(&app2, &vm)) {
             eprintln!("agent notification: {e}");
         }
     });
+}
+
+/// A human request's message is the agent's own words, except the broker's usual ones (said in Spanish).
+fn spanish_or(text: &str) -> String {
+    if english() {
+        return text.to_string();
+    }
+    match text {
+        "Windows asks for a password" => "Windows pide una contraseña".into(),
+        "Windows asks for administrator permission" => "Windows pide permiso de administrador".into(),
+        "Windows needs you" => "Windows te necesita".into(),
+        other => other.to_string(),
+    }
+}
+
+/// View: GpuVM comes forward and opens that machine's picture, as its Open button (gpuvm.exe --view does the same).
+fn open_viewer(app: &AppHandle, vm: &str) {
+    crate::show_main(app);
+    if let Some(w) = app.get_webview_window("main") {
+        if vm.is_empty() {
+            let _ = w.emit("open-route", ":agents");
+        } else {
+            let _ = w.emit("open-viewer", vm);
+        }
+    }
 }
 
 /// The broker's titles are English ("Connect to github.com"); the notification is drawn here, so its common shapes
@@ -640,12 +692,6 @@ fn spanish_title(en: &str) -> String {
     en.to_string()
 }
 
-fn open_agents(app: &AppHandle) {
-    crate::show_main(app);
-    if let Some(w) = app.get_webview_window("main") {
-        let _ = w.emit("open-route", ":agents");
-    }
-}
 
 mod toast {
     use windows::core::{Interface, HSTRING};

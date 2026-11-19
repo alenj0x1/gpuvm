@@ -36,8 +36,8 @@ export default {
   // Requests
   "Requests": "Solicitudes",
   "An agent waits for your answer. With no answer, it's refused.": "Un agente espera tu respuesta. Sin respuesta, se rechaza.",
-  "{name} waits": "{name} espera",
-  "{name} waits until you do it": "{name} espera a que lo hagas",
+  "View": "Ver",
+  "{name} needs you": "{name} te necesita",
   "Refused by itself when the time runs out": "Se rechaza sola cuando se acaba el tiempo",
   "Refuse": "Rechazar",
   "Accept": "Aceptar",

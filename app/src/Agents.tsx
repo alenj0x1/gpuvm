@@ -163,7 +163,8 @@ const left = (r: AgentRequest, now: number) => Math.max(0, Math.round((new Date(
 
 /** A request waiting for the person, answered here (a GpuVM window). Allow is once; the right click also offers
  *  Allow for this task. Human-only requests have no buttons: the person acts in the machine. */
-export function RequestRow({ r, showMachine = true }: { r: AgentRequest; showMachine?: boolean }) {
+/** `onView`: opens the request's machine picture (what only the person can do is done there). */
+export function RequestRow({ r, showMachine = true, onView }: { r: AgentRequest; showMachine?: boolean; onView?: (machine: string) => void }) {
   const [busy, setBusy] = useState<"allow" | "deny" | "task" | null>(null);
   const [error, setError] = useState("");
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -185,7 +186,14 @@ export function RequestRow({ r, showMachine = true }: { r: AgentRequest; showMac
         {error && <span className="error-text">{error}</span>}
       </div>
       {r.human
-        ? <span className="ag-request-wait">{t("{name} waits", { name: r.clientName })}</span>
+        // Only the person can do it, in the machine: View opens its picture; once done, the agent goes on.
+        ? <div className="ag-request-actions">
+            {onView && <button type="button" className="btn ghost compact" onClick={() => onView(r.machine)}><IconDeviceDesktop size={15} />{t("View")}</button>}
+            <button type="button" className="btn compact" disabled={!!busy}
+              onClick={async () => { setBusy("allow"); setError(""); try { await agents.resume(r.client); await refreshAgents(); } catch (e) { setError(humanError(e)); setBusy(null); } }}>
+              {busy ? <IconLoader2 size={15} className="spin" /> : <IconRobot size={15} />}{t("Return to agent")}
+            </button>
+          </div>
         : <>
             <span className="ag-request-left" title={t("Refused by itself when the time runs out")}>{sec < 60 ? t("{n} s", { n: sec }) : t("{n} min", { n: Math.ceil(sec / 60) })}</span>
             <div className="ag-request-actions">
@@ -293,7 +301,7 @@ export function RecordingList({ list, showMachine }: { list: AgentRecording[]; s
             <strong className="ellipsis" title={r.name}>{r.name}</strong>
             <span className="ellipsis">{[duration(r.durationMs), bytes(r.bytes, locale()), showMachine ? r.machine : r.clientName, since(r.at)].join(" · ")}</span>
           </div>
-          <button type="button" className="btn ghost compact" onClick={() => agents.openRecording(r.path).catch((e) => setError(humanError(e)))}><IconPlayerPlay size={15} />{t("Play|video")}</button>
+          <div className="ag-request-actions"><button type="button" className="btn ghost compact" onClick={() => agents.openRecording(r.path).catch((e) => setError(humanError(e)))}><IconPlayerPlay size={15} />{t("Play|video")}</button></div>
         </div>
       ))}
       {error && <span className="error-text">{error}</span>}
@@ -365,7 +373,7 @@ function ClientCard({ c, onOpenVm, recordings }: { c: AgentClient; onOpenVm: (na
 
 /** The Agents page: what is waiting for the person first, then the connected clients, the deliveries, and how to
  *  connect a client. */
-export function AgentsView({ onOpenVm }: { onOpenVm: (name: string) => void }) {
+export function AgentsView({ onOpenVm, onViewMachine }: { onOpenVm: (name: string) => void; onViewMachine?: (name: string) => void }) {
   const snap = useAgents();
   const [stopping, setStopping] = useState(false);
   const [confirm, setConfirm] = useState(false);
@@ -397,7 +405,7 @@ export function AgentsView({ onOpenVm }: { onOpenVm: (name: string) => void }) {
       {snap.requests.length > 0 && (
         <section className="ag-section">
           {head(<IconShieldLock size={17} />, t("Requests"), t("An agent waits for your answer. With no answer, it's refused."))}
-          <div className="card ag-requests">{snap.requests.map((r) => <RequestRow key={r.id} r={r} />)}</div>
+          <div className="card ag-requests">{snap.requests.map((r) => <RequestRow key={r.id} r={r} onView={onViewMachine} />)}</div>
         </section>
       )}
       <section className="ag-section">

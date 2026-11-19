@@ -3,5 +3,5 @@
   "identifier": "agent",
   "description": "The agent's dock over a machine's picture: they read what they show and answer it, nothing else",
   "windows": ["agent-dock"],
-  "permissions": ["core:default", "allow-agent-dock-request", "allow-agent-dock-answer"]
+  "permissions": ["core:default", "allow-agent-dock-request", "allow-agent-dock-answer", "allow-agent-dock-resume"]
 }
