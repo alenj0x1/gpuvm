@@ -276,6 +276,22 @@ pub(crate) fn show_main(app: &AppHandle) {
     }
 }
 
+/// `--view <name>`: open that machine's picture, as its Open button does. Only a valid machine name passes; the page
+/// checks it is one of the machines and does nothing else with it.
+fn view_arg(args: &[String]) -> Option<String> {
+    let i = args.iter().position(|a| a == "--view")?;
+    let name = args.get(i + 1)?;
+    (!name.is_empty() && name.len() <= 40 && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')).then(|| name.clone())
+}
+
+/// A `--view` GpuVM was started with (no instance was running): the page takes it once it can open machines.
+static PENDING_VIEW: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+#[tauri::command]
+fn pending_view() -> Option<String> {
+    PENDING_VIEW.lock().unwrap_or_else(|e| e.into_inner()).take()
+}
+
 /// The app's language for the few texts drawn by Rust (the tray menu): false Spanish, true English.
 pub(crate) static ENGLISH: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -400,7 +416,16 @@ pub fn consent(code: &str) -> i32 {
 pub fn run() {
     tauri::Builder::default()
         // A second launch (e.g. from the Start menu while GpuVM is in the tray) shows the open window instead.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            show_main(app);
+            // `gpuvm.exe --view <name>` (the MCP server's open_viewer) while GpuVM runs: open that machine's picture.
+            if let Some(name) = view_arg(&args) {
+                use tauri::Manager;
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.emit("open-viewer", name);
+                }
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         // Until the page sends its preferences: the default "with GpuVM" (stop the service when the app quits).
         .manage(AppState { stop_service_on_quit: AtomicBool::new(true), ..Default::default() })
@@ -426,10 +451,11 @@ pub fn run() {
         .setup(|app| {
             prompt::start(app.handle().clone());
             agent::start(app.handle().clone());
+            *PENDING_VIEW.lock().unwrap_or_else(|e| e.into_inner()) = view_arg(&std::env::args().collect::<Vec<_>>());
             clipboard::start(app.handle());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![ps, job, prompt::admin_prompts, prompt::card_answer, dock::dock_prompt, dock::dock_answer, agent::agent_dock_request, agent::agent_dock_answer, agent::agent_banner_info, agent::agent_banner_return, agent::set_agent_prefs, agent::mcp_exe_path, viewer::viewer_send, viewer::viewer_is_open, viewer::viewer_home, viewer::viewer_show, viewer::viewer_list, viewer::viewer_reveal, viewer::viewer_covered, overlay::viewer_panel_resize, overlay::viewer_panel_close, overlay::viewer_panel_vm, dropzone::transfer_start, dropzone::transfer_cancel, dropzone::transfer_list, dropzone::viewer_drop_hide, dropzone::viewer_drop_state, clipboard::clipboard_items, clipboard::clipboard_send, clipboard::clipboard_auto, clipboard::clipboard_clear, capture::set_capture_prefs, capture::capture_folders, capture::capture_open, capture::capture_reveal, capture::capture_open_folder, capture::capture_state, capture::capture_get_hevc, open_console, repair_service, relaunch_as_admin, service_status, start_service, stop_service, set_service_mode, set_service_startup, set_close_to_tray, set_stop_vms_on_quit, set_language, notices::set_notices_after_quit])
+        .invoke_handler(tauri::generate_handler![ps, job, prompt::admin_prompts, prompt::card_answer, dock::dock_prompt, dock::dock_answer, agent::agent_dock_request, agent::agent_dock_answer, agent::agent_banner_info, agent::agent_banner_return, agent::set_agent_prefs, agent::mcp_exe_path, pending_view, viewer::viewer_send, viewer::viewer_is_open, viewer::viewer_home, viewer::viewer_show, viewer::viewer_list, viewer::viewer_reveal, viewer::viewer_covered, overlay::viewer_panel_resize, overlay::viewer_panel_close, overlay::viewer_panel_vm, dropzone::transfer_start, dropzone::transfer_cancel, dropzone::transfer_list, dropzone::viewer_drop_hide, dropzone::viewer_drop_state, clipboard::clipboard_items, clipboard::clipboard_send, clipboard::clipboard_auto, clipboard::clipboard_clear, capture::set_capture_prefs, capture::capture_folders, capture::capture_open, capture::capture_reveal, capture::capture_open_folder, capture::capture_state, capture::capture_get_hevc, open_console, repair_service, relaunch_as_admin, service_status, start_service, stop_service, set_service_mode, set_service_startup, set_close_to_tray, set_stop_vms_on_quit, set_language, notices::set_notices_after_quit])
         .build(tauri::generate_context!())
         .expect("failed to start GpuVM")
         .run(|app, event| {

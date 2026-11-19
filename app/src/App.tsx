@@ -204,6 +204,20 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     if (selected !== PREFS && selected !== HOME && selected !== AGENTS && !libraryTab(selected) && vms && vms.length && !vms.some((v) => v.name === selected)) setSelected(HOME);
   }, [vms, selected]);
 
+  // `gpuvm.exe --view <name>` (an agent's open_viewer): that machine's page, and its picture opened like its Open
+  // button does. A name that isn't one of the machines, or one busy with a job, does nothing.
+  const openFromAgent = (name: string) => {
+    if (!vmsRef.current?.some((v) => v.name === name) || Object.values(jobsRef.current).some((j) => j.vm === name)) return;
+    setSelected(name);
+    startJobRef.current?.(name, "Connect-GpuVM", { Name: name });
+  };
+  // GpuVM started by that command: it opens once the machines are known.
+  const loaded = vms !== null;
+  useEffect(() => {
+    if (!inTauri || !loaded) return;
+    import("@tauri-apps/api/core").then(({ invoke }) => invoke<string | null>("pending_view")).then((name) => { if (name) openFromAgent(name); }).catch(() => {});
+  }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // A Windows notification of an agent's request opens Agents (agent.rs); answers there are read again at once.
   useEffect(() => {
     if (!inTauri) return;
@@ -211,6 +225,9 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     import("@tauri-apps/api/event").then(({ listen }) => {
       offs.push(listen<string>("open-route", (e) => { if (e.payload === AGENTS) setSelected(AGENTS); }));
       offs.push(listen("agents-changed", () => { refreshAgents(); }));
+      // `gpuvm.exe --view <name>` (an agent's open_viewer): that machine's page, and its picture opened like its Open
+      // button does. A name that isn't one of the machines, or one busy with a job, does nothing.
+      offs.push(listen<string>("open-viewer", (e) => openFromAgent(e.payload)));
     });
     return () => { offs.forEach((p) => p.then((off) => off())); };
   }, []);
