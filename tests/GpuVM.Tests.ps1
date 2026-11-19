@@ -1785,3 +1785,24 @@ InModuleScope GpuVM {
         }
     }
 }
+
+InModuleScope GpuVM {
+    Describe 'Sunshine on an agent machine runs as the service, never as the agent''s account' {
+        It 'the capture mode is ddx for agent machines, whatever was chosen' {
+            Get-GpuVMCaptureMode -State @{ config = @{ streaming = @{} } } | Should Be 'wgc'
+            Get-GpuVMCaptureMode -State @{ config = @{ streaming = @{ captureMode = 'ddx' } } } | Should Be 'ddx'
+            Get-GpuVMCaptureMode -State @{ use = 'agent'; config = @{ streaming = @{} } } | Should Be 'ddx'
+            Get-GpuVMCaptureMode -State @{ use = 'agent'; config = @{ streaming = @{ captureMode = 'wgc' } } } | Should Be 'ddx'
+        }
+        It 'WGC is refused on an agent machine' {
+            Mock Assert-Admin { }
+            Mock Save-GpuVMState { $script:saved = $true }
+            Mock Get-VM { [pscustomobject]@{ State = 'Off' } }
+            Mock Get-GpuVMState { @{ use = 'agent'; streaming = @{ x = 1 }; config = @{ streaming = @{} } } }
+            $script:saved = $false
+            Test-Throws { Set-GpuVMCapture -Name a -Mode wgc } | Should Be $true
+            $script:saved | Should Be $false
+            (Set-GpuVMCapture -Name a -Mode ddx).captureMode | Should Be 'ddx'
+        }
+    }
+}
