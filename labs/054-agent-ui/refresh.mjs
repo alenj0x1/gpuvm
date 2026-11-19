@@ -55,6 +55,7 @@ async function finish(code) {
   clearTimeout(guard);
   // GpuVM as the person had it: no lab flag.
   try { report.appRestoredWithoutFlag = await startApp(false); } catch { report.appRestoredWithoutFlag = false; }
+  report.approvalAtEnd = approval();
   if (machine) { try { await tool("destroy", { machine }); } catch { /* left */ } }
   writeFileSync(join(out, "refresh.json"), JSON.stringify(report, null, 1));
   console.log(JSON.stringify(report));
@@ -64,7 +65,11 @@ async function finish(code) {
 
 await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "lab054-refresh", version: "1.0" } });
 mcp.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
+/** The service's time to answer: it must stay 600 s however often GpuVM starts (the app used to write its own). */
+const approval = () => { try { return JSON.parse(pwsh("Import-Module 'C:\\Program Files\\GpuVM\\gpuvm\\src\\GpuVM' -ErrorAction Stop; Get-GpuVMAgentSettings | ConvertTo-Json -Compress")).approvalTimeoutSec; } catch { return null; } };
+report.approvalBefore = approval();
 report.appStarted = await startApp(false);
+report.approvalAfterStart = approval();
 const name = `lab054r-${new Date().toISOString().slice(11, 19).replace(/:/g, "")}`;
 const made = await tool("create_disposable", { template, name, task: "Lab 054: screen.refresh", cpu: 2, memoryGB: Number(process.env.LAB054_MEMORY_GB ?? 4) });
 console.log("create_disposable:", text(made).slice(0, 200));
@@ -86,7 +91,7 @@ async function connect() {
   let hiddenMs = null;
   for (const t0 = Date.now(); Date.now() - t0 < 180000;) {
     if (viewers() > 0) { hiddenMs = Date.now() - tClosed; break; }
-    await tool("screenshot", { machine, maxWidth: 64, maxHeight: 40 });
+    await tool("screenshot", { machine, maxWidth: 96, maxHeight: 64 });
     await sleep(1500);
   }
   if (hiddenMs === null) return { error: "no hidden viewer in 3 min" };

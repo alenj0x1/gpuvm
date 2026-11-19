@@ -11,8 +11,13 @@ export interface AgentSnapshot {
   recordings: AgentRecording[];
   /** How long a request waits for an answer, as the service has it (the one source of truth; null while unknown). */
   approvalTimeoutSec: number | null;
+  /** Each machine's agent (Get-GpuVMAgent), by machine name: ready, no-display (signed in but it sees no screen, so no
+   *  screenshots or input), starting, off or no-agent, and the service's reason. */
+  machineAgents: Record<string, { state: MachineAgentState; error: string | null }>;
   loaded: boolean; error: string | null;
 }
+
+export type MachineAgentState = "ready" | "no-display" | "starting" | "off" | "no-agent";
 
 /** What the broker sends (app/host/src/agent.rs on the agent-broker branch): times in ms, the client is a connection. */
 export interface BrokerState {
@@ -20,6 +25,7 @@ export interface BrokerState {
   settings?: { clients?: Record<string, { clientApprovals?: boolean }>; approvalTimeoutSec?: number } | null;
   broker?: { listening: boolean; error?: string | null } | null;
   recordings?: Record<string, unknown>[];
+  machines?: Record<string, unknown>[];
 }
 
 const iso = (v: unknown) => (typeof v === "number" ? new Date(v).toISOString() : typeof v === "string" ? v : new Date().toISOString());
@@ -91,10 +97,17 @@ export function fromBroker(raw: BrokerState): Omit<AgentSnapshot, "loaded" | "er
     name: String(r.name ?? ""), durationMs: num(r.durationMs), bytes: num(r.bytes), at: iso(r.at),
   })).reverse();
   const timeout = raw.settings?.approvalTimeoutSec;
-  return { clients, requests, offers, broker: raw.broker ?? null, recordings, approvalTimeoutSec: typeof timeout === "number" && timeout > 0 ? timeout : null };
+  const STATES_M: MachineAgentState[] = ["ready", "no-display", "starting", "off", "no-agent"];
+  const machineAgents: AgentSnapshot["machineAgents"] = {};
+  for (const m of raw.machines ?? []) {
+    const name = str(m.name);
+    if (!name) continue;
+    machineAgents[name] = { state: STATES_M.includes(m.state as MachineAgentState) ? (m.state as MachineAgentState) : "no-agent", error: str(m.lastError) };
+  }
+  return { clients, requests, offers, broker: raw.broker ?? null, recordings, approvalTimeoutSec: typeof timeout === "number" && timeout > 0 ? timeout : null, machineAgents };
 }
 
-let snap: AgentSnapshot = { clients: [], requests: [], offers: [], broker: null, recordings: [], approvalTimeoutSec: null, loaded: false, error: null };
+let snap: AgentSnapshot = { clients: [], requests: [], offers: [], broker: null, recordings: [], approvalTimeoutSec: null, machineAgents: {}, loaded: false, error: null };
 let json = "";
 const subs = new Set<() => void>();
 let users = 0;
@@ -116,9 +129,10 @@ if (inTauri) {
 
 async function read() {
   try {
-    const [clients, requests, offers, settings, broker, recordings] = await Promise.all([
-      agents.clients(), agents.requests(), agents.offers(), agents.settings().catch(() => null), agents.broker().catch(() => null), agents.recordings().catch(() => [])]);
-    take({ clients, requests, offers, settings, broker, recordings });
+    const [clients, requests, offers, settings, broker, recordings, machines] = await Promise.all([
+      agents.clients(), agents.requests(), agents.offers(), agents.settings().catch(() => null), agents.broker().catch(() => null), agents.recordings().catch(() => []),
+      agents.machines().catch(() => [])]);
+    take({ clients, requests, offers, settings, broker, recordings, machines });
   } catch (e) {
     snap = { ...snap, loaded: true, error: String(e) };
     subs.forEach((f) => f());

@@ -141,13 +141,17 @@ pub fn start(app: AppHandle) {
             };
             let requests = list(call(&app, "Get-GpuVMAgentRequest", json!({})).await).unwrap_or_default();
             let offers = list(call(&app, "Get-GpuVMAgentOffer", json!({})).await).unwrap_or_default();
+            // Each machine's agent: ready, no-display (signed in but sees no screen), starting, off or no-agent. Only
+            // what the pages show is kept (not the agent's whole info).
+            let machines: Vec<Value> = list(call(&app, "Get-GpuVMAgent", json!({})).await).unwrap_or_default().iter()
+                .map(|m| json!({ "name": m["name"], "state": m["state"], "lastError": m["lastError"] })).collect();
             // The settings (per-client approvals) and the channel's state change rarely: every tenth round.
             if round % 10 == 0 {
                 settings = call(&app, "Get-GpuVMAgentSettings", json!({})).await.ok().and_then(|v| v.get(0).cloned()).unwrap_or(Value::Null);
                 broker = call(&app, "Get-GpuVMAgentBroker", json!({})).await.ok().and_then(|v| v.get(0).cloned()).unwrap_or(Value::Null);
             }
             round += 1;
-            update(&app, clients, requests, offers, &settings, &broker);
+            update(&app, clients, requests, offers, machines, &settings, &broker);
             // An agent holding a machine counts even while idle (thinking): its viewer must be watched without lag.
             let busy = lock(&CLIENTS).iter().any(|c| c["state"].as_str().is_some_and(|s| s != "idle" && s != "stopped") || holds(c))
                 // A delivery still copying: its result shows without waiting for the slow poll.
@@ -169,10 +173,10 @@ fn offer_request(o: &Value) -> Value {
     })
 }
 
-fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Vec<Value>, settings: &Value, broker: &Value) {
+fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Vec<Value>, machines: Vec<Value>, settings: &Value, broker: &Value) {
     // Every page that shows agents takes this instead of asking the service again (agentStore.ts turns it into the
     // app's shapes).
-    let _ = app.emit("agents-state", json!({ "clients": clients, "requests": requests, "offers": offers, "settings": settings, "broker": broker, "recordings": recordings() }));
+    let _ = app.emit("agents-state", json!({ "clients": clients, "requests": requests, "offers": offers, "machines": machines, "settings": settings, "broker": broker, "recordings": recordings() }));
     *lock(&CLIENTS) = clients.clone();
     release_view(app, &clients);
     let answered = lock(&ANSWERED).clone();

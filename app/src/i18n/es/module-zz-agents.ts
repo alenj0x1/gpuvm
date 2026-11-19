@@ -18,6 +18,10 @@ export const patterns: [RegExp, string][] = [
   [/^The machine is locked$/, "La máquina está bloqueada"],
   [/^Out of steps$/, "Se acabaron los pasos"],
   [/^Out of time$/, "Se acabó el tiempo"],
+  // Get-GpuVMAgent "no-display" (lastError).
+  [/^The agent is signed in but has seen no display for (\d+) s: it can't take screenshots or use the mouse and keyboard\. Restarting doesn't help; the machine's agent needs fixing\.$/,
+    "El agente inició sesión pero no ve ninguna pantalla desde hace $1 s. No puede tomar capturas ni usar el mouse y el teclado. Reiniciar no lo arregla, hay que reparar el agente de la máquina."],
+  [/^The agent is signed in but has seen no display for (\d+) s: (.+)$/, "El agente inició sesión pero no ve ninguna pantalla desde hace $1 s. $2"],
   // What the agent did (its actions, newest first).
   [/^Took a screenshot$/, "Tomó una captura"],
   [/^Clicked (.+)$/, "Clic en $1"],

@@ -56,6 +56,10 @@ switch (scenario) {
   case "control":
     clients = [claude({ state: "control", reason: "You took control" })];
     break;
+  case "nodisplay":
+    // The agent is signed in but sees no screen (Get-GpuVMAgent "no-display"): its session waits.
+    clients = [claude({ state: "idle", reason: null })];
+    break;
   case "human":
     clients = [claude({ state: "human", reason: "Windows asks for a password" })];
     requests = [{ id: "r-human", client: "c1", clientName: "Claude Code", machine: "win-agent", kind: "admin", title: "Windows asks for a password", reason: null,
@@ -119,6 +123,10 @@ export function agentCommand(cmd: string, args: Record<string, unknown>): unknow
     case "Get-GpuVMAgentClient":
       return clients.map(({ clientApprovals: _, ...c }) => ({ ...c, connectedAt: ms(c.connectedAt),
         actions: c.actions.map((a) => ({ id: a.id, at: ms(a.at), method: a.method, text: a.text, ok: a.ok, code: a.ok ? "ok" : "internal", capture: false })) }));
+    case "Get-GpuVMAgent":
+      return agentMachines.map((name) => scenario === "nodisplay" && name === "win-agent"
+        ? { name, state: "no-display", lastError: "The agent is signed in but has seen no display for 47 s: it can't take screenshots or use the mouse and keyboard. Restarting doesn't help; the machine's agent needs fixing." }
+        : { name, state: "ready", lastError: null });
     case "Set-GpuVMAgentSettings":
       if (typeof args.ApprovalTimeoutSec === "number") approvalTimeoutSec = args.ApprovalTimeoutSec;
       return [];
