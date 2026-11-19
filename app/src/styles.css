@@ -567,7 +567,6 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
   .scene-head .specs { grid-area: specs; display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 16px 16px; }
   .scene-head .warn-text { grid-area: warn; margin: -8px 16px 16px; }
 }
-}
 .machine-icon { display: block; flex: none; }
 .tab-body { display: flex; flex-direction: column; gap: 16px; }
 .tab-body .section-title:only-child, .tab-body .card > .section-title { display: none; }
