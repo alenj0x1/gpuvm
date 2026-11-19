@@ -21,19 +21,23 @@ try {
     Start-VM -Name $Name
     $t0 = Get-Date
     Line 'copy started; Connect-GpuVM -Viewer (what Open runs) in a job, with every step it reports'
-    $job = Start-ThreadJob -ArgumentList $module, $Name {
-        param($m, $n)
+    $steps = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
+    $job = Start-ThreadJob -ArgumentList $steps, $module, $Name {
+        param($steps, $m, $n)
         Import-Module $m -Force
-        $global:GpuVMProgressSink = { param($message) Write-Output "STEP $(Get-Date -Format HH:mm:ss.fff) $message" }
+        # The steps go to a queue the lab reads, never to the output: Write-Step runs inside Connect-GpuVM, and output
+        # there would end up in its variables (lab 052: "drive STEP 04 not found").
+        $global:GpuVMProgressSink = { param($message) $steps.Enqueue("STEP $(Get-Date -Format HH:mm:ss.fff) $message") }.GetNewClosure()
         try { $r = Connect-GpuVM -Name $n -Viewer 3>&1; $r | ForEach-Object { if ($_ -is [System.Management.Automation.WarningRecord]) { "WARN $(Get-Date -Format HH:mm:ss.fff) $($_.Message)" } else { "RESULT $($_ | ConvertTo-Json -Compress -Depth 4)" } } }
         catch { "ERROR $(Get-Date -Format HH:mm:ss.fff) $($_.Exception.Message)" }
     }
     $lines = [System.Collections.Generic.List[string]]::new()
+    $step = $null
     while ($job.State -in 'NotStarted', 'Running' -and ((Get-Date) - $t0).TotalSeconds -lt $LimitSec) {
-        foreach ($l in @(Receive-Job $job)) { $lines.Add("$l"); Line "$l" }
+        while ($steps.TryDequeue([ref]$step)) { $lines.Add($step); Line $step }; foreach ($l in @(Receive-Job $job)) { $lines.Add("$l"); Line "$l" }
         Start-Sleep -Seconds 2
     }
-    foreach ($l in @(Receive-Job $job)) { $lines.Add("$l"); Line "$l" }
+    while ($steps.TryDequeue([ref]$step)) { $lines.Add($step); Line $step }; foreach ($l in @(Receive-Job $job)) { $lines.Add("$l"); Line "$l" }
     $result['finished'] = $job.State -notin 'NotStarted', 'Running'
     $result['seconds'] = [math]::Round(((Get-Date) - $t0).TotalSeconds)
     $result['lines'] = @($lines)
