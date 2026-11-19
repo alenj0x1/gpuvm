@@ -32,18 +32,18 @@ try {
     while (-not $(try { (Get-GpuVMAgentBroker).listening } catch { $false }) -and $sw.Elapsed.TotalSeconds -lt 15) { Start-Sleep -Milliseconds 100 }
     $result['broker'] = Get-GpuVMAgentBroker
     Line "broker: $($result['broker'] | ConvertTo-Json -Compress)"
-    # The machine under test: a disposable copy of the template, 2 GB (4 GB if the profile refuses 2).
-    $sw = [Diagnostics.Stopwatch]::StartNew()
-    try { New-GpuVM -Name $Name -Template $Template -Disposable -Override @{ vm = @{ memoryGB = 2 } } | Out-Null }
-    catch {
-        Line "2 GB copy refused ($($_.Exception.Message)); default memory"
-        if (Get-VM -Name $Name -ErrorAction SilentlyContinue) { Stop-VM -Name $Name -TurnOff -Force -ErrorAction SilentlyContinue; Remove-GpuVM -Name $Name -DeleteDisk -Confirm:$false }
-        New-GpuVM -Name $Name -Template $Template -Disposable | Out-Null
+    # The machine under test: a copy of the template (not disposable: those start at once with the template's 8 GB).
+    # GpuVM asks 4 GB per machine; this lab VM runs on 2 GB, set in Hyper-V only (deleted at the end), so two fit.
+    function New-SmallCopy([string]$vm, [switch]$AgentUse) {
+        $w = [Diagnostics.Stopwatch]::StartNew()
+        if ($AgentUse) { New-GpuVM -Name $vm -Template $Template -Use agent | Out-Null } else { New-GpuVM -Name $vm -Template $Template | Out-Null }
+        $made.Add($vm)
+        Set-VMMemory -VMName $vm -DynamicMemoryEnabled $false -StartupBytes 2GB
+        Start-VM -Name $vm
+        [math]::Round($w.Elapsed.TotalMilliseconds)
     }
-    if (-not $made.Contains($Name)) { $made.Add($Name) }
-    $result['cloneMs'] = [math]::Round($sw.Elapsed.TotalMilliseconds)
-    $result['cloneMemoryGB'] = (Get-VM -Name $Name).MemoryStartup / 1GB
-    Line "copy $Name of $Template made in $($result['cloneMs']) ms ($($result['cloneMemoryGB']) GB)"
+    $result['cloneMs'] = New-SmallCopy $Name
+    Line "copy $Name of $Template made and started in $($result['cloneMs']) ms (2 GB)"
     $cred = (Get-LatencyVM -Name $Name).Guest
     $guest = { param([scriptblock]$b, $a = @()) Invoke-Command -VMName $Name -Credential $cred -ErrorAction Stop -ScriptBlock $b -ArgumentList $a }
     function Wait-Ready([string]$vm, [double]$sec, [long]$after = 0) {
@@ -122,15 +122,21 @@ try {
         $first = @(Get-GpuVMAgent -Name $Name)[0]
         $copies = @([ordered]@{ name = $Name; vmId = $first.vmId; state = $first.state; version = $first.version })
         $copies += foreach ($n in @('agent052b')) {
+            # New-GpuVM -Use agent on a machine that isn't on yet: the agent stays pending; Set-GpuVMUse installs it.
             $w = [Diagnostics.Stopwatch]::StartNew()
-            try { New-GpuVM -Name $n -Template $Template -Disposable -Override @{ vm = @{ memoryGB = 2 } } -Use agent | Out-Null }
-            catch { Line "$n : $($_.Exception.Message)"; if (Get-VM -Name $n -ErrorAction SilentlyContinue) { $made.Add($n) }; continue }
-            $made.Add($n)
+            try { New-SmallCopy $n -AgentUse | Out-Null }
+            catch { Line "$n : $($_.Exception.Message)"; continue }
+            $pending = (& (Get-Module GpuVM) { param($v) (Get-GpuVMState -Name $v)['agent'] } $n)
+            $credB = (Get-LatencyVM -Name $n).Guest
+            while ($w.Elapsed.TotalMinutes -lt 10) { try { Invoke-Command -VMName $n -Credential $credB { 1 } -ErrorAction Stop | Out-Null; break } catch { Start-Sleep -Milliseconds 500 } }
+            $psd = [math]::Round($w.Elapsed.TotalMilliseconds)
+            $use = Set-GpuVMUse -Name $n -Use agent
             $ms = [math]::Round($w.Elapsed.TotalMilliseconds)
             $ready = Wait-Ready $n 300
             $a = @(Get-GpuVMAgent -Name $n)[0]
-            Line "$n created and agent installed in $ms ms, ready +$ready ms, state $($a.state)"
-            [ordered]@{ name = $n; createAndInstallMs = $ms; readyMs = $ready; state = $a.state; vmId = $a.vmId; version = $a.version }
+            Line "${n}: pending=$($pending['pending']), PS Direct at $psd ms, agent use set at $ms ms, ready +$ready ms, state $($a.state)"
+            [ordered]@{ name = $n; pendingBeforeStart = $pending['pending']; psDirectMs = $psd; useSetMs = $ms; readyMs = $ready; use = $use
+                state = $a.state; vmId = $a.vmId; version = $a.version }
         }
         $result['disposables'] = @($copies)
         $want = @{}
