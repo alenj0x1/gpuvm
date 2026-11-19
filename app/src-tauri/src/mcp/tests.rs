@@ -343,6 +343,8 @@ fn commands_files_and_offers() {
     // Only the path goes with the request (agent-broker's contract): the service measures it and writes the title.
     let asked = h.fake.with(|s| s.last_approval.clone());
     assert_eq!((asked["kind"].as_str(), asked["path"].as_str()), (Some("send"), Some(host_path.as_str())));
+    // Its own 10 minutes, whatever the session's default approval timeout is.
+    assert_eq!(asked["timeoutSec"], 600);
     assert!(asked.get("sizeBytes").is_none() && asked.get("files").is_none() && asked.get("title").is_none(), "{asked}");
     // A folder works the same; the local measure only words the refusal.
     let dir = std::env::temp_dir().join(format!("gpuvm-mcp-dir-{}", std::process::id()));
