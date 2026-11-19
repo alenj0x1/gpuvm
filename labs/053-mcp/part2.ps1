@@ -68,7 +68,7 @@ try {
             "1. Create a disposable machine from the $Template template named lab053-demo with memoryGB $MemoryGB and task 'Test the GpuVM installer'. " +
             "2. Open the viewer so I can watch. 3. Send $Installer from this PC into the machine. " +
             "4. Run it from Desktop\Received (double-click it or start it). Installing needs administrator rights: when a UAC prompt or an administrator window blocks you, " +
-            "ask me with request_human (say exactly what to accept) and wait up to $HumanWaitSeconds seconds; if I don't hand it back, stop installing and say so. " +
+            "ask me with request_human (say exactly what to accept) and wait up to $HumanWaitSeconds seconds; if I don't hand it back, stop installing, withdraw your request with cancel_request and say so in the report. " +
             "5. If it installed, check it like a user would (Start menu entry, C:\Program Files\GpuVM, open the app once) and take screenshots of what you see. " +
             "6. Write a short Markdown report in Desktop\Outbox\gpuvm-install-report.md (what you did, what you saw, what failed) and offer it to me with a note. " +
             "7. Destroy the machine. Finally report each step in one line."
