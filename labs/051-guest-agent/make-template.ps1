@@ -1,12 +1,14 @@
 # Turns the lab VM into the shared template `agent-tpl`: removes the lab's guest-side files, runs install.ps1
 # -PrepareTemplate (no secret, no logs: a template never carries a secret), checks that, shuts the VM down and saves
 # it with New-GpuVMTemplate. Stops at the first error. Takes the lab lock (the disk copy is heavy I/O).
-param([string]$Name = 'agent051', [string]$Template = 'agent-tpl', [string]$Me = 'agent-guest')
+param([string]$Name = 'agent051', [string]$Template = 'agent-tpl', [string]$Me = 'agent-guest', [switch]$LockHeld)
 $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 Import-Module (Join-Path $root 'src\GpuVM\GpuVM.psd1') -Force
-& (Join-Path $root 'labs\042-admin-dock\take-lock.ps1') -What "lab 051: template $Template from $Name (disk copy)" -Me $Me
-if ($LASTEXITCODE -ne 0) { throw 'no lock' }
+if (-not $LockHeld) {
+    & (Join-Path $root 'labs\042-admin-dock\take-lock.ps1') -What "lab 051: template $Template from $Name (disk copy)" -Me $Me
+    if ($LASTEXITCODE -ne 0) { throw 'no lock' }
+}
 try {
     $c = Import-Clixml (Join-Path $PSScriptRoot 'out\guest.xml')
     if ((Get-VM -Name $Name).State -ne 'Running') { Start-VM -Name $Name; & (Join-Path $root 'labs\047-hvsocket\wait-ready.ps1') -Name $Name -MaxMinutes 10 | Out-Null }
@@ -23,6 +25,6 @@ try {
     "template $Template in $([int]$t.TotalSeconds) s"
 }
 finally {
-    Remove-Item 'C:\GpuVM\.lab-lock' -Force -ErrorAction SilentlyContinue
+    if (-not $LockHeld) { Remove-Item 'C:\GpuVM\.lab-lock' -Force -ErrorAction SilentlyContinue }
     "lock released $(Get-Date -Format HH:mm:ss)"
 }
