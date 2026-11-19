@@ -21,7 +21,7 @@ const bytes = (n: number) => n >= 1 << 30
   : n >= 1 << 20 ? `${(n / (1 << 20)).toLocaleString(locale(), { maximumFractionDigits: 1 })} MB`
     : `${Math.max(1, Math.round(n / 1024)).toLocaleString(locale())} KB`;
 
-/** "foto.png", "foto.png y 2 más". */
+/** "photo.png", "photo.png and 2 more". */
 export const namesOf = (names: string[]) => names.length <= 1 ? names[0] ?? "" : t("{first} and {n} more", { first: names[0], n: names.length - 1 });
 
 /** One copy: the percent before the name (a long name never hides it), its bar and Cancelar; once done, where it went. */

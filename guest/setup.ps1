@@ -16,25 +16,25 @@ try {
     $applied = @()
     foreach ($name in $config.optimizations) {
         if (-not $GpuVMOptimizations.Contains($name)) {
-            Write-Warning "Optimización desconocida: $name"
+            Write-Warning "Unknown optimization: $name"
             continue
         }
-        Write-Host "Aplicando $name — $($GpuVMOptimizations[$name].Description)"
+        Write-Host "Applying $name — $($GpuVMOptimizations[$name].Description)"
         try {
             & $GpuVMOptimizations[$name].Apply
             $applied += $name
         }
         catch {
-            Write-Warning "Falló ${name}: $_"
+            Write-Warning "${name} failed: $_"
         }
     }
 
     $cleanup = $null
     if ($config.cleanup -and $config.cleanup -ne 'none') {
         . (Join-Path $root 'cleanup.ps1')
-        Write-Host "Limpiando Windows: $($config.cleanup)"
+        Write-Host "Cleaning up Windows: $($config.cleanup)"
         $cleanup = @(Invoke-GpuVMCleanup -Level $config.cleanup)
-        $cleanup | Where-Object { -not $_.ok } | ForEach-Object { Write-Warning "Falló $($_.name): $($_.detail)" }
+        $cleanup | Where-Object { -not $_.ok } | ForEach-Object { Write-Warning "$($_.name) failed: $($_.detail)" }
     }
 
     $streaming = $null
@@ -63,5 +63,5 @@ finally {
 # A restart leaves the virtual display as the only one; automatic logon signs back in.
 # Audio needs no restart: usbip-win2 attaches GpuVM's speaker again every time Windows starts.
 if ($streaming -and $streaming.hyperVVideo -eq 'disabled') {
-    shutdown.exe /r /t 15 /c "GpuVM: reinicio para terminar de instalar el streaming"
+    shutdown.exe /r /t 15 /c "GpuVM: restarting to finish installing streaming"
 }

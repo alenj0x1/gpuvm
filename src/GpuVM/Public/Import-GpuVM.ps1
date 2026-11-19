@@ -40,12 +40,12 @@ function Import-GpuVM {
         # The unpacked disk must fit now, and the VM must be able to grow to its size like any other (lab 027 budget).
         $freeGB = Get-DriveFreeGB $root
         $needGB = [math]::Ceiling($diskBytes / 1GB) + $script:DiskMarginGB
-        if ($needGB -gt $freeGB) { throw "No hay espacio para importar: el disco ocupa $([math]::Ceiling($diskBytes / 1GB)) GB y quedan $freeGB GB libres." }
+        if ($needGB -gt $freeGB) { throw "There's no room to import: the disk takes $([math]::Ceiling($diskBytes / 1GB)) GB and $freeGB GB are free." }
         # Same rule as any new machine: its disk at full size must fit next to what the other disks may still grow.
         $checkOverride = if ($Override) { Merge-Hashtable -Base $Override -Override $diskOverride } else { $diskOverride }
         $failed = @(Test-GpuVMHost -Profile $Profile -Override $checkOverride | Where-Object Status -eq 'Fail')
-        if ($failed) { throw ('El equipo no pasa la revisión: ' + (($failed | ForEach-Object { "$($_.Name): $($_.Detail)" }) -join '; ')) }
-        if (-not $PSCmdlet.ShouldProcess($vmName, "Importar desde $Path")) { return }
+        if ($failed) { throw ("This PC doesn't pass the check: " + (($failed | ForEach-Object { "$($_.Name): $($_.Detail)" }) -join '; ')) }
+        if (-not $PSCmdlet.ShouldProcess($vmName, "Import from $Path")) { return }
 
         Initialize-GpuVMRoot -Path $root
         $vmDir = Join-Path $root $vmName
@@ -66,7 +66,7 @@ function Import-GpuVM {
         # are reset inside the VM, over PowerShell Direct, the first time it is opened (Connect-GpuVM).
         $webPassword = New-RandomPassword
 
-        Write-Step "Registrando la máquina '$vmName' en Hyper-V"
+        Write-Step "Registering the machine '$vmName' in Hyper-V"
         New-VM -Name $vmName -Generation 2 -MemoryStartupBytes ([int64]$config['vm']['memoryGB'] * 1GB) -VHDPath $vhdPath -Path $root | Out-Null
         Invoke-GpuVMBackend -Backend $config['backend'] -Operation Apply -Arguments $vmName, $config
 
@@ -106,10 +106,10 @@ function Import-GpuVM {
     }
     finally { $archive.Zip.Dispose() }
 
-    Write-Step "Máquina '$vmName' importada"
+    Write-Step "Machine '$vmName' imported"
     if ($Start) {
         try { Assert-VMCanStart -Name $vmName; Start-VM -Name $vmName -ErrorAction Stop }
-        catch { Write-Warning "La máquina se importó pero no pudo encender: $($_.Exception.Message)" }
+        catch { Write-Warning "The machine was imported but couldn't turn on: $($_.Exception.Message)" }
     }
     Get-GpuVM -Name $vmName
 }

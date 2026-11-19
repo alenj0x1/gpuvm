@@ -50,7 +50,7 @@ function Get-GpuDriverFileSet {
             }
         }
         catch {
-            Write-Verbose "WMI falló (intento $attempt): $_"
+            Write-Verbose "WMI failed (attempt $attempt): $_"
         }
         if ($attempt -lt 3) { Start-Sleep -Seconds 5 }
     }
@@ -91,7 +91,7 @@ function Save-GpuDriverFileSetCache {
                 driverStoreFolders = @($Set.DriverStoreFolders); files = @($Set.Files)
             })
     }
-    catch { Write-Verbose "No se pudo recordar la lista del driver: $_" }
+    catch { Write-Verbose "Couldn't remember the driver's file list: $_" }
 }
 
 # The DriverStore folder is the one containing an identical copy of the device's oemNN.inf.
@@ -100,14 +100,14 @@ function Get-GpuDriverFileSetFromInf {
     param([Parameter(Mandatory)][string]$PnpDeviceId)
     $infName = (Get-PnpDeviceProperty -InstanceId $PnpDeviceId -KeyName DEVPKEY_Device_DriverInfPath).Data
     $infPath = Join-Path $env:windir "INF\$infName"
-    if (-not $infName -or -not (Test-Path $infPath)) { throw "No se encontró el .inf del driver de $PnpDeviceId." }
+    if (-not $infName -or -not (Test-Path $infPath)) { throw "The driver's .inf for $PnpDeviceId wasn't found." }
     $infHash = (Get-FileHash $infPath).Hash
 
     $repository = Join-Path $env:windir 'System32\DriverStore\FileRepository'
     $folder = Get-ChildItem $repository -Directory |
         Where-Object { Get-ChildItem $_.FullName -Filter *.inf -File | Where-Object { (Get-FileHash $_.FullName).Hash -eq $infHash } } |
         Select-Object -First 1
-    if (-not $folder) { throw "No se encontró en el DriverStore la carpeta del driver ($infName)." }
+    if (-not $folder) { throw "The driver's folder ($infName) wasn't found in the DriverStore." }
 
     # DriverStore names plus the .inf CopyFiles targets ("target,source"), because some are renamed when copied.
     $names = @(Get-ChildItem $folder.FullName -Recurse -File | ForEach-Object Name)
@@ -164,7 +164,7 @@ function Assert-NoReparsePoint {
     $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd('\')
     $full = [IO.Path]::GetFullPath($Path).TrimEnd('\')
     if (-not $full.StartsWith("$rootFull\", [StringComparison]::OrdinalIgnoreCase)) {
-        throw "La ruta $full queda fuera del disco de la VM; no se escribe."
+        throw "The path $full is outside the VM's disk; nothing is written there."
     }
     $current = $rootFull
     foreach ($part in $full.Substring($rootFull.Length + 1).Split('\')) {
@@ -175,7 +175,7 @@ function Assert-NoReparsePoint {
         # Nothing exists from here down: it will be created as plain folders.
         if ($null -eq $attributes) { return }
         if ($attributes -band [IO.FileAttributes]::ReparsePoint) {
-            throw "El disco de la VM tiene un enlace en $current; no se escribe en él para no escribir fuera de la VM."
+            throw "The VM's disk has a link at $current; nothing is written through it so nothing lands outside the VM."
         }
     }
 }

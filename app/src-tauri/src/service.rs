@@ -61,7 +61,7 @@ pub fn status() -> Status {
 pub fn start() -> Result<(), String> {
     let svc = open(SERVICE_START).ok_or("Couldn't start the GpuVM service. Choose “Repair”.")?;
     if unsafe { StartServiceW(svc.0, 0, std::ptr::null()) } == 0 && unsafe { GetLastError() } != ERROR_SERVICE_ALREADY_RUNNING {
-        return Err(format!("No se pudo iniciar el servicio de GpuVM (error {}).", unsafe { GetLastError() }));
+        return Err(format!("Couldn't start the GpuVM service (error {}).", unsafe { GetLastError() }));
     }
     Ok(())
 }
@@ -71,7 +71,7 @@ pub fn stop() -> Result<(), String> {
     let svc = open(SERVICE_STOP).ok_or("Couldn't stop the GpuVM service.")?;
     let mut s: SERVICE_STATUS = unsafe { std::mem::zeroed() };
     if unsafe { ControlService(svc.0, SERVICE_CONTROL_STOP, &mut s) } == 0 && unsafe { GetLastError() } != ERROR_SERVICE_NOT_ACTIVE {
-        return Err(format!("No se pudo detener el servicio de GpuVM (error {}).", unsafe { GetLastError() }));
+        return Err(format!("Couldn't stop the GpuVM service (error {}).", unsafe { GetLastError() }));
     }
     Ok(())
 }

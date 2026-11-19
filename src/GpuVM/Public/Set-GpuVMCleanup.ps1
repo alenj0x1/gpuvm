@@ -34,7 +34,7 @@ function Set-GpuVMCleanup {
         Invoke-GpuVMCleanup -Level $level | ForEach-Object { @{ name = [string]$_.name; ok = [bool]$_.ok; detail = [string]$_.detail } }
     }
     $failed = @($results | Where-Object { -not $_['ok'] })
-    foreach ($item in $failed) { Write-Warning "No se pudo aplicar $($item['name']): $($item['detail'])" }
+    foreach ($item in $failed) { Write-Warning "Couldn't apply $($item['name']): $($item['detail'])" }
 
     $state = Get-GpuVMState -Name $Name
     $state['config']['guest']['cleanup'] = $Level

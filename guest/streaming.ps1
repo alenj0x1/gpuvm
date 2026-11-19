@@ -6,18 +6,18 @@ function Install-GpuVMVirtualDisplay {
     $work = Join-Path $Dir 'vdd'
     $zip = Get-ChildItem $Dir -Filter 'VirtualDisplayDriver*.zip' | Select-Object -First 1
     $nefconZip = Get-ChildItem $Dir -Filter 'nefcon*.zip' | Select-Object -First 1
-    if (-not $zip -or -not $nefconZip) { return 'error: faltan los paquetes de VDD o nefcon' }
+    if (-not $zip -or -not $nefconZip) { return 'error: the VDD or nefcon packages are missing' }
     Expand-Archive $zip.FullName -DestinationPath $work -Force
     Expand-Archive $nefconZip.FullName -DestinationPath (Join-Path $Dir 'nefcon') -Force
 
     $inf = Get-ChildItem $work -Recurse -Filter 'MttVDD.inf' | Select-Object -First 1
     $cat = Get-ChildItem $inf.DirectoryName -Filter '*.cat' | Select-Object -First 1
     $nefcon = Get-ChildItem (Join-Path $Dir 'nefcon') -Recurse -Filter 'nefconw.exe' | Where-Object { $_.Directory.Name -eq 'x64' } | Select-Object -First 1
-    if (-not $inf -or -not $cat -or -not $nefcon) { return 'error: paquete de VDD incompleto' }
+    if (-not $inf -or -not $cat -or -not $nefcon) { return 'error: the VDD package is incomplete' }
 
     # Only the certificate that signed the driver is trusted, so Windows installs it without prompting.
     $signer = (Get-AuthenticodeSignature $cat.FullName).SignerCertificate
-    if (-not $signer) { return 'error: el catálogo del driver no está firmado' }
+    if (-not $signer) { return 'error: the driver''s catalog isn''t signed' }
     $store = New-Object System.Security.Cryptography.X509Certificates.X509Store('TrustedPublisher', 'LocalMachine')
     $store.Open('ReadWrite')
     $store.Add($signer)
@@ -33,7 +33,7 @@ function Install-GpuVMVirtualDisplay {
     Start-Sleep -Seconds 10
     $device = Get-PnpDevice -Class Display -ErrorAction SilentlyContinue | Where-Object { $_.HardwareID -contains 'Root\MttVDD' -or $_.FriendlyName -match 'Virtual Display' }
     if ($device | Where-Object Status -eq 'OK') { return 'ok' }
-    "error: nefcon terminó con código $($p.ExitCode) y la pantalla virtual no aparece"
+    "error: nefcon ended with code $($p.ExitCode) and the virtual display doesn't show up"
 }
 
 # Replaces or appends "key = value" in sunshine.conf.
@@ -46,7 +46,7 @@ function Set-SunshineConfig {
     if (Test-Path $Path) { foreach ($line in Get-Content $Path) { $lines.Add($line) } }
     foreach ($key in $Settings.Keys) {
         # A line break in a key or value would inject unintended configuration lines.
-        if ("$key$($Settings[$key])" -match '[\r\n]') { throw "Valor no válido para sunshine.conf: $key" }
+        if ("$key$($Settings[$key])" -match '[\r\n]') { throw "Invalid value for sunshine.conf: $key" }
         $entry = "$key = $($Settings[$key])"
         $index = -1
         for ($i = 0; $i -lt $lines.Count; $i++) { if ($lines[$i] -match "^\s*$([regex]::Escape($key))\s*=") { $index = $i; break } }
@@ -61,14 +61,14 @@ function Install-GpuVMSunshine {
         [Parameter(Mandatory)]$Config
     )
     $msi = Get-ChildItem $Dir -Filter 'Sunshine*.msi' | Select-Object -First 1
-    if (-not $msi) { return 'error: falta el instalador de Sunshine' }
+    if (-not $msi) { return 'error: the Sunshine installer is missing' }
     $log = Join-Path (Split-Path $Dir -Parent) 'sunshine-install.log'
     $p = Start-Process msiexec.exe -ArgumentList '/i', "`"$($msi.FullName)`"", '/qn', '/norestart', '/l*v', "`"$log`"" -Wait -PassThru
-    if ($p.ExitCode -notin 0, 3010) { return "error: msiexec terminó con código $($p.ExitCode) (ver $log)" }
+    if ($p.ExitCode -notin 0, 3010) { return "error: msiexec ended with code $($p.ExitCode) (see $log)" }
 
     $install = Join-Path $env:ProgramFiles 'Sunshine'
     $exe = Join-Path $install 'sunshine.exe'
-    if (-not (Test-Path $exe)) { return "error: no se encontró $exe" }
+    if (-not (Test-Path $exe)) { return "error: $exe wasn't found" }
     Push-Location $install
     try { & $exe --creds $Config.user $Config.password | Out-Null } finally { Pop-Location }
 
@@ -157,12 +157,12 @@ function Install-GpuVMAudio {
     $usbip = Get-GpuVMUsbipPath
     if (-not $usbip) {
         $installer = Get-ChildItem $Dir -Filter 'USBip-*.exe' | Select-Object -First 1
-        if (-not $installer) { return 'error: falta el instalador de usbip-win2' }
+        if (-not $installer) { return 'error: the usbip-win2 installer is missing' }
         # Only the client: the UDE and filter drivers and usbip.exe, plus the VC++ runtime usbip.exe needs.
         $p = Start-Process $installer.FullName -Wait -PassThru -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',
             '/COMPONENTS=main,client', '/TASKS=vcredist', "/LOG=`"$(Join-Path $Root 'usbip-install.log')`""
         $usbip = Get-GpuVMUsbipPath
-        if (-not $usbip) { return "error: el instalador de usbip-win2 terminó con código $($p.ExitCode)" }
+        if (-not $usbip) { return "error: the usbip-win2 installer ended with code $($p.ExitCode)" }
     }
 
     # Its drivers must be signed by Microsoft and it must not have trusted any certificate of its own.
@@ -176,7 +176,7 @@ function Install-GpuVMAudio {
     if (-not $drivers -or $unsigned -or $trusted) {
         $uninstaller = Get-ChildItem (Split-Path $usbip) -Filter 'unins*.exe' | Select-Object -First 1
         if ($uninstaller) { Start-Process $uninstaller.FullName -Wait -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' }
-        return 'error: los drivers de usbip-win2 no están firmados por Microsoft; se desinstaló'
+        return 'error: the usbip-win2 drivers aren''t signed by Microsoft; it was uninstalled'
     }
 
     # The server is compiled here from its source and kept where only administrators can change it.
@@ -188,7 +188,7 @@ function Install-GpuVMAudio {
     Copy-Item (Join-Path $Root 'audio\UsbAudioServer.cs') $source -Force
     Remove-Item $exe -Force -ErrorAction SilentlyContinue
     Add-Type -Path $source -OutputAssembly $exe -OutputType ConsoleApplication
-    if (-not (Test-Path $exe)) { return 'error: no se pudo compilar el servidor de audio' }
+    if (-not (Test-Path $exe)) { return 'error: the audio server couldn''t be built' }
     # LOCAL SERVICE only writes its log and status.
     icacls.exe $script:AudioDataDir /grant '*S-1-5-19:(OI)(CI)M' | Out-Null
 
@@ -209,7 +209,7 @@ function Install-GpuVMAudio {
     # Persistent: usbip-win2 attaches it again every time its driver loads, so it is back after each restart.
     & $usbip port --stash 2>&1 | Out-Null
     $endpoint = Wait-GpuVMAudioEndpoint
-    if (-not $endpoint) { return 'error: Windows no mostró la salida de audio GpuVM Audio' }
+    if (-not $endpoint) { return 'error: Windows didn''t show the GpuVM Audio output' }
 
     # virtual_sink makes Sunshine switch the default output to the speaker while streaming.
     Set-SunshineConfig -Path (Join-Path $env:ProgramFiles 'Sunshine\config\sunshine.conf') -Settings ([ordered]@{ virtual_sink = $endpoint })
@@ -234,7 +234,7 @@ function Repair-GpuVMAudio {
     if (Wait-GpuVMAudioEndpoint -Seconds 10) { return 'ok' }
     Connect-GpuVMAudioDevice -Usbip $usbip
     if (Wait-GpuVMAudioEndpoint) { return 'ok' }
-    'error: la salida de audio GpuVM Audio no aparece'
+    'error: the GpuVM Audio output doesn''t show up'
 }
 
 function Install-GpuVMStreaming {
@@ -245,16 +245,16 @@ function Install-GpuVMStreaming {
     $status = [ordered]@{ provider = $config.provider; virtualDisplay = 'skipped'; sunshine = 'skipped'; hyperVVideo = 'kept'; audio = 'skipped' }
     try {
         if ($config.virtualDisplay) {
-            Write-Host 'Instalando la pantalla virtual'
+            Write-Host 'Installing the virtual display'
             $status.virtualDisplay = Install-GpuVMVirtualDisplay -Dir $dir
         }
         if ($config.provider -eq 'sunshine') {
-            Write-Host 'Instalando Sunshine'
+            Write-Host 'Installing Sunshine'
             $status.sunshine = Install-GpuVMSunshine -Dir $dir -Config $config
         }
         # "vbcable" is how profiles before 0.3 named the audio option.
         if ($config.audio -in 'usb', 'vbcable') {
-            Write-Host 'Instalando el audio (altavoz USB de GpuVM)'
+            Write-Host 'Installing the audio (GpuVM''s USB speaker)'
             $status.audio = Install-GpuVMAudio -Dir $dir -Root $Root
         }
         # Only disable the Hyper-V display if the virtual one is working; otherwise the VM would have no display.

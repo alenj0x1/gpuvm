@@ -403,9 +403,9 @@ fn new_id() -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// "Enviando 42 % · 1.2 de 2.9 GB" -> 42.
+/// "Sending 42 % · 1.2 of 2.9 GB" -> 42.
 fn percent_of(message: &str) -> Option<u32> {
-    let rest = message.strip_prefix("Enviando ")?;
+    let rest = message.strip_prefix("Sending ")?;
     rest.split_whitespace().next()?.parse().ok()
 }
 

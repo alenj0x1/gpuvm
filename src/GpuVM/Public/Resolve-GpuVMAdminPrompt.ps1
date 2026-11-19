@@ -20,10 +20,10 @@ function Resolve-GpuVMAdminPrompt {
     if (-not $result) {
         $state = Get-GpuVMState -Name $Name
         $guest = Get-GpuVMGuestCredential -State $state
-        if (-not $guest) { throw "Falta la contraseña de Windows de '$Name' en GpuVM." }
+        if (-not $guest) { throw "GpuVM doesn't have the Windows password for '$Name'." }
         $result = Invoke-GuestAdminPromptAnswer -Name $Name -Credential $guest -Answer $reply -PromptId $PromptId
     }
     if ($result -eq 'changed') { throw 'The prompt changed or closed. Check the new one before answering.' }
-    if ($result -ne 'done') { throw "No se pudo responder el aviso: $result" }
+    if ($result -ne 'done') { throw "Couldn't answer the prompt: $result" }
     [ordered]@{ name = $Name; answer = $Answer }
 }

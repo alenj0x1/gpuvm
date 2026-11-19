@@ -13,14 +13,14 @@ function Update-GpuVMComponent {
     $changed = $false
     foreach ($key in $names) {
         $c = $manifest[$key]
-        if (-not $c) { Write-Warning "Componente desconocido: $key"; continue }
-        if ($c.Contains('hold') -and $c['hold']) { Write-Warning "$key se mantiene en $($c['version']): $($c['hold'])"; continue }
-        if (-not $c['repo']) { Write-Warning "$key no se publica en GitHub; revisa $($c['homepage']) y actualiza versión, URL y SHA-256 a mano."; continue }
+        if (-not $c) { Write-Warning "Unknown component: $key"; continue }
+        if ($c.Contains('hold') -and $c['hold']) { Write-Warning "$key stays at $($c['version']): $($c['hold'])"; continue }
+        if (-not $c['repo']) { Write-Warning "$key isn't published on GitHub; check $($c['homepage']) and update its version, URL and SHA-256 by hand."; continue }
         $release = Invoke-RestMethod "https://api.github.com/repos/$($c['repo'])/releases/latest" -Headers @{ 'User-Agent' = 'GpuVM' }
         $asset = $release.assets | Where-Object name -match $c['assetPattern'] | Select-Object -First 1
-        if (-not $asset) { Write-Warning "$key $($release.tag_name): ningún archivo coincide con $($c['assetPattern'])"; continue }
+        if (-not $asset) { Write-Warning "$key $($release.tag_name): no file matches $($c['assetPattern'])"; continue }
         $sha256 = if ($asset.digest -match '^sha256:([0-9a-f]{64})$') { $Matches[1] } else { $null }
-        if (-not $sha256) { Write-Warning "$key $($release.tag_name): GitHub no publica SHA-256; se omite."; continue }
+        if (-not $sha256) { Write-Warning "$key $($release.tag_name): GitHub doesn't publish its SHA-256; skipped."; continue }
 
         $result = [pscustomobject]@{ Component = $key; Current = $c['version']; Latest = $release.tag_name; Updated = $false }
         if ($release.tag_name -ne $c['version'] -and $PSCmdlet.ShouldProcess($key, "Actualizar de $($c['version']) a $($release.tag_name)")) {

@@ -17,14 +17,14 @@ function Export-GpuVM {
     )
     Assert-Admin
     $state = Get-GpuVMState -Name $Name
-    Assert-GpuVMNotDisposable -State $state -Action 'exportar'
+    Assert-GpuVMNotDisposable -State $state -Action 'be exported'
     $target = [IO.Path]::GetFullPath($Path)
     if ([IO.Path]::GetExtension($target) -ne $script:TransferExtension) { $target += $script:TransferExtension }
     $dir = Split-Path $target -Parent
-    if (-not (Test-Path -LiteralPath $dir -PathType Container)) { throw "No existe la carpeta $dir." }
+    if (-not (Test-Path -LiteralPath $dir -PathType Container)) { throw "The folder $dir doesn't exist." }
     $target = Assert-GpuVMExportPath -Path $target
     $source = (Get-VMHardDiskDrive -VMName $Name | Select-Object -First 1).Path
-    if (-not $source) { throw "La máquina '$Name' no tiene disco." }
+    if (-not $source) { throw "The machine '$Name' has no disk." }
     # The merged copy is made in GpuVM's own folder and the file in the chosen one: each needs up to what the chain takes.
     $chain = Get-VhdChainBytes -Path $source
     $root = Get-GpuVMDefaultRoot
@@ -33,9 +33,9 @@ function Export-GpuVM {
     foreach ($check in @(@($root, $(if ($sameDrive) { 2 * $chainGB } else { $chainGB })), @($target, $chainGB))) {
         if ($sameDrive -and $check[0] -eq $target) { continue }
         $freeGB = Get-DriveFreeGB $check[0]
-        if ($check[1] -gt $freeGB) { throw "No hay espacio en $(Split-Path $check[0] -Qualifier) para exportar: hacen falta hasta $($check[1]) GB y quedan $freeGB GB libres." }
+        if ($check[1] -gt $freeGB) { throw "There's no room on $(Split-Path $check[0] -Qualifier) to export: up to $($check[1]) GB are needed and $freeGB GB are free." }
     }
-    if (-not $PSCmdlet.ShouldProcess($Name, "Exportar a $target")) { return }
+    if (-not $PSCmdlet.ShouldProcess($Name, "Export to $target")) { return }
 
     # The destination file is created now, once, and checked to be exactly where it was asked (no folder of the path
     # swapped for a link since the service checked it as the user). Everything after writes and, on failure, deletes it
@@ -50,7 +50,7 @@ function Export-GpuVM {
     $restart = $false
     $sw = [Diagnostics.Stopwatch]::StartNew()
     try {
-        $restart = Stop-GpuVMForDisk -Name $Name -ShutdownIfRunning:$ShutdownIfRunning -Action 'exportarla'
+        $restart = Stop-GpuVMForDisk -Name $Name -ShutdownIfRunning:$ShutdownIfRunning -Action 'export it'
         try {
             Write-Step 'Copying the machine''s disk'
             Convert-VHD -Path $source -DestinationPath $temp -VHDType Dynamic -ErrorAction Stop
@@ -58,7 +58,7 @@ function Export-GpuVM {
         finally {
             if ($restart) {
                 Write-Step 'Starting'
-                try { Start-VM -Name $Name -ErrorAction Stop } catch { Write-Warning "No se pudo volver a encender ${Name}: $($_.Exception.Message)" }
+                try { Start-VM -Name $Name -ErrorAction Stop } catch { Write-Warning "Couldn't turn ${Name} back on: $($_.Exception.Message)" }
             }
         }
         $freed = Compress-GpuVMDiskCopy -Path $temp
@@ -91,7 +91,7 @@ function Export-GpuVM {
         }
         Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
     }
-    Write-Step "Máquina exportada ($([math]::Round($size / 1GB, 1)) GB)"
+    Write-Step "Machine exported ($([math]::Round($size / 1GB, 1)) GB)"
     [ordered]@{
         name       = $Name
         path       = $target

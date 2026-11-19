@@ -31,7 +31,7 @@ const free = <T,>(spots: [number, number][], taken: T[], at: (t: T) => [number, 
 /** Copied stickers and figures, kept between machines: copy on one, paste on another. `pastes` counts the pastes since
  *  the copy, so each one lands a cell further aside instead of on top of the last. */
 let clipboard: { stickers: Decor["stickers"]; figures: Decor["figures"]; from: DecorSource | null; pastes: number } | null = null;
-/** The editors open, the last one on top (Crear máquina over a machine's page): only the top one pastes. */
+/** The editors open, the last one on top (Create machine over a machine's page): only the top one pastes. */
 const editors: DecorSource[] = [];
 
 /** The selection and right-click menu shared by the cube and the panel. */
@@ -279,7 +279,7 @@ function Placed({ items, selected, onPick, onRemove, onMenu }: {
 }
 
 export function Customize({ source, ops, selected, setSelected, openMenu, bare, first }: Pick<ReturnType<typeof useDecorEdit>, "source" | "ops" | "selected" | "setSelected" | "openMenu"> & {
-  /** Without its own card (inside Crear máquina, which already frames each section). */
+  /** Without its own card (inside Create machine, which already frames each section). */
   bare?: boolean;
   /** Rows that go before the decoration (the machine's space, on its page). */
   first?: React.ReactNode;

@@ -8,9 +8,9 @@ function Remove-GpuVMTemplate {
     Assert-Admin
     $meta = Read-GpuVMTemplate -Name $Name
     $children = @(Get-TemplateChildVM -VhdPath $meta['vhdPath'])
-    if ($children) { throw "La plantilla '$Name' la usan $($children -join ', '); elimina esas máquinas primero." }
-    if (-not $PSCmdlet.ShouldProcess($Name, 'Eliminar plantilla')) { return }
+    if ($children) { throw "The template '$Name' is used by $($children -join ', '); delete those machines first." }
+    if (-not $PSCmdlet.ShouldProcess($Name, 'Delete template')) { return }
     (Get-Item -LiteralPath $meta['vhdPath']).IsReadOnly = $false
     Remove-Item -LiteralPath $meta['dir'] -Recurse -Force
-    Write-Step "Plantilla '$Name' eliminada"
+    Write-Step "Template '$Name' deleted"
 }

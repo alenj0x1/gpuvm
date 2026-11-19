@@ -16,9 +16,9 @@ function Restore-GpuVMRestorePoint {
     )
     Assert-Admin
     $state = Get-GpuVMState -Name $Name
-    Assert-GpuVMNotDisposable -State $state -Action 'volver a un punto de restauración'
-    if (-not $PSCmdlet.ShouldProcess($Name, "Volver al punto $Id")) { return }
-    $restart = Stop-GpuVMForDisk -Name $Name -ShutdownIfRunning:$ShutdownIfRunning -Action 'volver a un punto de restauración'
+    Assert-GpuVMNotDisposable -State $state -Action 'go back to a restore point'
+    if (-not $PSCmdlet.ShouldProcess($Name, "Go back to the point $Id")) { return }
+    $restart = Stop-GpuVMForDisk -Name $Name -ShutdownIfRunning:$ShutdownIfRunning -Action 'go back to a restore point'
     try {
         if ($SaveCurrent) { New-GpuVMRestorePointCore -Name $Name -State $state -Label 'Before going back' | Out-Null }
         $point = Restore-GpuVMRestorePointCore -Name $Name -State $state -Id $Id
@@ -26,7 +26,7 @@ function Restore-GpuVMRestorePoint {
     finally {
         if ($restart) {
             Write-Step 'Starting'
-            try { Start-VM -Name $Name -ErrorAction Stop } catch { Write-Warning "No se pudo volver a encender ${Name}: $($_.Exception.Message)" }
+            try { Start-VM -Name $Name -ErrorAction Stop } catch { Write-Warning "Couldn't turn ${Name} back on: $($_.Exception.Message)" }
         }
     }
     $point

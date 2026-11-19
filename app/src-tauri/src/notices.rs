@@ -1,8 +1,8 @@
-//! Notices-only mode ("Avisos de administrador al salir", lab 042). When the person quits GpuVM while machines it can
-//! watch are still on ("Al salir de GpuVM": Dejarlas encendidas), the app closes every window and viewer and stays in
+//! Notices-only mode ("Administrator prompts after quitting", lab 042). When the person quits GpuVM while machines it can
+//! watch are still on ("When quitting GpuVM": Leave them on), the app closes every window and viewer and stays in
 //! the background with only its tray icon, polling for Windows administrator prompts in those machines; when one opens
 //! it shows the prompt card (without taking the keyboard, nothing of GpuVM's is in front). It ends by itself once no
-//! watched machine is on, or from the tray ("Salir por completo"); opening GpuVM again brings the window back.
+//! watched machine is on, or from the tray ("Quit completely"); opening GpuVM again brings the window back.
 //!
 //! Least privilege: nothing new runs or is elevated for it. The app keeps its usual Medium-integrity process and its
 //! one connection to the GpuVM service (which already runs while the machines are on), and asks it only for the
@@ -12,7 +12,7 @@ use serde_json::Value;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Manager};
 
-/// The preference (on unless turned off in Ajustes).
+/// The preference (on unless turned off in Settings).
 static ENABLED: AtomicBool = AtomicBool::new(true);
 /// The app is in notices-only mode now.
 static ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -21,7 +21,7 @@ pub fn active() -> bool {
     ACTIVE.load(Ordering::Relaxed)
 }
 
-/// "Avisos de administrador al salir" preference.
+/// "Administrator prompts after quitting" preference.
 #[tauri::command]
 pub fn set_notices_after_quit(enabled: bool) {
     ENABLED.store(enabled, Ordering::Relaxed);
@@ -40,7 +40,7 @@ pub async fn poll(app: &AppHandle) -> Option<Value> {
     }
 }
 
-/// Quitting GpuVM (the window's close button with "Salir por completo", or the tray's Salir): into notices-only mode
+/// Quitting GpuVM (the window's close button with "Quit completely", or the tray's Quit): into notices-only mode
 /// when it applies, else the app exits as before.
 pub fn request_quit(app: &AppHandle) {
     let stop_vms = app.state::<crate::AppState>().stop_vms_on_quit.load(Ordering::Relaxed);

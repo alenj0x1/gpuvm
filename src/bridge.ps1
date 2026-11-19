@@ -47,12 +47,12 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
     try {
         # Names must match exactly, letter case included: the service decides consent and checks paths by the exact
         # command and argument names, and PowerShell itself would accept "remove-gpuvm" or "path" (or a prefix).
-        if ($request['cmd'] -isnot [string] -or $request['cmd'] -cnotin $allowed) { throw "Comando no permitido: $($request['cmd'])" }
+        if ($request['cmd'] -isnot [string] -or $request['cmd'] -cnotin $allowed) { throw "Command not allowed: $($request['cmd'])" }
         $parameters = (Get-Command -Name $request['cmd'] -Module GpuVM).Parameters.Keys
         $arguments = @{}
         if ($request['args']) {
             foreach ($key in $request['args'].Keys) {
-                if ($key -cnotin $parameters) { throw "Argumento no permitido: $key" }
+                if ($key -cnotin $parameters) { throw "Argument not allowed: $key" }
                 $arguments[$key] = ConvertTo-Argument $request['args'][$key]
             }
         }

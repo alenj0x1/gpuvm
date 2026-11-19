@@ -11,7 +11,7 @@ function Sync-GpuVMDriver {
     )
     Assert-Admin
     $state = Get-GpuVMState -Name $Name
-    if (-not $PSCmdlet.ShouldProcess($Name, 'Sincronizar driver de GPU')) { return }
+    if (-not $PSCmdlet.ShouldProcess($Name, 'Sync the GPU driver')) { return }
     $wasRunning = (Get-VM -Name $Name).State -eq 'Running'
     if ($wasRunning -and $ShutdownIfRunning) {
         Write-Step 'Shutting down'

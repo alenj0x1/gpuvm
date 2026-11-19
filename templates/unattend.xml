@@ -51,7 +51,7 @@
         <SynchronousCommand wcm:action="add">
           <Order>1</Order>
           <CommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\GpuVM\setup.ps1</CommandLine>
-          <Description>GpuVM: configuración inicial del invitado</Description>
+          <Description>GpuVM: guest first-time setup</Description>
         </SynchronousCommand>
       </FirstLogonCommands>
     </component>

@@ -39,7 +39,7 @@ function Send-GpuVMClipboard {
     $state = Get-GpuVMState -Name $Name
     $guest = Get-GpuVMGuestCredential -State $state
     if (-not $guest) { throw 'Save the VM''s Windows password to paste into it.' }
-    if ((Get-VM -Name $Name).State -ne 'Running') { throw "La VM '$Name' está apagada." }
+    if ((Get-VM -Name $Name).State -ne 'Running') { throw "The VM '$Name' is off." }
 
     $received = @()
     if ($kind -eq 'files') {

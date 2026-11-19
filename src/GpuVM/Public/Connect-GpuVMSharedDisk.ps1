@@ -17,14 +17,14 @@ function Connect-GpuVMSharedDisk {
     $attachment = Get-SharedDiskAttachment -Path $disk['path']
     if ($attachment -and $attachment.VMName -ne $VMName) {
         if ((Get-VM -Name $attachment.VMName).State -ne 'Off') {
-            throw "El disco '$Name' está conectado a '$($attachment.VMName)', que está encendida. Desconéctalo ahí primero."
+            throw "The disk '$Name' is connected to '$($attachment.VMName)', which is on. Disconnect it there first."
         }
-        Write-Step "Quitando el disco de '$($attachment.VMName)'"
+        Write-Step "Removing the disk from '$($attachment.VMName)'"
         $attachment | Remove-VMHardDiskDrive
         $attachment = $null
     }
     if (-not $attachment) {
-        Write-Step "Conectando el disco '$Name' a '$VMName'"
+        Write-Step "Connecting the disk '$Name' to '$VMName'"
         Add-VMHardDiskDrive -VMName $VMName -ControllerType SCSI -Path $disk['path']
     }
     $letter = $null

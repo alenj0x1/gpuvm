@@ -12,7 +12,7 @@ function Get-GpuVMHostInfo {
         logicalProcessors = [int]$cpu.NumberOfLogicalProcessors
         memoryGB          = [int][math]::Floor($cs.TotalPhysicalMemory / 1GB)
         gpuName           = if ($gpu) { $gpu.Name } else { $null }
-        # Room for a new machine's disk where GpuVM keeps them (profiles and "Crear máquina" stay within it).
+        # Room for a new machine's disk where GpuVM keeps them (profiles and "Create machine" stay within it).
         disk              = $(try { Get-GpuVMDiskBudget -Root (Get-GpuVMDefaultRoot) } catch { $null })
     }
 }

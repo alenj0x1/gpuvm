@@ -11,7 +11,7 @@ function Uninstall-GpuVMApp {
         [Parameter(Mandatory)][string[]]$App
     )
     Assert-Admin
-    if (-not $PSCmdlet.ShouldProcess($Name, "Desinstalar $($App -join ', ')")) { return }
+    if (-not $PSCmdlet.ShouldProcess($Name, "Uninstall $($App -join ', ')")) { return }
     $guest = Start-GuestForApp -Name $Name
     Uninstall-GuestApp -Name $Name -Credential $guest -App $App
 }

@@ -26,7 +26,7 @@ function Connect-GpuVM {
     )
     Assert-Admin
     $state = Get-GpuVMState -Name $Name
-    if (-not $state['streaming']) { throw "La VM '$Name' se creó sin streaming." }
+    if (-not $state['streaming']) { throw "The VM '$Name' was created without streaming." }
     if ($Viewer) {
         $moonlight = Get-GpuVMViewerPath
         if (-not $moonlight) { throw 'GpuVM''s viewer isn''t installed. Install GpuVM again.' }
@@ -47,7 +47,7 @@ function Connect-GpuVM {
             $state = Get-GpuVMState -Name $Name
         }
         if ($MemoryGB -and $MemoryGB -ne $state['config']['vm']['memoryGB']) {
-            Write-Step "Memoria: $MemoryGB GB"
+            Write-Step "Memory: $MemoryGB GB"
             Set-GpuVM -Name $Name -Override @{ vm = @{ memoryGB = $MemoryGB } } -Confirm:$false | Out-Null
             $state = Get-GpuVMState -Name $Name
         }
@@ -132,7 +132,7 @@ function Connect-GpuVM {
                     Write-Step 'Windows session moved back to the GPU''s display'
                 }
             }
-            catch { Write-Warning "No se pudo revisar la sesión dentro de la VM: $($_.Exception.Message)" }
+            catch { Write-Warning "Couldn't check the session inside the VM: $($_.Exception.Message)" }
         }
         if ($guest -and $state['config']['streaming']['virtualDisplay']) {
             # The monitor's rate (fps 0) is resolved now: opening on another monitor sets the display again.
@@ -142,16 +142,16 @@ function Connect-GpuVM {
                 try {
                     $result = Set-GuestDisplayResolution -Name $Name -Credential $guest -Resolution $client['resolution'] -Fps $client['fps']
                     if ($result.ok) {
-                        Write-Step "Pantalla de la VM a $($result.applied)"
+                        Write-Step "The VM's display set to $($result.applied)"
                         $prepared['display'] = $mode
                         $restartSunshine = $result.changed
                     }
                     else {
-                        $detail = if ($result.PSObject.Properties['available']) { " Disponibles: $($result.available)" } else { '' }
-                        Write-Warning "No se pudo ajustar la resolución de la VM: $($result.error)$detail"
+                        $detail = if ($result.PSObject.Properties['available']) { " Available: $($result.available)" } else { '' }
+                        Write-Warning "Couldn't set the VM's resolution: $($result.error)$detail"
                     }
                 }
-                catch { Write-Warning "No se pudo ajustar la resolución de la VM: $($_.Exception.Message)" }
+                catch { Write-Warning "Couldn't set the VM's resolution: $($_.Exception.Message)" }
             }
         }
         # Gamepads (ViGEmBus): installed once; Sunshine only sees the driver after a restart.
@@ -163,7 +163,7 @@ function Connect-GpuVM {
                 $state['gamepad'] = 'vigembus'
                 Save-GpuVMState $state
             }
-            catch { Write-Warning "No se pudo preparar el soporte de mandos en la VM: $($_.Exception.Message)" }
+            catch { Write-Warning "Couldn't set up controller support in the VM: $($_.Exception.Message)" }
         }
         $captureMode = Get-GpuVMCaptureMode -State $state
         if ($guest -and $done['capture'] -eq $captureMode -and -not $restartSunshine) { $prepared['capture'] = $captureMode }
@@ -173,7 +173,7 @@ function Connect-GpuVM {
                 $null = Set-GuestCaptureMode -Name $Name -Credential $guest -Mode $captureMode -Restart:$restartSunshine
                 $prepared['capture'] = $captureMode
             }
-            catch { Write-Warning "No se pudo ajustar la captura de Sunshine: $($_.Exception.Message)" }
+            catch { Write-Warning "Couldn't set Sunshine's capture: $($_.Exception.Message)" }
         }
         # With WGC, administrator prompts are shown and answered from the app: the guest watcher, once per boot.
         if ($guest -and $captureMode -eq 'wgc') {
@@ -183,7 +183,7 @@ function Connect-GpuVM {
                     if (Install-GuestAdminPrompt -Name $Name -Credential $guest) { Write-Step 'The VM''s administrator prompts now show in GpuVM' }
                     $prepared['adminPrompt'] = $true
                 }
-                catch { Write-Warning "No se pudo preparar los avisos de administrador de la VM: $($_.Exception.Message)" }
+                catch { Write-Warning "Couldn't set up the VM's administrator prompts: $($_.Exception.Message)" }
             }
         }
 
@@ -237,7 +237,7 @@ function Connect-GpuVM {
                     }
                     $prepared['audioSink'] = $true
                 }
-                catch { Write-Warning "No se pudo preparar el audio dentro de la VM: $($_.Exception.Message)" }
+                catch { Write-Warning "Couldn't set up the audio inside the VM: $($_.Exception.Message)" }
             }
             else {
                 $sunshineConfig = try { Invoke-SunshineApi -Address $address -Credential $credential -Path '/api/config' } catch { $null }
@@ -252,7 +252,7 @@ function Connect-GpuVM {
         Close-GuestSession -Name $Name
     }
 
-    Write-Step "Abriendo a $($client['resolution']) y $(Resolve-GpuVMStreamFps $client['fps']) FPS"
+    Write-Step "Opening at $($client['resolution']) and $(Resolve-GpuVMStreamFps $client['fps']) FPS"
     if ($Viewer) {
         $state = Get-GpuVMState -Name $Name
         $state['lastOpenedAt'] = (Get-Date).ToString('o')
@@ -274,7 +274,7 @@ function Connect-GpuVM {
     Start-UnelevatedProcess -FilePath $moonlight -ArgumentList (Get-MoonlightStreamArguments -Address $address -Client $client) | Out-Null
     if ($target) {
         try { Move-MoonlightToMonitor -Since $launched -Monitor $target }
-        catch { Write-Warning "No se pudo mover Moonlight a $($target['name']): $($_.Exception.Message)" }
+        catch { Write-Warning "Couldn't move Moonlight to $($target['name']): $($_.Exception.Message)" }
     }
     # For the home screen's "continue where you left off", and what is already done in this boot.
     $state = Get-GpuVMState -Name $Name
@@ -297,7 +297,7 @@ function Connect-GpuVM {
                     Write-Warning 'The VM''s audio will be ready the next time you open it.'
                 }
             }
-            catch { Write-Warning "No se pudo preparar el audio dentro de la VM: $($_.Exception.Message)" }
+            catch { Write-Warning "Couldn't set up the audio inside the VM: $($_.Exception.Message)" }
         }
     }
     finally { Stop-GuestAudioCheck $audioCheck -TimeoutSec 0 }

@@ -14,7 +14,7 @@ import { AppPicker, CleanupPicker, FpsPicker, IsoPicker, resolveMonitor, useMoni
 import { Segmented, Slider, humanError, portalRoot, scrollToSection, useFlip, useScrollFade } from "./ui";
 import { ResourceChips } from "./resources";
 import { NewTemplate } from "./VmView";
-import { locale, t, tn } from "./i18n";
+import { locale, t, tn, translateModule } from "./i18n";
 
 export type LibraryTab = "perfiles" | "plantillas" | "discos" | "compartidos" | "isos";
 
@@ -550,12 +550,13 @@ function Templates({ tabs, notify, onOpenVm, onCreate, startJob }: { tabs: React
       {templates === null && [0, 1].map((i) => <div key={i} className="card skeleton profile-skeleton" />)}
       {templates?.map((tpl) => {
         const level = tpl.cleanup !== "none" ? cleanupLevels.find((l) => l.id === tpl.cleanup)?.name : null;
+        const levelShown = level ? translateModule(level) : null;
         return (
           <div className="card profile-card" key={tpl.name}>
             <MiniCube className="profile-cube" kind="template" machine={{ cores: 0, memoryGB: 0, gpuPercent: 0, diskGB: 0, apps: 3 }} />
             <div className="profile-text">
               <strong>{tpl.name}{tpl.usedBy.length > 0 && <span className="tag">{tpl.usedBy.length === 1 ? t("Base of {vm}", { vm: tpl.usedBy[0] }) : tn(tpl.usedBy.length, "Base of {n} machine", "Base of {n} machines")}</span>}</strong>
-              <span className="profile-desc">{[t("From {vm}", { vm: tpl.fromVM }), tpl.edition, t("takes {gb} GB", { gb: tpl.fileGB }), level && `Windows: ${level.toLowerCase()}`].filter(Boolean).join(" · ")}</span>
+              <span className="profile-desc">{[t("From {vm}", { vm: tpl.fromVM }), tpl.edition, t("takes {gb} GB", { gb: tpl.fileGB }), levelShown && `Windows: ${levelShown.toLowerCase()}`].filter(Boolean).join(" · ")}</span>
             </div>
             <div className="profile-actions">
               <button className="btn compact" onClick={() => onCreate(tpl.name)}><IconPlus size={15} />{t("Create machine")}</button>

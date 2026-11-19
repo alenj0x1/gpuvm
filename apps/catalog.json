@@ -1,12 +1,12 @@
 {
   "description": "Apps GpuVM can install inside a VM. Each one is downloaded from its publisher inside the guest, and installed only if its Authenticode signature is valid and from the expected signer. A pinned version also carries its sha256; an app its publisher does not sign (7-Zip) must carry one. asUser runs the installer as the signed-in user without elevation (Spotify refuses to install as administrator). uninstall finds the app's own uninstaller in Windows' list of programs by DisplayName (match) and runs it silently: the publisher's QuietUninstallString if it has one, msiexec /x for MSI, or its UninstallString plus args; interactive opens it on the VM's desktop, for uninstallers without a silent mode (Battle.net).",
   "categories": {
-    "games": "Juegos",
-    "browsers": "Navegadores",
-    "media": "Multimedia",
-    "chat": "Comunicación",
-    "tools": "Utilidades",
-    "privacy": "Privacidad"
+    "games": "Games",
+    "browsers": "Browsers",
+    "media": "Media",
+    "chat": "Chat",
+    "tools": "Tools",
+    "privacy": "Privacy"
   },
   "apps": {
     "steam": {

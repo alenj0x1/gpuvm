@@ -75,7 +75,7 @@ impl Conn {
         self.abort
     }
 
-    /// Lets the last request finish after the app quits ("apagar las máquinas al salir").
+    /// Lets the last request finish after the app quits ("When quitting GpuVM": Shut them down).
     pub fn detach(mut self) {
         // The service finishes a request whose client left; in development the bridge must just not be killed.
         std::mem::forget(self.child.take());
@@ -98,8 +98,8 @@ impl Conn {
 pub fn connect() -> Result<Conn, String> {
     use std::os::windows::io::AsRawHandle;
     let mut child = crate::direct::spawn_bridge()?;
-    let stdin = child.stdin.take().ok_or("sin stdin")?;
-    let stdout = child.stdout.take().ok_or("sin stdout")?;
+    let stdin = child.stdin.take().ok_or("no stdin")?;
+    let stdout = child.stdout.take().ok_or("no stdout")?;
     let abort = Aborter(child.as_raw_handle() as usize);
     Ok(Conn { reader: BufReader::new(Box::new(stdout)), writer: Box::new(stdin), abort, child: Some(child) })
 }

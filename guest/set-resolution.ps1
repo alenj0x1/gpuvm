@@ -154,19 +154,19 @@ function Write-Result($Data) { $Data | ConvertTo-Json -Depth 4 | Set-Content -Pa
 try {
     $device = [GpuVMDisplay]::FindDevice('Virtual Display|MttVDD|IddSample')
     if (-not $device) {
-        Write-Result @{ ok = $false; error = 'No se encontró la pantalla virtual.'; devices = [GpuVMDisplay]::Devices() -join '; ' }
+        Write-Result @{ ok = $false; error = 'the virtual display wasn''t found.'; devices = [GpuVMDisplay]::Devices() -join '; ' }
         return
     }
     $applied = $null
     $code = [GpuVMDisplay]::SetMode($device, $Width, $Height, $Refresh, [ref]$applied)
     if ($code -eq -100) {
-        Write-Result @{ ok = $false; error = "La pantalla virtual no ofrece ${Width}x${Height}."; available = ([GpuVMDisplay]::Modes($device) -join ', ') }
+        Write-Result @{ ok = $false; error = "the virtual display doesn't offer ${Width}x${Height}."; available = ([GpuVMDisplay]::Modes($device) -join ', ') }
         return
     }
     # Sunshine no longer rearranges displays per session (that costs ~20 s), so GpuVM leaves the virtual one alone.
     $off = [GpuVMDisplay]::MakeOnlyDisplay($device)
     $result = @{ ok = ($code -eq 0 -and $null -ne $off); code = $code; device = $device; applied = $applied; turnedOff = (@($off) -join ', '); changed = [GpuVMDisplay]::Changed }
-    if ($null -eq $off) { $result.error = 'Windows no dejó apagar las otras pantallas de la VM.' }
+    if ($null -eq $off) { $result.error = 'Windows didn''t let the VM''s other displays be turned off.' }
     Write-Result $result
 }
 catch {

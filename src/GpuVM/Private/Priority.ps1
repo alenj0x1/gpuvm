@@ -207,10 +207,10 @@ function Copy-PacedFile {
         [Parameter(Mandatory)][string]$Source,
         [Parameter(Mandatory)][string]$Destination
     )
-    if (Test-Path -LiteralPath $Destination) { throw "Ya existe $Destination." }
+    if (Test-Path -LiteralPath $Destination) { throw "$Destination already exists." }
     try { [GpuVMPacedCopy]::Copy($Source, $Destination) }
     catch {
         Remove-Item -LiteralPath $Destination -Force -ErrorAction SilentlyContinue
-        throw "No se pudo copiar el disco: $($_.Exception.InnerException.Message ?? $_.Exception.Message)"
+        throw "Couldn't copy the disk: $($_.Exception.InnerException.Message ?? $_.Exception.Message)"
     }
 }

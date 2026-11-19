@@ -43,7 +43,9 @@ function Test-GpuVMDisposableDone {
 
 # Taking points, going back or exporting needs the machine off; a used disposable machine that is off gets deleted by
 # the next sweep, so these refuse disposable machines (Set-GpuVMDisposable -Keep makes one a normal machine first).
+# -Action completes "A disposable machine can't …": 'be exported', 'keep restore points', 'go back to a restore point',
+# 'change its restore points', 'be saved as a template'.
 function Assert-GpuVMNotDisposable {
     param([System.Collections.IDictionary]$State, [Parameter(Mandatory)][string]$Action)
-    if (Test-GpuVMDisposable -State $State) { throw "Una máquina desechable no se puede $Action. Consérvala primero para hacerlo." }
+    if (Test-GpuVMDisposable -State $State) { throw "A disposable machine can't $Action. Keep it first to do that." }
 }

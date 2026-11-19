@@ -15,14 +15,14 @@ function New-GpuVMTemplate {
     )
     Assert-Admin
     $state = Get-GpuVMState -Name $VMName
-    Assert-GpuVMNotDisposable -State $state -Action 'guardar como plantilla'
+    Assert-GpuVMNotDisposable -State $state -Action 'be saved as a template'
     $vm = Get-VM -Name $VMName -ErrorAction Stop
     $wasRunning = $vm.State -eq 'Running'
-    if ($vm.State -ne 'Off' -and -not ($wasRunning -and $ShutdownIfRunning)) { throw "Apaga la VM '$VMName' antes de crear la plantilla." }
+    if ($vm.State -ne 'Off' -and -not ($wasRunning -and $ShutdownIfRunning)) { throw "Turn off the VM '$VMName' before creating the template." }
     $source = (Get-VMHardDiskDrive -VMName $VMName | Select-Object -First 1).Path
-    if (-not $source) { throw "La VM '$VMName' no tiene disco." }
+    if (-not $source) { throw "The VM '$VMName' has no disk." }
     $dir = Get-TemplateDirectory -Name $Name
-    if (Test-Path -LiteralPath $dir) { throw "Ya existe una plantilla llamada '$Name'." }
+    if (Test-Path -LiteralPath $dir) { throw "There's already a template called '$Name'." }
     $sourceVhd = Get-VHD -Path $source
     # A dynamic copy only takes the space Windows uses; it needs at most that much free on the PC. A VM built on a
     # template is merged with its parents, so the whole chain counts.
@@ -34,8 +34,8 @@ function New-GpuVMTemplate {
     }
     $needGB = [math]::Ceiling($chainBytes / 1GB) + 10
     $freeGB = Get-DriveFreeGB (Get-GpuVMDefaultRoot)
-    if ($needGB -gt $freeGB) { throw "No hay espacio para la plantilla: hacen falta unos $needGB GB y quedan $freeGB GB libres." }
-    if (-not $PSCmdlet.ShouldProcess($Name, "Crear plantilla desde $VMName")) { return }
+    if ($needGB -gt $freeGB) { throw "There's no room for the template: about $needGB GB are needed and $freeGB GB are free." }
+    if (-not $PSCmdlet.ShouldProcess($Name, "Create template from $VMName")) { return }
     if ($wasRunning) {
         Write-Step 'Shutting down'
         Stop-VM -Name $VMName -Force
@@ -47,7 +47,7 @@ function New-GpuVMTemplate {
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
     $target = Join-Path $dir "$Name.vhdx"
     try {
-        Write-Step "Copiando el disco de $VMName (puede tardar unos minutos)"
+        Write-Step "Copying the disk of $VMName (it may take a few minutes)"
         # Convert-VHD copies into a new dynamic disk; a disk that is itself a copy of a template is merged into one.
         Convert-VHD -Path $source -DestinationPath $target -VHDType Dynamic -ErrorAction Stop
         # Only what Windows uses now: the space of deleted files is given back (lab 045).
@@ -83,9 +83,9 @@ function New-GpuVMTemplate {
     finally {
         if ($wasRunning) {
             Write-Step 'Starting'
-            try { Start-VM -Name $VMName -ErrorAction Stop } catch { Write-Warning "No se pudo volver a encender ${VMName}: $($_.Exception.Message)" }
+            try { Start-VM -Name $VMName -ErrorAction Stop } catch { Write-Warning "Couldn't turn ${VMName} back on: $($_.Exception.Message)" }
         }
     }
-    Write-Step "Plantilla '$Name' lista ($([math]::Round((Get-Item -LiteralPath $target).Length / 1GB, 1)) GB)"
+    Write-Step "Template '$Name' is ready ($([math]::Round((Get-Item -LiteralPath $target).Length / 1GB, 1)) GB)"
     Get-GpuVMTemplate | Where-Object { $_['name'] -eq $Name }
 }

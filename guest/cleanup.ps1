@@ -6,12 +6,12 @@
 # Runs on Windows PowerShell 5.1 inside the VM, as the VM's user with administrator rights.
 
 $GpuVMCleanupLevels = @('none', 'privacy', 'apps', 'minimal')
-$GpuVMCleanupLevelNames = @{ none = 'Normal'; privacy = 'Privacidad'; apps = 'No extra apps'; minimal = 'Mínimo' }
+$GpuVMCleanupLevelNames = @{ none = 'Normal'; privacy = 'Privacy'; apps = 'No extra apps'; minimal = 'Minimal' }
 
 $GpuVMCleanup = [ordered]@{
     'telemetry-minimum'    = @{
         Level       = 'privacy'
-        Description = 'Datos de diagnóstico al mínimo que permite la edición (en Pro, «Requerido»; en Enterprise y Education, apagados).'
+        Description = 'Diagnostic data at the lowest level the edition allows (on Pro, “Required”; on Enterprise and Education, off).'
         Registry    = @(
             @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection'; Name = 'AllowTelemetry'; Value = 0 }
             @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection'; Name = 'DoNotShowFeedbackNotifications'; Value = 1 }
@@ -22,7 +22,7 @@ $GpuVMCleanup = [ordered]@{
     }
     'advertising'          = @{
         Level       = 'privacy'
-        Description = 'Sin identificador de publicidad ni experiencias personalizadas con tus datos de diagnóstico.'
+        Description = 'No advertising ID or tailored experiences from your diagnostic data.'
         Registry    = @(
             @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\AdvertisingInfo'; Name = 'DisabledByGroupPolicy'; Value = 1 }
             @{ Path = 'HKCU:\Software\Policies\Microsoft\Windows\CloudContent'; Name = 'DisableTailoredExperiencesWithDiagnosticData'; Value = 1 }
@@ -30,7 +30,7 @@ $GpuVMCleanup = [ordered]@{
     }
     'activity-history'     = @{
         Level       = 'privacy'
-        Description = 'Sin historial de actividad ni envío de actividad a Microsoft.'
+        Description = 'No activity history and no activity sent to Microsoft.'
         Registry    = @(
             @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System'; Name = 'EnableActivityFeed'; Value = 0 }
             @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System'; Name = 'PublishUserActivities'; Value = 0 }
@@ -39,7 +39,7 @@ $GpuVMCleanup = [ordered]@{
     }
     'suggestions'          = @{
         Level       = 'privacy'
-        Description = 'Sin sugerencias, consejos, Spotlight ni apps promocionadas que se instalan solas.'
+        Description = 'No suggestions, tips, Spotlight or promoted apps that install themselves.'
         Registry    = @(
             foreach ($name in 'ContentDeliveryAllowed', 'OemPreInstalledAppsEnabled', 'PreInstalledAppsEnabled', 'SilentInstalledAppsEnabled',
                 'SoftLandingEnabled', 'SystemPaneSuggestionsEnabled', 'RotatingLockScreenEnabled', 'RotatingLockScreenOverlayEnabled',
@@ -52,7 +52,7 @@ $GpuVMCleanup = [ordered]@{
     }
     'web-search'           = @{
         Level       = 'privacy'
-        Description = 'La búsqueda de Inicio busca solo en el equipo, sin Bing.'
+        Description = 'Start''s search looks only on this PC, without Bing.'
         Registry    = @(
             @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search'; Name = 'DisableWebSearch'; Value = 1 }
             @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search'; Name = 'ConnectedSearchUseWeb'; Value = 0 }
@@ -62,7 +62,7 @@ $GpuVMCleanup = [ordered]@{
     }
     'copilot-recall'       = @{
         Level       = 'privacy'
-        Description = 'Sin Copilot ni Recall (las capturas de pantalla que guarda Windows 11).'
+        Description = 'No Copilot or Recall (the screenshots Windows 11 saves).'
         Registry    = @(
             @{ Path = 'HKCU:\Software\Policies\Microsoft\Windows\WindowsCopilot'; Name = 'TurnOffWindowsCopilot'; Value = 1 }
             @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot'; Name = 'TurnOffWindowsCopilot'; Value = 1 }
@@ -72,7 +72,7 @@ $GpuVMCleanup = [ordered]@{
     }
     'store-apps'           = @{
         Level       = 'apps'
-        Description = 'Quita apps preinstaladas que no hacen falta (noticias, clima, Solitario, Clipchamp, Teams personal, Outlook nuevo...), también para usuarios nuevos. Se pueden volver a instalar desde Microsoft Store.'
+        Description = 'Removes preinstalled apps that aren''t needed (news, weather, Solitaire, Clipchamp, personal Teams, new Outlook...), for new users too. They can be installed again from Microsoft Store.'
         # Kept on purpose: Microsoft Store, App Installer (winget), Windows Security, Xbox (Game Pass), Photos,
         # Calculator, Notepad, Paint, Terminal, Snipping Tool, Media Player and the frameworks apps depend on.
         Packages    = @(
@@ -88,7 +88,7 @@ $GpuVMCleanup = [ordered]@{
     }
     'onedrive'             = @{
         Level       = 'apps'
-        Description = 'Quita OneDrive y evita que se vuelva a instalar.'
+        Description = 'Removes OneDrive and keeps it from installing again.'
         Registry    = @(
             @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\OneDrive'; Name = 'DisableFileSyncNGSC'; Value = 1 }
         )
@@ -109,7 +109,7 @@ $GpuVMCleanup = [ordered]@{
     }
     'widgets'              = @{
         Level       = 'apps'
-        Description = 'Sin widgets ni «Noticias e intereses» en la barra de tareas.'
+        Description = 'No widgets or “News and interests” on the taskbar.'
         Registry    = @(
             @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Dsh'; Name = 'AllowNewsAndInterests'; Value = 0 }
             @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Feeds'; Name = 'EnableFeeds'; Value = 0 }
@@ -117,7 +117,7 @@ $GpuVMCleanup = [ordered]@{
     }
     'telemetry-services'   = @{
         Level       = 'minimal'
-        Description = 'Apaga los servicios que envían telemetría y el informe de errores a Microsoft.'
+        Description = 'Turns off the services that send telemetry and error reports to Microsoft.'
         Services    = @(
             @{ Name = 'DiagTrack'; Default = 'Automatic' }
             @{ Name = 'dmwappushservice'; Default = 'Manual' }
@@ -126,7 +126,7 @@ $GpuVMCleanup = [ordered]@{
     }
     'unneeded-services'    = @{
         Level       = 'minimal'
-        Description = 'Apaga servicios que una VM no usa: mapas, ubicación, fax, modo demo y uso compartido de Windows Media.'
+        Description = 'Turns off services a VM doesn''t use: maps, location, fax, demo mode and Windows Media sharing.'
         Services    = @(
             @{ Name = 'MapsBroker'; Default = 'Automatic' }
             @{ Name = 'lfsvc'; Default = 'Manual' }
@@ -137,7 +137,7 @@ $GpuVMCleanup = [ordered]@{
     }
     'background-apps'      = @{
         Level       = 'minimal'
-        Description = 'Las apps de Microsoft Store no corren en segundo plano.'
+        Description = 'Microsoft Store apps don''t run in the background.'
         Registry    = @(
             @{ Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy'; Name = 'LetAppsRunInBackground'; Value = 2 }
         )
@@ -147,7 +147,7 @@ $GpuVMCleanup = [ordered]@{
 function Get-GpuVMCleanupItem {
     param([Parameter(Mandatory)][string]$Level)
     $rank = [array]::IndexOf($GpuVMCleanupLevels, $Level)
-    if ($rank -lt 0) { throw "Nivel de limpieza desconocido: $Level" }
+    if ($rank -lt 0) { throw "Unknown cleanup level: $Level" }
     foreach ($name in $GpuVMCleanup.Keys) {
         $item = $GpuVMCleanup[$name]
         [pscustomobject]@{ Name = $name; Item = $item; Included = [array]::IndexOf($GpuVMCleanupLevels, $item['Level']) -le $rank }
@@ -193,7 +193,7 @@ function Invoke-GpuVMCleanup {
                         try { Remove-AppxPackage -Package $_.PackageFullName -AllUsers -ErrorAction Stop; $removed++ } catch { }
                     }
                 }
-                $result.detail = "$removed apps quitadas"
+                $result.detail = "$removed apps removed"
             }
             if ($entry.Included -and $item['Script']) { & $item['Script'] }
         }

@@ -33,7 +33,7 @@ function Update-GpuVMSettings {
             Write-Step 'Starting'
             try { Start-VM -Name $Name -ErrorAction Stop }
             catch {
-                Write-Warning "La VM no encendió con los ajustes nuevos ($($_.Exception.Message)); se restauraron los anteriores."
+                Write-Warning "The VM didn't turn on with the new settings ($($_.Exception.Message)); the previous ones were restored."
                 Invoke-GpuVMBackend -Backend $state['backend'] -Operation Apply -Arguments $Name, $previous
                 $restored = Get-GpuVMState -Name $Name
                 $restored['config'] = $previous

@@ -33,13 +33,13 @@ function New-GpuVM {
     Assert-GpuVMNameFree -Name $Name
     if ($Template) {
         if ($IsoPath -or $Edition -or $Credential) { throw 'With -Template, Windows, its edition and its password come from the template; remove -IsoPath, -Edition and -Credential.' }
-        if (-not $PSCmdlet.ShouldProcess($Name, "Crear VM desde la plantilla $Template")) { return }
+        if (-not $PSCmdlet.ShouldProcess($Name, "Create VM from the template $Template")) { return }
         return New-GpuVMFromTemplate -Name $Name -Template $Template -Profile $Profile -Override $Override -Start:$Start -Disposable:$Disposable
     }
 
     $failed = @(Test-GpuVMHost -Profile $Profile -Override $Override | Where-Object Status -eq 'Fail')
     if ($failed) {
-        throw ('El equipo no pasa la revisión: ' + (($failed | ForEach-Object { "$($_.Name): $($_.Detail)" }) -join '; '))
+        throw ("This PC doesn't pass the check: " + (($failed | ForEach-Object { "$($_.Name): $($_.Detail)" }) -join '; '))
     }
 
     $config = Resolve-GpuVMProfile -Name $Profile -Override $Override
@@ -47,7 +47,7 @@ function New-GpuVM {
     if (-not $IsoPath) { throw 'Choose the Windows image (ISO).' }
     $editionName = if ($Edition) { $Edition } else { $config['guest']['edition'] }
     if (-not $Credential) {
-        $Credential = Get-Credential -UserName $config['guest']['userName'] -Message 'Usuario y contraseña de la cuenta local del invitado'
+        $Credential = Get-Credential -UserName $config['guest']['userName'] -Message 'User name and password for the guest''s local account'
     }
     if (-not $Credential) { throw 'The VM needs a user name.' }
 
@@ -55,12 +55,12 @@ function New-GpuVM {
     try {
         $image = Select-WindowsEdition -Editions (Get-WindowsEditionList -ImageFile $iso.ImageFile) -Edition $editionName
         $language = Get-WindowsImageLanguage -ImageFile $iso.ImageFile -Index $image.Index
-        Write-Step "Edición: $($image.Name) ($language)"
+        Write-Step "Edition: $($image.Name) ($language)"
 
         $unattend = New-UnattendXml -ComputerName (ConvertTo-ComputerName $Name) -UserName $Credential.UserName `
             -Password $Credential.Password -UILanguage $language -AutoLogon ([bool]$config['guest']['autoLogon'])
 
-        if (-not $PSCmdlet.ShouldProcess($Name, "Crear VM con perfil $Profile")) { return }
+        if (-not $PSCmdlet.ShouldProcess($Name, "Create VM with profile $Profile")) { return }
 
         $streaming = New-StreamingPayload -Config $config
         $context = @{
@@ -77,25 +77,25 @@ function New-GpuVM {
         # Only the state returned by the backend counts; any other output that leaks through is discarded.
         $state = @(Invoke-GpuVMBackend -Backend $config['backend'] -Operation New -Arguments (, $context)) |
             Where-Object { $_ -is [System.Collections.IDictionary] } | Select-Object -Last 1
-        if (-not $state) { throw "El backend no devolvió el estado de la VM '$Name'. Recupéralo con: ./gpuvm.ps1 repair -Name $Name -Profile $Profile" }
+        if (-not $state) { throw "The backend didn't return the state of the VM '$Name'. Recover it with: ./gpuvm.ps1 repair -Name $Name -Profile $Profile" }
         $state['edition'] = $image.Name
         $state['streaming'] = if ($streaming) { $streaming.State } else { $null }
         # Lets GpuVM fix things inside the VM via PowerShell Direct (session, logs) without prompting.
         $state['guest'] = [ordered]@{ user = $Credential.UserName; password = $Credential.Password | ConvertFrom-SecureString }
         $state['pendingApps'] = @(if ($config['guest'].Contains('apps')) { $config['guest']['apps'] })
         Save-GpuVMState $state
-        try { Register-GpuVMIsoUse -Path $IsoPath -VMName $Name } catch { Write-Warning "No se pudo recordar el ISO: $($_.Exception.Message)" }
+        try { Register-GpuVMIsoUse -Path $IsoPath -VMName $Name } catch { Write-Warning "Couldn't remember the ISO: $($_.Exception.Message)" }
     }
     finally {
         # Only dismount it if GpuVM mounted it; if the user already had it open, leave it as it was.
         if (-not $iso.WasAttached) { Dismount-DiskImage -ImagePath $iso.IsoPath | Out-Null }
     }
 
-    Write-Step "VM '$Name' lista. La primera vez Windows termina de configurarse solo (unos minutos)."
-    if ($state['streaming']) { Write-Step "Para verla con la GPU: ./gpuvm.ps1 connect -Name $Name" }
+    Write-Step "VM '$Name' is ready. The first time, Windows finishes setting itself up (a few minutes)."
+    if ($state['streaming']) { Write-Step "To see it with the GPU: ./gpuvm.ps1 connect -Name $Name" }
     if ($Start) {
         try { Assert-VMCanStart -Name $Name; Start-VM -Name $Name -ErrorAction Stop }
-        catch { Write-Warning "La VM se creó pero no pudo encender: $($_.Exception.Message)" }
+        catch { Write-Warning "The VM was created but couldn't turn on: $($_.Exception.Message)" }
     }
     Get-GpuVM -Name $Name
 }
@@ -118,22 +118,22 @@ function New-GpuVMFromTemplate {
     if ($Disposable) {
         # A disposable machine reserves a fixed amount, not the template's full size: it is shut down (and deleted) if
         # the drive gets near the host's margin (Remove-GpuVMDisposable).
-        $failed = @($failed | Where-Object Name -ne 'Disco')
+        $failed = @($failed | Where-Object Name -ne 'Disk')
         $budget = Get-GpuVMDiskBudget -Root (Get-GpuVMDefaultRoot)
         if ($budget['availableGB'] -lt $script:DisposableReserveGB) {
-            $failed += New-CheckResult 'Disco' Fail ("Una máquina desechable necesita $($script:DisposableReserveGB) GB libres en $($budget['drive']) " +
-                "además de lo reservado para las otras máquinas; hay $($budget['availableGB']) GB.")
+            $failed += New-CheckResult 'Disk' Fail ("A disposable machine needs $($script:DisposableReserveGB) GB free on $($budget['drive']) " +
+                "besides what is reserved for the other machines; there are $($budget['availableGB']) GB.")
         }
     }
     if ($failed) {
-        throw ('El equipo no pasa la revisión: ' + (($failed | ForEach-Object { "$($_.Name): $($_.Detail)" }) -join '; '))
+        throw ("This PC doesn't pass the check: " + (($failed | ForEach-Object { "$($_.Name): $($_.Detail)" }) -join '; '))
     }
     $config = New-TemplateCloneConfig -Config (Resolve-GpuVMProfile -Name $Profile -Override $Override) -Template $base
 
     $context = @{ Name = $Name; Config = $config; Template = $base }
     $state = @(Invoke-GpuVMBackend -Backend $config['backend'] -Operation Clone -Arguments (, $context)) |
         Where-Object { $_ -is [System.Collections.IDictionary] } | Select-Object -Last 1
-    if (-not $state) { throw "El backend no devolvió el estado de la VM '$Name'." }
+    if (-not $state) { throw "The backend didn't return the state of the VM '$Name'." }
     $state['edition'] = $base['edition']
     # Sunshine keeps the template's web credentials; Moonlight pairs again with the copy's new identity.
     $state['streaming'] = $base['streaming']
@@ -144,10 +144,10 @@ function New-GpuVMFromTemplate {
     if ($Disposable) { $state['disposable'] = [ordered]@{ createdAt = (Get-Date).ToString('o'); startedAt = $null } }
     Save-GpuVMState $state
 
-    Write-Step "VM '$Name' lista sobre la plantilla '$Template'."
+    Write-Step "VM '$Name' is ready, based on the template '$Template'."
     if ($Start) {
         try { Assert-VMCanStart -Name $Name; Start-VM -Name $Name -ErrorAction Stop; Set-GpuVMDisposableStarted -State $state }
-        catch { Write-Warning "La VM se creó pero no pudo encender: $($_.Exception.Message)" }
+        catch { Write-Warning "The VM was created but couldn't turn on: $($_.Exception.Message)" }
     }
     Get-GpuVM -Name $Name
 }

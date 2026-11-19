@@ -7,8 +7,8 @@ function Get-LabRoot {
 function Get-LabDirectory {
     param([Parameter(Mandatory)][string]$Id)
     $found = @(Get-ChildItem (Get-LabRoot) -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "$Id*" -and (Test-Path (Join-Path $_.FullName 'lab.json')) })
-    if ($found.Count -eq 0) { throw "No existe el laboratorio '$Id'." }
-    if ($found.Count -gt 1) { throw "'$Id' coincide con varios laboratorios: $($found.Name -join ', ')" }
+    if ($found.Count -eq 0) { throw "The lab '$Id' doesn't exist." }
+    if ($found.Count -gt 1) { throw "'$Id' matches several labs: $($found.Name -join ', ')" }
     $found[0].FullName
 }
 

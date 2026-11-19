@@ -14,13 +14,13 @@ function New-GpuVMSharedDisk {
     )
     Assert-Admin
     $path = Get-SharedDiskPath -Name $Name
-    if (Test-Path -LiteralPath $path) { throw "Ya existe un disco compartido llamado '$Name'." }
-    if (-not $PSCmdlet.ShouldProcess($Name, "Crear disco compartido de $SizeGB GB")) { return }
+    if (Test-Path -LiteralPath $path) { throw "There's already a shared disk called '$Name'." }
+    if (-not $PSCmdlet.ShouldProcess($Name, "Create a $SizeGB GB shared disk")) { return }
     Initialize-GpuVMRoot -Path (Get-GpuVMDefaultRoot)
     New-Item -ItemType Directory -Path (Get-SharedDiskRoot) -Force | Out-Null
     Protect-GpuVMSharedFolder -Path (Get-SharedDiskRoot)
     try {
-        Write-Step "Creando el disco '$Name' de $SizeGB GB"
+        Write-Step "Creating the disk '$Name' of $SizeGB GB"
         New-VHD -Path $path -SizeBytes ([uint64]$SizeGB * 1GB) -Dynamic | Out-Null
         # Formatted here, without a drive letter on this PC; the VM gives it one when it is attached.
         Mount-VHD -Path $path -NoDriveLetter
@@ -38,6 +38,6 @@ function New-GpuVMSharedDisk {
         Remove-Item -LiteralPath $path, ([IO.Path]::ChangeExtension($path, '.json')) -Force -ErrorAction SilentlyContinue
         throw
     }
-    Write-Step "Disco '$Name' listo"
+    Write-Step "Disk '$Name' is ready"
     Get-GpuVMSharedDisk | Where-Object { $_['name'] -eq $Name }
 }

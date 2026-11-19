@@ -72,7 +72,7 @@ struct Viewer {
     last_toggle: Mutex<Option<Instant>>,
     /// When the viewer last reported a drag (same limit as the panel).
     last_drag: Mutex<Option<Instant>>,
-    /// The machine opens full screen (its "Pantalla completa" option): it still starts inside the app, hidden, and
+    /// The machine opens full screen (its "Full screen" option): it still starts inside the app, hidden, and
     /// goes full screen when revealed.
     full_screen: bool,
 }
@@ -161,7 +161,7 @@ fn allow_foreground(pid: u32) {
     unsafe { AllowSetForegroundWindow(pid) };
 }
 
-/// Who waits for a viewer's first picture (the "Abrir" job), by machine name.
+/// Who waits for a viewer's first picture (the "Open" job), by machine name.
 static WAITERS: Mutex<Option<HashMap<String, std::sync::mpsc::Sender<Value>>>> = Mutex::new(None);
 
 /// Open viewers by machine name.
@@ -504,7 +504,7 @@ pub fn launch_in(data: &Value) -> Option<Value> {
     items.into_iter().rev().find_map(|v| v.get("viewerLaunch").filter(|l| l.is_object()).cloned())
 }
 
-/// The end of "Abrir": opens the viewer with the module's arguments and returns once the first picture is decoded
+/// The end of "Open": opens the viewer with the module's arguments and returns once the first picture is decoded
 /// (the button shows "Connecting the picture" until then), or with the viewer's error in plain words.
 pub fn open_and_wait(app: &AppHandle, vm: &str, launch: &Value) -> Result<(), String> {
     let arguments: Vec<String> = launch["arguments"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
@@ -566,7 +566,7 @@ pub fn open_and_wait(app: &AppHandle, vm: &str, launch: &Value) -> Result<(), St
         // Text from the streaming host (untrusted): kept short.
         "error" => Err(msg["message"].as_str().unwrap_or("The viewer couldn't connect.").chars().take(200).collect()),
         "app-running" => Err("The machine has another session open. Close it and try again.".into()),
-        "stage-failed" => Err(format!("No se pudo conectar ({}).", msg["stage"].as_str().unwrap_or("?"))),
+        "stage-failed" => Err(format!("Couldn't connect ({}).", msg["stage"].as_str().unwrap_or("?"))),
         // The viewer's last message on every exit ("ended"), or its pipe closing.
         "closed" | "ended" => Err("The viewer closed before showing the picture.".into()),
         // Still connecting: the viewer stays open and shows the picture when it comes.

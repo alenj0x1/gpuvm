@@ -20,18 +20,18 @@ export const startTransfer = (vm: string, paths: string[], folder: string, from?
   invoke<string>("transfer_start", { vm, paths, folder, from: from ?? null });
 export const cancelTransfer = (id: string) => invoke("transfer_cancel", { id });
 
-/** "Enviando 42 % · 1.2 de 2.9 GB" -> "1,2 de 2,9 GB" in the app's language (the module sends invariant numbers). */
+/** "Sending 42 % · 1.2 of 2.9 GB" -> "1,2 de 2,9 GB" in the app's language (the module sends invariant numbers). */
 export const transferAmount = (tr: Transfer) => {
-  const m = /· ([\d.]+) de ([\d.]+) (\w+)$/.exec(tr.message);
+  const m = /· ([\d.]+) of ([\d.]+) (\w+)$/.exec(tr.message);
   if (!m) return "";
   const n = (v: string) => Number(v).toLocaleString(locale(), { maximumFractionDigits: 1 });
   return t("{sent} of {total}", { sent: n(m[1]), total: `${n(m[2])} ${m[3]}` });
 };
 
 const SAMPLE: Transfer[] = [
-  { id: "a", vm: "win10", from: null, names: ["fotos-vacaciones", "informe.pdf"], state: "running", percent: 42, message: "Enviando 42 % · 1.2 de 2.9 GB", error: null, items: [] },
+  { id: "a", vm: "win10", from: null, names: ["fotos-vacaciones", "informe.pdf"], state: "running", percent: 42, message: "Sending 42 % · 1.2 of 2.9 GB", error: null, items: [] },
   { id: "b", vm: "win11-pruebas", from: "win10", names: ["presupuesto.xlsx"], state: "done", percent: 100, message: "", error: null, items: ["presupuesto.xlsx"], folder: "Recibidos" },
-  { id: "c", vm: "win10", from: null, names: ["setup.iso"], state: "error", percent: 0, message: "", error: "No cabe: son 6200 MB y win10 tiene 4100 MB libres.", items: [] },
+  { id: "c", vm: "win10", from: null, names: ["setup.iso"], state: "error", percent: 0, message: "", error: "It doesn't fit: it's 6200 MB and win10 has 4100 MB free.", items: [] },
 ];
 
 /** Every copy the app knows, newest first, kept up to date. */

@@ -113,11 +113,11 @@ function Test-GuestAddressInHostSubnet {
 function Get-GpuVMHostNetwork {
     param([Parameter(Mandatory)][string]$Name)
     $switch = (Get-VMNetworkAdapter -VMName $Name | Select-Object -First 1).SwitchName
-    if (-not $switch) { throw "La VM '$Name' no está conectada a ningún conmutador virtual." }
+    if (-not $switch) { throw "The VM '$Name' isn't connected to any virtual switch." }
     $networks = @(Get-NetIPAddress -InterfaceAlias "vEthernet ($switch)" -AddressFamily IPv4 -ErrorAction SilentlyContinue |
         Where-Object { $_.IPAddress -notlike '169.254.*' } |
         ForEach-Object { [pscustomobject]@{ Address = $_.IPAddress; PrefixLength = [int]$_.PrefixLength } })
-    if (-not $networks) { throw "El host no tiene una dirección IPv4 en el conmutador '$switch' de la VM '$Name'; no se puede comprobar la IP que informa la VM." }
+    if (-not $networks) { throw "The host has no IPv4 address on the switch '$switch' of the VM '$Name'; the IP the VM reports can't be checked." }
     $networks
 }
 
@@ -145,22 +145,22 @@ function Get-GpuVMEndpoint {
         }
         if ($reported) {
             $subnets = ($networks | ForEach-Object { "$($_.Address)/$($_.PrefixLength)" }) -join ', '
-            throw ("La VM '{0}' informa la IP {1}, que no está en la red del host con la VM ({2}). Por seguridad no se conecta: revisa el adaptador de red de la VM." -f
+            throw ("The VM '{0}' reports the IP {1}, which isn't on the host's network with the VM ({2}). For safety it won't connect: check the VM's network adapter." -f
                 $Name, (ConvertTo-GuestString ($reported -join ', ') -MaxLength 100), $subnets)
         }
         # A VM that is off never gets an IP: say so now instead of waiting 20 minutes.
         $vm = Get-VM -Name $Name
-        $stopped = @{ Off = 'apagada'; Saved = 'guardada'; Paused = 'en pausa' }
-        if ($stopped.ContainsKey([string]$vm.State)) { throw "La VM '$Name' está $($stopped[[string]$vm.State]). Ábrela desde GpuVM para encenderla." }
+        $stopped = @{ Off = 'off'; Saved = 'saved'; Paused = 'paused' }
+        if ($stopped.ContainsKey([string]$vm.State)) { throw "The VM '$Name' is $($stopped[[string]$vm.State]). Open it from GpuVM to turn it on." }
         if (((Get-Date) - $lastReport).TotalSeconds -ge 60) {
             $heartbeat = (Get-VMIntegrationService -VMName $Name | Where-Object { $_.Id -like '*84EAAE65-2F2E-45F5-9BB5-0E857DC8EB47*' }).PrimaryStatusDescription
-            Write-Step ("Esperando a Windows en '{0}' ({1:N0} min; estado {2}, CPU {3} %, latido {4}). Para ver la pantalla: vmconnect.exe localhost {0}" -f
-                $Name, ((Get-Date) - $started).TotalMinutes, $vm.State, $vm.CPUUsage, ($heartbeat ? $heartbeat : 'sin datos'))
+            Write-Step ("Waiting for Windows on '{0}' ({1:N0} min; state {2}, CPU {3} %, heartbeat{4}). To see its screen: vmconnect.exe localhost {0}" -f
+                $Name, ((Get-Date) - $started).TotalMinutes, $vm.State, $vm.CPUUsage, ($heartbeat ? " $heartbeat" : ': no data'))
             $lastReport = Get-Date
         }
         Start-Sleep -Seconds 5
     } while ((Get-Date) -lt $deadline)
-    throw "La VM '$Name' no obtuvo una dirección IP en $([int]($TimeoutSec / 60)) min. Mira su pantalla con: vmconnect.exe localhost $Name"
+    throw "The VM '$Name' didn't get an IP address in $([int]($TimeoutSec / 60)) min. See its screen with: vmconnect.exe localhost $Name"
 }
 
 function Get-GpuVMAddress {
@@ -210,7 +210,7 @@ function Wait-SunshineReady {
     while ($true) {
         try { Invoke-SunshineApi -Address $Address -Credential $Credential -Path '/api/clients/list' | Out-Null; return }
         catch {
-            if ((Get-Date) -gt $deadline) { throw "Sunshine no responde en ${Address}:$($script:SunshineWebPort). Revisa C:\GpuVM\setup.log dentro de la VM. Último error: $_" }
+            if ((Get-Date) -gt $deadline) { throw "Sunshine isn't answering at ${Address}:$($script:SunshineWebPort). Check C:\GpuVM\setup.log inside the VM. Last error: $_" }
             if (-not $announced) { Write-Step $Message; $announced = $true }
             Start-Sleep -Seconds 3
         }
@@ -249,7 +249,7 @@ function Set-SunshineVirtualDisplay {
     # also for VMs created before it. Other encoders ignore it. Applied in the same restart as the display.
     $settings = [ordered]@{ output_name = $vdd.device_id; dd_configuration_option = $mode; nvenc_twopass = 'disabled' }
     if (Update-SunshineConfig -Address $Address -Credential $Credential -Settings $settings -Name $Name -GuestCredential $GuestCredential) {
-        Write-Step "Sunshine capturará la pantalla virtual ($($vdd.display_name))"
+        Write-Step "Sunshine will capture the virtual display ($($vdd.display_name))"
     }
 }
 
@@ -282,7 +282,7 @@ function Update-SunshineConfig {
         $null = Set-GuestCaptureMode -Name $Name -Credential $GuestCredential -Mode wgc -Restart
     }
     else {
-        if ($wgc) { Write-Warning 'Sunshine se reinicia sin la contraseña de Windows de la VM: si no vuelve, reinicia la VM.' }
+        if ($wgc) { Write-Warning 'Sunshine is restarting without the VM''s Windows password: if it doesn''t come back, restart the VM.' }
         # Sunshine drops the connection when restarting; the error from that call is expected.
         try { Invoke-SunshineApi -Address $Address -Credential $Credential -Method POST -Path '/api/restart' -Body @{} | Out-Null } catch { }
     }
@@ -327,7 +327,8 @@ function Install-GuestAudio {
         }
         finally { Remove-PSSession $session -ErrorAction SilentlyContinue }
     }
-    if ($answer -ne 'ok') { throw "El audio de la VM no quedó listo: $answer" }
+    # The guest answers 'error: <reason>'; the reason alone follows the colon.
+    if ($answer -ne 'ok') { throw "The VM's audio isn't ready: $($answer -replace '^error: ')" }
     $installed
 }
 
@@ -354,14 +355,14 @@ function Install-GuestGamepad {
             param($file, $hash)
             $path = Join-Path 'C:\GpuVM\streaming' $file
             try {
-                if ((Get-FileHash -Algorithm SHA256 $path).Hash -ne $hash) { return 'error: el instalador no es el esperado' }
+                if ((Get-FileHash -Algorithm SHA256 $path).Hash -ne $hash) { return 'error: the installer isn''t the expected one' }
                 $signature = Get-AuthenticodeSignature $path
                 if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch '^CN=Nefarius Software Solutions e\.U\.,') {
-                    return 'error: el instalador no tiene la firma de su autor'
+                    return 'error: the installer doesn''t have its author''s signature'
                 }
                 $p = Start-Process $path -ArgumentList '/quiet', '/norestart' -Wait -PassThru
-                if ($p.ExitCode -notin 0, 3010) { return "error: el instalador terminó con código $($p.ExitCode)" }
-                if (-not (Get-CimInstance Win32_SystemDriver -Filter "Name='ViGEmBus'")) { return 'error: el driver no quedó instalado' }
+                if ($p.ExitCode -notin 0, 3010) { return "error: the installer ended with code $($p.ExitCode)" }
+                if (-not (Get-CimInstance Win32_SystemDriver -Filter "Name='ViGEmBus'")) { return 'error: the driver didn''t get installed' }
                 'ok'
             }
             finally { Remove-Item $path -Force -ErrorAction SilentlyContinue }
@@ -369,7 +370,7 @@ function Install-GuestGamepad {
     }
     finally { Remove-PSSession $session -ErrorAction SilentlyContinue }
     $answer = ConvertTo-GuestString (@($answer)[-1])
-    if ($answer -ne 'ok') { throw "El soporte de mandos no quedó listo: $answer" }
+    if ($answer -ne 'ok') { throw "Controller support isn't ready: $($answer -replace '^error: ')" }
     $true
 }
 
@@ -433,7 +434,7 @@ function Set-SunshineAudioSink {
     $sink = Get-GuestAudioSink -Name $Name -Credential $GuestCredential
     if (-not $sink) { Write-Warning 'The GpuVM Audio output wasn''t found in the VM; the picture will have no sound.'; return }
     if (Update-SunshineConfig -Address $Address -Credential $Credential -Settings ([ordered]@{ virtual_sink = $sink }) -Name $Name -GuestCredential $GuestCredential) {
-        Write-Step "Sunshine captura el audio de $sink"
+        Write-Step "Sunshine captures the audio from $sink"
     }
 }
 
@@ -616,8 +617,8 @@ function Set-GuestDisplayResolution {
     # 0 = the host monitor's rate (Refresh.ps1); a rate the virtual display lacks is added to it first.
     $Fps = Resolve-GpuVMStreamFps $Fps
     if ($Fps -notin 30, 60, 90, 120, 144, 165, 244) {
-        try { if (Add-GuestRefreshRate -Name $Name -Credential $Credential -Hz $Fps) { Write-Step "Pantalla de la VM con $Fps Hz, como tu monitor" } }
-        catch { Write-Warning "No se pudo agregar $Fps Hz a la pantalla de la VM: $($_.Exception.Message)" }
+        try { if (Add-GuestRefreshRate -Name $Name -Credential $Credential -Hz $Fps) { Write-Step "The VM's display at $Fps Hz, like your monitor" } }
+        catch { Write-Warning "Couldn't add $Fps Hz to the VM's display: $($_.Exception.Message)" }
     }
     $code = Get-Content -Raw -LiteralPath (Get-RepoPath 'guest\set-resolution.ps1')
     $raw = Invoke-Guest -Name $Name -Credential $Credential -ArgumentList $code, $width, $height, $Fps -ScriptBlock {
@@ -845,7 +846,7 @@ function Register-MoonlightPairing {
         [switch]$Quiet
     )
     $pin = '{0:D4}' -f [Security.Cryptography.RandomNumberGenerator]::GetInt32(0, 10000)
-    Write-Step "Emparejando con Sunshine en $Address"
+    Write-Step "Pairing with Sunshine at $Address"
     $pairArguments = @('pair', $Address, '--pin', $pin)
     if ($Quiet) { $pairArguments += '--gpuvm-quiet' }
     $task = Start-UnelevatedProcess -FilePath $MoonlightPath -ArgumentList $pairArguments -KeepTask
@@ -871,7 +872,7 @@ function Register-MoonlightPairing {
             if ((Get-Date) -gt $deadline) { throw 'Moonlight didn''t finish pairing.' }
             Start-Sleep -Seconds 1
         }
-        if ($state.ExitCode -ne 0) { throw "Moonlight terminó el emparejamiento con código $($state.ExitCode)." }
+        if ($state.ExitCode -ne 0) { throw "Moonlight ended pairing with code $($state.ExitCode)." }
         if (-not (Test-SunshineClientPaired -Address $Address -Credential $Credential -ClientName $ClientName)) {
             throw 'Sunshine didn''t record Moonlight''s pairing.'
         }
@@ -887,7 +888,7 @@ function Get-MoonlightStreamArguments {
         [Parameter(Mandatory)][System.Collections.IDictionary]$Client
     )
     # The app name is quoted; if it contained its own quotes it could inject arguments into Moonlight.
-    if ($Client['app'] -notmatch '^[\w .-]{1,60}$') { throw "Nombre de app de Moonlight no válido: $($Client['app'])" }
+    if ($Client['app'] -notmatch '^[\w .-]{1,60}$') { throw "Invalid Moonlight app name: $($Client['app'])" }
     $arguments = @('stream', $Address, "`"$($Client['app'])`"")
     if ($Client['resolution']) { $arguments += '--resolution', $Client['resolution'] }
     if ($Client.Contains('fps') -and $null -ne $Client['fps']) { $arguments += '--fps', [string](Resolve-GpuVMStreamFps $Client['fps']) }

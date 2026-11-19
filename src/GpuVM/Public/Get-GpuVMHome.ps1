@@ -40,7 +40,7 @@ function Get-GpuVMHome {
         if (-not $hostGpus.ContainsKey($match)) { $hostGpus[$match] = Get-HostGpu -Match $match | Select-Object -First 1 }
         $hostGpu = $hostGpus[$match]
         if ($hostGpu -and $state['gpu'] -and $hostGpu.DriverVersion -ne $state['gpu']['driverVersion']) {
-            & $issue 'driver' "Su driver de la GPU no es el del equipo ($($hostGpu.DriverVersion))" 'Update driver' 'Sync-GpuVMDriver' @{ Name = $vm.Name; Confirm = $false; ShutdownIfRunning = $true }
+            & $issue 'driver' "Its GPU driver isn't the one on this PC ($($hostGpu.DriverVersion))" 'Update driver' 'Sync-GpuVMDriver' @{ Name = $vm.Name; Confirm = $false; ShutdownIfRunning = $true }
         }
         if (-not $state['guest']) {
             & $issue 'password' 'Its Windows password is missing, so things inside it can''t be fixed' 'Save password' $null $null
@@ -51,11 +51,11 @@ function Get-GpuVMHome {
         $pending = @(if ($state.Contains('pendingApps')) { $state['pendingApps'] | Where-Object { $_ } })
         if ($pending.Count) {
             $names = @($pending | ForEach-Object { $entry = (Get-AppCatalog)[$_]; if ($entry) { $entry['name'] } else { $_ } })
-            & $issue 'apps' "Faltan por instalar: $($names -join ', ')" $(if ($vm.State -eq 'Off') { 'Start and install' } else { 'Install' }) 'Install-GpuVMApp' @{ Name = $vm.Name; App = $pending }
+            & $issue 'apps' "Still to install: $($names -join ', ')" $(if ($vm.State -eq 'Off') { 'Start and install' } else { 'Install' }) 'Install-GpuVMApp' @{ Name = $vm.Name; App = $pending }
         }
     }
     if ($diskFreeGB -lt 40) {
-        $attention.Add([ordered]@{ vm = $null; kind = 'disk'; text = "Quedan $diskFreeGB GB libres en el disco de las máquinas"; label = 'See disks'; cmd = $null; args = $null })
+        $attention.Add([ordered]@{ vm = $null; kind = 'disk'; text = "$diskFreeGB GB left on the machines' disk"; label = 'See disks'; cmd = $null; args = $null })
     }
 
     # What uses the most memory, so a machine that doesn't fit says what to close. VM worker processes are left

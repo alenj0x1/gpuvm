@@ -137,11 +137,11 @@ function Assert-GpuVMExportPath {
         (Get-GpuVMDefaultRoot)
     ) | Where-Object { $_ } | ForEach-Object { [IO.Path]::GetFullPath($_).TrimEnd('\') }
     foreach ($dir in $protected) {
-        if ($full.StartsWith("$dir\", [StringComparison]::OrdinalIgnoreCase)) { throw "No se puede guardar en $dir. Elige otra carpeta, por ejemplo Documentos." }
+        if ($full.StartsWith("$dir\", [StringComparison]::OrdinalIgnoreCase)) { throw "It can't be saved in $dir. Choose another folder, such as Documents." }
     }
     $item = Get-Item -LiteralPath (Split-Path $full -Parent) -Force -ErrorAction Stop
     for ($cur = $item; $cur; $cur = $cur.Parent) {
-        if ($cur.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "$($cur.FullName) es un enlace a otra carpeta; elige otra." }
+        if ($cur.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "$($cur.FullName) is a link to another folder; choose another one." }
     }
     $full
 }
@@ -154,7 +154,7 @@ function Get-FreeGpuVMName {
         $candidate = if ($i -eq 1) { $Base } else { $suffix = "-$i"; $Base.Substring(0, [math]::Min($Base.Length, 40 - $suffix.Length)) + $suffix }
         if (-not (Get-VM -Name $candidate -ErrorAction SilentlyContinue) -and -not (Test-Path -LiteralPath (Join-Path $root $candidate))) { return $candidate }
     }
-    throw "No hay un nombre libre para '$Base'."
+    throw "There's no free name for '$Base'."
 }
 
 # An imported machine gets its own streaming identity and Sunshine web login inside the VM, over PowerShell Direct,
@@ -189,5 +189,5 @@ function Reset-GuestStreamingIdentity {
         try { & $exe --creds $user $password | Out-Null } finally { Pop-Location }
         'ok'
     }
-    if ("$result" -ne 'ok') { throw "No se pudo dar a la máquina su propia identidad de streaming ($result)." }
+    if ("$result" -ne 'ok') { throw "Couldn't give the machine its own streaming identity ($result)." }
 }

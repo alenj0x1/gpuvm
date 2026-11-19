@@ -19,7 +19,7 @@ const POINT_CMDS = ["New-GpuVMRestorePoint", "Restore-GpuVMRestorePoint", "Remov
 const when = (iso: string) => new Date(iso).toLocaleString(locale(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 const gb = (n: number) => `${n.toLocaleString(locale(), { maximumFractionDigits: 1 })} GB`;
 
-/** Restore points of a machine (Máquina section): Windows as it was at a moment, to go back to. Taken and applied with
+/** Restore points of a machine (Machine section): Windows as it was at a moment, to go back to. Taken and applied with
  *  the machine off (GpuVM shuts it down cleanly and starts it again). A disposable machine shows instead that it is
  *  deleted when it turns off, and lets it be kept. */
 export function RestorePoints({ vm, busy, startJob, run }: Props) {

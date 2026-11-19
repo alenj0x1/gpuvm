@@ -77,7 +77,7 @@ function Expand-GuestSystemDisk {
         [math]::Round($max / 1GB)
     }
     $sizeGB = [int]$grown
-    if ($sizeGB -gt 0) { Write-Step "Disco C: de la VM ampliado a $sizeGB GB" }
+    if ($sizeGB -gt 0) { Write-Step "The VM's C: drive enlarged to $sizeGB GB" }
 }
 
 function Get-IsoLibraryPath { Get-DataPath 'isos.json' }
@@ -116,10 +116,10 @@ function Assert-GpuVMNameFree {
         [string]$Root,
         [guid]$Except = [guid]::Empty
     )
-    if (Get-VM -Name $Name -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne $Except }) { throw "Ya existe una VM llamada '$Name'." }
+    if (Get-VM -Name $Name -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne $Except }) { throw "There's already a VM called '$Name'." }
     if ($Root) {
         $dir = Join-Path $Root $Name
-        if (Test-Path -LiteralPath $dir) { throw "Ya existe la carpeta $dir. Elige otro nombre o bórrala." }
+        if (Test-Path -LiteralPath $dir) { throw "The folder $dir already exists. Choose another name or delete it." }
     }
 }
 

@@ -35,9 +35,9 @@ function Resolve-ProfileChain {
         [System.Collections.Generic.List[string]]$Chain
     )
     $path = Find-ProfilePath -Name $Name -ProfileDirectory $ProfileDirectory
-    if (-not (Test-Path -LiteralPath $path)) { throw "No existe el perfil '$Name' ($path)." }
+    if (-not (Test-Path -LiteralPath $path)) { throw "The profile '$Name' doesn't exist ($path)." }
     $key = [IO.Path]::GetFileNameWithoutExtension($path)
-    if ($Chain.Contains($key)) { $cycle = @($Chain); [array]::Reverse($cycle); throw "Herencia circular de perfiles: $($cycle -join ' → ') → $key" }
+    if ($Chain.Contains($key)) { $cycle = @($Chain); [array]::Reverse($cycle); throw "Profiles inherit from each other in a circle: $($cycle -join ' → ') → $key" }
     $Chain.Insert(0, $key)
 
     $data = Read-JsonFile $path
@@ -63,7 +63,7 @@ function Test-GpuVMProfileData {
     $cpu = $vm['cpu']['count']
     if ($cpu -lt 2) { $problems.Add('vm.cpu.count must be at least 2 (Windows 11 requires it).') }
     if ($HostLogicalProcessors -and $cpu -ge $HostLogicalProcessors) {
-        $problems.Add("vm.cpu.count ($cpu) debe dejar al menos un hilo al host (tiene $HostLogicalProcessors).")
+        $problems.Add("vm.cpu.count ($cpu) must leave at least one thread to the host (it has $HostLogicalProcessors).")
     }
     $reserve = $vm['cpu']['reservePercent']
     if ($reserve -lt 0 -or $reserve -gt 100) { $problems.Add('vm.cpu.reservePercent goes from 0 to 100.') }
@@ -73,7 +73,7 @@ function Test-GpuVMProfileData {
     $mem = $vm['memoryGB']
     if ($mem -lt 4) { $problems.Add('vm.memoryGB must be at least 4 (Windows 11 requires it).') }
     if ($HostMemoryGB -and $mem -gt ($HostMemoryGB - 4)) {
-        $problems.Add("vm.memoryGB ($mem) deja menos de 4 GB al host (tiene $([math]::Round($HostMemoryGB,1)) GB).")
+        $problems.Add("vm.memoryGB ($mem) leaves less than 4 GB to the host (it has $([math]::Round($HostMemoryGB,1)) GB).")
     }
 
     # Differencing: a VM built on a template (set by GpuVM, never by a profile).
@@ -105,7 +105,7 @@ function Test-GpuVMProfileData {
     if ($guest -and $guest.Contains('apps') -and $guest['apps']) {
         $known = @((Get-AppCatalog).Keys)
         foreach ($app in @($guest['apps'])) {
-            if ($app -notin $known) { $problems.Add("guest.apps: no existe la app '$app' en el catálogo.") }
+            if ($app -notin $known) { $problems.Add("guest.apps: the app '$app' isn't in the catalog.") }
         }
     }
     if ($guest -and $guest.Contains('cleanup') -and $guest['cleanup'] -notin 'none', 'privacy', 'apps', 'minimal') {

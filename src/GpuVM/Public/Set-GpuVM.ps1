@@ -18,7 +18,7 @@ function Set-GpuVM {
     $config = Resolve-GpuVMSettings -State $state -Profile $Profile -Override $Override
     $profileName = $config['name']
 
-    if (-not $PSCmdlet.ShouldProcess($Name, "Aplicar perfil $profileName")) { return }
+    if (-not $PSCmdlet.ShouldProcess($Name, "Apply profile $profileName")) { return }
     Invoke-GpuVMBackend -Backend $state['backend'] -Operation Apply -Arguments $Name, $config
     $state['profile'] = $profileName
     $state['config'] = $config
@@ -54,6 +54,6 @@ function Resolve-GpuVMSettings {
     if ($problems.Count) { throw ($problems -join ' ') }
     # A disk only grows; refusing here keeps the saved size equal to the real one.
     $current = [int]$State['config']['vm']['disk']['sizeGB']
-    if ([int]$config['vm']['disk']['sizeGB'] -lt $current) { throw "El disco mide $current GB y no se puede reducir." }
+    if ([int]$config['vm']['disk']['sizeGB'] -lt $current) { throw "The disk is $current GB and can't be shrunk." }
     $config
 }

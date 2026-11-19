@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { api } from "./api";
 import type { AppInfo, CleanupLevel, CleanupLevelId, HostMonitor, IsoFile, MouseMode, ProfileSettings } from "./types";
 import { CheckMark, Dropdown, Segmented, useScrollFade, type DropdownOption } from "./ui";
-import { t, tn } from "./i18n";
+import { t, tn, translateModule } from "./i18n";
 
 export const RESOLUTIONS = ["1280x720", "1920x1080", "2560x1440", "3840x2160"];
 export const FPS = [30, 60, 120, 144];
@@ -211,11 +211,11 @@ export function CleanupPicker({ levels, value, onChange }: { levels: CleanupLeve
   return (
     <div className="cleanup-picker">
       <div className="segment-row">
-        <Segmented value={value} onChange={onChange} options={levels.map((l) => ({ value: l.id, label: l.name }))} />
+        <Segmented value={value} onChange={onChange} options={levels.map((l) => ({ value: l.id, label: translateModule(l.name) }))} />
       </div>
       {items.length ? (
         <ul className="cleanup-items">
-          {items.map((i) => <li key={i.id}><IconCheck size={14} />{i.description}</li>)}
+          {items.map((i) => <li key={i.id}><IconCheck size={14} />{translateModule(i.description)}</li>)}
         </ul>
       ) : <span className="hint">{t("Windows as it comes, with its stock apps and settings.")}</span>}
       {items.length > 0 && <span className="hint">{t("Microsoft Defender, Windows Update, SmartScreen and the firewall are left alone.")}</span>}

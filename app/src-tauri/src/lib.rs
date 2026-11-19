@@ -54,7 +54,7 @@ pub(crate) struct AppState {
     counter: std::sync::atomic::AtomicU64,
     close_to_tray: AtomicBool,
     stop_vms_on_quit: AtomicBool,
-    /// "Servicio de GpuVM" preference is "with GpuVM": the service stops when the app quits.
+    /// "GpuVM service" preference is "with GpuVM": the service stops when the app quits.
     stop_service_on_quit: AtomicBool,
 }
 
@@ -205,7 +205,7 @@ fn open_console(name: String) -> Result<(), String> {
 #[tauri::command]
 async fn repair_service() -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let host = exe.parent().map(|d| d.join("gpuvm-host.exe")).ok_or("sin carpeta")?;
+    let host = exe.parent().map(|d| d.join("gpuvm-host.exe")).ok_or("no folder")?;
     if !host.exists() {
         return Err("Some GpuVM files are missing. Install it again.".into());
     }
@@ -234,7 +234,7 @@ async fn stop_service(state: State<'_, AppState>) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(service::stop).await.map_err(|e| e.to_string())?
 }
 
-/// "Servicio de GpuVM" preference: `app` (starts with GpuVM, stops when it quits), `windows` (starts with
+/// "GpuVM service" preference: `app` (starts with GpuVM, stops when it quits), `windows` (starts with
 /// Windows) or `manual` (only from Preferences).
 #[tauri::command]
 fn set_service_mode(state: State<'_, AppState>, mode: String) {
@@ -246,7 +246,7 @@ fn set_service_mode(state: State<'_, AppState>, mode: String) {
 #[tauri::command]
 async fn set_service_startup(with_windows: bool) -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let host = exe.parent().map(|d| d.join("gpuvm-host.exe")).ok_or("sin carpeta")?;
+    let host = exe.parent().map(|d| d.join("gpuvm-host.exe")).ok_or("no folder")?;
     let mode = if with_windows { "startup auto" } else { "startup demand" };
     let exit = tauri::async_runtime::spawn_blocking(move || backend::run_elevated(&host, mode, "You canceled the administrator permission."))
         .await
@@ -289,7 +289,7 @@ fn set_language(app: AppHandle, lang: String) -> Result<(), String> {
     Ok(())
 }
 
-/// The tray icon the app needs now: the notices-only one, the usual one when "Al cerrar la ventana" keeps GpuVM in
+/// The tray icon the app needs now: the notices-only one, the usual one when "When closing the window" keeps GpuVM in
 /// the tray, or none.
 pub(crate) fn refresh_tray(app: &AppHandle) {
     use tauri::Manager;
@@ -310,8 +310,8 @@ pub(crate) fn refresh_tray(app: &AppHandle) {
 /// Which tray icon is up: Some(true) the notices-only one, Some(false) the usual one.
 static TRAY_KIND: std::sync::Mutex<Option<bool>> = std::sync::Mutex::new(None);
 
-/// Tray icon with "Abrir GpuVM" and "Salir" (or their English); a left click opens the window. In notices-only mode
-/// its tooltip says GpuVM is watching administrator prompts, and Salir ends GpuVM for good.
+/// Tray icon with "Open GpuVM" and "Quit" (or their Spanish); a left click opens the window. In notices-only mode
+/// its tooltip says GpuVM is watching administrator prompts, and Quit ends GpuVM for good.
 fn ensure_tray(app: &AppHandle, notices: bool) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -355,7 +355,7 @@ fn ensure_tray(app: &AppHandle, notices: bool) -> tauri::Result<()> {
 
 const TRAY_ID: &str = "main";
 
-/// "Al cerrar la ventana" preference: true keeps GpuVM in the tray, false quits completely.
+/// "When closing the window" preference: true keeps GpuVM in the tray, false quits completely.
 #[tauri::command]
 fn set_close_to_tray(app: AppHandle, state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
     state.close_to_tray.store(enabled, Ordering::Relaxed);
@@ -363,7 +363,7 @@ fn set_close_to_tray(app: AppHandle, state: State<'_, AppState>, enabled: bool) 
     Ok(())
 }
 
-/// "Al cerrar GpuVM" preference: true shuts the GpuVM machines down when the app quits.
+/// "When quitting GpuVM" preference: true shuts the GpuVM machines down when the app quits.
 #[tauri::command]
 fn set_stop_vms_on_quit(state: State<'_, AppState>, enabled: bool) {
     state.stop_vms_on_quit.store(enabled, Ordering::Relaxed);
@@ -390,7 +390,7 @@ fn stop_service_when_idle() {
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// `gpuvm.exe --consent <code>` (elevated, after a UAC "Sí"): confirms a deletion to the service and exits.
+/// `gpuvm.exe --consent <code>` (elevated, after a UAC "Yes"): confirms a deletion to the service and exits.
 pub fn consent(code: &str) -> i32 {
     backend::consent(code)
 }

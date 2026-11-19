@@ -238,7 +238,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
   machine: CubeMachine; name?: string; others?: CubeNeighbor[]; className?: string; perPart?: boolean;
   /** Whose decoration to show (the machine's name; `name` can be a name still being typed). */
   decorOf?: string;
-  /** A decoration to show instead of a machine's own (Home's showcase, a draft in Crear máquina). */
+  /** A decoration to show instead of a machine's own (Home's showcase, a draft in Create machine). */
   decorShown?: Decor;
   /** Each time it changes, the cube turns once quickly while the hologram rebuilds (a new decoration arriving). */
   spin?: number;

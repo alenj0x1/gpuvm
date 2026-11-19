@@ -4,7 +4,7 @@ import {
   IconActivity, IconAd, IconCheck, IconPointFilled, IconBolt, IconBrandWindows, IconEyeOff, IconTrash, IconBrandBing, IconBrandOnedrive, IconBrandTeams, IconBug, IconCards, IconHistory, IconLayoutDashboard, IconMap,
   IconMovie, IconNews, IconPlayerPlay, IconPuzzle, IconSparkles, IconSpeakerphone, type Icon,
 } from "@tabler/icons-react";
-import { t } from "./i18n";
+import { t, translateModule } from "./i18n";
 
 /** How each cleanup item looks: an icon and a color, a short name and one line that says what it is. Several pieces
  *  can stand for one item (the preinstalled apps). Items the UI doesn't know yet get a neutral piece. */
@@ -166,9 +166,9 @@ export function CleanupItems({ items, removed }: { items: { id: string; descript
         const drop = removed.has(i.id);
         const look = CLEANUP_LOOK[i.id];
         return (
-          <li key={i.id} className={drop ? "drop" : "keep"} title={i.description}>
+          <li key={i.id} className={drop ? "drop" : "keep"} title={translateModule(i.description)}>
             {drop ? <IconCheck size={14} /> : <IconPointFilled size={14} />}
-            <span><span className="ci-name">{look?.name ?? i.description}</span>{look && <span className="ci-line">{drop ? look.done : look.line}</span>}</span>
+            <span><span className="ci-name">{look?.name ?? translateModule(i.description)}</span>{look && <span className="ci-line">{drop ? look.done : look.line}</span>}</span>
           </li>
         );
       })}

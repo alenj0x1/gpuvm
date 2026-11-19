@@ -105,7 +105,7 @@ function Invoke-HostKvpMethod {
             if ($job.JobState -ge 7) { if ($job.JobState -ne 7) { throw "$Method`: $($job.ErrorDescription)" }; return }
             Start-Sleep -Milliseconds 10
         }
-        throw "$Method`: sin respuesta"
+        throw "$Method`: no answer"
     }
     if ($r.ReturnValue -ne 0) { throw "$Method`: $($r.ReturnValue)" }
 }
@@ -161,7 +161,7 @@ function Invoke-GuestAdminPromptAnswer {
     $reply = Invoke-Guest -Name $Name -Credential $Credential -ArgumentList $Answer, $PromptId, $script:AdminPromptDir -ScriptBlock {
         param($answer, $promptId, $dir)
         $file = Join-Path $dir 'admin-prompt.ps1'
-        if (-not (Test-Path $file)) { return 'error: no está instalado' }
+        if (-not (Test-Path $file)) { return 'error: it isn''t installed' }
         $out = Join-Path $dir 'answer.txt'
         Remove-Item $out -ErrorAction SilentlyContinue
         $exe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
@@ -170,7 +170,7 @@ function Invoke-GuestAdminPromptAnswer {
         try {
             Start-ScheduledTask -TaskName 'GpuVM-AdminPromptAnswer'
             for ($i = 0; $i -lt 60 -and -not (Test-Path $out); $i++) { Start-Sleep -Milliseconds 250 }
-            if (Test-Path $out) { (Get-Content $out -Raw).Trim() } else { 'error: sin respuesta' }
+            if (Test-Path $out) { (Get-Content $out -Raw).Trim() } else { 'error: no answer' }
         }
         finally { Unregister-ScheduledTask -TaskName 'GpuVM-AdminPromptAnswer' -Confirm:$false -ErrorAction SilentlyContinue }
     }

@@ -20,7 +20,7 @@ pub fn wide_path(p: &Path) -> Vec<u16> {
 }
 
 pub fn last_error(what: &str) -> String {
-    format!("{what} falló (error {})", unsafe { GetLastError() })
+    format!("{what} failed (error {})", unsafe { GetLastError() })
 }
 
 /// An owned kernel handle, closed on drop.
@@ -92,7 +92,7 @@ pub fn token_elevated(token: HANDLE) -> Result<bool, String> {
 }
 
 /// The elevated token of the user signed in to `session`, who must be `expected_sid`. That is the linked token of
-/// their filtered token: the same rights a UAC "Sí" gives them. Accounts that are not administrators have none.
+/// their filtered token: the same rights a UAC "Yes" gives them. Accounts that are not administrators have none.
 pub fn elevated_user_token(session: u32, expected_sid: &str) -> Result<Handle, String> {
     let mut raw = std::ptr::null_mut();
     if unsafe { WTSQueryUserToken(session, &mut raw) } == 0 {
@@ -100,7 +100,7 @@ pub fn elevated_user_token(session: u32, expected_sid: &str) -> Result<Handle, S
     }
     let token = Handle(raw);
     if token_sid(token.0)? != expected_sid {
-        return Err("La sesión de Windows pertenece a otro usuario.".into());
+        return Err("The Windows session belongs to another user.".into());
     }
     let kind = i32::from_ne_bytes(token_info(token.0, TokenElevationType)?[..4].try_into().unwrap());
     let source = if kind == TokenElevationTypeLimited {
@@ -109,7 +109,7 @@ pub fn elevated_user_token(session: u32, expected_sid: &str) -> Result<Handle, S
     } else if token_elevated(token.0)? {
         token
     } else {
-        return Err("GpuVM necesita una cuenta de administrador de este equipo.".into());
+        return Err("GpuVM needs an administrator account on this PC.".into());
     };
     let mut primary = std::ptr::null_mut();
     if unsafe { DuplicateTokenEx(source.0, TOKEN_ALL_ACCESS, std::ptr::null(), SecurityImpersonation, TokenPrimary, &mut primary) } == 0 {
@@ -156,9 +156,9 @@ pub fn check_access(path: &str, kind: PathAccess) -> Result<(), String> {
     };
     if h == INVALID_HANDLE_VALUE {
         return Err(match unsafe { GetLastError() } {
-            ERROR_ACCESS_DENIED => format!("Tu usuario no tiene acceso a {path}."),
-            ERROR_FILE_NOT_FOUND | ERROR_PATH_NOT_FOUND => format!("No existe {path}."),
-            code => format!("No se pudo abrir {path} (error {code})."),
+            ERROR_ACCESS_DENIED => format!("Your user has no access to {path}."),
+            ERROR_FILE_NOT_FOUND | ERROR_PATH_NOT_FOUND => format!("{path} doesn't exist."),
+            code => format!("{path} couldn't be opened (error {code})."),
         });
     }
     let h = Handle(h);
@@ -170,7 +170,7 @@ pub fn check_access(path: &str, kind: PathAccess) -> Result<(), String> {
     let real = String::from_utf16_lossy(&buf[..len]);
     let real = real.strip_prefix(r"\\?\").unwrap_or(&real);
     if !real.trim_end_matches('\\').eq_ignore_ascii_case(path.trim_end_matches('\\')) {
-        return Err(format!("{path} pasa por un enlace a otra carpeta; elige la ubicación real."));
+        return Err(format!("{path} goes through a link to another folder; choose the real location."));
     }
     Ok(())
 }

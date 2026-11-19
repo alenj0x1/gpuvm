@@ -17,7 +17,7 @@ function Register-GpuVMBackend {
         [Parameter(Mandatory)][hashtable]$Operations
     )
     $missing = $script:BackendOperations | Where-Object { -not $Operations.ContainsKey($_) }
-    if ($missing) { throw "El backend '$Name' no implementa: $($missing -join ', ')" }
+    if ($missing) { throw "The backend '$Name' doesn't implement: $($missing -join ', ')" }
     $script:Backends[$Name] = [pscustomobject]@{
         Name        = $Name
         Description = $Description
@@ -28,7 +28,7 @@ function Register-GpuVMBackend {
 function Get-GpuVMBackend {
     param([Parameter(Mandatory)][string]$Name)
     if (-not $script:Backends.ContainsKey($Name)) {
-        throw "Backend desconocido '$Name'. Disponibles: $($script:Backends.Keys -join ', ')"
+        throw "Unknown backend '$Name'. Available: $($script:Backends.Keys -join ', ')"
     }
     $script:Backends[$Name]
 }

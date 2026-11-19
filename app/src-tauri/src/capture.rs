@@ -101,7 +101,7 @@ fn default_folder(video: bool) -> Option<PathBuf> {
     Some(base.join("GpuVM"))
 }
 
-/// Where screenshots (or videos) go: the folder chosen in Ajustes, or Pictures\GpuVM (Videos\GpuVM).
+/// Where screenshots (or videos) go: the folder chosen in Settings, or Pictures\GpuVM (Videos\GpuVM).
 fn folder(video: bool) -> Option<PathBuf> {
     let p = prefs();
     let chosen = if video { p.videos } else { p.shots };
@@ -281,7 +281,7 @@ pub fn on_file(app: &AppHandle, vm: &str, msg: &Value) {
     });
 }
 
-/// What the viewer needs to know (sent when it connects and whenever Ajustes change).
+/// What the viewer needs to know (sent when it connects and whenever Settings change).
 pub fn setup_message() -> Value {
     let p = prefs();
     json!({ "type": "capture-setup", "replay": p.replay, "seconds": 30, "lang": if p.lang == "en" { "en" } else { "es" } })
@@ -297,7 +297,7 @@ fn check_dir(dir: Option<String>) -> Result<Option<PathBuf>, String> {
     }
 }
 
-/// Ajustes › Capturas: the last 30 s on or off, and the folders (empty = Pictures\GpuVM, Videos\GpuVM).
+/// Settings › Captures: the last 30 s on or off, and the folders (empty = Pictures\GpuVM, Videos\GpuVM).
 #[tauri::command]
 pub fn set_capture_prefs(replay: bool, shots_dir: Option<String>, videos_dir: Option<String>, lang: String) -> Result<(), String> {
     let next = Prefs { replay, shots: check_dir(shots_dir)?, videos: check_dir(videos_dir)?, lang };
@@ -344,7 +344,7 @@ fn windows_decodes(fourcc: &[u8; 4]) -> bool {
     count > 0
 }
 
-/// The folders in use, as shown in Ajustes, and which recorded formats Windows' own players can open.
+/// The folders in use, as shown in Settings, and which recorded formats Windows' own players can open.
 #[tauri::command]
 pub fn capture_folders() -> Value {
     json!({

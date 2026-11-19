@@ -78,5 +78,5 @@ pub fn spawn_bridge() -> Result<std::process::Child, String> {
         .stderr(Stdio::null())
         .creation_flags(CREATE_NO_WINDOW)
         .spawn()
-        .map_err(|e| format!("No se pudo iniciar PowerShell 7 (pwsh.exe): {e}"))
+        .map_err(|e| format!("Couldn't start PowerShell 7 (pwsh.exe): {e}"))
 }

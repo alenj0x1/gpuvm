@@ -222,7 +222,8 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
   const maxCpu = Math.max(2, (host?.logicalProcessors ?? 12) - 1);
   const maxMem = Math.max(4, Math.round(host?.memoryGB ?? 16) - 4);
   const isoName = isos?.find((f) => f.path === iso)?.name;
-  const level = cleanupLevels.find((l) => l.id === cleanup)?.name;
+  const levelName = cleanupLevels.find((l) => l.id === cleanup)?.name;
+  const level = levelName ? translateModule(levelName) : undefined;
   const allItems = cleanupLevels.flatMap((l) => l.items);
   const dropped = new Set(cleanupLevels.slice(0, Math.max(0, cleanupLevels.findIndex((l) => l.id === cleanup)) + 1).flatMap((l) => l.items.map((i) => i.id)));
   const section = (id: Section, title: string, desc: string, children: React.ReactNode) => (
@@ -400,7 +401,7 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
                     <button key={l.id} type="button" role="radio" aria-checked={l.id === cleanup} className={`level-row${l.id === cleanup ? " on" : ""}`}
                       onClick={() => { setCleanup(l.id); touch(); }}>
                       <span className="level-icon">{LEVEL_LOOK[l.id]?.icon ?? <IconSparkles size={18} />}</span>
-                      <span className="level-text"><span className="level-name">{l.name}</span><span className="level-tagline">{LEVEL_LOOK[l.id]?.tagline ?? ""}</span></span>
+                      <span className="level-text"><span className="level-name">{translateModule(l.name)}</span><span className="level-tagline">{LEVEL_LOOK[l.id]?.tagline ?? ""}</span></span>
                     </button>
                   ))}
                 </div>

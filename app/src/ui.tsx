@@ -221,7 +221,7 @@ export function Segmented<T extends string | number | boolean>({ value, options,
       <span className={`segmented-pill${animate ? " animate" : ""}`} aria-hidden="true"
         style={pill ? { left: pill.left, top: pill.top, width: pill.width, height: pill.height } : { opacity: 0 }} />
       {options.map((o) => (
-        // type="button": inside a form (Crear máquina, profiles) a plain button would submit it.
+        // type="button": inside a form (Create machine, profiles) a plain button would submit it.
         <button type="button" key={String(o.value)} role="radio" aria-checked={o.value === value} className={o.value === value ? "on" : ""}
           onClick={() => onChange(o.value)}>
           {o.label}

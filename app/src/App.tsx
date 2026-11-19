@@ -186,7 +186,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     if (selected !== PREFS && selected !== HOME && !libraryTab(selected) && vms && vms.length && !vms.some((v) => v.name === selected)) setSelected(HOME);
   }, [vms, selected]);
 
-  // "Otro patrón" (another pattern) is reflected instantly in the sidebar too.
+  // "Another pattern" is reflected instantly in the sidebar too.
   const [, repaint] = useState(0);
   useEffect(() => {
     const onPattern = () => repaint((n) => n + 1);

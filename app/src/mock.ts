@@ -44,8 +44,8 @@ const restorePoints: Record<string, RestorePointList> = {
   "win11-pruebas": {
     max: 10, changesGB: 1.4, restoredFrom: null,
     points: [
-      { id: "20261112-091000-a1b2", label: "Recién instalada", createdAt: "2026-11-12T09:10:00-05:00", sizeGB: 38.2, missing: false, current: false },
-      { id: "20261117-213000-c3d4", label: "Antes del juego", createdAt: "2026-11-17T21:30:00-05:00", sizeGB: 2.1, missing: false, current: true },
+      { id: "20261112-091000-a1b2", label: "Freshly installed", createdAt: "2026-11-12T09:10:00-05:00", sizeGB: 38.2, missing: false, current: false },
+      { id: "20261117-213000-c3d4", label: "Before the game", createdAt: "2026-11-17T21:30:00-05:00", sizeGB: 2.1, missing: false, current: true },
     ],
   },
 };
@@ -70,10 +70,10 @@ const builtIn = (cpu: number, diskGB: number, diskType: "Dynamic" | "Fixed"): Pr
   ({ cpu, memoryGB: 8, gpuPercent: 100, diskGB, diskType, iso: null, apps: [], cleanup: "none", resolution: "1920x1080", fps: 0, displayMode: "fullscreen", vsync: true, framePacing: false, mouse: "capture" });
 
 let profiles: ProfileInfo[] = [
-  { Name: "balanced", Extends: "base", Description: "Buen rendimiento dejando holgura al host: 8 hilos, 8 GB, disco dinámico.", BuiltIn: true, Settings: builtIn(8, 128, "Dynamic") },
-  { Name: "base", Extends: null, Description: "Valores comunes a todos los perfiles.", BuiltIn: true, Settings: builtIn(6, 128, "Dynamic") },
-  { Name: "max-performance", Extends: "balanced", Description: "CPU reservada al 100 %, 8 GB fijos, disco fijo y optimizaciones del invitado.", BuiltIn: true, Settings: builtIn(8, 96, "Fixed") },
-  { Name: "juegos", Extends: "max-performance", Description: "Para juegos con Steam.", BuiltIn: false,
+  { Name: "balanced", Extends: "base", Description: "Good performance while leaving headroom for the host: 8 threads, 8 GB, dynamic disk.", BuiltIn: true, Settings: builtIn(8, 128, "Dynamic") },
+  { Name: "base", Extends: null, Description: "Values shared by all profiles. Not used directly.", BuiltIn: true, Settings: builtIn(6, 128, "Dynamic") },
+  { Name: "max-performance", Extends: "balanced", Description: "Maximum performance: 100 % CPU reservation, host SMT topology, 8 GB fixed and guest optimizations.", BuiltIn: true, Settings: builtIn(8, 96, "Fixed") },
+  { Name: "juegos", Extends: "max-performance", Description: "For games with Steam.", BuiltIn: false,
     Settings: { ...builtIn(8, 250, "Fixed"), iso: "C:\\Users\\demo\\Downloads\\Win10_22H2_Spanish_Mexico_x64v1.iso", apps: ["steam", "discord"], resolution: "1920x1080", fps: 120 } },
 ];
 
@@ -253,9 +253,9 @@ let lastOpened = "win10";
 // What Rename-GpuVM keeps under the new name: the machine, its apps, shared disks, templates and last opened.
 function renameVm(from: string, to: string) {
   const vm = vms.find((v) => v.name === from);
-  if (!vm) throw new Error(`No existe la VM '${from}'.`);
-  if (vm.state !== "Off") throw new Error(`Apaga la VM '${from}' para cambiarle el nombre.`);
-  if (vms.some((v) => v !== vm && v.name.toLowerCase() === to.toLowerCase())) throw new Error(`Ya existe una VM llamada '${to}'.`);
+  if (!vm) throw new Error(`The VM '${from}' doesn't exist.`);
+  if (vm.state !== "Off") throw new Error(`Turn off the VM '${from}' to rename it.`);
+  if (vms.some((v) => v !== vm && v.name.toLowerCase() === to.toLowerCase())) throw new Error(`There's already a VM called '${to}'.`);
   vm.name = to;
   if (installed[from]) { installed[to] = installed[from]; delete installed[from]; }
   shared = shared.map((d) => d.vm === from ? { ...d, vm: to } : d);
@@ -265,8 +265,8 @@ function renameVm(from: string, to: string) {
 }
 
 let attention = [
-  { vm: "win11-pruebas", kind: "driver", text: "Su driver de la GPU no es el del equipo (32.0.15.8180)", label: "Update driver", cmd: "Sync-GpuVMDriver", args: { Name: "win11-pruebas" } },
-  { vm: "win11-pruebas", kind: "apps", text: "Faltan por instalar: Steam, Discord", label: "Start and install", cmd: "Install-GpuVMApp", args: { Name: "win11-pruebas", App: ["steam", "discord"] } },
+  { vm: "win11-pruebas", kind: "driver", text: "Its GPU driver isn't the one on this PC (32.0.15.8180)", label: "Update driver", cmd: "Sync-GpuVMDriver", args: { Name: "win11-pruebas" } },
+  { vm: "win11-pruebas", kind: "apps", text: "Still to install: Steam, Discord", label: "Start and install", cmd: "Install-GpuVMApp", args: { Name: "win11-pruebas", App: ["steam", "discord"] } },
 ];
 const APP_NAMES: Record<string, string> = Object.fromEntries(Object.entries(catalog.apps).map(([id, a]) => [id, (a as { name: string }).name]));
 
@@ -281,44 +281,44 @@ let shared: SharedDiskInfo[] = [
 const CLEANUP_LEVELS = [
   { id: "none", name: "Normal", items: [] },
   { id: "privacy", name: "Privacy", items: [
-    { id: "telemetry-minimum", description: "Datos de diagnóstico al mínimo que permite la edición (en Pro, «Requerido»; en Enterprise y Education, apagados)." },
-    { id: "advertising", description: "Sin identificador de publicidad ni experiencias personalizadas con tus datos de diagnóstico." },
-    { id: "activity-history", description: "Sin historial de actividad ni envío de actividad a Microsoft." },
-    { id: "suggestions", description: "Sin sugerencias, consejos, Spotlight ni apps promocionadas que se instalan solas." },
-    { id: "web-search", description: "La búsqueda de Inicio busca solo en el equipo, sin Bing." },
-    { id: "copilot-recall", description: "Sin Copilot ni Recall (las capturas de pantalla que guarda Windows 11)." },
+    { id: "telemetry-minimum", description: "Diagnostic data at the lowest level the edition allows (on Pro, “Required”; on Enterprise and Education, off)." },
+    { id: "advertising", description: "No advertising ID or tailored experiences from your diagnostic data." },
+    { id: "activity-history", description: "No activity history and no activity sent to Microsoft." },
+    { id: "suggestions", description: "No suggestions, tips, Spotlight or promoted apps that install themselves." },
+    { id: "web-search", description: "Start's search looks only on this PC, without Bing." },
+    { id: "copilot-recall", description: "No Copilot or Recall (the screenshots Windows 11 saves)." },
   ] },
   { id: "apps", name: "No extra apps", items: [
-    { id: "store-apps", description: "Quita apps preinstaladas que no hacen falta (noticias, clima, Solitario, Clipchamp, Teams personal, Outlook nuevo...), también para usuarios nuevos. Se pueden volver a instalar desde Microsoft Store." },
-    { id: "onedrive", description: "Quita OneDrive y evita que se vuelva a instalar." },
-    { id: "widgets", description: "Sin widgets ni «Noticias e intereses» en la barra de tareas." },
+    { id: "store-apps", description: "Removes preinstalled apps that aren't needed (news, weather, Solitaire, Clipchamp, personal Teams, new Outlook...), for new users too. They can be installed again from Microsoft Store." },
+    { id: "onedrive", description: "Removes OneDrive and keeps it from installing again." },
+    { id: "widgets", description: "No widgets or “News and interests” on the taskbar." },
   ] },
   { id: "minimal", name: "Minimal", items: [
-    { id: "telemetry-services", description: "Apaga los servicios que envían telemetría y el informe de errores a Microsoft." },
-    { id: "unneeded-services", description: "Apaga servicios que una VM no usa: mapas, ubicación, fax, modo demo y uso compartido de Windows Media." },
-    { id: "background-apps", description: "Las apps de Microsoft Store no corren en segundo plano." },
+    { id: "telemetry-services", description: "Turns off the services that send telemetry and error reports to Microsoft." },
+    { id: "unneeded-services", description: "Turns off services a VM doesn't use: maps, location, fax, demo mode and Windows Media sharing." },
+    { id: "background-apps", description: "Microsoft Store apps don't run in the background." },
   ] },
 ];
 
 export async function job(jobId: string, cmd: string, args: Record<string, unknown>) {
   const emit = (e: Omit<JobEvent, "jobId">) => listeners.forEach((l) => l({ jobId, ...e }));
-  const steps = cmd === "New-GpuVMTemplate" ? ["Shutting down", "Copiando el disco de win10 (puede tardar unos minutos)", "Starting", "Plantilla lista (61.4 GB)"]
-    : cmd === "Import-GpuVMSharedDisk" ? ["Measuring the folder", "Copiando a SteamLibrary\\steamapps", "Copiando 18 %", "Copiando 47 %", "Copiando 83 %", "Copiado: 92,4 GB en SteamLibrary\\steamapps"]
-    : cmd === "Connect-GpuVMSharedDisk" ? ["Conectando el disco", "Disco en G: dentro de la VM", "Biblioteca de Steam en G:\\SteamLibrary"]
-    : cmd === "Disconnect-GpuVMSharedDisk" ? ["Cerrando el disco dentro de la VM", "Quitando el disco"]
+  const steps = cmd === "New-GpuVMTemplate" ? ["Shutting down", "Copying the disk of win10 (it may take a few minutes)", "Starting", `Template '${args.Name}' is ready (61.4 GB)`]
+    : cmd === "Import-GpuVMSharedDisk" ? ["Measuring the folder", "Copying to SteamLibrary\\steamapps", "Copying 18 %", "Copying 47 %", "Copying 83 %", "Copied: 92.4 GB in SteamLibrary\\steamapps"]
+    : cmd === "Connect-GpuVMSharedDisk" ? [`Connecting the disk '${args.Name}' to '${args.VMName}'`, `Disk '${args.Name}' at G: inside the VM`, "Steam library at G:\\SteamLibrary"]
+    : cmd === "Disconnect-GpuVMSharedDisk" ? [`Closing the disk inside '${args.VMName ?? "win10"}'`, `Removing the disk '${args.Name}' from '${args.VMName ?? "win10"}'`]
     : cmd === "Set-GpuVMCleanup" ? ["Waiting for Windows", "Cleaning up Windows", "Cleanup applied"]
-    : cmd === "Sync-GpuVMDriver" ? ["Leyendo archivos del driver 32.0.15.8180", "Driver copiado: 4 carpetas del DriverStore y 31 archivos"]
+    : cmd === "Sync-GpuVMDriver" ? ["Reading the files of driver 32.0.15.8180 for NVIDIA GeForce RTX 4060", "Driver copied: 4 DriverStore folders and 31 files"]
     : cmd === "Install-GpuVMApp" ? ["Waiting for Windows", ...((args.App as string[]) ?? []).flatMap((id) => [
-      ...(args.Reinstall ? [`Desinstalando ${APP_NAMES[id] ?? id}`, `${APP_NAMES[id] ?? id} desinstalado`] : []),
-      `Instalando ${APP_NAMES[id] ?? id}`, `${APP_NAMES[id] ?? id} instalado`])]
-    : cmd === "Uninstall-GpuVMApp" ? ["Waiting for Windows", ...((args.App as string[]) ?? []).flatMap((id) => [`Desinstalando ${APP_NAMES[id] ?? id}`, `${APP_NAMES[id] ?? id} desinstalado`])]
+      ...(args.Reinstall ? [`Uninstalling ${APP_NAMES[id] ?? id}`, `${APP_NAMES[id] ?? id} uninstalled`] : []),
+      `Installing ${APP_NAMES[id] ?? id}`, `${APP_NAMES[id] ?? id} installed`])]
+    : cmd === "Uninstall-GpuVMApp" ? ["Waiting for Windows", ...((args.App as string[]) ?? []).flatMap((id) => [`Uninstalling ${APP_NAMES[id] ?? id}`, `${APP_NAMES[id] ?? id} uninstalled`])]
     : cmd === "Invoke-GpuVMPower" ? ["Installing updates"]
-    : cmd === "Rename-GpuVM" ? [`Cambiando el nombre en Hyper-V a '${args.NewName}'`, "Moving the VM's settings to its new folder", "Renaming the disk", `La VM ahora se llama '${args.NewName}'.`]
-    : cmd === "Connect-GpuVM" && args.MemoryGB ? [`Memoria: ${args.MemoryGB} GB`, "Starting", "Waiting for Windows", "Waiting for Sunshine", "Abriendo a 1920x1080 y 60 FPS"]
-    : cmd === "New-GpuVM" && args.Template ? [`Copia diferencial de ${args.Template}`, "Identidad propia: nombre de equipo y Sunshine", "Starting", "Waiting for Windows"]
+    : cmd === "Rename-GpuVM" ? [`Renaming it in Hyper-V to '${args.NewName}'`, "Moving the VM's settings to its new folder", "Renaming the disk", `The VM is now called '${args.NewName}'.`]
+    : cmd === "Connect-GpuVM" && args.MemoryGB ? [`Memory: ${args.MemoryGB} GB`, "Starting", "Waiting for Windows", "Waiting for Sunshine", "Opening at 1920x1080 and 60 FPS"]
+    : cmd === "New-GpuVM" && args.Template ? [`Creating the disk on top of the template '${args.Template}'`, "Giving the copy its own streaming identity", "Starting", "Waiting for Windows"]
     : cmd === "New-GpuVM"
-    ? ["Edición: Windows 10 Pro (es-MX)", "Leyendo archivos del driver", "Creando disco Fixed de 96 GB", "Aplicando la imagen de Windows", "Copying the GPU driver to the guest", "Registrando la VM en Hyper-V"]
-    : ["Starting", "Waiting for Windows", "Signing in to Windows", "Waiting for Sunshine", "Sunshine capturará la pantalla virtual (Virtual Display)", "Abriendo a 1920x1080 y 60 FPS", "Connecting the picture"];
+    ? ["Edition: Windows 10 Pro (es-MX)", "Reading the files of driver 32.0.15.8180 for NVIDIA GeForce RTX 4060", "Creating a fixed 96 GB disk (it writes the whole disk; takes a few minutes)", "Copying Windows to the machine's disk", "Copying the GPU driver to the guest", `Registering the VM '${args.Name}' in Hyper-V`]
+    : ["Starting", "Waiting for Windows", "Signing in to Windows", "Waiting for Sunshine", "Sunshine will capture the virtual display (Virtual Display)", "Opening at 1920x1080 and 60 FPS", "Connecting the picture"];
   for (const message of steps) {
     emit({ type: "progress", message });
     await wait(900);

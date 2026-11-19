@@ -19,9 +19,9 @@ function Assert-FreeMemory {
     # The figure shown already includes the margin Windows keeps for itself, so "needs 6, has 6.1" never happens.
     if ($freeGB -lt $RequiredGB + 0.3) {
         # Rounded so the figures never look equal: what is needed up, what is free down.
-        $message = "La VM necesita {0:N1} GB libres y hay {1:N1} GB. Cierra programas" -f ([math]::Ceiling(($RequiredGB + 0.3) * 10) / 10), ([math]::Floor($freeGB * 10) / 10)
+        $message = "The VM needs {0:N1} GB free and there are {1:N1} GB. Close programs" -f ([math]::Ceiling(($RequiredGB + 0.3) * 10) / 10), ([math]::Floor($freeGB * 10) / 10)
         $fit = Get-FittingMemoryGB -FreeGB $freeGB
-        throw $(if ($fit) { "$message o baja su memoria a $fit GB en Opciones." } else { "$message." })
+        throw $(if ($fit) { "$message or lower its memory to $fit GB in Options." } else { "$message." })
     }
 }
 
@@ -66,15 +66,15 @@ function Initialize-GpuVMRoot {
     if (-not (Test-Path -LiteralPath $Path)) { New-Item -ItemType Directory -Path $Path -Force | Out-Null }
     $item = Get-Item -LiteralPath $Path -Force
     if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
-        throw "$Path es un enlace a otra carpeta; GpuVM no la usará. Bórralo y vuelve a intentarlo."
+        throw "$Path is a link to another folder; GpuVM won't use it. Delete it and try again."
     }
     if (Test-GpuVMRootAcl -Acl (Get-Acl -LiteralPath $Path)) { return }
     if ((Get-Acl -LiteralPath $Path).GetOwner([Security.Principal.SecurityIdentifier]).Value -notin $script:AdminSids) {
         & takeown.exe /F $Path /A | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "No se pudo recuperar la propiedad de $Path para Administradores." }
+        if ($LASTEXITCODE -ne 0) { throw "Couldn't take back ownership of $Path for Administrators." }
     }
     & icacls.exe $Path /inheritance:r /grant:r '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' '*S-1-5-83-0:(OI)(CI)RX' /Q | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "No se pudieron restringir los permisos de $Path." }
+    if ($LASTEXITCODE -ne 0) { throw "Couldn't restrict the permissions of $Path." }
     # Explicit grants other than the three above (e.g. a user's own) are removed.
     $acl = Get-Acl -LiteralPath $Path
     $extra = @($acl.GetAccessRules($true, $false, [Security.Principal.SecurityIdentifier]) |
@@ -83,7 +83,7 @@ function Initialize-GpuVMRoot {
         foreach ($rule in $extra) { $acl.RemoveAccessRuleSpecific($rule) }
         Set-Acl -LiteralPath $Path -AclObject $acl
     }
-    if (-not (Test-GpuVMRootAcl -Acl (Get-Acl -LiteralPath $Path))) { throw "No se pudieron restringir los permisos de $Path." }
+    if (-not (Test-GpuVMRootAcl -Acl (Get-Acl -LiteralPath $Path))) { throw "Couldn't restrict the permissions of $Path." }
 }
 
 function Write-Step {
@@ -180,7 +180,7 @@ function Get-GpuVMState {
             return $state
         }
     }
-    throw "La VM '$Name' no fue creada con GpuVM (no se encontró gpuvm.json)."
+    throw "The VM '$Name' wasn't created with GpuVM (gpuvm.json wasn't found)."
 }
 
 function Save-GpuVMState {

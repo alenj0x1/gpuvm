@@ -10,7 +10,7 @@ function Get-AppCategory { (Read-JsonFile (Get-RepoPath 'apps\catalog.json'))['c
 $script:GuestRunAsUser = @'
 param([string]$File, [string[]]$Arguments)
 $user = (Get-CimInstance Win32_ComputerSystem).UserName
-if (-not $user) { return @{ finished = $false; error = 'no hay una sesión iniciada en la VM' } }
+if (-not $user) { return @{ finished = $false; error = 'nobody is signed in on the VM' } }
 $task = "GpuVM-App-$([guid]::NewGuid().ToString('n'))"
 $action = if ($Arguments) { New-ScheduledTaskAction -Execute $File -Argument ($Arguments -join ' ') } else { New-ScheduledTaskAction -Execute $File }
 $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
@@ -97,9 +97,9 @@ function Install-GuestApp {
     $catalog = Get-AppCatalog
     foreach ($id in $App) {
         $entry = $catalog[$id]
-        if (-not $entry) { throw "No existe la app '$id' en el catálogo." }
-        if (-not $entry['signer'] -and -not $entry['sha256']) { throw "La app '$id' no tiene firmante ni hash: no se puede verificar." }
-        Write-Step "Instalando $($entry['name'])"
+        if (-not $entry) { throw "The app '$id' isn't in the catalog." }
+        if (-not $entry['signer'] -and -not $entry['sha256']) { throw "The app '$id' has no signer or hash: it can't be verified." }
+        Write-Step "Installing $($entry['name'])"
         $result = Invoke-Guest -Name $Name -Credential $Credential -ArgumentList $entry, $script:GuestRunAsUser -ScriptBlock {
             param($entry, $runAsUser)
             $ErrorActionPreference = 'Stop'
@@ -118,7 +118,7 @@ function Install-GuestApp {
             try {
                 # A pinned version also carries its hash: the file must be exactly that release.
                 if ($entry['sha256'] -and (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $entry['sha256']) {
-                    return @{ status = 'unsigned'; detail = 'el archivo no coincide con la versión verificada' }
+                    return @{ status = 'unsigned'; detail = 'the file doesn''t match the verified version' }
                 }
                 # Without a signer (the publisher does not sign, as 7-Zip) the pinned hash above is the only check.
                 if ($entry['signer']) {
@@ -147,10 +147,10 @@ function Install-GuestApp {
                     $finished = $process.WaitForExit(600000)
                     $exitCode = $process.ExitCode
                 }
-                if (-not $finished) { return @{ status = 'failed'; detail = 'el instalador no terminó en 10 minutos' } }
+                if (-not $finished) { return @{ status = 'failed'; detail = 'the installer didn''t finish in 10 minutes' } }
                 # Some installers (Discord, Chrome) hand off to a background process; give them a moment.
                 for ($i = 0; $i -lt 60 -and -not (& $isInstalled); $i++) { Start-Sleep -Seconds 2 }
-                @{ status = if (& $isInstalled) { 'installed' } else { 'failed' }; detail = "código $exitCode" }
+                @{ status = if (& $isInstalled) { 'installed' } else { 'failed' }; detail = "code $exitCode" }
             }
             finally {
                 $lock.Dispose()
@@ -162,18 +162,18 @@ function Install-GuestApp {
         $detail = ([string]$result['detail'])
         if ($detail.Length -gt 200) { $detail = $detail.Substring(0, 200) }
         switch ($status) {
-            'present' { Write-Step "$($entry['name']) ya estaba instalado" }
-            'installed' { Write-Step "$($entry['name']) instalado" }
-            'unsigned' { Write-Warning "No se instaló $($entry['name']): el instalador no está firmado por $($entry['signer']) ($detail)." }
-            default { Write-Warning "La instalación de $($entry['name']) no terminó bien ($detail)." }
+            'present' { Write-Step "$($entry['name']) was already installed" }
+            'installed' { Write-Step "$($entry['name']) installed" }
+            'unsigned' { Write-Warning "$($entry['name']) wasn't installed: the installer isn't signed by $($entry['signer']) ($detail)." }
+            default { Write-Warning "Installing $($entry['name']) didn't go well ($detail)." }
         }
         if ($status -in 'installed', 'present') { Update-InstalledAppState -Name $Name -Installed $id }
         [ordered]@{ app = $id; name = $entry['name']; status = $status }
     }
 }
 
-# Uninstalls apps from inside the running guest with the uninstaller the app registered in Windows (Apps y
-# características). Returns one result per app: uninstalled, absent or failed.
+# Uninstalls apps from inside the running guest with the uninstaller the app registered in Windows (Apps &
+# features). Returns one result per app: uninstalled, absent or failed.
 function Uninstall-GuestApp {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -183,9 +183,9 @@ function Uninstall-GuestApp {
     $catalog = Get-AppCatalog
     foreach ($id in $App) {
         $entry = $catalog[$id]
-        if (-not $entry) { throw "No existe la app '$id' en el catálogo." }
-        if (-not $entry['uninstall']) { throw "La app '$id' no sabe desinstalarse." }
-        Write-Step $(if ($entry['uninstall']['interactive']) { "Termina de desinstalar $($entry['name']) en la ventana de la VM" } else { "Desinstalando $($entry['name'])" })
+        if (-not $entry) { throw "The app '$id' isn't in the catalog." }
+        if (-not $entry['uninstall']) { throw "The app '$id' doesn't know how to uninstall itself." }
+        Write-Step $(if ($entry['uninstall']['interactive']) { "Finish uninstalling $($entry['name']) in the VM's window" } else { "Uninstalling $($entry['name'])" })
         $result = Invoke-Guest -Name $Name -Credential $Credential -ArgumentList $entry, $script:GuestRunAsUser -ScriptBlock {
             param($entry, $runAsUser)
             $ErrorActionPreference = 'Stop'
@@ -210,7 +210,7 @@ function Uninstall-GuestApp {
             }
             # A bundle's own parts (SystemComponent = 1) are hidden from the list; the visible entry removes them all.
             $pick = @($found | Sort-Object { [int]($_.item.SystemComponent -eq 1) }) | Select-Object -First 1
-            if (-not $pick) { return @{ status = 'failed'; detail = 'Windows no tiene registrado su desinstalador' } }
+            if (-not $pick) { return @{ status = 'failed'; detail = 'Windows has no uninstaller registered for it' } }
             $item = $pick.item
 
             # Splits a command line into the program and its arguments.
@@ -235,7 +235,7 @@ function Uninstall-GuestApp {
                 $file, $arguments = & $split $line
                 $arguments = (@($arguments) + @($entry['uninstall']['args']) | Where-Object { $_ }) -join ' '
             }
-            if (-not (Test-Path -LiteralPath $file)) { return @{ status = 'failed'; detail = "no está su desinstalador ($file)" } }
+            if (-not (Test-Path -LiteralPath $file)) { return @{ status = 'failed'; detail = "its uninstaller isn't there ($file)" } }
 
             # A per-user entry can be written by the user's own programs: it runs as that user, never elevated. An
             # uninstaller without a silent mode opens on the signed-in user's desktop, to finish it there.
@@ -250,18 +250,18 @@ function Uninstall-GuestApp {
                 $finished = $process.WaitForExit(600000)
                 $exitCode = $process.ExitCode
             }
-            if (-not $finished) { return @{ status = 'failed'; detail = 'el desinstalador no terminó en 10 minutos' } }
+            if (-not $finished) { return @{ status = 'failed'; detail = 'the uninstaller didn''t finish in 10 minutes' } }
             # NSIS and Inno uninstallers copy themselves to TEMP and return at once; the files go a moment later.
             for ($i = 0; $i -lt 90 -and (& $isInstalled); $i++) { Start-Sleep -Seconds 2 }
-            @{ status = if (& $isInstalled) { 'failed' } else { 'uninstalled' }; detail = "código $exitCode" }
+            @{ status = if (& $isInstalled) { 'failed' } else { 'uninstalled' }; detail = "code $exitCode" }
         }
         $status = [string]$result['status']
         $detail = ([string]$result['detail'])
         if ($detail.Length -gt 200) { $detail = $detail.Substring(0, 200) }
         switch ($status) {
-            'absent' { Write-Step "$($entry['name']) no estaba instalado" }
-            'uninstalled' { Write-Step "$($entry['name']) desinstalado" }
-            default { Write-Warning "No se pudo desinstalar $($entry['name']) ($detail)." }
+            'absent' { Write-Step "$($entry['name']) wasn't installed" }
+            'uninstalled' { Write-Step "$($entry['name']) uninstalled" }
+            default { Write-Warning "Couldn't uninstall $($entry['name']) ($detail)." }
         }
         if ($status -in 'uninstalled', 'absent') { Update-InstalledAppState -Name $Name -Removed $id }
         [ordered]@{ app = $id; name = $entry['name']; status = $status }
@@ -288,7 +288,7 @@ function Invoke-GuestPendingWork {
                 Save-GpuVMState $state
             }
         }
-        catch { Write-Warning "No se pudo ampliar el disco C: de la VM: $($_.Exception.Message)" }
+        catch { Write-Warning "Couldn't enlarge the VM's C: drive: $($_.Exception.Message)" }
     }
 
     # A copy of a template still has the template's computer name; it takes its own from the next restart.
@@ -306,12 +306,12 @@ function Invoke-GuestPendingWork {
             $state['pendingRename'] = $false
             Save-GpuVMState $state
         }
-        catch { Write-Warning "No se pudo cambiar el nombre del equipo de la VM: $($_.Exception.Message)" }
+        catch { Write-Warning "Couldn't change the VM's computer name: $($_.Exception.Message)" }
     }
     # Shared disks attached while the VM was off get their drive letter (and Steam library) now.
     foreach ($disk in @(Get-GpuVMSharedDisk | Where-Object { $_['vm'] -eq $Name })) {
         try { Initialize-GuestSharedDisk -VMName $Name -Credential $Credential -Disk (Read-SharedDisk -Name $disk['name']) | Out-Null }
-        catch { Write-Warning "No se pudo preparar el disco '$($disk['name'])' en la VM: $($_.Exception.Message)" }
+        catch { Write-Warning "Couldn't prepare the disk '$($disk['name'])' in the VM: $($_.Exception.Message)" }
     }
     # Apps no longer in the catalog (it changed between versions) are dropped instead of failing every time.
     $known = @((Get-AppCatalog).Keys)
@@ -323,5 +323,5 @@ function Invoke-GuestPendingWork {
         $state['pendingApps'] = @($results | Where-Object { $_['status'] -notin 'installed', 'present' } | ForEach-Object { $_['app'] })
         Save-GpuVMState $state
     }
-    catch { Write-Warning "No se pudieron instalar las apps: $($_.Exception.Message)" }
+    catch { Write-Warning "Couldn't install the apps: $($_.Exception.Message)" }
 }

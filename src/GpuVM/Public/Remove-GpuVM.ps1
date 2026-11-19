@@ -10,7 +10,7 @@ function Remove-GpuVM {
     )
     Assert-Admin
     $state = Get-GpuVMState -Name $Name
-    $action = if ($DeleteDisk) { "Eliminar la VM y borrar $($state['vmDir'])" } else { 'Eliminar la VM (el disco se conserva)' }
+    $action = if ($DeleteDisk) { "Delete the VM and erase $($state['vmDir'])" } else { 'Delete the VM (the disk is kept)' }
     if (-not $PSCmdlet.ShouldProcess($Name, $action)) { return }
     Invoke-GpuVMBackend -Backend $state['backend'] -Operation Remove -Arguments $Name, $state, ([bool]$DeleteDisk)
 }
