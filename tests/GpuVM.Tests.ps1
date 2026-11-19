@@ -2075,6 +2075,8 @@ InModuleScope GpuVM {
 InModuleScope GpuVM {
     Describe 'Off and on, never a restart' {
         BeforeEach {
+            # Never the real ProgramData\GpuVM\power.log.
+            Mock Write-PowerLog { }
             $script:st = @{ disposable = @{ createdAt = (Get-Date).AddHours(-1).ToString('o'); startedAt = (Get-Date).ToString('o') } }
             Mock Get-GpuVMState { $script:st }
             Mock Save-GpuVMState { $script:st = $State; $script:saved.Add(($State['disposable'].Contains('cyclingUntil'))) }
