@@ -190,10 +190,8 @@ impl PipeBroker {
             "description": format!("{}, saved from {}{}", t["edition"].as_str().unwrap_or("Windows"),
                 t["fromVM"].as_str().unwrap_or("a machine"), t["createdAt"].as_str().map(|d| format!(" on {}", &d[..d.len().min(10)])).unwrap_or_default()),
         })).collect();
-        // Get-GpuVMProfile lists {Name, Description, Settings:{cpu, memoryGB, ...}}.
-        let profiles: Vec<Value> = list(self.cmd("Get-GpuVMProfile", json!({}))?.data).into_iter().map(|p| json!({
-            "name": p["Name"], "cpu": p["Settings"]["cpu"], "memoryGB": p["Settings"]["memoryGB"] })).collect();
-        Ok(Reply::of(json!({ "templates": templates, "profiles": profiles })))
+        // Profiles aren't listed: an agent can't create with one (the service denies Profile).
+        Ok(Reply::of(json!({ "templates": templates })))
     }
 
     fn runner(&self) -> impl Fn(&str, Value, bool) -> Result<(Reply, Vec<String>)> + '_ {
@@ -305,7 +303,9 @@ pub fn create_disposable(run: &Run, args: &Value, pause: &dyn Fn(Duration)) -> R
         Some(n) if !n.is_empty() => n.to_string(),
         _ => new_name(args["template"].as_str().unwrap_or("agent")),
     };
-    let mut new = json!({ "Template": s(args, "template"), "Name": name, "Profile": s(args, "profile"), "Disposable": true,
+    // Only what the service allows an agent session: Template, Name, Disposable, Connection and an Override of
+    // vm.cpu.count / vm.memoryGB (no Profile, FromVM, User or other overrides).
+    let mut new = json!({ "Template": s(args, "template"), "Name": name, "Disposable": true,
         "Connection": s(args, "connection") });
     let mut vm = serde_json::Map::new();
     if let Some(cpu) = args["cpu"].as_u64() {
@@ -352,7 +352,7 @@ pub fn create_disposable(run: &Run, args: &Value, pause: &dyn Fn(Duration)) -> R
 
 fn finish_create(run: &Run, args: &Value, name: &str, pause: &dyn Fn(Duration)) -> Result<Reply> {
     // Errors that retrying can't fix: someone else has it, the session ended, or it isn't allowed.
-    let fatal = |e: &BrokerError| matches!(e.code.as_str(), "unavailable" | "taken" | "not_taken" | "killed" | "denied" | "bad_request");
+    let fatal = |e: &BrokerError| matches!(e.code.as_str(), "unavailable" | "taken" | "not_taken" | "killed" | "denied" | "bad_request" | "paused" | "budget");
     // PowerShell Direct answers once Windows has started: retry the install for a few minutes. The same failure three
     // times in a row won't change by waiting (lab 053: an access error repeated for 5 minutes).
     let end = Instant::now() + Duration::from_secs(300);
@@ -538,6 +538,25 @@ mod tests {
         });
         create_disposable(&run, &json!({ "template": "t", "name": "x4" }), NO_PAUSE).unwrap();
         assert_eq!(names(&calls), ["New-GpuVM", "Install-GpuVMAgent", "Lock-GpuVMAgent"]);
+    }
+
+    #[test]
+    fn create_sends_only_what_an_agent_may_and_stops_on_pause() {
+        let (calls, run) = script(|cmd, args| match cmd {
+            "New-GpuVM" => Ok((Reply::of(json!({ "name": args["Name"], "started": true })), vec![])),
+            "Install-GpuVMAgent" => Err(BrokerError::new("budget", "The session's budget is used up.")),
+            "Get-GpuVM" => Ok((Reply::of(json!([])), vec![])),
+            _ => Ok((Reply::default(), vec![])),
+        });
+        let e = create_disposable(&run, &json!({ "template": "t", "name": "p1", "cpu": 2, "memoryGB": 4, "profile": "max", "connection": "c1" }), NO_PAUSE).unwrap_err();
+        assert_eq!(e.code, "budget");
+        let sent = calls.lock().unwrap()[0].1.clone();
+        let mut keys: Vec<&str> = sent.as_object().unwrap().keys().map(String::as_str).collect();
+        keys.sort();
+        assert_eq!(keys, ["Connection", "Disposable", "Name", "Override", "Template"]);
+        assert_eq!(sent["Override"], json!({ "vm": { "cpu": { "count": 2 }, "memoryGB": 4 } }));
+        // budget/paused aren't retried: one install attempt, then the copy is deleted.
+        assert_eq!(names(&calls).iter().filter(|c| *c == "Install-GpuVMAgent").count(), 1);
     }
 
     #[test]
