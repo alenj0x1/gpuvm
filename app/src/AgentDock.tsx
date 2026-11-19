@@ -131,7 +131,7 @@ export function AgentDock() {
         <span className={`dock-icon${risky ? " ag-dock-risky" : request.kind === "network" ? " ag-dock-warn" : ""}`}><I size={18} /></span>
         <div className="dock-text">
           <strong id="ag-dock-title" title={title}>{title}</strong>
-          {send?.paths.map((p) => <span key={p} className="ag-dock-path" title={p}>{middlePath(p)}</span>)}
+          {send?.paths.map((p) => <span key={p} className="ag-dock-path" title={p}>{middlePath(p, 50)}</span>)}
           <span id="ag-dock-detail">{detail}</span>
           {error && <span className="dock-error">{error}</span>}
         </div>
