@@ -215,8 +215,9 @@ impl Wgc {
             if self.latest.is_some() {
                 break;
             }
-            if t.elapsed() > Duration::from_secs(1) {
-                return Err("no frame from the display in 1 s".into());
+            // a session opened right after a display change takes longer for its first frame (lab 051)
+            if t.elapsed() > Duration::from_secs(3) {
+                return Err("no frame from the display in 3 s".into());
             }
             std::thread::sleep(Duration::from_millis(2));
         }
