@@ -43,6 +43,17 @@ export function useOpenViewers(): OpenViewer[] {
   return list;
 }
 
+/** Viewers of machines that no longer exist (deleted, a disposable destroyed) close at once, connected or still
+ *  connecting, instead of showing a black picture for minutes. `names`: the machines just read from the module. */
+export async function closeGoneViewers(names: string[]) {
+  if (!inTauri) return;
+  const list = await invoke<OpenViewer[]>("viewer_list").catch(() => [] as OpenViewer[]);
+  const known = new Set(names.map((n) => n.toLowerCase()));
+  const gone = list.filter((v) => !known.has(v.vm.toLowerCase()));
+  for (const v of gone) await invoke("viewer_gone", { vm: v.vm }).catch(() => {});
+  if (gone.length) await refresh();
+}
+
 /** Back to a connected machine's picture. */
 export async function showViewer(vm: string) {
   await invoke("viewer_show", { vm });

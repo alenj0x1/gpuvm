@@ -52,6 +52,55 @@ static NOTIFIED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 /// Answered here: hidden at once, before the next poll stops listing them.
 static ANSWERED: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
+/// `gpuvm.exe --view <name>` from an agent (the MCP server's open_viewer): waits here until that machine is held by
+/// a live agent session, for up to VIEW_WAIT (an agent that just made it isn't listed yet). Never anything else: the
+/// person's own machines don't open (or power on) because some process ran `--view` (security review, 2026-11-19).
+static AGENT_VIEW: Mutex<Option<(String, Instant)>> = Mutex::new(None);
+/// Released: the page opens it when it is running (pending_agent_view, for a page that isn't loaded yet).
+static AGENT_VIEW_READY: Mutex<Option<String>> = Mutex::new(None);
+const VIEW_WAIT: Duration = Duration::from_secs(180);
+
+/// A `--view` arrived: checked against the sessions now and on each poll.
+pub fn request_view(app: &AppHandle, name: &str) {
+    *lock(&AGENT_VIEW) = Some((name.to_string(), Instant::now()));
+    let clients = lock(&CLIENTS).clone();
+    release_view(app, &clients);
+}
+
+/// Whether a live agent session holds that machine (any state but stopped).
+fn held_by_agent(clients: &[Value], name: &str) -> bool {
+    clients.iter().any(|c| c["machine"].as_str().is_some_and(|m| m.eq_ignore_ascii_case(name)) && c["state"].as_str().is_some_and(|s| s != "stopped"))
+}
+
+fn release_view(app: &AppHandle, clients: &[Value]) {
+    let name = {
+        let mut pending = lock(&AGENT_VIEW);
+        match pending.as_ref() {
+            Some((_, at)) if at.elapsed() > VIEW_WAIT => { *pending = None; return; }
+            Some((name, _)) if held_by_agent(clients, name) => { let n = name.clone(); *pending = None; n }
+            _ => return,
+        }
+    };
+    *lock(&AGENT_VIEW_READY) = Some(name.clone());
+    if let Some(w) = app.get_webview_window("main") {
+        // No focus taken: the taskbar button flashes, the person looks when they want.
+        let _ = w.request_user_attention(Some(tauri::UserAttentionType::Informational));
+        let _ = w.emit("agent-view", name);
+    }
+}
+
+/// The page, once it can open machines: an agent's `--view` released before it loaded.
+#[tauri::command]
+pub fn pending_agent_view() -> Option<String> {
+    lock(&AGENT_VIEW_READY).take()
+}
+
+/// The page took the released name (it opens it or decides not to).
+#[tauri::command]
+pub fn agent_view_taken() {
+    *lock(&AGENT_VIEW_READY) = None;
+}
+
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
@@ -100,7 +149,10 @@ pub fn start(app: AppHandle) {
             }
             round += 1;
             update(&app, clients, requests, offers, &settings, &broker);
-            let busy = lock(&CLIENTS).iter().any(|c| c["state"].as_str().is_some_and(|s| s != "idle"));
+            // An agent holding a machine counts even while idle (thinking): its viewer must be watched without lag.
+            let busy = lock(&CLIENTS).iter().any(|c| c["state"].as_str().is_some_and(|s| s != "idle" && s != "stopped") || holds(c))
+                // A delivery still copying: its result shows without waiting for the slow poll.
+                || lock(&COPIES).as_ref().is_some_and(|c| c.values().any(|(_, done)| done.is_none()));
             tokio::time::sleep(Duration::from_millis(if viewing && busy { 1000 } else if busy { 2000 } else { 5000 })).await;
         }
     });
@@ -123,6 +175,7 @@ fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Ve
     // app's shapes).
     let _ = app.emit("agents-state", json!({ "clients": clients, "requests": requests, "offers": offers, "settings": settings, "broker": broker, "recordings": recordings() }));
     *lock(&CLIENTS) = clients.clone();
+    release_view(app, &clients);
     let answered = lock(&ANSWERED).clone();
     // What only the person can do (a password, UAC) is the agent's state, not a request: shown without buttons.
     let human = clients.iter().filter(|c| c["state"] == "human" && c["machine"].is_string()).map(|c| json!({
@@ -137,10 +190,12 @@ fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Ve
         .collect();
     waiting.sort_by(|a, b| a["createdAt"].as_f64().unwrap_or(0.0).total_cmp(&b["createdAt"].as_f64().unwrap_or(0.0)));
 
-    // Which viewers report input: those whose machine has an agent working, with take control on input.
+    // Which viewers report input: those whose machine an agent holds and may act on (working, or idle between two
+    // actions), with take control on input. Only "working" missed the person's first move after the agent had been
+    // idle 15 s (lab 054: round 1 missed in every run).
     let on_input = TAKE_ON_INPUT.load(Ordering::Relaxed);
     let working: HashSet<String> = clients.iter()
-        .filter(|c| c["state"] == "working")
+        .filter(|c| holds(c))
         .filter_map(|c| c["machine"].as_str().map(str::to_string))
         .filter(|vm| on_input && crate::viewer::viewer_is_open(vm.clone()))
         .collect();
@@ -162,6 +217,8 @@ fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Ve
     sync_status(app, &clients);
     // Recording while an agent works on a machine.
     sync_recordings(app, &clients);
+    // A delivery the person accepted: "Copying…" on the machine's notch, then where it went or why it failed.
+    sync_copies(app, &offers);
 
     // The dock: the oldest request of a machine in view, unless its administrator dock is down already.
     let docked = waiting.iter().find(|r| {
@@ -192,6 +249,12 @@ fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Ve
     let live: HashSet<String> = waiting.iter().filter_map(|r| r["id"].as_str().map(str::to_string)).collect();
     notified.retain(|id| live.contains(id));
     lock(&ANSWERED).retain(|id| live.contains(id));
+}
+
+/// The agent holds a machine and may act on it now or at any moment (working, thinking between steps, or waiting for
+/// an answer): the person's input there takes control, so its next click never fights theirs (code review).
+fn holds(c: &Value) -> bool {
+    c["machine"].is_string() && matches!(c["state"].as_str(), Some("working") | Some("idle") | Some("waiting"))
 }
 
 fn main_in_front(app: &AppHandle) -> bool {
@@ -312,20 +375,55 @@ fn hide_dock(app: &AppHandle) {
     });
 }
 
-/// Allow / Refuse (and, from its right click, Allow for this task) in the dock. Only which button: the request is
-/// the one this app put there.
+/// The dock's answer is for the request its page shows (`id`), which must still be the one docked: a newer request
+/// that replaced it between the page's draw and the click is never answered by that click (security review).
+fn docked_request(id: &str) -> Result<(Value, String, Instant), String> {
+    let d = lock(&DOCKED);
+    let d = d.as_ref().ok_or("The request already closed.")?;
+    if id.is_empty() || d.request["id"].as_str() != Some(id) {
+        return Err("That request changed. Look again before answering.".into());
+    }
+    Ok((d.request.clone(), d.vm.clone(), d.shown))
+}
+
+/// Allow for this task covers later requests of the same kind; a copy from the PC names one exact path, so it is
+/// answered one at a time.
+fn task_allowed(request: &Value) -> bool {
+    request["kind"].as_str() != Some("send")
+}
+
+/// A copy from the PC is allowed only when its exact path was there to show (the page shows it, the person reads it).
+fn send_shown(request: &Value) -> bool {
+    if request["kind"].as_str() != Some("send") {
+        return true;
+    }
+    send_paths(request).next().is_some()
+}
+
+/// The exact paths of a "send" request (Get-GpuVMAgentRequest: `paths`), blank ones left out.
+fn send_paths(request: &Value) -> impl Iterator<Item = &str> {
+    request["paths"].as_array().into_iter().flatten().filter_map(Value::as_str).filter(|p| !p.trim().is_empty())
+}
+
+/// Allow / Refuse (and, from its right click, Allow for this task) in the dock. Only which button, for the request
+/// whose id the page shows: the request is the one this app put there.
 #[tauri::command]
-pub async fn agent_dock_answer(app: AppHandle, allow: bool, for_task: bool) -> Result<(), String> {
+pub async fn agent_dock_answer(app: AppHandle, id: String, allow: bool, for_task: bool) -> Result<(), String> {
     let request = {
-        let d = lock(&DOCKED);
-        let d = d.as_ref().ok_or("The request already closed.")?;
-        if d.request["human"].as_bool() == Some(true) {
+        let (request, _, shown) = docked_request(&id)?;
+        if request["human"].as_bool() == Some(true) {
             return Err("Only you can do this, in the machine.".into());
         }
-        if d.shown.elapsed() < ARM {
+        if shown.elapsed() < ARM {
             return Err("The request just appeared.".into());
         }
-        d.request.clone()
+        if for_task && !task_allowed(&request) {
+            return Err("This one is answered on its own.".into());
+        }
+        if allow && !send_shown(&request) {
+            return Err("It doesn't say what it would copy.".into());
+        }
+        request
     };
     answer(&app, &request, allow, for_task).await?;
     lock(&ANSWERED).push(request["id"].as_str().unwrap_or("").to_string());
@@ -350,16 +448,15 @@ async fn answer(app: &AppHandle, request: &Value, allow: bool, for_task: bool) -
 /// Return to agent, from the dock of what only the person could do (request_human): they did it in the machine, the
 /// agent goes on.
 #[tauri::command]
-pub async fn agent_dock_resume(app: AppHandle) -> Result<(), String> {
-    let client = {
-        let d = lock(&DOCKED);
-        let d = d.as_ref().ok_or("The request already closed.")?;
-        if d.request["human"].as_bool() != Some(true) {
+pub async fn agent_dock_resume(app: AppHandle, id: String) -> Result<(), String> {
+    let (client, vm) = {
+        let (request, vm, _) = docked_request(&id)?;
+        if request["human"].as_bool() != Some(true) {
             return Err("Answer it with its buttons.".into());
         }
-        d.request["client"].as_str().unwrap_or("").to_string()
+        (request["client"].as_str().unwrap_or("").to_string(), vm)
     };
-    resume(&app, &client).await?;
+    resume(&app, &client, &vm).await?;
     hide_dock(&app);
     Ok(())
 }
@@ -399,19 +496,23 @@ pub fn docked_vm() -> Option<String> {
     lock(&DOCKED).as_ref().map(|d| d.vm.clone())
 }
 
-/// Return to agent / Resume, from the status notch: the broker gives it the machine back, with a fresh screenshot and a
-/// note that the person had control.
-pub async fn resume(app: &AppHandle, client: &str) -> Result<(), String> {
-    if client.is_empty() {
+/// Return to agent / Resume, from the status notch or the dock: the broker gives that one machine back (Name and
+/// Connection: a session holding several machines gets back only this one, never the one the person still has), with
+/// a fresh screenshot and a note that the person had control.
+pub async fn resume(app: &AppHandle, client: &str, vm: &str) -> Result<(), String> {
+    // A pause whose session is gone (the service clears orphans) resumes by Name alone.
+    if vm.is_empty() {
         return Err("The agent isn't valid.".into());
     }
-    call(app, "Resume-GpuVMAgent", json!({ "Connection": client })).await?;
-    lock(&STATUS).as_mut().map(|s| s.retain(|_, (_, id)| id != client));
-    if let Some(vm) = lock(&CLIENTS).iter().find(|c| c["id"].as_str() == Some(client)).and_then(|c| c["machine"].as_str().map(str::to_string)) {
-        crate::status::set(app, &vm, "agent", None);
-    }
+    call(app, "Resume-GpuVMAgent", resume_args(client, vm)).await?;
+    lock(&STATUS).as_mut().map(|s| s.remove(vm));
+    crate::status::set(app, vm, "agent", None);
     let _ = app.emit("agents-changed", json!({}));
     Ok(())
+}
+
+fn resume_args(client: &str, vm: &str) -> Value {
+    if client.is_empty() { json!({ "Name": vm }) } else { json!({ "Name": vm, "Connection": client }) }
 }
 
 /// The viewer saw the person's input over the picture: the agent working there pauses (take control).
@@ -427,7 +528,7 @@ pub fn on_input(app: &AppHandle, vm: &str) {
         }
         at.insert(vm.to_string(), Instant::now());
     }
-    let Some(client) = lock(&CLIENTS).iter().find(|c| c["machine"].as_str() == Some(vm) && c["state"] == "working").cloned() else { return };
+    let Some(client) = lock(&CLIENTS).iter().find(|c| c["machine"].as_str() == Some(vm) && holds(c)).cloned() else { return };
     // The viewer stops reporting at once (nothing to pause until it is given back).
     let _ = crate::viewer::send_to(vm, &json!({ "type": "agent-watch", "on": false }));
     lock(&WATCHING).as_mut().map(|w| w.remove(vm));
@@ -470,6 +571,55 @@ pub fn on_viewer(app: &AppHandle, vm: &str, msg: &Value) {
     }
 }
 
+/* ---------- deliveries being copied ---------- */
+
+/// Deliveries seen copying (offer id -> machine, and when it finished): Resolve-GpuVMAgentOffer answers "copying" at
+/// once and the copy ends in the background, accepted or failed (Get-GpuVMAgentOffer).
+static COPIES: Mutex<Option<HashMap<String, (String, Option<Instant>)>>> = Mutex::new(None);
+/// How long the result stays on the notch.
+const COPY_RESULT: Duration = Duration::from_secs(6);
+
+/// What the notch says about one delivery, from its offer: None once there is nothing to say.
+fn copy_notice(offer: &Value) -> Option<Value> {
+    let state = offer["state"].as_str()?;
+    if !matches!(state, "copying" | "accepted" | "failed") {
+        return None;
+    }
+    Some(json!({ "kind": "copy", "state": state, "name": offer["name"], "error": offer["error"] }))
+}
+
+fn sync_copies(app: &AppHandle, offers: &[Value]) {
+    let mut copies = lock(&COPIES);
+    let copies = copies.get_or_insert_with(HashMap::new);
+    for o in offers {
+        let (Some(id), Some(vm)) = (o["id"].as_str(), o["machine"].as_str()) else { continue };
+        let state = o["state"].as_str().unwrap_or("");
+        let key = format!("copy:{id}");
+        match (state, copies.get(id).cloned()) {
+            // Copying: shown on its machine once (the notch isn't redrawn every poll).
+            ("copying", None) => {
+                copies.insert(id.to_string(), (vm.to_string(), None));
+                crate::status::set(app, vm, &key, copy_notice(o));
+            }
+            // It finished while followed: its result, for a few seconds.
+            ("accepted" | "failed", Some((_, None))) => {
+                copies.insert(id.to_string(), (vm.to_string(), Some(Instant::now())));
+                crate::status::set(app, vm, &key, copy_notice(o));
+            }
+            _ => {}
+        }
+    }
+    // Results shown long enough, and deliveries no longer listed, leave the notch.
+    let live: HashSet<&str> = offers.iter().filter_map(|o| o["id"].as_str()).collect();
+    let gone: Vec<(String, String)> = copies.iter()
+        .filter(|(id, (_, done))| !live.contains(id.as_str()) || done.is_some_and(|t| t.elapsed() > COPY_RESULT))
+        .map(|(id, (vm, _))| (id.clone(), vm.clone())).collect();
+    for (id, vm) in gone {
+        copies.remove(&id);
+        crate::status::set(app, &vm, &format!("copy:{id}"), None);
+    }
+}
+
 /* ---------- recording an agent's work ---------- */
 
 /// A machine an agent works on is recorded from when it takes it until it lets it go (The person's option B): with the
@@ -483,14 +633,19 @@ struct Rec {
     /// The agent let go: waiting for the file, then (ours, still hidden) the viewer closes.
     stopping: Option<Instant>,
     opening: bool,
+    /// The viewer said it records. Until then "record" is sent again each round: a viewer just opened has no picture
+    /// yet and refuses it ("no-stream"), which left the hidden viewer recording nothing (lab 054, 2026-11-19).
+    confirmed: bool,
 }
 static RECS: Mutex<Option<HashMap<String, Rec>>> = Mutex::new(None);
 /// Recordings of agents' work, newest last: what the Agents page and the machine's Agent section link to.
 static RECORDINGS: Mutex<Vec<Value>> = Mutex::new(Vec::new());
 
 fn sync_recordings(app: &AppHandle, clients: &[Value]) {
+    // Held, idle included: an agent thinking for 15 s used to cut the recording and close the hidden viewer, which
+    // then took minutes to open again (lab 054: three files per run).
     let taken: HashMap<String, (String, Value)> = clients.iter()
-        .filter(|c| !matches!(c["state"].as_str(), Some("idle") | Some("stopped") | None))
+        .filter(|c| !matches!(c["state"].as_str(), Some("stopped") | None))
         .filter_map(|c| Some((c["machine"].as_str()?.to_string(), (c["id"].as_str().unwrap_or("").to_string(), c["name"].clone()))))
         .collect();
     let mut recs = lock(&RECS);
@@ -509,11 +664,19 @@ fn sync_recordings(app: &AppHandle, clients: &[Value]) {
     }
     // A viewer the person closed while the agent still works: it opens again (a new file) next round.
     recs.retain(|vm, r| r.opening || r.stopping.is_some() || crate::viewer::viewer_is_open(vm.clone()));
+    // Not recording yet (no picture when asked): ask again.
+    for (vm, rec) in recs.iter_mut().filter(|(_, r)| !r.opening && r.stopping.is_none() && !r.confirmed) {
+        if crate::capture::is_recording(vm) {
+            rec.confirmed = true;
+        } else {
+            let _ = crate::viewer::send_to(vm, &json!({ "type": "record", "on": true }));
+        }
+    }
     for (vm, (client, name)) in taken {
         if recs.contains_key(&vm) {
             continue;
         }
-        recs.insert(vm.clone(), Rec { client, client_name: name, ours: false, stopping: None, opening: true });
+        recs.insert(vm.clone(), Rec { client, client_name: name, ours: false, stopping: None, opening: true, confirmed: false });
         let app = app.clone();
         tauri::async_runtime::spawn(async move { start_recording(&app, &vm).await });
     }
@@ -572,7 +735,7 @@ pub fn on_capture_saved(app: &AppHandle, vm: &str, saved: &Value) {
         match recs.get(vm) {
             Some(r) if r.stopping.is_some() => recs.remove(vm),
             // Still working: a file cut by the viewer (the stream changed) links too, and recording goes on.
-            Some(r) => Some(Rec { client: r.client.clone(), client_name: r.client_name.clone(), ours: false, stopping: None, opening: false }),
+            Some(r) => Some(Rec { client: r.client.clone(), client_name: r.client_name.clone(), ours: false, stopping: None, opening: false, confirmed: true }),
             None => None,
         }
     };
@@ -638,9 +801,18 @@ fn notify(app: &AppHandle, request: &Value) {
     let what = request["title"].as_str().unwrap_or("");
     let vm = request["machine"].as_str().unwrap_or("").to_string();
     let human = request["human"].as_bool() == Some(true);
+    let paths: Vec<&str> = send_paths(request).collect();
+    let send_body = match paths.len() {
+        0 => String::new(),
+        1 => paths[0].to_string(),
+        n => tr(&format!("{} and {} more", paths[0], n - 1), &format!("{} y {} más", paths[0], n - 1)),
+    };
     let (title, body) = if human {
         // The agent's own words: what it needs the person to do.
         (tr(&format!("{who} needs you"), &format!("{who} te necesita")), format!("{} · {vm}", spanish_or(what)))
+    } else if request["kind"].as_str() == Some("send") {
+        // What it would copy from this PC, by its exact path (answered only in GpuVM).
+        (tr(&format!("{who} wants to copy to {vm}"), &format!("{who} quiere copiar a {vm}")), send_body)
     } else if english() {
         (format!("{who} asks: {what}"), format!("{vm} · Waiting for your answer"))
     } else {
@@ -735,5 +907,79 @@ mod toast {
 
     thread_local! {
         static KEEP: std::cell::RefCell<Vec<ToastNotification>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn client(machine: &str, state: &str) -> Value {
+        json!({ "id": "c1", "name": "lab", "machine": machine, "state": state })
+    }
+
+    #[test]
+    fn view_opens_only_machines_a_live_session_holds() {
+        let clients = vec![client("lab054-1", "idle"), client("win-gpu-x", "stopped")];
+        assert!(held_by_agent(&clients, "lab054-1"));
+        assert!(held_by_agent(&clients, "LAB054-1"));
+        // A stopped session, another name, no session at all: never.
+        assert!(!held_by_agent(&clients, "win-gpu-x"));
+        assert!(!held_by_agent(&clients, "win-gpu"));
+        assert!(!held_by_agent(&[], "lab054-1"));
+        assert!(!held_by_agent(&[json!({ "id": "c2", "machine": null, "state": "working" })], "lab054-1"));
+    }
+
+    #[test]
+    fn take_control_watches_working_and_idle_only() {
+        assert!(holds(&client("m", "working")));
+        assert!(holds(&client("m", "idle")));
+        assert!(holds(&client("m", "waiting")));
+        for s in ["control", "paused", "human", "stopped"] {
+            assert!(!holds(&client("m", s)), "{s}");
+        }
+        assert!(!holds(&json!({ "machine": null, "state": "working" })));
+    }
+
+    #[test]
+    fn dock_answers_only_the_request_it_shows() {
+        *lock(&DOCKED) = Some(Docked { vm: "m".into(), request: json!({ "id": "r2", "kind": "network" }), shown: Instant::now() });
+        assert!(docked_request("r2").is_ok());
+        assert!(docked_request("r1").is_err()); // the page drew r1, r2 replaced it
+        assert!(docked_request("").is_err());
+        *lock(&DOCKED) = None;
+        assert!(docked_request("r2").is_err());
+    }
+
+    #[test]
+    fn a_copy_from_the_pc_is_answered_one_at_a_time_and_only_with_its_path() {
+        // The broker's shape (Get-GpuVMAgentRequest): paths, files, bytes.
+        let send = json!({ "id": "s", "kind": "send", "paths": ["C:\\Users\\a\\file.zip"], "files": 1, "bytes": 10 });
+        assert!(!task_allowed(&send));
+        assert!(send_shown(&send));
+        assert!(!send_shown(&json!({ "kind": "send" })));
+        assert!(!send_shown(&json!({ "kind": "send", "paths": [] })));
+        assert!(!send_shown(&json!({ "kind": "send", "paths": ["  ", 3] })));
+        assert!(task_allowed(&json!({ "kind": "network" })));
+        assert!(send_shown(&json!({ "kind": "network" })));
+    }
+
+    #[test]
+    fn a_delivery_shows_copying_then_its_result() {
+        let o = |state: &str| json!({ "id": "o1", "machine": "m", "name": "report.md", "state": state, "error": if state == "failed" { json!("Disk full") } else { Value::Null } });
+        assert_eq!(copy_notice(&o("copying")).unwrap()["state"], "copying");
+        assert_eq!(copy_notice(&o("accepted")).unwrap()["name"], "report.md");
+        assert_eq!(copy_notice(&o("failed")).unwrap()["error"], "Disk full");
+        for s in ["pending", "refused", "expired", ""] {
+            assert!(copy_notice(&o(s)).is_none(), "{s}");
+        }
+    }
+
+    #[test]
+    fn return_to_agent_names_the_machine() {
+        assert_eq!(resume_args("c1", "lab054-1"), json!({ "Name": "lab054-1", "Connection": "c1" }));
+        // A pause left without a session: by Name alone.
+        assert_eq!(resume_args("", "lab054-1"), json!({ "Name": "lab054-1" }));
     }
 }

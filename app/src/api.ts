@@ -97,7 +97,11 @@ export const agents = {
   /** "control": the person took control over the picture (the viewer saw their input). */
   pause: (connection: string, reason: "person" | "control" = "person") =>
     ps("Suspend-GpuVMAgent", { Connection: connection, Reason: reason, Message: reason === "control" ? "You took control" : "Paused by you" }),
-  resume: (connection: string) => ps("Resume-GpuVMAgent", { Connection: connection }),
+  /** Only that machine goes back to the session (one it holds besides may still be the person's). */
+  resume: (connection: string, machine: string) => ps("Resume-GpuVMAgent", connection ? { Name: machine, Connection: connection } : { Name: machine }),
+  /** The guest repaints its whole desktop (agent 0.3.8, no input, nothing moved): with ddx a still desktop sends no
+   *  frame and the picture stayed black after connecting. From the app's pipe, no session. */
+  refreshScreen: (name: string) => ps("Invoke-GpuVMAgent", { Name: name, Method: "screen.refresh", TimeoutSec: 5 }),
   /** The kill switch: one session, or every one with "*". */
   stop: (connection: string) => ps("Stop-GpuVMAgentClient", connection === "*" ? { All: true } : { Connection: connection }),
   /** Per client (by its name, so it stays for its next sessions): low-risk approvals from the client itself. */

@@ -230,6 +230,14 @@ function Connect-GpuVM {
             $state['streaming']['pairedAt'] = (Get-Date).ToString('o')
             Save-GpuVMState $state
         }
+        elseif (-not $state['streaming']['pairedClient']) {
+            # Already paired in Sunshine without GpuVM pairing it here: a copy of a template keeps the template's
+            # pairing (New-GpuVMTemplate leaves pairedClient out). Home said "Moonlight isn't paired" while it streamed.
+            $state = Get-GpuVMState -Name $Name
+            $state['streaming']['pairedClient'] = $clientName
+            $state['streaming']['pairedAt'] = (Get-Date).ToString('o')
+            Save-GpuVMState $state
+        }
 
         # The speaker comes back ~60 s after Windows starts (usbip-win2 reattaches it), well after Sunshine answers
         # (lab 019). If it is still on its way, Moonlight opens now and the speaker is checked once the picture is up.

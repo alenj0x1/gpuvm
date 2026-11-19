@@ -32,6 +32,23 @@ const methodText = (m: string) => ({
   "files.list": "Listed a folder", "outbox.offer": "Offered a file",
 })[m] ?? m;
 
+/** A copy from this PC into the machine (broker "send": paths, files, bytes). Without a path it can't be shown for
+ *  what it is, so there is nothing to allow. */
+export function sendOf(r: Record<string, unknown>): AgentRequest["send"] {
+  const s = (r.send && typeof r.send === "object" ? r.send : r) as Record<string, unknown>;
+  const paths = (Array.isArray(s.paths) ? s.paths : []).filter((p): p is string => typeof p === "string" && p.trim() !== "");
+  if (!paths.length) return null;
+  return { paths, bytes: num(s.bytes), files: Math.max(1, num(s.files)) };
+}
+
+/** A long path with its middle cut ("C:\Users\…\folder\file.exe"): its drive and its name stay; the whole path is
+ *  the element's title. */
+export function middlePath(path: string, max = 64) {
+  if (path.length <= max) return path;
+  const tail = Math.ceil((max - 1) * 0.6), head = max - 1 - tail;
+  return `${path.slice(0, head)}…${path.slice(path.length - tail)}`;
+}
+
 /** One shape for every page, whatever sent it (the broker's poll in agent.rs, a direct read, the browser's mock). */
 export function fromBroker(raw: BrokerState): Omit<AgentSnapshot, "loaded" | "error"> {
   const approvals = raw.settings?.clients ?? {};
@@ -52,8 +69,9 @@ export function fromBroker(raw: BrokerState): Omit<AgentSnapshot, "loaded" | "er
   });
   const requests: AgentRequest[] = (raw.requests ?? []).filter((r) => (r.state ?? "pending") === "pending").map((r) => ({
     id: String(r.id), client: String(r.connection ?? r.client ?? ""), clientName: str(r.clientName) ?? "Agent", machine: String(r.machine ?? ""),
-    kind: (["admin", "network", "revert", "delete", "deliver", "other"].includes(String(r.kind)) ? r.kind : "other") as AgentRequest["kind"],
+    kind: (["admin", "network", "revert", "delete", "deliver", "send", "other"].includes(String(r.kind)) ? r.kind : "other") as AgentRequest["kind"],
     title: String(r.title ?? ""), reason: str(r.reason), createdAt: iso(r.createdAt), expiresAt: iso(r.expiresAt),
+    send: r.kind === "send" ? sendOf(r as Record<string, unknown>) : null,
   }));
   // What only the person can do (a password, UAC, the lock screen) comes as the agent's state, not as a request.
   for (const c of clients.filter((x) => x.state === "human" && x.machine)) {

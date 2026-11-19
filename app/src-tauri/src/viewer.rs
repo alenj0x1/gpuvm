@@ -751,6 +751,22 @@ pub fn viewer_visible(vm: &str) -> bool {
     viewers().as_ref().and_then(|v| v.get(vm)).is_some_and(|v| v.visible.load(Ordering::Relaxed))
 }
 
+/// The machine no longer exists (deleted, a disposable destroyed): its viewer closes now instead of trying to connect
+/// for minutes over a black picture (lab 054: ~2 min). Asked to quit (it can while still connecting), ended if it
+/// hasn't in a few seconds.
+#[tauri::command]
+pub fn viewer_gone(vm: String) {
+    let Some(viewer) = viewers().as_ref().and_then(|v| v.get(&vm).cloned()) else { return };
+    send_raw(&viewer, &json!({ "type": "quit" }));
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(5));
+        if viewer.child.running() {
+            eprintln!("viewer {vm}: the machine is gone and the viewer didn't quit; ended");
+            viewer.child.kill();
+        }
+    });
+}
+
 /// Closes every viewer (GpuVM is going to its notices-only mode: no windows left).
 pub fn quit_all() {
     let list: Vec<Arc<Viewer>> = viewers().as_ref().map(|v| v.values().cloned().collect()).unwrap_or_default();

@@ -1,14 +1,21 @@
 # Lab 054 helper: the person's mouse moving over the viewer's picture, without touching the real cursor: two
 # WM_MOUSEMOVE messages posted to the viewer's window (SDL turns them into motion events, as for a real move).
-# Prints the Unix ms of the second one, so take-control.mjs can measure input → agent paused.
+# Prints the Unix ms of the first one, so take-control.mjs can measure input → agent paused.
 #   pwsh -NoProfile -File input.ps1            (the largest visible GpuVMViewer window, top-level or embedded)
 # The viewer is usually embedded in GpuVM's window (a child window, no MainWindowHandle): the first version only
 # looked at top-level windows and its moves never reached the picture (lab 054, 2026-11-19).
+# The second move ends where the real cursor is: SDL then remembers the real position, and a move Windows sends by
+# itself later (a window appearing over a still cursor) has no distance, as with a real person. Ending elsewhere made
+# those count as the person's input and paused the agent between rounds (2026-11-19, round 2 missed).
 Add-Type -Namespace Lab054 -Name Win -MemberDefinition @'
 [StructLayout(LayoutKind.Sequential)] public struct R { public int L, T, Rt, B; }
+[StructLayout(LayoutKind.Sequential)] public struct P { public int X, Y; }
 [DllImport("user32.dll")] public static extern bool PostMessageW(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out R r);
 [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+[DllImport("user32.dll")] public static extern bool GetCursorPos(out P p);
+[DllImport("user32.dll")] public static extern bool ScreenToClient(IntPtr h, ref P p);
+[DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
 [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
 public delegate bool EnumProc(IntPtr h, IntPtr l);
 [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc f, IntPtr l);
@@ -20,6 +27,7 @@ public static System.Collections.Generic.List<IntPtr> Of(uint[] pids) {
     return found;
 }
 '@
+[Lab054.Win]::SetProcessDPIAware() | Out-Null
 $ids = @(Get-Process GpuVMViewer -ErrorAction SilentlyContinue | ForEach-Object { [uint32]$_.Id })
 if (-not $ids.Count) { 'no-viewer'; exit 1 }
 $h = [IntPtr]::Zero; $area = 0
@@ -30,12 +38,15 @@ foreach ($w in [Lab054.Win]::Of([uint32[]]$ids)) {
     if ($a -gt $area) { $area = $a; $h = $w }
 }
 if ($h -eq [IntPtr]::Zero) { 'no-viewer'; exit 1 }
+$c = New-Object Lab054.Win+P
+[Lab054.Win]::GetCursorPos([ref]$c) | Out-Null
+[Lab054.Win]::ScreenToClient($h, [ref]$c) | Out-Null
 $WM_MOUSEMOVE = 0x0200
-$pos = { param($x, $y) [IntPtr](($y -shl 16) -bor $x) }
-# A different spot each call, so SDL always sees relative motion.
-$x = 300 + (Get-Random -Maximum 200); $y = 200 + (Get-Random -Maximum 150)
-[Lab054.Win]::PostMessageW($h, $WM_MOUSEMOVE, [IntPtr]::Zero, (& $pos $x $y)) | Out-Null
-Start-Sleep -Milliseconds 20
+# Client coordinates as Windows packs them: two signed 16-bit halves.
+$pos = { param($x, $y) [IntPtr]((($y -band 0xFFFF) -shl 16) -bor ($x -band 0xFFFF)) }
+# The time of the first move: it is already input (30 px away).
 $t = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
-[Lab054.Win]::PostMessageW($h, $WM_MOUSEMOVE, [IntPtr]::Zero, (& $pos ($x + 30) ($y + 20))) | Out-Null
+[Lab054.Win]::PostMessageW($h, $WM_MOUSEMOVE, [IntPtr]::Zero, (& $pos ($c.X + 30) ($c.Y + 20))) | Out-Null
+Start-Sleep -Milliseconds 20
+[Lab054.Win]::PostMessageW($h, $WM_MOUSEMOVE, [IntPtr]::Zero, (& $pos $c.X $c.Y)) | Out-Null
 $t
