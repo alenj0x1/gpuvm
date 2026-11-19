@@ -279,8 +279,22 @@ pub fn create_disposable(run: &Run, args: &Value, pause: &dyn Fn(Duration)) -> R
     }
     let (created, warnings) = run("New-GpuVM", new, true)?;
     let name = created.data["name"].as_str().unwrap_or(&name).to_string();
-    // New-GpuVM keeps a machine it couldn't turn on and only warns (not enough memory, mostly): stop here, with the
-    // module's own reason and figures, instead of waiting for an agent that can't come.
+    // New-GpuVM keeps a machine it couldn't turn on (not enough memory, mostly) and says so in `started`/`startError`
+    // with the figures: stop here instead of waiting for an agent that can't come.
+    let d = &created.data;
+    if d["started"] == false {
+        remove_disposable(run, &name);
+        let (needed, free) = (d["neededGB"].as_f64(), d["freeGB"].as_f64());
+        let reason = match (needed, free) {
+            (Some(n), Some(f)) => format!("it needs {n:.1} GB of memory free and there are {f:.1} GB"),
+            _ => d["startError"].as_str().unwrap_or("Windows didn't start it").trim_end_matches('.').to_string(),
+        };
+        let memory = needed.is_some();
+        return Err(BrokerError::new(if memory { "no_memory" } else { "failed" }, format!(
+            "{name} couldn't start: {reason}. It was deleted again.{}",
+            if memory { " Ask for less memoryGB (4 is enough for most tests), or ask the person to free memory." } else { "" })));
+    }
+    // Modules before `started` only warn.
     if let Some(w) = warnings.iter().find(|w| w.contains("couldn't turn on")) {
         remove_disposable(run, &name);
         let reason = w.split_once(": ").map(|(_, r)| r).unwrap_or(w).trim_end_matches('.');
@@ -329,6 +343,7 @@ pub fn remove_disposable(run: &Run, name: &str) {
     let _ = run("Invoke-GpuVMPower", json!({ "Name": name, "Action": "TurnOff" }), true);
     if let Err(e) = run("Remove-GpuVMDisposable", json!({ "Name": name }), true) {
         if e.message.contains("Argument not allowed") {
+            super::server::log(&format!("this GpuVM has no Remove-GpuVMDisposable -Name: {name} goes with the next sweep"));
             let _ = run("Remove-GpuVMDisposable", json!({}), true);
         } else {
             super::server::log(&format!("couldn't delete the disposable {name}: {}", e.message));
@@ -434,6 +449,34 @@ mod tests {
         assert_eq!(names(&calls), ["New-GpuVM", "Invoke-GpuVMPower", "Remove-GpuVMDisposable"]);
         assert_eq!(calls.lock().unwrap()[2].1, json!({ "Name": "x1" }));
         assert_eq!(calls.lock().unwrap()[0].1["Connection"], "c1");
+    }
+
+    #[test]
+    fn create_reads_the_structured_start_state() {
+        let (calls, run) = script(|cmd, args| match cmd {
+            "New-GpuVM" => Ok((Reply::of(json!({ "name": args["Name"], "started": false, "startError": "The VM needs 8.3 GB free and there are 3.6 GB.",
+                "neededGB": 8.3, "freeGB": 3.6 })), vec![])),
+            _ => Ok((Reply::default(), vec![])),
+        });
+        let e = create_disposable(&run, &json!({ "template": "agent-tpl", "name": "x2" }), NO_PAUSE).unwrap_err();
+        assert_eq!(e.code, "no_memory");
+        assert!(e.message.starts_with("x2 couldn't start: it needs 8.3 GB of memory free and there are 3.6 GB. It was deleted again."), "{}", e.message);
+        assert_eq!(names(&calls), ["New-GpuVM", "Invoke-GpuVMPower", "Remove-GpuVMDisposable"]);
+        assert_eq!(calls.lock().unwrap()[2].1, json!({ "Name": "x2" }));
+        // Another reason, without figures.
+        let (_, run) = script(|cmd, args| match cmd {
+            "New-GpuVM" => Ok((Reply::of(json!({ "name": args["Name"], "started": false, "startError": "Hyper-V refused." })), vec![])),
+            _ => Ok((Reply::default(), vec![])),
+        });
+        let e = create_disposable(&run, &json!({ "template": "t", "name": "x3" }), NO_PAUSE).unwrap_err();
+        assert_eq!((e.code.as_str(), e.message.as_str()), ("failed", "x3 couldn't start: Hyper-V refused. It was deleted again."));
+        // Started: goes on to install and take.
+        let (calls, run) = script(|cmd, args| match cmd {
+            "New-GpuVM" => Ok((Reply::of(json!({ "name": args["Name"], "started": true })), vec![])),
+            _ => Ok((Reply::default(), vec![])),
+        });
+        create_disposable(&run, &json!({ "template": "t", "name": "x4" }), NO_PAUSE).unwrap();
+        assert_eq!(names(&calls), ["New-GpuVM", "Install-GpuVMAgent", "Lock-GpuVMAgent"]);
     }
 
     #[test]

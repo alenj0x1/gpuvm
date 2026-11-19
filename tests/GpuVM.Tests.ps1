@@ -1633,6 +1633,38 @@ InModuleScope GpuVM {
 }
 
 InModuleScope GpuVM {
+    Describe 'Where a copy lands and that it arrived' {
+        It 'finds the signed-in person''s desktop without expanding variables with this session''s own' {
+            $key = 'HKCU:\Software\GpuVM-test-desktop'
+            New-Item -Path $key -Force | Out-Null
+            try {
+                $k = Get-Item $key
+                $w = $k.OpenSubKey('', $true)
+                $w.SetValue('Desktop', '%USERPROFILE%\Desktop', [Microsoft.Win32.RegistryValueKind]::ExpandString); $w.Close()
+                & $script:GuestDesktopResolver $key 'C:\Users\agent' | Should Be 'C:\Users\agent\Desktop'
+                (Get-ItemProperty $key).Desktop | Should Be (Join-Path $env:USERPROFILE 'Desktop')
+                $w = (Get-Item $key).OpenSubKey('', $true)
+                $w.SetValue('Desktop', '%OneDrive%\Desktop', [Microsoft.Win32.RegistryValueKind]::ExpandString); $w.Close()
+                & $script:GuestDesktopResolver $key 'C:\Users\agent' | Should Be 'C:\Users\agent\Desktop'
+                $w = (Get-Item $key).OpenSubKey('', $true)
+                $w.SetValue('Desktop', 'D:\Escritorio', [Microsoft.Win32.RegistryValueKind]::String); $w.Close()
+                & $script:GuestDesktopResolver $key 'C:\Users\agent' | Should Be 'D:\Escritorio'
+                & $script:GuestDesktopResolver 'HKCU:\Software\GpuVM-test-missing' 'C:\Users\agent' | Should Be 'C:\Users\agent\Desktop'
+            }
+            finally { Remove-Item $key -Recurse -Force }
+        }
+
+        It 'reports a copy done only when the destination holds every file and byte' {
+            $ok = [pscustomobject]@{ Ok = $true; Error = ''; Dest = 'C:\Users\agent\Desktop\Received'; Bytes = [int64]106697424; Files = 1 }
+            Test-Throws { Assert-TransferArrived -Done $ok -Bytes 106697424 -Files 1 -Name vm } | Should Be $false
+            Test-Throws { Assert-TransferArrived -Done ([pscustomobject]@{ Ok = $true; Error = ''; Dest = 'x'; Bytes = [int64]0; Files = 0 }) -Bytes 106697424 -Files 1 -Name vm } | Should Be $true
+            Test-Throws { Assert-TransferArrived -Done ([pscustomobject]@{ Ok = $true; Error = ''; Dest = 'x'; Bytes = [int64]106697424; Files = 2 }) -Bytes 106697424 -Files 1 -Name vm } | Should Be $true
+            Test-Throws { Assert-TransferArrived -Done ([pscustomobject]@{ Ok = $false; Error = 'tar 1'; Dest = 'x'; Bytes = [int64]106697424; Files = 1 }) -Bytes 106697424 -Files 1 -Name vm } | Should Be $true
+        }
+    }
+}
+
+InModuleScope GpuVM {
     Describe 'New-GpuVM -Template returns how the start went' {
         It 'a copy that starts, and one that can''t (the -Start switch and the result are separate variables)' {
             Mock Assert-Admin { }

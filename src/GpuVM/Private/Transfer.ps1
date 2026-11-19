@@ -149,16 +149,15 @@ function Write-UstarHeader {
 # the VM's screen (or of the session's user if nobody is). Returns the folder and the free space there.
 function Open-GuestReceiver {
     param([Parameter(Mandatory)]$Session, [Parameter(Mandatory)][string]$Id, [Parameter(Mandatory)][string]$Folder)
-    $answer = Invoke-Command -Session $Session -ErrorAction Stop -ArgumentList $Id, $Folder -ScriptBlock {
-        param($id, $folder)
+    $answer = Invoke-Command -Session $Session -ErrorAction Stop -ArgumentList $Id, $Folder, $script:GuestDesktopResolver.ToString() -ScriptBlock {
+        param($id, $folder, $resolver)
         $desktop = $null
         $user = (Get-CimInstance Win32_ComputerSystem).UserName
         if ($user) {
             try {
                 $sid = ([Security.Principal.NTAccount]$user).Translate([Security.Principal.SecurityIdentifier]).Value
                 $profile = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$sid").ProfileImagePath
-                $shell = (Get-ItemProperty "Registry::HKEY_USERS\$sid\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" -ErrorAction SilentlyContinue).Desktop
-                $desktop = if ($shell) { $shell -replace '%USERPROFILE%', $profile } else { Join-Path $profile 'Desktop' }
+                $desktop = & ([scriptblock]::Create($resolver)) "Registry::HKEY_USERS\$sid\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" $profile
             }
             catch { $desktop = $null }
         }
@@ -211,6 +210,21 @@ function Send-GuestBytes {
 
 # Ends the stream. Done: each item moves from the hidden folder into Desktop\<Folder> (a name already there gets
 # " (2)"), and the names it got come back. Cancelled or failed: tar is stopped and the hidden folder deleted.
+# The desktop of the person signed in at the VM's screen, from their own registry hive (run inside the guest, also by
+# Send-GpuVMClipboard). The value is REG_EXPAND_SZ, usually "%USERPROFILE%\Desktop": it is read unexpanded, since
+# Get-ItemProperty expands it with this session's variables, the PowerShell Direct user's, and copies went to that
+# user's desktop while another one was signed in (lab 053: "Copied", and nothing in the person's Received).
+# Any other variable left (a OneDrive folder) falls back to <profile>\Desktop.
+$script:GuestDesktopResolver = {
+    param([string]$KeyPath, [string]$ProfilePath)
+    $key = Get-Item -LiteralPath $KeyPath -ErrorAction SilentlyContinue
+    $raw = if ($key) { $key.GetValue('Desktop', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) } else { $null }
+    if (-not $raw) { return (Join-Path $ProfilePath 'Desktop') }
+    $path = ([string]$raw) -ireplace '%USERPROFILE%', $ProfilePath.Replace('$', '$$')
+    if ($path -match '%[^%]+%' -or -not [IO.Path]::IsPathRooted($path)) { return (Join-Path $ProfilePath 'Desktop') }
+    $path
+}
+
 function Close-GuestReceiver {
     param([Parameter(Mandatory)]$Session, [Parameter(Mandatory)][string]$Id, [switch]$Cancel)
     $answer = Invoke-Command -Session $Session -ErrorAction Stop -ArgumentList @($Id, $Cancel.IsPresent) -ScriptBlock {
@@ -235,14 +249,36 @@ function Close-GuestReceiver {
             }
         }
         Remove-Item -LiteralPath $r.staging -Recurse -Force -ErrorAction SilentlyContinue
+        # What is now in the destination, measured there: the sender compares it with what it sent.
+        $bytes = [int64]0; $files = 0
+        foreach ($name in $names) {
+            $placed = Get-Item -LiteralPath (Join-Path $r.dest $name) -Force -ErrorAction SilentlyContinue
+            if (-not $placed) { continue }
+            if ($placed.PSIsContainer) {
+                foreach ($f in Get-ChildItem -LiteralPath $placed.FullName -Recurse -File -Force -ErrorAction SilentlyContinue) { $bytes += $f.Length; $files++ }
+            }
+            else { $bytes += $placed.Length; $files++ }
+        }
         $err = if ($ok -or $cancel) { '' } else { "tar $(if ($p.HasExited) { $p.ExitCode } else { 'still running' }): $("$($r.error.Result)".Trim())" }
-        @{ ok = $ok; names = $names; error = $err }
+        @{ ok = $ok; names = $names; error = $err; dest = $r.dest; bytes = $bytes; files = $files }
     }
     $answer = @($answer)[-1]
     [pscustomobject]@{
         Ok    = [bool]$answer['ok']
         Names = @($answer['names'] | ForEach-Object { ConvertTo-GuestString $_ -MaxLength 260 })
         Error = ConvertTo-GuestString $answer['error'] -MaxLength 300
+        Dest  = ConvertTo-GuestString $answer['dest'] -MaxLength 400
+        Bytes = $(if ($answer['bytes'] -is [int64] -or $answer['bytes'] -is [int32]) { [int64]$answer['bytes'] } else { [int64]-1 })
+        Files = $(if ($answer['files'] -is [int32] -or $answer['files'] -is [int64]) { [int]$answer['files'] } else { -1 })
+    }
+}
+
+# A copy is only reported done when the destination holds what was sent: the same number of files and bytes.
+function Assert-TransferArrived {
+    param([Parameter(Mandatory)]$Done, [int64]$Bytes, [int]$Files, [string]$Name)
+    if (-not $Done.Ok) { throw "The machine couldn't save the files. $($Done.Error)" }
+    if ($Done.Files -ne $Files -or $Done.Bytes -ne $Bytes) {
+        throw "The copy didn't arrive whole in $Name ($($Done.Files) of $Files files, $($Done.Bytes) of $Bytes bytes in $($Done.Dest))."
     }
 }
 
