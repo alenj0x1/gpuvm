@@ -174,7 +174,7 @@ pub fn hide(app: &AppHandle) {
 fn dropped(app: &AppHandle, paths: Vec<String>) {
     let vm = zone().vm.clone();
     let (Some(vm), false) = (vm, paths.is_empty()) else { return hide(app) };
-    let folder = if crate::ENGLISH.load(Ordering::Relaxed) { "Received" } else { "Recibidos" };
+    let folder = "Received";
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         match start(&app, vm.clone(), paths, None, folder.to_string()).await {

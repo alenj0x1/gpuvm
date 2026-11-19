@@ -27,14 +27,14 @@ import { t, translateModule } from "./i18n";
 
 const NEW_VM = "__new__";
 // Route of the preferences screen in the URL hash, shaped so it doesn't look like a VM name.
-const PREFS = ":preferencias";
-const LIBRARY = ":biblioteca";
+const PREFS = ":settings";
+const LIBRARY = ":library";
 // The home screen, where the app opens.
-const HOME = ":inicio";
+const HOME = ":home";
 const libraryTab = (route: string): LibraryTab | null => {
   if (!route.startsWith(LIBRARY)) return null;
   const tab = route.slice(LIBRARY.length + 1);
-  return tab === "plantillas" || tab === "discos" || tab === "compartidos" || tab === "isos" ? tab : "perfiles";
+  return tab === "templates" || tab === "disks" || tab === "shared" || tab === "isos" ? tab : "profiles";
 };
 
 interface RunningJob extends JobInfo {

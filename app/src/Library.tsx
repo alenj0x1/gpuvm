@@ -16,7 +16,7 @@ import { ResourceChips } from "./resources";
 import { NewTemplate } from "./VmView";
 import { locale, t, tn, translateModule } from "./i18n";
 
-export type LibraryTab = "perfiles" | "plantillas" | "discos" | "compartidos" | "isos";
+export type LibraryTab = "profiles" | "templates" | "disks" | "shared" | "isos";
 
 // What each tab loaded last, so switching tabs shows it at once while it refreshes.
 const cache: { bases?: BaseInfo[]; profiles?: ProfileInfo[]; apps?: AppInfo[]; disks?: DiskInfo[]; isos?: IsoFile[]; templates?: TemplateInfo[]; shared?: SharedDiskInfo[] } = {};
@@ -37,10 +37,10 @@ interface Props {
 
 // Labels are getters so they are read in the language shown.
 const SECTIONS: { tab: LibraryTab; readonly label: string; icon: React.ReactNode; readonly desc: string }[] = [
-  { tab: "perfiles", get label() { return t("Profiles"); }, icon: <IconAdjustmentsHorizontal size={17} />, get desc() { return t("Machine recipes: resources, apps and cleanup ready to use."); } },
-  { tab: "plantillas", get label() { return t("Templates"); }, icon: <IconTemplate size={17} />, get desc() { return t("Windows already installed, with its apps, to create machines in seconds."); } },
-  { tab: "compartidos", get label() { return t("Shared disks"); }, icon: <IconStack2 size={17} />, get desc() { return t("They attach to whichever machine needs them: your games or files, stored once."); } },
-  { tab: "discos", get label() { return t("Machine disks"); }, icon: <IconDatabase size={17} />, get desc() { return t("Each machine's disk and the ones left without a machine."); } },
+  { tab: "profiles", get label() { return t("Profiles"); }, icon: <IconAdjustmentsHorizontal size={17} />, get desc() { return t("Machine recipes: resources, apps and cleanup ready to use."); } },
+  { tab: "templates", get label() { return t("Templates"); }, icon: <IconTemplate size={17} />, get desc() { return t("Windows already installed, with its apps, to create machines in seconds."); } },
+  { tab: "shared", get label() { return t("Shared disks"); }, icon: <IconStack2 size={17} />, get desc() { return t("They attach to whichever machine needs them: your games or files, stored once."); } },
+  { tab: "disks", get label() { return t("Machine disks"); }, icon: <IconDatabase size={17} />, get desc() { return t("Each machine's disk and the ones left without a machine."); } },
   { tab: "isos", get label() { return t("ISOs"); }, icon: <IconDisc size={17} />, get desc() { return t("Windows images to create machines from scratch."); } },
 ];
 
@@ -106,10 +106,10 @@ export function Library({ tab, onTab, host, startJob, busy, progress, notify, on
         ))}
       </nav>
       <StorageOverview hostFreeGB={host?.disk?.freeGB ?? null} />
-      {section("perfiles", <Profiles tabs={<SectionHead tab="perfiles" />} host={host} notify={notify} />)}
-      {section("plantillas", <Templates tabs={<SectionHead tab="plantillas" />} notify={notify} onOpenVm={onOpenVm} onCreate={onCreateFromTemplate} startJob={startJob} />)}
-      {section("compartidos", <SharedDisks tabs={<SectionHead tab="compartidos" />} startJob={startJob} progress={progress} notify={notify} onOpenVm={onOpenVm} />)}
-      {section("discos", <Disks tabs={<SectionHead tab="discos" />} startJob={startJob} busy={busy} notify={notify} onOpenVm={onOpenVm} />)}
+      {section("profiles", <Profiles tabs={<SectionHead tab="profiles" />} host={host} notify={notify} />)}
+      {section("templates", <Templates tabs={<SectionHead tab="templates" />} notify={notify} onOpenVm={onOpenVm} onCreate={onCreateFromTemplate} startJob={startJob} />)}
+      {section("shared", <SharedDisks tabs={<SectionHead tab="shared" />} startJob={startJob} progress={progress} notify={notify} onOpenVm={onOpenVm} />)}
+      {section("disks", <Disks tabs={<SectionHead tab="disks" />} startJob={startJob} busy={busy} notify={notify} onOpenVm={onOpenVm} />)}
       {section("isos", <Isos tabs={<SectionHead tab="isos" />} notify={notify} />)}
     </div>
   );
@@ -649,8 +649,18 @@ function SharedDisks({ tabs, startJob, progress, notify, onOpenVm }: Pick<Props,
 function NewSharedDisk({ existing, notify, onCancel, onCreated }: {
   existing: SharedDiskInfo[]; notify: Props["notify"]; onCancel: () => void; onCreated: () => void;
 }) {
-  const [name, setName] = useState(existing.some((d) => d.name === "juegos") ? "" : "juegos");
-  const [purpose, setPurpose] = useState<"games" | "general">("games");
+  // The name offered follows the use (games, shared), in the app's language, with a number when it is taken; once
+  // typed in, it stays as written.
+  const suggest = (use: "games" | "general") => {
+    const base = use === "games" ? t("games|disk name") : t("shared|disk name");
+    let n = base;
+    for (let i = 2; existing.some((d) => d.name.toLowerCase() === n.toLowerCase()); i++) n = `${base}-${i}`;
+    return n;
+  };
+  const [name, setName] = useState(() => suggest("games"));
+  const [typed, setTyped] = useState(false);
+  const [purpose, setPurposeOnly] = useState<"games" | "general">("games");
+  const setPurpose = (use: "games" | "general") => { setPurposeOnly(use); if (!typed) setName(suggest(use)); };
   // Dynamic: it only takes what its files use, so the size is a ceiling, not space taken now.
   const maxGB = 2048;
   const [sizeGB, setSizeGB] = useState(512);
@@ -685,7 +695,7 @@ function NewSharedDisk({ existing, notify, onCancel, onCreated }: {
         <div ref={bodyRef} className={`dialog-body ${bodyFade}`}>
           <div className="field">
             <label className="field-top" htmlFor="sd-name"><span>{t("Name")}</span></label>
-            <input id="sd-name" className="text-input" value={name} autoFocus onChange={(e) => setName(e.target.value)} />
+            <input id="sd-name" className="text-input" value={name} autoFocus onChange={(e) => { setName(e.target.value); setTyped(true); }} />
             {nameError && <span className="error-text">{nameError}</span>}
           </div>
           <div className="field">

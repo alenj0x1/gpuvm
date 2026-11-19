@@ -310,10 +310,10 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
           </div>
           <div className="home-library-grid">
             {[
-              { icon: <IconLayoutGrid size={16} />, n: library?.profiles, label: t("Profiles"), route: ":biblioteca:perfiles" },
-              { icon: <IconTemplate size={16} />, n: library?.templates, label: t("Templates"), route: ":biblioteca:plantillas" },
-              { icon: <IconStack2 size={16} />, n: library?.shared, label: t("Shared disks"), route: ":biblioteca:compartidos" },
-              { icon: <IconDisc size={16} />, n: library?.isos, label: t("ISOs"), route: ":biblioteca:isos" },
+              { icon: <IconLayoutGrid size={16} />, n: library?.profiles, label: t("Profiles"), route: ":library:profiles" },
+              { icon: <IconTemplate size={16} />, n: library?.templates, label: t("Templates"), route: ":library:templates" },
+              { icon: <IconStack2 size={16} />, n: library?.shared, label: t("Shared disks"), route: ":library:shared" },
+              { icon: <IconDisc size={16} />, n: library?.isos, label: t("ISOs"), route: ":library:isos" },
             ].map((x) => (
               <button key={x.route} type="button" className="home-library-item" onClick={() => onRoute(x.route)}>
                 <span className="home-library-icon">{x.icon}</span>
@@ -336,7 +336,7 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
               const mine = !!busy && !!a.cmd && busy.cmd === a.cmd;
               const act = () => {
                 if (a.cmd && a.vm) startJob(a.vm, a.cmd, a.args ?? {}, () => api.home().then((h) => { cache = h; setHome(h); }).catch(() => {}));
-                else if (a.kind === "disk") onRoute(":biblioteca:discos");
+                else if (a.kind === "disk") onRoute(":library:disks");
                 else if (a.vm) onOpenVm(a.vm);
               };
               return (
@@ -446,9 +446,9 @@ export function EmptyHome({ gpuName, onCreate, onRoute }: { gpuName: string | nu
       .catch(() => {});
   }, []);
   const ready = [
-    { icon: <IconLayoutGrid size={16} />, n: library?.profiles, one: t("profile ready"), many: t("profiles ready"), route: ":biblioteca:perfiles" },
-    { icon: <IconTemplate size={16} />, n: library?.templates, one: t("template"), many: t("templates"), route: ":biblioteca:plantillas" },
-    { icon: <IconDisc size={16} />, n: library?.isos, one: t("Windows image|count"), many: t("Windows images"), route: ":biblioteca:isos" },
+    { icon: <IconLayoutGrid size={16} />, n: library?.profiles, one: t("profile ready"), many: t("profiles ready"), route: ":library:profiles" },
+    { icon: <IconTemplate size={16} />, n: library?.templates, one: t("template"), many: t("templates"), route: ":library:templates" },
+    { icon: <IconDisc size={16} />, n: library?.isos, one: t("Windows image|count"), many: t("Windows images"), route: ":library:isos" },
   ].filter((x) => x.n);
   return (
     <div className="main home">

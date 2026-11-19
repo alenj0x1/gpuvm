@@ -30,7 +30,7 @@ export const transferAmount = (tr: Transfer) => {
 
 const SAMPLE: Transfer[] = [
   { id: "a", vm: "win10", from: null, names: ["fotos-vacaciones", "informe.pdf"], state: "running", percent: 42, message: "Sending 42 % · 1.2 of 2.9 GB", error: null, items: [] },
-  { id: "b", vm: "win11-pruebas", from: "win10", names: ["presupuesto.xlsx"], state: "done", percent: 100, message: "", error: null, items: ["presupuesto.xlsx"], folder: "Recibidos" },
+  { id: "b", vm: "win11-pruebas", from: "win10", names: ["presupuesto.xlsx"], state: "done", percent: 100, message: "", error: null, items: ["presupuesto.xlsx"], folder: "Received" },
   { id: "c", vm: "win10", from: null, names: ["setup.iso"], state: "error", percent: 0, message: "", error: "It doesn't fit: it's 6200 MB and win10 has 4100 MB free.", items: [] },
 ];
 

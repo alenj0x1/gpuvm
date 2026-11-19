@@ -1,7 +1,7 @@
 function Send-GpuVMFile {
     <#
     .SYNOPSIS
-    Copies files and folders into a running VM: to Desktop\Recibidos of the user signed in there. From this PC
+    Copies files and folders into a running VM: to Desktop\Received of the user signed in there. From this PC
     (-Path), or from another running VM (-FromVM with paths inside it), passing through this PC's memory only: nothing
     is written to its disk. Nothing ever goes from a VM to this PC.
     .EXAMPLE
@@ -15,7 +15,7 @@ function Send-GpuVMFile {
         [Parameter(Mandatory)][string[]]$Path,
         [string]$FromVM,
         # Folder on the VM's desktop.
-        [ValidatePattern('^(?!\.{1,2}$)(?!.*[. ]$)[^\\/:*?"<>|\x00-\x1f]{1,60}$')][string]$Folder = 'Recibidos',
+        [ValidatePattern('^(?!\.{1,2}$)(?!.*[. ]$)[^\\/:*?"<>|\x00-\x1f]{1,60}$')][string]$Folder = 'Received',
         # Lets Stop-GpuVMTransfer cancel it.
         [ValidatePattern('^[a-f0-9]{8,32}$')][string]$TransferId = ([guid]::NewGuid().ToString('n'))
     )

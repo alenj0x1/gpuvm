@@ -1229,7 +1229,7 @@ function SpaceRow({ name, vms }: { name: string; vms: VmOverview[] }) {
         <Dropdown label={t("Space")} value={space.id} onChange={(id) => (id === NEW_SPACE ? setCreating(true) : moveToSpace(name, id))}
           options={[...spaces.map((x) => { const I = ambientInfo(x.ambient).icon; return { value: x.id, label: x.name, detail: ambientInfo(x.ambient).name, icon: <I size={16} /> }; }),
             { value: NEW_SPACE, label: t("New space"), detail: t("With {name} and its own ambience", { name }), icon: <IconPlus size={16} /> }]} />
-        <button type="button" className="btn ghost" onClick={() => { showSpace(space.id); location.hash = encodeURIComponent(":inicio"); }}>{t("View space")}</button>
+        <button type="button" className="btn ghost" onClick={() => { showSpace(space.id); location.hash = encodeURIComponent(":home"); }}>{t("View space")}</button>
       </div>
       {creating && createPortal(<SpaceDialog vms={vms} initialMachines={[name]} onClose={() => setCreating(false)} />, portalRoot())}
     </div>
