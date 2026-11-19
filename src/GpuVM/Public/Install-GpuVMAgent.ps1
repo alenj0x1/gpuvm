@@ -44,6 +44,9 @@ function Install-GpuVMAgent {
     # Switching the sign-in to `agent` before it ran would skip it for good (and for every copy of a template made
     # from this machine), so it is waited for first.
     Wait-GuestReady -Name $Name -Credential $credential
+    # Without a viewer the console's only display is the Hyper-V one: it stays on for the agent.
+    try { $null = Enable-GuestHyperVVideo -Name $Name -Credential $credential }
+    catch { Write-Warning "Couldn't turn the machine's Hyper-V display on: $($_.Exception.Message)" }
     $timing['firstSetup'] = $sw.ElapsedMilliseconds
     $signInAs = if ($User -eq 'own') { 'previous' } else { 'agent' }
     $secret = [byte[]]::new(32)

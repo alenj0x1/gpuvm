@@ -213,6 +213,24 @@ function Update-GpuVMAgentIfStale {
     $true
 }
 
+# An agent machine keeps the Hyper-V display on: until a viewer connects, the virtual display has no monitor plugged
+# in, and without the Hyper-V one the console session has no display at all (no screenshots, no input; agent-guest
+# 2026-11-19 on copies of a template whose source had it disabled). The agent (0.4.x) turns that display's desktop
+# off itself once the virtual one is active, and Sunshine captures the virtual display by name.
+# Returns 'enabled' (it was off), 'ok' or 'not-found'.
+function Enable-GuestHyperVVideo {
+    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential)
+    $r = Invoke-Command -VMName $Name -Credential $Credential -ErrorAction Stop -ScriptBlock {
+        $devices = @(Get-PnpDevice -Class Display -ErrorAction SilentlyContinue | Where-Object FriendlyName -like '*Hyper-V*')
+        if (-not $devices) { return 'not-found' }
+        $off = @($devices | Where-Object Status -ne 'OK')
+        if (-not $off) { return 'ok' }
+        $off | Enable-PnpDevice -Confirm:$false -ErrorAction Stop
+        'enabled'
+    }
+    [string](@($r)[-1])
+}
+
 # The agent's removal inside a running machine (install.ps1 -Uninstall -RemoveUser): its last result.
 function Invoke-GuestAgentRemoval {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential)

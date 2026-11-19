@@ -32,7 +32,11 @@ function New-GpuVM {
     Assert-Admin
     if ($ForAgent -and -not $Template) { throw 'An agent session only makes copies of a template made for agents.' }
     # An agent machine gets 4 GB unless its memory is chosen (the person, 2026-11-19).
-    if ($Use -eq 'agent') { $Override = Add-DefaultMemory -Override $Override -MemoryGB $script:AgentMemoryGB }
+    if ($Use -eq 'agent') {
+        $Override = Add-DefaultMemory -Override $Override -MemoryGB $script:AgentMemoryGB
+        # Its first-time setup must not turn the Hyper-V display off (the agent needs a display before any viewer).
+        $Override = Merge-Hashtable -Base $(if ($Override) { $Override } else { @{} }) -Override @{ streaming = @{ disableHyperVVideo = $false } }
+    }
     if ($Disposable) {
         if (-not $Template) { throw 'A disposable machine is made from a template (-Template).' }
         if (-not $Name) { $Name = Get-FreeGpuVMName -Base ($Template.Substring(0, [math]::Min($Template.Length, 29)) + '-desechable') }
@@ -152,7 +156,10 @@ function New-GpuVMFromTemplate {
         throw "An agent session can only copy a template made for agents, and '$Template' isn't one (its source wasn't an agent machine)."
     }
     # An agent machine is always isolated (as Set-GpuVMUse agent does): an explicit false goes back to the default.
-    if ($agentCopy) { Set-AgentNetworkIsolation -Config $config }
+    if ($agentCopy) {
+        Set-AgentNetworkIsolation -Config $config
+        Set-AgentKeepsHyperVVideo -Config $config
+    }
 
     $context = @{ Name = $Name; Config = $config; Template = $base }
     $state = @(Invoke-GpuVMBackend -Backend $config['backend'] -Operation Clone -Arguments (, $context)) |
@@ -262,4 +269,11 @@ function Set-AgentNetworkIsolation {
     if (-not ($vm -is [System.Collections.IDictionary])) { return }
     $network = $vm['network']
     if ($network -is [System.Collections.IDictionary] -and $network.Contains('isolation') -and $network['isolation'] -eq $false) { $network['isolation'] = $true }
+}
+
+# An agent machine never has its Hyper-V display turned off by GpuVM: until a viewer connects, it is the console's
+# only display (the agent turns its desktop off itself once the virtual one is active).
+function Set-AgentKeepsHyperVVideo {
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Config)
+    if ($Config['streaming'] -is [System.Collections.IDictionary]) { $Config['streaming']['disableHyperVVideo'] = $false }
 }

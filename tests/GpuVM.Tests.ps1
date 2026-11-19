@@ -1446,6 +1446,7 @@ InModuleScope GpuVM {
             Mock Close-AgentSession { }
             Mock Wait-GuestReady { }
             Mock Assert-AgentSwitch { $script:calls.Add('switch checked') }
+            Mock Enable-GuestHyperVVideo { $script:calls.Add('video on'); 'ok' }
             Mock Update-GpuVMNetworkIsolation { $script:calls.Add('isolated') }
             Mock Copy-ToAgentSession { $script:calls.Add("copy-to-session $Destination") }
             # Which guest call it is, by its arguments: setup (hash), fast-path copy (2 paths), installer (text, dir,
@@ -1476,7 +1477,7 @@ InModuleScope GpuVM {
             $r = Install-GpuVMAgent -Name vm1
             $r.vmId | Should Be '0b5d1f53-1e33-4b7e-9f0a-2c4d6e8f0a1b'
             $r.exeSent | Should Be $true
-            ($script:calls -join ',') | Should Be 'switch checked,setup,copy-to-session C:\Windows\Temp\GpuVMAgentSetup-1\gpuvm-agent.exe,copy-to-session C:\Windows\Temp\GpuVMAgentSetup-1\VERSION,install,cleanup,isolated,restart'
+            ($script:calls -join ',') | Should Be 'switch checked,video on,setup,copy-to-session C:\Windows\Temp\GpuVMAgentSetup-1\gpuvm-agent.exe,copy-to-session C:\Windows\Temp\GpuVMAgentSetup-1\VERSION,install,cleanup,isolated,restart'
             $script:sentSecret.GetType().Name | Should Be 'Byte[]'
             $script:sentSecret.Length | Should Be 32
             Assert-MockCalled Write-AgentSecret -Times 1 -Scope It
@@ -1491,7 +1492,7 @@ InModuleScope GpuVM {
             $script:sameBuild = $true
             $r = Install-GpuVMAgent -Name vm1
             $r.exeSent | Should Be $false
-            ($script:calls -join ',') | Should Be 'switch checked,setup,fast-copy,install,cleanup,isolated,restart'
+            ($script:calls -join ',') | Should Be 'switch checked,video on,setup,fast-copy,install,cleanup,isolated,restart'
         }
         It 'a failed install keeps the old secret' {
             Mock Copy-ToAgentSession { throw 'copy failed' }
@@ -2035,6 +2036,27 @@ InModuleScope GpuVM {
             (Add-StartResult -Info ([pscustomobject]@{ Name = 'copy1' }) -Start $null).vmId | Should Be '3a4b5c6d-7e8f-4a1b-9c2d-3e4f5a6b7c8d'
             Mock Get-VM { throw 'gone' }
             (Add-StartResult -Info ([pscustomobject]@{ Name = 'copy1' }) -Start $null).PSObject.Properties['vmId'] | Should Be $null
+        }
+    }
+}
+
+InModuleScope GpuVM {
+    Describe 'An agent machine keeps its Hyper-V display' {
+        It 'turns it back on when it is off, and leaves it when it is on' {
+            Mock Invoke-Command { & $ScriptBlock }
+            Mock Get-PnpDevice { @([pscustomobject]@{ FriendlyName = 'Microsoft Hyper-V Video'; Status = 'Error'; InstanceId = 'VMBUSx' }) }
+            Mock Enable-PnpDevice { $script:enabled = $true }
+            $cred = [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force))
+            $script:enabled = $false
+            Enable-GuestHyperVVideo -Name a -Credential $cred | Should Be 'enabled'
+            $script:enabled | Should Be $true
+            Mock Get-PnpDevice { @([pscustomobject]@{ FriendlyName = 'Microsoft Hyper-V Video'; Status = 'OK' }) }
+            Enable-GuestHyperVVideo -Name a -Credential $cred | Should Be 'ok'
+        }
+        It 'its copies and new agent machines never have it turned off by their setup' {
+            $c = @{ streaming = @{ disableHyperVVideo = $true; virtualDisplay = $true } }
+            Set-AgentKeepsHyperVVideo -Config $c
+            $c['streaming']['disableHyperVVideo'] | Should Be $false
         }
     }
 }
