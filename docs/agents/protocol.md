@@ -118,6 +118,7 @@ counts its budget. Requests without `Connection` are the person's (the app) or t
 | `Set-GpuVMAgentClient` | `Name (client name), ClientApprovals` | settings (person only); MCP elicitation stays off unless turned on here |
 | `Install-GpuVMAgent` | `Name, User? agent\|own` | `{name, vmId, version, fastPath, restarted, ms}` (bridge) |
 | `Uninstall-GpuVMAgent` | `Name` | `{name}` (bridge, UAC consent) |
+| `Remove-GpuVMAgentRegistration` | `VmId` | `{}`; the service (SYSTEM) deletes that VM's registration and secret; administrators' pipe only (the agents' pipe gets `denied`); called by `Remove-GpuVM` and `Uninstall-GpuVMAgent`, and the hourly sweep removes what's left of VMs that no longer exist |
 
 Error codes (`code`, or `error.code` of a guest request) on top of the guest's: `paused`, `killed`, `budget`,
 `not_taken`, `taken`, `off` (no agent connected), `busy` (32 requests in flight on a machine, or too many waiting),
