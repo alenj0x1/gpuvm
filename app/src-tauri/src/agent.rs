@@ -150,7 +150,9 @@ pub fn start(app: AppHandle) {
             round += 1;
             update(&app, clients, requests, offers, &settings, &broker);
             // An agent holding a machine counts even while idle (thinking): its viewer must be watched without lag.
-            let busy = lock(&CLIENTS).iter().any(|c| c["state"].as_str().is_some_and(|s| s != "idle" && s != "stopped") || holds(c));
+            let busy = lock(&CLIENTS).iter().any(|c| c["state"].as_str().is_some_and(|s| s != "idle" && s != "stopped") || holds(c))
+                // A delivery still copying: its result shows without waiting for the slow poll.
+                || lock(&COPIES).as_ref().is_some_and(|c| c.values().any(|(_, done)| done.is_none()));
             tokio::time::sleep(Duration::from_millis(if viewing && busy { 1000 } else if busy { 2000 } else { 5000 })).await;
         }
     });
@@ -215,6 +217,8 @@ fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Ve
     sync_status(app, &clients);
     // Recording while an agent works on a machine.
     sync_recordings(app, &clients);
+    // A delivery the person accepted: "Copying…" on the machine's notch, then where it went or why it failed.
+    sync_copies(app, &offers);
 
     // The dock: the oldest request of a machine in view, unless its administrator dock is down already.
     let docked = waiting.iter().find(|r| {
@@ -567,6 +571,55 @@ pub fn on_viewer(app: &AppHandle, vm: &str, msg: &Value) {
     }
 }
 
+/* ---------- deliveries being copied ---------- */
+
+/// Deliveries seen copying (offer id -> machine, and when it finished): Resolve-GpuVMAgentOffer answers "copying" at
+/// once and the copy ends in the background, accepted or failed (Get-GpuVMAgentOffer).
+static COPIES: Mutex<Option<HashMap<String, (String, Option<Instant>)>>> = Mutex::new(None);
+/// How long the result stays on the notch.
+const COPY_RESULT: Duration = Duration::from_secs(6);
+
+/// What the notch says about one delivery, from its offer: None once there is nothing to say.
+fn copy_notice(offer: &Value) -> Option<Value> {
+    let state = offer["state"].as_str()?;
+    if !matches!(state, "copying" | "accepted" | "failed") {
+        return None;
+    }
+    Some(json!({ "kind": "copy", "state": state, "name": offer["name"], "error": offer["error"] }))
+}
+
+fn sync_copies(app: &AppHandle, offers: &[Value]) {
+    let mut copies = lock(&COPIES);
+    let copies = copies.get_or_insert_with(HashMap::new);
+    for o in offers {
+        let (Some(id), Some(vm)) = (o["id"].as_str(), o["machine"].as_str()) else { continue };
+        let state = o["state"].as_str().unwrap_or("");
+        let key = format!("copy:{id}");
+        match (state, copies.get(id).cloned()) {
+            // Copying: shown on its machine once (the notch isn't redrawn every poll).
+            ("copying", None) => {
+                copies.insert(id.to_string(), (vm.to_string(), None));
+                crate::status::set(app, vm, &key, copy_notice(o));
+            }
+            // It finished while followed: its result, for a few seconds.
+            ("accepted" | "failed", Some((_, None))) => {
+                copies.insert(id.to_string(), (vm.to_string(), Some(Instant::now())));
+                crate::status::set(app, vm, &key, copy_notice(o));
+            }
+            _ => {}
+        }
+    }
+    // Results shown long enough, and deliveries no longer listed, leave the notch.
+    let live: HashSet<&str> = offers.iter().filter_map(|o| o["id"].as_str()).collect();
+    let gone: Vec<(String, String)> = copies.iter()
+        .filter(|(id, (_, done))| !live.contains(id.as_str()) || done.is_some_and(|t| t.elapsed() > COPY_RESULT))
+        .map(|(id, (vm, _))| (id.clone(), vm.clone())).collect();
+    for (id, vm) in gone {
+        copies.remove(&id);
+        crate::status::set(app, &vm, &format!("copy:{id}"), None);
+    }
+}
+
 /* ---------- recording an agent's work ---------- */
 
 /// A machine an agent works on is recorded from when it takes it until it lets it go (The person's option B): with the
@@ -910,6 +963,17 @@ mod tests {
         assert!(!send_shown(&json!({ "kind": "send", "paths": ["  ", 3] })));
         assert!(task_allowed(&json!({ "kind": "network" })));
         assert!(send_shown(&json!({ "kind": "network" })));
+    }
+
+    #[test]
+    fn a_delivery_shows_copying_then_its_result() {
+        let o = |state: &str| json!({ "id": "o1", "machine": "m", "name": "report.md", "state": state, "error": if state == "failed" { json!("Disk full") } else { Value::Null } });
+        assert_eq!(copy_notice(&o("copying")).unwrap()["state"], "copying");
+        assert_eq!(copy_notice(&o("accepted")).unwrap()["name"], "report.md");
+        assert_eq!(copy_notice(&o("failed")).unwrap()["error"], "Disk full");
+        for s in ["pending", "refused", "expired", ""] {
+            assert!(copy_notice(&o(s)).is_none(), "{s}");
+        }
     }
 
     #[test]

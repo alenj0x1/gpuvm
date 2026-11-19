@@ -265,7 +265,7 @@ function OfferRow({ o, showMachine }: { o: AgentOffer; showMachine: boolean }) {
         <strong className="ellipsis" title={o.name}>{o.name}</strong>
         <span className="ellipsis">{[bytes(o.sizeBytes, locale()), showMachine ? `${o.clientName} · ${o.machine}` : o.clientName, since(o.createdAt)].join(" · ")}</span>
         {o.note && <span className="ag-offer-note" title={o.note}>{o.note}</span>}
-        {status && <span className={`ag-offer-status ${o.state}`}>{o.state === "accepted" && <IconCheck size={13} />}{status}</span>}
+        {status && <span className={`ag-offer-status ${o.state}`}>{o.state === "accepted" && <IconCheck size={13} />}{o.state === "copying" && <IconLoader2 size={13} className="spin" />}{status}</span>}
         {error && <span className="error-text">{error}</span>}
       </div>
       {o.state === "pending" && (

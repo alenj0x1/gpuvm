@@ -2,14 +2,17 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { IconAlertTriangle, IconCamera, IconCheck, IconHandFinger, IconHistoryOff, IconLoader2, IconMovie, IconPlayerPause, IconPlayerPlay, IconRobot, IconVideo, type Icon } from "@tabler/icons-react";
 import { inTauri } from "./api";
 import { humanError } from "./ui";
-import { t } from "./i18n";
+import { t, translateModule } from "./i18n";
 
 // The status notch (status.rs): the one place over a machine's picture for what only says how things are (recording,
 // saved, you took control, an agent paused). Requests drop from the top as docks; status lives here, at the bottom
 // center unless the person put it elsewhere (Settings › Appearance). Several notices stack in the same notch.
 
 export type StatusPlacement = "bottom" | "top" | "top-left" | "top-right" | "panel";
-export interface StatusItem { id: string; kind: "recording" | "notice" | "control" | "paused"; key?: string; since?: number; client?: string; clientName?: string }
+/** "copy": a file an agent delivered, being copied to this PC after the person accepted it (agent.rs): `state`
+ *  copying, then accepted or failed for a few seconds, with `name` (the file) and `error`. */
+export interface StatusItem { id: string; kind: "recording" | "notice" | "control" | "paused" | "copy"; key?: string; since?: number; client?: string; clientName?: string;
+  name?: string; state?: "copying" | "accepted" | "failed"; error?: string | null }
 export interface StatusState { vm: string | null; items: StatusItem[]; placement: StatusPlacement }
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T | null> {
@@ -53,6 +56,19 @@ export function StatusRow({ item, onAction, short }: { item: StatusItem; onActio
   if (item.kind === "recording") {
     return <div className="sn-row"><span className="sn-rec" aria-hidden="true" /><span className="sn-text">{t("Recording")}</span><span className="sn-time">{clock(Date.now() - (item.since ?? Date.now()))}</span></div>;
   }
+  if (item.kind === "copy") {
+    const name = item.name ?? "";
+    if (item.state === "failed") {
+      return <div className="sn-row warn"><IconAlertTriangle size={15} className="sn-icon" />
+        <span className="sn-text" title={name}>{t("Couldn't save {name}. {error}", { name, error: item.error ? translateModule(item.error) : "?" })}</span></div>;
+    }
+    return (
+      <div className="sn-row">
+        {item.state === "accepted" ? <IconCheck size={15} className="sn-icon ok" /> : <IconLoader2 size={15} className="sn-icon spin" />}
+        <span className="sn-text" title={name}>{item.state === "accepted" ? t("{name} saved in Downloads", { name }) : t("Copying {name}…", { name })}</span>
+      </div>
+    );
+  }
   if (item.kind === "notice") {
     const n = NOTICE[item.key ?? ""] ?? NOTICE.error;
     return <div className={`sn-row${n.warn ? " warn" : ""}`}>{n.warn ? <n.icon size={15} className="sn-icon" /> : <IconCheck size={15} className="sn-icon ok" />}<span className="sn-text">{n.text()}</span></div>;
@@ -80,6 +96,8 @@ function sample(): StatusState {
     { id: "recording", kind: "recording", since: Date.now() - 83000 },
     { id: "notice:1", kind: "notice", key: q.get("notice") ?? "shot" },
   ];
+  const copy = q.get("copy") as StatusItem["state"] | null;
+  if (copy) return { vm: "win-agent", items: [{ id: "copy:o1", kind: "copy", state: copy, name: "installer-test-report.md", error: copy === "failed" ? "There isn't enough room in Downloads." : null }], placement: "bottom" };
   return { vm: "win-agent", items: items.slice(0, Number(q.get("n") ?? 3)), placement: (q.get("placement") as StatusPlacement) ?? "bottom" };
 }
 
