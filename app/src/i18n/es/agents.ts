@@ -41,6 +41,8 @@ export default {
   "{name} needs you": "{name} te necesita",
   "{name} wants to copy to {machine}": "{name} quiere copiar a {machine}",
   "{n} files": "{n} archivos",
+  "No display": "Sin pantalla",
+  "The agent can't see this machine's screen.": "El agente no ve la pantalla de esta máquina.",
   "Copying {name}…": "Copiando {name}…",
   "{name} saved in Downloads": "{name} guardado en Descargas",
   "Couldn't save {name}. {error}": "No se pudo guardar {name}. {error}",

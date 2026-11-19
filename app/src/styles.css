@@ -1722,6 +1722,12 @@ html.viewer-panel-window body::after { display: none; }
 .ag-state.on .ag-dot { background: var(--accent); animation: ag-pulse 1.6s ease-in-out infinite; }
 .ag-state.on { color: var(--text); }
 .ag-state.warn { color: var(--warn); }
+/* The machine's agent sees no screen: on the card's surface, only the icon in its warning square (taste: no yellow). */
+.ag-nodisplay { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0 2px; }
+.ag-nodisplay-icon { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; flex: none; background: var(--warn-bg); color: var(--warn); }
+.ag-nodisplay-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ag-nodisplay-text strong { font-weight: 600; }
+.ag-nodisplay-text span { font-size: 12.5px; color: var(--muted); line-height: 1.45; }
 .ag-state.warn .ag-dot { background: var(--warn); }
 @keyframes ag-pulse { 50% { opacity: 0.35; } }
 .ag-budget { display: flex; flex-direction: column; gap: 6px; }

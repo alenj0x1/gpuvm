@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  IconCheck, IconCopy, IconDeviceDesktop, IconFile, IconFileDownload, IconFileText, IconFileUpload, IconFileZip, IconHandFinger, IconHandStop, IconHistory, IconLoader2,
+  IconCheck, IconCopy, IconDeviceDesktop, IconDeviceDesktopOff, IconFile, IconFileDownload, IconFileText, IconFileUpload, IconFileZip, IconHandFinger, IconHandStop, IconHistory, IconLoader2,
   IconLock, IconPhoto, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconPlugConnectedX, IconRobot, IconShieldLock, IconTerminal2, IconTrash, IconVideo, IconWorld, IconX, type Icon,
 } from "@tabler/icons-react";
 import { agents, inTauri } from "./api";
@@ -43,8 +43,32 @@ function ClientIcon({ client, size = 18 }: { client: Pick<AgentClient, "name">; 
   return <span className="ag-client-icon"><I size={size} /></span>;
 }
 
-export function StatePill({ state }: { state: AgentState }) {
+export function StatePill({ state, noDisplay }: { state: AgentState; noDisplay?: boolean }) {
+  if (noDisplay) return <span className="ag-state warn"><span className="ag-dot" />{t("No display")}</span>;
   return <span className={`ag-state ${stateTone(state)}`}><span className="ag-dot" />{stateLabel(state)}</span>;
+}
+
+/** The machine's agent is signed in but sees no screen (Get-GpuVMAgent "no-display"): it can't take screenshots or
+ *  use the mouse and keyboard, so nothing that needs its screen is offered. */
+export function useNoDisplay(machine: string | null | undefined) {
+  const snap = useAgents();
+  const m = machine ? snap.machineAgents[machine] : undefined;
+  return m?.state === "no-display" ? m : null;
+}
+
+/** The notice for a machine whose agent sees no screen: on the card's surface, the icon in its warning square. */
+export function NoDisplayNotice({ machine }: { machine: string | null | undefined }) {
+  const nd = useNoDisplay(machine);
+  if (!nd) return null;
+  return (
+    <div className="ag-nodisplay" role="status">
+      <span className="ag-nodisplay-icon"><IconDeviceDesktopOff size={16} /></span>
+      <div className="ag-nodisplay-text">
+        <strong>{t("No display")}</strong>
+        <span>{nd.error ? translateModule(nd.error) : t("The agent can't see this machine's screen.")}</span>
+      </div>
+    </div>
+  );
 }
 
 /** Steps and minutes used of the task's budget. */
@@ -97,7 +121,14 @@ export function AgentLive({ client, size = "full", actions = 3, onTakeControl }:
   const paused = client.state === "paused" || client.state === "control";
   const spin = (key: string, I: Icon) => (busy === key ? <IconLoader2 size={15} className="spin" /> : <I size={15} />);
   const last = client.actions[0];
-  const controls = (
+  // Without a screen the agent can't act: only Stop is offered (pausing or taking control has nothing to stop).
+  const noDisplay = !!useNoDisplay(client.machine);
+  const controls = noDisplay ? (
+    <div className="ag-controls">
+      <button type="button" className="btn ghost compact" disabled={!!busy} title={t("Ends its task on this machine")}
+        onClick={() => act("stop", () => agents.stop(client.id))} aria-label={t("Stop")}>{spin("stop", IconPlayerStop)}<span className="ag-btn-label">{t("Stop")}</span></button>
+    </div>
+  ) : (
     <div className="ag-controls">
       {client.state === "control"
         ? <button type="button" className="btn compact" disabled={!!busy} onClick={() => act("resume", () => agents.resume(client.id, client.machine ?? ""))}>{spin("resume", IconRobot)}{t("Return to agent")}</button>
@@ -125,8 +156,8 @@ export function AgentLive({ client, size = "full", actions = 3, onTakeControl }:
             <strong className="ellipsis">{client.name}</strong>
             <span className="ellipsis">{last ? `${translateModule(last.text)} · ${since(last.at, now)}` : stateLabel(client.state)}</span>
           </div>
-          <StatePill state={client.state} />
-          <button type="button" className="icon-btn ag-tiny-btn" aria-label={label} title={label} disabled={!!busy || client.state === "idle"}
+          <StatePill state={client.state} noDisplay={noDisplay} />
+          <button type="button" className="icon-btn ag-tiny-btn" aria-label={label} title={label} disabled={!!busy || client.state === "idle" || noDisplay}
             onClick={() => act("tiny", run)}>{busy ? <IconLoader2 size={16} className="spin" /> : <I size={16} />}</button>
         </div>
       </div>
@@ -140,8 +171,9 @@ export function AgentLive({ client, size = "full", actions = 3, onTakeControl }:
           <strong className="ellipsis">{client.name}</strong>
           <span className="ellipsis">{client.reason && client.state !== "paused" && client.state !== "control" ? translateModule(client.reason) : client.task ?? (client.version ? t("Version {v}", { v: client.version }) : "")}</span>
         </div>
-        <StatePill state={client.state} />
+        <StatePill state={client.state} noDisplay={noDisplay} />
       </div>
+      {size === "full" && <NoDisplayNotice machine={client.machine} />}
       {client.maxSteps > 0 && <Budget c={client} />}
       {actions > 0 && (
         client.actions.length
@@ -489,10 +521,14 @@ export function MachineAgent({ machine }: { machine: string }) {
     <>
       <div className="card ag-machine-live">
         {client ? <AgentLive client={client} actions={5} /> : (
-          <div className="empty-small">
-            <span className="empty-small-icon"><IconRobot size={18} /></span>
-            <strong>{t("No agent on this machine")}</strong>
-          </div>
+          // No session, but the machine's own agent may already be blind: said here before an agent tries.
+          <>
+            <div className="empty-small">
+              <span className="empty-small-icon"><IconRobot size={18} /></span>
+              <strong>{t("No agent on this machine")}</strong>
+            </div>
+            <NoDisplayNotice machine={machine} />
+          </>
         )}
       </div>
       {requests.length > 0 && <div className="card ag-requests">{requests.map((r) => <RequestRow key={r.id} r={r} showMachine={false} />)}</div>}
