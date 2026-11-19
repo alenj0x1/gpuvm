@@ -36,6 +36,21 @@ fn main() {
             }
             println!("active console session: {:?}", session::active_session());
         }
+        Some("diag") => {
+            // what the helper would see in this session: displays, the target one, a real WGC capture's size
+            console();
+            unsafe {
+                let _ = windows::Win32::UI::HiDpi::SetProcessDpiAwarenessContext(windows::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+                let _ = windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_MULTITHREADED);
+            }
+            let cap = capture::screen_capture(&serde_json::json!({"format": "png"}));
+            let r = serde_json::json!({
+                "displays": capture::displays_json(),
+                "outputRect": capture::output_rect().map(|r| vec![r.left, r.top, r.right - r.left, r.bottom - r.top]),
+                "capture": match &cap { Ok((v, b)) => serde_json::json!({"result": v, "bytes": b.as_ref().map(|b| b.len())}), Err((c, m)) => serde_json::json!({"error": c, "message": m}) },
+            });
+            println!("{r}");
+        }
         Some("version") => {
             console();
             println!("{}", util::VERSION);
