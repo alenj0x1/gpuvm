@@ -401,7 +401,7 @@ fn handle(pipe: HANDLE) {
         // An agent session (the MCP server acting for a model) may run only some commands, some with the person's
         // approval; the person's app is never limited here.
         let mut request = request;
-        let mut claim = match crate::agent::gate(&mut request, client.pid) {
+        let mut claim = match crate::agent::gate(&mut request, client.pid, agent_ctx.is_agent_pipe()) {
             Ok(c) => c,
             Err(e) => {
                 send(&mut out, &json!({ "id": id, "type": "result", "ok": false, "error": e.message, "code": e.code }));
