@@ -214,3 +214,34 @@ nothing and can't hurt.
 layout applied before hello). On 2 of 5 (both early, 08:45 and 08:50) the agent reported NO display for 60 s after
 the install's restart, while a diagnosis copy in between was fine; the failing runs had no dump (added afterwards):
 open, intermittent.
+
+### Copies with no display: the VM's GPU partition, not the helper (Nov 19)
+
+agent-broker saw 4 of 13 copies of agent-tpl whose agent reported `displays: []` for good. Reproduced the claim way
+(copy, start, Install-GpuVMAgent with its in-guest restart): 2 of 10 (`race-repro.ps1`), then 2 of 10, 2 of 14, 1 of 8,
+2 of 9 in the later runs, about 1 copy in 5. A first repro run said 0 of 8: it skipped the install + restart and
+counted `@($null)` as a display (tool-pitfalls 9h, lab-craft rule added).
+
+What a bad copy looks like (`ccd-test.ps1`, harness `guest-ccd`, as the agent user in its console session):
+- the helper is in `WinSta0\Default`, session 1 = the console session, local (protocol 0, SM_REMOTESESSION 0), dwm,
+  explorer, sihost running, both monitors OK in PnP, display-off timeout 0 (never);
+- Windows gives the session NO display path at all: QDC_ONLY_ACTIVE_PATHS and even QDC_ALL_PATHS size 0 (query 87),
+  both display devices detached (flags 0x0), a 1024x768 stand-in desktop with 1 "monitor";
+- the agent never got to touch it: its first layout call already found 0 paths (helper's first run on that boot).
+
+What did NOT bring it back, each on 2 bad copies: SDC_TOPOLOGY_EXTEND (once, or every 3 s for 30 s: 2 of 4 copies
+came back, 2 never did), waking the display (ES_DISPLAY_REQUIRED + a 1 px mouse move), restarting the virtual display
+device, restarting the Hyper-V video device, `tscon` to the console, signing out (autologon did not sign in again),
+restarting Windows (Restart-VM). Good vs bad registry (GraphicsDrivers), devices and System/DxgKrnl logs
+(`diff-test.ps1`): the same, except the GPU-P device's instance id (new on every copy).
+
+What did (`readd-test.ps1`): removing and adding the GPU partition adapter on the host (2 of 2), and the control
+alone, a cold stop + start of the VM with the same adapter (2 of 2); both stayed good across a restart. So the state
+lives in the running VM's GPU partition and only a power cycle resets it; in-guest restarts and Restart-VM keep it.
+
+Fix (`coldcycle-test.ps1`, `out/coldcycle-20261119-115734.json`): the claim path plus Stop-VM + Start-VM once the
+agent's install restarted: 12 of 12 copies had their display 12-23 s after the start (stop 4-9 s, cycle 17-28 s);
+in the same run 2 of 12 had none before the cycle. The repair belongs to the host (Install-GpuVMAgent / the broker:
+shut Windows down instead of restarting it from inside, then start the VM), not to the agent. The agent 0.4.5 says it
+plainly: `agent.info.noDisplay` is a reason when QDC_ALL_PATHS is empty (null otherwise), and the periodic layout
+error is logged once per new error instead of every 5 s.

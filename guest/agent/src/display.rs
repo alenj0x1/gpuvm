@@ -200,6 +200,17 @@ pub fn diag() -> Value {
     json!({"devices": devs, "ccd": qdc, "desktop": station, "lastEnsure": LAST_ENSURE.lock().unwrap().clone()})
 }
 
+/// Why this session has no display at all, or None. Lab 051: on ~1 of 5 copies Windows gave the session no display
+/// path whatsoever (not even an inactive one: QDC_ALL_PATHS is empty), every display device detached, a 1024x768
+/// stand-in desktop. Nothing inside the guest brought it back (layout calls, device restarts, sign-out, restarting
+/// Windows, Restart-VM); turning the VM off and on did, every time. So the agent says so plainly and the host repairs.
+pub fn no_display() -> Option<&'static str> {
+    use windows::Win32::Devices::Display::*;
+    let (mut np, mut nm) = (0u32, 0u32);
+    let r = unsafe { GetDisplayConfigBufferSizes(QDC_ALL_PATHS, &mut np, &mut nm) };
+    (r.is_ok() && np == 0).then_some("Windows gives this machine no display path at all; turning the VM off and on again (not a restart) brings it back")
+}
+
 /// True when the virtual display (if any) is the only attached display, at 0,0.
 pub fn settled() -> bool {
     let devs = devices();

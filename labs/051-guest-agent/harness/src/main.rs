@@ -4,6 +4,7 @@
 //!   harness serve --secret <file> --vm <guid> --name <vm> --out <dir> [--scenarios a,b,c]
 //!   harness guest-system-window <exe>   (inside the guest, as SYSTEM)
 //!   harness guest-errorbox              (inside the guest, as the agent user)
+mod ccd;
 mod guestside;
 
 use gpuvm_agent::hv::*;
@@ -887,6 +888,7 @@ fn main() {
         Some("serve") => serve(&a),
         Some("guest-system-window") => guestside::system_window(a.get(2).map(String::as_str).unwrap_or("C:\\Windows\\System32\\notepad.exe")),
         Some("guest-errorbox") => guestside::errorbox(),
+        Some("guest-ccd") => ccd::run(a.get(2).map(String::as_str).unwrap_or("probe")),
         Some("guest-open-helper") => guestside::open_helper(),
         Some("guest-dup-refresh") => guestside::dup_refresh(a.get(2).and_then(|v| v.parse().ok()).unwrap_or(20)),
         Some("guest-window-rect") => guestside::window_rect(a.get(2).map(String::as_str).unwrap_or("OSKMainClass")),
