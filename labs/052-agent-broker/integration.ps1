@@ -1,13 +1,13 @@
 # Lab 052, real VMs with the INSTALLED GpuVM (service broker + module + guest agent from the same build), all under
 # one hold of the shared lab lock:
-#   1. agent051 (Off, no secret): start, Install-GpuVMAgent (full), again (same version: fast path), the display the
-#      agent sees and Set-GpuVMUse's 1280x800 (the 1024x768 question).
-#   2. run.ps1 -Real on agent051: latency, parallel, timeout, attacks (stub copied into the guest), offers, restart.
+#   1. A disposable copy of agent-tpl (2 GB): Install-GpuVMAgent (the template has the agent: fast path), again, the
+#      display the agent sees and Set-GpuVMUse's 1280x800 (the 1024x768 question).
+#   2. run.ps1 -Real on it: latency, parallel, timeout, attacks (stub copied into the guest), offers, restart.
 #   3. Service restarts: how fast the real agent is back.
-#   4. agent051 off again; two small disposables of agent-tpl at once (New-GpuVM -Use agent: create, wait, install),
-#      requests to both in parallel, each answer checked against its machine; then both deleted.
-# Run elevated. Nothing of another session's VM is touched; agent051 ends Off as it was.
-param([string]$Session = 'agent-broker', [string]$Name = 'agent051', [string]$Template = 'agent-tpl', [int]$Rounds = 2,
+#   4. A second copy made with New-GpuVM -Use agent (create, wait, install), requests to both in parallel, each
+#      machine's log holding only its own requests.
+# Run elevated. Only the copies this script makes are touched, and they are deleted at the end.
+param([string]$Session = 'agent-broker', [string]$Name = 'agent052a', [string]$Template = 'agent-tpl', [int]$Rounds = 2,
     [string[]]$Steps = @('install', 'parts', 'service', 'two'))
 $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
@@ -32,6 +32,18 @@ try {
     while (-not $(try { (Get-GpuVMAgentBroker).listening } catch { $false }) -and $sw.Elapsed.TotalSeconds -lt 15) { Start-Sleep -Milliseconds 100 }
     $result['broker'] = Get-GpuVMAgentBroker
     Line "broker: $($result['broker'] | ConvertTo-Json -Compress)"
+    # The machine under test: a disposable copy of the template, 2 GB (4 GB if the profile refuses 2).
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    try { New-GpuVM -Name $Name -Template $Template -Disposable -Override @{ vm = @{ memoryGB = 2 } } | Out-Null }
+    catch {
+        Line "2 GB copy refused ($($_.Exception.Message)); default memory"
+        if (Get-VM -Name $Name -ErrorAction SilentlyContinue) { Stop-VM -Name $Name -TurnOff -Force -ErrorAction SilentlyContinue; Remove-GpuVM -Name $Name -DeleteDisk -Confirm:$false }
+        New-GpuVM -Name $Name -Template $Template -Disposable | Out-Null
+    }
+    if (-not $made.Contains($Name)) { $made.Add($Name) }
+    $result['cloneMs'] = [math]::Round($sw.Elapsed.TotalMilliseconds)
+    $result['cloneMemoryGB'] = (Get-VM -Name $Name).MemoryStartup / 1GB
+    Line "copy $Name of $Template made in $($result['cloneMs']) ms ($($result['cloneMemoryGB']) GB)"
     $cred = (Get-LatencyVM -Name $Name).Guest
     $guest = { param([scriptblock]$b, $a = @()) Invoke-Command -VMName $Name -Credential $cred -ErrorAction Stop -ScriptBlock $b -ArgumentList $a }
     function Wait-Ready([string]$vm, [double]$sec, [long]$after = 0) {
@@ -46,7 +58,6 @@ try {
 
     if ('install' -in $Steps) {
         $sw = [Diagnostics.Stopwatch]::StartNew()
-        if ((Get-VM -Name $Name).State -ne 'Running') { Start-VM -Name $Name }
         while ($sw.Elapsed.TotalMinutes -lt 10) { try { & $guest { 1 } | Out-Null; break } catch { Start-Sleep -Milliseconds 500 } }
         $result['psDirectAfterStartMs'] = [math]::Round($sw.Elapsed.TotalMilliseconds)
         Line "PowerShell Direct after $($result['psDirectAfterStartMs']) ms"
@@ -107,12 +118,10 @@ try {
     }
 
     if ('two' -in $Steps) {
-        # agent051 goes off (as it was) so two small copies fit in memory.
-        try { & $guest { Stop-Computer -Force } } catch { }
-        $w = [Diagnostics.Stopwatch]::StartNew()
-        while ((Get-VM -Name $Name).State -ne 'Off' -and $w.Elapsed.TotalSeconds -lt 120) { Start-Sleep -Seconds 1 }
-        if ((Get-VM -Name $Name).State -ne 'Off') { Stop-VM -Name $Name -Force }
-        $copies = foreach ($n in 'agent052a', 'agent052b') {
+        # The first copy is already up with its agent; the second one comes with New-GpuVM -Use agent.
+        $first = @(Get-GpuVMAgent -Name $Name)[0]
+        $copies = @([ordered]@{ name = $Name; vmId = $first.vmId; state = $first.state; version = $first.version })
+        $copies += foreach ($n in @('agent052b')) {
             $w = [Diagnostics.Stopwatch]::StartNew()
             try { New-GpuVM -Name $n -Template $Template -Disposable -Override @{ vm = @{ memoryGB = 2 } } -Use agent | Out-Null }
             catch { Line "$n : $($_.Exception.Message)"; if (Get-VM -Name $n -ErrorAction SilentlyContinue) { $made.Add($n) }; continue }
