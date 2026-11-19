@@ -657,14 +657,17 @@ function Header({ vm, vms = [], busy, variant, startJob, run, onRemoved, onRenam
       <button type="button" className="pattern-btn" title={t("Otro ícono")} aria-label={t("Otro ícono")} onClick={onPattern}>
         <MachineIcon name={vm.name} variant={variant} size={48} radius={12} />
       </button>
-      <div style={{ minWidth: 0 }}>
+      <div className="head-text">
         <h1>{vm.name}</h1>
         <div className="meta">
           <span className="state-pill"><span className={`dot ${vm.state}`} />{stateText(vm.state)}</span>
-          {/* What the machine is, as small labeled pieces: its Windows, its GPU and the profile it was made from. */}
-          {vm.edition && <span className="spec-chip" title="Windows"><IconBrandWindows size={13} />{vm.edition}</span>}
-          {vm.hasGpu && vm.gpuName && <span className="spec-chip" title="GPU"><IconBolt size={13} />{vm.gpuName.replace("NVIDIA GeForce ", "")}</span>}
-          {vm.profile && <span className="spec-chip" title={t("Perfil")}><IconLayoutGrid size={13} />{profileLabel(vm.profile)}</span>}
+          {/* What the machine is, as small labeled pieces: its Windows, its GPU and the profile it was made from. In a
+              narrow header they move to a row of their own under the icon and the name. */}
+          <span className="specs">
+            {vm.edition && <span className="spec-chip" title="Windows"><IconBrandWindows size={13} />{vm.edition}</span>}
+            {vm.hasGpu && vm.gpuName && <span className="spec-chip" title="GPU"><IconBolt size={13} />{vm.gpuName.replace("NVIDIA GeForce ", "")}</span>}
+            {vm.profile && <span className="spec-chip" title={t("Perfil")}><IconLayoutGrid size={13} />{profileLabel(vm.profile)}</span>}
+          </span>
           {short && <span className="warn-text">{t("Le faltan {gb} GB de memoria libre", { gb: vm.missingGB.toLocaleString(locale()) })}</span>}
         </div>
       </div>
