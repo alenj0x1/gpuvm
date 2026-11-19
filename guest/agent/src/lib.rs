@@ -7,6 +7,7 @@ pub mod secret;
 pub mod session;
 pub mod service;
 pub mod capture;
+pub mod display;
 pub mod state;
 pub mod input;
 pub mod uia;

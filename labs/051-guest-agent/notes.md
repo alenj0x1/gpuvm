@@ -127,3 +127,15 @@ The agent adds a SYSTEM service and a standard user to the guest, never touches 
 the agent's password only as the autologon LSA secret (the host has the copy, DPAPI), and the person's previous
 autologon is restored exactly. Everything ran in a disposable VM; the host only got the service GUID registered
 (removed again: `service.ps1 -Remove`).
+
+### Agent-mode displays (agent 0.3.3, `display-test.ps1`, disposable from agent-tpl, no viewer connected)
+
+A GPU-P guest has an extra "Microsoft Basic Display" (1024x768) that is the PRIMARY display, and GpuVM's virtual
+display is a secondary 800x600 until a viewer connects. With 0.3.2 Notepad opened by the agent landed on the basic
+display at x = -972 relative to the agent's screen: only its taskbar button was visible in the screenshot
+(`out/display-20261119-012802/before.png`). 0.3.3's session helper makes the virtual display the only (hence primary)
+display at startup and re-checks every 5 s (GpuVM's own MakeOnlyDisplay technique), and raises it to the first size
+it offers of 1280x800, 1366x768, ... only while it is below 1280x720 (a viewer's size is never overridden). After:
+one display, 1366x768 (the virtual display offers no 1280x800), Notepad at [78,78] fully inside the screenshot
+(`after.png`). First version re-applied 1366x768 every 5 s (768 < 800): fixed, a change makes Sunshine re-test its
+encoders. Template build with the installed broker: clone ready + agent connected in 37-38 s.

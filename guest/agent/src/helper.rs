@@ -121,6 +121,14 @@ fn events(out: Out) {
             fg_dirty = false;
             fg_sent = Instant::now();
         }
+        // every 5 s: a display that came back (Windows, a driver, a disconnect) goes off again
+        if tick % 50 == 25 && desk == "default" {
+            match crate::display::ensure() {
+                Ok(Some(did)) => hlog(&out, &format!("displays arranged again: {did}")),
+                Ok(None) => {}
+                Err(e) => hlog(&out, &format!("displays: {e}")),
+            }
+        }
         if tick % 5 == 0 {
             let now = state::error_boxes();
             for (hw, title) in &now {
@@ -157,6 +165,13 @@ pub fn run() {
     };
     let me = info();
     send(&out, &json!({"t": "hello", "user": me["user"], "session": me["session"], "integrity": me["integrity"]}), None);
+    // the virtual display alone and primary, before anything is opened (agent machines only: this helper)
+    match crate::display::ensure() {
+        Ok(Some(did)) => hlog(&out, &format!("displays arranged: {did}")),
+        Ok(None) => {}
+        Err(e) => hlog(&out, &format!("displays: {e}")),
+    }
+    let me = info();
     hlog(&out, &format!("helper {} up: {}", std::process::id(), me));
     let ev = out.clone();
     std::thread::spawn(move || events(ev));

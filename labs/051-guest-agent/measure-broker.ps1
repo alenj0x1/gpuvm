@@ -50,7 +50,8 @@ try {
         $inst = Install-GpuVMAgent -Name $Name
         Rec 'install' $inst
     } else {
-        New-GpuVM -Name $Name -Template $Template -Disposable -Use agent -Confirm:$false | Out-Null
+        # 4 GB / 4 threads like the other test VMs (the default profile asks 8 GB and doesn't fit next to others)
+        New-GpuVM -Name $Name -Template $Template -Disposable -Use agent -Override @{ vm = @{ memoryGB = 4; cpu = @{ count = 4 } } } -Confirm:$false | Out-Null
     }
     $created = $sw.Elapsed.TotalSeconds
     do {
