@@ -71,6 +71,26 @@ busy: the tails, not the medians, carry that).
   open (error 32), and the copy stayed unmarked in Downloads. Now the handle is closed first, and a file that can't be
   marked is deleted.
 
+## The real GpuVM service, release build (`real-service.ps1`, under the lab lock, original put back after)
+
+This branch's `gpuvm-host.exe` replaced the installed one for one run; `gpuvm-host install` (what the installer
+runs) registered the service id (`ElementName = GpuVM agent`); the service listened 40 ms after start.
+
+| through the module pipe, loopback stub (n=120, 2 rounds) | p50 | p95 | p99 |
+| --- | --- | --- | --- |
+| pipe alone (instrument) | 0.07 ms | 0.13 ms | 0.20 ms |
+| agent.info, raw line (broker's share 0.26 ms) | 0.94 ms | 1.38 ms | 2.34 ms |
+| agent.info through the cmdlet | 1.6 ms | 2.2 ms | 3.5 ms |
+| screen.capture 257 KB | 2.2 ms | 2.8 ms | 3.4 ms |
+| screen.capture 1 MB | 4.3 ms | 5.7 ms | 6.7 ms |
+| screen.capture 4 MB | 11.5 ms | 13.4 ms | 15.4 ms |
+
+- 8 clients in parallel: **1 667 req/s**, 0 failed, p50 3.2 ms, p95 6.2 ms.
+- The 18 attack cases (with `bad-blob-hash`: a blob that isn't the one its signed frame announces) gave the same
+  answers as the debug build; frame flood closed after 2 006 frames (9.8 ms).
+- Service restarts (`Restart-Service GpuVM`, 3 times): the agent was connected again 268, 723 and 706 ms after the
+  restart began (the restart itself 11-525 ms; the agent redials every 200 ms).
+
 ## Results in a VM
 
 (pending: agent052 is installing Windows)
