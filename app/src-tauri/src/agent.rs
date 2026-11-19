@@ -31,7 +31,6 @@ const ARM: Duration = Duration::from_millis(700);
 
 /// Take control with the mouse or keyboard (true) or only with the button (false).
 static TAKE_ON_INPUT: AtomicBool = AtomicBool::new(true);
-static TIMEOUT_S: AtomicU32 = AtomicU32::new(120);
 
 struct Docked {
     vm: String,
@@ -152,7 +151,7 @@ pub fn start(app: AppHandle) {
             // An agent holding a machine counts even while idle (thinking): its viewer must be watched without lag.
             let busy = lock(&CLIENTS).iter().any(|c| c["state"].as_str().is_some_and(|s| s != "idle" && s != "stopped") || holds(c))
                 // A delivery still copying: its result shows without waiting for the slow poll.
-                || lock(&COPIES).as_ref().is_some_and(|c| c.values().any(|(_, done)| done.is_none()));
+                || lock(&COPIES).as_ref().is_some_and(|c| c.values().any(|x| x.state == "copying" || x.state == "pending"));
             tokio::time::sleep(Duration::from_millis(if viewing && busy { 1000 } else if busy { 2000 } else { 5000 })).await;
         }
     });
@@ -230,25 +229,46 @@ fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Ve
         None => hide_dock(app),
     }
 
-    // A notification for each new request whose machine isn't in view (once each; not for the docked one).
+    // A Windows notification for every new request (once each), wherever GpuVM is: in front, minimized, in the tray or
+    // in notices-only mode. Only the one dropping as the dock over the picture the person looks at goes without.
+    // (agent-mcp, 2026-11-19: a request that came while GpuVM was in front was marked as announced without a
+    // notification, and with GpuVM then in the tray the person never learned of it.)
     let shown_id = lock(&DOCKED).as_ref().map(|d| d.request["id"].clone());
-    let mut notified = lock(&NOTIFIED);
-    let notified = notified.get_or_insert_with(HashSet::new);
-    for r in &waiting {
-        let id = r["id"].as_str().unwrap_or("").to_string();
-        if id.is_empty() || notified.contains(&id) || Some(&r["id"]) == shown_id.as_ref() {
-            continue;
-        }
-        notified.insert(id);
-        // What only the person can do is always announced (the person may be in GpuVM but not looking at that machine);
-        // a request to answer, when GpuVM isn't in front.
-        if r["human"].as_bool() == Some(true) || !main_in_front(app) {
+    {
+        let mut notified = lock(&NOTIFIED);
+        let notified = notified.get_or_insert_with(HashSet::new);
+        for r in &waiting {
+            let id = r["id"].as_str().unwrap_or("").to_string();
+            if id.is_empty() || notified.contains(&id) || Some(&r["id"]) == shown_id.as_ref() {
+                continue;
+            }
+            notified.insert(id);
             notify(app, r);
         }
+        let live: HashSet<String> = waiting.iter().filter_map(|r| r["id"].as_str().map(str::to_string)).collect();
+        notified.retain(|id| live.contains(id));
+        lock(&ANSWERED).retain(|id| live.contains(id));
     }
-    let live: HashSet<String> = waiting.iter().filter_map(|r| r["id"].as_str().map(str::to_string)).collect();
-    notified.retain(|id| live.contains(id));
-    lock(&ANSWERED).retain(|id| live.contains(id));
+    // The mark: the tray icon (a dot and the count in its tooltip) and, with the window out of front, its taskbar
+    // button flashing once per new request.
+    mark_waiting(app, waiting.len());
+}
+
+/// How many requests waited at the last poll (the tray's mark changes only when it changes).
+static WAITING: AtomicU32 = AtomicU32::new(0);
+
+fn mark_waiting(app: &AppHandle, count: usize) {
+    let count = count as u32;
+    let before = WAITING.swap(count, Ordering::Relaxed);
+    if before == count {
+        return;
+    }
+    crate::set_tray_waiting(app, count);
+    if count > before && !main_in_front(app) {
+        if let Some(w) = app.get_webview_window("main") {
+            let _ = w.request_user_attention(Some(tauri::UserAttentionType::Informational));
+        }
+    }
 }
 
 /// The agent holds a machine and may act on it now or at any moment (working, thinking between steps, or waiting for
@@ -573,9 +593,17 @@ pub fn on_viewer(app: &AppHandle, vm: &str, msg: &Value) {
 
 /* ---------- deliveries being copied ---------- */
 
-/// Deliveries seen copying (offer id -> machine, and when it finished): Resolve-GpuVMAgentOffer answers "copying" at
-/// once and the copy ends in the background, accepted or failed (Get-GpuVMAgentOffer).
-static COPIES: Mutex<Option<HashMap<String, (String, Option<Instant>)>>> = Mutex::new(None);
+/// Deliveries followed (offer id -> machine, the state the last poll saw, and when its result went up): Resolve-
+/// GpuVMAgentOffer answers "copying" and the copy ends in the background, accepted or failed (Get-GpuVMAgentOffer).
+/// A small file is often done before the next poll (lab 054: pending, then accepted), so the result shows for any
+/// offer that leaves pending or copying, not only for one seen copying.
+static COPIES: Mutex<Option<HashMap<String, Delivery>>> = Mutex::new(None);
+
+struct Delivery {
+    vm: String,
+    state: String,
+    shown_at: Option<Instant>,
+}
 /// How long the result stays on the notch.
 const COPY_RESULT: Duration = Duration::from_secs(6);
 
@@ -588,35 +616,49 @@ fn copy_notice(offer: &Value) -> Option<Value> {
     Some(json!({ "kind": "copy", "state": state, "name": offer["name"], "error": offer["error"] }))
 }
 
+/// What the notch does about one delivery between two polls: show "copying", show its result, or nothing.
+fn copy_step(before: Option<&str>, now: &str) -> Option<&'static str> {
+    match (before, now) {
+        (Some("copying"), "copying") => None,
+        (_, "copying") => Some("copying"),
+        (Some("pending" | "copying"), "accepted" | "failed") => Some("result"),
+        _ => None,
+    }
+}
+
 fn sync_copies(app: &AppHandle, offers: &[Value]) {
     let mut copies = lock(&COPIES);
     let copies = copies.get_or_insert_with(HashMap::new);
     for o in offers {
-        let (Some(id), Some(vm)) = (o["id"].as_str(), o["machine"].as_str()) else { continue };
+        let (Some(id), Some(vm)) = (o["id"].as_str(), o["machine"].as_str().filter(|m| !m.is_empty())) else { continue };
         let state = o["state"].as_str().unwrap_or("");
+        let before = copies.get(id).map(|c| c.state.clone());
         let key = format!("copy:{id}");
-        match (state, copies.get(id).cloned()) {
-            // Copying: shown on its machine once (the notch isn't redrawn every poll).
-            ("copying", None) => {
-                copies.insert(id.to_string(), (vm.to_string(), None));
+        match copy_step(before.as_deref(), state) {
+            Some("copying") => crate::status::set(app, vm, &key, copy_notice(o)),
+            Some(_) => {
                 crate::status::set(app, vm, &key, copy_notice(o));
+                copies.insert(id.to_string(), Delivery { vm: vm.to_string(), state: state.to_string(), shown_at: Some(Instant::now()) });
+                continue;
             }
-            // It finished while followed: its result, for a few seconds.
-            ("accepted" | "failed", Some((_, None))) => {
-                copies.insert(id.to_string(), (vm.to_string(), Some(Instant::now())));
-                crate::status::set(app, vm, &key, copy_notice(o));
-            }
-            _ => {}
+            None => {}
         }
+        let shown_at = copies.get(id).and_then(|c| c.shown_at);
+        copies.insert(id.to_string(), Delivery { vm: vm.to_string(), state: state.to_string(), shown_at });
     }
     // Results shown long enough, and deliveries no longer listed, leave the notch.
     let live: HashSet<&str> = offers.iter().filter_map(|o| o["id"].as_str()).collect();
-    let gone: Vec<(String, String)> = copies.iter()
-        .filter(|(id, (_, done))| !live.contains(id.as_str()) || done.is_some_and(|t| t.elapsed() > COPY_RESULT))
-        .map(|(id, (vm, _))| (id.clone(), vm.clone())).collect();
-    for (id, vm) in gone {
-        copies.remove(&id);
+    let gone: Vec<(String, String, bool)> = copies.iter()
+        .filter(|(id, c)| !live.contains(id.as_str()) || c.shown_at.is_some_and(|t| t.elapsed() > COPY_RESULT))
+        .map(|(id, c)| (id.clone(), c.vm.clone(), live.contains(id.as_str()))).collect();
+    for (id, vm, still_listed) in gone {
         crate::status::set(app, &vm, &format!("copy:{id}"), None);
+        if still_listed {
+            // Done showing; remembered as finished so it never shows again.
+            if let Some(c) = copies.get_mut(&id) { c.shown_at = None; c.state = "done".into(); }
+        } else {
+            copies.remove(&id);
+        }
     }
 }
 
@@ -765,15 +807,11 @@ pub fn recordings() -> Value {
 
 /* ---------- preferences ---------- */
 
-/// Settings › Agents: how the person takes control, and how long a request waits (the broker refuses it after).
+/// Settings › Agents: how the person takes control. The time to answer is not here: it is the service's own setting,
+/// written only when the person moves it in Settings (this ran at every start and once overwrote it with a stale 30 s).
 #[tauri::command]
-pub async fn set_agent_prefs(app: AppHandle, take_control: String, approval_timeout: u32) -> Result<(), String> {
+pub fn set_agent_prefs(take_control: String) -> Result<(), String> {
     TAKE_ON_INPUT.store(take_control != "button", Ordering::Relaxed);
-    let timeout = approval_timeout.clamp(15, 3600);
-    if TIMEOUT_S.swap(timeout, Ordering::Relaxed) != timeout {
-        // A module without the broker yet just doesn't know it; the app keeps working.
-        let _ = call(&app, "Set-GpuVMAgentSettings", json!({ "ApprovalTimeoutSec": timeout })).await;
-    }
     if take_control == "button" {
         // Nothing to report any more.
         if let Some(w) = lock(&WATCHING).take() {
@@ -820,8 +858,11 @@ fn notify(app: &AppHandle, request: &Value) {
     };
     let view = tr("View", "Ver");
     let app2 = app.clone();
+    // View: what only the person can do is done in the machine (its picture); a request to answer opens GpuVM on
+    // Agents, where its card waits with Allow and Refuse (the dock drops there too once its picture is open).
+    let target = if human { vm } else { String::new() };
     let _ = app.run_on_main_thread(move || {
-        if let Err(e) = toast::show(&title, &body, &view, move || open_viewer(&app2, &vm)) {
+        if let Err(e) = toast::show(&title, &body, &view, move || open_viewer(&app2, &target)) {
             eprintln!("agent notification: {e}");
         }
     });
@@ -974,6 +1015,14 @@ mod tests {
         for s in ["pending", "refused", "expired", ""] {
             assert!(copy_notice(&o(s)).is_none(), "{s}");
         }
+        // A small file done between two polls still shows its result; a finished one shows nothing again.
+        assert_eq!(copy_step(Some("pending"), "accepted"), Some("result"));
+        assert_eq!(copy_step(Some("pending"), "copying"), Some("copying"));
+        assert_eq!(copy_step(Some("copying"), "copying"), None);
+        assert_eq!(copy_step(Some("copying"), "failed"), Some("result"));
+        assert_eq!(copy_step(None, "accepted"), None); // already finished when GpuVM started
+        assert_eq!(copy_step(Some("done"), "accepted"), None);
+        assert_eq!(copy_step(Some("pending"), "refused"), None);
     }
 
     #[test]

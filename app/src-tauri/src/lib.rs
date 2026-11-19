@@ -309,6 +309,14 @@ fn view_arg(args: &[String]) -> Option<String> {
 }
 
 
+/// Lab switches read once from GpuVM's environment (a lab starts it with them; nobody else sets them). Only
+/// `noScreenRefresh` (lab 054): agent machines don't get screen.refresh when their stream comes up, to measure what it
+/// changes. Nothing here widens what the app can do.
+#[tauri::command]
+fn lab_flags() -> Value {
+    json!({ "noScreenRefresh": std::env::var("GPUVM_LAB_NO_SCREEN_REFRESH").is_ok_and(|v| v == "1") })
+}
+
 /// The app's language for the few texts drawn by Rust (the tray menu): false Spanish, true English.
 pub(crate) static ENGLISH: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -384,7 +392,63 @@ fn ensure_tray(app: &AppHandle, notices: bool) -> tauri::Result<()> {
         tray = tray.icon(icon.clone());
     }
     tray.build(app)?;
+    apply_tray_mark(app);
     Ok(())
+}
+
+/// How many agents' requests wait for the person (agent.rs): the tray icon carries a dot and says how many.
+static TRAY_WAITING: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+pub(crate) fn set_tray_waiting(app: &AppHandle, count: u32) {
+    TRAY_WAITING.store(count, Ordering::Relaxed);
+    apply_tray_mark(app);
+}
+
+fn apply_tray_mark(app: &AppHandle) {
+    let Some(tray) = app.tray_by_id(TRAY_ID) else { return };
+    let Some(icon) = app.default_window_icon() else { return };
+    let count = TRAY_WAITING.load(Ordering::Relaxed);
+    let en = ENGLISH.load(Ordering::Relaxed);
+    if count == 0 {
+        let _ = tray.set_icon(Some(icon.clone()));
+        let base = if notices::active() { if en { "GpuVM · Watching administrator prompts" } else { "GpuVM · Vigilando avisos de administrador" } } else { "GpuVM" };
+        let _ = tray.set_tooltip(Some(base));
+        return;
+    }
+    let marked = tauri::image::Image::new_owned(with_dot(icon.rgba(), icon.width(), icon.height()), icon.width(), icon.height());
+    let _ = tray.set_icon(Some(marked));
+    let text = match (count, en) {
+        (1, true) => "GpuVM · An agent waits for you".to_string(),
+        (n, true) => format!("GpuVM · {n} agent requests wait for you"),
+        (1, false) => "GpuVM · Un agente te espera".to_string(),
+        (n, false) => format!("GpuVM · {n} solicitudes de agentes te esperan"),
+    };
+    let _ = tray.set_tooltip(Some(text));
+}
+
+/// The icon with a round amber dot in its bottom-right corner, ringed in dark so it reads on any taskbar.
+fn with_dot(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
+    let mut out = rgba.to_vec();
+    let size = width.min(height) as f32;
+    let r = size * 0.24;
+    let (cx, cy) = (width as f32 - r - 0.5, height as f32 - r - 0.5);
+    for y in 0..height {
+        for x in 0..width {
+            let d = ((x as f32 + 0.5 - cx).powi(2) + (y as f32 + 0.5 - cy).powi(2)).sqrt();
+            let i = ((y * width + x) * 4) as usize;
+            if i + 3 >= out.len() {
+                continue;
+            }
+            let px = if d <= r - size * 0.06 { Some([0xE7, 0xB4, 0x5E]) } else if d <= r { Some([0x1C, 0x1C, 0x1C]) } else { None };
+            if let Some([red, g, b]) = px {
+                out[i] = red;
+                out[i + 1] = g;
+                out[i + 2] = b;
+                out[i + 3] = 0xFF;
+            }
+        }
+    }
+    out
 }
 
 const TRAY_ID: &str = "main";
@@ -479,7 +543,7 @@ pub fn run() {
             clipboard::start(app.handle());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![ps, job, prompt::admin_prompts, prompt::card_answer, dock::dock_prompt, dock::dock_answer, agent::agent_dock_request, agent::agent_dock_answer, agent::agent_dock_resume, status::status_resize, status::status_state, status::status_action, status::set_status_prefs, agent::set_agent_prefs, agent::mcp_exe_path, agent::agent_recordings, agent::pending_agent_view, agent::agent_view_taken, viewer::viewer_send, viewer::viewer_is_open, viewer::viewer_home, viewer::viewer_show, viewer::viewer_list, viewer::viewer_gone, viewer::viewer_reveal, viewer::viewer_covered, overlay::viewer_panel_resize, overlay::viewer_panel_close, overlay::viewer_panel_vm, dropzone::transfer_start, dropzone::transfer_cancel, dropzone::transfer_list, dropzone::viewer_drop_hide, dropzone::viewer_drop_state, clipboard::clipboard_items, clipboard::clipboard_send, clipboard::clipboard_auto, clipboard::clipboard_clear, capture::set_capture_prefs, capture::capture_folders, capture::capture_open, capture::capture_reveal, capture::capture_open_folder, capture::capture_state, capture::capture_get_hevc, open_console, repair_service, relaunch_as_admin, service_status, start_service, stop_service, set_service_mode, set_service_startup, set_close_to_tray, set_stop_vms_on_quit, set_language, notices::set_notices_after_quit])
+        .invoke_handler(tauri::generate_handler![ps, job, prompt::admin_prompts, prompt::card_answer, dock::dock_prompt, dock::dock_answer, agent::agent_dock_request, agent::agent_dock_answer, agent::agent_dock_resume, status::status_resize, status::status_state, status::status_action, status::set_status_prefs, agent::set_agent_prefs, agent::mcp_exe_path, agent::agent_recordings, agent::pending_agent_view, agent::agent_view_taken, lab_flags, viewer::viewer_send, viewer::viewer_is_open, viewer::viewer_home, viewer::viewer_show, viewer::viewer_list, viewer::viewer_gone, viewer::viewer_reveal, viewer::viewer_covered, overlay::viewer_panel_resize, overlay::viewer_panel_close, overlay::viewer_panel_vm, dropzone::transfer_start, dropzone::transfer_cancel, dropzone::transfer_list, dropzone::viewer_drop_hide, dropzone::viewer_drop_state, clipboard::clipboard_items, clipboard::clipboard_send, clipboard::clipboard_auto, clipboard::clipboard_clear, capture::set_capture_prefs, capture::capture_folders, capture::capture_open, capture::capture_reveal, capture::capture_open_folder, capture::capture_state, capture::capture_get_hevc, open_console, repair_service, relaunch_as_admin, service_status, start_service, stop_service, set_service_mode, set_service_startup, set_close_to_tray, set_stop_vms_on_quit, set_language, notices::set_notices_after_quit])
         .build(tauri::generate_context!())
         .expect("failed to start GpuVM")
         .run(|app, event| {
@@ -503,6 +567,24 @@ pub fn run() {
         });
 }
 
+
+#[cfg(test)]
+mod tray_tests {
+    use super::with_dot;
+
+    #[test]
+    fn the_mark_is_a_dot_in_the_corner_and_leaves_the_rest() {
+        let (w, h) = (32u32, 32u32);
+        let icon = vec![10u8; (w * h * 4) as usize];
+        let out = with_dot(&icon, w, h);
+        let px = |x: u32, y: u32| { let i = ((y * w + x) * 4) as usize; [out[i], out[i + 1], out[i + 2], out[i + 3]] };
+        assert_eq!(px(0, 0), [10, 10, 10, 10]); // top-left untouched
+        assert_eq!(px(w - 8, h - 8), [0xE7, 0xB4, 0x5E, 0xFF]); // inside the dot
+        assert_eq!(out.len(), icon.len());
+        // A short buffer never panics.
+        assert_eq!(with_dot(&[0u8; 8], 32, 32).len(), 8);
+    }
+}
 
 #[cfg(test)]
 mod ps_tests {

@@ -41,6 +41,8 @@ const claude = (over: Partial<AgentClient> = {}): AgentClient => ({
 let clients: AgentClient[] = [];
 let requests: AgentRequest[] = [];
 let offers: AgentOffer[] = [];
+/** The service's time to answer (Set-GpuVMAgentSettings keeps it; 10 minutes by default). */
+let approvalTimeoutSec = 600;
 
 const deliver = (id: string, name: string, sizeBytes: number, note: string | null, secondsAgo: number, state: AgentOffer["state"] = "pending", machine = "win-agent"): AgentOffer =>
   ({ id, machine, client: "c1", clientName: "Claude Code", name, sizeBytes, note, createdAt: ago(secondsAgo), state });
@@ -117,8 +119,11 @@ export function agentCommand(cmd: string, args: Record<string, unknown>): unknow
     case "Get-GpuVMAgentClient":
       return clients.map(({ clientApprovals: _, ...c }) => ({ ...c, connectedAt: ms(c.connectedAt),
         actions: c.actions.map((a) => ({ id: a.id, at: ms(a.at), method: a.method, text: a.text, ok: a.ok, code: a.ok ? "ok" : "internal", capture: false })) }));
+    case "Set-GpuVMAgentSettings":
+      if (typeof args.ApprovalTimeoutSec === "number") approvalTimeoutSec = args.ApprovalTimeoutSec;
+      return [];
     case "Get-GpuVMAgentSettings":
-      return [{ maxSteps: 200, maxMinutes: 60, approvalTimeoutSec: 120, clients: Object.fromEntries(clients.filter((c) => c.clientApprovals).map((c) => [c.name, { clientApprovals: true }])) }];
+      return [{ maxSteps: 200, maxMinutes: 60, approvalTimeoutSec, clients: Object.fromEntries(clients.filter((c) => c.clientApprovals).map((c) => [c.name, { clientApprovals: true }])) }];
     case "Get-GpuVMAgentBroker":
       return [{ listening: params.get("broker") !== "blocked", error: params.get("broker") === "blocked" ? "Another program holds the agents' channel." : null, connected: clients.length }];
     case "Get-GpuVMAgentRequest":
