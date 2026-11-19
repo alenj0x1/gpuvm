@@ -28,6 +28,9 @@ function Install-GpuVMAgent {
     $vm = Get-VM -Name $Name -ErrorAction Stop
     if ($vm.State -ne 'Running') { throw "Start '$Name' first: the agent is installed into the running machine." }
     $credential = Get-GpuVMGuestCredential -State $state
+    # An agent machine is isolated on the Default Switch or an internal one (review 2, #3): checked before the guest
+    # gets anything.
+    Assert-AgentSwitch -Name $Name
     if (-not $credential) { throw "GpuVM doesn't know the account of '$Name'. Save it first (Set-GpuVMGuestCredential)." }
     $package = Get-AgentPackage
     $vmId = $vm.Id.Guid.ToLowerInvariant()
@@ -103,9 +106,10 @@ function Install-GpuVMAgent {
         signInAs    = $User
         installedAt = (Get-Date).ToString('o')
     }
-    # A machine with the agent is an agent machine (Set-GpuVMUse none takes it back).
+    # A machine with the agent is an agent machine (Set-GpuVMUse none takes it back), and always isolated.
     $state['use'] = 'agent'
     Save-GpuVMState $state
+    Update-GpuVMNetworkIsolation -Name $Name -State $state
     Write-JsonFile -Path (Join-Path $folder 'agent.json') -Data ([ordered]@{
         vmId        = $vmId
         name        = $Name

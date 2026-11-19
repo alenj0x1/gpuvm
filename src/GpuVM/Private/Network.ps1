@@ -9,6 +9,8 @@ $script:IsolationBlockSize = 100
 
 function Get-GpuVMNetworkIsolation {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$State)
+    # An agent machine is always isolated, whatever its config says (review 2, #3).
+    if ([string]$State['use'] -eq 'agent') { return $true }
     $network = $State['config']['vm']['network']
     # VMs created before this option are isolated too: only an explicit false turns it off.
     -not ($network -and $network.Contains('isolation') -and $network['isolation'] -eq $false)
@@ -72,6 +74,8 @@ function Update-GpuVMNetworkIsolation {
     # On an external switch the DHCP and DNS servers are on the LAN, which these rules block.
     $switch = Get-VMSwitch -Name $switchName -ErrorAction SilentlyContinue
     if ($switch -and $switch.SwitchType -ne 'Internal') {
+        # An agent machine is never left on the LAN unisolated: it doesn't start there (review 2, #3).
+        if ([string]$State['use'] -eq 'agent') { Assert-AgentSwitch -Name $Name }
         if ($current) { Remove-GpuVMIsolationAcl -Name $Name -Acl $current }
         Write-Warning "The VM '$Name' uses the external switch '$switchName': network isolation only works with the Default Switch or an internal one."
         return
@@ -103,4 +107,17 @@ function Update-GpuVMNetworkIsolation {
         $weight--
     }
     if ($current) { Remove-GpuVMIsolationAcl -Name $Name -Acl $current }
+}
+
+# An agent machine only runs on the Default Switch or an internal one, where its isolation rules work: an external or
+# private switch would put the guest (untrusted) on the LAN or leave it unisolated.
+function Assert-AgentSwitch {
+    param([Parameter(Mandatory)][string]$Name)
+    foreach ($adapter in @(Get-VMNetworkAdapter -VMName $Name)) {
+        if (-not $adapter.SwitchName) { continue }
+        $switch = Get-VMSwitch -Name $adapter.SwitchName -ErrorAction SilentlyContinue
+        if (-not $switch -or $switch.SwitchType -ne 'Internal') {
+            throw "'$Name' is an agent machine and its network adapter uses the switch '$($adapter.SwitchName)': agent machines only use the Default Switch or an internal one, where GpuVM isolates them."
+        }
+    }
 }

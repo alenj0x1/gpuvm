@@ -1445,6 +1445,8 @@ InModuleScope GpuVM {
             Mock New-PSSession { [pscustomobject]@{ Name = 'fake' } }
             Mock Close-AgentSession { }
             Mock Wait-GuestReady { }
+            Mock Assert-AgentSwitch { $script:calls.Add('switch checked') }
+            Mock Update-GpuVMNetworkIsolation { $script:calls.Add('isolated') }
             Mock Copy-ToAgentSession { $script:calls.Add("copy-to-session $Destination") }
             # Which guest call it is, by its arguments: setup (hash), fast-path copy (2 paths), installer (text, dir,
             # secret), cleanup (dir), restart (none).
@@ -1474,7 +1476,7 @@ InModuleScope GpuVM {
             $r = Install-GpuVMAgent -Name vm1
             $r.vmId | Should Be '0b5d1f53-1e33-4b7e-9f0a-2c4d6e8f0a1b'
             $r.exeSent | Should Be $true
-            ($script:calls -join ',') | Should Be 'setup,copy-to-session C:\Windows\Temp\GpuVMAgentSetup-1\gpuvm-agent.exe,copy-to-session C:\Windows\Temp\GpuVMAgentSetup-1\VERSION,install,cleanup,restart'
+            ($script:calls -join ',') | Should Be 'switch checked,setup,copy-to-session C:\Windows\Temp\GpuVMAgentSetup-1\gpuvm-agent.exe,copy-to-session C:\Windows\Temp\GpuVMAgentSetup-1\VERSION,install,cleanup,isolated,restart'
             $script:sentSecret.GetType().Name | Should Be 'Byte[]'
             $script:sentSecret.Length | Should Be 32
             Assert-MockCalled Write-AgentSecret -Times 1 -Scope It
@@ -1489,7 +1491,7 @@ InModuleScope GpuVM {
             $script:sameBuild = $true
             $r = Install-GpuVMAgent -Name vm1
             $r.exeSent | Should Be $false
-            ($script:calls -join ',') | Should Be 'setup,fast-copy,install,cleanup,restart'
+            ($script:calls -join ',') | Should Be 'switch checked,setup,fast-copy,install,cleanup,isolated,restart'
         }
         It 'a failed install keeps the old secret' {
             Mock Copy-ToAgentSession { throw 'copy failed' }
@@ -1902,6 +1904,44 @@ InModuleScope GpuVM {
             Invoke-AgentScreenRefresh -Name a | Should Be $false
             Mock Get-GpuVMState { throw 'no state' }
             Invoke-AgentScreenRefresh -Name a | Should Be $false
+        }
+    }
+}
+
+InModuleScope GpuVM {
+    Describe 'Agent machines are always isolated' {
+        It 'an agent machine counts as isolated whatever its config says' {
+            Get-GpuVMNetworkIsolation -State @{ use = 'agent'; config = @{ vm = @{ network = @{ isolation = $false } } } } | Should Be $true
+            Get-GpuVMNetworkIsolation -State @{ config = @{ vm = @{ network = @{ isolation = $false } } } } | Should Be $false
+        }
+        It 'an agent machine refuses a switch where it can''t be isolated' {
+            Mock Get-VMNetworkAdapter { [pscustomobject]@{ SwitchName = 'LAN' } }
+            Mock Get-VMSwitch { [pscustomobject]@{ Name = 'LAN'; SwitchType = 'External' } }
+            Test-Throws { Assert-AgentSwitch -Name a } | Should Be $true
+            Mock Get-VMSwitch { [pscustomobject]@{ Name = 'Default Switch'; SwitchType = 'Internal' } }
+            Assert-AgentSwitch -Name a
+            Mock Get-VMSwitch { $null }
+            Test-Throws { Assert-AgentSwitch -Name a } | Should Be $true
+        }
+        It 'an agent session copies only a template made for agents' {
+            Mock Assert-Admin { }
+            Mock Assert-GpuVMNameFree { }
+            Mock Test-GpuVMHost { @() }
+            Mock Resolve-GpuVMProfile { @{ backend = 'hyperv-gpup' } }
+            Mock New-TemplateCloneConfig { @{ backend = 'hyperv-gpup'; vm = @{} } }
+            Mock Invoke-GpuVMBackend { [ordered]@{ name = 'copy1' } }
+            Mock Save-GpuVMState { $script:saved = $State }
+            Mock Write-Step { }
+            Mock Get-GpuVM { [pscustomobject]@{ Name = 'copy1' } }
+            Mock Get-GpuVMDiskBudget { @{ availableGB = 500; drive = 'C:' } }
+            Mock Start-NewGpuVM { @{ started = $true } }
+            Mock Read-GpuVMTemplate { @{ name = 't'; sizeGB = 64; edition = 'Pro'; streaming = @{}; guest = @{}; vhdPath = 'x'; config = @{ vm = @{} } } }
+            Test-Throws { New-GpuVM -Name copy1 -Template t -Disposable -ForAgent -Confirm:$false } | Should Be $true
+            Assert-MockCalled Invoke-GpuVMBackend -Times 0 -Scope It
+            Mock Read-GpuVMTemplate { @{ name = 't'; sizeGB = 64; edition = 'Pro'; streaming = @{}; guest = @{}; vhdPath = 'x'; config = @{ vm = @{} }; use = 'agent' } }
+            New-GpuVM -Name copy1 -Template t -Disposable -ForAgent -Confirm:$false | Out-Null
+            $script:saved['use'] | Should Be 'agent'
+            Test-Throws { New-GpuVM -Name copy1 -ForAgent -Confirm:$false } | Should Be $true
         }
     }
 }

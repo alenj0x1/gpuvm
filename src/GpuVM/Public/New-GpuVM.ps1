@@ -24,9 +24,13 @@ function New-GpuVM {
         [switch]$Disposable,
         # For GpuVM's agent: installs it once Windows is up (Set-GpuVMUse), signing in as `agent` or the person's user.
         [ValidateSet('agent')][string]$Use,
-        [ValidateSet('agent', 'own')][string]$AgentUser = 'agent'
+        [ValidateSet('agent', 'own')][string]$AgentUser = 'agent',
+        # Set by GpuVM's service for an agent session (never needed by hand): only a template made for agents
+        # (template.json use = agent) is copied, and the copy is an agent machine, isolated.
+        [switch]$ForAgent
     )
     Assert-Admin
+    if ($ForAgent -and -not $Template) { throw 'An agent session only makes copies of a template made for agents.' }
     # An agent machine gets 4 GB unless its memory is chosen (the person, 2026-11-19).
     if ($Use -eq 'agent') { $Override = Add-DefaultMemory -Override $Override -MemoryGB $script:AgentMemoryGB }
     if ($Disposable) {
@@ -40,7 +44,7 @@ function New-GpuVM {
         if ($IsoPath -or $Edition -or $Credential) { throw 'With -Template, Windows, its edition and its password come from the template; remove -IsoPath, -Edition and -Credential.' }
         if (-not $PSCmdlet.ShouldProcess($Name, "Create VM from the template $Template")) { return }
         $made = New-GpuVMFromTemplate -Name $Name -Template $Template -Profile $Profile -Override $Override -Start:$Start -Disposable:$Disposable `
-            -ProfileGiven:$PSBoundParameters.ContainsKey('Profile')
+            -ProfileGiven:$PSBoundParameters.ContainsKey('Profile') -ForAgent:$ForAgent
         if (-not $Use) { return $made }
         Initialize-GpuVMAgentUse -Name $Name -User $AgentUser
         $startResult = if ($made -and $made.PSObject.Properties['Started']) { @{ started = $made.Started; startError = $made.StartError; neededGB = $made.NeededGB; freeGB = $made.FreeGB } }
@@ -117,7 +121,9 @@ function New-GpuVMFromTemplate {
         [switch]$Start,
         [switch]$Disposable,
         # A profile chosen by name: its memory and processors count; otherwise the template's own.
-        [switch]$ProfileGiven
+        [switch]$ProfileGiven,
+        # An agent session asked: only a template made for agents.
+        [switch]$ForAgent
     )
     # Not $template: PowerShell names are case-insensitive, and that would overwrite the -Template string.
     $base = Read-GpuVMTemplate -Name $Template
@@ -142,6 +148,9 @@ function New-GpuVMFromTemplate {
     }
     $config = New-TemplateCloneConfig -Config (Resolve-GpuVMProfile -Name $Profile -Override $Override) -Template $base
     $agentCopy = [string]$base['use'] -eq 'agent'
+    if ($ForAgent -and -not $agentCopy) {
+        throw "An agent session can only copy a template made for agents, and '$Template' isn't one (its source wasn't an agent machine)."
+    }
     # An agent machine is always isolated (as Set-GpuVMUse agent does): an explicit false goes back to the default.
     if ($agentCopy) { Set-AgentNetworkIsolation -Config $config }
 

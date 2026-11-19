@@ -179,7 +179,7 @@ fn needs_consent(request: &Value) -> bool {
     let cmd = request["cmd"].as_str().unwrap_or("");
     NEEDS_CONSENT.contains(&cmd) || (cmd == "Restore-GpuVMRestorePoint" && request["args"]["SaveCurrent"] != json!(true))
         // Taking a machine back from the agent removes its user and profile.
-        || (cmd == "Set-GpuVMUse" && request["args"]["Use"] == json!("none"))
+        || (cmd == "Set-GpuVMUse" && request["args"]["Use"].as_str().is_some_and(|u| u.trim().eq_ignore_ascii_case("none")))
 }
 
 /// Checks each path as the user on the other end of the pipe (unelevated), then goes back to the service's identity.
@@ -401,8 +401,8 @@ fn handle(pipe: HANDLE) {
         // An agent session (the MCP server acting for a model) may run only some commands, some with the person's
         // approval; the person's app is never limited here.
         let mut request = request;
-        let mut claim = match crate::agent::gate(&mut request, client.pid, agent_ctx.is_agent_pipe()) {
-            Ok(c) => c,
+        let mut gated = match crate::agent::gate(&mut request, client.pid, agent_ctx.is_agent_pipe()) {
+            Ok(g) => Some(g),
             Err(e) => {
                 send(&mut out, &json!({ "id": id, "type": "result", "ok": false, "error": e.message, "code": e.code }));
                 continue;
@@ -457,8 +457,8 @@ fn handle(pipe: HANDLE) {
             if parsed["type"] == "result" && parsed["id"] == id {
                 // An agent session's new disposable copy is its own from now on.
                 if parsed["ok"] == json!(true) {
-                    if let Some(c) = claim.take() {
-                        crate::agent::claim(c);
+                    if let Some(g) = gated.take() {
+                        g.succeeded();
                     }
                 }
                 break;
