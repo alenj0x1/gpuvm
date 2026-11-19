@@ -40,8 +40,8 @@ function New-GpuVM {
         $made = New-GpuVMFromTemplate -Name $Name -Template $Template -Profile $Profile -Override $Override -Start:$Start -Disposable:$Disposable
         if (-not $Use) { return $made }
         Initialize-GpuVMAgentUse -Name $Name -User $AgentUser
-        $start = if ($made -and $made.PSObject.Properties['Started']) { @{ started = $made.Started; startError = $made.StartError; neededGB = $made.NeededGB; freeGB = $made.FreeGB } }
-        return Add-StartResult -Info (Get-GpuVM -Name $Name) -Start $start
+        $startResult = if ($made -and $made.PSObject.Properties['Started']) { @{ started = $made.Started; startError = $made.StartError; neededGB = $made.NeededGB; freeGB = $made.FreeGB } }
+        return Add-StartResult -Info (Get-GpuVM -Name $Name) -Start $startResult
     }
 
     $failed = @(Test-GpuVMHost -Profile $Profile -Override $Override | Where-Object Status -eq 'Fail')
@@ -100,9 +100,9 @@ function New-GpuVM {
 
     Write-Step "VM '$Name' is ready. The first time, Windows finishes setting itself up (a few minutes)."
     if ($state['streaming']) { Write-Step "To see it with the GPU: ./gpuvm.ps1 connect -Name $Name" }
-    $start = if ($Start) { Start-NewGpuVM -Name $Name }
+    $startResult = if ($Start) { Start-NewGpuVM -Name $Name }
     if ($Use) { Initialize-GpuVMAgentUse -Name $Name -User $AgentUser }
-    Add-StartResult -Info (Get-GpuVM -Name $Name) -Start $start
+    Add-StartResult -Info (Get-GpuVM -Name $Name) -Start $startResult
 }
 
 function New-GpuVMFromTemplate {
@@ -150,8 +150,8 @@ function New-GpuVMFromTemplate {
     Save-GpuVMState $state
 
     Write-Step "VM '$Name' is ready, based on the template '$Template'."
-    $start = if ($Start) { Start-NewGpuVM -Name $Name -State $state }
-    Add-StartResult -Info (Get-GpuVM -Name $Name) -Start $start
+    $startResult = if ($Start) { Start-NewGpuVM -Name $Name -State $state }
+    Add-StartResult -Info (Get-GpuVM -Name $Name) -Start $startResult
 }
 
 # Starts a machine just made: {started, startError, neededGB, freeGB} (the figures when memory was short). Disposable
