@@ -4,7 +4,7 @@ import { IconCheck, IconFileDownload, IconHandFinger, IconHistory, IconLoader2, 
 import { inTauri } from "./api";
 import { bytes } from "./agentStore";
 import { humanError } from "./ui";
-import { locale, t } from "./i18n";
+import { locale, t, translateModule } from "./i18n";
 import type { AgentRequest, AgentRequestKind } from "./types";
 
 // The two windows of GpuVM over a machine's picture while an agent works on it (agent.rs):
@@ -82,7 +82,7 @@ export function AgentDock() {
       await invoke("agent_dock_answer", { allow: kind !== "deny", forTask: kind === "task" });
     } catch (e) { setError(humanError(e)); setBusy(null); }
   };
-  const title = t(request.title);
+  const title = translateModule(request.title);
   const detail = [request.clientName, request.reason, request.file && bytes(request.file.sizeBytes, locale())].filter(Boolean).join(" · ");
 
   if (request.human) {

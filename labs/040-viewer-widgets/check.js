@@ -12,10 +12,12 @@
   // window.LAB040 = { themes, widths, dragWidths } runs a part (a whole run takes several minutes).
   const OPT = window.LAB040 ?? {};
   const WIDTHS = OPT.widths ?? [300, 340, 440, 560];
-  const SPEC = {
+  // OPT.spec checks only these kinds; OPT.vm and OPT.query load another machine and mock state (lab 054: the agent
+  // widget on ?agents=working, paused, many).
+  const SPEC = OPT.spec ?? {
     // [minW, maxW, minH, maxH], as SPEC in app/src/ViewerWidgets.tsx.
     machines: [1, 3, 1, 6], actions: [1, 3, 1, 2], stats: [1, 3, 1, 3], clock: [1, 3, 1, 2],
-    shelf: [1, 3, 1, 4], games: [1, 3, 1, 3], weather: [1, 3, 1, 2],
+    shelf: [1, 3, 1, 4], games: [1, 3, 1, 3], weather: [1, 3, 1, 2], agent: [2, 3, 1, 4],
   };
   const KEYS = ["gpuvm.viewerPanelWidgets", "gpuvm.prefs", "gpuvm.decor.win10", "gpuvm.decor.win11-pruebas", "gpuvm.weather"];
   const saved = Object.fromEntries(KEYS.map((k) => [k, localStorage.getItem(k)]));
@@ -32,7 +34,7 @@
     localStorage.setItem("gpuvm.viewerPanelWidgets", JSON.stringify(layout));
     localStorage.setItem("gpuvm.prefs", JSON.stringify({ ...JSON.parse(saved["gpuvm.prefs"] || "{}"), theme }));
     frame.style.width = width + "px";
-    frame.src = "/?viewer-panel&vm=win10&t=" + Math.random();
+    frame.src = `/?viewer-panel&vm=${OPT.vm ?? "win10"}${OPT.query ? "&" + OPT.query : ""}&t=` + Math.random();
     await new Promise((r) => (frame.onload = r));
     await sleep(900);
     return frame.contentDocument;
@@ -82,7 +84,7 @@
   // at that row or higher (widgets move up while the cells above are free), with nothing overlapping, and never stay
   // lifted. Widgets whose width fills the row only try the first column.
   const DEFAULT = [{ type: "machines", w: 2, h: 2 }, { type: "stats", w: 1, h: 2 }, { type: "clock", w: 1, h: 2 }, { type: "actions", w: 2, h: 2 }, { type: "shelf", w: 3, h: 2 }, { type: "games", w: 3, h: 2 }];
-  for (const width of OPT.dragWidths ?? [300, 340, 560]) {
+  for (const width of OPT.skipDrags ? [] : OPT.dragWidths ?? [300, 340, 560]) {
     const cols = width - 24 >= 416 ? 3 : 2;
     for (const item of DEFAULT) {
       const w = Math.min(item.w, cols);
@@ -127,7 +129,7 @@
   // Edge: pulling the last widget down with the pointer held at the panel's bottom edge scrolls the panel and keeps
   // growing the widget up to its limit, then stops (it must stay in view, its bottom inside the panel).
   report.edge = [];
-  for (const width of OPT.dragWidths ?? [300, 340, 560]) {
+  for (const width of OPT.skipDrags ? [] : OPT.dragWidths ?? [300, 340, 560]) {
     const doc = await load(width, DEFAULT.map((x) => (x.type === "games" ? { ...x, h: 2 } : x)), "dark");
     frame.style.height = "620px";
     await sleep(300);

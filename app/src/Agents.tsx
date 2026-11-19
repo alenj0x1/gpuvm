@@ -8,7 +8,7 @@ import { agents, inTauri } from "./api";
 import { bytes, clientOn, refreshAgents, useAgents } from "./agentStore";
 import { MachineIcon } from "./machineIcon";
 import { CheckMark, humanError, portalRoot } from "./ui";
-import { locale, t, tn } from "./i18n";
+import { locale, t, tn, translateModule } from "./i18n";
 import type { AgentAction, AgentClient, AgentOffer, AgentRequest, AgentRequestKind, AgentState } from "./types";
 
 // Everything the app shows of agents: the Agents page, an agent's live state (machine page and the viewer's widget),
@@ -65,7 +65,7 @@ function ActionRow({ a, now }: { a: AgentAction; now: number }) {
   return (
     <li className={`ag-action${a.ok ? "" : " failed"}`}>
       <span className="ag-thumb">{a.thumb ? <img src={a.thumb} alt="" draggable={false} /> : <IconDeviceDesktop size={14} />}</span>
-      <span className="ag-action-text">{a.text}</span>
+      <span className="ag-action-text">{translateModule(a.text)}</span>
       <span className="ag-action-time">{since(a.at, now)}</span>
     </li>
   );
@@ -99,10 +99,10 @@ export function AgentLive({ client, size = "full", actions = 3, onTakeControl }:
           : <button type="button" className="btn compact" disabled={!!busy || client.state === "idle"} onClick={() => act("pause", () => agents.pause(client.id))}>{spin("pause", IconPlayerPause)}{t("Pause|agent")}</button>}
       {client.state !== "control" && (
         <button type="button" className="btn ghost compact" disabled={!!busy || client.state === "idle"}
-          onClick={() => act("control", async () => { await agents.pause(client.id, "control"); onTakeControl?.(); })}>{spin("control", IconHandFinger)}{t("Take control")}</button>
+          onClick={() => act("control", async () => { await agents.pause(client.id, "control"); onTakeControl?.(); })} title={t("Take control")}>{spin("control", IconHandFinger)}<span className="ag-btn-label">{t("Take control")}</span></button>
       )}
       <button type="button" className="btn ghost compact" disabled={!!busy} title={t("Ends its task on this machine")}
-        onClick={() => act("stop", () => agents.stop(client.id))}>{spin("stop", IconPlayerStop)}{t("Stop")}</button>
+        onClick={() => act("stop", () => agents.stop(client.id))} aria-label={t("Stop")}>{spin("stop", IconPlayerStop)}<span className="ag-btn-label">{t("Stop")}</span></button>
     </div>
   );
   if (size === "tiny") {
@@ -116,7 +116,7 @@ export function AgentLive({ client, size = "full", actions = 3, onTakeControl }:
           <ClientIcon client={client} size={16} />
           <div className="ag-live-name">
             <strong className="ellipsis">{client.name}</strong>
-            <span className="ellipsis">{last ? `${last.text} · ${since(last.at, now)}` : stateLabel(client.state)}</span>
+            <span className="ellipsis">{last ? `${translateModule(last.text)} · ${since(last.at, now)}` : stateLabel(client.state)}</span>
           </div>
           <StatePill state={client.state} />
           <button type="button" className="icon-btn ag-tiny-btn" aria-label={label} title={label} disabled={!!busy || client.state === "idle"}
@@ -131,7 +131,7 @@ export function AgentLive({ client, size = "full", actions = 3, onTakeControl }:
         <ClientIcon client={client} />
         <div className="ag-live-name">
           <strong className="ellipsis">{client.name}</strong>
-          <span className="ellipsis">{client.reason && client.state !== "paused" && client.state !== "control" ? t(client.reason) : client.task ?? (client.version ? t("Version {v}", { v: client.version }) : "")}</span>
+          <span className="ellipsis">{client.reason && client.state !== "paused" && client.state !== "control" ? translateModule(client.reason) : client.task ?? (client.version ? t("Version {v}", { v: client.version }) : "")}</span>
         </div>
         <StatePill state={client.state} />
       </div>
@@ -173,7 +173,7 @@ export function RequestRow({ r, showMachine = true }: { r: AgentRequest; showMac
       onContextMenu={(e) => { if (r.human) return; e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY }); }}>
       <span className="ag-request-icon"><I size={17} /></span>
       <div className="ag-request-text">
-        <strong className="ellipsis">{t(r.title)}{r.file && <span className="ag-request-size">{bytes(r.file.sizeBytes, locale())}</span>}</strong>
+        <strong className="ellipsis">{translateModule(r.title)}{r.file && <span className="ag-request-size">{bytes(r.file.sizeBytes, locale())}</span>}</strong>
         <span className="ellipsis">{[showMachine ? `${r.clientName} · ${r.machine}` : r.clientName, r.reason].filter(Boolean).join(" · ")}</span>
         {error && <span className="error-text">{error}</span>}
       </div>
@@ -322,7 +322,7 @@ function ClientCard({ c, onOpenVm }: { c: AgentClient; onOpenVm: (name: string) 
         <span className="check">{approvals ? <CheckMark /> : null}</span>
         <span className="grow">
           <span className="title">{t("Approve from {name}", { name: c.name })}</span>
-          <span className="desc">{t("Low-risk requests can also be answered in {name}. The rest are always answered in GpuVM.", { name: c.name })}</span>
+          <span className="desc">{t("Low-risk requests only. The rest are always answered in GpuVM.")}</span>
         </span>
       </button>
       {error && <span className="error-text">{error}</span>}
@@ -410,10 +410,11 @@ export function AgentWidget({ machine, size }: { machine: string; size: { w: num
     );
   }
   const tiny = size.h <= 1;
+  const note = !tiny && size.h >= 3 && requests.length > 0;
   return (
     <div className="ag-widget">
-      <AgentLive client={client} size={tiny ? "tiny" : "compact"} actions={Math.max(0, size.h * 2 - 3)} />
-      {!tiny && size.h >= 3 && requests.length > 0 && <span className="ag-widget-note"><IconShieldLock size={14} />{tn(requests.length, "{n} request waits for you", "{n} requests wait for you")}</span>}
+      <AgentLive client={client} size={tiny ? "tiny" : "compact"} actions={Math.max(0, size.h * 2 - 3 - (note ? 1 : 0))} />
+      {note && <span className="ag-widget-note"><IconShieldLock size={14} />{tn(requests.length, "{n} request waits for you", "{n} requests wait for you")}</span>}
     </div>
   );
 }
