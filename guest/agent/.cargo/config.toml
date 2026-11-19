@@ -1,3 +1,7 @@
+# Builds and tests go outside guest\ (the installer ships guest\ as is), to the same folder build.ps1 uses.
+[build]
+target-dir = "../../app/guest-agent-target"
+
 # A clean Windows has no Visual C++ runtime: link it statically so the agent is one self-contained exe.
 [target.x86_64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]
