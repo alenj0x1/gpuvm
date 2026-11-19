@@ -38,13 +38,14 @@ const AGENTS = ":agents";
 /** Agents in the sidebar: a dot while one works, the warning tone while one waits for the person. */
 function AgentsNavItem({ active, onClick }: { active: boolean; onClick: () => void }) {
   const snap = useAgents();
-  const waiting = snap.requests.filter((r) => !r.human).length + snap.offers.filter((o) => o.state === "pending").length;
+  // Everything waiting for the person: requests to answer, what only they can do, files to accept.
+  const waiting = snap.requests.length + snap.offers.filter((o) => o.state === "pending").length;
   const working = snap.clients.some((c) => c.state === "working");
-  const needs = waiting > 0 || snap.clients.some((c) => c.state === "human");
+  const needs = waiting > 0;
   return (
     <button className={`side-item side-home ${active ? "active" : ""}`} onClick={onClick} title={t("Agents")}>
       <span className="add-icon"><IconRobot size={16} /></span><span className="name">{t("Agents")}</span>
-      {needs ? <span className="side-meta side-count" title={t("Waiting for you")}>{waiting || "!"}</span>
+      {needs ? <span className="side-meta side-count" title={t("Waiting for you")}>{waiting}</span>
         : working ? <span className="side-meta"><span className="ag-dot side-working" /></span> : null}
     </button>
   );
@@ -623,7 +624,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
         ) : selected === PREFS ? (
           <Preferences />
         ) : selected === AGENTS ? (
-          <AgentsView onOpenVm={setSelected} />
+          <AgentsView onOpenVm={setSelected} onViewMachine={openFromAgent} />
         ) : libraryTab(selected) ? (
           <Library tab={libraryTab(selected)!} onTab={(tab) => setSelected(`${LIBRARY}:${tab}`)} host={host} startJob={startJob}
             busy={(name) => !!busyFor(name)} progress={(key) => busyFor(key)?.message ?? null} notify={push} onOpenVm={setSelected}

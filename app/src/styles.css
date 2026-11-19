@@ -1771,7 +1771,7 @@ html.viewer-panel-window body::after { display: none; }
   .ag-request-text, .ag-offer-text { flex-basis: calc(100% - 46px); }
   .ag-request-left { margin-left: 46px; }
   .ag-request-actions { margin-left: auto; }
-  .ag-offer .ag-request-actions { width: 100%; justify-content: flex-end; }
+  .ag-offer .ag-request-actions { margin-left: auto; }
 }
 @media (max-width: 640px) {
   .ag-request, .ag-offer { flex-wrap: wrap; }
@@ -1793,7 +1793,7 @@ html.viewer-panel-window body::after { display: none; }
 .dock-icon.ag-dock-risky { color: #ef7a66; }
 .ag-dock-left { flex: none; font-size: 12px; color: #a8a59e; font-variant-numeric: tabular-nums; }
 .dock.ag-dock { width: min(540px, calc(100% - 32px)); }
-.dock.ag-dock-human { width: min(420px, calc(100% - 16px)); }
+.dock.ag-dock-human { width: min(520px, calc(100% - 16px)); }
 .ag-dock-menu { z-index: 60; background: #1c1c1c; color: #ebe8e1; box-shadow: inset 0 0 0 1px #2f2f2f; }
 .ag-dock-menu button:hover { background: #262626; }
 .ag-dock-menu-catch { position: fixed; inset: 0; z-index: 55; }
