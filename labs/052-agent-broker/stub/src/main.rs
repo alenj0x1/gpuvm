@@ -119,7 +119,7 @@ fn answer(method: &str, params: &Value) -> Result<(Value, Option<Vec<u8>>), (&'s
         "input.act" => {
             let mut done = 0;
             for a in params["actions"].as_array().cloned().unwrap_or_default() {
-                if let Some(ms) = a["wait"]["ms"].as_u64() {
+                if let Some(ms) = a["wait"]["ms"].as_u64().or(if a["type"] == "wait" { a["ms"].as_u64() } else { None }) {
                     std::thread::sleep(Duration::from_millis(ms.min(60_000)));
                 }
                 done += 1;
