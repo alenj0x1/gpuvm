@@ -57,6 +57,8 @@ pub struct Ctx {
     screens: Mutex<HashMap<String, (u32, u32)>>,
     uses: Mutex<HashMap<String, MachineUse>>,
     pending: Mutex<HashMap<String, Pending>>,
+    /// This connection's pending request_human per machine (lowercase name → request id), for cancel_request.
+    human_requests: Mutex<HashMap<String, String>>,
     /// Poll interval while waiting (machine ready, person, offers); short in tests.
     pub poll_ms: std::sync::atomic::AtomicU64,
 }
@@ -73,6 +75,7 @@ impl Ctx {
             screens: Mutex::new(HashMap::new()),
             uses: Mutex::new(HashMap::new()),
             pending: Mutex::new(HashMap::new()),
+            human_requests: Mutex::new(HashMap::new()),
             poll_ms: std::sync::atomic::AtomicU64::new(1000),
         }
     }
@@ -348,6 +351,9 @@ pub fn definitions() -> Vec<Value> {
             schema(json!({ "machine": m(), "message": { "type": "string", "description": "What you need them to do, in one or two sentences." },
                 "waitSeconds": { "type": "integer", "minimum": 0, "maximum": 1800, "description": "Default 0 (return at once)." } }), &["machine", "message"]),
             ann("Ask the person", false, false, false, false)),
+        tool("cancel_request", "Withdraw your pending request_human on a machine when you give up waiting: the pause it caused ends and the machine is yours again (to write a report or destroy it). It can't end a pause the person started themselves.",
+            schema(json!({ "machine": m() }), &["machine"]),
+            ann("Withdraw request to the person", false, false, true, false)),
     ]
 }
 
@@ -436,6 +442,7 @@ pub fn call(ctx: &Ctx, name: &str, call: &Call) -> Value {
         "open_viewer" => t.open_viewer(),
         "request_human" => t.request_human(),
         "request_approval" => t.request_approval(),
+        "cancel_request" => t.cancel_request(),
         _ => Err(format!("There is no tool named {name}.")),
     };
     result.unwrap_or_else(tool_error)
@@ -529,6 +536,15 @@ impl Tool<'_> {
         if e.code == "unavailable" {
             self.ctx.connection.lock().unwrap().take();
             self.ctx.shots.lock().unwrap().clear();
+        }
+        // Paused because the agent itself asked the person (request_human), not because they took over (lab 053: the
+        // model was told "the person took control" while it was the one waiting for them).
+        if e.code == "paused" && !machine.is_empty() {
+            if let Ok(Some(m)) = self.find(machine) {
+                if paused_by(&m) == Some("human") {
+                    return format!("{machine} is waiting for the person to do what you asked with request_human; nothing can be done in it until they press \"Return to agent\". If you give up waiting, use cancel_request to get it back.");
+                }
+            }
         }
         explain(machine, &e)
     }
@@ -1155,7 +1171,14 @@ impl Tool<'_> {
         match state.as_str() {
             "allowed" => Ok(id),
             "denied" => Err("The person said no in GpuVM. Don't try again; ask them what to do instead.".into()),
-            "pending" => Err(format!("The person hasn't answered in GpuVM yet (request {id}); try again later.")),
+            "pending" => {
+                // Withdrawn so the person isn't asked later about something nobody waits for; a request answered in
+                // the meantime keeps its answer (the broker refuses to withdraw it).
+                match self.broker("request.revoke", machine, json!({ "requestId": id })) {
+                    Ok(_) => Err(format!("The person didn't answer in GpuVM in time, so the request ({id}) was withdrawn. Ask again later if you still need it, or tell the user.")),
+                    Err(_) => Err(format!("The person hasn't answered in GpuVM yet (request {id}); try again later.")),
+                }
+            }
             _ => Err("The request expired without an answer.".into()),
         }
     }
@@ -1242,15 +1265,52 @@ impl Tool<'_> {
         let machine = self.machine()?;
         let message = arg_str(self.args, "message")?;
         let wait = opt_int(self.args, "waitSeconds", 0, 1800)?.unwrap_or(0) as u64;
-        self.broker("human.request", machine, json!({ "message": cap_to(message.to_string(), 500) }))?;
+        let r = self.broker("human.request", machine, json!({ "message": cap_to(message.to_string(), 500) }))?;
+        if let Some(id) = r.data["requestId"].as_str() {
+            self.ctx.human_requests.lock().unwrap().insert(machine.to_ascii_lowercase(), id.to_string());
+        }
         if wait == 0 {
             return Ok(text(format!("Asked the person. The agent on {machine} is paused until they press \"Return to agent\"; calls will say so meanwhile.")));
         }
         let back = self.wait(wait, || Ok(self.find(machine)?.is_some_and(|m| paused_by(&m).is_none())))?;
         if back {
+            self.ctx.human_requests.lock().unwrap().remove(&machine.to_ascii_lowercase());
             Ok(text(format!("The person handed {machine} back. Take a fresh screenshot before acting: the screen may have changed.")))
         } else {
-            Ok(text(format!("The person hasn't handed {machine} back yet; call again later.")))
+            // Not withdrawn here: the person may be in the middle of it (a UAC prompt). The model decides.
+            Ok(text(format!("The person hasn't handed {machine} back yet. Wait more with request_human, or give up with cancel_request (it gets the machine back so you can write your report or destroy it).")))
+        }
+    }
+
+    /// Withdraws this connection's pending request_human on a machine: the pause it caused ends. Never a pause or
+    /// take-control by the person (the broker refuses those).
+    fn cancel_request(&self) -> Out {
+        let machine = self.machine()?;
+        let key = machine.to_ascii_lowercase();
+        let Some(id) = self.ctx.human_requests.lock().unwrap().get(&key).cloned() else {
+            return Err(format!("You have no request to the person pending on {machine}."));
+        };
+        match self.ctx.broker.call("request.revoke", json!({ "connection": self.connection, "name": machine, "requestId": id })) {
+            Ok(r) => {
+                self.ctx.human_requests.lock().unwrap().remove(&key);
+                self.ctx.shots.lock().unwrap().retain(|s| s.machine != machine);
+                if r.data["resumed"] == false {
+                    Ok(text(format!("Withdrew your request on {machine}; it is still paused for another reason.")))
+                } else {
+                    Ok(text(format!("Withdrew your request; {machine} is yours again. Take a fresh screenshot before acting: the person may have done part of it.")))
+                }
+            }
+            Err(e) => {
+                let answered = e.code == "bad_request";
+                if answered || e.code == "not_found" {
+                    self.ctx.human_requests.lock().unwrap().remove(&key);
+                }
+                Err(match e.code.as_str() {
+                    "not_found" => format!("The person took control of {machine} themselves, so the pause is theirs now; wait until they press \"Return to agent\"."),
+                    "bad_request" => format!("The person already answered your request on {machine}; check with list_machines or take a screenshot."),
+                    _ => self.fail(machine, e),
+                })
+            }
         }
     }
 }

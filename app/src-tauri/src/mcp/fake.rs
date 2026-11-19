@@ -19,6 +19,8 @@ pub struct Machine {
     pub paused_by: String,
     pub off: bool,
     pub drop_sends: bool,
+    /// The agent's pending request_human (None once answered, withdrawn or replaced by the person's take-control).
+    pub human_request: Option<String>,
     pub elevated_foreground: bool,
     pub secure_desktop: bool,
     pub files: HashMap<String, Vec<u8>>,
@@ -76,6 +78,7 @@ fn machine(name: &str, disposable: bool, template: &str) -> Machine {
         paused_by: "control".into(),
         off: false,
         drop_sends: false,
+        human_request: None,
         elevated_foreground: false,
         secure_desktop: false,
         files: HashMap::new(),
@@ -176,6 +179,24 @@ impl Broker for FakeBroker {
             st.approvals.insert(id.clone(), (s(&args, "kind").to_string(), answer));
             return Ok(Reply::of(json!({ "requestId": id, "expiresAt": "later" })));
         }
+        if op == "request.revoke" {
+            let id = s(&args, "requestId").to_string();
+            // A pending approval: withdrawn; an answered one: refused, as the broker does.
+            if let Some((_, state)) = st.approvals.get_mut(&id) {
+                if state != "pending" {
+                    return Err(err("bad_request", "Already answered."));
+                }
+                *state = "withdrawn".into();
+                return Ok(Reply::of(json!({ "id": id, "state": "withdrawn" })));
+            }
+            let m = &mut st.machines[idx];
+            if m.human_request.as_deref() != Some(id.as_str()) {
+                return Err(err("not_found", "No such pending request (the person's own pause stays)."));
+            }
+            m.human_request = None;
+            m.paused = false;
+            return Ok(Reply::of(json!({ "id": id, "state": "withdrawn", "resumed": true })));
+        }
         let m = &mut st.machines[idx];
         match op {
             "machine.take" => {
@@ -262,7 +283,8 @@ impl Broker for FakeBroker {
             "human.request" => {
                 m.paused = true;
                 m.paused_by = "human".into();
-                Ok(Reply::of(json!({ "requestId": "h1" })))
+                m.human_request = Some(format!("h-{}", m.name));
+                Ok(Reply::of(json!({ "requestId": format!("h-{}", m.name) })))
             }
             _ => Err(err("internal", &format!("Unknown operation {op}."))),
         }

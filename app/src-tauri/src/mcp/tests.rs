@@ -125,11 +125,11 @@ fn legacy_handshake_and_tool_list() {
     let mut h = H::new(false);
     let r = h.rpc("tools/list", json!({}));
     let tools = r["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 26);
+    assert_eq!(tools.len(), 27);
     let mut names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     names.sort();
     names.dedup();
-    assert_eq!(names.len(), 26);
+    assert_eq!(names.len(), 27);
     for t in tools {
         assert_eq!(t["inputSchema"]["type"], "object");
         let a = &t["annotations"];
@@ -371,7 +371,10 @@ fn commands_files_and_offers() {
     assert!(h.ok("request_approval", json!({ "machine": "work-pc", "kind": "admin", "title": "Install as admin", "reason": "Test the installer" })).contains("allowed"));
     assert!(h.err("request_approval", json!({ "machine": "work-pc", "kind": "delete", "title": "x", "reason": "y" })).contains("admin, network or other"));
     h.fake.with(|s| s.approval_answer = "pending".into());
-    assert!(h.err("request_approval", json!({ "machine": "work-pc", "kind": "other", "title": "x", "reason": "y", "waitSeconds": 0 })).contains("hasn't answered"));
+    // No answer in time: the approval request is withdrawn, so nobody is asked later about it.
+    let late = h.err("request_approval", json!({ "machine": "work-pc", "kind": "other", "title": "x", "reason": "y", "waitSeconds": 0 }));
+    assert!(late.contains("was withdrawn"), "{late}");
+    assert!(h.fake.with(|s| s.approvals.values().any(|(_, st)| st == "withdrawn")));
     h.fake.with(|s| s.approval_answer = "allowed".into());
     assert!(h.err("click", json!({ "machine": "work-pc", "x": 1, "y": 1 })).contains("Take a screenshot"), "revert forgets old screenshots");
     assert!(h.err("restore_point_revert", json!({ "machine": "work-pc", "point": "nope" })).contains("no restore point"));
@@ -392,7 +395,9 @@ fn budgets_and_human_requests() {
     let mut h = H::new(false);
     let m = h.machine();
     assert!(h.ok("request_human", json!({ "machine": m, "message": "Please accept the UAC prompt." })).contains("paused"));
-    assert!(h.err("click", json!({ "machine": m, "x": 1, "y": 1 })).contains("took control"));
+    // Paused by its own request: the error says so, not "the person took control".
+    let waiting = h.err("click", json!({ "machine": m, "x": 1, "y": 1 }));
+    assert!(waiting.contains("waiting for the person to do what you asked") && !waiting.contains("took control"), "{waiting}");
     // Waiting: handed back during the wait.
     let fake = h.fake.clone();
     let name = m.clone();
@@ -408,8 +413,18 @@ fn budgets_and_human_requests() {
     std::thread::sleep(Duration::from_millis(30));
     h.notify("notifications/cancelled", json!({ "requestId": id }));
     let r = h.wait_for(id);
-    assert!(H::text(&r["result"]).contains("hasn't handed"));
+    assert!(H::text(&r["result"]).contains("hasn't handed") && H::text(&r["result"]).contains("cancel_request"));
     assert!(started.elapsed() < Duration::from_secs(5));
+    // Giving up: cancel_request withdraws its own request and the machine is usable again.
+    assert!(h.err("write_file", json!({ "machine": m, "path": "Desktop\\Outbox\\r.md", "content": "x" })).contains("cancel_request"));
+    assert!(h.ok("cancel_request", json!({ "machine": m })).contains("yours again"));
+    h.ok("write_file", json!({ "machine": m, "path": "Desktop\\Outbox\\r.md", "content": "report" }));
+    assert!(h.err("cancel_request", json!({ "machine": m })).contains("no request to the person pending"));
+    // A pause the person started can't be cancelled by the agent.
+    h.ok("request_human", json!({ "machine": m, "message": "y" }));
+    h.fake.with(|s| { let x = s.machines.iter_mut().find(|x| x.name == m).unwrap(); x.human_request = None; x.paused_by = "control".into(); });
+    assert!(h.err("cancel_request", json!({ "machine": m })).contains("took control"));
+    assert!(h.err("screenshot", json!({ "machine": m })).contains("took control"));
 }
 
 #[test]

@@ -287,6 +287,9 @@ InModuleScope GpuVM {
 
     Describe 'Labs' {
         $env:GPUVM_LABS_ROOT = Join-Path $TestDrive 'labs'
+        # An elevated module ignores the variable (by design), so the folder is also redirected here: an elevated run
+        # never writes labs into the repository.
+        Mock Get-LabRoot { Join-Path $TestDrive 'labs' }
 
         It 'creates, records and compares' {
             $lab = New-GpuVMLab -Title 'CPU test' -Hypothesis 'More threads, more FPS'
@@ -316,6 +319,8 @@ InModuleScope GpuVM {
 
     Describe 'Streaming components' {
         $env:GPUVM_CACHE_ROOT = Join-Path $TestDrive 'cache'
+        # Elevated, the module ignores the variable (by design): the cache is redirected here as well.
+        Mock Get-ComponentCacheRoot { Join-Path $TestDrive 'cache' }
 
         It 'the manifest pins version, GitHub URL and SHA-256 of each component' {
             $m = Get-ComponentManifest
@@ -1782,6 +1787,102 @@ InModuleScope GpuVM {
             Mock Get-AgentPackage { throw 'no dist' }
             Update-GpuVMAgentIfStale -Name c -Credential $cred | Should Be $false
             Assert-MockCalled Install-GpuVMAgent -Times 3 -Exactly -Scope It -ParameterFilter { $Name -eq 'c' -and $User -eq 'own' }
+        }
+    }
+}
+
+InModuleScope GpuVM {
+    Describe 'Sunshine on an agent machine runs as the service, never as the agent''s account' {
+        It 'the capture mode is ddx for agent machines, whatever was chosen' {
+            Get-GpuVMCaptureMode -State @{ config = @{ streaming = @{} } } | Should Be 'wgc'
+            Get-GpuVMCaptureMode -State @{ config = @{ streaming = @{ captureMode = 'ddx' } } } | Should Be 'ddx'
+            Get-GpuVMCaptureMode -State @{ use = 'agent'; config = @{ streaming = @{} } } | Should Be 'ddx'
+            Get-GpuVMCaptureMode -State @{ use = 'agent'; config = @{ streaming = @{ captureMode = 'wgc' } } } | Should Be 'ddx'
+        }
+        It 'a guest with a standard user signed in keeps the service: WGC comes back as ddx' {
+            $cred = [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force))
+            Mock Write-Step { }
+            Mock Invoke-Guest { 'standard-changed' }
+            $e = 'wgc'
+            Set-GuestCaptureMode -Name a -Credential $cred -Mode wgc -Effective ([ref]$e) | Should Be $true
+            $e | Should Be 'ddx'
+            Mock Invoke-Guest { 'standard-unchanged' }
+            Set-GuestCaptureMode -Name a -Credential $cred -Mode wgc -Effective ([ref]$e) | Should Be $false
+            Mock Invoke-Guest { 'unchanged' }
+            Set-GuestCaptureMode -Name a -Credential $cred -Mode wgc -Effective ([ref]$e) | Should Be $false
+            $e | Should Be 'wgc'
+            Set-GuestCaptureMode -Name a -Credential $cred -Mode wgc | Should Be $false
+        }
+        It 'WGC is refused on an agent machine' {
+            Mock Assert-Admin { }
+            Mock Save-GpuVMState { $script:saved = $true }
+            Mock Get-VM { [pscustomobject]@{ State = 'Off' } }
+            Mock Get-GpuVMState { @{ use = 'agent'; streaming = @{ x = 1 }; config = @{ streaming = @{} } } }
+            $script:saved = $false
+            Test-Throws { Set-GpuVMCapture -Name a -Mode wgc } | Should Be $true
+            $script:saved | Should Be $false
+            (Set-GpuVMCapture -Name a -Mode ddx).captureMode | Should Be 'ddx'
+        }
+    }
+}
+
+InModuleScope GpuVM {
+    Describe 'A template of an agent machine makes agent machines' {
+        It 'the template records the use and who signs in' {
+            (Get-TemplateAgentUse -State @{ use = 'agent'; agent = @{ signInAs = 'own' } }).agentSignInAs | Should Be 'own'
+            (Get-TemplateAgentUse -State @{ use = 'agent'; agent = @{ version = '0.3.7' } }).agentSignInAs | Should Be 'agent'
+            (Get-TemplateAgentUse -State @{ use = 'agent' }).use | Should Be 'agent'
+            (Get-TemplateAgentUse -State @{ agent = @{ signInAs = 'agent' } }).use | Should Be $null
+        }
+        It 'a copy is born an agent machine, isolated, with its agent pending; other copies are untouched' {
+            Mock Assert-Admin { }
+            Mock Assert-GpuVMNameFree { }
+            Mock Test-GpuVMHost { @() }
+            Mock Resolve-GpuVMProfile { @{ backend = 'hyperv-gpup' } }
+            Mock New-TemplateCloneConfig { @{ backend = 'hyperv-gpup'; vm = @{ network = @{ isolation = $false } } } }
+            Mock Invoke-GpuVMBackend { $script:cloneConfig = $Arguments[0].Config; [ordered]@{ name = 'copy1' } }
+            Mock Save-GpuVMState { $script:saved = $State }
+            Mock Write-Step { }
+            Mock Get-GpuVM { [pscustomobject]@{ Name = 'copy1' } }
+            Mock Read-GpuVMTemplate { @{ name = 't'; sizeGB = 64; edition = 'Pro'; streaming = @{}; guest = @{}; vhdPath = 'x'; config = @{ vm = @{} }; use = 'agent'; agentSignInAs = 'agent' } }
+            New-GpuVM -Name copy1 -Template t -Confirm:$false | Out-Null
+            $script:saved['use'] | Should Be 'agent'
+            $script:saved['agent']['pending'] | Should Be $true
+            $script:saved['agent']['signInAs'] | Should Be 'agent'
+            $script:cloneConfig['vm']['network']['isolation'] | Should Be $true
+            Get-GpuVMCaptureMode -State $script:saved | Should Be 'ddx'
+
+            Mock Read-GpuVMTemplate { @{ name = 't'; sizeGB = 64; edition = 'Pro'; streaming = @{}; guest = @{}; vhdPath = 'x'; config = @{ vm = @{} } } }
+            New-GpuVM -Name copy1 -Template t -Confirm:$false | Out-Null
+            $script:saved.Contains('use') | Should Be $false
+            $script:cloneConfig['vm']['network']['isolation'] | Should Be $false
+        }
+    }
+}
+
+InModuleScope GpuVM {
+    Describe 'Deleting a machine never stops half-way on its agent registration' {
+        It 'the VM and its folder go even when the registration can''t be removed; a warning says so' {
+            New-Item -ItemType Directory (Join-Path $TestDrive 'GpuVM') -Force | Out-Null
+            # The long form of the path (TestDrive can be an 8.3 short path; the backend compares full paths).
+            $script:testRoot = (Get-Item -LiteralPath (Join-Path $TestDrive 'GpuVM')).FullName
+            $script:testRoot = (New-Object -ComObject Scripting.FileSystemObject).GetFolder($script:testRoot).Path
+            $script:testRoot = [IO.Path]::GetFullPath($script:testRoot)
+            $dir = Join-Path $script:testRoot 'copy1'
+            New-Item -ItemType Directory $dir -Force | Out-Null
+            Set-Content (Join-Path $dir 'copy1.vhdx') 'disk'
+            Set-Content (Join-Path $dir 'gpuvm.json') '{}'
+            Mock Get-GpuVMDefaultRoot { $script:testRoot }
+            Mock Get-VM { [pscustomobject]@{ State = 'Off'; Id = [guid]'0b5d1f53-1e33-4b7e-9f0a-2c4d6e8f0a1b' } }
+            Mock Stop-VM { }
+            Mock Remove-VM { $script:vmRemoved = $true }
+            Mock Remove-GpuVMAgentRegistration { throw 'Access to the path secret is denied.' }
+            $script:vmRemoved = $false
+            $w = Invoke-GpuVMBackend -Backend 'hyperv-gpup' -Operation Remove -Arguments 'copy1', @{ vmDir = $dir }, $true 3>&1
+            $script:vmRemoved | Should Be $true
+            Test-Path $dir | Should Be $false
+            ($w | Where-Object { $_ -is [System.Management.Automation.WarningRecord] }).Message | Should Match 'within the hour'
+            Assert-MockCalled Remove-GpuVMAgentRegistration -Times 1 -Exactly -Scope It
         }
     }
 }

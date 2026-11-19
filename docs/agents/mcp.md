@@ -50,7 +50,7 @@ The command must point at the installed `gpuvm.exe`: the GpuVM service only acce
 | do: UI | `ui_tree`, `ui_invoke` | read-only / not destructive |
 | do: commands, files | `run` (PowerShell, cmd or a program, as the standard user `agent`), `read_file`, `write_file` (under `C:\Users\agent`), `send_file` (host → `Desktop\Received`), `offer_file` + `offer_status` (Outbox → the person approves) | `run` and `write_file` destructive; `run` open-world |
 | do: lifetime | `restore_point_create`, `restore_point_revert` (normal machines only; the person allows it in GpuVM; current state kept first), `destroy` (disposables only) | revert and destroy destructive |
-| see / take control | `open_viewer`, `request_human` (human-only steps), `request_approval` (admin, network, other: answered in GpuVM) | – |
+| see / take control | `open_viewer`, `request_human` (human-only steps), `cancel_request` (withdraws the agent's own pending `request_human`, never a pause the person started), `request_approval` (admin, network, other: answered in GpuVM; withdrawn automatically when nobody answers in time) | – |
 
 `create_disposable` and `take_machine` take an optional `task` (shown to the person); every guest request carries a
 note (the tool and its arguments, file contents summarized) for the session's action list in the app.

@@ -91,3 +91,43 @@ while an offer waits unless `force` (this commit).
 
 Screenshots: `out/demo-agent-view.webp` (what the agent saw, 1279x719), `out/demo-viewer-waiting.png` (the person's
 viewer), `out/20261119-013727-modern-first.webp` (800x600 right after ready).
+
+## Part 3: where the screenshot time goes (installed main 218c3f0, 2026-11-19 04:13)
+
+`overhead.py` times each call twice: at the client (request written → reply parsed) and in the server's own log
+(`GPUVM_MCP_LOG=1`). `overhead-real.ps1` runs it on one real disposable from agent-tpl, 30 rounds per client mode.
+
+| Client | Tool | Client p50 / p95 | Server p50 / p95 | stdio transfer p50 | base64 |
+| --- | --- | --- | --- | --- | --- |
+| unbuffered (`bufsize=0`) | screenshot 1280 | 143.9 / 155.0 ms | 22 / 26 ms | 121.9 ms | 269 KB |
+| buffered | screenshot 1280 | 6.7 / 10.3 ms | 6 / 9 ms | 0.8 ms | 16 KB |
+| unbuffered | ui_tree | 35.2 / 41.5 ms | 34 / 40 ms | 1.7 ms | – |
+| buffered | ui_tree | 17.5 / 55.9 ms | 17 / 55 ms | 0.7 ms | – |
+
+- The "105 ms" screenshots of part 2 were the lab's own client: Python's `readline()` on an unbuffered pipe makes one
+  system call per byte (0.45 ms per KB here). Server side, a ~200 KB WebP takes 22 ms p50 through gpuvm.exe → service
+  pipe → broker → guest and back, against 20.9 ms measured at the broker (agent-guest): the MCP layer, the pipe and the
+  base64 round trip add ~1 ms. drive.py reads buffered since e082009. (The two sessions' screens differed: 269 vs
+  16 KB of base64, so their server times aren't comparable to each other; each row's transfer is.)
+- ui_tree is all guest time (UI Automation), 17-34 ms p50 here; the 174 ms p95 of part 2 depended on the window in front.
+- Destroy check: right after the MCP's `destroy`, the disposable was already gone from Hyper-V (Remove-GpuVMDisposable
+  -Name, no fallback to the 30-minute sweep).
+
+## Part 4: the installer demo again (installed main 10c7525, 2026-11-19 05:04-05:22)
+
+`part2.ps1 -Template agent-tpl -ModelOnly -HumanWaitSeconds 600`; Claude Code, 11 turns, 1,054 s (most of it waiting
+for the person), USD 0.60. Steps: create `lab053-demo` (4 GB, task set) → open the viewer → `send_file` of the 106 MB
+installer: "Copied … (106755484 bytes, checked)", i.e. it arrived (the send fix works) → `run Start-Process` started
+it; the call timed out at 60 s because Start-Process waits while the UAC prompt is up → `screenshot` refused with
+`secure_desktop` (the agent can't see UAC, by design) → `request_human` with an exact instruction ("Pulsa Sí … y
+después Return to agent"), waited 600 s, nobody answered → it stopped installing, tried to write the report
+(refused: the machine stays paused for the person), asked again for 300 s, then ended without destroying the machine
+because the person might be mid-install, and asked what to do. The lab's cleanup deleted it.
+
+Findings: (1) the viewer opened by `open_viewer` showed "Sunshine is restarting with the new settings" and fell back
+to the app's machine page within ~40 s, never streaming, so the person couldn't see the UAC prompt without pressing
+Open (`out/demo2-viewer-sunshine-restarting.png`); (2) while the agent waited, the app's machine page showed nothing
+saying the agent was asking for help (`out/demo2-app-while-agent-waits.png`); (3) a machine paused by the agent's own
+`request_human` stays paused after the agent gives up, so it can't even write its report: a way for a session to
+withdraw its own pending human request (not the person's take-control) would help (broker); (4) the MCP said "the
+person took control" for that pause: now it says the machine is waiting for the person to do what was asked.

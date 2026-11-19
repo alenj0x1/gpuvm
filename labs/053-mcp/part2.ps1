@@ -17,7 +17,9 @@ param(
     [int]$HumanWaitSeconds = 180,
     [switch]$SkipModel,
     # The caller already took the lock as 'agent-mcp' (it is still released at the end).
-    [switch]$HaveLock
+    [switch]$HaveLock,
+    # Only the real-model demo (the measurements were taken already).
+    [switch]$ModelOnly
 )
 $ErrorActionPreference = 'Stop'
 $me = 'agent-mcp'
@@ -49,12 +51,14 @@ try {
     Log "gpuvm.exe $version"
 
     $drive = Join-Path $PSScriptRoot 'drive.py'
+    if (-not $ModelOnly) {
     Log 'modern era: create, latency, coords, misuse, finale'
     python $drive --exe $Exe --era modern --template $Template --memory $MemoryGB --phases latency,coords,misuse,finale --rounds $Rounds --samples $Samples 2>&1 | Tee-Object -FilePath (Join-Path $outDir "part2-$stamp-modern.txt")
     # Fail fast: if the first disposable couldn't be made, the others won't be either.
     if (Select-String -Path (Join-Path $outDir "part2-$stamp-modern.txt") -Pattern '^no machine' -Quiet) { throw 'The first disposable machine could not be created; see the modern run above.' }
     Log 'legacy era: create, latency, finale'
     python $drive --exe $Exe --era legacy --template $Template --memory $MemoryGB --phases latency,finale --rounds ([math]::Max(10, [int]($Rounds / 4))) 2>&1 | Tee-Object -FilePath (Join-Path $outDir "part2-$stamp-legacy.txt")
+    }
 
     if (-not $SkipModel) {
         $config = Join-Path $outDir "mcp-installed.json"
@@ -64,7 +68,7 @@ try {
             "1. Create a disposable machine from the $Template template named lab053-demo with memoryGB $MemoryGB and task 'Test the GpuVM installer'. " +
             "2. Open the viewer so I can watch. 3. Send $Installer from this PC into the machine. " +
             "4. Run it from Desktop\Received (double-click it or start it). Installing needs administrator rights: when a UAC prompt or an administrator window blocks you, " +
-            "ask me with request_human (say exactly what to accept) and wait up to $HumanWaitSeconds seconds; if I don't hand it back, stop installing and say so. " +
+            "ask me with request_human (say exactly what to accept) and wait up to $HumanWaitSeconds seconds; if I don't hand it back, stop installing, withdraw your request with cancel_request and say so in the report. " +
             "5. If it installed, check it like a user would (Start menu entry, C:\Program Files\GpuVM, open the app once) and take screenshots of what you see. " +
             "6. Write a short Markdown report in Desktop\Outbox\gpuvm-install-report.md (what you did, what you saw, what failed) and offer it to me with a note. " +
             "7. Destroy the machine. Finally report each step in one line."

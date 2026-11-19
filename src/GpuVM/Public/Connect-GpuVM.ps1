@@ -177,7 +177,10 @@ function Connect-GpuVM {
         elseif ($guest) {
             try {
                 if ($restartSunshine) { Write-Step 'Sunshine is restarting to pick up the changes' }
-                $null = Set-GuestCaptureMode -Name $Name -Credential $guest -Mode $captureMode -Restart:$restartSunshine
+                # The mode the guest really uses: with a standard user signed in, WGC stays ddx (the service).
+                $effective = $captureMode
+                $null = Set-GuestCaptureMode -Name $Name -Credential $guest -Mode $captureMode -Restart:$restartSunshine -Effective ([ref]$effective)
+                $captureMode = $effective
                 $prepared['capture'] = $captureMode
             }
             catch { Write-Warning "Couldn't set Sunshine's capture: $($_.Exception.Message)" }

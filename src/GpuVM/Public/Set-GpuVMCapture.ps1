@@ -17,6 +17,9 @@ function Set-GpuVMCapture {
     Assert-Admin
     $state = Get-GpuVMState -Name $Name
     if (-not $state['streaming']) { throw "The VM '$Name' was created without streaming." }
+    if ($Mode -eq 'wgc' -and [string]$state['use'] -eq 'agent') {
+        throw "'$Name' is an agent machine: Sunshine runs as a service there (ddx), never as the account the agent uses."
+    }
     $state['config']['streaming']['captureMode'] = $Mode
     Save-GpuVMState $state
 
