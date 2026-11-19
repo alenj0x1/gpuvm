@@ -72,8 +72,6 @@ pub trait Broker: Send + Sync {
 pub struct PipeBroker {
     conn: Mutex<Option<crate::backend::Conn>>,
     next: std::sync::atomic::AtomicU64,
-    /// The agent session registered on the shared connection (for the hello on other connections).
-    session: Mutex<Option<String>>,
 }
 
 /// The first request on every pipe connection this process opens (agent-broker's contract, ff9d55d).
@@ -108,7 +106,7 @@ pub fn list(v: Value) -> Vec<Value> {
 
 impl PipeBroker {
     pub fn new() -> Self {
-        PipeBroker { conn: Mutex::new(None), next: std::sync::atomic::AtomicU64::new(1), session: Mutex::new(None) }
+        PipeBroker { conn: Mutex::new(None), next: std::sync::atomic::AtomicU64::new(1) }
     }
 
     fn request(&self, cmd: &str, args: Value) -> Value {
@@ -144,12 +142,11 @@ impl PipeBroker {
     /// One command, with its warnings: on the shared connection (the service answers one request at a time per
     /// connection), or on a connection of its own for minutes-long module work (`long`).
     /// A new pipe connection, announced as an agent's (agent-broker's `Register-GpuVMAgentPipe`, the first line of
-    /// every connection): the shared one before its session exists (no arguments), an extra one with the session's id
-    /// so the service applies that session's limits to it.
-    fn open(&self, session: Option<String>) -> Result<crate::backend::Conn> {
+    /// every connection, with no arguments: the service ties the connection to this process's session itself and
+    /// limits it like an agent's from then on).
+    fn open(&self) -> Result<crate::backend::Conn> {
         let mut conn = crate::backend::connect().map_err(|e| BrokerError::new("unavailable", e))?;
-        let args = session.map(|id| json!({ "Connection": id })).unwrap_or(json!({}));
-        let hello = self.request(HELLO, args);
+        let hello = self.request(HELLO, json!({}));
         if let Err(e) = Self::run(&mut conn, &hello) {
             // A service from before the hello: nothing to announce to.
             let older = e.message.contains(HELLO) && ["not allowed", "Unknown", "can't run"].iter().any(|t| e.message.contains(t));
@@ -163,15 +160,14 @@ impl PipeBroker {
     fn exec(&self, cmd: &str, args: Value, long: bool) -> Result<(Reply, Vec<String>)> {
         let request = self.request(cmd, args);
         if long {
-            let session = self.session.lock().unwrap_or_else(|e| e.into_inner()).clone();
-            let mut conn = self.open(session)?;
+            let mut conn = self.open()?;
             return Self::run(&mut conn, &request);
         }
         let mut guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         if guard.is_none() {
             // The shared connection is the session's own (Connect-GpuVMAgentClient registers on it); when it breaks,
             // tools.rs registers a new session on the next call.
-            *guard = Some(self.open(None)?);
+            *guard = Some(self.open()?);
         }
         let result = Self::run(guard.as_mut().unwrap(), &request);
         if matches!(&result, Err(e) if e.code == "unavailable") {
@@ -228,9 +224,7 @@ impl Broker for PipeBroker {
             "client.connect" => {
                 // A new session lives on a fresh shared connection (the old one's session ended with it).
                 *self.conn.lock().unwrap_or_else(|e| e.into_inner()) = None;
-                let r = self.cmd("Connect-GpuVMAgentClient", json!({ "Client": s(&args, "client") }))?;
-                *self.session.lock().unwrap_or_else(|e| e.into_inner()) = r.data["connection"].as_str().map(str::to_string);
-                Ok(r)
+                self.cmd("Connect-GpuVMAgentClient", json!({ "Client": s(&args, "client") }))
             }
             "client.disconnect" => self.cmd("Disconnect-GpuVMAgentClient", json!({ "Connection": connection })),
             "templates.list" => self.templates(),

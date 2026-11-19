@@ -107,9 +107,10 @@ Wait until they hand it back ("Return to agent" in GpuVM), then take a fresh scr
 - **What the app shows and logs.** Every step's note has the tool and its arguments, with anything the model wrote
   (file contents, commands, typed text, values, stdin) replaced by its length. Accepted offers tell the model the
   file's name and "the person's Downloads\GpuVM folder", never the person's absolute path.
-- **Connections.** Every pipe connection the server opens starts with `Register-GpuVMAgentPipe`: the shared one before
-  its session exists, and the extra ones (module work, guest requests over 20 s) with `{Connection}`, so the service
-  applies the session's limits to all of them; long calls never queue in front of `cancel_request` or screenshots.
+- **Connections.** Every pipe connection the server opens starts with `Register-GpuVMAgentPipe` (no arguments): the
+  shared one before its session exists and the extra ones (module work, guest requests over 20 s); from then on the
+  service treats each as an agent's and applies the session's limits. Long calls never queue in front of
+  `cancel_request` or screenshots.
 - **Names.** `list_machines` shows every GpuVM machine's name and state (not their contents) so the model can ask for
   one; machines without the agent can't be used.
 - **Open risks.** Short calls of a client share one connection (one at a time); a service restart drops the
