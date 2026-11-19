@@ -163,8 +163,10 @@ try {
     # --- a csrss error box raised by the agent user ---------------------------------------------------------------
     $h = Join-Path $PSScriptRoot 'harness\target\release\harness.exe'
     $hw = Call 'files.write' @{ path = 'lab051-harness.exe' } -Blob $h
-    Exec "$((Call 'agent.info').result.home)\lab051-harness.exe" @('guest-errorbox') 3000 | Out-Null
-    Start-Sleep -Milliseconds 800
+    # detached (cmd /c start): the box lasts only while its raiser lives; a 3 s exec timeout killed it in the first
+    # run, which left an invisible foreground window and no box in the screenshot
+    Exec 'cmd.exe' @('/c', 'start', '', "$((Call 'agent.info').result.home)\lab051-harness.exe", 'guest-errorbox') 5000 | Out-Null
+    Start-Sleep -Milliseconds 1500
     $st = (Call 'screen.state').result
     $shot = Call 'screen.capture' @{}
     if ($shot.ok) { Copy-Item $shot.blobPath (Join-Path $outDir "errorbox.$($shot.blobFormat)") }
