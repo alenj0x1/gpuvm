@@ -60,7 +60,7 @@ the guest stops it and replies `ok:false` with code `cancelled`. Error codes: `b
 | --- | --- | --- |
 | `agent.info` | – | `{version, os, user, session, screen:{w,h}, signedIn}` |
 | `screen.capture` | `{maxW?:1280, maxH?:800, format?:"webp"\|"png", region?:[x,y,w,h]}` | `{w,h,scale,format}` + blob (lossless). Coordinates everywhere are the full desktop's pixels; `scale` = sent/full. `region` = zoom at native resolution. Refused with `secure_desktop` when the input desktop isn't `Default`. |
-| `screen.state` | – | `{desktop:"default"\|"secure"\|"locked", foreground:{title, process, integrity, blocked}}` |
+| `screen.state` | – | `{desktop:"default"\|"secure"\|"locked", foreground:{title, process, integrity, blocked}, screen:{w,h}}` |
 | `input.act` | `{actions:[…], stopOnError?:true}` | `{done:<n>}`. Actions are objects with a `type`: `click{x,y,button?,count?,mods?}`, `move{x,y}`, `drag{x,y,toX,toY}`, `scroll{x,y,dx,dy}` (notches, `dy>0` = down), `type{text}`, `key{keys:"ctrl+shift+end", repeat?}`, `wait{ms≤5000}`. Checked before each action: foreground elevated → `blocked_elevated`; no foreground > 500 ms → `no_foreground`; secure desktop → `secure_desktop`. Nothing is injected then. |
 | `ui.tree` | `{scope?:"foreground", maxNodes?:300, visibleOnly?:true, interactiveOnly?:true}` | `{nodes:[{id,role,name,bbox:[x,y,w,h],enabled,patterns:[…]}]}` (UIA control view, CacheRequest; queries Chromium twice) |
 | `ui.invoke` | `{id, action:"invoke"\|"toggle"\|"select"\|"expand"\|"setValue", value?}` | `{}` (ids are valid until the next `ui.tree`; a stale id → `not_found`) |
@@ -73,7 +73,9 @@ the agent's password or S4U to run commands as `agent`; left for later).
 Outbox deliveries are resolved by the host (`New-GpuVMAgentOffer`): it lists `Desktop\Outbox` and, once the person
 approves, reads the file with `files.read` in 8 MiB pieces. The guest never pushes files to the host.
 
-Frame `length` counts the payload only. Guest events: `secure_desktop{on}`, `signed_in{user}` (`user:null` when the
+Frame `length` counts the payload only. Guest events: `screen{w,h}` (the agent's screen changed size: recapture; in
+Agent mode the helper makes GpuVM's virtual display the only display before it announces `signed_in`),
+`secure_desktop{on}`, `signed_in{user}` (`user:null` when the
 session helper goes away), `foreground{…}` (rate-limited to 4/s), `error_box{title}`
 (a system error dialog blocks input, lab 049).
 

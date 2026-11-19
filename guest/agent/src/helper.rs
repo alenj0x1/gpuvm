@@ -102,6 +102,8 @@ fn events(out: Out) {
     let mut fg_sent = Instant::now() - Duration::from_secs(1);
     let mut boxes: Vec<isize> = Vec::new();
     let mut tick = 0u64;
+    let size = || capture::output_rect().map(|r| (r.right - r.left, r.bottom - r.top));
+    let mut last_size = size();
     loop {
         std::thread::sleep(Duration::from_millis(100));
         tick += 1;
@@ -127,6 +129,16 @@ fn events(out: Out) {
                 Ok(Some(did)) => hlog(&out, &format!("displays arranged again: {did}")),
                 Ok(None) => {}
                 Err(e) => hlog(&out, &format!("displays: {e}")),
+            }
+        }
+        // the agent's screen changed size (display arranged, viewer connected): clients recapture
+        if tick % 5 == 2 {
+            let s = size();
+            if s != last_size {
+                if let Some((w, h)) = s {
+                    send(&out, &json!({"t": "evt", "event": "screen", "data": {"w": w, "h": h}}), None);
+                }
+                last_size = s;
             }
         }
         if tick % 5 == 0 {
@@ -163,15 +175,23 @@ pub fn run() {
         }
         (File::from_raw_handle(i.0 as _), Arc::new(Mutex::new(File::from_raw_handle(o.0 as _))))
     };
+    // the virtual display alone and primary BEFORE the helper announces itself: the host treats `signed_in` as
+    // ready, and a client that captured at 800x600 a moment before the change got stale sizes (lab 053)
+    let arranged = crate::display::ensure();
+    if matches!(arranged, Ok(Some(_))) {
+        // wait (<= 2 s) until Windows reports the new layout
+        let t = std::time::Instant::now();
+        while t.elapsed() < Duration::from_secs(2) && !crate::display::settled() {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
     let me = info();
     send(&out, &json!({"t": "hello", "user": me["user"], "session": me["session"], "integrity": me["integrity"]}), None);
-    // the virtual display alone and primary, before anything is opened (agent machines only: this helper)
-    match crate::display::ensure() {
+    match arranged {
         Ok(Some(did)) => hlog(&out, &format!("displays arranged: {did}")),
         Ok(None) => {}
         Err(e) => hlog(&out, &format!("displays: {e}")),
     }
-    let me = info();
     hlog(&out, &format!("helper {} up: {}", std::process::id(), me));
     let ev = out.clone();
     std::thread::spawn(move || events(ev));
