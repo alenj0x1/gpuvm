@@ -1350,7 +1350,10 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
   .opt-row, .opt-row.section { grid-template-columns: 32px minmax(0, 1fr); }
   .opt-row.sub { grid-template-columns: 20px minmax(0, 1fr); }
   .opt-row > .opt-ctl { grid-column: 1 / -1; justify-content: flex-start; max-width: none; }
-  .opt-row > .opt-ctl > .segmented, .opt-row > .opt-ctl > .dropdown, .opt-row > .opt-ctl > .slider { width: 100%; max-width: none; }
+  /* A slider or a list uses the row; a segmented group stays as wide as its options (stretched, it left an empty
+     strip inside its pill). */
+  .opt-row > .opt-ctl > .dropdown, .opt-row > .opt-ctl > .slider { width: 100%; max-width: none; }
+  .opt-row > .opt-ctl > .segmented { width: auto; max-width: 100%; }
 }
 /* The cube's column folded into a rail at the right edge (its handle stays to open it again), or taking the whole
    width with the options folded away. */
