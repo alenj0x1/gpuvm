@@ -53,7 +53,7 @@ const DEFAULT_HOME: &str = r"C:\Users\agent";
 /// The guest methods of protocol.md; anything else is refused before it reaches a guest.
 const METHODS: &[&str] = &["agent.info", "screen.capture", "screen.state", "input.act", "ui.tree", "ui.invoke", "exec.run", "files.list",
     "files.read", "files.write"];
-const EVENTS: &[&str] = &["secure_desktop", "signed_in", "foreground", "error_box"];
+const EVENTS: &[&str] = &["screen", "secure_desktop", "signed_in", "foreground", "error_box"];
 
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
@@ -261,6 +261,8 @@ struct Conn {
     dead: AtomicBool,
     info: Mutex<Value>,
     events: Mutex<Map<String, Value>>,
+    /// When the agent last said its screen changed size (ms since 1970; 0 = not since it connected).
+    screen_changed: AtomicU64,
 }
 
 impl Conn {
@@ -680,6 +682,7 @@ fn serve_agent(sock: Sock, vm_id: String) {
         dead: AtomicBool::new(false),
         info: Mutex::new(Value::Null),
         events: Mutex::new(Map::new()),
+        screen_changed: AtomicU64::new(0),
     });
     // A new connection from the same VM replaces the old one (the agent restarted).
     if let Some(old) = lock(&broker().conns).insert(vm_id.clone(), conn.clone()) {
@@ -717,6 +720,20 @@ fn serve_agent(sock: Sock, vm_id: String) {
         }
     }
     vm_log(&reg, json!({ "event": "disconnected", "reason": reason }));
+}
+
+/// The agent's screen changed size (`screen{w,h}` event): the agent info follows it and clients learn to recapture.
+/// Sizes out of range (a hostile guest) are ignored.
+fn note_screen(info: &Mutex<Value>, changed: &AtomicU64, data: &Value) -> bool {
+    let size = |k: &str| data[k].as_u64().filter(|v| (1..=16384).contains(v));
+    let (Some(w), Some(h)) = (size("w"), size("h")) else { return false };
+    let mut info = lock(info);
+    if !info.is_object() {
+        *info = json!({});
+    }
+    info["screen"] = json!({ "w": w, "h": h });
+    changed.store(now_ms(), Ordering::SeqCst);
+    true
 }
 
 /// Reads the guest's frames until the connection ends; returns why it ended.
@@ -793,6 +810,9 @@ fn read_loop(conn: &Conn, opener: &mut Opener) -> String {
                 tokens -= 1.0;
                 let Some(name) = msg.get("event").and_then(Value::as_str).filter(|n| EVENTS.contains(n)) else { continue };
                 let data = bounded(msg.get("data").unwrap_or(&Value::Null), 3);
+                if name == "screen" {
+                    note_screen(&conn.info, &conn.screen_changed, &data);
+                }
                 lock(&conn.events).insert(name.to_string(), json!({ "data": data, "at": now_ms() }));
             }
             _ => return "unknown message".into(),
@@ -1380,6 +1400,8 @@ fn get_agents(name: Option<&str>) -> Value {
         list.push(json!({
             "name": reg.name, "vmId": reg.vm_id, "state": state, "version": conn.as_ref().map(|c| c.agent.clone()),
             "agent": agent, "desktop": desktop, "events": events, "connectedSince": conn.as_ref().map(|c| c.since),
+            "screen": conn.as_ref().map(|c| lock(&c.info)["screen"].clone()),
+            "screenChangedAt": conn.as_ref().map(|c| c.screen_changed.load(Ordering::SeqCst)).filter(|t| *t > 0),
             "paused": m.and_then(|m| m.paused.clone()), "takenBy": taken,
             "lastError": m.and_then(|m| m.last_error.clone()), "disposable": disposable, "template": template,
         }));
@@ -1624,6 +1646,14 @@ fn invoke(args: &Map<String, Value>, ctx: &Ctx) -> Result<Value, CmdError> {
         Err((code, message)) => json!({ "ok": false, "error": { "code": code, "message": message } }),
     };
     out["ms"] = json!((ms * 100.0).round() / 100.0);
+    // Every answer says when the agent's screen last changed size, so a client recaptures before acting on old pixels.
+    if let Some(c) = conn_of(&reg.vm_id) {
+        let changed = c.screen_changed.load(Ordering::SeqCst);
+        if changed > 0 {
+            out["screenChangedAt"] = json!(changed);
+            out["screen"] = lock(&c.info)["screen"].clone();
+        }
+    }
     Ok(out)
 }
 
@@ -1951,6 +1981,24 @@ pub(crate) mod tests {
         assert!(safe_file_name("...").is_none());
         assert_eq!(safe_file_name("COMMON.txt").as_deref(), Some("COMMON.txt"));
         assert_eq!(safe_file_name("x\u{202e}y\u{7}").as_deref(), Some("xy"));
+    }
+
+    #[test]
+    fn screen_event() {
+        assert!(EVENTS.contains(&"screen"));
+        let info = Mutex::new(json!({ "version": "0.3.5", "screen": { "w": 1024, "h": 768 } }));
+        let changed = AtomicU64::new(0);
+        assert!(note_screen(&info, &changed, &json!({ "w": 1280, "h": 800 })));
+        assert_eq!(lock(&info)["screen"], json!({ "w": 1280, "h": 800 }));
+        assert_eq!(lock(&info)["version"], "0.3.5");
+        assert!(changed.load(Ordering::SeqCst) > 0);
+        // A hostile or broken size changes nothing.
+        let before = changed.load(Ordering::SeqCst);
+        assert!(!note_screen(&info, &changed, &json!({ "w": 0, "h": 800 })));
+        assert!(!note_screen(&info, &changed, &json!({ "w": 99999, "h": 800 })));
+        assert!(!note_screen(&info, &changed, &json!({ "w": "1280", "h": 800 })));
+        assert_eq!(lock(&info)["screen"]["w"], 1280);
+        assert_eq!(changed.load(Ordering::SeqCst), before);
     }
 
     #[test]

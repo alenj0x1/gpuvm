@@ -1564,3 +1564,25 @@ InModuleScope GpuVM {
         }
     }
 }
+
+InModuleScope GpuVM {
+    Describe 'A new machine that can''t turn on' {
+        It 'says why (StartError) instead of only warning' {
+            Mock Assert-VMCanStart { throw 'The VM needs 8.3 GB free and there are 7.3 GB.' }
+            Mock Start-VM { }
+            Mock Write-Warning { }
+            Start-NewGpuVM -Name vm1 | Should Be 'The VM needs 8.3 GB free and there are 7.3 GB.'
+            Assert-MockCalled Start-VM -Times 0 -Scope It
+            $info = Add-StartError -Info ([pscustomobject]@{ Name = 'vm1' }) -StartError 'no memory'
+            $info.StartError | Should Be 'no memory'
+            (Add-StartError -Info ([pscustomobject]@{ Name = 'vm1' }) -StartError $null).PSObject.Properties['StartError'] | Should Be $null
+        }
+        It 'returns nothing when it runs, and marks a disposable copy as started' {
+            Mock Assert-VMCanStart { }
+            Mock Start-VM { }
+            Mock Set-GpuVMDisposableStarted { }
+            Start-NewGpuVM -Name vm1 -State @{ disposable = @{} } | Should Be $null
+            Assert-MockCalled Set-GpuVMDisposableStarted -Times 1 -Scope It
+        }
+    }
+}
