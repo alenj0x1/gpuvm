@@ -49,7 +49,18 @@ try {
             sunshine = "$((Get-Service SunshineService -ErrorAction SilentlyContinue).Status)"
             bootedAt = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToString('o')
             displays = @(Get-CimInstance Win32_VideoController | ForEach-Object { "$($_.Name): $($_.CurrentHorizontalResolution)x$($_.CurrentVerticalResolution) $($_.Status)" })
-            logTail = @(Get-Content 'C:\Program Files\Sunshine\config\sunshine.log' -Tail 25 -ErrorAction SilentlyContinue) }
+            logTail = @(Get-Content 'C:\Program Files\Sunshine\config\sunshine.log' -Tail 25 -ErrorAction SilentlyContinue)
+            # Who runs Sunshine (the service's SYSTEM copy or the WGC task as the signed-in user), and what listens.
+            processes = @(Get-CimInstance Win32_Process -Filter "Name='sunshine.exe'" | ForEach-Object {
+                    $o = Invoke-CimMethod -InputObject $_ -MethodName GetOwner
+                    "pid $($_.ProcessId) session $($_.SessionId) owner $($o.Domain)\$($o.User) started $($_.CreationDate.ToString('HH:mm:ss'))" })
+            task = @(Get-ScheduledTask -TaskName 'GpuVM-Sunshine-User' -ErrorAction SilentlyContinue | ForEach-Object { "$($_.State) as $($_.Principal.UserId) $($_.Principal.RunLevel)" })
+            taskLastResult = (Get-ScheduledTaskInfo -TaskName 'GpuVM-Sunshine-User' -ErrorAction SilentlyContinue).LastTaskResult
+            captureConf = @(Get-Content 'C:\Program Files\Sunshine\config\sunshine.conf' -ErrorAction SilentlyContinue | Where-Object { $_ -match '^\s*capture' })
+            listening = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -in 47984, 47989, 47990, 48010 } | ForEach-Object { "$($_.LocalAddress):$($_.LocalPort) pid $($_.OwningProcess)" })
+            configAcl = (Get-Acl 'C:\Program Files\Sunshine\config').AccessToString
+            agentAgent = "$((Get-Service 'GpuVMAgent*' -ErrorAction SilentlyContinue | ForEach-Object { "$($_.Name) $($_.Status)" }) -join ', ')"
+            agentVersion = (Get-Item 'C:\Program Files\GpuVM Agent\gpuvm-agent.exe' -ErrorAction SilentlyContinue).VersionInfo.ProductVersion }
     }
     Line "guest now: $($result['guest'] | ConvertTo-Json -Compress -Depth 3)"
 }
