@@ -1306,7 +1306,14 @@ impl Tool<'_> {
                     self.ctx.human_requests.lock().unwrap().remove(&key);
                 }
                 Err(match e.code.as_str() {
-                    "not_found" => format!("The person took control of {machine} themselves, so the pause is theirs now; wait until they press \"Return to agent\"."),
+                    // Gone from the broker: the person answered it (handed the machine back) or replaced it with a
+                    // pause of their own. Which one is in the machine's state now (lab 053: an answered request came
+                    // back not_found and was reported as "took control").
+                    "not_found" => match self.find(machine).ok().flatten().as_ref().and_then(paused_by) {
+                        None => format!("The person already answered your request and handed {machine} back; take a fresh screenshot before acting."),
+                        Some("human") => format!("{machine} is paused by another request to the person; wait for them."),
+                        Some(_) => format!("The person took control of {machine} themselves, so the pause is theirs now; wait until they press \"Return to agent\"."),
+                    },
                     "bad_request" => format!("The person already answered your request on {machine}; check with list_machines or take a screenshot."),
                     _ => self.fail(machine, e),
                 })

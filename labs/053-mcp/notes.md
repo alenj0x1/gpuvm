@@ -131,3 +131,20 @@ saying the agent was asking for help (`out/demo2-app-while-agent-waits.png`); (3
 `request_human` stays paused after the agent gives up, so it can't even write its report: a way for a session to
 withdraw its own pending human request (not the person's take-control) would help (broker); (4) the MCP said "the
 person took control" for that pause: now it says the machine is waiting for the person to do what was asked.
+
+## Part 5: cancel_request on a real disposable (installed main 0d88da6+, 2026-11-19 06:46)
+
+`cancel-real.ps1` → `cancel.py`: session A (direct MCP client) creates a disposable (36.8 s); the person's side is
+the module's own Suspend/Resume-GpuVMAgent (what the app calls); session B is a second MCP client.
+
+| Case | Result |
+| --- | --- |
+| request_human, then acting | refused: "waiting for the person … use cancel_request" |
+| cancel_request (own request) | "Withdrew your request; … is yours again" |
+| acting after it | no pause any more (that one screenshot met a secure screen in the just-started clone: guest state, not the pause) |
+| cancel_request with nothing pending | refused locally |
+| person takes control on top of the request, then cancel_request | refused: "The person took control … themselves" (broker not_found), and acting stays refused until the person resumes |
+| request answered by the person (resumed), then cancel_request | refused by the broker (not_found); the installed MCP called it "took control" — wrong. Fixed: on not_found the MCP looks at the machine and says "already answered and handed back" when it isn't paused |
+| session B: cancel_request on A's machine | refused (B has no request of A's: the tool takes no request id, so a session can't name another's) |
+| session B: take A's machine | refused: "being used by another agent connection" |
+| A withdraws, destroy | deleted; the VM was gone from Hyper-V 3 s later |

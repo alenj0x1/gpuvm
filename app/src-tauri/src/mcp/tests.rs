@@ -420,6 +420,11 @@ fn budgets_and_human_requests() {
     assert!(h.ok("cancel_request", json!({ "machine": m })).contains("yours again"));
     h.ok("write_file", json!({ "machine": m, "path": "Desktop\\Outbox\\r.md", "content": "report" }));
     assert!(h.err("cancel_request", json!({ "machine": m })).contains("no request to the person pending"));
+    // The person answered (handed it back): the broker no longer knows the request (not_found, as on the real one).
+    h.ok("request_human", json!({ "machine": m, "message": "z" }));
+    h.fake.with(|s| { let x = s.machines.iter_mut().find(|x| x.name == m).unwrap(); x.human_request = None; x.paused = false; });
+    let answered = h.err("cancel_request", json!({ "machine": m }));
+    assert!(answered.contains("already answered") && !answered.contains("took control"), "{answered}");
     // A pause the person started can't be cancelled by the agent.
     h.ok("request_human", json!({ "machine": m, "message": "y" }));
     h.fake.with(|s| { let x = s.machines.iter_mut().find(|x| x.name == m).unwrap(); x.human_request = None; x.paused_by = "control".into(); });
