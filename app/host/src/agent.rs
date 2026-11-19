@@ -1058,6 +1058,14 @@ pub fn result_line(id: &Value, result: Result<Value, CmdError>) -> Value {
     }
 }
 
+/// What an agent caller may read: only its own sessions (review 2, #8). `None` = the person or the module, who see all.
+fn own_scope(ctx: &Ctx) -> Option<Vec<String>> {
+    if !ctx.is_agent_side() {
+        return None;
+    }
+    Some(lock(&broker().clients).iter().filter(|(_, c)| c.pid == ctx.pid).map(|(id, _)| id.clone()).collect())
+}
+
 fn person_only(ctx: &Ctx, what: &str) -> Result<(), CmdError> {
     if ctx.is_agent_side() { err("denied", format!("Only the person can {what}.")) } else { Ok(()) }
 }
@@ -1139,9 +1147,19 @@ pub fn command(cmd: &str, args: &Value, ctx: &mut Ctx) -> Result<Value, CmdError
             ctx.owned.retain(|c| c != id);
             Ok(json!({}))
         }
-        "Get-GpuVMAgentClient" => Ok(get_clients(s("Connection"))),
+        "Get-GpuVMAgentClient" => match own_scope(ctx) {
+            None => Ok(get_clients(s("Connection"))),
+            Some(own) => match s("Connection") {
+                Some(c) if own.iter().any(|o| o == c) => Ok(get_clients(Some(c))),
+                Some(_) => err("not_found", "Unknown agent connection."),
+                None => Ok(Value::Array(own.iter().filter_map(|c| get_clients(Some(c)).as_array().and_then(|a| a.first().cloned())).collect())),
+            },
+        },
         "Get-GpuVMAgentCapture" => {
             let id = need(s("Connection"), "Connection")?;
+            if own_scope(ctx).is_some_and(|own| !own.iter().any(|o| o == id)) {
+                return err("not_found", "Unknown agent connection.");
+            }
             let action = args.get("Action").and_then(Value::as_u64).ok_or_else(|| CmdError { code: "bad_request".into(), message: "Action is required.".into() })?;
             let clients = lock(&broker().clients);
             let c = clients.get(id).ok_or_else(|| CmdError { code: "not_found".into(), message: "Unknown agent connection.".into() })?;
@@ -1256,7 +1274,9 @@ pub fn command(cmd: &str, args: &Value, ctx: &mut Ctx) -> Result<Value, CmdError
         "Get-GpuVMAgentRequest" => {
             let mut list = lock(&broker().requests);
             expire(&mut list);
-            Ok(Value::Array(list.iter().filter(|r| s("Id").is_none_or(|id| r.id == id)).map(Request::to_json).collect()))
+            let own = own_scope(ctx);
+            Ok(Value::Array(list.iter().filter(|r| s("Id").is_none_or(|id| r.id == id) && own.as_ref().is_none_or(|o| o.contains(&r.connection)))
+                .map(Request::to_json).collect()))
         }
         "Resolve-GpuVMAgentRequest" => {
             person_only(ctx, "answer what an agent asks for")?;
@@ -1336,8 +1356,10 @@ pub fn command(cmd: &str, args: &Value, ctx: &mut Ctx) -> Result<Value, CmdError
             for o in offers.iter_mut().filter(|o| o.state == "pending" && o.expires <= now) {
                 o.state = "expired".into();
             }
+            let own = own_scope(ctx);
             let list: Vec<Value> = offers.iter()
-                .filter(|o| s("Id").is_none_or(|id| o.id == id) && filter_vm.as_ref().is_none_or(|vm| &o.vm_id == vm))
+                .filter(|o| s("Id").is_none_or(|id| o.id == id) && filter_vm.as_ref().is_none_or(|vm| &o.vm_id == vm)
+                    && own.as_ref().is_none_or(|own| o.client.as_ref().is_some_and(|c| own.contains(c))))
                 .map(|o| o.to_json(&regs.iter().find(|r| r.vm_id == o.vm_id).map(|r| r.name.clone()).unwrap_or_default()))
                 .collect();
             Ok(Value::Array(list))
@@ -2223,10 +2245,21 @@ fn save_blob(data: &[u8], format: &str) -> Result<String, String> {
 pub fn safe_file_name(name: &str) -> Option<String> {
     let cleaned: String = name.chars().filter(|&c| !hidden_char(c) && !r#"<>:"/\|?*"#.contains(c)).take(200).collect();
     let cleaned = cleaned.trim_end_matches(['.', ' ']).trim_start().to_string();
-    let stem = cleaned.split('.').next().unwrap_or("").trim_end().to_ascii_uppercase();
+    let stem = cleaned.split('.').next().unwrap_or("").trim_end().to_uppercase();
+    // COM0-9 / LPT0-9, and the superscript ¹ ² ³ Windows also reserves (review 2, #10).
+    let device_digit = |c: char| c.is_ascii_digit() || matches!(c, '\u{b9}' | '\u{b2}' | '\u{b3}');
+    let chars: Vec<char> = stem.chars().collect();
     let reserved = ["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"].contains(&stem.as_str())
-        || ((stem.starts_with("COM") || stem.starts_with("LPT")) && stem.len() == 4 && stem.as_bytes()[3].is_ascii_alphanumeric());
+        || ((stem.starts_with("COM") || stem.starts_with("LPT")) && chars.len() == 4 && device_digit(chars[3]));
     (!cleaned.is_empty() && !reserved && cleaned != "." && cleaned != "..").then_some(cleaned)
+}
+
+/// Files that act just by being looked at in Explorer (an icon or a target on a network path makes Windows send the
+/// person's NTLM hash to the guest's server): never offered (review 2, #10).
+pub fn offer_kind_allowed(file_name: &str) -> bool {
+    let lower = file_name.to_lowercase();
+    let blocked_ext = [".url", ".lnk", ".scf", ".library-ms", ".searchconnector-ms", ".website", ".appref-ms"];
+    lower != "desktop.ini" && !blocked_ext.iter().any(|e| lower.ends_with(e))
 }
 
 /// Only a file directly inside the agent's Outbox: no subfolders, links are the guest's problem (it reads as
@@ -2268,6 +2301,9 @@ fn new_offer(name: &str, path: &str, note: &str, client: Option<&str>, ctx: &Ctx
     };
     let conn = conn.ok_or_else(|| CmdError { code: "off".into(), message: format!("The agent on '{}' isn't connected.", reg.name) })?;
     let Some(file_name) = safe_file_name(&guest_name) else { return err("bad_request", "That file name can't be saved on this PC.") };
+    if !offer_kind_allowed(&file_name) {
+        return err("denied", "Shortcuts and folder settings files (.url, .lnk, .scf, .library-ms, .searchConnector-ms, desktop.ini) can't leave the machine.");
+    }
     // Kept relative to the agent's home: what the guest's files.read takes, whatever its profile folder is called.
     let path = &format!("{OUTBOX}{guest_name}");
     // The size, as the guest reports it (shown to the person; the copy re-checks every byte count).
@@ -2629,6 +2665,13 @@ pub(crate) mod tests {
         assert_eq!(r["stopped"][0], json!(id2));
         assert_eq!(invoke(&mut other, Some(&id2)), "killed");
         assert_eq!(code(command("Lock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id2 }), &mut other)), "killed");
+        // A session reads only its own: not another session's steps, screenshots or requests.
+        assert_eq!(code(command("Get-GpuVMAgentClient", &json!({ "Connection": id }), &mut other)), "not_found");
+        assert!(command("Get-GpuVMAgentClient", &json!({}), &mut other).unwrap().as_array().unwrap().iter().all(|c| c["id"] == json!(id2)));
+        assert_eq!(code(command("Get-GpuVMAgentCapture", &json!({ "Connection": id, "Action": 1 }), &mut other)), "not_found");
+        assert!(command("Get-GpuVMAgentRequest", &json!({}), &mut other).unwrap().as_array().unwrap().iter().all(|r| r["connection"] == json!(id2)));
+        assert!(command("Get-GpuVMAgentRequest", &json!({}), &mut app).unwrap().as_array().unwrap().iter().any(|r| r["connection"] == json!(id)));
+        assert!(command("Get-GpuVMAgentClient", &json!({}), &mut app).unwrap().as_array().unwrap().len() >= 2);
         // A call for a human ends with its session: closing the MCP pipe connection frees the machine and its pause.
         command("Request-GpuVMHuman", &json!({ "Name": "Test1", "Connection": id, "Message": "help" }), &mut mcp).unwrap();
         assert_eq!(get_agents(Some("Test1"))[0]["paused"]["by"], "agent");
@@ -2720,6 +2763,18 @@ pub(crate) mod tests {
         let folders = vec![(a.to_string(), old), (b.to_string(), old), (b.to_uppercase(), Duration::from_secs(5)), ("blobs".to_string(), old)];
         // The VM that exists stays; a young folder stays (an install may be writing it); other folders stay.
         assert_eq!(orphans(&folders, &[a.to_string()]), vec![b.to_string()]);
+    }
+
+    #[test]
+    fn dangerous_names_never_land() {
+        for bad in ["COM1.txt", "lpt9", "COM\u{b9}.txt", "LPT\u{b3}", "con", "AUX.log"] {
+            assert!(safe_file_name(bad).is_none(), "{bad}");
+        }
+        assert_eq!(safe_file_name("COMET.txt").as_deref(), Some("COMET.txt"));
+        for bad in ["x.url", "Report.LNK", "a.scf", "b.library-ms", "c.searchConnector-ms", "desktop.ini", "Desktop.INI"] {
+            assert!(!offer_kind_allowed(bad), "{bad}");
+        }
+        assert!(offer_kind_allowed("report.pdf"));
     }
 
     #[test]
