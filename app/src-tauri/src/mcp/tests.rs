@@ -287,7 +287,7 @@ fn guest_and_broker_states() {
     h.fake.with(|s| { let x = s.machines.iter_mut().find(|x| x.name == m).unwrap(); x.secure_desktop = false; x.paused = true; });
     let paused = h.err("click", json!({ "machine": m, "x": 1, "y": 1 }));
     assert!(paused.contains("took control") && paused.contains("fresh screenshot"), "{paused}");
-    assert!(h.ok("list_machines", json!({})).contains("paused by the person"));
+    assert!(h.ok("list_machines", json!({})).contains("paused: the person took control"));
     h.fake.with(|s| s.machines.iter_mut().find(|x| x.name == m).unwrap().paused = false);
     // Someone else's machine.
     h.fake.with(|s| s.machines.iter_mut().find(|x| x.name == "work-pc").unwrap().taken_by = Some("other".into()));
@@ -325,13 +325,24 @@ fn commands_files_and_offers() {
     assert!(h.ok("offer_status", json!({ "machine": m, "offerId": id })).contains("still waiting"));
     h.fake.with(|s| s.offers.get_mut(&id).unwrap().1 = "approved".into());
     assert!(h.ok("offer_status", json!({ "machine": m, "offerId": id })).contains("approved"));
-    let p = h.ok("restore_point_create", json!({ "machine": m, "label": "clean" }));
-    assert!(p.contains("clean"));
-    assert!(h.ok("restore_point_revert", json!({ "machine": m, "point": "clean" })).contains("back at clean"));
-    assert!(h.err("click", json!({ "machine": m, "x": 1, "y": 1 })).contains("Take a screenshot"), "revert forgets old screenshots");
-    assert!(h.err("restore_point_revert", json!({ "machine": m, "point": "nope" })).contains("no restore point"));
+    // Restore points: not on disposable machines (turning them off deletes them), only on taken normal ones.
+    assert!(h.err("restore_point_create", json!({ "machine": m })).contains("is disposable"));
     assert!(h.ok("open_viewer", json!({ "machine": m })).contains("viewer"));
     assert!(h.err("destroy", json!({ "machine": "work-pc" })).contains("Take work-pc first"));
+    assert!(h.err("restore_point_create", json!({ "machine": "work-pc" })).contains("Take work-pc first"));
+    // A normal machine that is off: take starts it.
+    h.fake.with(|s| s.machines.iter_mut().find(|x| x.name == "work-pc").unwrap().off = true);
+    assert!(h.ok("list_machines", json!({})).contains("work-pc: off"));
+    assert!(h.ok("take_machine", json!({ "machine": "work-pc" })).contains("ready (screen 1920x1080)"));
+    h.ok("screenshot", json!({ "machine": "work-pc" }));
+    let p = h.ok("restore_point_create", json!({ "machine": "work-pc", "label": "clean" }));
+    assert!(p.contains("clean"));
+    assert!(h.ok("restore_point_revert", json!({ "machine": "work-pc", "point": "clean" })).contains("back at clean"));
+    assert!(h.err("click", json!({ "machine": "work-pc", "x": 1, "y": 1 })).contains("Take a screenshot"), "revert forgets old screenshots");
+    assert!(h.err("restore_point_revert", json!({ "machine": "work-pc", "point": "nope" })).contains("no restore point"));
+    assert!(h.err("destroy", json!({ "machine": "work-pc" })).contains("isn't disposable"));
+    h.ok("release_machine", json!({ "machine": "work-pc" }));
+    assert!(!h.ok("list_machines", json!({})).contains("work-pc: ready, taken"));
 }
 
 #[test]

@@ -15,6 +15,9 @@ pub struct Machine {
     pub screen: (u32, u32),
     pub taken_by: Option<String>,
     pub paused: bool,
+    /// "person" (took control) or "agent" (request_human).
+    pub paused_by: String,
+    pub off: bool,
     pub elevated_foreground: bool,
     pub secure_desktop: bool,
     pub files: HashMap<String, Vec<u8>>,
@@ -66,6 +69,8 @@ fn machine(name: &str, disposable: bool, template: &str) -> Machine {
         screen: (1920, 1080),
         taken_by: None,
         paused: false,
+        paused_by: "person".into(),
+        off: false,
         elevated_foreground: false,
         secure_desktop: false,
         files: HashMap::new(),
@@ -110,9 +115,11 @@ impl Broker for FakeBroker {
             }
             "machines.list" => {
                 let list: Vec<Value> = st.machines.iter().map(|m| json!({
-                    "name": m.name, "state": "ready", "disposable": m.disposable, "template": m.template,
-                    "screen": { "w": m.screen.0, "h": m.screen.1 }, "signedIn": true,
-                    "takenBy": m.taken_by, "paused": m.paused })).collect();
+                    "name": m.name, "state": if m.off { "off" } else { "ready" }, "disposable": m.disposable, "template": m.template,
+                    "agent": if m.off { Value::Null } else { json!({ "version": "fake", "screen": { "w": m.screen.0, "h": m.screen.1 }, "signedIn": true }) },
+                    "desktop": if m.secure_desktop { "secure" } else { "default" },
+                    "takenBy": m.taken_by.as_ref().map(|c| json!({ "connection": c, "client": "fake client" })),
+                    "paused": if m.paused { json!({ "by": m.paused_by, "message": "" }) } else { Value::Null } })).collect();
                 return Ok(Reply::of(Value::Array(list)));
             }
             "machine.create" => {
@@ -159,6 +166,10 @@ impl Broker for FakeBroker {
                 return Ok(Reply::default());
             }
             "viewer.open" => return Ok(Reply::of(json!({ "open": true }))),
+            "machine.start" => {
+                m.off = false;
+                return Ok(Reply::default());
+            }
             _ => {}
         }
         if m.taken_by.as_deref() != Some(conn.as_str()) {
@@ -172,7 +183,12 @@ impl Broker for FakeBroker {
                 if steps > max_steps {
                     return Err(err("budget", "Step budget used up."));
                 }
-                guest(m, s(&args, "method"), &args["params"])
+                // The broker sends `blob` after the request; the fake hands it to the guest with the params.
+                let mut params = args["params"].clone();
+                if let Some(b) = args.get("blob") {
+                    params["blob"] = b.clone();
+                }
+                guest(m, s(&args, "method"), &params)
             }
             "file.send" => {
                 let host = s(&args, "hostPath");
@@ -213,6 +229,7 @@ impl Broker for FakeBroker {
             }
             "human.request" => {
                 m.paused = true;
+                m.paused_by = "agent".into();
                 Ok(Reply::of(json!({ "requestId": "h1" })))
             }
             _ => Err(err("internal", &format!("Unknown operation {op}."))),
@@ -296,7 +313,7 @@ fn guest(m: &mut Machine, method: &str, p: &Value) -> Result<Reply> {
                 return Err(err("denied", "Outside the agent's profile."));
             }
             use base64::Engine;
-            let data = base64::engine::general_purpose::STANDARD.decode(p["data"].as_str().unwrap_or("")).unwrap_or_default();
+            let data = base64::engine::general_purpose::STANDARD.decode(p["blob"].as_str().unwrap_or("")).unwrap_or_default();
             m.files.insert(path, data);
             Ok(Reply::of(json!({})))
         }

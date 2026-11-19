@@ -318,10 +318,10 @@ pub fn definitions() -> Vec<Value> {
             schema(json!({ "machine": m(), "offerId": { "type": "string" } }), &["machine", "offerId"]),
             ann("Offer status", true, false, true, false)),
         // do: restore points and lifetime
-        tool("restore_point_create", "Save a restore point of the machine to go back to later.",
+        tool("restore_point_create", "Save a restore point of a normal (not disposable) machine you took, to go back to later. The machine restarts for it.",
             schema(json!({ "machine": m(), "label": { "type": "string" } }), &["machine"]),
             ann("Create restore point", false, false, false, false)),
-        tool("restore_point_revert", "Return the machine to a restore point; everything since is lost.",
+        tool("restore_point_revert", "Return a normal machine you took to a restore point (by id or label). How it is now is kept as a new restore point first. The machine restarts.",
             schema(json!({ "machine": m(), "point": { "type": "string" } }), &["machine", "point"]),
             ann("Revert to restore point", false, true, false, false)),
         tool("destroy", "Shut down and delete a disposable machine you created; everything in it is lost. Other machines can't be destroyed by an agent.",
@@ -508,6 +508,12 @@ impl Tool<'_> {
         if e.code == "killed" {
             self.ctx.killed.store(true, std::sync::atomic::Ordering::Relaxed);
         }
+        // The service drops a client when its pipe closes: register again on the next call (machines must be
+        // taken again, which the error says).
+        if e.code == "unavailable" {
+            self.ctx.connection.lock().unwrap().take();
+            self.ctx.shots.lock().unwrap().clear();
+        }
         explain(machine, &e)
     }
 
@@ -531,8 +537,24 @@ impl Tool<'_> {
     }
 
     fn invoke(&self, machine: &str, method: &str, params: Value) -> Result<Reply, String> {
+        self.invoke_with(machine, method, params, json!({}))
+    }
+
+    /// `extra`: `timeoutSec` (the broker's wait, default 30 s) and `blob` (base64 sent after the request).
+    fn invoke_with(&self, machine: &str, method: &str, params: Value, mut extra: Value) -> Result<Reply, String> {
         self.step(machine)?;
-        self.broker("agent.invoke", machine, json!({ "method": method, "params": params }))
+        extra["method"] = json!(method);
+        extra["params"] = params;
+        self.broker("agent.invoke", machine, extra)
+    }
+
+    /// The machine as the broker lists it, which must be taken by this connection.
+    fn mine(&self, machine: &str) -> Result<Value, String> {
+        let m = self.find(machine)?.ok_or_else(|| format!("There is no machine named {machine}."))?;
+        if taken_by(&m) != Some(self.connection) {
+            return Err(explain(machine, &BrokerError::new("not_taken", "")));
+        }
+        Ok(m)
     }
 
     fn wait(&self, seconds: u64, mut done: impl FnMut() -> Result<bool, String>) -> Result<bool, String> {
@@ -609,14 +631,21 @@ impl Tool<'_> {
         let lines: Vec<String> = list.iter().map(|m| {
             let mut flags = vec![m["state"].as_str().unwrap_or("?").to_string()];
             if m["disposable"] == true { flags.push("disposable".into()); }
-            if m["paused"] == true { flags.push("paused by the person".into()); }
-            match m["takenBy"].as_str() {
-                Some(c) if c == self.connection => flags.push("taken by you".into()),
-                Some(_) => flags.push("taken by another agent".into()),
+            match paused_by(m) {
+                Some("agent") => flags.push("paused: waiting for the person (request_human)".into()),
+                Some(_) => flags.push("paused: the person took control".into()),
                 None => {}
             }
-            let screen = if m["screen"]["w"].is_u64() { format!(" {}x{}", m["screen"]["w"], m["screen"]["h"]) } else { String::new() };
-            format!("- {}: {}{screen}", m["name"].as_str().unwrap_or("?"), flags.join(", "))
+            match taken_by(m) {
+                Some(c) if c == self.connection => flags.push("taken by you".into()),
+                Some(_) => flags.push(format!("taken by another agent ({})", m["takenBy"]["client"].as_str().unwrap_or("?"))),
+                None => {}
+            }
+            if let Some(d) = m["desktop"].as_str().filter(|d| *d != "default") {
+                flags.push(format!("{d} screen"));
+            }
+            let size = screen(m).map(|(w, h)| format!(" {w}x{h}")).unwrap_or_default();
+            format!("- {}: {}{size}", m["name"].as_str().unwrap_or("?"), flags.join(", "))
         }).collect();
         Ok(text(lines.join("\n")))
     }
@@ -625,22 +654,33 @@ impl Tool<'_> {
         let mut last = Value::Null;
         let ready = self.wait(seconds, || {
             last = self.find(machine)?.unwrap_or(Value::Null);
-            Ok(last["state"] == "ready" && last["signedIn"] != false)
+            if last["state"] == "no-agent" {
+                return Err(explain(machine, &BrokerError::new("no_agent", "")));
+            }
+            Ok(last["state"] == "ready" && last["agent"]["signedIn"] != false)
         })?;
         if !ready {
             return Ok(format!("not ready yet (state: {}); call take_machine again to keep waiting.", last["state"].as_str().unwrap_or("unknown")));
         }
-        if let (Some(w), Some(h)) = (last["screen"]["w"].as_u64(), last["screen"]["h"].as_u64()) {
-            self.ctx.screens.lock().unwrap().insert(machine.to_string(), (w as u32, h as u32));
+        let size = screen(&last);
+        if let Some(s) = size {
+            self.ctx.screens.lock().unwrap().insert(machine.to_string(), s);
         }
         self.ctx.uses.lock().unwrap().entry(machine.to_string()).or_default().since.get_or_insert_with(Instant::now);
-        Ok(format!("its agent is ready (screen {}x{}). Next: screenshot.", last["screen"]["w"], last["screen"]["h"]))
+        Ok(format!("its agent is ready{}. Next: screenshot.", size.map(|(w, h)| format!(" (screen {w}x{h})")).unwrap_or_default()))
     }
 
     fn take_machine(&self) -> Out {
         let machine = self.machine()?;
         let wait = opt_int(self.args, "waitSeconds", 0, 900)?.unwrap_or(180) as u64;
+        let m = self.find(machine)?.ok_or_else(|| format!("There is no machine named {machine}."))?;
+        if m["state"] == "no-agent" {
+            return Err(explain(machine, &BrokerError::new("no_agent", "")));
+        }
         self.broker("machine.take", machine, json!({}))?;
+        if m["state"] == "off" {
+            self.broker("machine.start", machine, json!({}))?;
+        }
         let ready = self.wait_ready(machine, wait)?;
         Ok(text(format!("You have {machine}; {ready}")))
     }
@@ -899,8 +939,8 @@ impl Tool<'_> {
             return Err("`args` only goes with shell 'none'; put everything in `command` otherwise.".into());
         }
         let timeout = opt_int(self.args, "timeoutSeconds", 1, 600)?.unwrap_or(60);
-        let reply = self.invoke(machine, "exec.run", json!({ "file": file, "args": args, "cwd": opt_str(self.args, "cwd")?,
-            "timeoutMs": timeout * 1000, "stdin": opt_str(self.args, "stdin")? }))?;
+        let reply = self.invoke_with(machine, "exec.run", json!({ "file": file, "args": args, "cwd": opt_str(self.args, "cwd")?,
+            "timeoutMs": timeout * 1000, "stdin": opt_str(self.args, "stdin")? }), json!({ "timeoutSec": (timeout + 10).min(600) }))?;
         let d = &reply.data;
         let out = d["stdout"].as_str().unwrap_or("").replace("\r\n", "\n");
         let err = d["stderr"].as_str().unwrap_or("").replace("\r\n", "\n");
@@ -965,7 +1005,8 @@ impl Tool<'_> {
         if bytes.len() > MAX_WRITE {
             return Err("Write at most 10 MB at a time (use send_file for big files).".into());
         }
-        self.invoke(machine, "files.write", json!({ "path": path, "data": base64::engine::general_purpose::STANDARD.encode(&bytes) }))?;
+        self.invoke_with(machine, "files.write", json!({ "path": path, "blob": true }),
+            json!({ "blob": base64::engine::general_purpose::STANDARD.encode(&bytes), "timeoutSec": 60 }))?;
         Ok(text(format!("Wrote {} bytes to {path}.", bytes.len())))
     }
 
@@ -1012,25 +1053,44 @@ impl Tool<'_> {
 
     // -------- restore points and lifetime
 
+    /// Restore points need the machine off for a moment, which deletes a disposable machine: refused for those.
+    fn restorable(&self, machine: &str) -> Result<(), String> {
+        if self.mine(machine)?["disposable"] == true {
+            return Err(format!("{machine} is disposable: turning it off (which restore points need) deletes it. Use a normal machine the person gave you for restore points."));
+        }
+        Ok(())
+    }
+
     fn restore_create(&self) -> Out {
         let machine = self.machine()?;
+        let label = opt_str(self.args, "label")?;
+        if label.is_some_and(|l| l.chars().count() > 60) {
+            return Err("`label` is 60 characters at most.".into());
+        }
+        self.restorable(machine)?;
         self.step(machine)?;
-        let r = self.broker("restore.create", machine, json!({ "label": opt_str(self.args, "label")? }))?;
-        Ok(text(format!("Restore point {} saved.", r.data["name"].as_str().unwrap_or("?"))))
+        let r = self.broker("restore.create", machine, json!({ "label": label }))?;
+        self.ctx.shots.lock().unwrap().retain(|s| s.machine != machine);
+        let ready = self.wait_ready(machine, 300)?;
+        Ok(text(format!("Restore point {} saved (the machine restarted for it); {ready}", r.data["name"].as_str().unwrap_or("?"))))
     }
 
     fn restore_revert(&self) -> Out {
         let machine = self.machine()?;
         let point = arg_str(self.args, "point")?;
+        self.restorable(machine)?;
         self.step(machine)?;
         self.broker("restore.revert", machine, json!({ "point": point }))?;
         self.ctx.shots.lock().unwrap().retain(|s| s.machine != machine);
-        let ready = self.wait_ready(machine, 180)?;
-        Ok(text(format!("{machine} is back at {point}; {ready}")))
+        let ready = self.wait_ready(machine, 300)?;
+        Ok(text(format!("{machine} is back at {point} (how it was before is kept as a new restore point); {ready}")))
     }
 
     fn destroy(&self) -> Out {
         let machine = self.machine()?;
+        if self.mine(machine)?["disposable"] != true {
+            return Err(format!("{machine} isn't disposable; only the person can delete it. Use release_machine when you're done."));
+        }
         self.broker("machine.destroy", machine, json!({}))?;
         self.ctx.forget_machine(machine);
         Ok(text(format!("{machine} is being shut down and deleted.")))
@@ -1044,7 +1104,7 @@ impl Tool<'_> {
         Ok(text(format!("GpuVM's viewer shows {machine} to the person now.")))
     }
 
-    fn request_human(&self, ) -> Out {
+    fn request_human(&self) -> Out {
         let machine = self.machine()?;
         let message = arg_str(self.args, "message")?;
         let wait = opt_int(self.args, "waitSeconds", 0, 1800)?.unwrap_or(0) as u64;
@@ -1052,13 +1112,27 @@ impl Tool<'_> {
         if wait == 0 {
             return Ok(text(format!("Asked the person. The agent on {machine} is paused until they press \"Return to agent\"; calls will say so meanwhile.")));
         }
-        let back = self.wait(wait, || Ok(self.find(machine)?.is_some_and(|m| m["paused"] == false)))?;
+        let back = self.wait(wait, || Ok(self.find(machine)?.is_some_and(|m| paused_by(&m).is_none())))?;
         if back {
             Ok(text(format!("The person handed {machine} back. Take a fresh screenshot before acting: the screen may have changed.")))
         } else {
             Ok(text(format!("The person hasn't handed {machine} back yet; call again later.")))
         }
     }
+}
+
+/// Fields of a machine as the broker lists it.
+fn screen(m: &Value) -> Option<(u32, u32)> {
+    let s = &m["agent"]["screen"];
+    Some((s["w"].as_u64()? as u32, s["h"].as_u64()? as u32))
+}
+
+fn paused_by(m: &Value) -> Option<&str> {
+    m["paused"].is_object().then(|| m["paused"]["by"].as_str().unwrap_or("person"))
+}
+
+fn taken_by(m: &Value) -> Option<&str> {
+    m["takenBy"]["connection"].as_str()
 }
 
 fn offer_text(id: &str, d: &Value) -> String {

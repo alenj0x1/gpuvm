@@ -267,8 +267,12 @@ impl Server {
         };
         let started = std::time::Instant::now();
         let result = tools::call(&self.ctx, name, &call);
-        log(&format!("{name} {} ms{}", started.elapsed().as_millis(),
-            if result["isError"] == true { " (error)" } else { "" }));
+        // Clients show stderr as errors: failures always, every call only with GPUVM_MCP_LOG=1.
+        if result["isError"] == true {
+            log(&format!("{name} failed after {} ms: {}", started.elapsed().as_millis(), result["content"][0]["text"].as_str().unwrap_or("")));
+        } else if std::env::var_os("GPUVM_MCP_LOG").is_some() {
+            log(&format!("{name} {} ms", started.elapsed().as_millis()));
+        }
         result
     }
 
