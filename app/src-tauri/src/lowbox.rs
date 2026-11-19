@@ -106,6 +106,16 @@ impl LowChild {
     pub fn handle(&self) -> HANDLE {
         self.process.0
     }
+    /// How it ended (its exit code), or None while it runs.
+    pub fn exit_code(&self) -> Option<u32> {
+        use windows_sys::Win32::System::Threading::GetExitCodeProcess;
+        if self.running() {
+            return None;
+        }
+        let mut code = 0u32;
+        // SAFETY: owned process handle; the code is written to a local.
+        (unsafe { GetExitCodeProcess(self.process.0, &mut code) } != 0).then_some(code)
+    }
 }
 
 /// The job the viewer runs in: one process (it can't start others), gone when the app lets go of it, and kept away
@@ -279,6 +289,52 @@ mod tests {
             windows_sys::Win32::Foundation::CloseHandle(copy);
         }
     }
+    /// The installed viewer starts at Low inside its job and stays up (it waits for a pipe that never answers here).
+    /// A viewer that dies as it starts at Low (a DLL, the console, a second process the job refuses) fails this.
+    /// Run by hand: `cargo test viewer_starts_at_low -- --ignored --nocapture` (GPUVM_VIEWER overrides the exe).
+    #[test]
+    #[ignore]
+    fn viewer_starts_at_low() {
+        let exe = std::env::var("GPUVM_VIEWER").map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::path::PathBuf::from(r"C:\Program Files\GpuVM\gpuvm\viewer\GpuVMViewer.exe"));
+        // The pipe the app gives it (the Low label lets a Low process open it), and a thread that waits for it.
+        // The app's shapes: gpuvm-viewer-<32 hex> and a token of 32+ characters (bridge.cpp refuses anything else).
+        let name = format!(r"\\.\pipe\gpuvm-viewer-{:032x}", std::process::id() as u128 * 0x9e37_79b9_7f4a_7c15 + 0x1234);
+        let connected = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        // SAFETY: a test-only pipe with a valid descriptor; the handle lives until the test ends.
+        let pipe = unsafe {
+            use windows_sys::Win32::Security::{Authorization::{ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1}, SECURITY_ATTRIBUTES};
+            use windows_sys::Win32::System::Pipes::{CreateNamedPipeW, PIPE_TYPE_BYTE, PIPE_WAIT};
+            let mut sd = std::ptr::null_mut();
+            assert!(ConvertStringSecurityDescriptorToSecurityDescriptorW(super::wide("D:P(A;;GA;;;WD)S:(ML;;NW;;;LW)").as_ptr(), SDDL_REVISION_1, &mut sd, std::ptr::null_mut()) != 0);
+            let sa = SECURITY_ATTRIBUTES { nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32, lpSecurityDescriptor: sd, bInheritHandle: 0 };
+            let h = CreateNamedPipeW(super::wide(&name).as_ptr(), 3 /* PIPE_ACCESS_DUPLEX */, PIPE_TYPE_BYTE | PIPE_WAIT, 1, 65536, 65536, 0, &sa);
+            assert!(h != windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE);
+            h as usize
+        };
+        {
+            let connected = connected.clone();
+            // SAFETY: blocks on the test's own pipe handle.
+            std::thread::spawn(move || unsafe {
+                use windows_sys::Win32::System::Pipes::ConnectNamedPipe;
+                let ok = ConnectNamedPipe(pipe as _, std::ptr::null_mut()) != 0 || windows_sys::Win32::Foundation::GetLastError() == 535;
+                connected.store(ok, std::sync::atomic::Ordering::SeqCst);
+            });
+        }
+        // GPUVM_LOWBOX_PROBE=cmd: a plain cmd in the same token and job opens the pipe instead (is it the pipe or the viewer?).
+        let probe = std::env::var("GPUVM_LOWBOX_PROBE").is_ok();
+        let exe = if probe { system32("cmd.exe") } else { exe };
+        let args: Vec<String> = if probe { vec!["/c".into(), format!("echo x> {name}")] } else {
+            ["stream", "127.0.0.1", "Desktop", "--gpuvm-pipe", &name, "--gpuvm-token-env", "GPUVM_VIEWER_TOKEN"].iter().map(|s| s.to_string()).collect()
+        };
+        let child = super::spawn_low(&exe, &args, &[("GPUVM_VIEWER_TOKEN", "0123456789abcdef0123456789abcdef")]).expect("spawn");
+        std::thread::sleep(std::time::Duration::from_secs(6));
+        let code = child.exit_code();
+        let up = connected.load(std::sync::atomic::Ordering::SeqCst);
+        println!("viewer at Low after 6 s: connected to its pipe {up}, {}", code.map(|c| format!("ended, exit code {c:#010x}")).unwrap_or_else(|| "running".into()));
+        assert!(up, "the viewer never reached its pipe at Low (exit code {code:#x?})");
+    }
+
     #[test]
     fn quotes_like_the_c_runtime() {
         assert_eq!(quote("plain"), "plain");
