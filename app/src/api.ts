@@ -1,4 +1,4 @@
-import type { AppInfo, InstalledApp, BaseInfo, CleanupLevel, HomeInfo, SharedDiskInfo, TemplateInfo, DiskInfo, DisplayMode, HostInfo, IsoFile, JobEvent, ProfileInfo, ProfileSettings, StreamSettings, VmOverview, AdminPrompt, HostMonitor, RestorePointList, ImportInfo, AgentClient, AgentRequest, AgentOffer } from "./types";
+import type { AppInfo, InstalledApp, BaseInfo, CleanupLevel, HomeInfo, SharedDiskInfo, TemplateInfo, DiskInfo, DisplayMode, HostInfo, IsoFile, JobEvent, ProfileInfo, ProfileSettings, StreamSettings, VmOverview, AdminPrompt, HostMonitor, RestorePointList, ImportInfo } from "./types";
 import * as mock from "./mock";
 import { t } from "./i18n";
 
@@ -71,15 +71,25 @@ export const api = {
 
 /** Agents (docs/agents/protocol.md): the clients connected over MCP, their requests and the files they offer. The
  *  broker decides everything; the app only shows it and passes on the person's answers. */
+// The broker's own shapes (times in ms, the client is a "connection"); agentStore.ts turns them into the app's types.
+type Raw = Record<string, unknown>;
 export const agents = {
-  clients: () => ps<AgentClient>("Get-GpuVMAgent"),
-  requests: () => ps<AgentRequest>("Get-GpuVMAgentRequest"),
-  offers: (machine?: string) => ps<AgentOffer>("Get-GpuVMAgentOffer", machine ? { Name: machine } : {}),
-  /** "control": the person took control over the picture (the viewer saw their input). id "*" = every client. */
-  pause: (id: string, reason: "person" | "control" = "person") => ps("Suspend-GpuVMAgent", { Id: id, Reason: reason }),
-  resume: (id: string) => ps("Resume-GpuVMAgent", { Id: id }),
-  stop: (id: string) => ps("Stop-GpuVMAgent", { Id: id }),
-  setClientApprovals: (id: string, on: boolean) => ps("Set-GpuVMAgentClient", { Id: id, ClientApprovals: on }),
+  /** The agent sessions: who, on which machine, doing what, how far into the budget, its last steps. */
+  clients: () => ps<Raw>("Get-GpuVMAgentClient"),
+  requests: () => ps<Raw>("Get-GpuVMAgentRequest"),
+  offers: (machine?: string) => ps<Raw>("Get-GpuVMAgentOffer", machine ? { Name: machine } : {}),
+  settings: () => ps<{ clients?: Record<string, { clientApprovals?: boolean }> }>("Get-GpuVMAgentSettings").then((r) => r[0] ?? null),
+  broker: () => ps<{ listening: boolean; error?: string | null }>("Get-GpuVMAgentBroker").then((r) => r[0] ?? null),
+  /** An action's screenshot, kept by the broker for the last 10 steps. */
+  capture: (connection: string, action: number) => ps<{ format: string; data: string }>("Get-GpuVMAgentCapture", { Connection: connection, Action: action }).then((r) => r[0] ?? null),
+  /** "control": the person took control over the picture (the viewer saw their input). */
+  pause: (connection: string, reason: "person" | "control" = "person") =>
+    ps("Suspend-GpuVMAgent", { Connection: connection, Reason: reason, Message: reason === "control" ? "You took control" : "Paused by you" }),
+  resume: (connection: string) => ps("Resume-GpuVMAgent", { Connection: connection }),
+  /** The kill switch: one session, or every one with "*". */
+  stop: (connection: string) => ps("Stop-GpuVMAgentClient", connection === "*" ? { All: true } : { Connection: connection }),
+  /** Per client (by its name, so it stays for its next sessions): low-risk approvals from the client itself. */
+  setClientApprovals: (clientName: string, on: boolean) => ps("Set-GpuVMAgentClient", { Name: clientName, ClientApprovals: on }),
   /** forTask: allowed again for the rest of this task (never forever). */
   answer: (id: string, allow: boolean, forTask = false) => ps("Resolve-GpuVMAgentRequest", { Id: id, Allow: allow, ...(forTask ? { ForTask: true } : {}) }),
   resolveOffer: (id: string, accept: boolean) => ps("Resolve-GpuVMAgentOffer", { Id: id, Accept: accept }),

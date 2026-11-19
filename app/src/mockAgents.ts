@@ -104,36 +104,43 @@ setInterval(() => {
   });
 }, 3200);
 
-const want = (args: Record<string, unknown>) => (c: AgentClient) => args.Id === "*" || c.id === args.Id;
+const want = (args: Record<string, unknown>) => (c: AgentClient) => args.All === true || args.Connection === "*" || c.id === args.Connection || (!!args.Name && c.machine === args.Name);
+const ms = (s: string) => new Date(s).getTime();
 
-/** The agent commands the mock answers (null: not one of them). */
+/** The agent commands the mock answers, with the broker's names and shapes (times in ms, the client is a
+ *  "connection"), so the browser goes through the same normalization as the app (agentStore.fromBroker). */
 export function agentCommand(cmd: string, args: Record<string, unknown>): unknown[] | null {
   switch (cmd) {
-    case "Get-GpuVMAgent":
-      return clients;
+    case "Get-GpuVMAgentClient":
+      return clients.map(({ clientApprovals: _, ...c }) => ({ ...c, connectedAt: ms(c.connectedAt),
+        actions: c.actions.map((a) => ({ id: a.id, at: ms(a.at), method: a.method, text: a.text, ok: a.ok, code: a.ok ? "ok" : "internal", capture: false })) }));
+    case "Get-GpuVMAgentSettings":
+      return [{ maxSteps: 200, maxMinutes: 60, approvalTimeoutSec: 120, clients: Object.fromEntries(clients.filter((c) => c.clientApprovals).map((c) => [c.name, { clientApprovals: true }])) }];
+    case "Get-GpuVMAgentBroker":
+      return [{ listening: params.get("broker") !== "blocked", error: params.get("broker") === "blocked" ? "Another program holds the agents' channel." : null, connected: clients.length }];
     case "Get-GpuVMAgentRequest":
-      return requests;
+      return requests.filter((r) => !r.human).map(({ client, ...r }) => ({ ...r, connection: client, state: "pending", createdAt: ms(r.createdAt), expiresAt: ms(r.expiresAt) }));
     case "Get-GpuVMAgentOffer":
-      return args.Name ? offers.filter((o) => o.machine === args.Name) : offers;
+      return (args.Name ? offers.filter((o) => o.machine === args.Name) : offers).map(({ client, ...o }) => ({ ...o, connection: client, createdAt: ms(o.createdAt) }));
     case "Suspend-GpuVMAgent":
-      clients = clients.map((c) => want(args)(c) && c.state !== "idle" ? { ...c, state: args.Reason === "control" ? "control" : "paused", reason: args.Reason === "control" ? "You took control" : "Paused by you" } : c);
+      clients = clients.map((c) => want(args)(c) && c.state !== "idle" ? { ...c, state: args.Reason === "control" ? "control" : "paused", reason: String(args.Message ?? "Paused by you") } : c);
       return [];
     case "Resume-GpuVMAgent":
-      clients = clients.map((c) => want(args)(c) && (c.state === "paused" || c.state === "control") ? { ...c, state: "working", reason: null } : c);
+      clients = clients.map((c) => want(args)(c) && (c.state === "paused" || c.state === "control" || c.state === "human") ? { ...c, state: "working", reason: null } : c);
+      requests = requests.filter((r) => !(r.human && clients.some((c) => c.id === r.client && c.state === "working")));
       return [];
-    case "Stop-GpuVMAgent":
-      // Stopping cuts the client's work: it stays connected, without a machine, until it asks again.
+    case "Stop-GpuVMAgentClient":
+      // A stopped session keeps its row until its client goes; it has no machine any more.
       clients = clients.map((c) => want(args)(c) ? { ...c, state: "idle", machine: null, reason: null, task: null } : c);
-      requests = requests.filter((r) => !(args.Id === "*" || r.client === args.Id));
+      requests = requests.filter((r) => !(args.All === true || r.client === args.Connection));
       return [];
     case "Set-GpuVMAgentClient":
-      clients = clients.map((c) => c.id === args.Id ? { ...c, clientApprovals: Boolean(args.ClientApprovals) } : c);
+      clients = clients.map((c) => c.name === args.Name ? { ...c, clientApprovals: Boolean(args.ClientApprovals) } : c);
       return [];
     case "Resolve-GpuVMAgentRequest": {
       const r = requests.find((x) => x.id === args.Id);
       requests = requests.filter((x) => x.id !== args.Id);
       if (r) clients = clients.map((c) => c.id === r.client && c.state === "waiting" && !requests.some((x) => x.client === c.id) ? { ...c, state: "working", reason: null } : c);
-      if (r?.kind === "deliver" && r.file && args.Allow) offers = [deliver(`o${Date.now()}`, r.file.name, r.file.sizeBytes, r.reason, 0, "accepted", r.machine), ...offers];
       return [];
     }
     case "Resolve-GpuVMAgentOffer":
@@ -143,6 +150,5 @@ export function agentCommand(cmd: string, args: Record<string, unknown>): unknow
       return null;
   }
 }
-
 /** The machines the agents work on, so their pages exist in the mock. */
 export const agentMachines = scenario === "none" ? [] : scenario === "many" ? ["win-agent", "lab-02", "lab-03", "lab-04", "lab-05"] : ["win-agent"];

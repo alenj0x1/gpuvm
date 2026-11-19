@@ -86,16 +86,24 @@ fn list(v: Result<Value, String>) -> Option<Vec<Value>> {
 /// the agent commands (before the broker is installed) is asked again only every half minute.
 pub fn start(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
+        let (mut round, mut settings, mut broker) = (0u64, Value::Null, Value::Null);
         loop {
             let viewing = crate::viewer::any_open();
-            let clients = list(call(&app, "Get-GpuVMAgent", json!({})).await);
+            // The broker answers these itself, in-process (agent-broker.md): cheap enough to ask every second.
+            let clients = list(call(&app, "Get-GpuVMAgentClient", json!({})).await);
             let Some(clients) = clients else {
                 tokio::time::sleep(Duration::from_secs(30)).await;
                 continue;
             };
             let requests = list(call(&app, "Get-GpuVMAgentRequest", json!({})).await).unwrap_or_default();
             let offers = list(call(&app, "Get-GpuVMAgentOffer", json!({})).await).unwrap_or_default();
-            update(&app, clients, requests, offers);
+            // The settings (per-client approvals) and the channel's state change rarely: every tenth round.
+            if round % 10 == 0 {
+                settings = call(&app, "Get-GpuVMAgentSettings", json!({})).await.ok().and_then(|v| v.get(0).cloned()).unwrap_or(Value::Null);
+                broker = call(&app, "Get-GpuVMAgentBroker", json!({})).await.ok().and_then(|v| v.get(0).cloned()).unwrap_or(Value::Null);
+            }
+            round += 1;
+            update(&app, clients, requests, offers, &settings, &broker);
             let busy = lock(&CLIENTS).iter().any(|c| c["state"].as_str().is_some_and(|s| s != "idle"));
             tokio::time::sleep(Duration::from_millis(if viewing && busy { 1000 } else if busy { 2000 } else { 5000 })).await;
         }
@@ -107,22 +115,31 @@ fn offer_request(o: &Value) -> Value {
     let name = o["name"].as_str().unwrap_or("");
     let created = o["createdAt"].clone();
     json!({
-        "id": format!("offer:{}", o["id"].as_str().unwrap_or("")), "offerId": o["id"], "client": o["client"], "clientName": o["clientName"],
+        "id": format!("offer:{}", o["id"].as_str().unwrap_or("")), "offerId": o["id"], "client": o["connection"], "clientName": o["clientName"],
         "machine": o["machine"], "kind": "deliver", "title": format!("Deliver {name}"), "reason": o["note"], "createdAt": created,
-        "expiresAt": o["expiresAt"].as_str().map(|s| Value::String(s.into())).unwrap_or(Value::Null),
+        "expiresAt": o["expiresAt"],
         "file": { "name": name, "sizeBytes": o["sizeBytes"] },
     })
 }
 
-fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Vec<Value>) {
-    // Every page that shows agents takes this instead of asking the service again (agentStore.ts).
-    let _ = app.emit("agents-state", json!({ "clients": clients, "requests": requests, "offers": offers }));
+fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Vec<Value>, settings: &Value, broker: &Value) {
+    // Every page that shows agents takes this instead of asking the service again (agentStore.ts turns it into the
+    // app's shapes).
+    let _ = app.emit("agents-state", json!({ "clients": clients, "requests": requests, "offers": offers, "settings": settings, "broker": broker }));
     *lock(&CLIENTS) = clients.clone();
     let answered = lock(&ANSWERED).clone();
-    let mut waiting: Vec<Value> = requests.into_iter().chain(offers.iter().filter(|o| o["state"] == "pending").map(offer_request))
+    // What only the person can do (a password, UAC) is the agent's state, not a request: shown without buttons.
+    let human = clients.iter().filter(|c| c["state"] == "human" && c["machine"].is_string()).map(|c| json!({
+        "id": format!("human:{}", c["id"].as_str().unwrap_or("")), "client": c["id"], "clientName": c["name"], "machine": c["machine"],
+        "kind": "admin", "title": c["reason"].as_str().filter(|s| !s.is_empty()).unwrap_or("Windows needs you"), "human": true,
+        "createdAt": 0, "expiresAt": Value::Null,
+    }));
+    let pending = requests.into_iter().filter(|r| r["state"].as_str().unwrap_or("pending") == "pending")
+        .map(|mut r| { r["client"] = r["connection"].clone(); r });
+    let mut waiting: Vec<Value> = pending.chain(human).chain(offers.iter().filter(|o| o["state"] == "pending").map(offer_request))
         .filter(|r| !answered.iter().any(|a| Some(a.as_str()) == r["id"].as_str()))
         .collect();
-    waiting.sort_by(|a, b| a["createdAt"].as_str().cmp(&b["createdAt"].as_str()));
+    waiting.sort_by(|a, b| a["createdAt"].as_f64().unwrap_or(0.0).total_cmp(&b["createdAt"].as_f64().unwrap_or(0.0)));
 
     // Which viewers report input: those whose machine has an agent working, with take control on input.
     let on_input = TAKE_ON_INPUT.load(Ordering::Relaxed);
@@ -397,7 +414,7 @@ pub fn agent_banner_info() -> Value {
 pub async fn agent_banner_return(app: AppHandle) -> Result<(), String> {
     let info = lock(&BANNERED).clone().ok_or("The agent already has the machine.")?;
     let id = info["client"].as_str().ok_or("The agent isn't valid.")?.to_string();
-    call(&app, "Resume-GpuVMAgent", json!({ "Id": id })).await?;
+    call(&app, "Resume-GpuVMAgent", json!({ "Connection": id })).await?;
     show_banner(&app, None);
     let _ = app.emit("agents-changed", json!({}));
     Ok(())
@@ -425,7 +442,7 @@ pub fn on_input(app: &AppHandle, vm: &str) {
     let vm = vm.to_string();
     tauri::async_runtime::spawn(async move {
         let id = client["id"].as_str().unwrap_or("").to_string();
-        let result = call(&app, "Suspend-GpuVMAgent", json!({ "Id": id, "Reason": "control" })).await;
+        let result = call(&app, "Suspend-GpuVMAgent", json!({ "Connection": id, "Reason": "control", "Message": "You took control" })).await;
         // Lab 054 reads this line: the time from the viewer's report to the broker's answer.
         eprintln!("agent take-control {vm} paused in {} ms ({})", started.elapsed().as_millis(), if result.is_ok() { "ok" } else { "failed" });
         if result.is_ok() {

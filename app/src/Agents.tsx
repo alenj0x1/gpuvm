@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   IconCheck, IconCopy, IconDeviceDesktop, IconFile, IconFileDownload, IconFileText, IconFileZip, IconHandFinger, IconHandStop, IconHistory, IconLoader2,
-  IconLock, IconPhoto, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconRobot, IconShieldLock, IconTerminal2, IconTrash, IconWorld, IconX, type Icon,
+  IconLock, IconPhoto, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconPlugConnectedX, IconRobot, IconShieldLock, IconTerminal2, IconTrash, IconWorld, IconX, type Icon,
 } from "@tabler/icons-react";
 import { agents, inTauri } from "./api";
-import { bytes, clientOn, refreshAgents, useAgents } from "./agentStore";
+import { actionThumb, bytes, clientOn, refreshAgents, useAgents } from "./agentStore";
 import { MachineIcon } from "./machineIcon";
 import { CheckMark, humanError, portalRoot } from "./ui";
 import { locale, t, tn, translateModule } from "./i18n";
@@ -61,10 +61,17 @@ function Budget({ c }: { c: AgentClient }) {
 }
 
 /** One action of the agent: its screenshot (when the broker kept one), what it did and when. */
-function ActionRow({ a, now }: { a: AgentAction; now: number }) {
+function ActionRow({ a, now, client }: { a: AgentAction; now: number; client: string }) {
+  const [thumb, setThumb] = useState<string | null>(a.thumb ?? null);
+  useEffect(() => {
+    if (!a.capture || a.thumb) return;
+    let alive = true;
+    actionThumb(client, a.id).then((src) => { if (alive) setThumb(src); });
+    return () => { alive = false; };
+  }, [client, a.id, a.capture, a.thumb]);
   return (
     <li className={`ag-action${a.ok ? "" : " failed"}`}>
-      <span className="ag-thumb">{a.thumb ? <img src={a.thumb} alt="" draggable={false} /> : <IconDeviceDesktop size={14} />}</span>
+      <span className="ag-thumb">{thumb ? <img src={thumb} alt="" draggable={false} /> : <IconDeviceDesktop size={14} />}</span>
       <span className="ag-action-text">{translateModule(a.text)}</span>
       <span className="ag-action-time">{since(a.at, now)}</span>
     </li>
@@ -135,10 +142,10 @@ export function AgentLive({ client, size = "full", actions = 3, onTakeControl }:
         </div>
         <StatePill state={client.state} />
       </div>
-      <Budget c={client} />
+      {client.maxSteps > 0 && <Budget c={client} />}
       {actions > 0 && (
         client.actions.length
-          ? <ul className="ag-actions">{client.actions.slice(0, actions).map((a) => <ActionRow key={a.id} a={a} now={now} />)}</ul>
+          ? <ul className="ag-actions">{client.actions.slice(0, actions).map((a) => <ActionRow key={a.id} a={a} now={now} client={client.id} />)}</ul>
           : <div className="ag-none">{t("No actions yet")}</div>
       )}
       {error && <span className="error-text">{error}</span>}
@@ -233,7 +240,7 @@ function OfferRow({ o, showMachine }: { o: AgentOffer; showMachine: boolean }) {
     setBusy(null);
   };
   const status = o.state === "accepted" ? t("Saved in {path}", { path: o.savedTo ?? `Downloads\\GpuVM\\${o.machine}` })
-    : o.state === "refused" ? t("Refused") : o.state === "expired" ? t("Expired|offer") : null;
+    : o.state === "refused" ? t("Refused") : o.state === "expired" ? t("Expired|offer") : o.state === "failed" ? t("Couldn't save it: {error}", { error: o.error ? translateModule(o.error) : "?" }) : null;
   return (
     <div className={`ag-offer ${o.state}`}>
       <span className="ag-offer-icon"><I size={17} /></span>
@@ -305,7 +312,7 @@ function ClientCard({ c, onOpenVm }: { c: AgentClient; onOpenVm: (name: string) 
   const toggle = async () => {
     const on = !approvals;
     setApprovals(on); setError("");
-    try { await agents.setClientApprovals(c.id, on); await refreshAgents(); } catch (e) { setApprovals(!on); setError(humanError(e)); }
+    try { await agents.setClientApprovals(c.name, on); await refreshAgents(); } catch (e) { setApprovals(!on); setError(humanError(e)); }
   };
   return (
     <div className="card ag-client">
@@ -354,6 +361,13 @@ export function AgentsView({ onOpenVm }: { onOpenVm: (name: string) => void }) {
   }
   return (
     <div className="main ag-page">
+      {snap.broker && !snap.broker.listening && (
+        // Another program holds the channel's name (lab 050): no agent can reach its machine until it's freed.
+        <div className="notice error-notice">
+          <IconPlugConnectedX size={20} />
+          <div className="grow">{t("Agents can't reach their machines: {error}", { error: snap.broker.error ? translateModule(snap.broker.error) : t("the channel isn't open") })}</div>
+        </div>
+      )}
       {snap.requests.length > 0 && (
         <section className="ag-section">
           {head(<IconShieldLock size={17} />, t("Requests"), t("An agent waits for your answer. With no answer, it's refused."))}

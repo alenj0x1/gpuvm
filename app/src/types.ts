@@ -248,7 +248,7 @@ export interface ImportInfo { path: string; name: string | null; freeName: strin
 export type AgentState = "working" | "paused" | "control" | "waiting" | "human" | "idle";
 
 /** One thing the agent did on its machine, newest first in AgentClient.actions. */
-export interface AgentAction { id: number; text: string; at: string; method: string; ok: boolean; thumb?: string | null }
+export interface AgentAction { id: number; text: string; at: string; method: string; ok: boolean; thumb?: string | null; /** The broker kept its screenshot (Get-GpuVMAgentCapture). */ capture?: boolean }
 
 /** A client connected over MCP (gpuvm.exe --mcp): Claude Code, another MCP client. */
 export interface AgentClient {
@@ -305,9 +305,11 @@ export interface AgentOffer {
   sizeBytes: number;
   note: string | null;
   createdAt: string;
-  state: "pending" | "accepted" | "refused" | "expired";
+  state: "pending" | "accepted" | "refused" | "expired" | "failed";
   /** Where an accepted file went (Downloads\GpuVM\<machine>). */
   savedTo?: string | null;
+  /** Why it failed (the copy to Downloads), when state is "failed". */
+  error?: string | null;
 }
 
 /** Get-GpuVMRestorePoint: a machine's restore points, oldest first. */
