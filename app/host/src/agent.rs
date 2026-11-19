@@ -525,6 +525,37 @@ fn hyperv_vm_ids() -> Option<Vec<String>> {
     parse_vm_ids(&String::from_utf8_lossy(&output.stdout))
 }
 
+/// The VM id Hyper-V has now for a machine name: `Some(None)` when there is no such machine, `None` when it can't be
+/// told (then nothing is assumed). The name is a plain machine name (no wildcards) and reaches PowerShell as an
+/// environment variable, never as code.
+fn hyperv_id_of(name: &str) -> Option<Option<String>> {
+    if name.is_empty() || name.len() > 40 || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return Some(None);
+    }
+    #[cfg(test)]
+    {
+        return Some(tests::TEST_HV.lock().unwrap_or_else(|e| e.into_inner()).get(&name.to_lowercase()).cloned());
+    }
+    #[allow(unreachable_code)]
+    {
+        let local = crate::server::install_dir().join("pwsh").join("pwsh.exe");
+        let installed = PathBuf::from(std::env::var("ProgramFiles").unwrap_or(r"C:\Program Files".into())).join("GpuVM").join("pwsh").join("pwsh.exe");
+        let pwsh = [local, installed].into_iter().find(|p| p.is_file())?;
+        let script = "$ErrorActionPreference='Stop'; Import-Module Hyper-V; $vm = Get-VM | Where-Object Name -eq $env:GPUVM_VM_NAME | Select-Object -First 1; 'OK:' + $(if ($vm) { $vm.Id.Guid } else { '' })";
+        let output = std::process::Command::new(pwsh)
+            .args(["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script])
+            .env("GPUVM_VM_NAME", name)
+            .stdin(std::process::Stdio::null())
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let ids = parse_vm_ids(&String::from_utf8_lossy(&output.stdout))?;
+        Some(ids.into_iter().next())
+    }
+}
+
 /// Deletes a VM's registration folder (agent.json and its SYSTEM-only secret) and forgets the machine. `Ok(false)`
 /// when there was none. The id is a canonical VM id (checked by the caller), so the path stays inside agents\.
 fn remove_registration(vm_id: &str) -> Result<bool, String> {
@@ -1742,9 +1773,23 @@ pub fn forget_name(name: &str) {
     }
 }
 
-/// The VM id behind a machine name: its agent's registration, or the copy a session made under that name.
+/// The VM id behind a machine name: its agent's registration, or the copy a session made under that name, but only
+/// while Hyper-V still has that very VM under that name. A machine deleted outside GpuVM (Hyper-V Manager) and made
+/// again with the same name has another id, and is nobody's.
 fn id_of_name(name: &str) -> Option<String> {
-    reg_by_name(name).map(|r| r.vm_id).or_else(|| lock(&broker().names).get(&name.to_lowercase()).cloned())
+    if let Some(r) = reg_by_name(name) {
+        return Some(r.vm_id);
+    }
+    let made = lock(&broker().names).get(&name.to_lowercase()).cloned()?;
+    match hyperv_id_of(name) {
+        Some(Some(now)) if now == made => Some(made),
+        Some(_) => {
+            // Gone, or another VM now: forget it for good.
+            forget_name(name);
+            None
+        }
+        None => None,
+    }
 }
 
 /// Forgets what sessions made or claimed for VMs Hyper-V no longer has (deleted outside GpuVM).
@@ -1925,7 +1970,7 @@ fn owner_of_name(name: &str) -> Option<String> {
             }
             m.taken_by.clone()
         }
-        None => lock(&broker().names).get(&name.to_lowercase()).cloned().and_then(|id| lock(&broker().claims).get(&id).cloned()),
+        None => id_of_name(name).and_then(|id| lock(&broker().claims).get(&id).cloned()),
     }
 }
 
@@ -2427,6 +2472,8 @@ pub(crate) mod tests {
     use super::*;
 
     pub static TEST_AGENTS: OnceLock<PathBuf> = OnceLock::new();
+    /// What "Hyper-V" has in tests: machine name (lowercase) → VM id.
+    pub static TEST_HV: Mutex<std::collections::BTreeMap<String, String>> = Mutex::new(std::collections::BTreeMap::new());
 
     fn code(r: Result<Value, CmdError>) -> String {
         match r {
@@ -2518,6 +2565,7 @@ pub(crate) mod tests {
         assert!(r["args"].get("Connection").is_none());
         assert_eq!(r["args"]["ForAgent"], true); // the module copies only an agent template, as an agent machine
         assert_eq!(gate_code("Install-GpuVMAgent", json!({ "Name": "Copy1" }), 100), "not_taken"); // New-GpuVM didn't finish yet
+        TEST_HV.lock().unwrap().insert("copy1".into(), "3a4b5c6d-7e8f-4a1b-9c2d-3e4f5a6b7c8d".into());
         c.succeeded(&json!([{ "name": "Copy1", "vmId": "3a4b5c6d-7e8f-4a1b-9c2d-3e4f5a6b7c8d" }]));
         assert_eq!(gate_code("Install-GpuVMAgent", json!({ "Name": "Copy1" }), 100), "ok");
         assert_eq!(gate_code("Install-GpuVMAgent", json!({ "Name": "Copy1" }), 200), "taken");
@@ -2632,6 +2680,12 @@ pub(crate) mod tests {
         assert_eq!(gate_code("Remove-GpuVMDisposable", json!({ "Name": "Copy2" }), 100), "denied");
         // What a session made is known by the VM's id: once the name is gone, a new machine with it isn't the session's.
         assert_eq!(gate_code("Remove-GpuVMDisposable", json!({ "Name": "copy1" }), 100), "ok");
+        // Deleted outside GpuVM and made again with the same name (another VM id): not the session's any more.
+        TEST_HV.lock().unwrap().insert("copy1".into(), "99999999-7e8f-4a1b-9c2d-3e4f5a6b7c8d".into());
+        assert_eq!(gate_code("Remove-GpuVMDisposable", json!({ "Name": "Copy1" }), 100), "denied");
+        assert_eq!(gate_code("Install-GpuVMAgent", json!({ "Name": "Copy1" }), 100), "not_taken");
+        TEST_HV.lock().unwrap().insert("copy1".into(), "3a4b5c6d-7e8f-4a1b-9c2d-3e4f5a6b7c8d".into());
+        assert_eq!(gate_code("Remove-GpuVMDisposable", json!({ "Name": "Copy1" }), 100), "denied"); // forgotten for good
         forget_name("Copy1");
         assert_eq!(gate_code("Remove-GpuVMDisposable", json!({ "Name": "Copy1" }), 100), "denied");
         for c in lock(&broker().clients).values_mut() {
