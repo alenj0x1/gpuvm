@@ -54,7 +54,22 @@ fn session_locked() -> bool {
 fn csrss_pids() -> &'static Vec<u32> {
     static P: OnceLock<Vec<u32>> = OnceLock::new();
     P.get_or_init(|| unsafe {
+        // the terminal server's process list carries the session id without opening the process (a standard user
+        // can't open csrss): csrss.exe of THIS session only (security review 9); Toolhelp by name as a fallback
+        let mut own = 0u32;
+        let _ = windows::Win32::System::RemoteDesktop::ProcessIdToSessionId(std::process::id(), &mut own);
         let mut v = Vec::new();
+        let mut info: *mut WTS_PROCESS_INFOW = std::ptr::null_mut();
+        let mut n = 0u32;
+        if WTSEnumerateProcessesW(Some(WTS_CURRENT_SERVER_HANDLE), 0, 1, &mut info, &mut n).is_ok() {
+            for p in std::slice::from_raw_parts(info, n as usize) {
+                if p.SessionId == own && p.pProcessName.to_string().is_ok_and(|s| s.eq_ignore_ascii_case("csrss.exe")) {
+                    v.push(p.ProcessId);
+                }
+            }
+            WTSFreeMemory(info as *mut _);
+            return v;
+        }
         if let Ok(snap) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) {
             let snap = Owned(snap);
             let mut e = PROCESSENTRY32W { dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
@@ -130,7 +145,8 @@ pub struct Fg {
 pub fn window_block(h: HWND) -> (Option<&'static str>, ProcInfo) {
     let info = process_info(window_pid(h));
     let b = match info.integrity {
-        Some(il) if il <= own_integrity() => None,
+        // a UIAccess process (osk.exe...) can drive elevated windows: input to it would reach them (security review)
+        Some(il) if il <= own_integrity() && !info.uiaccess => None,
         _ => Some("blocked_elevated"),
     };
     (b, info)

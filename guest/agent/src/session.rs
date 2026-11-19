@@ -19,6 +19,8 @@ use windows::Win32::System::Threading::*;
 pub struct Helper {
     pub pid: u32,
     pub session: u32,
+    /// DOMAIN\name of the token the service launched it with (never what the helper says about itself)
+    pub user: String,
     pub process: std::sync::Arc<Owned>,
     pub job: Owned,
     pub to_helper: File,
@@ -52,9 +54,13 @@ pub fn user_token(session: u32) -> Result<Owned, String> {
             return Err("the signed-in user's token is elevated (UAC off?): the helper never runs elevated".into());
         }
         match token_integrity(tok.0) {
-            Some(il) if il <= IL_MEDIUM => Ok(tok),
-            il => Err(format!("the signed-in user's token has integrity {il:?}, above medium")),
+            Some(il) if il <= IL_MEDIUM => {}
+            il => return Err(format!("the signed-in user's token has integrity {il:?}, above medium")),
         }
+        let (agent, mode) = agent_mode();
+        let sid = token_sid(tok.0).ok_or("can't read the signed-in user's SID")?;
+        helper_allowed(agent.as_deref(), &mode, &sid, token_elevation_type(tok.0))?;
+        Ok(tok)
     }
 }
 
@@ -69,6 +75,7 @@ fn pipe() -> Result<(HANDLE, HANDLE), String> {
 
 pub fn launch(exe: &std::path::Path, session: u32) -> Result<Helper, String> {
     let tok = user_token(session)?;
+    let user = token_user(tok.0).0;
     // The helper keeps its user's default process DACL: a restricted one (only query/wait for the user) broke
     // Windows.Graphics.Capture with E_ACCESSDENIED (the process opens itself by id), lab 051. Programs the agent
     // runs as the same user can therefore still open the helper; they don't inherit its pipes (handle lists), and
@@ -156,6 +163,6 @@ pub fn launch(exe: &std::path::Path, session: u32) -> Result<Helper, String> {
         }
         ResumeThread(thread.0);
         drop((child_in, child_out, nul));
-        Ok(Helper { pid: pi.dwProcessId, session, process, job, to_helper, from_helper })
+        Ok(Helper { pid: pi.dwProcessId, session, user, process, job, to_helper, from_helper })
     }
 }

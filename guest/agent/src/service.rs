@@ -88,7 +88,11 @@ fn helper_writer(mut f: File, rx: std::sync::mpsc::Receiver<Vec<u8>>, busy: Arc<
     }
 }
 
+/// A request in the helper's hands. The map is keyed by a helper id unique for the service's life: the host numbers
+/// its requests from 1 on every connection, so a late answer to an old connection's request must never reach a new
+/// request with the same number (code review: an exec.run result answered an input.act).
 struct Pending {
+    host_id: u64,
     deadline: Instant,
     conn: u64,
     helper: u32,
@@ -98,6 +102,7 @@ pub struct Agent {
     host: Mutex<Option<HostLink>>,
     helper: Mutex<Option<HelperLink>>,
     pending: Mutex<HashMap<u64, Pending>>,
+    next_hid: AtomicU64,
     conn: AtomicU64,
     no_helper_reason: Mutex<String>,
     events: Mutex<(Instant, u32)>,
@@ -123,7 +128,14 @@ fn vm_id(s: &HvStream) -> Option<(String, &'static str)> {
 fn method_deadline(method: &str, params: &Value) -> Duration {
     match method {
         "exec.run" => Duration::from_millis(params["timeoutMs"].as_u64().unwrap_or(60_000).min(600_000) + 10_000),
-        "input.act" | "files.read" | "files.write" | "files.list" => Duration::from_secs(60),
+        // as long as its own waits need (+0.5 s per action and 30 s), or the host's timeoutMs; at most 10 min
+        "input.act" => {
+            let acts = params["actions"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
+            let waits: u64 = acts.iter().filter(|a| a["type"] == "wait").map(|a| a["ms"].as_u64().unwrap_or(0).min(5000)).sum();
+            let own = waits + 500 * acts.len() as u64 + 30_000;
+            Duration::from_millis(params["timeoutMs"].as_u64().unwrap_or(0).max(own).min(600_000))
+        }
+        "files.read" | "files.write" | "files.list" => Duration::from_secs(60),
         _ => Duration::from_secs(30),
     }
 }
@@ -134,6 +146,7 @@ impl Agent {
             host: Mutex::new(None),
             helper: Mutex::new(None),
             pending: Mutex::new(HashMap::new()),
+            next_hid: AtomicU64::new(1),
             conn: AtomicU64::new(0),
             no_helper_reason: Mutex::new("nobody is signed in yet".into()),
             events: Mutex::new((Instant::now(), 0)),
@@ -252,7 +265,20 @@ impl Agent {
             let why = self.read_loop(&stream, Opener::new(key));
             stream.shutdown();
             *self.host.lock().unwrap() = None;
-            self.pending.lock().unwrap().retain(|_, p| p.conn != conn);
+            // the old connection's work: dropped here and stopped in the helper (no late answer can reach anyone)
+            let old: Vec<u64> = {
+                let mut p = self.pending.lock().unwrap();
+                let hids: Vec<u64> = p.iter().filter(|(_, x)| x.conn == conn).map(|(h, _)| *h).collect();
+                for h in &hids {
+                    p.remove(h);
+                }
+                hids
+            };
+            if let Some(h) = self.helper.lock().unwrap().as_ref() {
+                for hid in old {
+                    let _ = h.send(&json!({"t": "cancel", "id": hid}), None);
+                }
+            }
             note(format!("disconnected from the host: {why}"));
             sleep_stop(200);
         }
@@ -331,26 +357,27 @@ impl Agent {
         };
         let conn = self.conn.load(Ordering::SeqCst);
         {
-            let mut p = self.pending.lock().unwrap();
+            let p = self.pending.lock().unwrap();
             if p.len() >= MAX_PENDING {
                 drop(p);
                 drop(hg);
                 self.send_host(err_res(id, "internal", "too many requests in flight"), None);
                 return Ok(());
             }
-            if p.contains_key(&id) {
+            if p.values().any(|x| x.conn == conn && x.host_id == id) {
                 drop(p);
                 drop(hg);
                 self.send_host(err_res(id, "bad_request", "that id is already in flight"), None);
                 return Ok(());
             }
-            p.insert(id, Pending { deadline: Instant::now() + method_deadline(method, &params), conn, helper: h.pid });
         }
-        let req = json!({"t": "req", "id": id, "method": method, "params": params, "blob": blob.is_some()});
+        let hid = self.next_hid.fetch_add(1, Ordering::SeqCst);
+        self.pending.lock().unwrap().insert(hid, Pending { host_id: id, deadline: Instant::now() + method_deadline(method, &params), conn, helper: h.pid });
+        let req = json!({"t": "req", "id": hid, "method": method, "params": params, "blob": blob.is_some()});
         let ok = h.send(&req, blob.as_deref());
         drop(hg);
         if !ok {
-            self.pending.lock().unwrap().remove(&id);
+            self.pending.lock().unwrap().remove(&hid);
             self.send_host(err_res(id, "internal", "the session helper is busy or gone"), None);
         }
         Ok(())
@@ -358,12 +385,15 @@ impl Agent {
 
     /// Host cancel: answer `cancelled` now, drop the helper's late answer, and ask the helper to stop the work.
     fn cancel(&self, id: u64) {
-        let p = self.pending.lock().unwrap().remove(&id);
-        if p.is_none() {
-            return;
-        }
+        let conn = self.conn.load(Ordering::SeqCst);
+        let hid = {
+            let mut p = self.pending.lock().unwrap();
+            let Some(hid) = p.iter().find(|(_, x)| x.conn == conn && x.host_id == id).map(|(h, _)| *h) else { return };
+            p.remove(&hid);
+            hid
+        };
         if let Some(h) = self.helper.lock().unwrap().as_ref() {
-            let _ = h.send(&json!({"t": "cancel", "id": id}), None);
+            let _ = h.send(&json!({"t": "cancel", "id": hid}), None);
         }
         self.send_host(err_res(id, "cancelled", "cancelled by the host"), None);
     }
@@ -388,23 +418,30 @@ impl Agent {
                 last_ping = Instant::now();
             }
             let now = Instant::now();
-            let expired: Vec<u64> = {
+            let cur = self.conn.load(Ordering::SeqCst);
+            let expired: Vec<(u64, u64, u64)> = {
                 let mut p = self.pending.lock().unwrap();
-                let ids: Vec<u64> = p.iter().filter(|(_, x)| x.deadline <= now).map(|(id, _)| *id).collect();
-                for id in &ids {
-                    p.remove(id);
+                let ids: Vec<(u64, u64, u64)> = p.iter().filter(|(_, x)| x.deadline <= now).map(|(h, x)| (*h, x.host_id, x.conn)).collect();
+                for (h, _, _) in &ids {
+                    p.remove(h);
                 }
                 ids
             };
-            for id in expired {
-                self.send_host(err_res(id, "timeout", "the guest didn't answer in time"), None);
+            for (hid, id, conn) in expired {
+                if let Some(h) = self.helper.lock().unwrap().as_ref() {
+                    let _ = h.send(&json!({"t": "cancel", "id": hid}), None);
+                }
+                if conn == cur {
+                    self.send_host(err_res(id, "timeout", "the guest didn't answer in time"), None);
+                }
             }
         }
     }
 
     // ---- helper side ----
 
-    fn helper_reader(self: Arc<Self>, mut from: File, pid: u32) {
+    /// `user` is the token the service launched the helper with: what the host is told, whatever the helper says.
+    fn helper_reader(self: Arc<Self>, mut from: File, pid: u32, user: String) {
         let mut said_hello = false;
         let mut logs = (Instant::now(), 0u32);
         let why = loop {
@@ -424,13 +461,13 @@ impl Agent {
             };
             match v["t"].as_str() {
                 Some("res") => {
-                    let Some(id) = v["id"].as_u64() else { continue };
-                    let p = self.pending.lock().unwrap().remove(&id);
+                    let Some(hid) = v["id"].as_u64() else { continue };
+                    let p = self.pending.lock().unwrap().remove(&hid);
                     let cur = self.conn.load(Ordering::SeqCst);
-                    if !p.is_some_and(|p| p.conn == cur && p.helper == pid) {
-                        continue; // timed out already, or from an old connection
-                    }
-                    let mut out = json!({"t": "res", "id": id, "ok": v["ok"] == true});
+                    let Some(p) = p.filter(|p| p.conn == cur && p.helper == pid) else {
+                        continue; // timed out, cancelled, or from an old connection
+                    };
+                    let mut out = json!({"t": "res", "id": p.host_id, "ok": v["ok"] == true});
                     if v["ok"] == true {
                         out["result"] = v.get("result").cloned().unwrap_or(json!({}));
                     } else {
@@ -447,8 +484,10 @@ impl Agent {
                 }
                 Some("hello") if !said_hello => {
                     said_hello = true; // once per helper: nothing else may announce a user (security review H1)
-                    let user = v["user"].as_str().unwrap_or("?").chars().take(256).collect::<String>();
-                    logf!("session helper {pid} is up as {user} (session {})", v["session"]);
+                    // the helper's own claim is only logged; the host gets the user of the token the service used
+                    let claimed: String = v["user"].as_str().unwrap_or("?").chars().take(64).collect();
+                    let user = user.clone();
+                    logf!("session helper {pid} is up as {user} (it says {claimed})");
                     if let Some(h) = self.helper.lock().unwrap().as_mut().filter(|h| h.pid == pid) {
                         h.user = Some(user.clone());
                     }
@@ -471,13 +510,11 @@ impl Agent {
         if g.as_ref().is_some_and(|h| h.pid == pid) {
             *g = None;
             drop(g);
+            let cur = self.conn.load(Ordering::SeqCst);
             let lost: Vec<u64> = {
                 let mut p = self.pending.lock().unwrap();
-                let ids: Vec<u64> = p.iter().filter(|(_, x)| x.helper == pid).map(|(id, _)| *id).collect();
-                for id in &ids {
-                    p.remove(id);
-                }
-                ids
+                let hids: Vec<u64> = p.iter().filter(|(_, x)| x.helper == pid).map(|(h, _)| *h).collect();
+                hids.iter().filter_map(|h| p.remove(h)).filter(|x| x.conn == cur).map(|x| x.host_id).collect()
             };
             for id in lost {
                 self.send_host(err_res(id, "not_signed_in", "the session helper exited (sign-out or session change)"), None);
@@ -541,7 +578,8 @@ impl Agent {
                                 std::thread::spawn(move || helper_writer(w, rx, b2));
                                 *self.helper.lock().unwrap() = Some(HelperLink { tx, busy, process: h.process.clone(), pid, user: None });
                                 let me = self.clone();
-                                std::thread::spawn(move || me.helper_reader(r, pid));
+                                let user = h.user.clone();
+                                std::thread::spawn(move || me.helper_reader(r, pid, user));
                                 current = Some((h, Instant::now()));
                                 last_err.clear();
                             }

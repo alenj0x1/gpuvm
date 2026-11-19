@@ -11,7 +11,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 const MAX_ACTIONS: usize = 100;
 const MAX_TEXT: usize = 10_000;
-const MAX_WAIT_TOTAL_MS: u64 = 30_000;
+const MAX_WAIT_TOTAL_MS: u64 = 300_000;
 
 type Fail = (&'static str, String);
 

@@ -56,8 +56,21 @@ pub fn log_to(path: &std::path::Path) {
     l.path = Some(path.to_path_buf());
 }
 
+/// Control characters (newlines included) as \u escapes: text from the helper or the guest can't forge log lines.
+pub fn escape_controls(msg: &str) -> String {
+    let mut o = String::with_capacity(msg.len());
+    for c in msg.chars() {
+        if c.is_control() {
+            o.push_str(&format!("\\u{:04x}", c as u32));
+        } else {
+            o.push(c);
+        }
+    }
+    o
+}
+
 pub fn log(msg: &str) {
-    let line = format!("{} {}\n", iso_now(), msg.chars().take(2000).collect::<String>());
+    let line = format!("{} {}\n", iso_now(), escape_controls(&msg.chars().take(2000).collect::<String>()));
     let mut l = match LOG.lock() {
         Ok(l) => l,
         Err(p) => p.into_inner(),
@@ -136,4 +149,13 @@ pub fn random<const N: usize>() -> [u8; N] {
         BCryptGenRandom(None, &mut b, BCRYPT_USE_SYSTEM_PREFERRED_RNG).ok().expect("BCryptGenRandom");
     }
     b
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn log_lines_cant_be_forged() {
+        assert_eq!(super::escape_controls("a\nb\r\u{1b}[31m"), "a\\u000ab\\u000d\\u001b[31m");
+        assert_eq!(super::escape_controls("ñ ok"), "ñ ok");
+    }
 }

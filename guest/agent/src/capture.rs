@@ -265,6 +265,32 @@ pub fn close_if_idle() {
     }
 }
 
+/// [x,y,w,h] (non-negative integers) fully inside fw x fh, with no overflow on the way (security review 7).
+pub fn region_inside(v: &[u64], fw: u32, fh: u32) -> Option<(u32, u32, u32, u32)> {
+    if v.len() != 4 || v[2] == 0 || v[3] == 0 {
+        return None;
+    }
+    let (x, y, w, h) = (v[0], v[1], v[2], v[3]);
+    if x.checked_add(w)? > fw as u64 || y.checked_add(h)? > fh as u64 {
+        return None;
+    }
+    Some((x as u32, y as u32, w as u32, h as u32))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::region_inside;
+    #[test]
+    fn regions() {
+        assert_eq!(region_inside(&[0, 0, 1366, 768], 1366, 768), Some((0, 0, 1366, 768)));
+        assert_eq!(region_inside(&[1, 0, 1366, 768], 1366, 768), None);
+        assert_eq!(region_inside(&[u64::MAX, 0, 2, 2], 1366, 768), None);
+        assert_eq!(region_inside(&[0, 0, u64::MAX, 1], 1366, 768), None);
+        assert_eq!(region_inside(&[0, 0, 0, 5], 1366, 768), None);
+        assert_eq!(region_inside(&[0, 0, 5], 1366, 768), None);
+    }
+}
+
 /// Crop of a BGRA frame.
 fn crop(bgra: &[u8], w: u32, x: u32, y: u32, cw: u32, ch: u32) -> Vec<u8> {
     let mut out = Vec::with_capacity((cw * ch * 4) as usize);
@@ -388,11 +414,10 @@ pub fn screen_capture(p: &Value) -> CallResult {
     drop(g);
     let (src, sw, sh, region) = match p.get("region").filter(|r| !r.is_null()) {
         Some(r) => {
-            let v: Vec<i64> = r.as_array().map(|a| a.iter().filter_map(Value::as_i64).collect()).unwrap_or_default();
-            if v.len() != 4 || v[0] < 0 || v[1] < 0 || v[2] < 1 || v[3] < 1 || v[0] + v[2] > fw as i64 || v[1] + v[3] > fh as i64 {
+            let v: Vec<u64> = r.as_array().map(|a| a.iter().filter_map(Value::as_u64).collect()).unwrap_or_default();
+            let Some((x, y, w, h)) = region_inside(&v, fw, fh) else {
                 return Err(("bad_request", format!("region must be [x,y,w,h] inside the {fw}x{fh} screen")));
-            }
-            let (x, y, w, h) = (v[0] as u32, v[1] as u32, v[2] as u32, v[3] as u32);
+            };
             (crop(&bgra, fw, x, y, w, h), w, h, Some([x, y, w, h]))
         }
         None => (bgra, fw, fh, None),

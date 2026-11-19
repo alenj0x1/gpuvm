@@ -181,3 +181,21 @@ it IS in the screenshot (`box-0.3.7.png`, over the raiser's black console window
 screenshot taken before the box was painted. 0.3.8 words the refusal as "a system error box '…' is open: only the
 person can close it" (and adds "outside the visible screen" when that is the case). screen.refresh couldn't be
 called through the installed broker yet: it rejects unknown method names (broker allowlist).
+
+### Second security review, verified (`security-check2.ps1`, `out/security2-20261119-070213`, agent 0.4.0)
+
+| finding | check in a disposable from agent-tpl | result |
+| --- | --- | --- |
+| install.ps1 followed links in the agent's profile | `agent` planted Desktop\Outbox -> C:\Program Files\GpuVM Agent, then a full install | link removed ("removed a link at ...\Outbox"), Outbox a real folder owned by agent, Program Files still owned by Administradores, no desktop.ini there |
+| helper in any session / by name | install records the agent SID + mode in HKLM; helper started (agent SID matches) | 0.4.0 helper up as agent; person-mode refusal of an admin's filtered token: unit test |
+| displays persisted for every user | only the agent's helper arranges them, with SetDisplayConfig without SDC_SAVE_TO_DATABASE | only the virtual display active, Notepad at [78,78] inside the screenshot |
+| UIAccess windows | osk.exe started by the agent, click on its window | refused `blocked_elevated` ("Teclado en pantalla (osk.exe) ... runs elevated") |
+| passwords in templates | -PrepareTemplate | no LSA DefaultPassword, no backed-up person password (both kinds), only the two machine-policy backups left, AutoAdminLogon 0, secret overwritten + deleted |
+| a copy's first install | fast path with a new secret | rebootNeeded = true; after the restart the copy signed in as agent |
+
+Not changed: the MAC is still checked after parsing the (<= 64 KiB) JSON to read `seq` (a key `seq` can also appear
+nested in params, so a scan can't find it without parsing; moving it would change the wire format on both sides).
+0.4.1 (code review): requests reach the helper under ids unique for the service's life (the host restarts at 1 per
+connection: a late result could answer a new request with the same number), the old connection's work is cancelled
+in the helper on disconnect and on timeout, and input.act's deadline follows its own waits (or the host's timeoutMs,
+max 10 min; waits up to 5 min per request).
