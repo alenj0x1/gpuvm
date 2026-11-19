@@ -299,7 +299,7 @@ async fn send(vm: String, id: u64, folder: String) -> Result<Value, String> {
         match &item.payload {
             Payload::Text(text) => json!({ "Name": vm, "Text": text }),
             Payload::Png(png) => json!({ "Name": vm, "Image": base64::engine::general_purpose::STANDARD.encode(png) }),
-            Payload::Files(files) => json!({ "Name": vm, "Files": files, "Folder": if folder.is_empty() { "Recibidos".to_string() } else { folder } }),
+            Payload::Files(files) => json!({ "Name": vm, "Files": files, "Folder": if folder.is_empty() { "Received".to_string() } else { folder } }),
         }
     };
     // Files may take a while: their own connection, without the 180 s limit of quick requests.

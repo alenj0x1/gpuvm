@@ -28,7 +28,7 @@ export const namesOf = (names: string[]) => names.length <= 1 ? names[0] ?? "" :
 export function TransferRow({ tr }: { tr: Transfer }) {
   const running = tr.state === "running";
   const sub = running ? (transferAmount(tr) || t("Preparing…"))
-    : tr.state === "done" ? t("In {vm} › {folder}", { vm: tr.vm, folder: tr.folder ?? t("Received") })
+    : tr.state === "done" ? t("In {vm} › {folder}", { vm: tr.vm, folder: !tr.folder || tr.folder === "Received" ? t("Received") : tr.folder })
       : tr.state === "cancelled" ? t("Cancelled") : humanError(tr.error ?? "");
   return (
     <li className={`vp-transfer ${tr.state}`}>

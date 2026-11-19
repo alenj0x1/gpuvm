@@ -2,7 +2,7 @@ function Send-GpuVMClipboard {
     <#
     .SYNOPSIS
     Puts what was copied on this PC into the VM's clipboard, ready to paste with Ctrl+V: text, an image (PNG) or
-    files (copied first to Desktop\Recibidos, then put on the clipboard so they paste in Explorer). It only goes from
+    files (copied first to Desktop\Received, then put on the clipboard so they paste in Explorer). It only goes from
     the PC to the VM: the VM never reads this PC's clipboard, so a damaged or infected VM cannot leave anything in it.
     .EXAMPLE
     Send-GpuVMClipboard -Name win10
@@ -17,7 +17,7 @@ function Send-GpuVMClipboard {
         # A PNG, as base64 (the app reads it from the clipboard).
         [Parameter(Mandatory, ParameterSetName = 'Image')][string]$Image,
         [Parameter(Mandatory, ParameterSetName = 'Files')][string[]]$Files,
-        [Parameter(ParameterSetName = 'Files')][ValidatePattern('^(?!\.{1,2}$)(?!.*[. ]$)[^\\/:*?"<>|\x00-\x1f]{1,60}$')][string]$Folder = 'Recibidos'
+        [Parameter(ParameterSetName = 'Files')][ValidatePattern('^(?!\.{1,2}$)(?!.*[. ]$)[^\\/:*?"<>|\x00-\x1f]{1,60}$')][string]$Folder = 'Received'
     )
     Assert-Admin
     $payload = $null

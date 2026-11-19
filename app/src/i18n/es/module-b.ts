@@ -4,9 +4,12 @@ export default {
   "The Administrators SID isn't valid.": "SID de Administradores no válido.",
   "Couldn't tell where a file is; nothing is sent.": "No se pudo saber dónde está un archivo; no se envía nada.",
   "Couldn't copy the disk: The base disk ended sooner than expected.": "No se pudo copiar el disco: El disco base terminó antes de lo esperado.",
+  "nothing was receiving": "sin recepción",
 } as Record<string, string>;
 
 export const patterns: [RegExp, string][] = [
+  // What the guest's tar said when a save failed, at the end of "The machine couldn't save the files. …".
+  [/^tar still running: (.*)$/s, "tar sigue abierto: $1"],
   [/^That restore point isn't valid: (.+)$/, "Punto de restauración no válido: $1"],
   [/^The disk (.+) isn't connected to the machine '(.+)'\.$/, "El disco $1 no está conectado a la máquina '$2'."],
   [/^The point's disk was already gone \((.+)\)\.$/, "El disco del punto ya no existía ($1)."],

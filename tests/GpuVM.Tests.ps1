@@ -1320,12 +1320,12 @@ InModuleScope GpuVM {
         }
 
         It 'refuses a destination folder that is "." or "..", or ends in a dot or space' {
-            foreach ($bad in '.', '..', 'Recibidos.', 'Recibidos ', 'a\b') {
+            foreach ($bad in '.', '..', 'Received.', 'Received ', 'a\b') {
                 Test-Throws { Send-GpuVMFile -Name x -Path 'C:\x' -Folder $bad } | Should Be $true
                 Test-Throws { Send-GpuVMClipboard -Name x -Files 'C:\x' -Folder $bad } | Should Be $true
             }
             Mock Assert-Admin { throw 'reached' }
-            (Get-InnerError { Send-GpuVMFile -Name x -Path 'C:\x' -Folder 'Recibidos' }) | Should Be 'reached'
+            (Get-InnerError { Send-GpuVMFile -Name x -Path 'C:\x' -Folder 'Received' }) | Should Be 'reached'
         }
     }
 }

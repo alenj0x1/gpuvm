@@ -20,9 +20,9 @@ export interface Space {
 export const MAIN_SPACE = "main";
 const KEY = "gpuvm.spaces";
 const EVENT = "gpuvm-spaces";
-// The first space's name until someone renames it: shown in the language of the app (whichever one it was saved in).
-const DEFAULT_NAMES = ["Mis m\u00e1quinas", "My machines"];
-const defaults = (): Space[] => [{ id: MAIN_SPACE, name: t("My machines"), ambient: "studio", machines: [] }];
+// The first space keeps no name until someone renames it (saved as ""): it shows "My machines" in the app's language.
+const defaultName = () => t("My machines");
+const defaults = (): Space[] => [{ id: MAIN_SPACE, name: "", ambient: "studio", machines: [] }];
 
 let cache: Space[] | null = null;
 let cacheLang = getLang();
@@ -39,14 +39,17 @@ export function readSpaces(): Space[] {
     }
   } catch { /* no storage or bad data */ }
   if (!list.some((s) => s.id === MAIN_SPACE)) list = [DEFAULT[0], ...list];
-  list = list.map((s) => (s.id === MAIN_SPACE && DEFAULT_NAMES.includes(s.name) ? { ...s, name: DEFAULT[0].name } : s));
+  list = list.map((s) => (s.id === MAIN_SPACE && !s.name ? { ...s, name: defaultName() } : s));
   cache = list;
   return list;
 }
 
 function write(list: Space[]) {
-  cache = list;
-  try { localStorage.setItem(KEY, JSON.stringify(list)); } catch { /* no storage */ }
+  // The first space with its default name stays unnamed, so it follows the app's language.
+  const saved = list.map((s) => (s.id === MAIN_SPACE && s.name === defaultName() ? { ...s, name: "" } : s));
+  cache = list.map((s) => (s.id === MAIN_SPACE && !s.name ? { ...s, name: defaultName() } : s));
+  cacheLang = getLang();
+  try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch { /* no storage */ }
   window.dispatchEvent(new Event(EVENT));
 }
 
@@ -75,7 +78,7 @@ const newId = () => Math.random().toString(36).slice(2, 9);
 /** Creates or changes a space; the machines listed leave whatever space they were in. */
 export function saveSpace(s: Omit<Space, "id"> & { id?: string }): Space {
   const id = s.id ?? newId();
-  const next: Space = { id, name: s.name.trim() || t("Space"), ambient: s.ambient, time: s.time, machines: [...new Set(s.machines)] };
+  const next: Space = { id, name: s.name.trim() || (id === MAIN_SPACE ? defaultName() : t("Space")), ambient: s.ambient, time: s.time, machines: [...new Set(s.machines)] };
   const others = readSpaces().filter((x) => x.id !== id).map((x) => ({ ...x, machines: x.machines.filter((m) => !next.machines.includes(m)) }));
   const old = readSpaces().findIndex((x) => x.id === id);
   const list = [...others];

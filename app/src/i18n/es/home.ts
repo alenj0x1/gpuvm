@@ -243,6 +243,8 @@ export default {
   "There's already a disk with that name": "Ya hay un disco con ese nombre",
   "Disk {name} created.": "Disco {name} creado.",
   "New shared disk": "Nuevo disco compartido",
+  "games|disk name": "juegos",
+  "shared|disk name": "compartido",
   "Use": "Uso",
   "When attached, Steam adds it to its libraries on the machine.": "Al conectarlo, Steam lo suma a sus bibliotecas en la máquina.",
   "Shows up as one more drive on the machine.": "Aparece como un disco más en la máquina.",

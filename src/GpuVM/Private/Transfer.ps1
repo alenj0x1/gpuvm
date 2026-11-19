@@ -166,6 +166,22 @@ function Open-GuestReceiver {
         $tar = Join-Path $env:SystemRoot 'System32\tar.exe'
         if (-not (Test-Path $tar)) { return @{ error = 'Windows in the machine has no tar.exe (Windows 10 1803 or later is needed).' } }
         $dest = Join-Path $desktop $folder
+        if ($folder -eq 'Received') {
+            # Versions before 0.9 named it in Spanish: that folder becomes this one, with its files.
+            $old = Join-Path $desktop 'Recibidos'
+            if (-not (Test-Path -LiteralPath $dest) -and (Test-Path -LiteralPath $old)) { Rename-Item -LiteralPath $old -NewName $folder }
+            New-Item -ItemType Directory -Force -Path $dest | Out-Null
+            # On disk it is Received; Explorer shows it in Windows' language through desktop.ini.
+            $shown = @{ es = 'Recibidos' }[[Globalization.CultureInfo]::InstalledUICulture.TwoLetterISOLanguageName]
+            $ini = Join-Path $dest 'desktop.ini'
+            if ($shown -and -not (Test-Path -LiteralPath $ini)) {
+                [IO.File]::WriteAllText($ini, "[.ShellClassInfo]`r`nLocalizedResourceName=$shown`r`n", [Text.Encoding]::Unicode)
+                (Get-Item -LiteralPath $ini -Force).Attributes = 'Hidden, System'
+                # Explorer only reads desktop.ini in a folder marked read-only (files can still go in).
+                $dir = Get-Item -LiteralPath $dest -Force
+                $dir.Attributes = $dir.Attributes -bor [IO.FileAttributes]::ReadOnly
+            }
+        }
         $staging = Join-Path $dest ".gpuvm-$id"
         New-Item -ItemType Directory -Force -Path $staging | Out-Null
         (Get-Item -LiteralPath $staging -Force).Attributes = 'Hidden, Directory'
