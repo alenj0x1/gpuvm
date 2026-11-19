@@ -51,8 +51,8 @@ const OUTBOX: &str = r"Desktop\Outbox\";
 const DEFAULT_HOME: &str = r"C:\Users\agent";
 
 /// The guest methods of protocol.md; anything else is refused before it reaches a guest.
-const METHODS: &[&str] = &["agent.info", "screen.capture", "screen.state", "input.act", "ui.tree", "ui.invoke", "exec.run", "files.list",
-    "files.read", "files.write"];
+const METHODS: &[&str] = &["agent.info", "screen.capture", "screen.state", "screen.refresh", "input.act", "ui.tree", "ui.invoke", "exec.run",
+    "files.list", "files.read", "files.write"];
 const EVENTS: &[&str] = &["screen", "secure_desktop", "signed_in", "foreground", "error_box"];
 
 fn now_ms() -> u64 {
@@ -1940,6 +1940,9 @@ pub(crate) mod tests {
         // Exact argument names; unknown ones are refused.
         assert_eq!(code(command("Invoke-GpuVMAgent", &json!({ "name": "Test1", "Method": "agent.info" }), &mut app)), "bad_request");
         assert_eq!(code(command("Invoke-GpuVMAgent", &json!({ "Name": "Test1", "Method": "rm" }), &mut app)), "bad_request");
+        // screen.refresh (agent 0.3.8) is a guest method: it reaches the machine (here "off": no agent connected).
+        assert_eq!(code(command("Invoke-GpuVMAgent", &json!({ "Name": "Test1", "Method": "screen.refresh" }), &mut app)), "off");
+        assert_eq!(code(command("Invoke-GpuVMAgent", &json!({ "Name": "Test1", "Method": "screen.repaint" }), &mut app)), "bad_request");
         // The MCP side must name its connection and take the machine first.
         assert_eq!(invoke(&mut mcp, None), "not_taken");
         assert_eq!(invoke(&mut mcp, Some(&id)), "not_taken"); // step 1

@@ -1886,3 +1886,22 @@ InModuleScope GpuVM {
         }
     }
 }
+
+InModuleScope GpuVM {
+    Describe 'A stream on an agent machine starts with a fresh frame' {
+        It 'asks the agent to repaint only on agent machines, and never fails the open' {
+            Mock Invoke-GpuVMAgent { $script:asked = $Method }
+            Mock Get-GpuVMState { @{ use = 'agent' } }
+            $script:asked = $null
+            Invoke-AgentScreenRefresh -Name a | Should Be $true
+            $script:asked | Should Be 'screen.refresh'
+            Mock Invoke-GpuVMAgent { throw 'Unknown method screen.refresh' }
+            Invoke-AgentScreenRefresh -Name a | Should Be $false
+            Mock Get-GpuVMState { @{ } }
+            Mock Invoke-GpuVMAgent { throw 'must not be called' }
+            Invoke-AgentScreenRefresh -Name a | Should Be $false
+            Mock Get-GpuVMState { throw 'no state' }
+            Invoke-AgentScreenRefresh -Name a | Should Be $false
+        }
+    }
+}

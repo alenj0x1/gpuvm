@@ -207,6 +207,17 @@ function Update-GpuVMAgentIfStale {
     $true
 }
 
+# Once a stream is up on an agent machine: the agent repaints the whole desktop (screen.refresh, agent 0.3.8), so
+# Sunshine's ddx capture gets a fresh frame of a still desktop instead of staying black (1 connect in 3, lab 054).
+# Best effort and quiet: an older agent (bad_request), no agent connected or nobody signed in changes nothing.
+function Invoke-AgentScreenRefresh {
+    param([Parameter(Mandatory)][string]$Name)
+    $state = try { Get-GpuVMState -Name $Name } catch { $null }
+    if (-not $state -or [string]$state['use'] -ne 'agent') { return $false }
+    try { Invoke-GpuVMAgent -Name $Name -Method screen.refresh -TimeoutSec 5 -ErrorAction Stop | Out-Null; $true }
+    catch { $false }
+}
+
 # New-GpuVM / Import-GpuVM -Use agent: remembers who signs in, waits for Windows when the machine runs, then sets the
 # use (which installs the agent). Never fails the creation: a problem leaves the agent pending, with a warning.
 function Initialize-GpuVMAgentUse {
