@@ -100,7 +100,9 @@ fn local_path(path: &str) -> String {
 
 fn answer(method: &str, params: &Value) -> Result<(Value, Option<Vec<u8>>), (&'static str, String)> {
     match method {
-        "agent.info" => Ok((json!({ "version": "stub-052", "os": "stub", "user": "agent", "session": 1, "screen": { "w": 1920, "h": 1080 }, "signedIn": true }), None)),
+        // vmId: lets the lab check each answer came from the machine it asked (two machines at once).
+        "agent.info" => Ok((json!({ "version": "stub-052", "os": "stub", "user": "agent", "session": 1, "screen": { "w": 1920, "h": 1080 },
+            "signedIn": true, "vmId": VM_ID.get() }), None)),
         "screen.state" => Ok((json!({ "desktop": "default", "foreground": { "title": "stub", "process": "stub052.exe", "integrity": "medium", "blocked": false } }), None)),
         "screen.capture" => {
             // A stand-in for a 1280x720 lossless WebP (~257 KB in lab 048), or the size asked for.
@@ -211,9 +213,12 @@ fn serve(sock: hv::Sock, session: wire::Session, log: &mut Option<std::fs::File>
     reason
 }
 
+static VM_ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
 fn run(args: &[String]) {
     hv::startup();
     let vm = vm_id(args);
+    let _ = VM_ID.set(vm.clone());
     let mut log = arg(args, "--log").and_then(|p| std::fs::OpenOptions::new().create(true).append(true).open(p).ok());
     loop {
         let k = secret(args);

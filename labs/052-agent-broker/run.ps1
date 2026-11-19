@@ -374,6 +374,44 @@ foreach ($part in $Parts) {
             $result | ConvertTo-Json -Compress -Depth 4
             Save-Result 'squat' $result
         }
+        'two' {
+            # Two machines at once: the VM over VMBus and the loopback stub, 4 clients each, every answer checked
+            # against the machine it was asked (agent.info returns the stub's VmId).
+            $env:STUB052_TARGET = 'loopback'
+            $loop = Start-Process $stub -ArgumentList 'run', '--secret', "$loopDir\secret.raw", '--vm-id', $loopId -PassThru -WindowStyle Hidden
+            Remove-Item Env:\STUB052_TARGET
+            try {
+                $sw = [Diagnostics.Stopwatch]::StartNew()
+                while ((@(Get-GpuVMAgent -Name loopback052)[0]).state -ne 'ready' -and $sw.Elapsed.TotalSeconds -lt 10) { Start-Sleep -Milliseconds 100 }
+                $expected = @{ $Name = (Get-VM -Name $Name).Id.Guid.ToLowerInvariant(); loopback052 = $loopId }
+                $both = @(Get-GpuVMAgent | Where-Object state -eq 'ready').name
+                $sw.Restart()
+                $runs = foreach ($m in $Name, 'loopback052') { foreach ($k in 1..4) { [pscustomobject]@{ Machine = $m; Want = $expected[$m] } } }
+                $all = $runs | ForEach-Object -ThrottleLimit 8 -Parallel {
+                    $p = [IO.Pipes.NamedPipeClientStream]::new('.', 'gpuvm-agent', [IO.Pipes.PipeDirection]::InOut); $p.Connect(3000)
+                    $r = [IO.StreamReader]::new($p); $w = [IO.StreamWriter]::new($p)
+                    $times = [System.Collections.Generic.List[double]]::new(); $wrong = 0; $fails = 0
+                    for ($i = 0; $i -lt 200; $i++) {
+                        $t = [Diagnostics.Stopwatch]::StartNew()
+                        $w.Write((@{ id = $i; cmd = 'Invoke-GpuVMAgent'; args = @{ Name = $_.Machine; Method = 'agent.info' } } | ConvertTo-Json -Compress) + "`n"); $w.Flush()
+                        $d = ($r.ReadLine() | ConvertFrom-Json).data[0]
+                        $times.Add($t.Elapsed.TotalMilliseconds)
+                        if (-not $d.ok) { $fails++ } elseif ($d.result.vmId -ne $_.Want) { $wrong++ }
+                    }
+                    $p.Dispose()
+                    [pscustomobject]@{ machine = $_.Machine; times = $times.ToArray(); wrong = $wrong; fails = $fails }
+                }
+                $wall = $sw.Elapsed.TotalMilliseconds
+                $result = [ordered]@{ readyAtOnce = $both; wallMs = [math]::Round($wall) }
+                foreach ($g in $all | Group-Object machine) {
+                    $result[$g.Name] = [ordered]@{ requests = ($g.Group.times | Measure-Object).Count; wrongMachine = ($g.Group | Measure-Object wrong -Sum).Sum
+                        failed = ($g.Group | Measure-Object fails -Sum).Sum; latency = Get-Stats ([double[]]@($g.Group.times)) }
+                }
+                $result | ConvertTo-Json -Compress -Depth 4
+                Save-Result 'two' $result
+            }
+            finally { Stop-Process -Id $loop.Id -Force -ErrorAction SilentlyContinue }
+        }
         'uninstall' {
             $vmId = (Get-VM -Name $Name).Id.Guid
             Uninstall-GpuVMAgent -Name $Name | Out-Null
