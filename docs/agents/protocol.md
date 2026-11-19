@@ -36,8 +36,16 @@ every choice is in labs 047-050. Change this file first (and tell the other piec
 - `H→G {"t":"challenge","nh":"<32 hex>","mac":HMAC(K,"host|"+vmId+"|"+ng+"|"+nh)}` — the guest checks it (the host
   knows K).
 - `G→H {"t":"proof","mac":HMAC(K,"guest|"+vmId+"|"+nh+"|"+ng)}` — the host checks it with the VmId from `accept()`.
-- Session key `S = HMAC(K,"session|"+ng+"|"+nh)`. Every later JSON frame carries `"seq"` (strictly increasing per
-  direction) and `"m":HMAC(S, seq|payload-without-m)` (hex, first 16 bytes). Wrong `m` or `seq` → close.
+- Session key `S = HMAC(K,"session|"+ng+"|"+nh)`. Every later JSON frame (pings included; not hello/challenge/proof)
+  is authenticated, byte-exactly:
+  1. The sender serializes the object WITH `"seq"` and WITHOUT `"m"` → bytes `P` (ends with `}`). `seq` starts at 1
+     per direction after the handshake and grows by exactly 1.
+  2. `mac` = first 16 bytes of `HMAC-SHA256(S, ascii(seq) + "|" + P)`, lowercase hex (32 chars).
+  3. Wire frame = `P` without its final `}` + `,"m":"<mac>"}`.
+  4. The receiver requires the frame to end with `,"m":"<32 hex>"}` (40 bytes), strips them, appends `}` → `P`,
+     recomputes the mac, then parses `P` and requires `seq == last + 1`. Any mismatch → close.
+- A JSON frame followed by a blob carries `"blob":true,"blobLen":<n>,"blobSha256":"<64 hex>"` inside its MACed
+  bytes; the receiver checks the blob's length and SHA-256 and closes on a mismatch.
 - HMAC-SHA256; vmId as lowercase GUID without braces.
 
 ## Messages
