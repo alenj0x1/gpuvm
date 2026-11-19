@@ -8,7 +8,7 @@
 #      machine's log holding only its own requests.
 # Run elevated. Only the copies this script makes are touched, and they are deleted at the end.
 param([string]$Session = 'agent-broker', [string]$Name = 'agent052a', [string]$Template = 'agent-tpl', [int]$Rounds = 2,
-    [string[]]$Steps = @('install', 'parts', 'service', 'two'))
+    [string[]]$Steps = @('install', 'parts', 'service', 'two', 'stop'))
 $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 $modulePath = Join-Path $env:ProgramFiles 'GpuVM\gpuvm\src\GpuVM\GpuVM.psd1'
@@ -168,8 +168,54 @@ try {
         Line "two at once: $($two | ConvertTo-Json -Compress -Depth 4)"
         Save
     }
+
+    if ('stop' -in $Steps) {
+        # The bounded stop (48fa2d7): this branch's gpuvm-host replaces the installed one while a 60 s agent request
+        # runs; then `gpuvm-host install` (what the installer does over a running service) must stop it in ~5 s, not
+        # 60. The original exe goes back in the finally below.
+        $installed = Join-Path $env:ProgramFiles 'GpuVM\gpuvm-host.exe'
+        $script:hostBackup = 'C:\GpuVM\lab052\gpuvm-host.installed.exe'
+        New-Item -ItemType Directory -Force (Split-Path $script:hostBackup) | Out-Null
+        & cargo build --release --manifest-path (Join-Path $root 'app\host\Cargo.toml') 2>&1 | Select-Object -Last 1
+        Copy-Item $installed $script:hostBackup -Force
+        Stop-Service GpuVM
+        (Get-Service GpuVM).WaitForStatus('Stopped', '00:02:00')
+        Copy-Item (Join-Path $root 'app\host\target\release\gpuvm-host.exe') $installed -Force
+        Start-Service GpuVM
+        $ready = Wait-Ready $Name 60
+        Line "this branch's service up, agent back in $ready ms"
+        $job = Start-ThreadJob -ArgumentList $modulePath, $Name {
+            param($m, $n)
+            Import-Module $m -Force
+            $w = [Diagnostics.Stopwatch]::StartNew()
+            $r = try { Invoke-GpuVMAgent -Name $n -Method input.act -Params @{ actions = @(@{ type = 'wait'; ms = 5000 }) * 12 } -TimeoutSec 120 } catch { $_.Exception.Message }
+            [ordered]@{ ms = [math]::Round($w.Elapsed.TotalMilliseconds); result = $r }
+        }
+        Start-Sleep -Seconds 2
+        $w = [Diagnostics.Stopwatch]::StartNew()
+        & $installed install
+        $installMs = [math]::Round($w.Elapsed.TotalMilliseconds)
+        $state = (Get-Service GpuVM).Status
+        $request = $job | Wait-Job -Timeout 90 | Receive-Job
+        Start-Service GpuVM
+        $result['boundedStop'] = [ordered]@{ installOverRunningServiceMs = $installMs; serviceAfterInstall = "$state"; longRequest = $request
+            hostLog = @(Get-Content (Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'GpuVM\host.log') -Tail 5) }
+        Line "bounded stop: $($result['boundedStop'] | ConvertTo-Json -Compress -Depth 4)"
+        Save
+    }
 }
 finally {
+    # The installed service goes back exactly as it was (when the stop step replaced it).
+    if ($script:hostBackup -and (Test-Path $script:hostBackup)) {
+        try {
+            Stop-Service GpuVM -ErrorAction SilentlyContinue
+            (Get-Service GpuVM).WaitForStatus('Stopped', '00:02:00')
+            Copy-Item $script:hostBackup (Join-Path $env:ProgramFiles 'GpuVM\gpuvm-host.exe') -Force
+            Start-Service GpuVM
+            Line 'installed gpuvm-host.exe put back'
+        }
+        catch { Line "COULDN'T PUT BACK gpuvm-host.exe: $($_.Exception.Message)" }
+    }
     foreach ($n in $made) {
         try { Stop-VM -Name $n -TurnOff -Force -ErrorAction SilentlyContinue; Remove-GpuVM -Name $n -DeleteDisk -Confirm:$false -ErrorAction Stop; Line "$n deleted" }
         catch { Line "couldn't delete $n : $($_.Exception.Message)" }
