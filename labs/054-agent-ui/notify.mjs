@@ -32,6 +32,12 @@ const machine = `lab054n-${new Date().toISOString().slice(11, 19).replace(/:/g, 
 const made = await tool("create_disposable", { template, name: machine, task: "Lab 054: request_human notification", cpu: 2, memoryGB: Number(process.env.LAB054_MEMORY_GB ?? 4) });
 console.log("create_disposable:", text(made).slice(0, 300));
 if (made?.isError) { clearTimeout(guard); mcp.kill(); process.exit(4); }
+// Ready: take_machine again until it says so (the copy may still be starting).
+for (let i = 0; i < 30; i++) {
+  const r = text(await tool("take_machine", { machine, task: "Lab 054: notifications" }));
+  if (!/not ready|keep waiting/i.test(r)) break;
+  await sleep(10000);
+}
 // The request, without waiting: the notification, the dock and the sidebar's count should come at once.
 const t0 = Date.now();
 const asked = await tool("request_human", { machine, message: "Accept the UAC prompt to install the printer driver." });
@@ -50,6 +56,36 @@ try {
 console.log("broker:", shots.broker);
 const cancel = await tool("cancel_request", { machine });
 console.log("cancel_request:", text(cancel).slice(0, 200));
+
+// A copy from this PC (send) with GpuVM out of view (minimized; agent-mcp saw nothing with it in the tray): its
+// Windows notification must come anyway, and the tray icon carries the mark. Windows' own history says whether
+// GpuVM posted it, whatever Focus Assist does with the banner.
+const history = () => { try { return execFileSync("powershell.exe", ["-NoProfile", "-Command",
+  "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType=WindowsRuntime] | Out-Null; $h = [Windows.UI.Notifications.ToastNotificationManager]::History.GetHistory('dev.alejandro.gpuvm'); foreach ($t in $h) { $t.Content.GetXml() }"]).toString(); } catch { return ""; } };
+const win = (cmd) => { try { execFileSync("pwsh", ["-NoProfile", "-Command", `Add-Type -Namespace L54 -Name W -MemberDefinition '[DllImport("user32.dll")] public static extern bool ShowWindow(System.IntPtr h, int c);'; $p = Get-Process gpuvm -ErrorAction SilentlyContinue | Where-Object MainWindowHandle -ne 0 | Select-Object -First 1; if ($p) { [L54.W]::ShowWindow($p.MainWindowHandle, ${cmd}) | Out-Null }`]); } catch { /* no window */ } };
+win(6); // SW_MINIMIZE
+await sleep(1500);
+const before = history();
+const tSend = Date.now();
+const sending = tool("send_file", { machine, hostPath: join(here, "README.md"), reason: "Lab 054: the notification of a copy from the PC" });
+for (const ms of [2500, 6000]) {
+  await sleep(Math.max(0, tSend + ms - Date.now()));
+  shots[`send-toast-${ms}`] = ps("screen-shot.ps1", ["-Out", join(out, `installed-send-toast-${ms}.png`)]);
+}
+await sleep(2000);
+const after = history();
+const sendToast = after.split("<toast").find((t) => /wants to copy to|quiere copiar a/.test(t) && t.includes(machine) && !before.includes(t)) ?? null;
+shots.sendToastPosted = !!sendToast;
+shots.sendToastXml = sendToast ? `<toast${sendToast}`.slice(0, 400) : null;
+shots.sendToastMs = Date.now() - tSend;
+// The tray area (bottom-right corner, where the icon with its dot is).
+shots.tray = ps("screen-shot.ps1", ["-Out", join(out, "installed-send-tray.png"), "-Width", "360", "-Height", "60"]);
+console.log("send notification posted:", shots.sendToastPosted);
+try {
+  execFileSync("pwsh", ["-NoProfile", "-Command", `Import-Module 'C:\\Program Files\\GpuVM\\gpuvm\\src\\GpuVM' -ErrorAction Stop; Get-GpuVMAgentRequest | Where-Object { $_.machine -eq '${machine}' -and $_.state -eq 'pending' } | ForEach-Object { Resolve-GpuVMAgentRequest -Id $_.id -Allow:$false | Out-Null }`]);
+} catch { /* answered */ }
+await sending;
+win(9); // SW_RESTORE
 writeFileSync(join(out, "notify.json"), JSON.stringify({ machine, shots }, null, 1));
 await tool("destroy", { machine });
 clearTimeout(guard); mcp.kill();

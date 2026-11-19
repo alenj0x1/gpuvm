@@ -39,7 +39,7 @@ const rpc = (method, params) => new Promise((ok) => { const id = next++; waiting
 const tool = async (name, args) => (await rpc("tools/call", { name, arguments: args })).result;
 const text = (r) => (r?.content ?? []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
 // Fail fast instead of hanging (lab-craft).
-const guard = setTimeout(() => { console.error("timed out"); mcp.kill(); process.exit(3); }, 25 * 60000);
+const guard = setTimeout(() => { console.error("timed out"); mcp.kill(); process.exit(3); }, 30 * 60000);
 
 await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "lab054", version: "1.0" } });
 mcp.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
@@ -55,6 +55,12 @@ if (disposable) {
   // Fail fast: without the machine there is nothing to measure (lab-craft).
   if (made?.isError) { clearTimeout(guard); mcp.kill(); process.exit(4); }
   machine = runName;
+  // Ready: take_machine again until it says so (2026-11-19 08:27: "not ready yet").
+  for (let i = 0; i < 30; i++) {
+    const r = text(await tool("take_machine", { machine, task: "Lab 054: take-control latency" }));
+    if (!/not ready|keep waiting/i.test(r)) break;
+    await sleep(10000);
+  }
 } else {
   const took = await tool("take_machine", { machine, task: "Lab 054: take-control latency" });
   console.log("take_machine:", text(took).slice(0, 200));
