@@ -1396,13 +1396,20 @@ InModuleScope GpuVM {
             $s = [IO.File]::Create($big); $s.SetLength(16MB + 1); $s.Dispose()
             Test-Throws { Invoke-GpuVMAgent -Name vm -Method files.write -BlobPath $big } | Should Be $true
         }
-        It 'a registration is removed only inside the agents folder' {
+        It 'a registration is removed by the service (its secret is SYSTEM-only); unreachable is a warning' {
             Mock Get-GpuVMAgentRoot { Join-Path $TestDrive 'agents' }
+            Mock Invoke-AgentBroker { $script:sent = @{ Command = $Command; Arguments = $Arguments } }
             $id = '0B5D1F53-1E33-4B7E-9F0A-2C4D6E8F0A1B'
-            $dir = Join-Path $TestDrive "agents\$($id.ToLowerInvariant())"
-            New-Item -ItemType Directory $dir -Force | Out-Null
+            $script:sent = $null
             Remove-GpuVMAgentRegistration -VMId $id
-            Test-Path $dir | Should Be $false
+            $script:sent | Should Be $null
+            New-Item -ItemType Directory (Join-Path $TestDrive "agents\$($id.ToLowerInvariant())") -Force | Out-Null
+            Remove-GpuVMAgentRegistration -VMId $id
+            $script:sent.Command | Should Be 'Remove-GpuVMAgentRegistration'
+            $script:sent.Arguments['VmId'] | Should Be '0b5d1f53-1e33-4b7e-9f0a-2c4d6e8f0a1b'
+            Mock Invoke-AgentBroker { throw 'no service' }
+            $w = Remove-GpuVMAgentRegistration -VMId $id 3>&1
+            ($w | Where-Object { $_ -is [System.Management.Automation.WarningRecord] }).Message | Should Match 'within the hour'
         }
         It 'the secret goes to the service, which stores it as SYSTEM' {
             Mock Invoke-AgentBroker { $script:sent = @{ Command = $Command; Arguments = $Arguments } }

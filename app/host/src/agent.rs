@@ -494,6 +494,19 @@ fn hyperv_vm_ids() -> Option<Vec<String>> {
     parse_vm_ids(&String::from_utf8_lossy(&output.stdout))
 }
 
+/// Deletes a VM's registration folder (agent.json and its SYSTEM-only secret) and forgets the machine. `Ok(false)`
+/// when there was none. The id is a canonical VM id (checked by the caller), so the path stays inside agents\.
+fn remove_registration(vm_id: &str) -> Result<bool, String> {
+    let dir = agents_dir().join(vm_id);
+    lock(&broker().machines).remove(vm_id);
+    if !dir.exists() {
+        return Ok(false);
+    }
+    std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
+    log(&format!("agent: removed the registration and secret of VM {vm_id}"));
+    Ok(true)
+}
+
 /// `OK:<id>,<id>` (the last line); anything else means the list isn't known.
 fn parse_vm_ids(text: &str) -> Option<Vec<String>> {
     let line = text.lines().rev().find(|l| !l.trim().is_empty())?.trim();
@@ -938,6 +951,8 @@ const COMMANDS: &[(&str, &[&str])] = &[
     ("Set-GpuVMAgentClient", &["Name", "ClientApprovals"]),
     // The module's Install-GpuVMAgent only (administrators' pipe): the service keeps the new secret as SYSTEM.
     ("Set-GpuVMAgentSecret", &["VmId", "Secret"]),
+    // Remove-GpuVM and Uninstall-GpuVMAgent: the secret is SYSTEM-only, so only the service can delete it.
+    ("Remove-GpuVMAgentRegistration", &["VmId"]),
 ];
 
 pub fn is_command(cmd: &str) -> bool {
@@ -1170,6 +1185,16 @@ pub fn command(cmd: &str, args: &Value, ctx: &mut Ctx) -> Result<Value, CmdError
             secret.iter_mut().for_each(|b| *b = 0);
             stored.map_err(|e| CmdError { code: "internal".into(), message: format!("The agent's secret couldn't be stored: {e}") })?;
             Ok(json!({ "vmId": vm_id }))
+        }
+        "Remove-GpuVMAgentRegistration" => {
+            if !ctx.admin {
+                return err("denied", "Only the GpuVM module removes agent registrations.");
+            }
+            let vm = need(s("VmId"), "VmId")?;
+            // Only a folder named by a VM id: never settings.json or a path the caller made up.
+            let vm_id = hv::parse_guid(vm).map(hv::fmt_guid).ok_or_else(|| CmdError { code: "bad_request".into(), message: "VmId isn't a VM id.".into() })?;
+            let removed = remove_registration(&vm_id).map_err(|e| CmdError { code: "internal".into(), message: format!("The agent's registration couldn't be removed: {e}") })?;
+            Ok(json!({ "vmId": vm_id, "removed": removed }))
         }
         "Set-GpuVMAgentSettings" | "Set-GpuVMAgentClient" => {
             person_only(ctx, "change the agents' settings")?;
@@ -1966,6 +1991,21 @@ pub(crate) mod tests {
         assert!(get_agents(Some("Test1"))[0]["takenBy"].is_null());
         assert_eq!(code(command("Lock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id }), &mut app)), "not_found");
         assert_eq!(get_agents(Some("Nope"))[0]["state"], "no-agent");
+        // A deleted machine's registration and SYSTEM-only secret go through the service, for the module only.
+        let gone = "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f";
+        std::fs::create_dir_all(dir.join(gone)).unwrap();
+        std::fs::write(dir.join(gone).join("secret"), b"x").unwrap();
+        std::fs::write(dir.join(gone).join("agent.json"), "{}").unwrap();
+        let remove = |ctx: &mut Ctx, id: &str| command("Remove-GpuVMAgentRegistration", &json!({ "VmId": id }), ctx);
+        assert_eq!(code(remove(&mut app, gone)), "denied");
+        assert!(dir.join(gone).join("secret").exists());
+        let mut module = Ctx::new(std::ptr::null_mut(), 400, true);
+        assert_eq!(code(remove(&mut module, "..\\Test1")), "bad_request");
+        assert_eq!(code(remove(&mut module, "settings.json")), "bad_request");
+        assert_eq!(remove(&mut module, &gone.to_uppercase()).unwrap()["removed"], json!(true));
+        assert!(!dir.join(gone).exists());
+        assert_eq!(remove(&mut module, gone).unwrap()["removed"], json!(false));
+        assert!(dir.join("settings.json").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

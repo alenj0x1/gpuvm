@@ -123,7 +123,12 @@ function Remove-GuestAgentSecret {
 function Remove-GpuVMAgentRegistration {
     param([Parameter(Mandatory)][string]$VMId)
     $dir = Join-Path (Get-GpuVMAgentRoot) $VMId.ToLowerInvariant()
-    if (Test-Path -LiteralPath $dir) { Remove-Item -LiteralPath $dir -Recurse -Force }
+    if (-not (Test-Path -LiteralPath $dir)) { return }
+    # The secret is SYSTEM-only (lab 054: an administrator's Remove-Item was denied and the deletion reported an
+    # error), so the service removes the folder. The machine itself is already gone or uninstalled by then, so a
+    # service that can't be reached is a warning: its hourly sweep removes registrations of VMs that don't exist.
+    try { Invoke-AgentBroker -Command 'Remove-GpuVMAgentRegistration' -Arguments @{ VmId = $VMId.ToLowerInvariant() } | Out-Null }
+    catch { Write-Warning "GpuVM's service couldn't remove the agent registration of $VMId now ($($_.Exception.Message)); it is removed within the hour once the machine no longer exists." }
 }
 
 function Update-GpuVMAgentRegistration {
