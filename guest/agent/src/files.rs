@@ -169,6 +169,8 @@ pub fn list(p: &Value) -> CallResult {
         }
         let _ = FindClose(h);
     }
+    // the folder may have been swapped for a link while listing by name: check again (security review L3)
+    open_checked(&path, FILE_LIST_DIRECTORY.0, OPEN_EXISTING, true)?;
     Ok((json!({"path": path.to_string_lossy(), "entries": entries, "truncated": truncated}), None))
 }
 
@@ -210,9 +212,17 @@ pub fn write(p: &Value, blob: Option<Vec<u8>>) -> CallResult {
     }
     if p["mkdirs"] == true {
         if let Some(parent) = path.parent() {
-            // each level checked by resolve() above; create_dir_all doesn't follow anything new
-            std::fs::create_dir_all(parent).map_err(|e| ("internal", format!("{}: {e}", parent.display())))?;
-            resolve(&parent.to_string_lossy())?;
+            // one level at a time, each checked (not a link, still inside) before the next is made (review L3)
+            let root = root()?;
+            let rel = parent.strip_prefix(root).map_err(|_| ("denied", "outside the agent's folder".to_string()))?;
+            let mut cur = root.clone();
+            for c in rel.components() {
+                cur.push(c);
+                if !cur.exists() {
+                    std::fs::create_dir(&cur).map_err(|e| ("internal", format!("{}: {e}", cur.display())))?;
+                }
+                open_checked(&resolve(&cur.to_string_lossy())?, FILE_LIST_DIRECTORY.0, OPEN_EXISTING, true)?;
+            }
         }
     }
     let (h, info, _) = open_checked(&path, (FILE_GENERIC_WRITE | FILE_GENERIC_READ).0 | DELETE.0, OPEN_ALWAYS, false)?;

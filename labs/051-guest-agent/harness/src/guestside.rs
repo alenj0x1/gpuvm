@@ -67,6 +67,46 @@ pub fn system_window(exe: &str) {
     let _ = std::fs::write(out, text);
 }
 
+/// `guest-open-helper` (run as the agent user): tries to open the session helper (gpuvm-agent.exe helper) with the
+/// rights an attacker would need to steal its pipes or inject (dup handle, VM read/write, all access) and with the
+/// harmless ones; writes the results to C:\Users\Public\lab051-open.json.
+pub fn open_helper() {
+    use windows::Win32::System::Diagnostics::ToolHelp::*;
+    let mut out = Vec::new();
+    unsafe {
+        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).unwrap();
+        let mut e = PROCESSENTRY32W { dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
+        let mut ok = Process32FirstW(snap, &mut e).is_ok();
+        while ok {
+            let name = String::from_utf16_lossy(&e.szExeFile[..e.szExeFile.iter().position(|&c| c == 0).unwrap_or(0)]);
+            if name.eq_ignore_ascii_case("gpuvm-agent.exe") {
+                let mut rights = Vec::new();
+                for (label, r) in [
+                    ("all", PROCESS_ALL_ACCESS),
+                    ("dupHandle", PROCESS_DUP_HANDLE),
+                    ("vmRead", PROCESS_VM_READ),
+                    ("vmWrite", PROCESS_VM_WRITE | PROCESS_VM_OPERATION),
+                    ("suspend", PROCESS_SUSPEND_RESUME),
+                    ("terminate", PROCESS_TERMINATE),
+                    ("writeDac", PROCESS_ACCESS_RIGHTS(0x0004_0000)),
+                    ("queryLimited", PROCESS_QUERY_LIMITED_INFORMATION),
+                    ("synchronize", PROCESS_SYNCHRONIZE),
+                ] {
+                    let r = OpenProcess(r, false, e.th32ProcessID);
+                    rights.push(format!("\"{label}\":{}", r.is_ok()));
+                    if let Ok(h) = r {
+                        let _ = CloseHandle(h);
+                    }
+                }
+                out.push(format!("{{\"pid\":{},\"open\":{{{}}}}}", e.th32ProcessID, rights.join(",")));
+            }
+            ok = Process32NextW(snap, &mut e).is_ok();
+        }
+        let _ = CloseHandle(snap);
+    }
+    let _ = std::fs::write(r"C:\Users\Public\lab051-open.json", format!("[{}]", out.join(",")));
+}
+
 #[repr(C)]
 struct UnicodeString {
     len: u16,

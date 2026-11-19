@@ -132,26 +132,39 @@ pub fn exec_run(p: &Value, id: u64) -> CallResult {
     let t0 = Instant::now();
     let mut pi = PROCESS_INFORMATION::default();
     unsafe {
-        let mut si = STARTUPINFOW { cb: std::mem::size_of::<STARTUPINFOW>() as u32, ..Default::default() };
-        si.dwFlags = STARTF_USESTDHANDLES;
-        si.hStdInput = in_r.0;
-        si.hStdOutput = out_w.0;
-        si.hStdError = err_w.0;
+        // exactly these three handles are inherited (never the helper's pipes to the service, nor another
+        // exec.run's pipes: security review H1)
+        let handles = [in_r.0, out_w.0, err_w.0];
+        let mut size = 0usize;
+        let _ = InitializeProcThreadAttributeList(None, 1, None, &mut size);
+        let mut attr_buf = vec![0u8; size];
+        let attrs = LPPROC_THREAD_ATTRIBUTE_LIST(attr_buf.as_mut_ptr() as _);
+        InitializeProcThreadAttributeList(Some(attrs), 1, None, &mut size).map_err(|e| ("internal", format!("attr list {e}")))?;
+        UpdateProcThreadAttribute(attrs, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST as usize, Some(handles.as_ptr() as *const _), std::mem::size_of_val(&handles), None, None)
+            .map_err(|e| ("internal", format!("handle list {e}")))?;
+        let mut si = STARTUPINFOEXW::default();
+        si.StartupInfo.cb = std::mem::size_of::<STARTUPINFOEXW>() as u32;
+        si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+        si.StartupInfo.hStdInput = in_r.0;
+        si.StartupInfo.hStdOutput = out_w.0;
+        si.StartupInfo.hStdError = err_w.0;
+        si.lpAttributeList = attrs;
         let mut cmd = wide(&line);
         let cwd_w = wide(&cwd.to_string_lossy());
-        CreateProcessW(
+        let r = CreateProcessW(
             PCWSTR::null(),
             Some(PWSTR(cmd.as_mut_ptr())),
             None,
             None,
             true,
-            CREATE_SUSPENDED | CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB | CREATE_UNICODE_ENVIRONMENT,
+            EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB,
             None,
             PCWSTR(cwd_w.as_ptr()),
-            &si,
+            &si.StartupInfo,
             &mut pi,
-        )
-        .map_err(|e| {
+        );
+        DeleteProcThreadAttributeList(attrs);
+        r.map_err(|e| {
             let code = (e.code().0 & 0xffff) as u32;
             if code == 2 || code == 3 {
                 ("not_found", format!("'{file}' wasn't found"))
@@ -219,7 +232,20 @@ pub fn exec_run(p: &Value, id: u64) -> CallResult {
         let _ = GetExitCodeProcess(proc_.0, &mut code);
     }
     drop(job); // no kill-on-close: what the program started on its own keeps running
-    let _ = writer.join();
+    // a stdin write can block forever when a grandchild holds stdin and nobody reads: cancel it (review L2)
+    if !writer.is_finished() {
+        let th = HANDLE(std::os::windows::io::AsRawHandle::as_raw_handle(&writer) as _);
+        let t = Instant::now();
+        while !writer.is_finished() && t.elapsed() < Duration::from_millis(500) {
+            unsafe {
+                let _ = windows::Win32::System::IO::CancelSynchronousIo(th);
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+    if writer.is_finished() {
+        let _ = writer.join();
+    }
     if cancelled {
         return Err(("cancelled", "cancelled by the host: the program and what it started were ended".into()));
     }
@@ -230,7 +256,9 @@ pub fn exec_run(p: &Value, id: u64) -> CallResult {
         "exitCode": if timed_out { Value::Null } else { json!(code as i32) },
         "timedOut": timed_out, "truncated": truncated, "ms": t0.elapsed().as_millis() as u64,
     });
-    if stdout.len() + stderr.len() <= INLINE {
+    // measured as JSON: escaping can make control characters 6x bigger (review L4)
+    let json_len = serde_json::to_string(&stdout).map(|s| s.len()).unwrap_or(usize::MAX) + serde_json::to_string(&stderr).map(|s| s.len()).unwrap_or(usize::MAX);
+    if json_len <= INLINE {
         r["stdout"] = json!(stdout);
         r["stderr"] = json!(stderr);
         Ok((r, None))

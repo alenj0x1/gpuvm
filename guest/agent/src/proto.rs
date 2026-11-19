@@ -171,6 +171,16 @@ impl Sealer {
     pub fn new(key: [u8; 32]) -> Self {
         Sealer { key, seq: 0 }
     }
+    /// Seals only if the frame fits `max` bytes; otherwise None and the seq is not used (no gap for the peer).
+    pub fn try_seal(&mut self, obj: Value, max: usize) -> Option<Vec<u8>> {
+        let f = self.seal(obj);
+        if f.len() > max {
+            self.seq -= 1;
+            return None;
+        }
+        Some(f)
+    }
+
     pub fn seal(&mut self, mut obj: Value) -> Vec<u8> {
         self.seq += 1;
         if let Some(m) = obj.as_object_mut() {

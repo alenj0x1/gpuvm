@@ -111,6 +111,15 @@ public static class GpuVMAgentLsa {
             LsaClose(h);
         }
     }
+    public static string Read(string key) {
+        IntPtr h = Open(), km, d; var k = Str(key, out km);
+        try {
+            uint s = LsaRetrievePrivateData(h, ref k, out d);
+            if (s != 0) return null;
+            try { var u = (LSA_UNICODE_STRING)Marshal.PtrToStructure(d, typeof(LSA_UNICODE_STRING)); return Marshal.PtrToStringUni(u.Buffer, u.Length / 2); }
+            finally { LsaFreeMemory(d); }
+        } finally { Marshal.FreeHGlobal(km); LsaClose(h); }
+    }
     public static bool Exists(string key) {
         IntPtr h = Open(), km, d; var k = Str(key, out km);
         try { uint s = LsaRetrievePrivateData(h, ref k, out d); if (s == 0) { LsaFreeMemory(d); return true; } return false; }
@@ -148,10 +157,21 @@ function Set-Value([string]$Path, [string]$Name, $Value, [string]$Type = 'DWord'
     New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
 }
 
+# The backup key: only SYSTEM and Administrators can read it (it lists the previous sign-in settings).
+function Initialize-BackupKey {
+    if (-not (Test-Path $BackupKey)) { New-Item -Path $BackupKey -Force | Out-Null }
+    $acl = New-Object Security.AccessControl.RegistrySecurity
+    $acl.SetAccessRuleProtection($true, $false)
+    foreach ($sid in $SidSystem, $SidAdmins) {
+        $acl.AddAccessRule((New-Object Security.AccessControl.RegistryAccessRule($sid, 'FullControl', 'ContainerInherit', 'None', 'Allow')))
+    }
+    Set-Acl -Path $BackupKey -AclObject $acl
+}
+
 # Saves a machine value once (before the first change), so uninstall can put it back exactly; '<absent>' if it wasn't set.
 function Backup-Value([string]$Path, [string]$Name) {
     $id = ($Path -replace '^HKLM:\\', '') + '|' + $Name
-    if (-not (Test-Path $BackupKey)) { New-Item -Path $BackupKey -Force | Out-Null }
+    Initialize-BackupKey
     if ($null -ne (Get-ItemProperty -Path $BackupKey -Name $id -ErrorAction SilentlyContinue)) { return }
     $cur = Get-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue
     $saved = if ($null -eq $cur) { '<absent>' } else {
@@ -193,14 +213,45 @@ function Set-ProtectedAcl([string]$Path, [bool]$UsersReadExecute) {
     }
     $acl.SetOwner($SidAdmins)
     Set-Acl -Path $Path -AclObject $acl
-    # children too (files that were there before get the same protected rules)
-    Get-ChildItem -LiteralPath $Path -Recurse -Force | ForEach-Object {
-        $a = Get-Acl -LiteralPath $_.FullName
-        $a.SetAccessRuleProtection($false, $false)
-        foreach ($r in @($a.Access | Where-Object { -not $_.IsInherited })) { [void]$a.RemoveAccessRule($r) }
-        $a.SetOwner($SidAdmins)
-        Set-Acl -LiteralPath $_.FullName -AclObject $a
+    # children too (files that were there before get the same protected rules); links are removed, never followed
+    $todo = New-Object Collections.Generic.Queue[string]
+    $todo.Enqueue($Path)
+    while ($todo.Count) {
+        foreach ($item in @(Get-ChildItem -LiteralPath $todo.Dequeue() -Force)) {
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                if ($item.PSIsContainer) { & cmd.exe /c rmdir "$($item.FullName)" } else { & cmd.exe /c del /f /q /a "$($item.FullName)" }
+                continue
+            }
+            $a = Get-Acl -LiteralPath $item.FullName
+            $a.SetAccessRuleProtection($false, $false)
+            foreach ($r in @($a.Access | Where-Object { -not $_.IsInherited })) { [void]$a.RemoveAccessRule($r) }
+            $a.SetOwner($SidAdmins)
+            Set-Acl -LiteralPath $item.FullName -AclObject $a
+            if ($item.PSIsContainer) { $todo.Enqueue($item.FullName) }
+        }
     }
+}
+
+# C:\ProgramData\GpuVM\Agent made safely: Users may create folders under C:\ProgramData, so a standard user could
+# plant GpuVM or GpuVM\Agent beforehand as a junction (the secret and the SYSTEM service's log would then go
+# wherever it points) or as their own folder. Anything there that is a link or not owned by SYSTEM/Administrators
+# is removed without following it, then the folder is created and protected (security review H2).
+function Test-Trusted([string]$Path) {
+    $item = Get-Item -LiteralPath $Path -Force
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { return $false }
+    $owner = (Get-Acl -LiteralPath $Path).GetOwner([Security.Principal.SecurityIdentifier])
+    $owner -eq $SidSystem -or $owner -eq $SidAdmins
+}
+function Initialize-DataDir {
+    foreach ($p in (Split-Path $DataDir -Parent), $DataDir) {
+        if ((Test-Path -LiteralPath $p) -and -not (Test-Trusted $p)) {
+            $notes.Add("removed $p (a link or a folder owned by someone else)")
+            & cmd.exe /c rmdir /s /q "$p"
+        }
+        if (-not (Test-Path -LiteralPath $p)) { New-Item -ItemType Directory -Path $p | Out-Null }
+        if (-not (Test-Trusted $p)) { throw "$p isn't safe (a link or owned by someone else) even after recreating it" }
+    }
+    Set-ProtectedAcl $DataDir $false
 }
 
 function New-Password {
@@ -240,10 +291,18 @@ function Invoke-AgentHive([string]$Sid, [string]$ProfilePath, [scriptblock]$Scri
     }
 }
 
-$WinlogonValues = 'AutoAdminLogon', 'DefaultUserName', 'DefaultDomainName', 'AutoLogonCount', 'DefaultPassword'
+$WinlogonValues = 'AutoAdminLogon', 'DefaultUserName', 'DefaultDomainName', 'AutoLogonCount'
+$PrevPlainSecret = 'GpuVMAgent_PreviousPlainDefaultPassword'
 
 function Set-AgentAutologon([string]$Password) {
     foreach ($n in $WinlogonValues) { Backup-Value $Winlogon $n }
+    $plainMarker = 'PLAIN|DefaultPassword'
+    if ($null -eq (Get-ItemProperty -Path $BackupKey -Name $plainMarker -ErrorAction SilentlyContinue)) {
+        $plain = Get-Reg $Winlogon 'DefaultPassword'
+        if ($null -ne $plain) { [GpuVMAgentLsa]::Store($PrevPlainSecret, [string]$plain) }
+        New-ItemProperty -Path $BackupKey -Name $plainMarker -Value $(if ($null -ne $plain) { 'lsa' } else { '<absent>' }) -PropertyType String -Force | Out-Null
+        $plain = $null
+    }
     # the previous autologon password (an LSA secret written by Windows setup) is kept in another LSA secret
     $marker = 'LSA|DefaultPassword'
     if ($null -eq (Get-ItemProperty -Path $BackupKey -Name $marker -ErrorAction SilentlyContinue)) {
@@ -270,6 +329,18 @@ function Restore-PreviousAutologon {
     }
     Remove-ItemProperty -Path $BackupKey -Name $marker
     foreach ($n in $WinlogonValues) { Restore-Value $Winlogon $n }
+    Restore-Value $Winlogon 'DefaultPassword'   # entries written by 0.1 installs
+    $plainMarker = 'PLAIN|DefaultPassword'
+    $pm = Get-ItemProperty -Path $BackupKey -Name $plainMarker -ErrorAction SilentlyContinue
+    if ($null -ne $pm) {
+        if ($pm.$plainMarker -eq 'lsa') {
+            $v = [GpuVMAgentLsa]::Read($PrevPlainSecret)
+            if ($null -ne $v) { Set-Value $Winlogon 'DefaultPassword' $v 'String' }
+            [GpuVMAgentLsa]::Store($PrevPlainSecret, $null)
+            $v = $null
+        }
+        Remove-ItemProperty -Path $BackupKey -Name $plainMarker
+    }
     $true
 }
 
@@ -335,7 +406,7 @@ $user = Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue
 $oldVersion = if (Test-Path $Exe) { (& $Exe version 2>$null | Out-String).Trim() } else { '' }
 if (-not $Full -and $svc -and $user -and $SignInAs -eq 'agent' -and $oldVersion -and $oldVersion -eq $newVersion) {
     if ($svc.Status -ne 'Stopped') { Stop-Service -Name $ServiceName -Force }
-    if (-not (Test-Path $DataDir)) { New-Item -ItemType Directory -Path $DataDir -Force | Out-Null }
+    Initialize-DataDir
     if ($Secret) { [IO.File]::WriteAllBytes((Join-Path $DataDir 'secret'), $Secret) }
     Set-ProtectedAcl $DataDir $false
     $password = New-Password
@@ -353,8 +424,7 @@ if (-not $Full -and $svc -and $user -and $SignInAs -eq 'agent' -and $oldVersion 
 }
 
 # 1. data folder: SYSTEM + Administrators only (checked again by the service before every connection)
-if (-not (Test-Path $DataDir)) { New-Item -ItemType Directory -Path $DataDir -Force | Out-Null }
-Set-ProtectedAcl $DataDir $false
+Initialize-DataDir
 if ($Secret) {
     [IO.File]::WriteAllBytes((Join-Path $DataDir 'secret'), $Secret)
     Set-ProtectedAcl $DataDir $false

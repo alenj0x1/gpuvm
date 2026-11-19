@@ -30,9 +30,11 @@ fn send(out: &Out, v: &Value, blob: Option<&[u8]>) {
     let mut f = out.lock().unwrap();
     let mut bytes = serde_json::to_vec(v).unwrap();
     let mut blob = blob;
-    if bytes.len() > MAX_JSON {
+    // room for what the service adds (seq, MAC, blob fields: review M3) and the blob limit checked BEFORE writing
+    // the JSON that announces it (review L1)
+    if bytes.len() > MAX_JSON - 1024 || blob.is_some_and(|b| b.len() > MAX_BLOB) {
         let id = v["id"].as_u64().unwrap_or(0);
-        bytes = serde_json::to_vec(&json!({"t": "res", "id": id, "ok": false, "error": {"code": "too_large", "message": "the result is over 64 KiB"}})).unwrap();
+        bytes = serde_json::to_vec(&json!({"t": "res", "id": id, "ok": false, "error": {"code": "too_large", "message": "the result is over the frame limits (63 KiB JSON, 16 MiB blob)"}})).unwrap();
         blob = None;
     }
     if write_frame(&mut *f, KIND_JSON, &bytes).is_err() || blob.is_some_and(|b| write_frame(&mut *f, KIND_BLOB, b).is_err()) {
@@ -140,6 +142,13 @@ pub fn run() {
         if i.is_invalid() || o.is_invalid() || i.0.is_null() || o.0.is_null() {
             eprintln!("the helper is started by the GpuVM agent service");
             std::process::exit(2);
+        }
+        // the pipes to the service must never reach a program the helper starts (security review H1)
+        use windows::Win32::Foundation::{SetHandleInformation, HANDLE_FLAGS, HANDLE_FLAG_INHERIT};
+        for h in [i, o, GetStdHandle(STD_ERROR_HANDLE).unwrap_or_default()] {
+            if !h.is_invalid() && !h.0.is_null() {
+                let _ = SetHandleInformation(h, HANDLE_FLAG_INHERIT.0, HANDLE_FLAGS(0));
+            }
         }
         (File::from_raw_handle(i.0 as _), Arc::new(Mutex::new(File::from_raw_handle(o.0 as _))))
     };

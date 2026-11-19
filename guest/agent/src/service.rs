@@ -51,9 +51,41 @@ struct HostLink {
 }
 
 struct HelperLink {
-    writer: File,
+    /// frames for the helper, written by its own writer thread (never under a lock: security review M1)
+    tx: std::sync::mpsc::SyncSender<Vec<u8>>,
+    /// set while the writer thread is inside a write; the ticker kills a helper that stops reading
+    busy: Arc<Mutex<Option<Instant>>>,
+    process: Arc<crate::token::Owned>,
     pid: u32,
     user: Option<String>,
+}
+
+impl HelperLink {
+    /// Queues frames (JSON + optional blob) for the helper; false when the queue is full or the helper is gone.
+    fn send(&self, v: &Value, blob: Option<&[u8]>) -> bool {
+        let mut buf = Vec::new();
+        if write_frame(&mut buf, KIND_JSON, &serde_json::to_vec(v).unwrap()).is_err() {
+            return false;
+        }
+        if let Some(b) = blob {
+            if write_frame(&mut buf, KIND_BLOB, b).is_err() {
+                return false;
+            }
+        }
+        self.tx.try_send(buf).is_ok()
+    }
+}
+
+fn helper_writer(mut f: File, rx: std::sync::mpsc::Receiver<Vec<u8>>, busy: Arc<Mutex<Option<Instant>>>) {
+    use std::io::Write;
+    while let Ok(buf) = rx.recv() {
+        *busy.lock().unwrap() = Some(Instant::now());
+        let ok = f.write_all(&buf).and_then(|_| f.flush()).is_ok();
+        *busy.lock().unwrap() = None;
+        if !ok {
+            break;
+        }
+    }
 }
 
 struct Pending {
@@ -118,14 +150,14 @@ impl Agent {
             v["blobLen"] = json!(b.len());
             v["blobSha256"] = json!(hex(&sha256(b)));
         }
-        let mut frame = link.sealer.seal(v.clone());
-        if frame.len() > MAX_JSON {
-            // a result too big for one JSON frame: tell the host instead of dropping the connection
-            let id = v["id"].as_u64().unwrap_or(0);
-            frame = link.sealer.seal(err_res(id, "too_large", "the result is over 64 KiB"));
+        let id = v["id"].as_u64().unwrap_or(0);
+        let Some(frame) = link.sealer.try_seal(v, MAX_JSON) else {
+            // a result too big for one JSON frame: tell the host instead of dropping the connection (and without
+            // a gap in seq: security review M3)
+            let f = link.sealer.seal(err_res(id, "too_large", "the result is over 64 KiB"));
             let mut s = &*link.stream;
-            return write_frame(&mut s, KIND_JSON, &frame).is_ok();
-        }
+            return write_frame(&mut s, KIND_JSON, &f).is_ok();
+        };
         let mut s = &*link.stream;
         let ok = write_frame(&mut s, KIND_JSON, &frame).is_ok() && blob.map_or(true, |b| write_frame(&mut s, KIND_BLOB, b).is_ok());
         if !ok {
@@ -261,10 +293,10 @@ impl Agent {
                     if v["blobLen"].as_u64().is_some_and(|n| n != b.len() as u64) {
                         return "blob length differs from blobLen".into();
                     }
-                    if let Some(h) = v["blobSha256"].as_str() {
-                        if !ct_eq(hex(&sha256(&b)).as_bytes(), h.to_ascii_lowercase().as_bytes()) {
-                            return "blob differs from blobSha256".into();
-                        }
+                    // blobSha256 is required (protocol): the blob frame itself carries no MAC
+                    let Some(h) = v["blobSha256"].as_str() else { return "blob without blobSha256".into() };
+                    if !ct_eq(hex(&sha256(&b)).as_bytes(), h.to_ascii_lowercase().as_bytes()) {
+                        return "blob differs from blobSha256".into();
                     }
                     if let Err(e) = self.handle_req(v, Some(b)) {
                         return e;
@@ -315,12 +347,11 @@ impl Agent {
             p.insert(id, Pending { deadline: Instant::now() + method_deadline(method, &params), conn, helper: h.pid });
         }
         let req = json!({"t": "req", "id": id, "method": method, "params": params, "blob": blob.is_some()});
-        let ok = write_frame(&mut h.writer, KIND_JSON, &serde_json::to_vec(&req).unwrap()).is_ok()
-            && blob.as_ref().map_or(true, |b| write_frame(&mut h.writer, KIND_BLOB, b).is_ok());
+        let ok = h.send(&req, blob.as_deref());
         drop(hg);
         if !ok {
             self.pending.lock().unwrap().remove(&id);
-            self.send_host(err_res(id, "internal", "the session helper isn't reading"), None);
+            self.send_host(err_res(id, "internal", "the session helper is busy or gone"), None);
         }
         Ok(())
     }
@@ -331,8 +362,8 @@ impl Agent {
         if p.is_none() {
             return;
         }
-        if let Some(h) = self.helper.lock().unwrap().as_mut() {
-            let _ = write_frame(&mut h.writer, KIND_JSON, &serde_json::to_vec(&json!({"t": "cancel", "id": id})).unwrap());
+        if let Some(h) = self.helper.lock().unwrap().as_ref() {
+            let _ = h.send(&json!({"t": "cancel", "id": id}), None);
         }
         self.send_host(err_res(id, "cancelled", "cancelled by the host"), None);
     }
@@ -342,6 +373,16 @@ impl Agent {
         let mut last_ping = Instant::now();
         while !STOP.load(Ordering::SeqCst) {
             std::thread::sleep(Duration::from_millis(100));
+            // a helper that stopped reading for 10 s (hung, or suspended by another process of its user) is ended;
+            // the supervisor starts a new one (security review M1)
+            if let Some(h) = self.helper.lock().unwrap().as_ref() {
+                if h.busy.lock().unwrap().is_some_and(|t| t.elapsed() > Duration::from_secs(10)) {
+                    logf!("session helper {} stopped reading for 10 s: ending it", h.pid);
+                    unsafe {
+                        let _ = windows::Win32::System::Threading::TerminateProcess(h.process.0, 1);
+                    }
+                }
+            }
             if last_ping.elapsed() >= Duration::from_millis(PING_EVERY_MS) {
                 self.send_host(json!({"t": "ping"}), None);
                 last_ping = Instant::now();
@@ -364,6 +405,8 @@ impl Agent {
     // ---- helper side ----
 
     fn helper_reader(self: Arc<Self>, mut from: File, pid: u32) {
+        let mut said_hello = false;
+        let mut logs = (Instant::now(), 0u32);
         let why = loop {
             let f = match read_frame(&mut from) {
                 Ok(f) => f,
@@ -402,15 +445,24 @@ impl Agent {
                         self.send_host(json!({"t": "evt", "event": name, "data": v.get("data").cloned().unwrap_or(json!({}))}), None);
                     }
                 }
-                Some("hello") => {
-                    let user = v["user"].as_str().unwrap_or("?").to_string();
+                Some("hello") if !said_hello => {
+                    said_hello = true; // once per helper: nothing else may announce a user (security review H1)
+                    let user = v["user"].as_str().unwrap_or("?").chars().take(256).collect::<String>();
                     logf!("session helper {pid} is up as {user} (session {})", v["session"]);
                     if let Some(h) = self.helper.lock().unwrap().as_mut().filter(|h| h.pid == pid) {
                         h.user = Some(user.clone());
                     }
                     self.send_host(json!({"t": "evt", "event": "signed_in", "data": {"user": user}}), None);
                 }
-                Some("log") => logf!("helper {pid}: {}", v["msg"].as_str().unwrap_or("")),
+                Some("log") => {
+                    if logs.0.elapsed() > Duration::from_secs(1) {
+                        logs = (Instant::now(), 0);
+                    }
+                    logs.1 += 1;
+                    if logs.1 <= 20 {
+                        logf!("helper {pid}: {}", v["msg"].as_str().unwrap_or(""));
+                    }
+                }
                 _ => {}
             }
         };
@@ -483,7 +535,11 @@ impl Agent {
                             (Ok(r), Ok(w)) => {
                                 let pid = h.pid;
                                 logf!("session helper {pid} started in session {}", h.session);
-                                *self.helper.lock().unwrap() = Some(HelperLink { writer: w, pid, user: None });
+                                let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<u8>>(64);
+                                let busy = Arc::new(Mutex::new(None));
+                                let b2 = busy.clone();
+                                std::thread::spawn(move || helper_writer(w, rx, b2));
+                                *self.helper.lock().unwrap() = Some(HelperLink { tx, busy, process: h.process.clone(), pid, user: None });
                                 let me = self.clone();
                                 std::thread::spawn(move || me.helper_reader(r, pid));
                                 current = Some((h, Instant::now()));
@@ -512,7 +568,16 @@ impl Agent {
 
 /// Runs the agent until STOP: host connection, heartbeat, helper supervision.
 pub fn run() {
-    log_to(&PathBuf::from(r"C:\ProgramData\GpuVM\Agent\logs\agent.log"));
+    // a log file only inside a folder that passed the secret's ACL check and isn't a link: a SYSTEM service
+    // writing through a junction a user planted would be an arbitrary file write (security review H2)
+    let logs = std::path::Path::new(secret::DIR).join("logs");
+    let link = std::fs::symlink_metadata(&logs).map(|m| {
+        use std::os::windows::fs::MetadataExt;
+        m.file_attributes() & 0x400 != 0
+    });
+    if secret::check_acl(secret::DIR).is_ok() && !matches!(link, Ok(true)) {
+        log_to(&logs.join("agent.log"));
+    }
     logf!("GpuVM agent {VERSION} starting (pid {})", std::process::id());
     let a = Agent::new();
     let (h1, h2) = (a.clone(), a.clone());
