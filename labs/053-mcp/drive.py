@@ -19,7 +19,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 class Mcp:
     def __init__(self, exe, fake, era):
         args = [exe, "--mcp"] + (["--fake"] if fake else [])
-        self.p = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
+        # Buffered: with bufsize=0 Python's readline reads one byte per system call, which added ~17 ms per 36 KB of
+        # base64 to every screenshot (~85 ms at 1280 px) and was the instrument's cost, not the server's (overhead.py).
+        self.p = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=-1)
         self.era, self.next, self.stderr = era, 0, []
         threading.Thread(target=self._drain, daemon=True).start()
         if era == "legacy":
