@@ -741,7 +741,7 @@ impl Tool<'_> {
             if last["state"] == "no-agent" {
                 return Err(explain(machine, &BrokerError::new("no_agent", "")));
             }
-            Ok(last["state"] == "ready" && last["agent"]["signedIn"] != false)
+            Ok(last["state"] == "ready" && signed_in(&last))
         })?;
         if !ready {
             return Ok(format!("not ready yet (state: {}); call take_machine again to keep waiting.", last["state"].as_str().unwrap_or("unknown")));
@@ -1460,6 +1460,15 @@ fn human_size(bytes: u64) -> String {
 fn screen(m: &Value) -> Option<(u32, u32)> {
     let s = &m["agent"]["screen"];
     Some((s["w"].as_u64()? as u32, s["h"].as_u64()? as u32))
+}
+
+/// Someone is signed in: the agent's snapshot says so, or a `signed_in` event with a user arrived after it connected
+/// (lab 053: the snapshot taken at connect said signedIn:false and stayed so after the user signed in 10 s later).
+fn signed_in(m: &Value) -> bool {
+    let event = &m["events"]["signed_in"];
+    let by_event = event["data"]["user"].as_str().is_some_and(|u| !u.is_empty())
+        && event["at"].as_u64().unwrap_or(0) >= m["connectedSince"].as_u64().unwrap_or(0);
+    m["agent"]["signedIn"] != false || by_event
 }
 
 /// Why the machine is paused: "human" (request_human), "control" (the person took over) or "person".
