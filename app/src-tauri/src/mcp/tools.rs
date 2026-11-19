@@ -22,6 +22,8 @@ const PROFILE: &str = r"C:\Users\agent\";
 /// The Outbox, relative to the agent's home (lowercase, for comparisons).
 const OUTBOX: &str = r"desktop\outbox\";
 const APPROVAL_TTL: Duration = Duration::from_secs(600);
+/// How long a `send` request stays open for the person (sent as its TimeoutSec) and how long send_file waits for it.
+const SEND_APPROVAL_SECS: u64 = 600;
 /// Tools that ask the person through the client first when the connection's "approvals" setting is on.
 const CONFIRM: &[&str] = &["run", "write_file"];
 
@@ -1152,7 +1154,8 @@ impl Tool<'_> {
         let what = if files == 1 && p.is_file() { human_size(bytes) } else { format!("{files} files, {}", human_size(bytes)) };
         let title = format!("Copy {} ({what}) from this PC into {machine}", p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| host.to_string()));
         let reason = opt_str(self.args, "reason")?.unwrap_or("The agent wants to use this file in the machine.");
-        let approval = self.approval_with(machine, "send", &title, reason, self.settings.approval_timeout, json!({ "path": host }))?;
+        // Its own 10 minutes, not the session's default (which the person may have set short).
+        let approval = self.approval_with(machine, "send", &title, reason, SEND_APPROVAL_SECS, json!({ "path": host }))?;
         self.step(machine)?;
         let sent = match self.ctx.broker.call_long("file.send", json!({ "connection": self.connection, "name": machine, "hostPath": host, "approval": approval })) {
             Ok(r) => r,
