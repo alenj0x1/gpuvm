@@ -168,8 +168,14 @@ fn copy(job: &OfferJob, ctx: &Ctx) -> Result<String, String> {
     })();
     match result {
         Ok(_) => {
+            // Opened without sharing: closed first, or the stream can't be opened next to it (error 32).
+            drop(handle);
             let _as = AsClient::new(ctx.pipe)?;
-            mark_downloaded(&path, &job.machine)?;
+            // A file that can't be marked as downloaded doesn't stay: unmarked, Windows would trust it.
+            if let Err(e) = mark_downloaded(&path, &job.machine) {
+                unsafe { DeleteFileW(wide(&path).as_ptr()) };
+                return Err(e);
+            }
             Ok(path)
         }
         Err(e) => {

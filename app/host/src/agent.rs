@@ -35,9 +35,9 @@ const SECRET_ENTROPY: &[u8] = b"GpuVM agent secret v1";
 const PING_EVERY: Duration = Duration::from_secs(2);
 const DEAD_AFTER_MS: u32 = 6000;
 const HANDSHAKE_MS: u32 = 5000;
-/// Connections still in their handshake, across all VMs, and new connections per VM in 10 s.
+/// Connections still in their handshake, across all VMs and per VM.
 const MAX_PRE_AUTH: usize = 16;
-const MAX_ACCEPTS_PER_10S: usize = 30;
+const MAX_PRE_AUTH_PER_VM: usize = 4;
 /// More frames than this in one second closes the connection (a flood, not an agent).
 const MAX_FRAMES_PER_SEC: u32 = 2000;
 const MAX_EVENTS_PER_SEC: f64 = 10.0;
@@ -279,7 +279,8 @@ impl Conn {
 struct Machine {
     paused: Option<Value>,
     taken_by: Option<String>,
-    accepts: VecDeque<Instant>,
+    pre_auth: usize,
+    failures: VecDeque<Instant>,
     last_error: Option<String>,
 }
 
@@ -406,28 +407,33 @@ fn accept_loop(listener: &Sock) {
             }
         };
         let vm_id = hv::fmt_guid(peer);
-        // Per VM: at most 30 new connections every 10 s; everywhere: at most 16 handshakes at once.
-        let flooding = {
+        // Handshakes in progress: at most 4 per VM and 16 in all; more are closed at once. A count of connections
+        // at the same time, not a rate: a rate a flood keeps full would also lock out the real agent's redials (lab
+        // 052 saw that). A guest can still keep its own 4 slots busy, which only hurts that VM's channel.
+        let admitted = {
             let mut machines = lock(&broker().machines);
             let m = machines.entry(vm_id.clone()).or_default();
-            m.accepts.retain(|t| t.elapsed() < Duration::from_secs(10));
-            m.accepts.push_back(Instant::now());
-            m.accepts.len() > MAX_ACCEPTS_PER_10S
+            let ok = m.pre_auth < MAX_PRE_AUTH_PER_VM && broker().pre_auth.load(Ordering::SeqCst) < MAX_PRE_AUTH;
+            if ok {
+                m.pre_auth += 1;
+                broker().pre_auth.fetch_add(1, Ordering::SeqCst);
+            }
+            ok
         };
-        if flooding || broker().pre_auth.load(Ordering::SeqCst) >= MAX_PRE_AUTH {
-            continue; // dropped: the socket closes
+        if admitted {
+            std::thread::spawn(move || serve_agent(sock, vm_id));
         }
-        broker().pre_auth.fetch_add(1, Ordering::SeqCst);
-        std::thread::spawn(move || serve_agent(sock, vm_id));
     }
 }
 
-struct PreAuth(bool);
+struct PreAuth(Option<String>);
 impl PreAuth {
     fn done(&mut self) {
-        if self.0 {
+        if let Some(vm_id) = self.0.take() {
             broker().pre_auth.fetch_sub(1, Ordering::SeqCst);
-            self.0 = false;
+            if let Some(m) = lock(&broker().machines).get_mut(&vm_id) {
+                m.pre_auth = m.pre_auth.saturating_sub(1);
+            }
         }
     }
 }
@@ -442,9 +448,11 @@ fn set_last_error(vm_id: &str, error: Option<String>) {
 }
 
 fn serve_agent(sock: Sock, vm_id: String) {
-    let mut pre = PreAuth(true);
+    let mut pre = PreAuth(Some(vm_id.clone()));
+    let started = Instant::now();
     // Unknown VMs (no agent installed by GpuVM) are closed without a word.
     let Some(reg) = reg_by_id(&vm_id) else { return };
+    let reg_ms = started.elapsed().as_secs_f64() * 1000.0;
     sock.set_timeouts(HANDSHAKE_MS, 10_000);
     let secret = match load_secret(&vm_id) {
         Ok(k) => k,
@@ -453,12 +461,19 @@ fn serve_agent(sock: Sock, vm_id: String) {
             return;
         }
     };
+    let secret_ms = started.elapsed().as_secs_f64() * 1000.0 - reg_ms;
     let mut stream = &sock;
     let session = match wire::host_handshake(&mut stream, &secret, &vm_id) {
         Ok(s) => s,
         Err(reason) => {
-            // Logged at most once a second per VM (a guest could otherwise fill the disk).
-            let quiet = lock(&broker().machines).get(&vm_id).is_some_and(|m| m.accepts.len() > 3);
+            // At most 5 failures logged per VM every 10 s: a guest could otherwise fill the disk.
+            let quiet = {
+                let mut machines = lock(&broker().machines);
+                let m = machines.entry(vm_id.clone()).or_default();
+                m.failures.retain(|t| t.elapsed() < Duration::from_secs(10));
+                m.failures.push_back(Instant::now());
+                m.failures.len() > 5
+            };
             if !quiet {
                 vm_log(&reg, json!({ "event": "handshake_failed", "reason": reason }));
             }
@@ -486,7 +501,9 @@ fn serve_agent(sock: Sock, vm_id: String) {
     if let Some(old) = lock(&broker().conns).insert(vm_id.clone(), conn.clone()) {
         old.close();
     }
-    vm_log(&reg, json!({ "event": "connected", "agent": conn.agent }));
+    let round = |ms: f64| (ms * 100.0).round() / 100.0;
+    vm_log(&reg, json!({ "event": "connected", "agent": conn.agent, "regMs": round(reg_ms), "secretMs": round(secret_ms),
+        "totalMs": round(started.elapsed().as_secs_f64() * 1000.0) }));
     {
         let c = conn.clone();
         std::thread::spawn(move || {
@@ -529,7 +546,9 @@ fn read_loop(conn: &Conn, opener: &mut Opener) -> String {
     loop {
         let frame = match wire::read_frame(&mut stream, wire::MAX_JSON) {
             Ok(f) => f,
-            Err(e) => return if e.contains("10060") { "no heartbeat for 6 s".into() } else { e },
+            Err(e) if e.contains("10060") => return "no heartbeat for 6 s".into(),
+            Err(e) if e.contains("fill whole buffer") => return "closed by the guest".into(),
+            Err(e) => return e,
         };
         if window.elapsed() >= Duration::from_secs(1) {
             window = Instant::now();

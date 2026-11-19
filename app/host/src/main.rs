@@ -231,6 +231,15 @@ fn main() {
         Some("stop") => stop(),
         Some("startup") => startup(std::env::args().nth(2).as_deref()),
         Some("uninstall") => uninstall(),
+        // Debug builds only (lab 052): the agent broker alone, run as SYSTEM next to an installed service that
+        // doesn't have it yet. Release builds don't have this command.
+        #[cfg(debug_assertions)]
+        Some("broker") => {
+            agent::start();
+            loop {
+                std::thread::sleep(Duration::from_secs(3600));
+            }
+        }
         _ => Err("usage: gpuvm-host install | stop | uninstall".into()),
     };
     if let Err(e) = result {

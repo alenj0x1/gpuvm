@@ -1426,13 +1426,15 @@ InModuleScope GpuVM {
                 $dist = Join-Path $TestDrive 'dist'
                 New-Item -ItemType Directory "$dist\sub" -Force | Out-Null
                 [IO.File]::WriteAllText("$dist\agent.exe", 'x'); [IO.File]::WriteAllText("$dist\sub\lib.dll", 'yyy')
-                [pscustomobject]@{ Install = 'install.ps1'; Dist = $dist; Files = @(Get-ChildItem $dist -File -Recurse); Version = '1.0.0' }
+                [IO.File]::WriteAllText("$TestDrive\install.ps1", 'param($Staging) "installed"')
+                [pscustomobject]@{ Install = "$TestDrive\install.ps1"; Dist = $dist; Files = @(Get-ChildItem $dist -File -Recurse); Version = '1.0.0' }
             }
             Mock Get-GuestServiceInterface { [pscustomobject]@{ Name = 'Guest Service Interface'; Enabled = $false } }
             Mock Enable-VMIntegrationService { $script:gsi.Add('on') }
             Mock Disable-VMIntegrationService { $script:gsi.Add('off') }
             Mock Copy-AgentFileToGuest { $script:copied.Add("$Destination|$((Get-Item $Source).Length)") }
-            Mock Invoke-Command { if ($FilePath) { [pscustomobject]@{ password = 'S3cret!'; version = '1.2.3' } } }
+            # The installer call is the one that carries the script's text and the staging folder.
+            Mock Invoke-Command { if (@($ArgumentList).Count -eq 2 -and $ArgumentList[0] -like '*installed*') { [pscustomobject]@{ password = 'S3cret!'; version = '1.2.3' } } }
             Mock Write-AgentSecret { }
             Mock Save-GpuVMState { $script:saved = $State }
             Mock Write-JsonFile { $script:registration = $Data }

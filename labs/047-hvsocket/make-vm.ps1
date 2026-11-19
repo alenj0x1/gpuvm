@@ -6,12 +6,23 @@ param(
     [string]$Name = 'agentlab',
     [string]$IsoPath = 'C:\Users\you\Downloads\Win10_22H2_Spanish_Mexico_x64v1.iso',
     [int]$MemoryGB = 2,
+    # Dynamic VHDX: what it may grow to (GpuVM refuses a size that doesn't fit next to the other machines' disks).
+    [int]$DiskGB = 64,
+    # Lab VMs only: ignore GpuVM's disk budget check (it reserves every dynamic disk's full size; a test VM uses
+    # ~17 GB of its 64). The other checks still apply.
+    [switch]$SkipDiskBudget,
     [switch]$Remove,
     [string]$Me = 'agents-phase0'
 )
 $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 Import-Module (Join-Path $root 'src\GpuVM\GpuVM.psd1') -Force
+if ($SkipDiskBudget) {
+    & (Get-Module GpuVM) {
+        $script:LabHostCheck = ${function:Test-GpuVMHost}
+        function script:Test-GpuVMHost { & $script:LabHostCheck @args | Where-Object { $_.Name -ne 'Disk' } }
+    }
+}
 $out = Join-Path $PSScriptRoot 'out'
 New-Item -ItemType Directory -Force $out | Out-Null
 & (Join-Path $root 'labs\042-admin-dock\take-lock.ps1') -What "lab 047: $(if ($Remove) { 'delete' } else { 'create' }) test VM $Name" -Me $Me
@@ -29,7 +40,7 @@ try {
     # GpuVM requires 4 GB per machine (Windows 11); this Windows 10 test VM runs on $MemoryGB GB, set in Hyper-V
     # only (lab VM, deleted at the end), because the host has ~2.5 GB free next to win-gpu.
     $t = Measure-Command {
-        New-GpuVM -Name $Name -IsoPath $IsoPath -Credential $cred -Override @{ vm = @{ memoryGB = 4; cpu = @{ count = 4 }; disk = @{ sizeGB = 64 } } } -Confirm:$false
+        New-GpuVM -Name $Name -IsoPath $IsoPath -Credential $cred -Override @{ vm = @{ memoryGB = 4; cpu = @{ count = 4 }; disk = @{ sizeGB = $DiskGB } } } -Confirm:$false
         Set-VMMemory -VMName $Name -DynamicMemoryEnabled $false -StartupBytes ([int64]$MemoryGB * 1GB)
         Start-VM -Name $Name
     }

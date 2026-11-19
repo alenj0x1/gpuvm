@@ -66,8 +66,11 @@ function Install-GpuVMAgent {
     [Array]::Clear($secret, 0, $secret.Length)
 
     Write-Step 'Installing the agent and its user'
-    $output = @(Invoke-Command -VMName $Name -Credential $credential -ErrorAction Stop -FilePath $package.Install `
-        -ArgumentList (Join-Path $script:GuestAgentDir 'staging'))
+    # guest\agent\install.ps1 -Staging <folder> (named arguments: the script's text runs in the guest).
+    $code = Get-Content -Raw -LiteralPath $package.Install
+    $output = @(Invoke-Command -VMName $Name -Credential $credential -ErrorAction Stop -ArgumentList $code, (Join-Path $script:GuestAgentDir 'staging') -ScriptBlock {
+        param($code, $staging) & ([scriptblock]::Create($code)) -Staging $staging
+    })
     $result = $output | Where-Object { $_ -and $_.PSObject.Properties['password'] } | Select-Object -Last 1
     if (-not $result -or -not $result.password) { throw 'The agent''s installer in the machine didn''t return the agent user''s password.' }
     $version = if ($result.PSObject.Properties['version'] -and $result.version) { [string]$result.version } else { $package.Version }
