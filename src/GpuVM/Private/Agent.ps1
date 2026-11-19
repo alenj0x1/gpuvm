@@ -228,10 +228,14 @@ function Restart-GpuVMCold {
     }
     try {
         Write-Step 'Turning the machine off and on again'
-        Stop-GpuVMBounded -Name $Name -ShutdownTimeoutSec $ShutdownTimeoutSec -TurnOffTimeoutSec $TurnOffTimeoutSec
-        # As any start: the isolation follows the host's current address on the switch.
-        Update-GpuVMNetworkIsolation -Name $Name
-        Start-VM -Name $Name
+        # Off and on as one transition: no other GPU machine changes power in between (GpuPower.ps1).
+        Invoke-GpuPowerTransition -Name $Name -UntilUp -Do {
+            Stop-GpuVMBounded -Name $Name -ShutdownTimeoutSec $ShutdownTimeoutSec -TurnOffTimeoutSec $TurnOffTimeoutSec
+            # As any start: the isolation follows the host's current address on the switch.
+            Update-GpuVMNetworkIsolation -Name $Name
+            # The module's Start-VM: it takes the same mutex again (a mutex is reentrant on its own thread).
+            Start-VM -Name $Name
+        }
     }
     finally {
         if ($disposable) {
@@ -255,12 +259,14 @@ function Stop-GpuVMBounded {
     try {
         if (& $off $ShutdownTimeoutSec) { return }
         Write-Warning "Windows in '$Name' didn't shut down in $ShutdownTimeoutSec s; it is turned off."
+        Write-PowerLog "$Name didn't shut down in $ShutdownTimeoutSec s; turned off"
         $jobs += Stop-VM -Name $Name -TurnOff -Force -AsJob
         if (& $off $TurnOffTimeoutSec) { return }
         # Hyper-V won't turn off a machine it sees as shutting down: its worker process is ended (only that VM's).
         $id = (Get-VM -Name $Name).Id.Guid
         $worker = @(Get-CimInstance Win32_Process -Filter "Name='vmwp.exe'" | Where-Object { $_.CommandLine -match [regex]::Escape($id) })
         Write-Warning "'$Name' didn't turn off; its Hyper-V worker process is ended."
+        Write-PowerLog "$Name didn't shut down nor turn off; its worker process ($(@($worker.ProcessId) -join ', ')) was ended"
         $worker | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
         if (& $off $TurnOffTimeoutSec) { return }
         throw "'$Name' couldn't be turned off (it is $((Get-VM -Name $Name).State))."
