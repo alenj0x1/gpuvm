@@ -54,10 +54,15 @@ export interface Prefs {
   takeControl: TakeControlPref;
   /** Seconds an agent's request waits for an answer before it is refused by itself. */
   approvalTimeout: number;
+  /** Where status notices over the picture go (recording, saved, you took control): the status notch. */
+  statusPlacement: StatusPlacementPref;
 }
 
+/** Where the status notch sits over the picture, or only in the side panel. */
+export type StatusPlacementPref = "bottom" | "top" | "top-left" | "top-right" | "panel";
+
 const KEY = "gpuvm.prefs";
-const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "stop", noticesAfterQuit: true, service: "app", monitor: "primary", accent: "blue", lang: "system", viewerHome: "keep", animFps: 0, animQuality: 100, replay: false, shotsDir: "", videosDir: "", takeControl: "input", approvalTimeout: 120 };
+const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "stop", noticesAfterQuit: true, service: "app", monitor: "primary", accent: "blue", lang: "system", viewerHome: "keep", animFps: 0, animQuality: 100, replay: false, shotsDir: "", videosDir: "", takeControl: "input", approvalTimeout: 120, statusPlacement: "bottom" };
 const EVENT = "gpuvm-prefs";
 const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
 
@@ -123,6 +128,13 @@ async function applyAgents(prefs: Prefs) {
   await invoke("set_agent_prefs", { takeControl: prefs.takeControl, approvalTimeout: prefs.approvalTimeout }).catch(() => {});
 }
 
+/** The status notch's place goes to the Rust side (status.rs), which draws it over every viewer. */
+async function applyStatus(placement: StatusPlacementPref) {
+  if (!inTauri) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("set_status_prefs", { placement }).catch(() => {});
+}
+
 async function applyService(mode: ServicePref) {
   if (!inTauri) return;
   const { invoke } = await import("@tauri-apps/api/core");
@@ -149,6 +161,7 @@ export function savePrefs(change: Partial<Prefs>) {
   if (change.lang) applyLang(next.lang);
   if ("replay" in change || "shotsDir" in change || "videosDir" in change || change.lang) applyCapture(next);
   if ("takeControl" in change || "approvalTimeout" in change) applyAgents(next);
+  if (change.statusPlacement) applyStatus(next.statusPlacement);
   window.dispatchEvent(new Event(EVENT));
 }
 
@@ -164,6 +177,7 @@ export function initPrefs() {
   applyLang(prefs.lang);
   applyCapture(prefs);
   applyAgents(prefs);
+  applyStatus(prefs.statusPlacement);
   systemDark.addEventListener("change", () => {
     if (readPrefs().theme === "system") { applyTheme("system"); window.dispatchEvent(new Event(EVENT)); }
   });

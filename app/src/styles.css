@@ -1786,17 +1786,37 @@ html.viewer-panel-window body::after { display: none; }
 .ag-dock-menu { z-index: 60; background: #1c1c1c; color: #ebe8e1; box-shadow: inset 0 0 0 1px #2f2f2f; }
 .ag-dock-menu button:hover { background: #262626; }
 .ag-dock-menu-catch { position: fixed; inset: 0; z-index: 55; }
-.ag-banner-stage { --dk-bg: #1c1c1c; --dk-fg: #ebe8e1; }
-.ag-banner { position: absolute; bottom: 0; left: 50%; box-sizing: border-box; display: flex; align-items: center; gap: 10px; max-width: calc(100% - 16px);
-  padding: 8px 8px 8px 14px; border-radius: 14px 14px 0 0; background: #1c1c1c; color: #ebe8e1; font-size: 13px; white-space: nowrap;
-  transform: translate(-50%, 110%); transition: transform 320ms cubic-bezier(.2, .8, .2, 1); }
-.ag-banner.on { transform: translate(-50%, 0); }
-.ag-banner-icon { color: #7d9cf0; flex: none; display: block; }
-.ag-banner-text { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.ag-banner .dock-btn { flex: none; }
-html.agent-dock-window, html.agent-dock-window body, html.agent-dock-window #root, html.agent-banner-window, html.agent-banner-window body, html.agent-banner-window #root { background: transparent; min-height: 0; height: 100%; overflow: hidden; }
+
+html.agent-dock-window, html.agent-dock-window body, html.agent-dock-window #root { background: transparent; min-height: 0; height: 100%; overflow: hidden; }
 .ag-widget { container-type: inline-size; }
 @container (max-width: 340px) {
   .ag-live .btn.ghost .ag-btn-label { display: none; }
   .ag-live .btn.ghost { padding: 0 9px; }
 }
+/* The status notch (StatusNotch.tsx, status.rs): one notch for every status notice over the picture. Its window is
+   exactly its size; the notch is always drawn dark, like the docks, since it sits on the picture. */
+html.status-notch-window, html.status-notch-window body, html.status-notch-window #root { background: transparent; min-height: 0; height: 100%; overflow: hidden; }
+.sn-stage { position: fixed; left: 0; top: 0; }
+.sn { --dk-bg: #1c1c1c; --dk-fg: #ebe8e1; --dk-line: #2f2f2f; --dk-chip: #262626; display: inline-flex; flex-direction: column; gap: 2px; padding: 6px; background: #1c1c1c; color: #ebe8e1; font-size: 13px; white-space: nowrap;
+  transition: transform 320ms cubic-bezier(.2, .8, .2, 1), opacity 200ms ease-out; }
+.sn-bottom .sn { border-radius: 14px 14px 0 0; transform: translateY(110%); }
+.sn-top .sn { border-radius: 0 0 14px 14px; transform: translateY(-110%); }
+.sn-top-left .sn, .sn-top-right .sn { border-radius: 14px; opacity: 0; transform: scale(.96); }
+.sn.on { transform: none; opacity: 1; }
+.sn-row { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 0 6px 0 8px; }
+.sn-row .sn-text { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.sn-icon { display: block; flex: none; color: #a8a59e; }
+.sn-icon.ok { color: #52c08b; }
+.sn-icon.accent { color: #7d9cf0; }
+.sn-row.warn .sn-icon { color: #e0b04f; }
+.sn-rec { width: 9px; height: 9px; margin: 0 3px; border-radius: 50%; background: #ef5a4c; flex: none; animation: ag-pulse 1.6s ease-in-out infinite; }
+.sn-time { font-variant-numeric: tabular-nums; color: #a8a59e; }
+.sn-btn { margin-left: auto; height: 28px; flex: none; white-space: nowrap; }
+/* In the side panel (placement "panel"): the same rows on the panel's own surface. */
+.vp-status { --dk-bg: var(--surface); --dk-fg: var(--text); display: flex; flex-direction: column; gap: 2px; margin: 0 0 8px; padding: 6px; border-radius: var(--r-lg); background: var(--surface); color: var(--text); font-size: 13px; }
+.vp-status .sn-icon, .vp-status .sn-time { color: var(--muted); }
+.vp-status .sn-icon.ok { color: var(--ok); }
+.vp-status .sn-icon.accent { color: var(--accent); }
+.vp-status .sn-btn { background: var(--btn-bg); color: var(--btn-fg); }
+/* In the open list the descriptions are read whole (up to two lines); the closed button keeps one. */
+.dropdown-list .dropdown-detail { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.35; }

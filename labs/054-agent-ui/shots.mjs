@@ -29,7 +29,7 @@ const SCREENS = [
   ["agents", (s) => `/?agents=${s}#:agents`, null],
   ["machine", (s) => `/?agents=${s}#win-agent`, `[...document.querySelectorAll(".section-nav button")].find((b) => /Agente/.test(b.textContent))?.click(); 1`],
   ["settings", () => `/?agents=working#:settings`, `[...document.querySelectorAll(".pref-nav-item")].find((b) => /Agentes/.test(b.textContent))?.click(); 1`],
-  ["use", () => `/?agents=working#win-agent`, `[...document.querySelectorAll(".section-nav button")].find((b) => /Imagen/.test(b.textContent))?.click(); await new Promise((r) => setTimeout(r, 900)); document.querySelector('button.dropdown[aria-label="Uso"]')?.click(); 1`],
+  ["use", () => `/?agents=working#win-agent`, `[...document.querySelectorAll(".section-nav button")].find((b) => /Imagen/.test(b.textContent))?.click(); await new Promise((r) => setTimeout(r, 900)); document.querySelector('button.dropdown[aria-label="Tipo de uso"]')?.click(); 1`],
   ["create", () => `/?agents=working#:home`, `document.querySelector(".side-add")?.click(); await new Promise((r) => setTimeout(r, 900)); [...document.querySelectorAll(".create-nav button")].find((b) => /partida/.test(b.textContent))?.click(); await new Promise((r) => setTimeout(r, 700)); [...document.querySelectorAll(".choice")].find((b) => /agentes/.test(b.textContent))?.click(); 1`],
 ];
 const STATES = ["none", "working", "waiting", "many"];
@@ -54,6 +54,12 @@ for (const theme of ["dark", "light"]) for (const width of [760, 1400]) {
   for (const [name, url, setup] of SCREENS) {
     const states = name === "agents" || name === "machine" ? STATES : ["working"];
     for (const s of states) {
+      if (name === "settings") { for (const sec of ["Agentes", "Apariencia"]) {
+        await open(url(s), theme, width, 900);
+        await js(`(async () => { [...document.querySelectorAll(".pref-nav-item")].find((b) => b.textContent.includes("${sec}"))?.click(); })()`); await sleep(900);
+        if (sec === "Apariencia") { await js(`document.querySelector('button.dropdown[aria-label="Avisos de estado"]')?.click(); 1`); await sleep(500); }
+        await shot(`settings-${sec === "Agentes" ? "agents" : "status"}-${theme}-${width}.png`); n++;
+      } continue; }
       await open(url(s), theme, width, 900);
       if (setup) { await js(`(async () => { ${setup} })()`); await sleep(1200); }
       await shot(`${name}-${s}-${theme}-${width}.png`); n++;
@@ -67,9 +73,10 @@ for (const width of [800, 1600]) {
     await js(PICTURE); await sleep(900);
     await shot(`dock-${d}-${width}.png`); n++;
   }
-  await open(`/?agent-banner`, "dark", width, Math.round(width * 0.5625));
+  // The status notch alone (status.mjs composes it over the picture with the docks).
+  await open(`/?status-notch&placement=bottom`, "dark", width, Math.round(width * 0.5625));
   await js(PICTURE); await sleep(900);
-  await shot(`banner-${width}.png`); n++;
+  await shot(`status-${width}.png`); n++;
 }
 // The widget in the viewer's panel, at its sizes, working and with requests waiting.
 for (const theme of ["dark", "light"]) for (const [w, h] of [[2, 1], [2, 2], [3, 3], [2, 4]]) for (const s of ["working", "waiting"]) {

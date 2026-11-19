@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { MachineCube, type CubeMachine } from "./MachineCube";
-import { IconAppWindow, IconCamera, IconFolder, IconFolderOpen, IconHistory, IconHistoryOff, IconBrandWindows, IconDeviceDesktop, IconExternalLink, IconPalette, IconServer, IconHandStop, IconLayoutBottombarCollapse, IconMoon, IconPlayerPlay, IconPlayerStop, IconPlugConnected, IconPlugConnectedX, IconPower, IconShieldLock, IconShieldOff, IconSun, IconRobot, IconMouse, IconHandFinger } from "@tabler/icons-react";
+import { IconAppWindow, IconCamera, IconFolder, IconFolderOpen, IconHistory, IconHistoryOff, IconBrandWindows, IconDeviceDesktop, IconExternalLink, IconPalette, IconServer, IconHandStop, IconLayoutBottombarCollapse, IconMoon, IconPlayerPlay, IconPlayerStop, IconPlugConnected, IconPlugConnectedX, IconPower, IconShieldLock, IconShieldOff, IconSun, IconRobot, IconMouse, IconHandFinger, IconLayoutBottombar, IconLayoutNavbar, IconBoxAlignTopLeft, IconBoxAlignTopRight, IconLayoutSidebarRight } from "@tabler/icons-react";
 import { inTauri, service, type ServiceStatus } from "./api";
-import { ACCENTS, savePrefs, usePrefs, type ClosePref, type ServicePref, type TakeControlPref, type ThemePref, type ViewerHomePref, type VmsOnQuitPref } from "./prefs";
-import { Segmented, Slider, humanError } from "./ui";
+import { ACCENTS, savePrefs, usePrefs, type ClosePref, type ServicePref, type StatusPlacementPref, type TakeControlPref, type ThemePref, type ViewerHomePref, type VmsOnQuitPref } from "./prefs";
+import { Dropdown, Segmented, Slider, humanError } from "./ui";
 import { t, type LangPref } from "./i18n";
 import { MonitorPicker, useMonitors } from "./pickers";
 
@@ -290,6 +290,18 @@ export function Preferences() {
                     </svg>
                   </button>
                 ))}
+              </div>
+            </div>
+            <div className="pref-row">
+              <div className="pref-text"><strong>{t("Status notices")}</strong><span>{t("Recording, saved captures and you took control, over the machine's picture. Requests always drop from the top.")}</span></div>
+              <div className="pref-side">
+                <Dropdown<StatusPlacementPref> label={t("Status notices")} value={prefs.statusPlacement} onChange={(statusPlacement) => savePrefs({ statusPlacement })} options={[
+                  { value: "bottom", label: t("Bottom center"), detail: t("From the picture's bottom edge"), icon: <IconLayoutBottombar size={16} /> },
+                  { value: "top", label: t("Top center"), detail: t("Under a request when one is open"), icon: <IconLayoutNavbar size={16} /> },
+                  { value: "top-left", label: t("Top left corner"), detail: t("Out of the way of requests"), icon: <IconBoxAlignTopLeft size={16} /> },
+                  { value: "top-right", label: t("Top right corner"), detail: t("Out of the way of requests"), icon: <IconBoxAlignTopRight size={16} /> },
+                  { value: "panel", label: t("Only in the side panel"), detail: t("Nothing over the picture"), icon: <IconLayoutSidebarRight size={16} /> },
+                ]} />
               </div>
             </div>
             <div className="pref-row">

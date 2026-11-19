@@ -120,6 +120,8 @@ export function Dropdown<T extends string>({ value, options, onChange, label, sh
   const list = useRef<HTMLDivElement>(null);
   const chosen = options.find((o) => o.value === value) ?? options[0];
   const withIcons = options.some((o) => o.icon);
+  // Lists whose options explain themselves are wider, so each description reads whole.
+  const listMin = options.some((o) => o.detail) ? 340 : 260;
 
   const show = () => {
     const r = button.current!.getBoundingClientRect();
@@ -128,7 +130,7 @@ export function Dropdown<T extends string>({ value, options, onChange, label, sh
     const roomBelow = window.innerHeight - r.bottom - 18, roomAbove = r.top - 18 - 32;
     const below = roomBelow >= need || roomBelow >= roomAbove;
     // Never past the window's right edge: a short button near it gets a list aligned to its right side instead.
-    const width = Math.max(r.width, 260);
+    const width = Math.max(r.width, listMin);
     const x = r.left + width > window.innerWidth - 8 ? Math.max(8, r.right - width) : r.left;
     setOpen({ x, y: below ? r.bottom + 6 : -(window.innerHeight - r.top + 6), width: r.width, room: below ? roomBelow : roomAbove });
     setActive(Math.max(0, options.findIndex((o) => o.value === value)));
@@ -176,7 +178,7 @@ export function Dropdown<T extends string>({ value, options, onChange, label, sh
       </button>
       {open && createPortal(
         <div ref={list} className="dropdown-list" role="listbox" aria-label={label}
-          style={{ left: open.x, width: Math.max(open.width, 260), maxHeight: open.room, ...(open.y >= 0 ? { top: open.y } : { bottom: -open.y }) }}>
+          style={{ left: open.x, width: Math.max(open.width, listMin), maxHeight: open.room, ...(open.y >= 0 ? { top: open.y } : { bottom: -open.y }) }}>
           {options.map((o, i) => (
             <button type="button" role="option" key={o.value} aria-selected={o.value === value}
               className={`${o.value === value ? "on" : ""}${i === active ? " active" : ""}`}

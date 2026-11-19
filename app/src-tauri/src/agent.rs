@@ -24,14 +24,10 @@ use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::UI::WindowsAndMessaging::{SetWindowLongPtrW, GWLP_HWNDPARENT};
 
 pub const DOCK: &str = "agent-dock";
-pub const BANNER: &str = "agent-banner";
 /// Same as the pages' drop and lift (styles.css, .dock and .ag-banner).
 const SLIDE_MS: u64 = 320;
 /// Least time between the dock coming down and an answer (its drop plus the page's own guard).
 const ARM: Duration = Duration::from_millis(700);
-/// The notch's size, in logical pixels (its page centers it at the bottom).
-const BANNER_W: f64 = 520.0;
-const BANNER_H: f64 = 56.0;
 
 /// Take control with the mouse or keyboard (true) or only with the button (false).
 static TAKE_ON_INPUT: AtomicBool = AtomicBool::new(true);
@@ -43,8 +39,8 @@ struct Docked {
     shown: Instant,
 }
 static DOCKED: Mutex<Option<Docked>> = Mutex::new(None);
-/// The machine and client whose notch is shown.
-static BANNERED: Mutex<Option<Value>> = Mutex::new(None);
+/// What each machine's status notch says about its agent now (machine -> "control"/"paused" and client).
+static STATUS: Mutex<Option<HashMap<String, (String, String)>>> = Mutex::new(None);
 /// The machines whose viewer reports input now.
 static WATCHING: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 /// When each machine's agent was last paused from input: one pause per press, not one per mouse move.
@@ -162,11 +158,8 @@ fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Ve
         }
     }
 
-    // The notch: a machine in view whose agent the person has.
-    let banner = clients.iter()
-        .find(|c| c["state"] == "control" && c["machine"].as_str().is_some_and(crate::dock::wants))
-        .map(|c| json!({ "vm": c["machine"], "clientName": c["name"], "client": c["id"] }));
-    show_banner(app, banner);
+    // The status notch: "You took control" or "<client> paused" on the machine's picture.
+    sync_status(app, &clients);
 
     // The dock: the oldest request of a machine in view, unless its administrator dock is down already.
     let docked = waiting.iter().find(|r| {
@@ -215,11 +208,6 @@ fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str, rect: Rect) -
             let bw = ((440.0 * scale) as i32).min(w);
             (x + (w - bw) / 2, y, bw, (72.0 * scale) as i32)
         }
-        Rect::Bottom => {
-            let bw = ((BANNER_W * scale) as i32).min(w);
-            let bh = (BANNER_H * scale) as i32;
-            (x + (w - bw) / 2, y + h - bh, bw, bh)
-        }
     };
     let _ = window.set_size(PhysicalSize::new(pw.max(1) as u32, ph.max(1) as u32));
     let _ = window.set_position(PhysicalPosition::new(px, py));
@@ -234,7 +222,6 @@ fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str, rect: Rect) -
 enum Rect {
     Picture,
     Top,
-    Bottom,
 }
 
 fn build(app: &AppHandle, label: &str) -> Option<tauri::WebviewWindow> {
@@ -278,6 +265,7 @@ fn show_dock(app: &AppHandle, request: Value) {
     }
     let _ = window.show();
     crate::overlay::mark_taskbar(&window, crate::viewer::viewer_full_screen(&vm));
+    crate::status::dock_changed(app);
     if !human {
         // Like the administrator dock: the viewer lets go of the mouse and the keyboard comes here, so nothing typed
         // meanwhile goes on into the machine (and no key answers it).
@@ -290,6 +278,7 @@ fn show_dock(app: &AppHandle, request: Value) {
 
 fn hide_dock(app: &AppHandle) {
     let Some(d) = lock(&DOCKED).take() else { return };
+    crate::status::dock_changed(app);
     let Some(window) = app.get_webview_window(DOCK) else { return };
     let _ = window.emit("agent-dock", json!({ "request": Value::Null }));
     let had_focus = window.is_focused().unwrap_or(false);
@@ -362,60 +351,44 @@ pub fn agent_dock_request() -> Value {
 
 /* ---------- take control ---------- */
 
-fn show_banner(app: &AppHandle, info: Option<Value>) {
-    let previous = lock(&BANNERED).clone();
-    if previous == info {
-        // Still the same: it follows the picture if it moved (window messages re-place it too).
-        return;
+/// What the status notch says about each machine's agent: the person has it, or it's paused. Changed only when it
+/// changes, so the notch isn't redrawn every poll.
+fn sync_status(app: &AppHandle, clients: &[Value]) {
+    let now: HashMap<String, (String, String, Value)> = clients.iter()
+        .filter(|c| c["state"] == "control" || c["state"] == "paused")
+        .filter_map(|c| Some((c["machine"].as_str()?.to_string(), (c["state"].as_str()?.to_string(), c["id"].as_str().unwrap_or("").to_string(), c["name"].clone()))))
+        .collect();
+    let mut last = lock(&STATUS);
+    let last = last.get_or_insert_with(HashMap::new);
+    for vm in last.keys().filter(|vm| !now.contains_key(*vm)).cloned().collect::<Vec<_>>() {
+        crate::status::set(app, &vm, "agent", None);
+        last.remove(&vm);
     }
-    *lock(&BANNERED) = info.clone();
-    let Some(info) = info else {
-        if let Some(w) = app.get_webview_window(BANNER) {
-            let _ = w.emit("agent-banner", json!({ "info": Value::Null }));
-            let app = app.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(Duration::from_millis(SLIDE_MS));
-                if lock(&BANNERED).is_none() {
-                    if let Some(w) = app.get_webview_window(BANNER) {
-                        let _ = w.destroy();
-                    }
-                }
-            });
+    for (vm, (state, id, name)) in now {
+        if last.get(&vm) == Some(&(state.clone(), id.clone())) {
+            continue;
         }
-        return;
-    };
-    let vm = info["vm"].as_str().unwrap_or("").to_string();
-    if let Some(w) = app.get_webview_window(BANNER) {
-        if previous.as_ref().is_some_and(|p| p["vm"] == info["vm"]) {
-            let _ = w.emit("agent-banner", json!({ "info": info }));
-            return;
-        }
-        let _ = w.destroy();
+        crate::status::set(app, &vm, "agent", Some(json!({ "kind": state, "client": id, "clientName": name })));
+        last.insert(vm, (state, id));
     }
-    let Some(window) = build(app, BANNER) else { return };
-    if !place(app, &window, &vm, Rect::Bottom) {
-        let _ = window.destroy();
-        *lock(&BANNERED) = None;
-        return;
-    }
-    // Shown without taking the keyboard: the person keeps typing into the machine.
-    let _ = window.show();
-    crate::overlay::mark_taskbar(&window, crate::viewer::viewer_full_screen(&vm));
 }
 
-/// The notch's machine and client, for its page when it loads.
-#[tauri::command]
-pub fn agent_banner_info() -> Value {
-    lock(&BANNERED).clone().unwrap_or(Value::Null)
+/// The machine whose agent dock is down now (a top-center status notch sits under it).
+pub fn docked_vm() -> Option<String> {
+    lock(&DOCKED).as_ref().map(|d| d.vm.clone())
 }
 
-/// Return to agent: the broker resumes it with a fresh screenshot and a note that the person had control.
-#[tauri::command]
-pub async fn agent_banner_return(app: AppHandle) -> Result<(), String> {
-    let info = lock(&BANNERED).clone().ok_or("The agent already has the machine.")?;
-    let id = info["client"].as_str().ok_or("The agent isn't valid.")?.to_string();
-    call(&app, "Resume-GpuVMAgent", json!({ "Connection": id })).await?;
-    show_banner(&app, None);
+/// Return to agent / Resume, from the status notch: the broker gives it the machine back, with a fresh screenshot and a
+/// note that the person had control.
+pub async fn resume(app: &AppHandle, client: &str) -> Result<(), String> {
+    if client.is_empty() {
+        return Err("The agent isn't valid.".into());
+    }
+    call(app, "Resume-GpuVMAgent", json!({ "Connection": client })).await?;
+    lock(&STATUS).as_mut().map(|s| s.retain(|_, (_, id)| id != client));
+    if let Some(vm) = lock(&CLIENTS).iter().find(|c| c["id"].as_str() == Some(client)).and_then(|c| c["machine"].as_str().map(str::to_string)) {
+        crate::status::set(app, &vm, "agent", None);
+    }
     let _ = app.emit("agents-changed", json!({}));
     Ok(())
 }
@@ -446,10 +419,8 @@ pub fn on_input(app: &AppHandle, vm: &str) {
         // Lab 054 reads this line: the time from the viewer's report to the broker's answer.
         eprintln!("agent take-control {vm} paused in {} ms ({})", started.elapsed().as_millis(), if result.is_ok() { "ok" } else { "failed" });
         if result.is_ok() {
-            let info = json!({ "vm": vm, "clientName": client["name"], "client": id });
-            if crate::dock::wants(&vm) {
-                show_banner(&app, Some(info));
-            }
+            crate::status::set(&app, &vm, "agent", Some(json!({ "kind": "control", "client": id, "clientName": client["name"] })));
+            lock(&STATUS).get_or_insert_with(HashMap::new).insert(vm.clone(), ("control".into(), id.clone()));
             let _ = app.emit("agents-changed", json!({}));
         }
     });
@@ -463,10 +434,6 @@ pub fn on_viewer(app: &AppHandle, vm: &str, msg: &Value) {
             if let (Some(human), Some(w)) = (docked, app.get_webview_window(DOCK)) {
                 place(app, &w, vm, if human { Rect::Top } else { Rect::Picture });
             }
-            let bannered = lock(&BANNERED).as_ref().is_some_and(|b| b["vm"].as_str() == Some(vm));
-            if let (true, Some(w)) = (bannered, app.get_webview_window(BANNER)) {
-                place(app, &w, vm, Rect::Bottom);
-            }
         }
         "closed" | "ended" => {
             if lock(&DOCKED).as_ref().is_some_and(|d| d.vm == vm) {
@@ -475,12 +442,7 @@ pub fn on_viewer(app: &AppHandle, vm: &str, msg: &Value) {
                     let _ = w.destroy();
                 }
             }
-            if lock(&BANNERED).as_ref().is_some_and(|b| b["vm"].as_str() == Some(vm)) {
-                *lock(&BANNERED) = None;
-                if let Some(w) = app.get_webview_window(BANNER) {
-                    let _ = w.destroy();
-                }
-            }
+            lock(&STATUS).as_mut().map(|s| s.remove(vm));
             lock(&WATCHING).as_mut().map(|w| w.remove(vm));
         }
         _ => {}

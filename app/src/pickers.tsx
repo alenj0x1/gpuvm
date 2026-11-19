@@ -44,7 +44,7 @@ export const USES: StreamUseInfo[] = [
  *  best (1280x800), recording runs while an agent works and the network stays isolated. Not a profile's use. */
 export const AGENT_USE = {
   id: "agent" as const, get label() { return t("Agent"); }, icon: IconRobot,
-  get description() { return t("For AI agents. A 1280x800 picture, recorded while an agent works, on an isolated network."); },
+  get description() { return t("For AI agents. 1280x800, recorded while they work, on an isolated network."); },
   resolution: "1280x800",
   client: { fps: 60, vsync: true, framePacing: false, mouse: "absolute" as MouseMode },
 };

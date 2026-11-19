@@ -16,6 +16,7 @@ import {
 } from "./ViewerWidgets";
 import { usePrefs } from "./prefs";
 import { AgentWidget } from "./Agents";
+import { PanelStatus } from "./StatusNotch";
 
 const WIDTH_KEY = "gpuvm.viewerPanelWidth";
 
@@ -231,6 +232,7 @@ export function ViewerPanel({ machine, onSwitched, onResize, sample }: {
           <div className="viewer-game"><GameStage game={game} machines={vms.filter((v) => v.streaming).map((v) => v.name)} first={vm} fallback={decor} onClose={() => setGame(null)} /></div>
         ) : (
           <>
+            <PanelStatus vm={vm} />
             {items.length === 0 && !edit ? (
               <div className="vp-board-empty">
                 <span className="vp-empty-icon"><IconLayoutGrid size={20} /></span>

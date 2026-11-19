@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { IconCheck, IconFileDownload, IconHandFinger, IconHistory, IconLoader2, IconLock, IconRobot, IconShieldLock, IconTrash, IconWorld, IconX, type Icon } from "@tabler/icons-react";
+import { IconCheck, IconFileDownload, IconHistory, IconLoader2, IconLock, IconShieldLock, IconTrash, IconWorld, IconX, type Icon } from "@tabler/icons-react";
 import { inTauri } from "./api";
 import { bytes } from "./agentStore";
 import { humanError } from "./ui";
+import { useReportDockSize } from "./dockSize";
 import { locale, t, translateModule } from "./i18n";
 import type { AgentRequest, AgentRequestKind } from "./types";
 
 // The two windows of GpuVM over a machine's picture while an agent works on it (agent.rs):
 // - the agent dock: what the agent asks, dropped from the top like the administrator dock (dock B), answered only here;
-// - the take-control notch, from the bottom edge: the person has the machine and gives it back to the agent.
 // The viewer (Low integrity, it draws what the guest sends) can't click either window (UIPI).
 
 const ICON: Record<AgentRequestKind, Icon> = { deliver: IconFileDownload, admin: IconShieldLock, network: IconWorld, revert: IconHistory, delete: IconTrash };
@@ -42,6 +42,8 @@ export function AgentDock() {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [, tick] = useState(0);
   const armTimer = useRef(0);
+  const dockRef = useRef<HTMLDivElement>(null);
+  useReportDockSize(dockRef, shown && !!request);
 
   useEffect(() => {
     let off: (() => void) | undefined;
@@ -89,7 +91,7 @@ export function AgentDock() {
     // Only the person can do it, in the machine itself: no veil and no buttons, the picture stays usable.
     return (
       <div className="dock-stage">
-        <div className={shown ? "dock on ag-dock-human" : "dock ag-dock-human"} role="status">
+        <div ref={dockRef} className={shown ? "dock on ag-dock-human" : "dock ag-dock-human"} role="status">
           <span className="dock-icon ag-dock-warn"><I size={18} /></span>
           <div className="dock-text">
             <strong>{title}</strong>
@@ -103,7 +105,7 @@ export function AgentDock() {
   return (
     <div className="dock-stage" onContextMenu={(e) => e.preventDefault()}>
       <div className={shown ? "dock-veil on" : "dock-veil"} />
-      <div className={shown ? "dock on ag-dock" : "dock ag-dock"} role="alertdialog" aria-labelledby="ag-dock-title" aria-describedby="ag-dock-detail"
+      <div ref={dockRef} className={shown ? "dock on ag-dock" : "dock ag-dock"} role="alertdialog" aria-labelledby="ag-dock-title" aria-describedby="ag-dock-detail"
         onContextMenu={(e) => { e.preventDefault(); if (ready) setMenu({ x: e.clientX, y: e.clientY }); }}>
         <span className={`dock-icon${risky ? " ag-dock-risky" : request.kind === "network" ? " ag-dock-warn" : ""}`}><I size={18} /></span>
         <div className="dock-text">
@@ -129,46 +131,6 @@ export function AgentDock() {
           <button type="button" role="menuitem" onClick={() => answer("deny")}><IconX size={15} />{t("Refuse")}</button>
         </div>, document.body)}
       {menu && <div className="ag-dock-menu-catch" onPointerDown={() => setMenu(null)} />}
-    </div>
-  );
-}
-
-/** The take-control notch at the bottom of the picture: the person has the machine; the agent waits. */
-export function AgentBanner() {
-  const [info, setInfo] = useState<{ vm: string; clientName: string } | null>(null);
-  const [shown, setShown] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    let off: (() => void) | undefined;
-    const take = (v: { vm: string; clientName: string } | null) => {
-      if (v) { setInfo(v); setBusy(false); setError(""); window.setTimeout(() => setShown(true), 30); } else setShown(false);
-    };
-    (async () => {
-      if (!inTauri) { take({ vm: "win-agent", clientName: "Claude Code" }); return; }
-      take(await invoke<{ vm: string; clientName: string } | null>("agent_banner_info"));
-      const { getCurrentWebviewWindow } = await import("@tauri-apps/api/webviewWindow");
-      off = await getCurrentWebviewWindow().listen<{ info: { vm: string; clientName: string } | null }>("agent-banner", (e) => take(e.payload.info));
-    })();
-    return () => off?.();
-  }, []);
-  if (!info) return null;
-  const back = async () => {
-    setBusy(true); setError("");
-    try {
-      if (!inTauri) { await new Promise((r) => setTimeout(r, 400)); setShown(false); return; }
-      await invoke("agent_banner_return");
-    } catch (e) { setError(humanError(e)); setBusy(false); }
-  };
-  return (
-    <div className="dock-stage ag-banner-stage">
-      <div className={shown ? "ag-banner on" : "ag-banner"} role="status">
-        <IconHandFinger size={16} className="ag-banner-icon" />
-        <span className="ag-banner-text">{error || t("You took control · {name} paused", { name: info.clientName })}</span>
-        <button type="button" className="dock-btn dock-allow" disabled={busy} onClick={back}>
-          {busy ? <IconLoader2 size={15} className="spin" /> : <IconRobot size={15} />}{t("Return to agent")}
-        </button>
-      </div>
     </div>
   );
 }

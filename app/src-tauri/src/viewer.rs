@@ -36,7 +36,9 @@ const FROM_VIEWER: &[&str] = &["hello", "stage", "stage-failed", "connected", "e
     // Screenshots and recordings (capture.rs).
     "capture", "capture-error", "recording",
     // The person moved the mouse or pressed a key over the picture while an agent works (agent.rs): nothing more.
-    "input"];
+    "input",
+    // A status notice for the status notch (status.rs): a fixed key only, the texts are the app's.
+    "notice"];
 /// Commands this app may send.
 const TO_VIEWER: &[&str] = &["inset", "capture", "fullscreen", "stats", "quit", "focus", "screenshot", "record", "replay-save", "agent-watch"];
 
@@ -463,6 +465,7 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
             crate::overlay::on_viewer(&app, &vm, &msg);
             crate::dock::on_viewer(&app, &vm, &msg);
             crate::agent::on_viewer(&app, &vm, &msg);
+            crate::status::on_viewer(&app, &vm, &msg);
             // The first picture: the app zooms into the machine and then reveals the viewer (viewer_reveal). If the
             // page doesn't (hidden, busy), the viewer comes out on its own a moment later.
             if kind == "first-frame" && viewer.embed && !viewer.first_frame.swap(true, Ordering::AcqRel) {
