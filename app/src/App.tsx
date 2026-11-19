@@ -332,7 +332,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
           .then(({ invoke }) => invoke<boolean>("viewer_is_open", { vm }))
           .catch(() => false)
           .then((alive) => {
-            if (alive) enterMachine(vm, () => showViewer(vm).then(() => after?.()), reopen);
+            if (alive) enterMachine(vm, () => showViewer(vm).then(() => { refreshAgentScreen(vm, true); after?.(); }), reopen);
             else reopen();
           });
         return;
@@ -340,7 +340,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       setViewing({ vm, phase: "opening" });
       const done = after, fail = failed;
       after = () => {
-        enterMachine(vm, () => import("@tauri-apps/api/core").then(({ invoke }) => invoke("viewer_reveal", { vm })),
+        enterMachine(vm, () => import("@tauri-apps/api/core").then(({ invoke }) => invoke("viewer_reveal", { vm })).then(() => refreshAgentScreen(vm, true)),
           () => push("error", translateModule("The viewer closed before showing the picture.")));
         done?.();
       };
@@ -410,7 +410,10 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     return () => { offs.forEach((o) => o.then((f) => f())); };
   }, [leaveToHome]);
 
-  /** screen.refresh on a machine for agents, once per connection (connected and first-frame both ask; 10 s apart). */
+  /** screen.refresh on a machine for agents: when its stream comes up (connected and first-frame both ask; 10 s
+   *  apart) and, always (`now`), when its picture comes out. A viewer GpuVM kept hidden (recording B) decodes frames
+   *  nobody sees; revealed, it showed black until the next one (lab 054: the refresh at connect came ~6 s before the
+   *  person opened the machine, and made no difference). */
   const refreshedAt = useRef<Record<string, number>>({});
   // Lab 054 measures what the refresh changes: GpuVM started with GPUVM_LAB_NO_SCREEN_REFRESH=1 skips it.
   const noRefresh = useRef(false);
@@ -419,10 +422,10 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     import("@tauri-apps/api/core").then(({ invoke }) => invoke<{ noScreenRefresh?: boolean }>("lab_flags"))
       .then((f) => { noRefresh.current = f?.noScreenRefresh === true; }).catch(() => {});
   }, []);
-  const refreshAgentScreen = (vm: string) => {
+  const refreshAgentScreen = (vm: string, now = false) => {
     if (noRefresh.current) return;
     if (vmsRef.current?.find((v) => v.name === vm)?.use !== "agent") return;
-    if (Date.now() - (refreshedAt.current[vm] ?? 0) < 10000) return;
+    if (!now && Date.now() - (refreshedAt.current[vm] ?? 0) < 10000) return;
     refreshedAt.current[vm] = Date.now();
     agents.refreshScreen(vm).catch(() => { /* an agent not ready or older than 0.3.8: nothing to do */ });
   };
