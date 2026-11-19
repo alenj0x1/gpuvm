@@ -272,7 +272,7 @@ export interface AgentClient {
   clientApprovals: boolean;
 }
 
-export type AgentRequestKind = "deliver" | "admin" | "network" | "revert" | "delete";
+export type AgentRequestKind = "deliver" | "admin" | "network" | "revert" | "delete" | "other";
 
 /** Something the agent asked that needs the person's approval (dock + Windows notification). Deliveries don't come
  *  here: they are the pending AgentOffers (the dock shows them as "deliver" requests). */
@@ -305,7 +305,8 @@ export interface AgentOffer {
   sizeBytes: number;
   note: string | null;
   createdAt: string;
-  state: "pending" | "accepted" | "refused" | "expired" | "failed";
+  /** copying: accepted, the broker is copying it to Downloads. */
+  state: "pending" | "copying" | "accepted" | "refused" | "expired" | "failed";
   /** Where an accepted file went (Downloads\GpuVM\<machine>). */
   savedTo?: string | null;
   /** Why it failed (the copy to Downloads), when state is "failed". */

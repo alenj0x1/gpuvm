@@ -50,6 +50,7 @@ export default {
   "No deliveries": "Sin entregas",
   "Saved in {path}": "Guardado en {path}",
   "Refused": "Rechazado",
+  "Copying to Downloads…": "Copiando a Descargas…",
   "Expired|offer": "Vencido",
 
   // Clients

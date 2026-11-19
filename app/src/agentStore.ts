@@ -33,6 +33,7 @@ const methodText = (m: string) => ({
 export function fromBroker(raw: BrokerState): Omit<AgentSnapshot, "loaded" | "error"> {
   const approvals = raw.settings?.clients ?? {};
   const clients: AgentClient[] = (raw.clients ?? []).map((c) => {
+    // "stopped" (the person stopped it; it stays listed until its client goes) shows as connected without a machine.
     const state = STATES.includes(c.state as AgentState) ? (c.state as AgentState) : "idle";
     const id = String(c.id ?? c.connection ?? "");
     const name = str(c.name) ?? "Agent";
@@ -48,7 +49,7 @@ export function fromBroker(raw: BrokerState): Omit<AgentSnapshot, "loaded" | "er
   });
   const requests: AgentRequest[] = (raw.requests ?? []).filter((r) => (r.state ?? "pending") === "pending").map((r) => ({
     id: String(r.id), client: String(r.connection ?? r.client ?? ""), clientName: str(r.clientName) ?? "Agent", machine: String(r.machine ?? ""),
-    kind: (["admin", "network", "revert", "delete", "deliver"].includes(String(r.kind)) ? r.kind : "admin") as AgentRequest["kind"],
+    kind: (["admin", "network", "revert", "delete", "deliver", "other"].includes(String(r.kind)) ? r.kind : "other") as AgentRequest["kind"],
     title: String(r.title ?? ""), reason: str(r.reason), createdAt: iso(r.createdAt), expiresAt: iso(r.expiresAt),
   }));
   // What only the person can do (a password, UAC, the lock screen) comes as the agent's state, not as a request.
@@ -59,7 +60,7 @@ export function fromBroker(raw: BrokerState): Omit<AgentSnapshot, "loaded" | "er
   const offers: AgentOffer[] = (raw.offers ?? []).map((o) => ({
     id: String(o.id), machine: String(o.machine ?? ""), client: String(o.connection ?? o.client ?? ""), clientName: str(o.clientName) ?? "Agent",
     name: String(o.name ?? o.fileName ?? ""), sizeBytes: num(o.sizeBytes ?? o.size), note: str(o.note), createdAt: iso(o.createdAt ?? o.created),
-    state: (["pending", "accepted", "refused", "expired", "failed"].includes(String(o.state)) ? o.state : "pending") as AgentOffer["state"],
+    state: (["pending", "copying", "accepted", "refused", "expired", "failed"].includes(String(o.state)) ? o.state : "failed") as AgentOffer["state"],
     savedTo: str(o.savedTo ?? o.hostPath), error: str(o.error),
   }));
   return { clients, requests, offers, broker: raw.broker ?? null };

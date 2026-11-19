@@ -12,7 +12,7 @@ import type { AgentRequest, AgentRequestKind } from "./types";
 // - the agent dock: what the agent asks, dropped from the top like the administrator dock (dock B), answered only here;
 // The viewer (Low integrity, it draws what the guest sends) can't click either window (UIPI).
 
-const ICON: Record<AgentRequestKind, Icon> = { deliver: IconFileDownload, admin: IconShieldLock, network: IconWorld, revert: IconHistory, delete: IconTrash };
+const ICON: Record<AgentRequestKind, Icon> = { deliver: IconFileDownload, admin: IconShieldLock, network: IconWorld, revert: IconHistory, delete: IconTrash, other: IconRobot };
 /** Like the administrator dock: a click meant for the picture never answers it. */
 const ARM_MS = 450;
 

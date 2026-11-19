@@ -156,7 +156,7 @@ export function AgentLive({ client, size = "full", actions = 3, onTakeControl }:
 
 /* ---------- requests ---------- */
 
-const REQUEST_ICON: Record<AgentRequestKind, Icon> = { deliver: IconFileDownload, admin: IconShieldLock, network: IconWorld, revert: IconHistory, delete: IconTrash };
+const REQUEST_ICON: Record<AgentRequestKind, Icon> = { deliver: IconFileDownload, admin: IconShieldLock, network: IconWorld, revert: IconHistory, delete: IconTrash, other: IconRobot };
 
 /** Seconds left before a request is refused by itself. */
 const left = (r: AgentRequest, now: number) => Math.max(0, Math.round((new Date(r.expiresAt).getTime() - now) / 1000));
@@ -239,7 +239,7 @@ function OfferRow({ o, showMachine }: { o: AgentOffer; showMachine: boolean }) {
     try { await agents.resolveOffer(o.id, accept); await refreshAgents(); } catch (e) { setError(humanError(e)); }
     setBusy(null);
   };
-  const status = o.state === "accepted" ? t("Saved in {path}", { path: o.savedTo ?? `Downloads\\GpuVM\\${o.machine}` })
+  const status = o.state === "copying" ? t("Copying to Downloads…") : o.state === "accepted" ? t("Saved in {path}", { path: o.savedTo ?? `Downloads\\GpuVM\\${o.machine}` })
     : o.state === "refused" ? t("Refused") : o.state === "expired" ? t("Expired|offer") : o.state === "failed" ? t("Couldn't save it: {error}", { error: o.error ? translateModule(o.error) : "?" }) : null;
   return (
     <div className={`ag-offer ${o.state}`}>
