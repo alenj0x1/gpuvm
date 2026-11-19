@@ -269,9 +269,23 @@ pub struct Dup {
 }
 
 pub fn dup_open(o: &OutputInfo) -> windows::core::Result<Dup> {
-    let (dev, ctx) = device_for(&o.adapter)?;
-    let out1: IDXGIOutput1 = o.output.cast()?;
-    let dup = unsafe { out1.DuplicateOutput(&dev)? };
+    // AGENTPROBE_DEVADAPTER=i: create the device on adapter i instead of the output's own (GPU-P shows several).
+    let (dev, ctx) = match std::env::var("AGENTPROBE_DEVADAPTER").ok().and_then(|v| v.parse::<u32>().ok()) {
+        Some(i) => unsafe {
+            let f: IDXGIFactory1 = CreateDXGIFactory1()?;
+            device_for(&f.EnumAdapters1(i)?)?
+        },
+        None => device_for(&o.adapter)?,
+    };
+    // DuplicateOutput1 (IDXGIOutput5) first: the modern call, required for per-monitor-aware processes and what
+    // Sunshine's ddx uses; DuplicateOutput as fallback. AGENTPROBE_DUP=1 forces the old call.
+    let dup = unsafe {
+        let old = std::env::var("AGENTPROBE_DUP").map(|v| v == "1").unwrap_or(false);
+        match (old, o.output.cast::<IDXGIOutput5>()) {
+            (false, Ok(o5)) => o5.DuplicateOutput1(&dev, 0, &[DXGI_FORMAT_B8G8R8A8_UNORM])?,
+            _ => o.output.cast::<IDXGIOutput1>()?.DuplicateOutput(&dev)?,
+        }
+    };
     Ok(Dup { dev, ctx, dup, latest: None, frames: 0 })
 }
 
@@ -313,6 +327,9 @@ pub struct Wgc {
     pub session: windows::Graphics::Capture::GraphicsCaptureSession,
     pub latest: Option<ID3D11Texture2D>,
     pub frames: u64,
+    pub d3d: IDirect3DDevice,
+    pub size: windows::Graphics::SizeInt32,
+    pub recreated: u32,
 }
 
 pub fn wgc_open(o: &OutputInfo, cursor: bool) -> windows::core::Result<Wgc> {
@@ -321,17 +338,27 @@ pub fn wgc_open(o: &OutputInfo, cursor: bool) -> windows::core::Result<Wgc> {
     let item: GraphicsCaptureItem = unsafe { interop.CreateForMonitor(o.monitor)? };
     let dxgi: IDXGIDevice = dev.cast()?;
     let d3d: IDirect3DDevice = unsafe { CreateDirect3D11DeviceFromDXGIDevice(&dxgi)?.cast()? };
-    let pool = Direct3D11CaptureFramePool::CreateFreeThreaded(&d3d, DirectXPixelFormat::B8G8R8A8UIntNormalized, 2, item.Size()?)?;
+    let size = item.Size()?;
+    let pool = Direct3D11CaptureFramePool::CreateFreeThreaded(&d3d, DirectXPixelFormat::B8G8R8A8UIntNormalized, 2, size)?;
     let session = pool.CreateCaptureSession(&item)?;
     let _ = session.SetIsCursorCaptureEnabled(cursor);
     session.StartCapture()?;
-    Ok(Wgc { dev, ctx, pool, session, latest: None, frames: 0 })
+    Ok(Wgc { dev, ctx, pool, session, latest: None, frames: 0, d3d, size, recreated: 0 })
 }
 
 /// Takes the newest frame if one arrived (drains the pool). Ok(true) when there was a new one.
 pub fn wgc_poll(w: &mut Wgc) -> windows::core::Result<bool> {
     let mut got = false;
     while let Ok(frame) = w.pool.TryGetNextFrame() {
+        // The display changed size: rebuild the pool at the new size (frames keep the old size otherwise).
+        let cs = frame.ContentSize()?;
+        if cs.Width != w.size.Width || cs.Height != w.size.Height {
+            w.size = cs;
+            w.pool.Recreate(&w.d3d, DirectXPixelFormat::B8G8R8A8UIntNormalized, 2, cs)?;
+            w.recreated += 1;
+            let _ = frame.Close();
+            continue;
+        }
         let surface = frame.Surface()?;
         let access: IDirect3DDxgiInterfaceAccess = surface.cast()?;
         let tex: ID3D11Texture2D = unsafe { access.GetInterface()? };
@@ -378,6 +405,7 @@ pub fn cmd_capture(args: &[String]) -> String {
     let desk = input_desktop();
     let mut samples = Vec::new();
     let mut open_ms = 0.0;
+    let mut reopened = 0u32;
     let mut first_ms = 0.0;
     let result: Result<(), String> = (|| {
         if method == "wgc" {
@@ -406,9 +434,18 @@ pub fn cmd_capture(args: &[String]) -> String {
             open_ms = ms(t_open);
             let t = Instant::now();
             while d.latest.is_none() {
-                dup_acquire(&mut d, 100).map_err(|hr| format!("acquire {:#x}", hr))?;
-                if t.elapsed() > Duration::from_secs(5) {
-                    return Err("dxgi: no first frame in 5 s".into());
+                if let Err(hr) = dup_acquire(&mut d, 100) {
+                    // ACCESS_LOST (mode change, desktop switch): re-open like the real agent would, once per 100 ms
+                    reopened += 1;
+                    if reopened > 100 {
+                        return Err(format!("acquire {:#x} after {reopened} re-opens", hr));
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                    let o2 = enumerate().ok().and_then(pick).ok_or("no output after access lost")?;
+                    d = dup_open(&o2).map_err(|e| format!("dup_open {:#x}", e.code().0))?;
+                }
+                if t.elapsed() > Duration::from_secs(10) {
+                    return Err(format!("dxgi: no first frame in 10 s ({reopened} re-opens)"));
                 }
             }
             first_ms = ms(t);
@@ -425,7 +462,18 @@ pub fn cmd_capture(args: &[String]) -> String {
             first_ms = if black_first > 0 { -ms(t) } else { first_ms };
             for i in 0..n {
                 let t0 = Instant::now();
-                let fresh = dup_acquire(&mut d, 0).map_err(|hr| format!("acquire {:#x}", hr))?;
+                let fresh = match dup_acquire(&mut d, 0) {
+                    Ok(f) => f,
+                    Err(_) => {
+                        reopened += 1;
+                        let o2 = enumerate().ok().and_then(pick).ok_or("no output after access lost")?;
+                        let keep = d.latest.take();
+                        d = dup_open(&o2).map_err(|e| format!("dup_open {:#x}", e.code().0))?;
+                        let _ = dup_acquire(&mut d, 200);
+                        if d.latest.is_none() { d.latest = keep; }
+                        true
+                    }
+                };
                 let tex = d.latest.clone().unwrap();
                 samples.push(process(&d.dev, &d.ctx, &tex, t0, fresh, i, &save, mw, mh, &method));
                 std::thread::sleep(Duration::from_millis(30 + (i as u64 * 37) % 70));
@@ -434,7 +482,7 @@ pub fn cmd_capture(args: &[String]) -> String {
         Ok(())
     })();
     format!(
-        "{{\"ok\":{},\"error\":{},\"method\":{},\"desktop\":{},\"outputs\":{},\"chosen\":{},\"openMs\":{:.1},\"firstFrameMs\":{:.1},\"samples\":[{}]}}",
+        "{{\"ok\":{},\"error\":{},\"method\":{},\"desktop\":{},\"outputs\":{},\"chosen\":{},\"openMs\":{:.1},\"firstFrameMs\":{:.1},\"reopened\":{},\"samples\":[{}]}}",
         result.is_ok(),
         jstr(&result.err().unwrap_or_default()),
         jstr(&method),
@@ -443,6 +491,7 @@ pub fn cmd_capture(args: &[String]) -> String {
         chosen,
         open_ms,
         first_ms,
+        reopened,
         samples.join(",")
     )
 }

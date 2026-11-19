@@ -3,7 +3,7 @@
 #   bench   : DXGI Desktop Duplication vs Windows.Graphics.Capture, per-step time and lossless sizes (PNG fast /
 #             balanced, lossless WebP) at 1920x1080 and fit into 1280x800; idle and while Sunshine streams; rounds
 #             interleaved.
-#   mode    : a watcher (dxgi, then wgc) while the host switches the guest display 1920x1080 -> 1280x720 -> 1920x1080.
+#   mode    : a watcher (dxgi, then wgc) while the host switches the guest display 1920x1080 -> 1366x768 -> 1920x1080.
 #   secure  : a watcher while an administrator prompt (secure desktop) opens and is denied.
 # Test VM only (it opens apps, changes the display, raises a UAC prompt). Run elevated:
 #   pwsh -File labs/048-capture/run.ps1 -Name agentlab [-Part bench,mode,secure] [-Stream]
@@ -50,12 +50,12 @@ try {
                 $streamSession = $null
                 if ($phase -eq 'stream') {
                     $since = Get-Date
-                    Connect-GpuVM -Name $Name | Out-Null
+                    # Moonlight already paired with the test VM (Connect-GpuVM -Pair once); 1080p60 like lab 041's baseline
+                    $streamSession = Start-LatencyStream -VM $labVm -Variant ([pscustomobject]@{ Fps = 60; VSync = $true })
                     $vis = Wait-LatencyStreamVisible -Since $since -TimeoutSec 90
                     "stream visible after $vis s"
-                    if ($vis -lt 0) { Write-Warning 'stream never showed video; skipping stream phase'; continue }
+                    if ($vis -lt 0) { Write-Warning 'stream never showed video; skipping stream phase'; Stop-LatencyStream -Session $streamSession -VM $labVm; continue }
                     Start-Sleep -Seconds 3
-                    $streamSession = [pscustomobject]@{ Process = Get-Process Moonlight -ErrorAction SilentlyContinue | Select-Object -First 1 }
                 }
                 foreach ($method in 'dxgi', 'wgc') {
                     $save = if ($round -eq 1 -and $phase -eq 'idle') { 'C:\GpuVMLab048\out' } else { $null }
@@ -65,6 +65,7 @@ try {
                     Save-Json "bench-$method-$phase-r$round.json" $r.result
                     $j = $r.result | ConvertFrom-Json
                     $s = $j.samples
+                    if (-not $j.ok -or -not $s) { "{0} {1} r{2}: FAILED {3} (re-opens {4})" -f $method, $phase, $round, $j.error, $j.reopened; continue }
                     "{0} {1} r{2}: ok={3} {4} open {5} ms first {6} ms | readback p50 {7:N1} | png-fast full {8:N1} ms {9:N0} KB | small png-bal {10:N1} ms {11:N0} KB | small webp {12:N1} ms {13:N0} KB | fresh {14}/{15}" -f `
                         $method, $phase, $round, $j.ok, $j.error, $j.openMs, $j.firstFrameMs,
                         (($s.readbackMs | Sort-Object)[[int]($s.Count / 2)]),
@@ -88,7 +89,7 @@ try {
             $id = Start-GuestProbe -Session $sess -ProbeArgs 'watch', '--method', $method, '--seconds', '30'
             Start-Sleep -Seconds 6
             $marks = @()
-            foreach ($res in '1280x720', '1920x1080') {
+            foreach ($res in '1366x768', '1920x1080') {
                 $t = Now
                 $r = & $labVm.Module { param($n, $c, $x) Set-GuestDisplayResolution -Name $n -Credential $c -Resolution $x -Fps 60 } $Name $labVm.Guest $res
                 $marks += [pscustomobject]@{ t = $t; tDone = Now; resolution = $res; applied = "$($r.applied)" }

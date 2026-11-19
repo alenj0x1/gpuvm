@@ -49,19 +49,38 @@ PowerShell Direct, no guest password and no network.
   sees the host as `HV_GUID_PARENT`. The client's service id is a random per-connection GUID.
 - 0 failed connections or requests in either run.
 
-## Part B: reboot, turn-off, save/restore (pending)
+## Part B: reboot, turn-off, clean shutdown (`reboot.ps1`, test VM `agentlab`, 4 GB, 2 cycles)
 
-`reboot.ps1` (boot-time SYSTEM tasks in the guest, host listener + watcher, 2 cycles of guest restart, turn off/on,
-save/restore) needs a disposable VM. Blocked: the host has ~2.2 GB available next to win-gpu (6 GB) and Hyper-V
-refused to start even a 2 GB test VM ("unable to allocate 2048 MB", 0x800705AA).
+Guest side: two boot-time SYSTEM scheduled tasks (stand-in for the service): `hvlab watch` dials the parent every
+200 ms and holds a connection; `hvlab listen` answers host dials. Host side: listener + watcher dialing the VM. Times
+from the moment the host's power-on (or guest restart) call returned.
+
+| event (2 cycles) | host notices the drop | guest agent connected to host again | host connected to guest listener | PowerShell Direct answers |
+| --- | --- | --- | --- | --- |
+| guest restart (`Restart-Computer`) | 5.3 / 13.0 s (reset 10054) | 11.6 / 20.1 s | 11.6 / 20.1 s | 16.3 / 26.3 s |
+| turn off + start | 0.09 / 0.17 s | 8.6 / 7.5 s | 8.6 / 7.6 s | 13.1 / 12.1 s |
+| clean shutdown + start | 2.2 / 2.3 s | 6.9 / 7.7 s | 6.9 / 7.7 s | 12.5 / 11.2 s |
+
+- The connection never survives a guest restart or power cycle: the host gets 10054 (reset) on the next send, then
+  10060 (timeout) / 10049 / 10051 / 10004 while the VM is down, and 10061 (refused) from the guest side until the host
+  listener is up. A watcher with a 200 ms retry reconnects without any help.
+- The guest agent is connected **4.5-6 s before PowerShell Direct answers** (lower bound: the PowerShell Direct check
+  started only after the hvsocket reconnect), so "agent connected" is a faster "VM ready" signal than today's.
+- The accepted peer VmId stays the VM's Id across every restart (6/6 reconnections).
+- **`Save-VM` is refused for a VM with a GPU-P partition** ("assigned one or more GPU partitions"), so save/restore
+  can't happen with GpuVM machines; nothing to design for.
+- First run: the host had ~2.2 GB available next to win-gpu and Hyper-V refused even 2 GB ("unable to allocate",
+  0x800705AA); win-gpu was shut down cleanly for the rest of phase 0 (coordinator/the person approved).
 
 ## Security impact
 
 The lab registers one service GUID on the host (reverted with `service.ps1 -Remove`) and runs a probe from a temp
 folder in the guest; nothing else changes. What registration means for who can connect is lab 050.
 
-## Conclusion (so far)
+## Conclusion
 
-Adopt hvsocket for the agent channel: guest agent dials the host (host listens on `HV_GUID_CHILDREN`, one service
-GUID), keep one long-lived connection (new connections cost ~1 ms, p95 ~4 ms), and use the accepted peer VmId to tell
-VMs apart. Frames up to a few MB are fine as single messages.
+Adopt hvsocket for the agent channel: guest agent (a SYSTEM service) dials the host (host listens on
+`HV_GUID_CHILDREN`, one service GUID), keeps one long-lived connection (new connections cost ~1 ms, p95 ~4 ms) and
+redials every ~200 ms when it breaks; the host uses the accepted peer VmId to tell VMs apart and treats "agent
+connected" as the VM-ready signal. Frames up to a few MB are fine as single messages. Keep a heartbeat: a dead guest
+is only noticed on the next send (up to 13 s on a guest restart otherwise).

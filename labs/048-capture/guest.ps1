@@ -33,7 +33,7 @@ function Remove-GuestProbe {
 function Start-GuestProbe {
     param(
         [Parameter(Mandatory)]$Session,
-        [Parameter(Mandatory)][string[]]$ProbeArgs,
+        [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$ProbeArgs,
         [switch]$AsSystem,
         [string]$Exe,          # with launch: another program to start in the session instead of the probe
         [int]$TimeoutSec = 300

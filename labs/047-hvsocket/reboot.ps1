@@ -1,4 +1,4 @@
-# Lab 047 part B: hvsocket across guest reboot, VM turn-off/on and save/restore. Guest side runs as boot-time SYSTEM
+# Lab 047 part B: hvsocket across guest reboot, VM turn-off/on and clean shutdown/start (Save-VM is refused with GPU-P). Guest side runs as boot-time SYSTEM
 # tasks (stand-in for the future service): `hvlab watch` dials the parent every 200 ms and keeps a connection; `hvlab
 # listen` answers host dials. Host side: a listener on HV_GUID_CHILDREN and a watcher dialing the VM. Every event is
 # a JSON line with a Unix ms timestamp; the script adds its own action marks. Then: how long until each side is
@@ -70,14 +70,15 @@ try {
 
     $results = [System.Collections.Generic.List[object]]::new()
     for ($c = 1; $c -le $Cycles; $c++) {
-        foreach ($kind in 'guest-restart', 'turnoff-start', 'save-restore') {
+        foreach ($kind in 'guest-restart', 'turnoff-start', 'shutdown-start') {
             Start-Sleep -Seconds (Get-Random -Minimum 3 -Maximum 8)
             $t0 = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
             Mark "$kind begin (cycle $c)"
             switch ($kind) {
                 'guest-restart' { Invoke-Command -VMName $Name -Credential $cred { Restart-Computer -Force } }
                 'turnoff-start' { Stop-VM -Name $Name -TurnOff -Force; Mark 'off'; Start-VM -Name $Name }
-                'save-restore' { Save-VM -Name $Name; Mark 'saved'; Start-VM -Name $Name }
+                # Save-VM is refused for VMs with a GPU-P partition (lab 047), so a clean shutdown instead
+                'shutdown-start' { Stop-VM -Name $Name -Force; Mark 'shut down'; Start-VM -Name $Name }
             }
             $tOn = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
             Mark "$kind start issued"
