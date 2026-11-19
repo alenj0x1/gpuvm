@@ -1631,3 +1631,27 @@ InModuleScope GpuVM {
         }
     }
 }
+
+InModuleScope GpuVM {
+    Describe 'New-GpuVM -Template returns how the start went' {
+        It 'a copy that starts, and one that can''t (the -Start switch and the result are separate variables)' {
+            Mock Assert-Admin { }
+            Mock Assert-GpuVMNameFree { }
+            Mock Read-GpuVMTemplate { @{ name = 't'; sizeGB = 64; edition = 'Pro'; streaming = @{}; guest = @{}; vhdPath = 'x' } }
+            Mock Test-GpuVMHost { @() }
+            Mock Resolve-GpuVMProfile { @{ backend = 'hyperv-gpup' } }
+            Mock New-TemplateCloneConfig { @{ backend = 'hyperv-gpup' } }
+            Mock Invoke-GpuVMBackend { [ordered]@{ name = 'copy1' } }
+            Mock Save-GpuVMState { }
+            Mock Write-Step { }
+            Mock Get-GpuVM { [pscustomobject]@{ Name = 'copy1' } }
+            Mock Start-NewGpuVM { @{ started = $true; startError = $null; neededGB = $null; freeGB = $null } }
+            (New-GpuVM -Name copy1 -Template t -Start -Confirm:$false).started | Should Be $true
+            Mock Start-NewGpuVM { @{ started = $false; startError = 'no memory'; neededGB = 8.3; freeGB = 7.3 } }
+            $r = New-GpuVM -Name copy1 -Template t -Start -Confirm:$false
+            "$($r.started) $($r.startError) $($r.neededGB)" | Should Be 'False no memory 8.3'
+            # Without -Start nothing about starting is added.
+            (New-GpuVM -Name copy1 -Template t -Confirm:$false).PSObject.Properties['started'] | Should Be $null
+        }
+    }
+}
