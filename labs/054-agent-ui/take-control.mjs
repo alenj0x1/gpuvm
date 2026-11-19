@@ -62,8 +62,12 @@ const viewerGpu = (seconds) => {
 for (let i = 0; i < 4; i++) { await tool("screenshot", { machine, maxWidth: 320, maxHeight: 200 }); await sleep(3000); }
 const hiddenGpu = viewerGpu(20);
 console.log("hidden viewer GPU %:", hiddenGpu);
+/** A screenshot of the GpuVM window's area (what's on screen there: the app, the picture and its notch). */
+const shot = (name) => { try { console.log(name, execFileSync("pwsh", ["-NoProfile", "-File", join(here, "window-shot.ps1"), "-Out", join(out, `${name}.png`)]).toString().trim()); } catch (e) { console.log(name, "failed"); } };
+shot("installed-app-recording-hidden");
 await tool("open_viewer", { machine });
 await sleep(8000);
+shot("installed-picture-working");
 const shownGpu = viewerGpu(10);
 console.log("shown viewer GPU %:", shownGpu);
 
@@ -87,6 +91,8 @@ for (let r = 0; r < rounds; r++) {
   for (let i = 0; i < 400 && t1 === null; i++) { if (await paused()) t1 = Date.now(); else await sleep(5); }
   samples.push(t1 === null ? null : t1 - t0);
   console.log(`round ${r + 1}: ${t1 === null ? "not paused in 2 s" : `${t1 - t0} ms`}`);
+  // The notch "You took control" over the picture, once (agent.rs shows it with the broker's answer).
+  if (r === 0) { await sleep(1500); shot("installed-take-control"); }
   // Back to the agent for the next round: the person's Resume, as the notch's button does.
   execFileSync("pwsh", ["-NoProfile", "-Command", `Import-Module 'C:\\Program Files\\GpuVM\\gpuvm\\src\\GpuVM' -ErrorAction Stop; Resume-GpuVMAgent -Name '${machine}' | Out-Null`], { stdio: "ignore" });
   await sleep(2500);
