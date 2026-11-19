@@ -219,7 +219,7 @@ function Update-GpuVMAgentIfStale {
 # it, against 2 of 12 without before). A disposable machine is marked meanwhile so the sweep never deletes it while it
 # is off. Returns when Start-VM did.
 function Restart-GpuVMCold {
-    param([Parameter(Mandatory)][string]$Name, [int]$ShutdownTimeoutSec = 180)
+    param([Parameter(Mandatory)][string]$Name, [int]$ShutdownTimeoutSec = 90, [int]$TurnOffTimeoutSec = 30)
     $state = Get-GpuVMState -Name $Name
     $disposable = $state['disposable'] -is [System.Collections.IDictionary]
     if ($disposable) {
@@ -228,11 +228,7 @@ function Restart-GpuVMCold {
     }
     try {
         Write-Step 'Turning the machine off and on again'
-        $job = Stop-VM -Name $Name -Force -AsJob
-        $deadline = (Get-Date).AddSeconds($ShutdownTimeoutSec)
-        while ((Get-VM -Name $Name).State -ne 'Off' -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }
-        if ((Get-VM -Name $Name).State -ne 'Off') { Stop-VM -Name $Name -TurnOff -Force }
-        $job | Remove-Job -Force -ErrorAction SilentlyContinue
+        Stop-GpuVMBounded -Name $Name -ShutdownTimeoutSec $ShutdownTimeoutSec -TurnOffTimeoutSec $TurnOffTimeoutSec
         # As any start: the isolation follows the host's current address on the switch.
         Update-GpuVMNetworkIsolation -Name $Name
         Start-VM -Name $Name
@@ -246,6 +242,30 @@ function Restart-GpuVMCold {
             }
         }
     }
+}
+
+# Turns a machine off within a bounded time, whatever its guest does: a clean shutdown first, then Hyper-V's turn off,
+# and last its worker process is ended (lab 052, two GPU-P machines at once: a guest hung "Shutting Down" for minutes,
+# Hyper-V refused to turn it off meanwhile, and it ended in a 0x9F blue screen; the open waited 34 minutes).
+function Stop-GpuVMBounded {
+    param([Parameter(Mandatory)][string]$Name, [int]$ShutdownTimeoutSec = 90, [int]$TurnOffTimeoutSec = 30)
+    $off = { param($s) $deadline = (Get-Date).AddSeconds($s); while ((Get-VM -Name $Name).State -ne 'Off' -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }; (Get-VM -Name $Name).State -eq 'Off' }
+    if ((Get-VM -Name $Name).State -eq 'Off') { return }
+    $jobs = @(Stop-VM -Name $Name -Force -AsJob)
+    try {
+        if (& $off $ShutdownTimeoutSec) { return }
+        Write-Warning "Windows in '$Name' didn't shut down in $ShutdownTimeoutSec s; it is turned off."
+        $jobs += Stop-VM -Name $Name -TurnOff -Force -AsJob
+        if (& $off $TurnOffTimeoutSec) { return }
+        # Hyper-V won't turn off a machine it sees as shutting down: its worker process is ended (only that VM's).
+        $id = (Get-VM -Name $Name).Id.Guid
+        $worker = @(Get-CimInstance Win32_Process -Filter "Name='vmwp.exe'" | Where-Object { $_.CommandLine -match [regex]::Escape($id) })
+        Write-Warning "'$Name' didn't turn off; its Hyper-V worker process is ended."
+        $worker | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        if (& $off $TurnOffTimeoutSec) { return }
+        throw "'$Name' couldn't be turned off (it is $((Get-VM -Name $Name).State))."
+    }
+    finally { $jobs | Remove-Job -Force -ErrorAction SilentlyContinue }
 }
 
 # An agent machine keeps the Hyper-V display on: until a viewer connects, the virtual display has no monitor plugged
