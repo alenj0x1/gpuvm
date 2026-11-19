@@ -40,7 +40,9 @@ export function MiniCube({ machine = NO_MACHINE, className, ghost = false, kind 
       const light = document.documentElement.dataset.theme === "light";
       g.globalCompositeOperation = light ? "source-over" : "lighter";
       g.globalAlpha = ghost ? 0.45 : 1;
-      const S = Math.min(W / 3.1, H / 3.1), cs = Math.cos(yaw), sn = Math.sin(yaw), cp = Math.cos(0.55), sp = Math.sin(0.55);
+      // The cube spans about 3.2 units tall: 3.8 leaves ~8 % of the height free above and below, so its edges never
+      // touch the box it sits in.
+      const S = Math.min(W / 3.1, H / 3.8), cs = Math.cos(yaw), sn = Math.sin(yaw), cp = Math.cos(0.55), sp = Math.sin(0.55);
       const P = (x: number, y: number, z: number): [number, number] => {
         const x1 = x * cs - z * sn, z1 = x * sn + z * cs, yy = y - 1;
         return [W / 2 + x1 * S, H / 2 - (yy * cp - z1 * sp) * S];
