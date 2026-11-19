@@ -1945,3 +1945,57 @@ InModuleScope GpuVM {
         }
     }
 }
+
+InModuleScope GpuVM {
+    Describe 'Removing the agent finishes and leaves an ordinary machine' {
+        BeforeEach {
+            $script:st = @{ use = 'agent'; agent = @{ version = '0.3.7' }; statePath = 'D:\GpuVM\vm1\gpuvm.json' }
+            Mock Assert-Admin { }
+            Mock Get-GpuVMState { $script:st }
+            Mock Save-GpuVMState { $script:st = $State }
+            Mock Remove-GpuVMAgentRegistration { }
+            Mock Write-Step { }
+            Set-Content (Join-Path $TestDrive 'install.ps1') '"x"'
+            Mock Get-RepoPath { Join-Path $TestDrive 'install.ps1' }
+            Mock Get-GpuVMGuestCredential { [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force)) }
+            Mock Get-GuestBootTime { '100' }
+            Mock Invoke-Command { }
+        }
+        It 'off: the use goes and the removal waits for the next open' {
+            Mock Get-VM { [pscustomobject]@{ State = 'Off'; Id = [guid]'0b5d1f53-1e33-4b7e-9f0a-2c4d6e8f0a1b' } }
+            Mock Write-Warning { }
+            (Uninstall-GpuVMAgent -Name vm1).removalPending | Should Be $true
+            $script:st.Contains('use') | Should Be $false
+            $script:st.Contains('agent') | Should Be $false
+            $script:st['agentRemovalPending'] | Should Be $true
+        }
+        It 'running with `agent` signed in: restarts and removes the user afterwards' {
+            Mock Get-VM { [pscustomobject]@{ State = 'Running'; Id = [guid]'0b5d1f53-1e33-4b7e-9f0a-2c4d6e8f0a1b' } }
+            $script:runs = 0
+            Mock Invoke-GuestAgentRemoval {
+                $script:runs++
+                if ($script:runs -eq 1) { [pscustomobject]@{ ok = $true; rebootNeeded = $true; notes = @('the agent user is signed in: its profile is removed after a restart and a new run of -Uninstall -RemoveUser') } }
+                else { [pscustomobject]@{ ok = $true; rebootNeeded = $false; notes = @() } }
+            }
+            $script:boots = [System.Collections.Generic.Queue[object]]::new([object[]]@('100', '100', '200'))
+            Mock Get-GuestBootTime { $script:boots.Dequeue() }
+            Mock Wait-GuestReady { }
+            Mock Start-Sleep { }
+            (Uninstall-GpuVMAgent -Name vm1).removalPending | Should Be $false
+            $script:runs | Should Be 2
+            $script:st.Contains('use') | Should Be $false
+            $script:st.Contains('agentRemovalPending') | Should Be $false
+        }
+        It 'a leftover staging folder holding a link is never deleted through it' {
+            $root = Join-Path $TestDrive 'win2'
+            $staging = "$root\ProgramData\GpuVM\Agent\staging"
+            New-Item -ItemType Directory "$staging\sub" -Force | Out-Null
+            $target = Join-Path $TestDrive 'precious'
+            New-Item -ItemType Directory $target -Force | Out-Null
+            Set-Content (Join-Path $target 'keep.txt') 'x'
+            cmd /c mklink /J "$staging\sub\j" "$target" | Out-Null
+            Test-Throws { Remove-GuestAgentSecret -WindowsRoot $root } | Should Be $true
+            Test-Path (Join-Path $target 'keep.txt') | Should Be $true
+        }
+    }
+}
