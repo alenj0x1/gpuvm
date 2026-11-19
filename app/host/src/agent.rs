@@ -127,6 +127,54 @@ fn reg_by_name(name: &str) -> Option<Reg> {
 }
 
 /// The VM's 32-byte secret: DPAPI (machine scope, GpuVM's entropy) in a file only SYSTEM can read.
+/// Stores a VM's new secret (Install-GpuVMAgent, through the module's administrators-only pipe). Done here, as
+/// SYSTEM: the file is created with its final SYSTEM-only ACL and filled in one go, then renamed over the old one, so
+/// it is never readable by anyone else and an elevated user (the app's bridge) never has to handle a file it can't open.
+fn store_secret(vm_id: &str, secret: &[u8]) -> Result<(), String> {
+    use windows_sys::Win32::Security::Authorization::*;
+    use windows_sys::Win32::Storage::FileSystem::*;
+    if secret.len() != 32 {
+        return Err("the secret must be 32 bytes".into());
+    }
+    let dir = agents_dir().join(vm_id);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let input = CRYPT_INTEGER_BLOB { cbData: 32, pbData: secret.as_ptr() as *mut u8 };
+    let entropy = CRYPT_INTEGER_BLOB { cbData: SECRET_ENTROPY.len() as u32, pbData: SECRET_ENTROPY.as_ptr() as *mut u8 };
+    let mut output = CRYPT_INTEGER_BLOB { cbData: 0, pbData: std::ptr::null_mut() };
+    if unsafe {
+        CryptProtectData(&input, std::ptr::null(), &entropy, std::ptr::null(), std::ptr::null(), CRYPTPROTECT_LOCAL_MACHINE | CRYPTPROTECT_UI_FORBIDDEN, &mut output)
+    } == 0 {
+        return Err(crate::win::last_error("CryptProtectData"));
+    }
+    let protected = unsafe { std::slice::from_raw_parts(output.pbData, output.cbData as usize) }.to_vec();
+    unsafe { LocalFree(output.pbData.cast()) };
+    let mut sd = std::ptr::null_mut();
+    if unsafe { ConvertStringSecurityDescriptorToSecurityDescriptorW(wide("O:SYD:P(A;;FA;;;SY)").as_ptr(), SDDL_REVISION_1, &mut sd, std::ptr::null_mut()) } == 0 {
+        return Err(crate::win::last_error("SDDL"));
+    }
+    let sa = windows_sys::Win32::Security::SECURITY_ATTRIBUTES { nLength: std::mem::size_of::<windows_sys::Win32::Security::SECURITY_ATTRIBUTES>() as u32, lpSecurityDescriptor: sd, bInheritHandle: 0 };
+    let temp = dir.join("secret.new");
+    let _ = std::fs::remove_file(&temp);
+    let h = unsafe {
+        CreateFileW(crate::win::wide_path(&temp).as_ptr(), GENERIC_WRITE, 0, &sa, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, std::ptr::null_mut())
+    };
+    unsafe { LocalFree(sd) };
+    if h == INVALID_HANDLE_VALUE {
+        return Err(crate::win::last_error("CreateFileW secret"));
+    }
+    let mut file = unsafe { <std::fs::File as std::os::windows::io::FromRawHandle>::from_raw_handle(h) };
+    let written = file.write_all(&protected).and_then(|_| file.sync_all());
+    drop(file);
+    if let Err(e) = written {
+        let _ = std::fs::remove_file(&temp);
+        return Err(e.to_string());
+    }
+    std::fs::rename(&temp, dir.join("secret")).map_err(|e| {
+        let _ = std::fs::remove_file(&temp);
+        e.to_string()
+    })
+}
+
 fn load_secret(vm_id: &str) -> Result<[u8; 32], String> {
     let data = std::fs::read(agents_dir().join(vm_id).join("secret")).map_err(|e| format!("secret: {e}"))?;
     let input = CRYPT_INTEGER_BLOB { cbData: data.len() as u32, pbData: data.as_ptr() as *mut u8 };
@@ -790,6 +838,8 @@ const COMMANDS: &[(&str, &[&str])] = &[
     ("Get-GpuVMAgentSettings", &[]),
     ("Set-GpuVMAgentSettings", &["MaxSteps", "MaxMinutes", "ApprovalTimeoutSec"]),
     ("Set-GpuVMAgentClient", &["Name", "ClientApprovals"]),
+    // The module's Install-GpuVMAgent only (administrators' pipe): the service keeps the new secret as SYSTEM.
+    ("Set-GpuVMAgentSecret", &["VmId", "Secret"]),
 ];
 
 pub fn is_command(cmd: &str) -> bool {
@@ -1011,6 +1061,18 @@ pub fn command(cmd: &str, args: &Value, ctx: &mut Ctx) -> Result<Value, CmdError
             crate::offer::resolve(id, accept, ctx)
         }
         "Get-GpuVMAgentSettings" => Ok(settings_json()),
+        "Set-GpuVMAgentSecret" => {
+            if !ctx.admin {
+                return err("denied", "Only the GpuVM module stores agent secrets.");
+            }
+            let vm = need(s("VmId"), "VmId")?;
+            let vm_id = hv::parse_guid(vm).map(hv::fmt_guid).ok_or_else(|| CmdError { code: "bad_request".into(), message: "VmId isn't a VM id.".into() })?;
+            let mut secret = wire::unbase64(need(s("Secret"), "Secret")?).ok_or_else(|| CmdError { code: "bad_request".into(), message: "Secret must be base64.".into() })?;
+            let stored = store_secret(&vm_id, &secret);
+            secret.iter_mut().for_each(|b| *b = 0);
+            stored.map_err(|e| CmdError { code: "internal".into(), message: format!("The agent's secret couldn't be stored: {e}") })?;
+            Ok(json!({ "vmId": vm_id }))
+        }
         "Set-GpuVMAgentSettings" | "Set-GpuVMAgentClient" => {
             person_only(ctx, "change the agents' settings")?;
             let mut data = read_settings();

@@ -77,16 +77,14 @@ function Initialize-AgentFolder {
     if ($LASTEXITCODE -ne 0) { throw "Couldn't restrict the permissions of $Path." }
 }
 
-# Writes the VM's secret K for the service: DPAPI machine scope + GpuVM's entropy, in a file only SYSTEM can read.
+# Hands the VM's secret K to the GpuVM service, which keeps it as SYSTEM (DPAPI machine scope + GpuVM's entropy, a
+# file only SYSTEM can open, created that way and renamed over the old one). Done there because an elevated user
+# (the app's bridge) can't handle a file it isn't allowed to open; the folder is the VM's registration folder.
 function Write-AgentSecret {
     param([Parameter(Mandatory)][string]$Folder, [Parameter(Mandatory)][byte[]]$Secret)
-    $protected = [Security.Cryptography.ProtectedData]::Protect($Secret, $script:AgentSecretEntropy,
-        [Security.Cryptography.DataProtectionScope]::LocalMachine)
-    $temp = Join-Path $Folder 'secret.new'
-    [IO.File]::WriteAllBytes($temp, $protected)
-    & icacls.exe $temp /inheritance:r /grant:r '*S-1-5-18:F' /Q | Out-Null
-    if ($LASTEXITCODE -ne 0) { Remove-Item -LiteralPath $temp -Force; throw 'Couldn''t protect the agent''s secret.' }
-    Move-Item -LiteralPath $temp -Destination (Join-Path $Folder 'secret') -Force
+    $text = [Convert]::ToBase64String($Secret)
+    try { Invoke-AgentBroker -Command 'Set-GpuVMAgentSecret' -Arguments @{ VmId = (Split-Path $Folder -Leaf); Secret = $text } | Out-Null }
+    finally { $text = $null }
 }
 
 
