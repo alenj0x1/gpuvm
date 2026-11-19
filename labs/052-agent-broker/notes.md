@@ -91,9 +91,62 @@ runs) registered the service id (`ElementName = GpuVM agent`); the service liste
 - Service restarts (`Restart-Service GpuVM`, 3 times): the agent was connected again 268, 723 and 706 ms after the
   restart began (the restart itself 11-525 ms; the agent redials every 200 ms).
 
-## Results in a VM
+## Results in a VM (`integration.ps1`, Nov 18-19, under the lab lock)
 
-(pending: agent052 is installing Windows)
+The installed GpuVM (integrated build: service, module, guest agent 0.3.1), with this branch's `gpuvm-host.exe` and
+`Private\Agent.ps1` put in its place for each run and the originals put back after (`restore.ps1` when a run broke
+off). Machine: a copy of the template `agent-tpl` set to 2 GB in Hyper-V (GpuVM asks 4; lab only), deleted at the end.
+
+| | result |
+| --- | --- |
+| copy made and started | 8.7-10.0 s; PowerShell Direct 2.8-4.5 s later |
+| Install-GpuVMAgent (template already has the agent: installer's fast path) | 7.3-9.0 s (PowerShell Direct session 2-3 s, exe copy 2-2.5 s, installer 2.5-3.9 s); agent connected 1.0 s after |
+| the same again | 3.2-3.5 s; connected 1.0 s after |
+| host secret | stored by the service as SYSTEM; an elevated administrator can't read it |
+
+Through the module pipe (n=120, 2 rounds; pipe alone 0.065 ms):
+
+| method | p50 | p95 | p99 |
+| --- | --- | --- | --- |
+| agent.info (broker's share 0.53 ms) | 1.24 ms | 1.77 ms | 2.14 ms |
+| screen.state | 1.30 ms | 1.83 ms | 2.15 ms |
+| input.act move | 1.72 ms | 2.22 ms | 2.47 ms |
+| screen.capture 1280x800 (real WebP) | 14.4 ms | 18.6 ms | 44.9 ms |
+| ui.tree | 16.3 ms | 22.1 ms | 29.6 ms |
+
+- 8 clients in parallel (1 in 9 a capture): 493 req/s, 0 failed, p50 12.9 ms, p95 49.5 ms (the agent runs captures,
+  ui.tree and screen.state on one thread of its helper).
+- Timeout: 1 014 ms for a 1 s timeout, next request 1.5 ms. 40 input.act of 2 s at once: 8 `busy` (cap 32), 3 done,
+  29 `timeout` at 10 s: the agent runs input.act one at a time on purpose (one pointer and keyboard).
+- The 18 hostile cases: same answers as over loopback; the real agent kept its connection through every
+  pre-handshake case and was back in ~1 ms (250 ms after the conn flood). Frame flood: the attacker wrote for its
+  full 3 s without noticing (VMBus buffers the writes); the close itself was only seen over loopback (9.8 ms).
+- Offers from the real agent's Outbox (`Desktop\Outbox\x`): accepted, same bytes, Zone.Identifier ZoneId=3, owner
+  the person, never overwriting (`report (2).txt`, `report (3).txt`).
+- Guest restart (2 rounds): host saw the drop after 4.7-8.1 s; agent connected again 10.5-12.8 s after
+  `Restart-Computer`, PowerShell Direct 16.4-18.6 s (the agent is ~6 s ahead, as in lab 047).
+- Service restarts (3): agent back 238, 489 and 971 ms after the restart began.
+- **Bounded stop:** with a 60 s agent request running, `gpuvm-host install` (what the installer does) stopped the
+  service in 5.0 s; the request ended at 6.8 s ("The GpuVM service closed the connection"); host.log: "stopping after
+  5.0 s with 0 job(s) and 1 request(s) still running: ended". The installed (old) service, by contrast, stayed in
+  StopPending over 2 minutes once; this branch's `gpuvm-host stop` stopped it in 232 ms.
+- **The MCP's own path** (`gpuvm.exe --mcp`, lab 053's drive.py): create_disposable (New-GpuVM -Template -Disposable
+  with the session's Connection, then Install-GpuVMAgent from the app's bridge, an elevated user) answered "its agent
+  is ready" after 32 s; take, run, write/read file, screenshot worked; some screenshots, clicks and keys were refused
+  with `secure_desktop` (the copy showed a secure screen for a while: guest side, not the broker).
+- Two machines at once: not run on real VMs: GpuVM's disk check refused the second 64 GB copy (112 GB already set
+  aside, 21 GB at most). Over loopback the routing by VmId was checked; left for a run with more room.
+
+### Found and fixed in these runs
+
+1. `Install-GpuVMAgent` from the bridge (elevated user, not SYSTEM) couldn't store the secret: the module made
+   `secret.new` SYSTEM-only, then couldn't move or overwrite it. Now the service stores it as SYSTEM
+   (`Set-GpuVMAgentSecret`, administrators' pipe only), and the agent cmdlets stop at the first error.
+2. A stop could hang for 10 minutes on any running request. Reading and agent requests now get 5 s; the
+   installer's stop gives jobs 30 s, then ends the service process (only the one it asked to stop) and stops the
+   instance Windows' recovery actions start again 2 s later, which kept the exe in use.
+3. 1024x768 in `agent.info`: GpuVM's session tasks already run as the console user (`agent`); the agent's helper
+   measured the primary monitor (Hyper-V video). Fixed in the guest agent 0.3.2.
 
 ## Security impact
 

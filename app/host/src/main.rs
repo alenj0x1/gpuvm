@@ -117,11 +117,6 @@ fn open_service(scm: &ScHandle) -> Option<ScHandle> {
     (!h.is_null()).then_some(ScHandle(h))
 }
 
-fn state(svc: &ScHandle) -> u32 {
-    let mut status: SERVICE_STATUS = unsafe { std::mem::zeroed() };
-    unsafe { QueryServiceStatus(svc.0, &mut status) };
-    status.dwCurrentState
-}
 
 fn stop_and_wait(svc: &ScHandle) {
     let process_info = || {
@@ -158,9 +153,16 @@ fn stop_and_wait(svc: &ScHandle) {
             server::log(&format!("the service didn't stop in 30 s (state {}); its process {} was ended", info.dwCurrentState, info.dwProcessId));
         }
     }
-    for _ in 0..100 {
-        if state(svc) == SERVICE_STOPPED {
-            break;
+    // Windows restarts a service whose process ended without stopping (its recovery actions, 2 s later): that new
+    // instance has nothing running, so a normal stop ends it at once and the installer can replace the files.
+    for _ in 0..150 {
+        match process_info() {
+            Some(i) if i.dwCurrentState == SERVICE_STOPPED => return,
+            Some(i) if i.dwProcessId != asked && i.dwProcessId != 0 && i.dwCurrentState == SERVICE_RUNNING => {
+                unsafe { ControlService(svc.0, SERVICE_CONTROL_STOP, &mut status) };
+            }
+            None => return,
+            _ => {}
         }
         std::thread::sleep(Duration::from_millis(100));
     }
