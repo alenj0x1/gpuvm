@@ -31,7 +31,6 @@ const ARM: Duration = Duration::from_millis(700);
 
 /// Take control with the mouse or keyboard (true) or only with the button (false).
 static TAKE_ON_INPUT: AtomicBool = AtomicBool::new(true);
-static TIMEOUT_S: AtomicU32 = AtomicU32::new(120);
 
 struct Docked {
     vm: String,
@@ -786,15 +785,11 @@ pub fn recordings() -> Value {
 
 /* ---------- preferences ---------- */
 
-/// Settings › Agents: how the person takes control, and how long a request waits (the broker refuses it after).
+/// Settings › Agents: how the person takes control. The time to answer is not here: it is the service's own setting,
+/// written only when the person moves it in Settings (this ran at every start and once overwrote it with a stale 30 s).
 #[tauri::command]
-pub async fn set_agent_prefs(app: AppHandle, take_control: String, approval_timeout: u32) -> Result<(), String> {
+pub fn set_agent_prefs(take_control: String) -> Result<(), String> {
     TAKE_ON_INPUT.store(take_control != "button", Ordering::Relaxed);
-    let timeout = approval_timeout.clamp(15, 3600);
-    if TIMEOUT_S.swap(timeout, Ordering::Relaxed) != timeout {
-        // A module without the broker yet just doesn't know it; the app keeps working.
-        let _ = call(&app, "Set-GpuVMAgentSettings", json!({ "ApprovalTimeoutSec": timeout })).await;
-    }
     if take_control == "button" {
         // Nothing to report any more.
         if let Some(w) = lock(&WATCHING).take() {

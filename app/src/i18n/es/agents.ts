@@ -10,6 +10,7 @@ export default {
   "Button only": "Solo con el botón",
   "Time to answer": "Tiempo para responder",
   "An agent's request with no answer is refused by itself after this time.": "Una solicitud de un agente sin respuesta se rechaza sola pasado este tiempo.",
+  "An agent's request with no answer is refused by itself after this time. Copies from this PC wait 10 min at most.": "Una solicitud de un agente sin respuesta se rechaza sola pasado este tiempo. Las copias desde este PC esperan 10 min como máximo.",
   "{n} s": "{n} s",
   "{n} min": "{n} min",
   "{n} h": "{n} h",

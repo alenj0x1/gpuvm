@@ -52,8 +52,6 @@ export interface Prefs {
   /** Moving the mouse or pressing a key over an agent's machine pauses the agent ("input"), or only the Take control
    *  button does ("button"). */
   takeControl: TakeControlPref;
-  /** Seconds an agent's request waits for an answer before it is refused by itself. */
-  approvalTimeout: number;
   /** Where status notices over the picture go (recording, saved, you took control): the status notch. */
   statusPlacement: StatusPlacementPref;
 }
@@ -62,7 +60,7 @@ export interface Prefs {
 export type StatusPlacementPref = "bottom" | "top" | "top-left" | "top-right" | "panel";
 
 const KEY = "gpuvm.prefs";
-const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "stop", noticesAfterQuit: true, service: "app", monitor: "primary", accent: "blue", lang: "system", viewerHome: "keep", animFps: 0, animQuality: 100, replay: false, shotsDir: "", videosDir: "", takeControl: "input", approvalTimeout: 120, statusPlacement: "bottom" };
+const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "stop", noticesAfterQuit: true, service: "app", monitor: "primary", accent: "blue", lang: "system", viewerHome: "keep", animFps: 0, animQuality: 100, replay: false, shotsDir: "", videosDir: "", takeControl: "input", statusPlacement: "bottom" };
 const EVENT = "gpuvm-prefs";
 const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
 
@@ -79,6 +77,8 @@ export function readPrefs(): Prefs {
       if (localStorage.getItem(KEY)) localStorage.setItem(KEY, JSON.stringify(saved));
     }
     delete saved.version;
+    // The time to answer lives in the service now (Get-GpuVMAgentSettings): an old stored one is never sent again.
+    delete saved.approvalTimeout;
     return { ...DEFAULTS, ...saved };
   } catch { return DEFAULTS; }
 }
@@ -121,11 +121,12 @@ async function applyNoticesAfterQuit(enabled: boolean) {
   await invoke("set_notices_after_quit", { enabled }).catch(() => {});
 }
 
-/** The take-control mode goes to the Rust side (it decides what the viewer's input does); the timeout to the broker. */
+/** The take-control mode goes to the Rust side (it decides what the viewer's input does). The time to answer is the
+ *  service's own setting, written only from Settings › Agents (an app start once overwrote it with a stale 30 s). */
 async function applyAgents(prefs: Prefs) {
   if (!inTauri) return;
   const { invoke } = await import("@tauri-apps/api/core");
-  await invoke("set_agent_prefs", { takeControl: prefs.takeControl, approvalTimeout: prefs.approvalTimeout }).catch(() => {});
+  await invoke("set_agent_prefs", { takeControl: prefs.takeControl }).catch(() => {});
 }
 
 /** The status notch's place goes to the Rust side (status.rs), which draws it over every viewer. */
@@ -160,7 +161,7 @@ export function savePrefs(change: Partial<Prefs>) {
   if (change.service) applyService(next.service);
   if (change.lang) applyLang(next.lang);
   if ("replay" in change || "shotsDir" in change || "videosDir" in change || change.lang) applyCapture(next);
-  if ("takeControl" in change || "approvalTimeout" in change) applyAgents(next);
+  if ("takeControl" in change) applyAgents(next);
   if (change.statusPlacement) applyStatus(next.statusPlacement);
   window.dispatchEvent(new Event(EVENT));
 }
