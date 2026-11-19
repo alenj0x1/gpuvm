@@ -39,7 +39,7 @@ pub const PIPE: &str = r"\\.\pipe\gpuvm";
 const CLIENT_ACCESS: u32 = 0x0010_0083;
 /// Commands that destroy data: they run only after a UAC confirmation.
 const NEEDS_CONSENT: &[&str] = &["Remove-GpuVM", "Remove-GpuVMDisk", "Remove-GpuVMSharedDisk", "Remove-GpuVMTemplate", "Remove-GpuVMBase",
-    "Remove-GpuVMRestorePoint"];
+    "Remove-GpuVMRestorePoint", "Uninstall-GpuVMAgent"];
 const CONSENT_TTL: Duration = Duration::from_secs(120);
 
 /// Requests running right now: a stop waits for them.
@@ -284,9 +284,9 @@ fn spawn_bridge(token: &Handle) -> Result<Bridge, String> {
 // ---------------------------------------------------------------- one connection
 
 /// Counts a request as running while it lives.
-struct Busy;
+pub struct Busy;
 impl Busy {
-    fn start() -> Self {
+    pub fn start() -> Self {
         BUSY.fetch_add(1, Ordering::SeqCst);
         Busy
     }
@@ -336,6 +336,9 @@ fn handle(pipe: HANDLE) {
     let mut out: &File = &file;
     let mut reader = BufReader::new(&*file);
     let mut bridge: Option<Bridge> = None;
+    // Agent commands are answered by the broker in this process (no PowerShell in the way: they are the MCP
+    // server's hot path). Its connections registered on this pipe end with it.
+    let mut agent_ctx = crate::agent::Ctx::new(pipe, client.pid, false);
     let mut line = String::new();
     // One request at a time, as the app sends them: the synchronous pipe is never read and written at once.
     loop {
@@ -371,6 +374,14 @@ fn handle(pipe: HANDLE) {
             fail(&mut out, "Invalid request.".into());
             continue;
         };
+        if crate::agent::is_command(cmd) {
+            let _busy = Busy::start();
+            let reply = crate::agent::result_line(&id, crate::agent::command(cmd, &request["args"], &mut agent_ctx));
+            if !send(&mut out, &reply) {
+                return;
+            }
+            continue;
+        }
         if needs_consent(&request) {
             let confirmed = request["consent"].as_str().is_some_and(|n| take_consent(n, client.pid, &request));
             if !confirmed {
@@ -428,6 +439,7 @@ fn handle(pipe: HANDLE) {
 }
 
 pub fn serve() {
+    crate::agent::start();
     // SYSTEM and Administrators: full access. Users signed in at this PC: read and write only. Network: denied.
     let sddl = format!("D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x{CLIENT_ACCESS:08x};;;IU)(D;;GA;;;NU)");
     let mut sd = std::ptr::null_mut();
