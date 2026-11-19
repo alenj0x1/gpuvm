@@ -270,6 +270,8 @@ struct Conn {
     screen_changed: AtomicU64,
     /// An agent.info refresh is on its way (one at a time, whatever the events).
     refreshing: AtomicBool,
+    /// Since when (ms) someone is signed in and the agent sees no display (0 = not so).
+    blank_since: AtomicU64,
 }
 
 impl Conn {
@@ -767,6 +769,7 @@ fn serve_agent(sock: Sock, vm_id: String) {
         events: Mutex::new(Map::new()),
         screen_changed: AtomicU64::new(0),
         refreshing: AtomicBool::new(false),
+        blank_since: AtomicU64::new(0),
     });
     // A new connection from the same VM replaces the old one (the agent restarted).
     if let Some(old) = lock(&broker().conns).insert(vm_id.clone(), conn.clone()) {
@@ -838,6 +841,25 @@ fn note_signed_in(info: &Mutex<Value>, data: &Value) {
         }
     }
 }
+
+/// How long a signed-in agent has seen no display at all (agent.info `displays: []`), in ms; `None` when it sees
+/// one or nobody is signed in. Starts counting the first time it is asked.
+fn blank_for(info: &Value, since: &AtomicU64, now: u64) -> Option<u64> {
+    let blank = info["signedIn"] == json!(true) && info["displays"].as_array().is_some_and(Vec::is_empty);
+    if !blank {
+        since.store(0, Ordering::SeqCst);
+        return None;
+    }
+    let start = match since.compare_exchange(0, now, Ordering::SeqCst, Ordering::SeqCst) {
+        Ok(_) => now,
+        Err(t) => t,
+    };
+    Some(now.saturating_sub(start))
+}
+
+/// A signed-in agent with no display for this long is "no-display", not "ready" (lab 052: 4 of 13 copies never get
+/// one; nothing the host can do brings it back).
+const NO_DISPLAY_AFTER_MS: u64 = 20_000;
 
 /// Asks the agent for agent.info again, in the background, one request at a time.
 fn refresh_info(conn: Arc<Conn>) {
@@ -2063,6 +2085,20 @@ fn get_agents(name: Option<&str>) -> Value {
             Some(c) => (lock(&c.info).clone(), Value::Object(lock(&c.events).clone())),
             None => (Value::Null, Value::Null),
         };
+        // Signed in but no display: asked again (the agent may just be starting), and after 20 s it is said plainly
+        // instead of "ready", so a caller fails fast with the reason.
+        let mut state = state;
+        let mut last_error = m.and_then(|m| m.last_error.clone());
+        if let Some(c) = &conn {
+            if let Some(ms) = blank_for(&agent, &c.blank_since, now_ms()) {
+                refresh_info(c.clone());
+                if ms > NO_DISPLAY_AFTER_MS {
+                    state = "no-display";
+                    last_error = Some(format!("The agent is signed in but has seen no display for {} s: it can't take screenshots or use the \
+                        mouse and keyboard. Restarting doesn't help; the machine's agent needs fixing.", ms / 1000));
+                }
+            }
+        }
         let desktop = match events["secure_desktop"]["data"]["on"].as_bool() {
             Some(true) => json!("secure"),
             Some(false) => json!("default"),
@@ -2075,7 +2111,7 @@ fn get_agents(name: Option<&str>) -> Value {
             "screen": conn.as_ref().map(|c| lock(&c.info)["screen"].clone()),
             "screenChangedAt": conn.as_ref().map(|c| c.screen_changed.load(Ordering::SeqCst)).filter(|t| *t > 0),
             "paused": m.and_then(|m| m.paused.clone()), "takenBy": taken,
-            "lastError": m.and_then(|m| m.last_error.clone()), "disposable": disposable, "template": template,
+            "lastError": last_error, "disposable": disposable, "template": template,
         }));
     }
     Value::Array(list)
@@ -2909,6 +2945,20 @@ pub(crate) mod tests {
         let folders = vec![(a.to_string(), old), (b.to_string(), old), (b.to_uppercase(), Duration::from_secs(5)), ("blobs".to_string(), old)];
         // The VM that exists stays; a young folder stays (an install may be writing it); other folders stay.
         assert_eq!(orphans(&folders, &[a.to_string()]), vec![b.to_string()]);
+    }
+
+    #[test]
+    fn no_display_after_twenty_seconds() {
+        let since = AtomicU64::new(0);
+        let blank = json!({ "signedIn": true, "displays": [] });
+        assert_eq!(blank_for(&blank, &since, 1_000), Some(0));
+        assert_eq!(blank_for(&blank, &since, 15_000), Some(14_000));
+        assert!(blank_for(&blank, &since, 22_000).unwrap() > NO_DISPLAY_AFTER_MS);
+        // A display, or nobody signed in, isn't "no display": the count starts again.
+        assert_eq!(blank_for(&json!({ "signedIn": true, "displays": [{ "device": "x" }] }), &since, 23_000), None);
+        assert_eq!(blank_for(&blank, &since, 24_000), Some(0));
+        assert_eq!(blank_for(&json!({ "signedIn": false, "displays": [] }), &since, 25_000), None);
+        assert_eq!(blank_for(&Value::Null, &since, 26_000), None);
     }
 
     #[test]
