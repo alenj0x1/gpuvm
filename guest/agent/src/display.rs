@@ -84,6 +84,54 @@ fn offered(dev: &str) -> Vec<String> {
     v
 }
 
+/// Keeps only the active path whose source is `gdi_name` (\\.\DISPLAYn), at 0,0, and applies it for now.
+/// Returns the GDI names of the sources turned off.
+fn only_this_source(gdi_name: &str) -> Result<Vec<String>, String> {
+    use windows::Win32::Devices::Display::*;
+    unsafe {
+        let (mut np, mut nm) = (0u32, 0u32);
+        GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &mut np, &mut nm).ok().map_err(|e| format!("display config sizes: {e}"))?;
+        let mut paths = vec![DISPLAYCONFIG_PATH_INFO::default(); np as usize];
+        let mut modes = vec![DISPLAYCONFIG_MODE_INFO::default(); nm as usize];
+        QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &mut np, paths.as_mut_ptr(), &mut nm, modes.as_mut_ptr(), None)
+            .ok()
+            .map_err(|e| format!("display config: {e}"))?;
+        paths.truncate(np as usize);
+        modes.truncate(nm as usize);
+        let name_of = |p: &DISPLAYCONFIG_PATH_INFO| -> String {
+            let mut req = DISPLAYCONFIG_SOURCE_DEVICE_NAME::default();
+            req.header.r#type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+            req.header.size = std::mem::size_of::<DISPLAYCONFIG_SOURCE_DEVICE_NAME>() as u32;
+            req.header.adapterId = p.sourceInfo.adapterId;
+            req.header.id = p.sourceInfo.id;
+            if DisplayConfigGetDeviceInfo(&mut req.header) == 0 { wstr(&req.viewGdiDeviceName) } else { String::new() }
+        };
+        let names: Vec<String> = paths.iter().map(name_of).collect();
+        let Some(i) = names.iter().position(|n| n.eq_ignore_ascii_case(gdi_name)) else { return Err(format!("{gdi_name} has no active path")) };
+        let mut keep = paths[i];
+        let mut kept_modes = Vec::new();
+        let src_idx = keep.sourceInfo.Anonymous.modeInfoIdx;
+        if (src_idx as usize) < modes.len() {
+            let mut m = modes[src_idx as usize];
+            if m.infoType == DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE {
+                m.Anonymous.sourceMode.position = windows::Win32::Foundation::POINTL { x: 0, y: 0 };
+            }
+            keep.sourceInfo.Anonymous.modeInfoIdx = kept_modes.len() as u32;
+            kept_modes.push(m);
+        }
+        let tgt_idx = keep.targetInfo.Anonymous.modeInfoIdx;
+        if (tgt_idx as usize) < modes.len() {
+            keep.targetInfo.Anonymous.modeInfoIdx = kept_modes.len() as u32;
+            kept_modes.push(modes[tgt_idx as usize]);
+        }
+        let r = SetDisplayConfig(Some(&[keep]), Some(&kept_modes), SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES);
+        if r != 0 {
+            return Err(format!("Windows refused the display layout ({r})"));
+        }
+        Ok(names.into_iter().enumerate().filter(|(j, _)| *j != i).map(|(_, n)| n).collect())
+    }
+}
+
 fn change(dev: Option<&str>, dm: Option<&DEVMODEW>, flags: CDS_TYPE) -> i32 {
     let w = dev.map(wide);
     unsafe {
@@ -109,6 +157,10 @@ pub fn settled() -> bool {
 /// Makes the virtual display the only (hence primary) display and at least MIN_W x MIN_H. Returns what it did
 /// (None when nothing had to change), or an error text.
 pub fn ensure() -> Result<Option<Value>, String> {
+    // only in the agent user's own session (security review): never rearrange the person's displays
+    if !crate::token::is_agent_process() {
+        return Ok(None);
+    }
     let devs = devices();
     let Some(vdd) = devs.iter().find(|d| is_vdd(&d.adapter)) else { return Ok(None) }; // no virtual display: not GpuVM
     let mut did = serde_json::Map::new();
@@ -122,7 +174,8 @@ pub fn ensure() -> Result<Option<Value>, String> {
             match sizes.iter().find_map(|&(w, h)| find_mode(&vdd.name, w, h).map(|m| (w, h, m))) {
                 Some((w, h, mut m)) => {
                     m.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFREQUENCY;
-                    let r = change(Some(&vdd.name), Some(&m), CDS_UPDATEREGISTRY);
+                    // dynamic: not saved in the registry (security review), so nothing outlives the agent's session
+                    let r = change(Some(&vdd.name), Some(&m), CDS_TYPE(0));
                     did.insert("mode".into(), json!({"from": [cur.dmPelsWidth, cur.dmPelsHeight], "to": [w, h], "code": r}));
                 }
                 None => {
@@ -137,33 +190,10 @@ pub fn ensure() -> Result<Option<Value>, String> {
     if vdd.attached && at_origin && others.is_empty() {
         return Ok((!did.is_empty()).then(|| Value::Object(did)));
     }
-    let mut primary = current(&vdd.name).ok_or("can't read the virtual display's mode")?;
-    primary.Anonymous1.Anonymous2.dmPosition = windows::Win32::Foundation::POINTL { x: 0, y: 0 };
-    primary.dmFields = DM_POSITION;
-    if !vdd.attached {
-        primary.dmFields |= DM_PELSWIDTH | DM_PELSHEIGHT;
-        if primary.dmPelsWidth == 0 {
-            primary.dmPelsWidth = MIN_W;
-            primary.dmPelsHeight = MIN_H;
-        }
-    }
-    let r = change(Some(&vdd.name), Some(&primary), CDS_UPDATEREGISTRY | CDS_SET_PRIMARY | CDS_NORESET);
-    if r != 0 {
-        return Err(format!("Windows refused to make the virtual display primary ({r})"));
-    }
-    let mut off = Vec::new();
-    for d in others {
-        let mut detach = DEVMODEW { dmSize: std::mem::size_of::<DEVMODEW>() as u16, ..Default::default() };
-        detach.dmFields = DM_POSITION | DM_PELSWIDTH | DM_PELSHEIGHT; // 0x0 at 0,0 removes it from the desktop
-        if change(Some(&d.name), Some(&detach), CDS_UPDATEREGISTRY | CDS_NORESET) == 0 {
-            off.push(format!("{} ({})", d.name, d.adapter));
-        }
-    }
-    let r = change(None, None, CDS_TYPE(0));
-    did.insert("turnedOff".into(), json!(off));
-    did.insert("apply".into(), json!(r));
-    if r != 0 {
-        return Err(format!("Windows didn't apply the display change ({r})"));
-    }
+    // the topology through SetDisplayConfig WITHOUT SDC_SAVE_TO_DATABASE: applied now, never written to the
+    // machine's display database (security review: the old ChangeDisplaySettingsEx + CDS_UPDATEREGISTRY batch
+    // persisted it for every user)
+    let off = only_this_source(&vdd.name)?;
+    did.insert("turnedOff".into(), json!(off.iter().map(|d| format!("{d}")).collect::<Vec<_>>()));
     Ok(Some(Value::Object(did)))
 }

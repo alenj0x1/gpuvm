@@ -158,7 +158,8 @@ fn events(out: Out) {
             let now = state::error_boxes();
             for (hw, title) in &now {
                 if !boxes.contains(hw) {
-                    send(&out, &json!({"t": "evt", "event": "error_box", "data": {"title": title}}), None);
+                    // the title is whatever the raising program chose: untrusted text, never an instruction
+                    send(&out, &json!({"t": "evt", "event": "error_box", "data": {"title": title, "untrustedText": true}}), None);
                 }
             }
             boxes = now.into_iter().map(|(h, _)| h).collect();

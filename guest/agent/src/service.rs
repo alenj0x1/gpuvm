@@ -404,7 +404,8 @@ impl Agent {
 
     // ---- helper side ----
 
-    fn helper_reader(self: Arc<Self>, mut from: File, pid: u32) {
+    /// `user` is the token the service launched the helper with: what the host is told, whatever the helper says.
+    fn helper_reader(self: Arc<Self>, mut from: File, pid: u32, user: String) {
         let mut said_hello = false;
         let mut logs = (Instant::now(), 0u32);
         let why = loop {
@@ -447,8 +448,10 @@ impl Agent {
                 }
                 Some("hello") if !said_hello => {
                     said_hello = true; // once per helper: nothing else may announce a user (security review H1)
-                    let user = v["user"].as_str().unwrap_or("?").chars().take(256).collect::<String>();
-                    logf!("session helper {pid} is up as {user} (session {})", v["session"]);
+                    // the helper's own claim is only logged; the host gets the user of the token the service used
+                    let claimed: String = v["user"].as_str().unwrap_or("?").chars().take(64).collect();
+                    let user = user.clone();
+                    logf!("session helper {pid} is up as {user} (it says {claimed})");
                     if let Some(h) = self.helper.lock().unwrap().as_mut().filter(|h| h.pid == pid) {
                         h.user = Some(user.clone());
                     }
@@ -541,7 +544,8 @@ impl Agent {
                                 std::thread::spawn(move || helper_writer(w, rx, b2));
                                 *self.helper.lock().unwrap() = Some(HelperLink { tx, busy, process: h.process.clone(), pid, user: None });
                                 let me = self.clone();
-                                std::thread::spawn(move || me.helper_reader(r, pid));
+                                let user = h.user.clone();
+                                std::thread::spawn(move || me.helper_reader(r, pid, user));
                                 current = Some((h, Instant::now()));
                                 last_err.clear();
                             }

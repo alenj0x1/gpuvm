@@ -888,6 +888,7 @@ fn main() {
         Some("guest-system-window") => guestside::system_window(a.get(2).map(String::as_str).unwrap_or("C:\\Windows\\System32\\notepad.exe")),
         Some("guest-errorbox") => guestside::errorbox(),
         Some("guest-open-helper") => guestside::open_helper(),
+        Some("guest-window-rect") => guestside::window_rect(a.get(2).map(String::as_str).unwrap_or("OSKMainClass")),
         _ => eprintln!("harness serve | guest-system-window <exe> | guest-errorbox"),
     }
 }

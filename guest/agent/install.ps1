@@ -51,7 +51,9 @@ param(
     # stop the service and remove the secret and logs before the VM is saved as a template
     [switch]$PrepareTemplate,
     # the full install even when the same version is already installed
-    [switch]$Full
+    [switch]$Full,
+    # SHA-256 (hex) the staged gpuvm-agent.exe must have; checked before it is run
+    [string]$ExpectedSha256
 )
 $ErrorActionPreference = 'Stop'
 
@@ -349,6 +351,70 @@ $MachinePolicies = @(
     @{ Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'; Name = 'EnableFirstLogonAnimation'; Value = 0 }
 )
 
+# Who the session helper may run as (read by the service, which compares SIDs, never names): the agent user's SID
+# and whether the machine signs in as the agent or as the person. HKLM: only administrators can change it.
+$ModeKey = 'HKLM:\SOFTWARE\GpuVM\Agent'
+function Set-AgentMode([string]$Sid, [string]$Mode) {
+    if (-not (Test-Path $ModeKey)) { New-Item -Path $ModeKey -Force | Out-Null }
+    New-ItemProperty -Path $ModeKey -Name 'AgentSid' -Value $Sid -PropertyType String -Force | Out-Null
+    New-ItemProperty -Path $ModeKey -Name 'SignInAs' -Value $Mode -PropertyType String -Force | Out-Null
+}
+
+# A folder in the agent's profile that this script (as an administrator) is about to touch: the agent owns the
+# profile and could have put a junction there, which would make an administrator's write or ownership change land
+# somewhere else (C:\Program Files...: security review). A link is removed without being followed; then created.
+function Initialize-ProfileFolder([string]$Path) {
+    if (Test-Path -LiteralPath $Path) {
+        $item = Get-Item -LiteralPath $Path -Force
+        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or -not $item.PSIsContainer) {
+            if ($item.PSIsContainer) { & cmd.exe /c rmdir "$Path" } else { & cmd.exe /c del /f /q /a "$Path" }
+            $notes.Add("removed a link at $Path")
+        }
+    }
+    if (-not (Test-Path -LiteralPath $Path)) { New-Item -ItemType Directory -Path $Path | Out-Null }
+    $item = Get-Item -LiteralPath $Path -Force
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "$Path is still a link" }
+}
+
+# desktop.ini written as a NEW file (FileMode CreateNew never follows or reuses an existing name): whatever was there
+# (a link, a hard link to another file, a folder) is removed first, without following it.
+function Write-NewFile([string]$Path, [string]$Text) {
+    if (Test-Path -LiteralPath $Path) {
+        $item = Get-Item -LiteralPath $Path -Force
+        if ($item.PSIsContainer) { & cmd.exe /c rmdir "$Path" } else { $item.Attributes = 'Normal'; & cmd.exe /c del /f /q /a "$Path" }
+        if (Test-Path -LiteralPath $Path) { throw "can't replace $Path" }
+    }
+    $fs = [IO.FileStream]::new($Path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    try { $b = [Text.Encoding]::Unicode.GetPreamble() + [Text.Encoding]::Unicode.GetBytes($Text); $fs.Write($b, 0, $b.Length) }
+    finally { $fs.Dispose() }
+}
+
+# The staged exe is run by this script as an administrator: its folder and the file must be owned by
+# SYSTEM/Administrators and not be links (and match -ExpectedSha256 when given) before anything runs it.
+function Assert-Staging {
+    if (-not $Staging -or -not (Test-Path -LiteralPath $Staging)) { throw "the staging folder $Staging doesn't exist" }
+    $full = [IO.Path]::GetFullPath($Staging).TrimEnd('\')
+    if (($full + '\').StartsWith($DataDir + '\', 'OrdinalIgnoreCase')) {
+        foreach ($p in (Split-Path $DataDir -Parent), $DataDir) { if (-not (Test-Trusted $p)) { throw "$p isn't safe (a link or owned by someone else)" } }
+    }
+    if (-not (Test-Trusted $full)) { throw "$full isn't safe (a link or owned by someone else)" }
+    $exe = Join-Path $full 'gpuvm-agent.exe'
+    if (-not (Test-Path -LiteralPath $exe)) { throw "gpuvm-agent.exe not found in $full" }
+    if (-not (Test-Trusted $exe)) { throw "$exe isn't safe (a link or owned by someone else)" }
+    if ($ExpectedSha256 -and (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash -ne $ExpectedSha256.ToUpperInvariant()) { throw "$exe doesn't match the expected SHA-256" }
+    $exe
+}
+
+function Remove-SecretFile {
+    $f = Join-Path $DataDir 'secret'
+    if (Test-Path -LiteralPath $f) {
+        # overwritten before it is deleted (best effort on an SSD: no copy of K is left in the file's clusters)
+        $junk = New-Object byte[] 32; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($junk)
+        [IO.File]::WriteAllBytes($f, $junk)
+        Remove-Item -LiteralPath $f -Force
+    }
+}
+
 # --- uninstall ----------------------------------------------------------------------------------------------------
 if ($Uninstall) {
     $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
@@ -372,6 +438,7 @@ if ($Uninstall) {
             Remove-LocalUser -Name $UserName
         }
     }
+    if (Test-Path $ModeKey) { Remove-ItemProperty -Path $ModeKey -Name 'AgentSid', 'SignInAs' -ErrorAction SilentlyContinue }
     if ((Test-Path $BackupKey) -and -not (Get-Item $BackupKey).Property) { Remove-Item 'HKLM:\SOFTWARE\GpuVM\Agent' -Recurse -Force }
     [pscustomobject]@{ ok = $true; uninstalled = $true; autologonRestored = $restored; rebootNeeded = ($reboot -or $restored); notes = @($notes) }
     return
@@ -387,17 +454,27 @@ function Remove-Staging {
 if ($PrepareTemplate) {
     $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     if ($svc -and $svc.Status -ne 'Stopped') { Stop-Service -Name $ServiceName -Force }
-    Remove-Item -LiteralPath (Join-Path $DataDir 'secret') -Force -ErrorAction SilentlyContinue
+    Remove-SecretFile
     Remove-Item -LiteralPath (Join-Path $DataDir 'logs') -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Staging
-    [pscustomobject]@{ ok = $true; template = $true; secret = 'removed'; notes = @('the service starts at boot and waits for a secret; run this script again on each clone with a new secret') }
+    # no password travels in a template (security review): the agent's autologon password, the person's backed-up
+    # one and the Winlogon backup go; the copy signs in once its install sets a new agent password
+    [GpuVMAgentLsa]::Store('DefaultPassword', $null)
+    [GpuVMAgentLsa]::Store($PrevSecret, $null)
+    [GpuVMAgentLsa]::Store($PrevPlainSecret, $null)
+    if (Test-Path $BackupKey) {
+        $b = Get-Item $BackupKey
+        foreach ($n in @($b.Property | Where-Object { $_ -like '*Winlogon|*' -or $_ -like 'LSA|*' -or $_ -like 'PLAIN|*' })) { Remove-ItemProperty -Path $BackupKey -Name $n }
+    }
+    Set-Value $Winlogon 'AutoAdminLogon' '0' 'String'
+    [pscustomobject]@{ ok = $true; template = $true; secret = 'removed'; passwords = 'removed'
+        notes = @('a copy signs in as agent only after its install (new secret + new agent password) and a restart') }
     return
 }
 
 # --- install / update ---------------------------------------------------------------------------------------------
-$srcExe = Join-Path $Staging 'gpuvm-agent.exe'
-if (-not (Test-Path $srcExe)) { throw "gpuvm-agent.exe not found in $Staging" }
 if ($Secret -and $Secret.Length -ne 32) { throw 'the secret must be 32 bytes' }
+$srcExe = Assert-Staging
 $newVersion = (& $srcExe version 2>$null | Out-String).Trim()
 
 # fast path: same version installed, user and service there -> new secret (if any), new password, restart
@@ -413,12 +490,16 @@ if (-not $Full -and $svc -and $user -and $SignInAs -eq 'agent' -and $oldVersion 
     Set-LocalUser -Name $UserName -Password (ConvertTo-SecureString $password -AsPlainText -Force)
     $before = "$(Get-Reg $Winlogon 'AutoAdminLogon')|$(Get-Reg $Winlogon 'DefaultUserName')"
     Set-AgentAutologon $password
+    Set-AgentMode $user.SID.Value 'agent'
+    # a copy of a template sits at the sign-in screen (no password there): it needs the restart to sign in
+    $console = "$((Get-CimInstance Win32_ComputerSystem).UserName)"
+    $restart = ($before -ne "1|$UserName") -or ($console -notlike "*\$UserName")
     Start-Service -Name $ServiceName
     Remove-Staging
     [pscustomobject]@{
         ok = $true; version = $newVersion; user = $UserName; password = $password; signInAs = 'agent'
         secret = $(if (Test-Path (Join-Path $DataDir 'secret')) { 'present' } else { 'missing' })
-        rebootNeeded = ($before -ne "1|$UserName"); fastPath = $true; notes = @()
+        rebootNeeded = $restart; fastPath = $true; notes = @()
     }
     return
 }
@@ -485,24 +566,25 @@ if (-not $profilePath -or -not (Test-Path $profilePath)) { throw "the agent's pr
 # 5. Desktop\Received and Desktop\Outbox, localized display names
 $spanish = [Globalization.CultureInfo]::InstalledUICulture.TwoLetterISOLanguageName -eq 'es'
 $desktop = Join-Path $profilePath 'Desktop'
-if (-not (Test-Path $desktop)) { New-Item -ItemType Directory -Path $desktop -Force | Out-Null }
+Initialize-ProfileFolder $desktop
+$owned = New-Object Collections.Generic.List[string]
+$owned.Add($desktop)
 foreach ($f in @(@{ Name = 'Received'; Es = 'Recibidos' }, @{ Name = 'Outbox'; Es = 'Entregas' })) {
     $dir = Join-Path $desktop $f.Name
-    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
+    Initialize-ProfileFolder $dir
+    $owned.Add($dir)
     $ini = Join-Path $dir 'desktop.ini'
     if ($spanish) {
-        if (Test-Path $ini) { (Get-Item $ini -Force).Attributes = 'Normal' }
-        [IO.File]::WriteAllText($ini, "[.ShellClassInfo]`r`nLocalizedResourceName=$($f.Es)`r`n", [Text.Encoding]::Unicode)
-        (Get-Item $ini -Force).Attributes = 'Hidden, System'
-        (Get-Item $dir).Attributes = 'ReadOnly, Directory'   # Explorer reads desktop.ini only for read-only/system folders
-    } elseif (Test-Path $ini) {
-        (Get-Item $ini -Force).Attributes = 'Normal'; Remove-Item $ini
+        Write-NewFile $ini "[.ShellClassInfo]`r`nLocalizedResourceName=$($f.Es)`r`n"
+        [IO.File]::SetAttributes($ini, [IO.FileAttributes]'Hidden, System')
+        $owned.Add($ini)
+        (Get-Item -LiteralPath $dir -Force).Attributes = 'ReadOnly, Directory'   # Explorer reads desktop.ini only for read-only/system folders
+    } elseif (Test-Path -LiteralPath $ini) {
+        Write-NewFile $ini ''; Remove-Item -LiteralPath $ini -Force
     }
 }
-# the files belong to the agent (created by an administrator here, so give ownership back)
-foreach ($p in @($desktop, (Join-Path $desktop 'Received'), (Join-Path $desktop 'Outbox'))) {
-    & icacls.exe $p /setowner "*$sid" /T /C /Q | Out-Null
-}
+# what this script created belongs to the agent: exactly these paths, never recursively, never through a link (/L)
+foreach ($p in $owned) { & icacls.exe $p /setowner "*$sid" /L /C /Q | Out-Null }
 
 # 6. the agent's own settings (its registry hive; the person's user is not touched)
 Invoke-AgentHive $sid $profilePath {
@@ -537,7 +619,8 @@ foreach ($p in $MachinePolicies) {
     Set-Value $p.Path $p.Name $p.Value
 }
 
-# 8. who signs in automatically
+# 8. who signs in automatically (and, for the service, whom the session helper may run as)
+Set-AgentMode $sid $SignInAs
 $reboot = $false
 if ($SignInAs -eq 'agent') {
     $before = "$(Get-Reg $Winlogon 'AutoAdminLogon')|$(Get-Reg $Winlogon 'DefaultUserName')"

@@ -21,8 +21,8 @@ type Fail = (&'static str, String);
 pub fn root() -> Result<&'static PathBuf, Fail> {
     static R: OnceLock<Option<PathBuf>> = OnceLock::new();
     R.get_or_init(|| {
-        let user = crate::token::token_user(crate::token::self_token().0).1;
-        if !user.eq_ignore_ascii_case("agent") {
+        // by SID (recorded by the installer in HKLM), never by name: another account called "agent" doesn't count
+        if !crate::token::is_agent_process() {
             return None;
         }
         std::env::var_os("USERPROFILE").map(PathBuf::from).filter(|p| p.is_absolute())

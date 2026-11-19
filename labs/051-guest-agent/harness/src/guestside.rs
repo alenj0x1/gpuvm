@@ -67,6 +67,19 @@ pub fn system_window(exe: &str) {
     let _ = std::fs::write(out, text);
 }
 
+/// `guest-window-rect <class>` (as the agent user): the rect of the first visible top-level window of that class
+/// (OSKMainClass for the on-screen keyboard), to C:\Users\Public\lab051-rect.json.
+pub fn window_rect(class: &str) {
+    let c = wide(class);
+    let r = unsafe {
+        let h = FindWindowW(PCWSTR(c.as_ptr()), PCWSTR::null()).unwrap_or_default();
+        let mut rc = RECT::default();
+        let ok = !h.0.is_null() && GetWindowRect(h, &mut rc).is_ok();
+        format!("{{\"found\":{ok},\"rect\":[{},{},{},{}]}}", rc.left, rc.top, rc.right, rc.bottom)
+    };
+    let _ = std::fs::write(r"C:\Users\Public\lab051-rect.json", r);
+}
+
 /// `guest-open-helper` (run as the agent user): tries to open the session helper (gpuvm-agent.exe helper) with the
 /// rights an attacker would need to steal its pipes or inject (dup handle, VM read/write, all access) and with the
 /// harmless ones; writes the results to C:\Users\Public\lab051-open.json.
