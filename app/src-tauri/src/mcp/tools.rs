@@ -1082,8 +1082,28 @@ impl Tool<'_> {
             return Err("`hostPath` must be a full path on this PC.".into());
         }
         self.step(machine)?;
-        let r = self.broker("file.send", machine, json!({ "hostPath": host }))?;
-        Ok(text(format!("Copied to {} in {machine}.", r.data["path"].as_str().unwrap_or("Desktop\\Received"))))
+        self.broker("file.send", machine, json!({ "hostPath": host }))?;
+        // Check it arrived instead of trusting the copy's "done" (lab 053: a 106 MB installer was reported copied
+        // and never reached the machine). Folders are only checked for existence.
+        let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let inside = format!("Desktop\\Received\\{name}");
+        let expected = std::fs::metadata(p).ok().filter(|m| m.is_file()).map(|m| m.len());
+        if expected.is_some() {
+            let missing = || format!("GpuVM reported the copy as done, but {inside} isn't in {machine}: the file wasn't delivered. Don't retry in a loop; tell the person.");
+            self.step(machine)?;
+            let check = self.ctx.broker.call("agent.invoke", json!({ "connection": self.connection, "name": machine, "method": "files.read",
+                "params": { "path": inside, "offset": 0, "length": 1 }, "note": format!("check {inside} arrived") }));
+            let got = match check {
+                Ok(r) => r.data["size"].as_u64(),
+                Err(e) if e.code == "not_found" => return Err(missing()),
+                Err(e) => return Err(self.fail(machine, e)),
+            };
+            if got != expected {
+                return Err(format!("{inside} reached {machine} incomplete ({} of {} bytes). Don't run it; tell the person.",
+                    got.map(|g| g.to_string()).unwrap_or("?".into()), expected.unwrap_or(0)));
+            }
+        }
+        Ok(text(format!("Copied to {inside} in {machine}{}.", expected.map(|n| format!(" ({n} bytes, checked)")).unwrap_or_default())))
     }
 
     fn offer_file(&self) -> Out {

@@ -329,6 +329,17 @@ fn commands_files_and_offers() {
     h.ok("write_file", json!({ "machine": m, "path": "C:\\Users\\agent\\u16.txt", "content": "//5oAGkA", "encoding": "base64" }));
     assert!(h.ok("read_file", json!({ "machine": m, "path": "C:\\Users\\agent\\u16.txt" })).ends_with("hi"));
     assert!(h.ok("send_file", json!({ "machine": m, "hostPath": "C:\\Builds\\GpuVM-setup.exe" })).contains("Received\\GpuVM-setup.exe"));
+    // A real host file is checked inside the machine after the copy, by size.
+    let host = std::env::temp_dir().join(format!("gpuvm-mcp-test-{}.bin", std::process::id()));
+    std::fs::write(&host, vec![7u8; 1000]).unwrap();
+    let host_path = host.to_string_lossy().to_string();
+    assert!(h.ok("send_file", json!({ "machine": m, "hostPath": host_path })).contains("1000 bytes, checked"));
+    h.fake.with(|s| s.machines.iter_mut().find(|x| x.name == m).unwrap().drop_sends = true);
+    std::fs::write(host.with_extension("lost"), b"x").unwrap();
+    assert!(h.err("send_file", json!({ "machine": m, "hostPath": host.with_extension("lost").to_string_lossy() })).contains("wasn't delivered"));
+    h.fake.with(|s| s.machines.iter_mut().find(|x| x.name == m).unwrap().drop_sends = false);
+    let _ = std::fs::remove_file(&host);
+    let _ = std::fs::remove_file(host.with_extension("lost"));
     let o = h.ok("offer_file", json!({ "machine": m, "path": "C:\\Users\\agent\\Desktop\\Outbox\\report.md", "note": "Test report" }));
     assert!(o.contains("offer o"), "{o}");
     let id = h.fake.with(|s| s.offers.keys().next().unwrap().clone());
