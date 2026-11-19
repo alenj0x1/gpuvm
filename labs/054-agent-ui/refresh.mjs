@@ -91,7 +91,7 @@ async function connect() {
   let hiddenMs = null;
   for (const t0 = Date.now(); Date.now() - t0 < 180000;) {
     if (viewers() > 0) { hiddenMs = Date.now() - tClosed; break; }
-    await tool("screenshot", { machine, maxWidth: 64, maxHeight: 40 });
+    await tool("screenshot", { machine, maxWidth: 96, maxHeight: 64 });
     await sleep(1500);
   }
   if (hiddenMs === null) return { error: "no hidden viewer in 3 min" };
