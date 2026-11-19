@@ -382,6 +382,12 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
         Err(message.to_string())
     };
     if !wait_connect(pipe.0, child.handle(), Duration::from_secs(20)) {
+        // A viewer that ended before connecting says how (0xC0000142: a DLL or the console failed to start at Low or
+        // inside its job), in the log and in the error, so the cause can be found from the app.
+        if let Some(code) = child.exit_code() {
+            eprintln!("viewer {vm}: ended before connecting, exit code {code:#010x}");
+            return refuse(&format!("The viewer closed as it started (code {code:#010x})."));
+        }
         return refuse("The viewer didn't respond.");
     }
     let mut client = 0u32;

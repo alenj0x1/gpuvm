@@ -206,12 +206,22 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
   }, [vms, selected]);
 
   // `gpuvm.exe --view <name>` (an agent's open_viewer): that machine's page, and its picture opened like its Open
-  // button does. A name that isn't one of the machines, or one busy with a job, does nothing.
+  // button does. A machine not in the list yet (an agent just created it) waits for it, for up to 3 minutes; one
+  // busy with a job does nothing.
+  const waitingView = useRef<{ name: string; until: number } | null>(null);
   const openFromAgent = (name: string) => {
-    if (!vmsRef.current?.some((v) => v.name === name) || Object.values(jobsRef.current).some((j) => j.vm === name)) return;
+    if (!vmsRef.current?.some((v) => v.name === name)) { waitingView.current = { name, until: Date.now() + 180000 }; return; }
+    waitingView.current = null;
+    if (Object.values(jobsRef.current).some((j) => j.vm === name)) return;
     setSelected(name);
     startJobRef.current?.(name, "Connect-GpuVM", { Name: name });
   };
+  useEffect(() => {
+    const w = waitingView.current;
+    if (!w) return;
+    if (Date.now() > w.until) { waitingView.current = null; return; }
+    if (vms?.some((v) => v.name === w.name)) openFromAgent(w.name);
+  }, [vms]); // eslint-disable-line react-hooks/exhaustive-deps
   // GpuVM started by that command: it opens once the machines are known.
   const loaded = vms !== null;
   useEffect(() => {
