@@ -508,7 +508,7 @@ InModuleScope GpuVM {
             Mock Save-GpuVMComponent { 'C:\cache\usbip\USBip-0.9.8.0-x64.exe' }
             Mock New-PSSession { [Runtime.Serialization.FormatterServices]::GetUninitializedObject([System.Management.Automation.Runspaces.PSSession]) }
             Mock Copy-Item { $script:copied += @($LiteralPath) }
-            Mock Close-AgentSession { }
+            Mock Remove-PSSession { }
             Mock Write-Step { }
             $script:copied = @()
             Install-GuestAudio -Name 'vm' -Credential $cred | Should Be $true
