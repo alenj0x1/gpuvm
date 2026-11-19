@@ -9,7 +9,7 @@ import { Logo } from "./Logo";
 import { TripleSpark } from "./Chart";
 import type { HostInfo, JobEvent, Sample, VmOverview } from "./types";
 import { readPrefs } from "./prefs";
-import { api, inTauri, onJob, relaunchAsAdmin, repairService, service, startJob as runJob } from "./api";
+import { agents, api, inTauri, onJob, relaunchAsAdmin, repairService, service, startJob as runJob } from "./api";
 import { MachineIcon, renamePatternVariant } from "./machineIcon";
 import { renameSceneStyle } from "./Scene";
 import { renameDecor } from "./decor/store";
@@ -386,10 +386,21 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       offs.push(listen<{ vm: string; msg: { type: string } }>("viewer", (e) => {
         if (e.payload.msg.type === "closed" && viewingRef.current?.vm === e.payload.vm && viewingRef.current.phase === "live") setViewing(null);
         if (e.payload.msg.type === "home" && viewingRef.current?.vm === e.payload.vm && viewingRef.current.phase === "live") leaveToHome(e.payload.vm);
+        // A machine for agents (ddx): its guest repaints once the stream is up, so a still desktop isn't black.
+        if (["connected", "first-frame"].includes(e.payload.msg.type)) refreshAgentScreen(e.payload.vm);
       }));
     });
     return () => { offs.forEach((o) => o.then((f) => f())); };
   }, [leaveToHome]);
+
+  /** screen.refresh on a machine for agents, once per connection (connected and first-frame both ask; 10 s apart). */
+  const refreshedAt = useRef<Record<string, number>>({});
+  const refreshAgentScreen = (vm: string) => {
+    if (vmsRef.current?.find((v) => v.name === vm)?.use !== "agent") return;
+    if (Date.now() - (refreshedAt.current[vm] ?? 0) < 10000) return;
+    refreshedAt.current[vm] = Date.now();
+    agents.refreshScreen(vm).catch(() => { /* an agent not ready or older than 0.3.8: nothing to do */ });
+  };
 
   const run = useCallback(async (vm: string, label: string, task: () => Promise<unknown>) => {
     setPending((p) => ({ ...p, [vm]: label }));
