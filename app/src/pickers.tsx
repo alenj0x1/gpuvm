@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { api } from "./api";
 import type { AppInfo, CleanupLevel, CleanupLevelId, HostMonitor, IsoFile, MouseMode, ProfileSettings } from "./types";
 import { CheckMark, Dropdown, Segmented, useScrollFade, type DropdownOption } from "./ui";
-import { t, tn, translateModule } from "./i18n";
+import { getLang, t, tn, translateModule } from "./i18n";
 
 export const RESOLUTIONS = ["1280x720", "1920x1080", "2560x1440", "3840x2160"];
 export const FPS = [30, 60, 120, 144];
@@ -126,13 +126,14 @@ export function AppPicker({ apps, value, onChange, scroll = true, installed = []
   const [category, setCategory] = useState<string | null>(null);
   const categories = useMemo(() => {
     const seen = new Map<string, string>();
-    for (const a of apps) if (a.category && !seen.has(a.category)) seen.set(a.category, a.categoryName ?? a.category);
+    // The module names categories in English; they show in the app's language.
+    for (const a of apps) if (a.category && !seen.has(a.category)) seen.set(a.category, translateModule(a.categoryName ?? a.category));
     return [...seen];
-  }, [apps]);
+  }, [apps, getLang()]);
   const q = fold(query.trim());
   // A search looks through every category, so a result is never hidden by the tab that happens to be open.
   const shown = apps.filter((a) => q
-    ? fold(`${a.name} ${a.categoryName ?? ""}`).includes(q)
+    ? fold(`${a.name} ${a.categoryName ?? ""} ${translateModule(a.categoryName ?? "")}`).includes(q)
     : !category || a.category === category);
   const [gridRef, gridFade] = useScrollFade<HTMLDivElement>();
   const [tabsRef, tabFade] = useScrollFade<HTMLDivElement>("x");

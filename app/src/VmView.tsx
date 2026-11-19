@@ -439,9 +439,9 @@ export function Apps({ vm, busy, startJob, onPreview }: Pick<Props, "vm" | "busy
   const q = fold(query.trim());
   // The catalog shows every app of the category, the installed ones too (marked, not installable again).
   const available = catalog
-    .filter((a) => (q ? fold(`${a.name} ${a.categoryName ?? ""}`).includes(q) : category === "all" || a.category === category));
+    .filter((a) => (q ? fold(`${a.name} ${a.categoryName ?? ""} ${translateModule(a.categoryName ?? "")}`).includes(q) : category === "all" || a.category === category));
   const mine = catalog.filter((a) => installed.includes(a.id));
-  const mineShown = q ? mine.filter((a) => fold(`${a.name} ${a.categoryName ?? ""}`).includes(q)) : mine;
+  const mineShown = q ? mine.filter((a) => fold(`${a.name} ${a.categoryName ?? ""} ${translateModule(a.categoryName ?? "")}`).includes(q)) : mine;
   const toggle = (id: string) => setChosen((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]));
 
   return (
