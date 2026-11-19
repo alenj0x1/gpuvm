@@ -5,9 +5,9 @@ function Set-GpuVMUse {
 
     .DESCRIPTION
     agent: network isolation on (the machine reaches the internet, never this PC or the LAN), the agent installed or
-    refreshed (Install-GpuVMAgent, signing in as `agent` or the person's user per Set-GpuVMAgentUser) and the guest
-    display at 1280x800 in the signed-in session, the size screenshots are taken at. A machine that is off keeps
-    the use and gets the agent at the next Set-GpuVMUse while it runs (`agent.pending`).
+    refreshed (Install-GpuVMAgent, signing in as `agent` or the person's user per Set-GpuVMAgentUser). The agent
+    keeps its own display (the virtual display alone, 1280x800 at least). A machine that is off keeps the use and
+    gets the agent at the next Set-GpuVMUse while it runs (`agent.pending`).
     none: the agent is removed (its user, service and secret; the person's automatic sign-in comes back). Needs the
     person's confirmation (UAC) like any deletion.
     #>
@@ -45,15 +45,8 @@ function Set-GpuVMUse {
         Write-Warning "'$Name' is off: the agent is installed the next time this runs with the machine on."
         return [ordered]@{ name = $Name; use = 'agent'; pending = $true }
     }
+    # The display is the agent's own business (0.3.3: the virtual display alone, 1280x800 at least, and never over a
+    # viewer's), so nothing is set from here.
     $installed = Install-GpuVMAgent -Name $Name -User $user
-    $display = $null
-    if (-not $installed.restarted) {
-        # In the session Windows signed in (Set-GuestDisplayResolution targets the console user, `agent` here).
-        try {
-            $credential = Get-GpuVMGuestCredential -State (Get-GpuVMState -Name $Name)
-            $display = (Set-GuestDisplayResolution -Name $Name -Credential $credential -Resolution '1280x800' -Fps 60).applied
-        }
-        catch { Write-Warning "Couldn't set the machine's display to 1280x800: $($_.Exception.Message)" }
-    }
-    [ordered]@{ name = $Name; use = 'agent'; agent = $installed; display = $display }
+    [ordered]@{ name = $Name; use = 'agent'; agent = $installed }
 }
