@@ -366,6 +366,8 @@ struct Machine {
     last_error: Option<String>,
     /// When the person last gave control back (the agent should look at the screen again).
     resumed_at: Option<u64>,
+    /// The one automatic power cycle for a machine whose agent sees no display: 0 none yet, 1 running, 2 done.
+    display_repair: u8,
 }
 
 struct Client {
@@ -860,6 +862,58 @@ fn blank_for(info: &Value, since: &AtomicU64, now: u64) -> Option<u64> {
 /// A signed-in agent with no display for this long is "no-display", not "ready" (lab 052: 4 of 13 copies never get
 /// one; nothing the host can do brings it back).
 const NO_DISPLAY_AFTER_MS: u64 = 20_000;
+
+/// Turns the machine off and on (the module's Restart-GpuVMCold, which keeps a disposable copy from being swept while
+/// it is off), in the background; the repair is "done" when it returns, whatever happened.
+fn power_cycle(reg: Reg) {
+    log(&format!("agent: {} sees no display; turning it off and on", reg.name));
+    vm_log(&reg, json!({ "event": "display_repair" }));
+    std::thread::spawn(move || {
+        #[cfg(test)]
+        tests::TEST_CYCLES.lock().unwrap_or_else(|e| e.into_inner()).push(reg.name.clone());
+        #[cfg(not(test))]
+        {
+            let pwsh = crate::server::install_dir().join("pwsh").join("pwsh.exe");
+            let module = crate::server::install_dir().join("gpuvm").join("src").join("GpuVM").join("GpuVM.psd1");
+            let script = "$ErrorActionPreference='Stop'; Import-Module $env:GPUVM_MODULE; & (Get-Module GpuVM) { param($n) Restart-GpuVMCold -Name $n } $env:GPUVM_VM_NAME";
+            let ok = std::process::Command::new(pwsh)
+                .args(["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script])
+                .env("GPUVM_MODULE", module).env("GPUVM_VM_NAME", &reg.name)
+                .stdin(std::process::Stdio::null()).output()
+                .map(|o| o.status.success()).unwrap_or(false);
+            log(&format!("agent: {} turned off and on: {}", reg.name, if ok { "done" } else { "failed" }));
+        }
+        lock(&broker().machines).entry(reg.vm_id.clone()).or_default().display_repair = 2;
+    });
+}
+
+#[derive(Debug, PartialEq)]
+enum Verdict {
+    /// Nothing to say about its display.
+    Fine,
+    /// No display: turn it off and on now (the first time).
+    Repair,
+    /// The power cycle is under way.
+    Repairing,
+    /// Still none after the power cycle: say so (ms without a display).
+    NoDisplay(u64),
+    /// A display again after a repair: a later loss may be repaired once more.
+    Recovered,
+}
+
+/// What a machine's display situation means: `connected` (its agent is), `blank` (ms signed in with no display),
+/// `said` (the agent reported no display path), `repair` (0 none, 1 running, 2 done).
+fn display_verdict(connected: bool, blank: Option<u64>, said: bool, signed_in: bool, repair: u8) -> Verdict {
+    if repair == 1 {
+        return Verdict::Repairing;
+    }
+    match blank {
+        Some(ms) if ms > NO_DISPLAY_AFTER_MS || said => if repair == 0 { Verdict::Repair } else { Verdict::NoDisplay(ms) },
+        Some(_) => Verdict::Fine,
+        None if connected && signed_in && repair == 2 => Verdict::Recovered,
+        None => Verdict::Fine,
+    }
+}
 
 /// Asks the agent for agent.info again, in the background, one request at a time.
 fn refresh_info(conn: Arc<Conn>) {
@@ -2085,20 +2139,35 @@ fn get_agents(name: Option<&str>) -> Value {
             Some(c) => (lock(&c.info).clone(), Value::Object(lock(&c.events).clone())),
             None => (Value::Null, Value::Null),
         };
-        // Signed in but no display: asked again (the agent may just be starting), and after 20 s it is said plainly
-        // instead of "ready", so a caller fails fast with the reason.
+        // Signed in but no display: asked again (the agent may just be starting). Past 20 s, or as soon as the agent
+        // says Windows gives it no display path (agent.info noDisplay, 0.4.5), the machine is turned off and on ONCE
+        // (only a power cycle clears that state, agent-guest lab 051); it is "starting" meanwhile, and "no-display"
+        // with the reason if it still has none afterwards.
         let mut state = state;
         let mut last_error = m.and_then(|m| m.last_error.clone());
-        if let Some(c) = &conn {
-            if let Some(ms) = blank_for(&agent, &c.blank_since, now_ms()) {
+        let repair = m.map(|m| m.display_repair).unwrap_or(0);
+        let blank = conn.as_ref().and_then(|c| blank_for(&agent, &c.blank_since, now_ms()));
+        if blank.is_some() {
+            if let Some(c) = &conn {
                 refresh_info(c.clone());
-                if ms > NO_DISPLAY_AFTER_MS {
-                    state = "no-display";
-                    last_error = Some(format!("The agent is signed in but has seen no display for {} s: it can't take screenshots or use the \
-                        mouse and keyboard. Restarting doesn't help; the machine's agent needs fixing.", ms / 1000));
-                }
             }
         }
+        let said = agent["noDisplay"].as_str().filter(|t| !t.is_empty()).map(|t| clean(t, 300));
+        let verdict = display_verdict(conn.is_some(), blank, said.is_some(), agent["signedIn"] == json!(true), repair);
+        match verdict {
+            Verdict::Fine => {}
+            Verdict::Repair | Verdict::Repairing => {
+                state = "starting";
+                last_error = Some("The agent saw no display: the machine is being turned off and on to bring it back.".into());
+            }
+            Verdict::NoDisplay(ms) => {
+                state = "no-display";
+                last_error = Some(format!("The agent is signed in but has seen no display for {} s, even after the machine was turned \
+                    off and on: it can't take screenshots or use the mouse and keyboard. {}", ms / 1000, said.unwrap_or_default()));
+            }
+            Verdict::Recovered => {}
+        }
+        let (start_repair, repaired) = (verdict == Verdict::Repair, verdict == Verdict::Recovered);
         let desktop = match events["secure_desktop"]["data"]["on"].as_bool() {
             Some(true) => json!("secure"),
             Some(false) => json!("default"),
@@ -2113,6 +2182,13 @@ fn get_agents(name: Option<&str>) -> Value {
             "paused": m.and_then(|m| m.paused.clone()), "takenBy": taken,
             "lastError": last_error, "disposable": disposable, "template": template,
         }));
+        drop(machines);
+        if start_repair {
+            lock(&broker().machines).entry(reg.vm_id.clone()).or_default().display_repair = 1;
+            power_cycle(reg.clone());
+        } else if repaired {
+            lock(&broker().machines).entry(reg.vm_id.clone()).or_default().display_repair = 0;
+        }
     }
     Value::Array(list)
 }
@@ -2559,6 +2635,8 @@ pub(crate) mod tests {
     use super::*;
 
     pub static TEST_AGENTS: OnceLock<PathBuf> = OnceLock::new();
+    /// Power cycles asked in tests (machine names).
+    pub static TEST_CYCLES: Mutex<Vec<String>> = Mutex::new(Vec::new());
     /// What "Hyper-V" has in tests: machine name (lowercase) → VM id.
     pub static TEST_HV: Mutex<std::collections::BTreeMap<String, String>> = Mutex::new(std::collections::BTreeMap::new());
 
@@ -2945,6 +3023,18 @@ pub(crate) mod tests {
         let folders = vec![(a.to_string(), old), (b.to_string(), old), (b.to_uppercase(), Duration::from_secs(5)), ("blobs".to_string(), old)];
         // The VM that exists stays; a young folder stays (an install may be writing it); other folders stay.
         assert_eq!(orphans(&folders, &[a.to_string()]), vec![b.to_string()]);
+    }
+
+    #[test]
+    fn a_machine_without_display_is_power_cycled_once() {
+        assert_eq!(display_verdict(true, Some(5_000), false, true, 0), Verdict::Fine); // may just be starting
+        assert_eq!(display_verdict(true, Some(21_000), false, true, 0), Verdict::Repair);
+        assert_eq!(display_verdict(true, Some(1_000), true, true, 0), Verdict::Repair); // the agent says so: at once
+        assert_eq!(display_verdict(false, None, false, false, 1), Verdict::Repairing); // off and on: no agent meanwhile
+        assert_eq!(display_verdict(true, Some(21_000), true, true, 1), Verdict::Repairing);
+        assert_eq!(display_verdict(true, Some(25_000), true, true, 2), Verdict::NoDisplay(25_000)); // never twice
+        assert_eq!(display_verdict(true, None, false, true, 2), Verdict::Recovered);
+        assert_eq!(display_verdict(true, None, false, true, 0), Verdict::Fine);
     }
 
     #[test]

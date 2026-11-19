@@ -1457,6 +1457,7 @@ InModuleScope GpuVM {
             Mock Wait-GuestReady { }
             Mock Assert-AgentSwitch { $script:calls.Add('switch checked') }
             Mock Enable-GuestHyperVVideo { $script:calls.Add('video on'); 'ok' }
+            Mock Restart-GpuVMCold { $script:calls.Add('restart') }
             Mock Update-GpuVMNetworkIsolation { $script:calls.Add('isolated') }
             Mock Copy-ToAgentSession { $script:calls.Add("copy-to-session $Destination") }
             # Which guest call it is, by its arguments: setup (hash), fast-path copy (2 paths), installer (text, dir,
@@ -2067,6 +2068,39 @@ InModuleScope GpuVM {
             $c = @{ streaming = @{ disableHyperVVideo = $true; virtualDisplay = $true } }
             Set-AgentKeepsHyperVVideo -Config $c
             $c['streaming']['disableHyperVVideo'] | Should Be $false
+        }
+    }
+}
+
+InModuleScope GpuVM {
+    Describe 'Off and on, never a restart' {
+        BeforeEach {
+            $script:st = @{ disposable = @{ createdAt = (Get-Date).AddHours(-1).ToString('o'); startedAt = (Get-Date).ToString('o') } }
+            Mock Get-GpuVMState { $script:st }
+            Mock Save-GpuVMState { $script:st = $State; $script:saved.Add(($State['disposable'].Contains('cyclingUntil'))) }
+            Mock Write-Step { }
+            Mock Start-Sleep { }
+            Mock Update-GpuVMNetworkIsolation { }
+            Mock Start-VM { $script:calls.Add('start') }
+            Mock Remove-Job { }
+            $script:calls = [System.Collections.Generic.List[string]]::new()
+            $script:saved = [System.Collections.Generic.List[bool]]::new()
+        }
+        It 'shuts Windows down, waits until off, starts it, and the sweep leaves a disposable copy alone meanwhile' {
+            Mock Stop-VM { $script:calls.Add("stop $([bool]$TurnOff)"); $script:sweepSaw = Test-GpuVMDisposableDone -State $script:st -VMState 'Off'; [pscustomobject]@{} }
+            $script:states = [System.Collections.Generic.Queue[string]]::new([string[]]@('Running', 'Off', 'Off'))
+            Mock Get-VM { [pscustomobject]@{ State = $script:states.Dequeue() } }
+            Restart-GpuVMCold -Name c
+            ($script:calls -join ',') | Should Be 'stop False,start'
+            $script:sweepSaw | Should Be $false
+            $script:saved -join ',' | Should Be 'True,False'
+            Test-GpuVMDisposableDone -State $script:st -VMState 'Off' | Should Be $true
+        }
+        It 'turns it off when Windows doesn''t shut down in time' {
+            Mock Stop-VM { $script:calls.Add("stop $([bool]$TurnOff)"); [pscustomobject]@{} }
+            Mock Get-VM { [pscustomobject]@{ State = 'Running' } }
+            Restart-GpuVMCold -Name c -ShutdownTimeoutSec 0
+            ($script:calls -join ',') | Should Be 'stop False,stop True,start'
         }
     }
 }
