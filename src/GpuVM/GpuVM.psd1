@@ -73,6 +73,17 @@
         'Get-GpuVMImportInfo'
         'Remove-GpuVMDisposable'
         'Set-GpuVMDisposable'
+        'Install-GpuVMAgent'
+        'Uninstall-GpuVMAgent'
+        'Get-GpuVMAgent'
+        'Get-GpuVMAgentBroker'
+        'Invoke-GpuVMAgent'
+        'Suspend-GpuVMAgent'
+        'Resume-GpuVMAgent'
+        'Stop-GpuVMAgentClient'
+        'New-GpuVMAgentOffer'
+        'Get-GpuVMAgentOffer'
+        'Resolve-GpuVMAgentOffer'
     )
     CmdletsToExport   = @()
     AliasesToExport   = @()

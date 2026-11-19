@@ -1350,3 +1350,125 @@ InModuleScope GpuVM {
         }
     }
 }
+
+InModuleScope GpuVM {
+    Describe 'Agent broker commands' {
+        It 'module commands send exactly the names and arguments the service accepts' {
+            # The service's list (app/host/src/agent.rs COMMANDS) is the contract: exact case, no extra arguments.
+            $source = Get-Content -Raw (Get-RepoPath 'app\host\src\agent.rs')
+            $accepted = @{}
+            foreach ($m in [regex]::Matches($source, '\("([A-Za-z-]+)", &\[([^\]]*)\]\)')) {
+                $accepted[$m.Groups[1].Value] = @([regex]::Matches($m.Groups[2].Value, '"(\w+)"') | ForEach-Object { $_.Groups[1].Value })
+            }
+            $accepted.Count | Should BeGreaterThan 10
+            $common = [System.Management.Automation.Cmdlet]::CommonParameters + [System.Management.Automation.Cmdlet]::OptionalCommonParameters
+            $wrappers = 'Get-GpuVMAgent', 'Get-GpuVMAgentBroker', 'Invoke-GpuVMAgent', 'Suspend-GpuVMAgent', 'Resume-GpuVMAgent',
+                'Stop-GpuVMAgentClient', 'New-GpuVMAgentOffer', 'Get-GpuVMAgentOffer', 'Resolve-GpuVMAgentOffer'
+            foreach ($name in $wrappers) {
+                $accepted.ContainsKey($name) | Should Be $true
+                foreach ($p in (Get-Command $name).Parameters.Keys | Where-Object { $_ -notin $common -and $_ -ne 'BlobPath' }) {
+                    "$name $p $($accepted[$name] -ccontains $p)" | Should Be "$name $p True"
+                }
+            }
+        }
+        It 'wrappers drop common parameters and send switches as booleans' {
+            Mock Invoke-AgentBroker { [pscustomobject]@{ Command = $Command; Arguments = $Arguments } }
+            $r = Stop-GpuVMAgentClient -All -Verbose:$false
+            $r.Command | Should Be 'Stop-GpuVMAgentClient'
+            $r.Arguments['All'] | Should Be $true
+            $r.Arguments.ContainsKey('Verbose') | Should Be $false
+            $r = Resolve-GpuVMAgentOffer -Id 'ab' -Answer approve
+            $r.Arguments['Answer'] | Should BeExactly 'approve'
+            Test-Throws { Resolve-GpuVMAgentOffer -Id 'ab' -Answer 'yes' } | Should Be $true
+        }
+        It 'Invoke-GpuVMAgent sends a host file as base64 and refuses big ones' {
+            Mock Invoke-AgentBroker { $Arguments }
+            $f = Join-Path $TestDrive 'a.bin'
+            [IO.File]::WriteAllBytes($f, [byte[]](1, 2, 3))
+            $a = Invoke-GpuVMAgent -Name vm -Method files.write -Params @{ path = 'C:\Users\agent\x' } -BlobPath $f
+            $a['Blob'] | Should Be 'AQID'
+            $a['TimeoutSec'] | Should Be 30
+            $big = Join-Path $TestDrive 'big.bin'
+            $s = [IO.File]::Create($big); $s.SetLength(16MB + 1); $s.Dispose()
+            Test-Throws { Invoke-GpuVMAgent -Name vm -Method files.write -BlobPath $big } | Should Be $true
+        }
+        It 'a registration is removed only inside the agents folder' {
+            Mock Get-GpuVMAgentRoot { Join-Path $TestDrive 'agents' }
+            $id = '0B5D1F53-1E33-4B7E-9F0A-2C4D6E8F0A1B'
+            $dir = Join-Path $TestDrive "agents\$($id.ToLowerInvariant())"
+            New-Item -ItemType Directory $dir -Force | Out-Null
+            Remove-GpuVMAgentRegistration -VMId $id
+            Test-Path $dir | Should Be $false
+        }
+        It 'the secret file is DPAPI-protected and readable by SYSTEM only' {
+            $dir = Join-Path $TestDrive 'secret-test'
+            New-Item -ItemType Directory $dir -Force | Out-Null
+            Write-AgentSecret -Folder $dir -Secret ([byte[]](1..32))
+            $acl = Get-Acl (Join-Path $dir 'secret')
+            $acl.AreAccessRulesProtected | Should Be $true
+            $sids = @($acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value })
+            ($sids -join ',') | Should Be 'S-1-5-18'
+            Test-Path (Join-Path $dir 'secret.new') | Should Be $false
+        }
+    }
+
+    Describe 'Install-GpuVMAgent' {
+        BeforeEach {
+            $script:copied = [System.Collections.Generic.List[string]]::new()
+            $script:gsi = [System.Collections.Generic.List[string]]::new()
+            Mock Assert-Admin { }
+            Mock Get-GpuVMState { @{ statePath = 'D:\GpuVM\vm1\gpuvm.json'; guest = @{ user = 'u' } } }
+            Mock Get-VM { [pscustomobject]@{ State = 'Running'; Id = [guid]'0b5d1f53-1e33-4b7e-9f0a-2c4d6e8f0a1b' } }
+            Mock Get-GpuVMGuestCredential { [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force)) }
+            Mock Get-GpuVMAgentRoot { Join-Path $TestDrive 'agents' }
+            Mock Initialize-AgentFolder { New-Item -ItemType Directory -Path $Path -Force | Out-Null }
+            Mock Get-AgentPackage {
+                $dist = Join-Path $TestDrive 'dist'
+                New-Item -ItemType Directory "$dist\sub" -Force | Out-Null
+                [IO.File]::WriteAllText("$dist\agent.exe", 'x'); [IO.File]::WriteAllText("$dist\sub\lib.dll", 'yyy')
+                [pscustomobject]@{ Install = 'install.ps1'; Dist = $dist; Files = @(Get-ChildItem $dist -File -Recurse); Version = '1.0.0' }
+            }
+            Mock Get-GuestServiceInterface { [pscustomobject]@{ Name = 'Guest Service Interface'; Enabled = $false } }
+            Mock Enable-VMIntegrationService { $script:gsi.Add('on') }
+            Mock Disable-VMIntegrationService { $script:gsi.Add('off') }
+            Mock Copy-AgentFileToGuest { $script:copied.Add("$Destination|$((Get-Item $Source).Length)") }
+            Mock Invoke-Command { if ($FilePath) { [pscustomobject]@{ password = 'S3cret!'; version = '1.2.3' } } }
+            Mock Write-AgentSecret { }
+            Mock Save-GpuVMState { $script:saved = $State }
+            Mock Write-JsonFile { $script:registration = $Data }
+            Mock Write-Step { }
+        }
+        It 'copies the secret and the files, turns the Guest Service Interface off again and saves the password encrypted' {
+            $r = Install-GpuVMAgent -Name vm1
+            $r.vmId | Should Be '0b5d1f53-1e33-4b7e-9f0a-2c4d6e8f0a1b'
+            $r.version | Should Be '1.2.3'
+            ($script:gsi -join ',') | Should Be 'on,off'
+            $script:copied[0] | Should Be 'C:\ProgramData\GpuVM\Agent\secret|32'
+            $script:copied -contains 'C:\ProgramData\GpuVM\Agent\staging\sub\lib.dll|3' | Should Be $true
+            Assert-MockCalled Write-AgentSecret -Times 1 -Scope It -ParameterFilter { $Secret.Length -eq 32 }
+            $script:saved['agent']['password'] | Should Not Be 'S3cret!'
+            (ConvertTo-SecureString $script:saved['agent']['password'] | ConvertFrom-SecureString -AsPlainText) | Should Be 'S3cret!'
+            $script:registration['name'] | Should Be 'vm1'
+            $script:registration['folder'] | Should Be 'D:\GpuVM\vm1'
+            # The plain copy of the secret doesn't stay behind.
+            @(Get-ChildItem (Join-Path $TestDrive 'agents') -Recurse -File -Filter 'copy-*').Count | Should Be 0
+        }
+        It 'a failed copy keeps the old secret and still turns the Guest Service Interface off' {
+            Mock Copy-AgentFileToGuest { throw 'copy failed' }
+            Test-Throws { Install-GpuVMAgent -Name vm1 } | Should Be $true
+            ($script:gsi -join ',') | Should Be 'on,off'
+            Assert-MockCalled Write-AgentSecret -Times 0 -Scope It
+            @(Get-ChildItem (Join-Path $TestDrive 'agents') -Recurse -File -Filter 'copy-*').Count | Should Be 0
+        }
+        It 'leaves the Guest Service Interface on when it already was' {
+            Mock Get-GuestServiceInterface { [pscustomobject]@{ Name = 'Guest Service Interface'; Enabled = $true } }
+            Install-GpuVMAgent -Name vm1 | Out-Null
+            $script:gsi.Count | Should Be 0
+        }
+        It 'refuses a machine that is off' {
+            Mock Get-VM { [pscustomobject]@{ State = 'Off'; Id = [guid]::NewGuid() } }
+            Test-Throws { Install-GpuVMAgent -Name vm1 } | Should Be $true
+            Assert-MockCalled Copy-AgentFileToGuest -Times 0 -Scope It
+        }
+    }
+}

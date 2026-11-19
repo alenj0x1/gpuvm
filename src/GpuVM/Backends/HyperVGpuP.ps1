@@ -530,6 +530,8 @@ Register-GpuVMBackend -Name 'hyperv-gpup'-Description 'Hyper-V with GPU Partitio
         if ($vm) {
             if ($vm.State -ne 'Off') { Stop-VM -Name $Name -TurnOff -Force }
             Remove-VM -Name $Name -Force
+            # Its agent secret and registration go with it.
+            Remove-GpuVMAgentRegistration -VMId $vm.Id.Guid
         }
         if ($dir) { Remove-Item -LiteralPath $dir -Recurse -Force }
     }
