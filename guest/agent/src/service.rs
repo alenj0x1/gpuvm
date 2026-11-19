@@ -39,7 +39,7 @@ fn sleep_stop(ms: u64) {
 }
 
 pub const METHODS: &[&str] = &[
-    "agent.info", "screen.capture", "screen.state", "input.act", "ui.tree", "ui.invoke", "exec.run", "files.list", "files.read",
+    "agent.info", "screen.capture", "screen.state", "screen.refresh", "input.act", "ui.tree", "ui.invoke", "exec.run", "files.list", "files.read",
     "files.write",
 ];
 const HELPER_EVENTS: &[&str] = &["secure_desktop", "foreground", "error_box", "screen"];

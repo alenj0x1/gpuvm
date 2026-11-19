@@ -173,3 +173,11 @@ Error box (raiser detached): now listed in `errorBoxes` and the click refused `b
 screenshot although user32 calls it visible and foreground. Hypothesis: csrss placed it by the old layout (the
 basic display the helper turned off), i.e. off-screen; 0.3.7 adds `errorBoxRects` (bbox relative to the agent's
 screen) to screen.state to check.
+
+**Error box, closed** (`errorbox-check.ps1`, `out/errorbox-20261119-064710`, installed agent 0.3.7): with the raiser
+detached the box is listed in `errorBoxes`, `errorBoxRects` puts it ON the screen (bbox 501,325 379x140 in 1366x768),
+it IS in the screenshot (`box-0.3.7.png`, over the raiser's black console window) and a click is refused. The
+"off-screen" hypothesis was wrong; the earlier invisible box was the killed raiser (first run) and, in the second, a
+screenshot taken before the box was painted. 0.3.8 words the refusal as "a system error box '…' is open: only the
+person can close it" (and adds "outside the visible screen" when that is the case). screen.refresh couldn't be
+called through the installed broker yet: it rejects unknown method names (broker allowlist).

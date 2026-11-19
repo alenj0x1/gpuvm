@@ -67,6 +67,7 @@ fn dispatch(method: &str, p: &Value, blob: Option<Vec<u8>>, id: u64) -> CallResu
         "agent.info" => Ok((info(), None)),
         "screen.capture" => capture::screen_capture(p),
         "screen.state" => Ok((state::screen_state(), None)),
+        "screen.refresh" => Ok((refresh(), None)),
         "input.act" => {
             let _one = INPUT.lock().unwrap_or_else(|e| e.into_inner());
             crate::input::input_act(p, id)
@@ -79,6 +80,16 @@ fn dispatch(method: &str, p: &Value, blob: Option<Vec<u8>>, id: u64) -> CallResu
         "files.write" => crate::files::write(p, blob),
         _ => Err(("bad_request", "unknown method".into())),
     }
+}
+
+/// screen.refresh: repaint the whole desktop so the compositor presents a new frame (a still desktop gives a
+/// duplication-based stream nothing to send, and Sunshine's ddx stayed black 1 time in 3 when a viewer connected,
+/// lab 054). Repaints only: no window is moved, no input is sent, the cursor stays where it is.
+pub fn refresh() -> Value {
+    use windows::Win32::Graphics::Gdi::*;
+    let t = Instant::now();
+    let ok = unsafe { RedrawWindow(None, None, None, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN | RDW_UPDATENOW).as_bool() };
+    json!({"ok": ok, "ms": (t.elapsed().as_secs_f64() * 1e4).round() / 10.0})
 }
 
 fn reply(out: &Out, id: u64, r: CallResult) {
@@ -138,6 +149,8 @@ fn events(out: Out) {
                 if let Some((w, h)) = s {
                     send(&out, &json!({"t": "evt", "event": "screen", "data": {"w": w, "h": h}}), None);
                 }
+                // a new mode: give a duplication-based stream a fresh frame of the still desktop
+                let _ = refresh();
                 last_size = s;
             }
         }
