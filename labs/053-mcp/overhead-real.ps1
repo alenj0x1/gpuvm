@@ -12,6 +12,10 @@ try {
     "free memory $freeGB GB"
     if ($freeGB -lt 4.8) { throw "Only $freeGB GB free: not enough for a 4 GB disposable." }
     python (Join-Path $PSScriptRoot 'overhead.py') --exe $Exe --template $Template --n $N
+    # overhead.py ends with the MCP's destroy: Remove-GpuVMDisposable -Name deletes at once, the old sweep doesn't.
+    Start-Sleep -Seconds 5
+    $still = @(Get-VM | Where-Object { $_.Name -notin $vmsBefore -and $_.Name -like "$Template-*" } | ForEach-Object Name)
+    if ($still) { "destroy check: STILL THERE after destroy: $($still -join ', ') (fell back to the sweep?)" } else { 'destroy check: deleted at once' }
 }
 finally {
     # Disposables this run created and didn't destroy.
