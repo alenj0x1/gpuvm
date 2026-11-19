@@ -67,8 +67,11 @@ impl Mapper {
         }
         Ok(POINT { x: self.ox + x.round() as i32, y: self.oy + y.round() as i32 })
     }
+    /// Pixel -> 0..65535 at the CENTER of the pixel: Windows maps back with abs * size / 65536 (floor), so a
+    /// truncated value can land one pixel short (lab 053: 1 px off at y=1).
     fn abs(&self, p: POINT) -> (i32, i32) {
-        (((p.x - self.vx) as i64 * 65535 / (self.vw - 1) as i64) as i32, ((p.y - self.vy) as i64 * 65535 / (self.vh - 1) as i64) as i32)
+        let f = |v: i32, size: i32| (((2 * v as i64 + 1) * 32768) / size.max(1) as i64).clamp(0, 65535) as i32;
+        (f(p.x - self.vx, self.vw), f(p.y - self.vy, self.vh))
     }
     fn move_to(&self, p: POINT) -> INPUT {
         let (x, y) = self.abs(p);
@@ -319,4 +322,19 @@ pub fn input_act(p: &Value, id: u64) -> CallResult {
         r["failed"] = json!(failed);
     }
     Ok((r, None))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn absolute_coordinates_land_on_the_same_pixel() {
+        // Windows maps an absolute coordinate back to a pixel as abs * size / 65536 (floor)
+        for size in [600, 768, 800, 1080, 1366, 1920, 3840] {
+            let m = super::Mapper { ox: 0, oy: 0, w: size, h: size, vx: 0, vy: 0, vw: size, vh: size };
+            for p in 0..size {
+                let (a, _) = m.abs(windows::Win32::Foundation::POINT { x: p, y: 0 });
+                assert_eq!((a as i64 * size as i64 / 65536) as i32, p, "size {size} pixel {p}");
+            }
+        }
+    }
 }

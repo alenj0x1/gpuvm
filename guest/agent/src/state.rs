@@ -186,5 +186,6 @@ pub fn screen_state() -> Value {
     let desk = desktop_state();
     let f = foreground(Duration::from_millis(0));
     let boxes: Vec<String> = error_boxes().into_iter().map(|(_, t)| t).collect();
-    json!({"desktop": desk, "foreground": fg_json(&f), "errorBoxes": boxes})
+    let screen = crate::capture::output_rect().map(|r| json!({"w": r.right - r.left, "h": r.bottom - r.top}));
+    json!({"desktop": desk, "foreground": fg_json(&f), "errorBoxes": boxes, "screen": screen})
 }
