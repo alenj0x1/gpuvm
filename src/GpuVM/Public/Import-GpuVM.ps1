@@ -15,7 +15,10 @@ function Import-GpuVM {
         [string]$Profile = 'balanced',
         [hashtable]$Override,
         [Parameter(Mandatory)][pscredential]$Credential,
-        [switch]$Start
+        [switch]$Start,
+        # For GpuVM's agent: installs it once Windows is up (Set-GpuVMUse), signing in as `agent` or the person's user.
+        [ValidateSet('agent')][string]$Use,
+        [ValidateSet('agent', 'own')][string]$AgentUser = 'agent'
     )
     Assert-Admin
     $archive = Open-TransferArchive -Path $Path
@@ -111,5 +114,7 @@ function Import-GpuVM {
         try { Assert-VMCanStart -Name $vmName; Start-VM -Name $vmName -ErrorAction Stop }
         catch { Write-Warning "The machine was imported but couldn't turn on: $($_.Exception.Message)" }
     }
+    # An imported machine never keeps an agent registration from where it came from: a new secret if it is one.
+    if ($Use) { Initialize-GpuVMAgentUse -Name $vmName -User $AgentUser }
     Get-GpuVM -Name $vmName
 }

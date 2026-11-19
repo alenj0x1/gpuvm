@@ -29,6 +29,9 @@ function Rename-GpuVM {
     # The ISO list only remembers which VMs used each ISO: a failure there never undoes the rename.
     try { Rename-GpuVMIsoUse -Name $Name -NewName $NewName }
     catch { Write-Warning "Couldn't update the ISO list: $($_.Exception.Message)" }
+    # The GpuVM service finds agents by this registration (name and folder).
+    try { Update-GpuVMAgentRegistration -Name $NewName }
+    catch { Write-Warning "Couldn't update the agent's registration: $($_.Exception.Message)" }
     Write-Step "The VM is now called '$NewName'."
     Get-GpuVM -Name $NewName
 }

@@ -21,7 +21,10 @@ function New-GpuVM {
         [switch]$Start,
         # A throwaway copy of -Template: it starts now and is deleted with its disk once it is turned off.
         # Without -Name it is called "<template>-desechable" (or -2, -3...).
-        [switch]$Disposable
+        [switch]$Disposable,
+        # For GpuVM's agent: installs it once Windows is up (Set-GpuVMUse), signing in as `agent` or the person's user.
+        [ValidateSet('agent')][string]$Use,
+        [ValidateSet('agent', 'own')][string]$AgentUser = 'agent'
     )
     Assert-Admin
     if ($Disposable) {
@@ -34,7 +37,10 @@ function New-GpuVM {
     if ($Template) {
         if ($IsoPath -or $Edition -or $Credential) { throw 'With -Template, Windows, its edition and its password come from the template; remove -IsoPath, -Edition and -Credential.' }
         if (-not $PSCmdlet.ShouldProcess($Name, "Create VM from the template $Template")) { return }
-        return New-GpuVMFromTemplate -Name $Name -Template $Template -Profile $Profile -Override $Override -Start:$Start -Disposable:$Disposable
+        $made = New-GpuVMFromTemplate -Name $Name -Template $Template -Profile $Profile -Override $Override -Start:$Start -Disposable:$Disposable
+        if (-not $Use) { return $made }
+        Initialize-GpuVMAgentUse -Name $Name -User $AgentUser
+        return Get-GpuVM -Name $Name
     }
 
     $failed = @(Test-GpuVMHost -Profile $Profile -Override $Override | Where-Object Status -eq 'Fail')
@@ -97,6 +103,7 @@ function New-GpuVM {
         try { Assert-VMCanStart -Name $Name; Start-VM -Name $Name -ErrorAction Stop }
         catch { Write-Warning "The VM was created but couldn't turn on: $($_.Exception.Message)" }
     }
+    if ($Use) { Initialize-GpuVMAgentUse -Name $Name -User $AgentUser }
     Get-GpuVM -Name $Name
 }
 

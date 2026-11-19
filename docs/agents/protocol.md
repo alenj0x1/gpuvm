@@ -77,8 +77,63 @@ Frame `length` counts the payload only. Guest events: `secure_desktop{on}`, `sig
 session helper goes away), `foreground{…}` (rate-limited to 4/s), `error_box{title}`
 (a system error dialog blocks input, lab 049).
 
-## Host side (broker → MCP)
+## Host side (broker → app and MCP)
 
-The broker exposes the connected agents to the app and to `gpuvm.exe --mcp` over the existing service pipe as new
-module/service commands (named `Get-GpuVMAgent`, `Invoke-GpuVMAgent -Name -Method -Params`), with every request
-logged (method, params minus blobs, result code, time) in the VM's folder.
+The broker lives in GpuVM's elevated service (`app/host/src/agent.rs`). The app and `gpuvm.exe --mcp` send these
+commands on the service pipe like any module command (`{"id","cmd","args"}`, exact-case names and arguments); the
+service answers them itself, without PowerShell (~1 ms). The module exports the same names for PowerShell and tests,
+over an administrators-only pipe (`\\.\pipe\gpuvm-agent`). Results: `{"type":"result","ok":true,"data":[…]}` (a list;
+one object = a one-item list), or `{"ok":false,"error":"<English message>","code":"<code>"}`. Every request to a
+guest is logged in the VM's folder (`agent.log`: method, params without blobs, code, ms, the step's note).
+
+**Agent sessions.** The MCP server registers one session per client with `Connect-GpuVMAgentClient`; the session is
+bound to that process and ends when its pipe connection closes. A process with a session acts for a model: the
+service never lets it resume, approve, stop or change settings, limits the module commands it may run (below) and
+counts its budget. Requests without `Connection` are the person's (the app) or the module's.
+
+| Command | Args | `data` |
+| --- | --- | --- |
+| `Get-GpuVMAgent` | `Name?` | machines: `{name, vmId, state: ready\|starting\|off\|no-agent, version, agent: <agent.info>, desktop: default\|secure\|null, events: {<name>: {data, at}}, connectedSince, paused: {by: person\|agent, reason: person\|control\|human, message, since, requestId?}\|null, takenBy: {connection, client: {name, version}, steps, startedAt}\|null, lastError, disposable, template}` |
+| `Get-GpuVMAgentBroker` | – | `{listening, since?, error?, code?, connected, serviceId}`; the app shows `error` when not listening |
+| `Invoke-GpuVMAgent` | `Name, Method, Params?, TimeoutSec? (30, ≤600), Connection?, Blob? (base64, files.write), Note? (what the step does, for the app)` | `{ok, result?, error?: {code, message}, ms, blob? (base64; the module gives blobPath), blobFormat?, blobBytes?}` — a guest's failure is `ok:true` outside, `ok:false` inside |
+| `Connect-GpuVMAgentClient` | `Client: {name, version, protocol?, pid?}` | `{connection, settings: {elicitation, maxSteps, maxMinutes, approvalTimeoutSec}}` |
+| `Disconnect-GpuVMAgentClient` | `Connection` | `{}` |
+| `Get-GpuVMAgentClient` | `Connection?` | sessions: `{id, name, version, connectedAt, machine, task, state: working\|paused\|control\|human\|waiting\|idle\|stopped, reason, steps, maxSteps, minutes, maxMinutes, resumedAt, actions: [{id, at, method, text, ok, code, ms, capture}] newest first (30)}` |
+| `Get-GpuVMAgentCapture` | `Connection, Action` | `{action, format, data (base64)}` for a step with `capture:true` (last 10 kept) |
+| `Lock-GpuVMAgent` | `Name, Connection, Task?` | `{name, connection}`; one session per machine (`taken`) |
+| `Unlock-GpuVMAgent` | `Name, Connection` | `{}` |
+| `Request-GpuVMHuman` | `Name, Connection, Message` | `{requestId}`; pauses the machine (`paused.reason = human`) until the person resumes |
+| `Suspend-GpuVMAgent` | `Name` or `Connection` (`*` = all), `Reason? person\|control`, `Message?` | `[{name}]`; running requests of sessions end with `paused` |
+| `Resume-GpuVMAgent` | `Name` or `Connection` (`*`) | `[{name}]`; sets `resumedAt` (the agent looks at the screen again) |
+| `Stop-GpuVMAgentClient` | `Connection` (`*` = all) or `All` | `{stopped: [ids]}`: kill switch, frees its machines, later calls get `killed` |
+| `New-GpuVMAgentRequest` | `Name, Connection, Kind: admin\|network\|revert\|delete\|other, Title?, Reason, TimeoutSec?` | `{requestId, expiresAt}`; the session shows `waiting` |
+| `Get-GpuVMAgentRequest` | `Id?` | `{id, connection, clientName, machine, kind, title, reason, createdAt, expiresAt, state: pending\|allowed\|denied\|expired, forTask}` |
+| `Resolve-GpuVMAgentRequest` | `Id, Allow, ForTask?` | the request (person only) |
+| `New-GpuVMAgentOffer` | `Name, Path (directly in C:\Users\agent\Desktop\Outbox), Note?, Connection?` | `{offerId}` (`Invoke-GpuVMAgent -Method outbox.offer` does the same) |
+| `Get-GpuVMAgentOffer` | `Id?, Name?` | `{id, machine, connection, clientName, name, path, sizeBytes, note, createdAt, expiresAt, state: pending\|copying\|accepted\|refused\|expired\|failed, savedTo, error}` |
+| `Resolve-GpuVMAgentOffer` | `Id, Accept` | the offer (person only): copied as the person to `Downloads\GpuVM\<machine>\`, `Zone.Identifier` ZoneId=3, never overwriting (`name (2).ext`), 2 GB cap |
+| `Get-GpuVMAgentSettings` / `Set-GpuVMAgentSettings` | – / `MaxSteps?, MaxMinutes?, ApprovalTimeoutSec?` | `{maxSteps, maxMinutes, approvalTimeoutSec, clients: {<name>: {clientApprovals}}}` (set: person only) |
+| `Set-GpuVMAgentClient` | `Name (client name), ClientApprovals` | settings (person only); MCP elicitation stays off unless turned on here |
+| `Install-GpuVMAgent` | `Name, User? agent\|own` | `{name, vmId, version, fastPath, restarted, ms}` (bridge) |
+| `Uninstall-GpuVMAgent` | `Name` | `{name}` (bridge, UAC consent) |
+
+Error codes (`code`, or `error.code` of a guest request) on top of the guest's: `paused`, `killed`, `budget`,
+`not_taken`, `taken`, `off` (no agent connected), `busy` (32 requests in flight on a machine, or too many waiting),
+`needs_approval`, `denied`, `not_found`, `bad_request`, `too_large`, `timeout`, `cancelled`.
+
+**What a session may run through the service** (everything else is `denied` for it; the person's app is never limited
+here): `Get-GpuVM`, `Get-GpuVMOverview`, `Get-GpuVMTemplate`, `Get-GpuVMProfile`, `Get-GpuVMRestorePoint`,
+`New-GpuVMRestorePoint`, `New-GpuVM` (only `-Disposable` with `-Template`), `Install-GpuVMAgent`, `Invoke-GpuVMPower`,
+`Send-GpuVMFile`, `Remove-GpuVMDisposable`, `Connect-GpuVM`; with an allowed request passed as `Approval: <requestId>`
+(same machine, same kind, used once unless allowed `ForTask`, 10 minutes): `Restore-GpuVMRestorePoint` (`revert`),
+`Remove-GpuVM` (`delete`). Commands naming a machine need it held by the session. `New-GpuVM -Disposable -Template
+-Name X` (with `Connection`, removed before PowerShell sees it; optional when the process has one session) makes X
+that session's the moment it succeeds: only it may `Install-GpuVMAgent` there and `Lock-GpuVMAgent` it, and the claim
+becomes the lock once the agent is registered. Destructive ones still need the person's UAC consent as before.
+
+**Installing the agent** (`Install-GpuVMAgent`): new 32-byte K kept host-side with DPAPI (machine scope, GpuVM entropy)
+in `ProgramData\GpuVM\agents\<vmid>\secret`, SYSTEM-only; over PowerShell Direct, `gpuvm-agent.exe` goes with
+`Copy-Item -ToSession` into an Administrators/SYSTEM-only temp folder (skipped when the same build is installed: a
+copy of a template), `guest\agent\install.ps1` runs as a script block with `-Source <folder> -Secret <K> -SignInAs
+agent|previous`, the returned `agent` password (new every install) is kept with DPAPI in gpuvm.json, and Windows
+restarts from inside the guest when the installer asks. Templates and their copies never carry an agent secret.

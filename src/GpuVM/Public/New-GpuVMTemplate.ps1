@@ -50,6 +50,9 @@ function New-GpuVMTemplate {
         Write-Step "Copying the disk of $VMName (it may take a few minutes)"
         # Convert-VHD copies into a new dynamic disk; a disk that is itself a copy of a template is merged into one.
         Convert-VHD -Path $source -DestinationPath $target -VHDType Dynamic -ErrorAction Stop
+        # A template never carries the VM's agent secret (every copy would share it): removed from the copy, before
+        # its unused space is given back.
+        Invoke-WithMountedWindows -Path $target -ScriptBlock { param($root) Remove-GuestAgentSecret -WindowsRoot $root }
         # Only what Windows uses now: the space of deleted files is given back (lab 045).
         Compress-GpuVMDiskCopy -Path $target | Out-Null
         (Get-Item -LiteralPath $target).IsReadOnly = $true
