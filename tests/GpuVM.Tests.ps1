@@ -1432,6 +1432,7 @@ InModuleScope GpuVM {
             }
             Mock New-PSSession { [pscustomobject]@{ Name = 'fake' } }
             Mock Close-AgentSession { }
+            Mock Wait-GuestReady { }
             Mock Copy-ToAgentSession { $script:calls.Add("copy-to-session $Destination") }
             # Which guest call it is, by its arguments: setup (hash), fast-path copy (2 paths), installer (text, dir,
             # secret), cleanup (dir), restart (none).

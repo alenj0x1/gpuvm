@@ -512,6 +512,10 @@ function Wait-GuestReady {
         $answer = @(try {
             Invoke-Command -VMName $Name -Credential $Credential -ErrorAction Stop -ScriptBlock {
                 $path = 'C:\GpuVM\setup.done.json'
+                # The first-time setup runs at the first sign-in of the machine's own account (unattend.xml). With
+                # GpuVM's agent signing in instead (`agent`), it can't run any more: waiting for it would never end.
+                $console = [string](Get-CimInstance Win32_ComputerSystem).UserName
+                if (-not (Test-Path $path) -and $console -like '*\agent') { return 'agent' }
                 if (-not (Test-Path $path)) { return $false }
                 $done = Get-Content -Raw $path | ConvertFrom-Json
                 if ($done.PSObject.Properties['rebootPending'] -and -not $done.rebootPending) { return $true }
@@ -521,6 +525,10 @@ function Wait-GuestReady {
         catch { })
         $ready = $answer.Count -eq 1 -and $answer[0] -is [bool] -and $answer[0]
         if ($ready) { return }
+        if ($answer.Count -eq 1 -and $answer[0] -eq 'agent') {
+            Write-Warning 'GpuVM''s agent signs in to this machine, but its first-time setup never ran (it was taken over by the agent before the first sign-in); carrying on without it.'
+            return
+        }
         # No answer is Windows still booting; an answer of "not done" is the first-time setup.
         $message = if ($answer.Count) { 'Windows is finishing its setup (first time only)' } else { $BootMessage }
         if ($announced -ne $message) { Write-Step $message; $announced = $message }
