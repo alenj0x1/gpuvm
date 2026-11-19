@@ -1687,3 +1687,43 @@ InModuleScope GpuVM {
         }
     }
 }
+
+InModuleScope GpuVM {
+    Describe 'Memory of template copies and agent machines' {
+        It 'a copy keeps the template''s memory and processors; the override wins' {
+            $tpl = @{ config = @{ vm = @{ memoryGB = 4; cpu = @{ count = 4; reservePercent = 0 } } } }
+            $o = Get-TemplateMachineOverride -Template $tpl -Override $null
+            "$($o.vm.memoryGB) $($o.vm.cpu.count)" | Should Be '4 4'
+            $o = Get-TemplateMachineOverride -Template $tpl -Override @{ vm = @{ memoryGB = 6 } }
+            "$($o.vm.memoryGB) $($o.vm.cpu.count)" | Should Be '6 4'
+            $o = Get-TemplateMachineOverride -Template $tpl -Override @{ vm = @{ cpu = @{ count = 2 } }; guest = @{ x = 1 } }
+            "$($o.vm.memoryGB) $($o.vm.cpu.count) $($o.guest.x)" | Should Be '4 2 1'
+            # A template without the figures changes nothing.
+            (Get-TemplateMachineOverride -Template @{ config = @{ vm = @{} } } -Override $null).vm.Count | Should Be 0
+        }
+        It 'an agent machine gets 4 GB unless memory is chosen' {
+            (Add-DefaultMemory -Override $null -MemoryGB 4).vm.memoryGB | Should Be 4
+            (Add-DefaultMemory -Override @{ vm = @{ memoryGB = 8 } } -MemoryGB 4).vm.memoryGB | Should Be 8
+            $o = Add-DefaultMemory -Override @{ vm = @{ cpu = @{ count = 2 } } } -MemoryGB 4
+            "$($o.vm.memoryGB) $($o.vm.cpu.count)" | Should Be '4 2'
+        }
+        It 'New-GpuVM -Template asks the profile for the template''s memory unless a profile is named' {
+            Mock Assert-Admin { }
+            Mock Assert-GpuVMNameFree { }
+            Mock Read-GpuVMTemplate { @{ name = 't'; sizeGB = 64; edition = 'Pro'; streaming = @{}; guest = @{}; vhdPath = 'x'; config = @{ vm = @{ memoryGB = 4; cpu = @{ count = 4 } } } } }
+            Mock Test-GpuVMHost { @() }
+            Mock Resolve-GpuVMProfile { $script:asked = $Override; @{ backend = 'hyperv-gpup' } }
+            Mock New-TemplateCloneConfig { @{ backend = 'hyperv-gpup' } }
+            Mock Invoke-GpuVMBackend { [ordered]@{ name = 'copy1' } }
+            Mock Save-GpuVMState { }
+            Mock Write-Step { }
+            Mock Get-GpuVM { [pscustomobject]@{ Name = 'copy1' } }
+            New-GpuVM -Name copy1 -Template t -Confirm:$false | Out-Null
+            $script:asked.vm.memoryGB | Should Be 4
+            New-GpuVM -Name copy1 -Template t -Profile max-performance -Confirm:$false | Out-Null
+            ($script:asked -and $script:asked['vm'] -and $script:asked['vm'].Contains('memoryGB')) | Should Be $false
+            New-GpuVM -Name copy1 -Template t -Override @{ vm = @{ memoryGB = 6 } } -Confirm:$false | Out-Null
+            $script:asked.vm.memoryGB | Should Be 6
+        }
+    }
+}

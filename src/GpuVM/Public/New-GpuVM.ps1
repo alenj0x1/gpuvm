@@ -27,6 +27,8 @@ function New-GpuVM {
         [ValidateSet('agent', 'own')][string]$AgentUser = 'agent'
     )
     Assert-Admin
+    # An agent machine gets 4 GB unless its memory is chosen (the person, 2026-11-19).
+    if ($Use -eq 'agent') { $Override = Add-DefaultMemory -Override $Override -MemoryGB $script:AgentMemoryGB }
     if ($Disposable) {
         if (-not $Template) { throw 'A disposable machine is made from a template (-Template).' }
         if (-not $Name) { $Name = Get-FreeGpuVMName -Base ($Template.Substring(0, [math]::Min($Template.Length, 29)) + '-desechable') }
@@ -37,7 +39,8 @@ function New-GpuVM {
     if ($Template) {
         if ($IsoPath -or $Edition -or $Credential) { throw 'With -Template, Windows, its edition and its password come from the template; remove -IsoPath, -Edition and -Credential.' }
         if (-not $PSCmdlet.ShouldProcess($Name, "Create VM from the template $Template")) { return }
-        $made = New-GpuVMFromTemplate -Name $Name -Template $Template -Profile $Profile -Override $Override -Start:$Start -Disposable:$Disposable
+        $made = New-GpuVMFromTemplate -Name $Name -Template $Template -Profile $Profile -Override $Override -Start:$Start -Disposable:$Disposable `
+            -ProfileGiven:$PSBoundParameters.ContainsKey('Profile')
         if (-not $Use) { return $made }
         Initialize-GpuVMAgentUse -Name $Name -User $AgentUser
         $startResult = if ($made -and $made.PSObject.Properties['Started']) { @{ started = $made.Started; startError = $made.StartError; neededGB = $made.NeededGB; freeGB = $made.FreeGB } }
@@ -112,10 +115,14 @@ function New-GpuVMFromTemplate {
         [string]$Profile = 'balanced',
         [hashtable]$Override,
         [switch]$Start,
-        [switch]$Disposable
+        [switch]$Disposable,
+        # A profile chosen by name: its memory and processors count; otherwise the template's own.
+        [switch]$ProfileGiven
     )
     # Not $template: PowerShell names are case-insensitive, and that would overwrite the -Template string.
     $base = Read-GpuVMTemplate -Name $Template
+    # A copy keeps its template's memory and processors (agent-tpl: 4 GB) unless a profile or the override says otherwise.
+    if (-not $ProfileGiven) { $Override = Get-TemplateMachineOverride -Template $base -Override $Override }
     # The copy's disk only grows with what it writes: the host check must not ask for a profile's fixed disk.
     $diskOverride = @{ vm = @{ disk = @{ type = 'Dynamic'; sizeGB = [int]$base['sizeGB'] } } }
     $checkOverride = if ($Override) { Merge-Hashtable -Base $Override -Override $diskOverride } else { $diskOverride }
@@ -187,4 +194,40 @@ function Add-StartResult {
         }
     }
     $Info
+}
+
+$script:AgentMemoryGB = 4
+
+# The override with vm.memoryGB set when it doesn't say one (a person's choice always wins).
+function Add-DefaultMemory {
+    param([hashtable]$Override, [Parameter(Mandatory)][int]$MemoryGB)
+    $copy = @{}
+    if ($Override) { foreach ($k in $Override.Keys) { $copy[$k] = $Override[$k] } }
+    $vm = @{}
+    if ($copy['vm'] -is [System.Collections.IDictionary]) { foreach ($k in $copy['vm'].Keys) { $vm[$k] = $copy['vm'][$k] } }
+    if (-not $vm.Contains('memoryGB')) { $vm['memoryGB'] = $MemoryGB }
+    $copy['vm'] = $vm
+    $copy
+}
+
+# The template's memory and processor count as the base of a copy's override; what the override says wins.
+function Get-TemplateMachineOverride {
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Template, [hashtable]$Override)
+    $source = if ($Template['config'] -is [System.Collections.IDictionary]) { $Template['config']['vm'] }
+    $copy = @{}
+    if ($Override) { foreach ($k in $Override.Keys) { $copy[$k] = $Override[$k] } }
+    $vm = @{}
+    if ($copy['vm'] -is [System.Collections.IDictionary]) { foreach ($k in $copy['vm'].Keys) { $vm[$k] = $copy['vm'][$k] } }
+    if ($source) {
+        if (-not $vm.Contains('memoryGB') -and $source['memoryGB']) { $vm['memoryGB'] = [int]$source['memoryGB'] }
+        $count = if ($source['cpu'] -is [System.Collections.IDictionary]) { $source['cpu']['count'] }
+        if ($count) {
+            $cpu = @{}
+            if ($vm['cpu'] -is [System.Collections.IDictionary]) { foreach ($k in $vm['cpu'].Keys) { $cpu[$k] = $vm['cpu'][$k] } }
+            if (-not $cpu.Contains('count')) { $cpu['count'] = [int]$count }
+            $vm['cpu'] = $cpu
+        }
+    }
+    $copy['vm'] = $vm
+    $copy
 }
