@@ -112,11 +112,12 @@ pub fn cmd_launch_as(args: &[String]) -> String {
     let u: Vec<u16> = user.encode_utf16().chain([0]).collect();
     let d: Vec<u16> = ".".encode_utf16().chain([0]).collect();
     let p: Vec<u16> = pw.encode_utf16().chain([0]).collect();
-    let mut desktop: Vec<u16> = "winsta0\\default".encode_utf16().chain([0]).collect();
     let cwd: Vec<u16> = "C:\\GpuVMLab048".encode_utf16().chain([0]).collect();
     let t0 = Instant::now();
     unsafe {
-        let si = STARTUPINFOW { cb: std::mem::size_of::<STARTUPINFOW>() as u32, lpDesktop: PWSTR(desktop.as_mut_ptr()), ..Default::default() };
+        // lpDesktop NULL: only then does Secondary Logon grant the new logon access to the caller's window station
+        // and desktop (an explicit "winsta0\default" left the child hanging in user32 start-up, lab 049).
+        let si = STARTUPINFOW { cb: std::mem::size_of::<STARTUPINFOW>() as u32, ..Default::default() };
         let mut pi = PROCESS_INFORMATION::default();
         let r = CreateProcessWithLogonW(
             PCWSTR(u.as_ptr()),
@@ -167,6 +168,9 @@ pub fn cmd_launch(args: &[String]) -> String {
         }
         let si = STARTUPINFOW { cb: std::mem::size_of::<STARTUPINFOW>() as u32, lpDesktop: PWSTR(desktop.as_mut_ptr()), ..Default::default() };
         let mut pi = PROCESS_INFORMATION::default();
+        // The user's own environment (profile, TEMP...): inheriting SYSTEM's broke Edge (lab 049).
+        let mut env: *mut core::ffi::c_void = std::ptr::null_mut();
+        let have_env = windows::Win32::System::Environment::CreateEnvironmentBlock(&mut env, Some(tok), false).is_ok();
         let r = CreateProcessAsUserW(
             Some(tok),
             PCWSTR::null(),
@@ -174,13 +178,16 @@ pub fn cmd_launch(args: &[String]) -> String {
             None,
             None,
             false,
-            CREATE_NO_WINDOW,
-            None,
+            CREATE_NO_WINDOW | if have_env { CREATE_UNICODE_ENVIRONMENT } else { PROCESS_CREATION_FLAGS(0) },
+            if have_env { Some(env as *const _) } else { None },
             PCWSTR::null(),
             &si,
             &mut pi,
         );
         let spawn_ms = t0.elapsed().as_secs_f64() * 1e3;
+        if have_env {
+            let _ = windows::Win32::System::Environment::DestroyEnvironmentBlock(env);
+        }
         let il = token_integrity(tok).unwrap_or(0);
         let user = token_user(tok);
         let _ = CloseHandle(tok);

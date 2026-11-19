@@ -18,7 +18,7 @@ New-Item -ItemType Directory -Force $out | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'no lock' }
 try {
     if ($Remove) {
-        Remove-GpuVM -Name $Name -Confirm:$false
+        Remove-GpuVM -Name $Name -DeleteDisk -Confirm:$false
         Remove-Item (Join-Path $out 'guest.xml') -ErrorAction SilentlyContinue
         return
     }

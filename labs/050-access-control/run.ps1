@@ -46,7 +46,7 @@ function As([string]$who, [string[]]$probeArgs) {
             Invoke-Command -Session $sess -ArgumentList $pwFile, $agentPw {
                 param($f, $p)
                 Set-Content $f $p -NoNewline
-                icacls $f /inheritance:r /grant:r 'SYSTEM:R' 'Administrators:F' "$env:COMPUTERNAME\gpuvm:R" | Out-Null
+                icacls $f /inheritance:r /grant:r '*S-1-5-18:R' '*S-1-5-32-544:F' "$env:COMPUTERNAME\gpuvm:R" | Out-Null
             }
             try { $r = Invoke-GuestProbe -Session $sess -ProbeArgs (@('launch-as', '--user', 'agent', '--password-file', $pwFile, '--wait', '--') + $probeArgs) }
             finally { Invoke-Command -Session $sess -ArgumentList $pwFile { param($f) Remove-Item $f -Force -ErrorAction SilentlyContinue } }
@@ -132,7 +132,7 @@ try {
     Invoke-Command -Session $sess { Get-Process hvlab -ErrorAction SilentlyContinue | Stop-Process -Force; Unregister-ScheduledTask GpuVMLab048-syslisten -Confirm:$false }
     "squat after SYSTEM: $($results.squatAfterSystem | ConvertTo-Json -Compress); host dial: $($results.hostDialWhileSystemListens | ConvertTo-Json -Compress)"
     #  b) nobody holds it: agent binds and waits; the host dials the VM on that name
-    Invoke-Command -Session $sess -ArgumentList $pwFile, $agentPw { param($f, $p) Set-Content $f $p -NoNewline; icacls $f /inheritance:r /grant:r 'SYSTEM:R' 'Administrators:F' "$env:COMPUTERNAME\gpuvm:R" | Out-Null }
+    Invoke-Command -Session $sess -ArgumentList $pwFile, $agentPw { param($f, $p) Set-Content $f $p -NoNewline; icacls $f /inheritance:r /grant:r '*S-1-5-18:R' '*S-1-5-32-544:F' "$env:COMPUTERNAME\gpuvm:R" | Out-Null }
     $id = Start-GuestProbe -Session $sess -ProbeArgs @('launch-as', '--user', 'agent', '--password-file', $pwFile, '--wait', '--', 'hv', '--service', $svcReg, '--bind-service', $svcGuest, '--hold-ms', '10000') -TimeoutSec 60
     Start-Sleep -Seconds 5
     Invoke-Command -Session $sess -ArgumentList $pwFile { param($f) Remove-Item $f -Force -ErrorAction SilentlyContinue }
@@ -155,7 +155,7 @@ try {
     Invoke-Command -Session $sess {
         $d = 'C:\ProgramData\GpuVMLab050'
         New-Item -ItemType Directory -Force $d | Out-Null
-        icacls $d /inheritance:r /grant:r 'SYSTEM:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
+        icacls $d /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
     }
     $tmp = Join-Path $OutDir 'secret.bin'
     [IO.File]::WriteAllBytes($tmp, [Security.Cryptography.RandomNumberGenerator]::GetBytes(32))

@@ -24,7 +24,14 @@ pub fn foreground() -> Fg {
     unsafe {
         let own_il = token_integrity(self_token()).unwrap_or(0x2000);
         let desk = capture::input_desktop();
-        let hwnd = GetForegroundWindow();
+        // Right after a window closes or another takes over, there is briefly no foreground window: wait up to
+        // 500 ms for one before calling it "no_foreground".
+        let mut hwnd = GetForegroundWindow();
+        let t = std::time::Instant::now();
+        while hwnd.0.is_null() && t.elapsed() < Duration::from_millis(500) {
+            std::thread::sleep(Duration::from_millis(20));
+            hwnd = GetForegroundWindow();
+        }
         let mut title = [0u16; 256];
         let n = GetWindowTextW(hwnd, &mut title);
         let mut class = [0u16; 256];
@@ -60,8 +67,20 @@ pub fn foreground() -> Fg {
 }
 
 pub fn fg_json(f: &Fg) -> String {
+    // what is under the cursor, to explain a foreground that vanished after a click
+    let under = unsafe {
+        let mut p = windows::Win32::Foundation::POINT::default();
+        let _ = GetCursorPos(&mut p);
+        let h = WindowFromPoint(p);
+        let root = GetAncestor(h, GA_ROOT);
+        let mut t = [0u16; 128];
+        let n = GetWindowTextW(root, &mut t);
+        let mut c = [0u16; 128];
+        let m = GetClassNameW(root, &mut c);
+        format!("{{\"x\":{},\"y\":{},\"title\":{},\"class\":{}}}", p.x, p.y, jstr(&String::from_utf16_lossy(&t[..n.max(0) as usize])), jstr(&String::from_utf16_lossy(&c[..m.max(0) as usize])))
+    };
     format!(
-        "{{\"hwnd\":{},\"title\":{},\"class\":{},\"pid\":{},\"targetIntegrity\":{},\"targetUser\":{},\"openErr\":{},\"ownIntegrity\":\"{:#x}\",\"verdict\":\"{}\"}}",
+        "{{\"underCursor\":{under},\"hwnd\":{},\"title\":{},\"class\":{},\"pid\":{},\"targetIntegrity\":{},\"targetUser\":{},\"openErr\":{},\"ownIntegrity\":\"{:#x}\",\"verdict\":\"{}\"}}",
         f.hwnd.0 as isize,
         jstr(&f.title),
         jstr(&f.class),
@@ -187,7 +206,8 @@ pub fn cmd_act(args: &[String]) -> String {
     let ny: f64 = arg_or(args, "--y", "0.5").parse().unwrap();
     let inputs = match what.as_str() {
         "click" => click_inputs(nx, ny, &arg_or(args, "--button", "left"), has(args, "--double")),
-        "type" => text_inputs(&arg_or(args, "--text", "")),
+        // "\n" in the text (two characters) means Enter: real line breaks can't cross a command line
+        "type" => text_inputs(&arg_or(args, "--text", "").replace("\\n", "\n")),
         "key" => combo_inputs(&arg_or(args, "--combo", "enter")),
         "scroll" => scroll_inputs(nx, ny, arg_or(args, "--delta", "-120").parse().unwrap()),
         "move" => { let (x, y) = abs_xy(nx, ny); vec![mouse(MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_MOVE, x, y, 0)] }
@@ -260,9 +280,10 @@ pub fn cmd_latency(args: &[String]) -> String {
         Some(o) => o,
         None => return "{\"ok\":false,\"error\":\"no output\"}".into(),
     };
-    let mut d = match capture::dup_open(&o) {
+    // WGC: DXGI duplication loses access on GpuVM's virtual display (lab 048)
+    let mut d = match capture::wgc_open(&o, false) {
         Ok(d) => d,
-        Err(e) => return format!("{{\"ok\":false,\"error\":\"dup {:#x}\"}}", e.code().0),
+        Err(e) => return format!("{{\"ok\":false,\"error\":\"wgc {:#x}\"}}", e.code().0),
     };
     let fg0 = foreground();
     let mut ms = Vec::new();
@@ -272,10 +293,13 @@ pub fn cmd_latency(args: &[String]) -> String {
         // settle: drain frames for 150-400 ms
         let settle = Instant::now() + Duration::from_millis(150 + (i as u64 * 53) % 250);
         while Instant::now() < settle {
-            let _ = capture::dup_acquire(&mut d, 10);
+            let _ = capture::wgc_poll(&mut d);
+            std::thread::sleep(Duration::from_millis(2));
         }
-        if d.latest.is_none() {
-            let _ = capture::dup_acquire(&mut d, 500);
+        let wait = Instant::now();
+        while d.latest.is_none() && wait.elapsed() < Duration::from_millis(1000) {
+            let _ = capture::wgc_poll(&mut d);
+            std::thread::sleep(Duration::from_millis(2));
         }
         let fg = foreground();
         if fg.hwnd != fg0.hwnd || fg.verdict != "ok" {
@@ -288,7 +312,8 @@ pub fn cmd_latency(args: &[String]) -> String {
         send(&inputs);
         let mut got = None;
         while t.elapsed() < Duration::from_millis(1000) {
-            match capture::dup_acquire(&mut d, 5) {
+            match capture::wgc_poll(&mut d) {
+                Ok(false) => std::thread::sleep(Duration::from_millis(1)),
                 Ok(true) => {
                     let (_, _, now) = capture::read_texture(&d.dev, &d.ctx, d.latest.as_ref().unwrap()).unwrap();
                     if diff_count(&before, &now) > threshold {
@@ -296,7 +321,6 @@ pub fn cmd_latency(args: &[String]) -> String {
                         break;
                     }
                 }
-                Ok(false) => {}
                 Err(_) => break,
             }
         }

@@ -35,7 +35,7 @@ function Probe([string]$who, [string[]]$probeArgs, [int]$timeout = 120) {
         Invoke-Command -Session $sess -ArgumentList $pwFile, $agentPw {
             param($f, $p)
             Set-Content $f $p -NoNewline
-            icacls $f /inheritance:r /grant:r 'SYSTEM:R' 'Administrators:F' "$env:COMPUTERNAME\gpuvm:R" | Out-Null
+            icacls $f /inheritance:r /grant:r '*S-1-5-18:R' '*S-1-5-32-544:F' "$env:COMPUTERNAME\gpuvm:R" | Out-Null
         }
         @('launch-as', '--user', 'agent', '--password-file', $pwFile, '--wait', '--') + $probeArgs
     } else { $probeArgs }
@@ -99,12 +99,14 @@ try {
             Start-Sleep -Milliseconds 300
             $fo = Probe $who @('focused'); Step $who 'focused-after-type' $fo
             $row.textLanded = ($fo.value -like "*$text*")
-            $a = Probe $who @('act', '--do', 'key', '--combo', 'ctrl+a'); Step $who 'ctrl+a' $a
+            # Spanish Notepad: Ctrl+A is Open (select all is Ctrl+E), so select with keys that mean the same everywhere
+            $null = Probe $who @('act', '--do', 'key', '--combo', 'ctrl+home')
+            $a = Probe $who @('act', '--do', 'key', '--combo', 'ctrl+shift+end'); Step $who 'select-all' $a
             $a = Probe $who @('act', '--do', 'key', '--combo', 'backspace'); Step $who 'backspace' $a
             $fo = Probe $who @('focused'); Step $who 'focused-after-clear' $fo
             $row.keysLanded = ([string]::IsNullOrWhiteSpace($fo.value))
-            # scroll: 120 lines, back to top, wheel down over the text
-            $lines = (1..120 | ForEach-Object { "linea $_" }) -join "`n"
+            # scroll: 60 lines (CreateProcessWithLogonW caps the command line at 1024 characters), back to top, wheel down over the text
+            $lines = (1..60 | ForEach-Object { "l$_" }) -join '\n'   # the probe turns \n into Enter
             $null = Probe $who @('act', '--do', 'type', '--text', $lines)
             $null = Probe $who @('act', '--do', 'key', '--combo', 'ctrl+home')
             $before = Probe $who @('focused')
@@ -113,8 +115,9 @@ try {
             $after = Probe $who @('focused'); Step $who 'focused-after-scroll' $after
             $row.scrollBefore = $before.verticalScrollPercent; $row.scrollAfter = $after.verticalScrollPercent
             $row.scrollLanded = ($after.verticalScrollPercent -gt $before.verticalScrollPercent)
-            # button: Find dialog, click its Cancel button by its UIA box
-            $null = Probe $who @('act', '--do', 'key', '--combo', 'ctrl+f')
+            # button: Alt+F4 on the modified text opens the save prompt; click its Cancel button by its UIA box (Ctrl+F is
+            # not Find in Spanish Notepad: Ctrl+B is)
+            $null = Probe $who @('act', '--do', 'key', '--combo', 'alt+f4')
             Start-Sleep -Milliseconds 600
             $dlg = Probe $who @('uia', '--max-lines', '100'); Step $who 'uia-find-dialog' $dlg
             $btn = $dlg.elements | Where-Object { $_.role -eq 'button' -and $_.name -match 'Cancelar|Cancel' } | Select-Object -First 1
@@ -128,7 +131,8 @@ try {
             } else { $row.buttonLanded = $false; $row.dialogWindow = $dlg.window }
             # action -> screen latency (typing in Notepad)
             $null = Probe $who @('act', '--do', 'key', '--combo', 'ctrl+end')
-            $lat = Probe $who @('latency', '--n', "$LatencyN") 300; Step $who 'latency' $lat
+            # The meter captures with WGC, which a process of another user can't open (lab 049): gpuvm only
+            $lat = if ($who -eq 'gpuvm') { Probe $who @('latency', '--n', "$LatencyN") 300 } else { Probe $who @('capture', '--method', 'wgc', '--n', '1') }; Step $who 'latency' $lat
             $row.latP50 = $lat.p50; $row.latP95 = $lat.p95; $row.latN = $lat.n; $row.latTimeouts = $lat.timeouts; $row.latSkipped = $lat.skipped
             $summary.Add([pscustomobject]$row)
             [pscustomobject]$row | Format-List | Out-String
@@ -202,8 +206,8 @@ try {
         }
     }
     # one screenshot of the Edge page as the model would get it
-    $shot = Invoke-GuestProbe -Session $sess -ProbeArgs 'capture', '--method', 'dxgi', '--n', '1', '--save', 'C:\GpuVMLab048\out'
-    Copy-Item -FromSession $sess 'C:\GpuVMLab048\out\dxgi-small.png' -Destination (Join-Path $OutDir 'edge-1280.png') -ErrorAction SilentlyContinue
+    $shot = Invoke-GuestProbe -Session $sess -ProbeArgs 'capture', '--method', 'wgc', '--n', '1', '--save', 'C:\GpuVMLab048\out'
+    Copy-Item -FromSession $sess 'C:\GpuVMLab048\out\wgc-small.png' -Destination (Join-Path $OutDir 'edge-1280.png') -ErrorAction SilentlyContinue
 }
 finally {
     $summary | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $OutDir 'summary.json')
