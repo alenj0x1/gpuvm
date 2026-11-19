@@ -199,3 +199,18 @@ nested in params, so a scan can't find it without parsing; moving it would chang
 connection: a late result could answer a new request with the same number), the old connection's work is cancelled
 in the helper on disconnect and on timeout, and input.act's deadline follows its own waits (or the host's timeoutMs,
 max 10 min; waits up to 5 min per request).
+
+### screen.refresh and ddx: not measurable from inside the guest (Nov 19)
+
+`dup-refresh-test.ps1` (`out/dup-refresh-20261119-085528`, agent 0.4.2 on copies of agent-tpl): DXGI Desktop
+Duplication opened as the agent user on the agent's display, 20 still rounds per variant: none 0/20, screen.refresh's
+RedrawWindow 0/20, and the positive control (a real, invisible 1x1 alpha-1 window shown for 50 ms) ALSO 0/20. The
+instrument sees no frames at all from that session (same family as lab 048: duplication on GpuVM's virtual display
+doesn't deliver frames), so it can't judge screen.refresh. The repaint's effect on Sunshine's ddx stays unproven; it
+needs the viewer path (agent-ui's luma method through an MCP session, 10+ connects per variant). Kept, since it costs
+nothing and can't hurt.
+
+0.4.2 readiness: on 3 of 5 copies agent.info at "ready" already reported only the virtual display at 1366x768 (the
+layout applied before hello). On 2 of 5 (both early, 08:45 and 08:50) the agent reported NO display for 60 s after
+the install's restart, while a diagnosis copy in between was fine; the failing runs had no dump (added afterwards):
+open, intermittent.
