@@ -23,6 +23,7 @@ tools/session/
 tools/latency/out/
 labs/*/out/
 labs/*/target/
+labs/*/*/target/
 
 # Website files built from the app and the changelogs (by .github/workflows/pages.yml)
 site/assets/embed.js
