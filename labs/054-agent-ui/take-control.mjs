@@ -38,7 +38,8 @@ mcp.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initiali
 // destroyed at the end. Otherwise an existing machine of ours, taken.
 const disposable = machine.startsWith("template:");
 if (disposable) {
-  const made = await tool("create_disposable", { template: machine.slice(9), name: "lab054-tc", task: "Lab 054: take-control latency" });
+  // Light (2 threads, LAB054_MEMORY_GB or 2 GB): the PC keeps its memory, and the measurement doesn't need more.
+  const made = await tool("create_disposable", { template: machine.slice(9), name: "lab054-tc", task: "Lab 054: take-control latency", cpu: 2, memoryGB: Number(process.env.LAB054_MEMORY_GB ?? 2) });
   console.log("create_disposable:", text(made).slice(0, 300));
   // Fail fast: without the machine there is nothing to measure (lab-craft).
   if (made?.isError) { clearTimeout(guard); mcp.kill(); process.exit(4); }
