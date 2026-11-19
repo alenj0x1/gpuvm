@@ -18,6 +18,7 @@ mod viewer;
 #[cfg(debug_assertions)]
 mod direct;
 mod dock;
+mod mcp;
 
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -393,6 +394,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// `gpuvm.exe --consent <code>` (elevated, after a UAC "Yes"): confirms a deletion to the service and exits.
 pub fn consent(code: &str) -> i32 {
     backend::consent(code)
+}
+
+/// `gpuvm.exe --mcp`: the MCP server for agent clients (mcp/), until stdin closes.
+pub fn mcp(fake: bool) -> i32 {
+    mcp::run(fake)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
