@@ -526,7 +526,7 @@ function Wait-GuestReady {
         $ready = $answer.Count -eq 1 -and $answer[0] -is [bool] -and $answer[0]
         if ($ready) { return }
         if ($answer.Count -eq 1 -and $answer[0] -eq 'agent') {
-            Write-Warning 'GpuVM''s agent signs in to this machine, but its first-time setup never ran (it was taken over by the agent before the first sign-in); carrying on without it.'
+            Write-Warning 'GpuVM''s agent signs in to this machine, but its first-time setup never finished (the agent took over the sign-in before it did); carrying on without it.'
             return
         }
         # No answer is Windows still booting; an answer of "not done" is the first-time setup.
