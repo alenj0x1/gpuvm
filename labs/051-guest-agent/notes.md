@@ -164,3 +164,12 @@ process snapshot without opening it. (2) The box wasn't in the screenshot becaus
 process that raised it: csrss withdraws the box when its raiser dies, leaving an invisible foreground window with the
 title (hence `blocked_elevated` and nothing on screen). measure-broker.ps1 now starts the raiser detached so the box
 persists, like lab 049's box from a process that failed to start. To verify in the next run.
+
+**Rerun with the installed build, agent 0.3.6** (`out/broker-20261119-040959`): clone + agent ready 29/30.5 s, and
+agent.info at ready already reports 1366x768 with only the virtual display (no transient 800x600). Capture host p50:
+WebP 1280 21.6 ms, PNG 19.7, native 14.5, region 6.9 ms. Action -> screen p50 23.5 / p95 34.2 ms (n=39, 1 timeout).
+Edge ui.tree warm 158 ms (was 300: double query only once). Edge input/ui.invoke 6/6. Secure desktop: all refused.
+Error box (raiser detached): now listed in `errorBoxes` and the click refused `blocked_elevated`, but still NOT in the
+screenshot although user32 calls it visible and foreground. Hypothesis: csrss placed it by the old layout (the
+basic display the helper turned off), i.e. off-screen; 0.3.7 adds `errorBoxRects` (bbox relative to the agent's
+screen) to screen.state to check.
