@@ -38,13 +38,56 @@ Driver: `drive.py` (a minimal MCP client over stdio, both eras; phases `latency`
 - **Protocol updates from main** (typed actions, exec output in the blob, timeouts as results, ranged reads) are
   followed since 3a8a950; tests cover the blob output and a timed-out command.
 
-## Part 2: real machines (pending integration)
+## Part 2: real machines, installed build main 758eb70 (agent 0.3.3), 2026-11-19 01:36-01:46
 
-Ready to run once the coordinator installs the integrated build: `pwsh -NoProfile -File labs/053-mcp/part2.ps1 -Template <t>`
-(lab lock as `agent-mcp`, preflight, both eras, coords against the real cursor, misuse, destroy-then-use, then a
-real-model Claude Code scenario; every disposable it creates is destroyed).
+`pwsh -NoProfile -File labs/053-mcp/part2.ps1 -Template agent-tpl` (lab lock as `agent-mcp`; three disposables from
+`agent-tpl`, 4 GB each, all deleted at the end). Raw data: `out/20261119-0137*-run.json`, `out/20261119-014011-run.json`,
+`out/part2-20261119-013655-*`.
 
-Needs the broker (claude/agent-broker-*), the guest agent and a template with it, in an installed build. Plan:
-`python drive.py --exe "C:\Program Files\GpuVM\gpuvm.exe" --template <t> --phases latency,coords,misuse`
-(coords: random screenshot pixels at five sizes → `act move` → the VM's real cursor position read with `run`),
-then Claude Code end to end: create a disposable, screenshot, Notepad click/type, run, write + offer a file.
+Earlier attempts and what they taught (each fixed in the MCP or reported): template deleted under the run; disk check
+(a disposable needs 20 GB besides the other machines' reserve; the lab reports it in 5 s); `Install-GpuVMAgent` from
+the bridge couldn't write the per-VM secret (broker fixed it; the MCP now deletes a half-created disposable and stops
+after the same error three times); a mixed install. Stopping another session's VM broke its first setup: never touch
+a VM another session made (lab-craft).
+
+**Create.** `create_disposable` (New-GpuVM + claim + Install-GpuVMAgent fast path + lock + ready): 31.0 s (modern),
+27.4 s (legacy), 3 of 3 succeeded. The first one reported "ready (screen 800x600)" and the desktop became 1366x768
+moments later (the guest's virtual display): the server followed it because every capture carries the screen size.
+
+**Latency through the whole chain** (MCP stdio → service pipe → broker → Hyper-V socket → guest), 40 interleaved
+rounds, modern era (legacy, 10 rounds: same within noise):
+
+| Tool | p50 | p95 | Notes |
+| --- | --- | --- | --- |
+| list_machines | 1.4 ms | 1.9 ms | in-process broker |
+| screenshot 1280 box, WebP | 105 ms | 116 ms | 139 KB; desktop 800x600 then 1366x768 |
+| screenshot 640 box | 46 ms | 62 ms | 61 KB |
+| screenshot PNG | 125 ms | 134 ms | 179 KB |
+| click | 10 ms | 20 ms | one 2.1 s outlier |
+| key | 2.4 ms | 4.6 ms | |
+| ui_tree | 13 ms | 174 ms | p50 12-116 ms depending on the window in front |
+| run (cmd echo) | 26 ms | 36 ms | process start in the guest |
+| write_file / read_file 1 KB | 3.1 / 2.7 ms | 3.5 / 3.0 ms | |
+
+**Coordinates against the real cursor** (`act move`, then `[Cursor]::Position` read in the VM with `run`), five boxes
+(1280x800, 1024x768, 640x400, 2576x2576, 333x222), 60 random points: 59 in the expected screenshot pixel, max error
+1 desktop px. The one miss (1366x768 sent as 1023x575, y=1) is the server's pixel 2 landing at 1: the guest's
+absolute-input rounding near the edge (reported to agent-guest).
+
+**Misuse** (real broker/guest): all 15 cases came back as one clear sentence in ≤ 2 ms, except the 1 MiB command
+output (1.6 s, cut to head + tail with the count); `destroy` 3.1 s, and the next call on it says
+"No agent on 'agent-tpl-c5bbf4'".
+
+**Real model: "test GpuVM's installer in a clean Windows"** (Claude Code, 17 turns, 349 s, USD 0.70). It created
+`lab053-demo` with a task, opened the viewer, sent `GpuVM_0.9.0_x64-setup.exe` (106 MB) — `send_file` said "Copied"
+— and `Start-Process` found no file. It checked `Desktop\Received` (only `desktop.ini`, created by the copy's receiver
+at 01:40:50), sent again ("Copied" again), searched all of C:, wrote a report to Outbox, offered it, waited 2 minutes,
+destroyed the machine and reported honestly that the installer never arrived and why. No UAC step was reached.
+Findings: (1) `Send-GpuVMFile` reports success for a file that never arrives (files/transfer owners);
+(2) the viewer opened by `open_viewer` stayed on "Waiting for Sunshine" for the whole 5 minutes
+(`out/demo-viewer-waiting.png`); (3) destroying a machine whose offer waits loses the file. MCP fixes: `send_file`
+now checks the file inside the machine by size and says "checked" or a plain error (dac7fc8); `destroy` refuses
+while an offer waits unless `force` (this commit).
+
+Screenshots: `out/demo-agent-view.webp` (what the agent saw, 1279x719), `out/demo-viewer-waiting.png` (the person's
+viewer), `out/20261119-013727-modern-first.webp` (800x600 right after ready).

@@ -266,6 +266,7 @@ impl Broker for PipeBroker {
                 Ok(Reply::of(json!({ "path": format!(r"C:\Users\agent\Desktop\Received\{file}") })))
             }
             "offer.create" => self.cmd("New-GpuVMAgentOffer", json!({ "Name": name, "Path": s(&args, "path"), "Note": s(&args, "note"), "Connection": connection })),
+            "offers.list" => self.cmd("Get-GpuVMAgentOffer", json!({ "Name": name })).map(|r| Reply::of(Value::Array(list(r.data)))),
             "offer.get" => {
                 let id = s(&args, "offerId");
                 let offers = list(self.cmd("Get-GpuVMAgentOffer", json!({ "Id": id }))?.data);

@@ -333,7 +333,7 @@ pub fn definitions() -> Vec<Value> {
             schema(json!({ "machine": m(), "point": { "type": "string" }, "reason": { "type": "string", "description": "Why, shown to the person." } }), &["machine", "point"]),
             ann("Revert to restore point", false, true, false, false)),
         tool("destroy", "Shut down and delete a disposable machine you created; everything in it is lost. Other machines can't be destroyed by an agent.",
-            schema(json!({ "machine": m() }), &["machine"]),
+            schema(json!({ "machine": m(), "force": { "type": "boolean", "description": "Destroy even if an offered file is still waiting for the person (it is lost)." } }), &["machine"]),
             ann("Destroy disposable machine", false, true, true, false)),
         // see / take control
         tool("open_viewer", "Open the machine in GpuVM's viewer on this PC so the person can watch and take over.",
@@ -1213,6 +1213,17 @@ impl Tool<'_> {
         let machine = self.machine()?;
         if self.mine(machine)?["disposable"] != true {
             return Err(format!("{machine} isn't disposable; only the person can delete it. Use release_machine when you're done."));
+        }
+        // A file offered to the person is still read from the machine when they accept it (lab 053: the report
+        // was lost because the machine was destroyed while its offer waited).
+        if opt_bool(self.args, "force")? != Some(true) {
+            let offers = self.broker("offers.list", machine, json!({}))?.data;
+            let waiting: Vec<String> = offers.as_array().into_iter().flatten()
+                .filter(|o| matches!(o["state"].as_str(), Some("pending" | "copying")))
+                .map(|o| o["id"].as_str().unwrap_or("?").to_string()).collect();
+            if !waiting.is_empty() {
+                return Err(format!("Offer {} is still waiting for the person; destroying {machine} would lose that file. Wait with offer_status (waitSeconds), or call destroy again with force: true.", waiting.join(", ")));
+            }
         }
         self.broker("machine.destroy", machine, json!({}))?;
         self.ctx.forget_machine(machine);

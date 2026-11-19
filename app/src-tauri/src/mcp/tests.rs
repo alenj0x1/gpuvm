@@ -344,6 +344,9 @@ fn commands_files_and_offers() {
     assert!(o.contains("offer o"), "{o}");
     let id = h.fake.with(|s| s.offers.keys().next().unwrap().clone());
     assert!(h.ok("offer_status", json!({ "machine": m, "offerId": id })).contains("still waiting"));
+    // Destroying would lose the waiting file: refused unless forced.
+    let refused = h.err("destroy", json!({ "machine": m }));
+    assert!(refused.contains("still waiting") && refused.contains("force"), "{refused}");
     h.fake.with(|s| s.offers.get_mut(&id).unwrap().1 = "accepted".into());
     assert!(h.ok("offer_status", json!({ "machine": m, "offerId": id })).contains("accepted"));
     assert!(h.err("offer_file", json!({ "machine": m, "path": "C:\\Users\\agent\\Desktop\\Outbox\\sub\\x.txt", "note": "n" })).contains("directly inside"));

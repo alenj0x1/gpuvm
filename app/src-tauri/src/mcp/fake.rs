@@ -149,6 +149,10 @@ impl Broker for FakeBroker {
                     None => Err(err("not_found", "There is no such request.")),
                 };
             }
+            "offers.list" => {
+                let list: Vec<Value> = st.offers.iter().map(|(id, (path, state))| json!({ "id": id, "path": path, "state": state })).collect();
+                return Ok(Reply::of(Value::Array(list)));
+            }
             "offer.get" => {
                 let id = s(&args, "offerId");
                 return match st.offers.get(id) {
