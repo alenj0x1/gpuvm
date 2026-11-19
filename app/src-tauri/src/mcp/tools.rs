@@ -19,7 +19,8 @@ const MAX_WRITE: usize = 10 << 20;
 /// Bytes asked for by read_file (text beyond what a model can use is cut anyway).
 const READ_MAX: u64 = 4 << 20;
 const PROFILE: &str = r"C:\Users\agent\";
-const OUTBOX: &str = r"C:\Users\agent\Desktop\Outbox\";
+/// The Outbox, relative to the agent's home (lowercase, for comparisons).
+const OUTBOX: &str = r"desktop\outbox\";
 const APPROVAL_TTL: Duration = Duration::from_secs(600);
 /// Tools that ask the person through the client first when the connection's "approvals" setting is on.
 const CONFIRM: &[&str] = &["run", "write_file", "send_file"];
@@ -192,7 +193,7 @@ pub fn explain(machine: &str, e: &BrokerError) -> String {
         "cancelled" => "The request was cancelled.".into(),
         "busy" => format!("{m} is busy with other requests; try again in a moment."),
         "not_found" => if e.message.is_empty() { "Not found.".into() } else { e.message.clone() },
-        "denied" => format!("Not allowed: {}", if e.message.is_empty() { "the agent can only use its own profile (C:\\Users\\agent)." } else { &e.message }),
+        "denied" => format!("Not allowed: {}", if e.message.is_empty() { "the agent can only use its own home folder." } else { &e.message }),
         "bad_request" => format!("GpuVM refused the request: {}", e.message),
         "paused" => format!("The person took control of {m}. Wait until they hand it back (\"Return to agent\" in GpuVM), then take a fresh screenshot before acting."),
         "killed" => "The person stopped this agent connection from GpuVM. Stop working and tell the user.".into(),
@@ -306,10 +307,10 @@ pub fn definitions() -> Vec<Value> {
                 "args": { "type": "array", "items": { "type": "string" } }, "cwd": { "type": "string" },
                 "timeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 600, "description": "Default 60." }, "stdin": { "type": "string" } }), &["machine", "command"]),
             ann("Run command", false, true, false, true)),
-        tool("read_file", "Read a file under C:\\Users\\agent in the machine: text is returned as text, images as an image.",
+        tool("read_file", "Read a file in the agent's home folder in the machine (a path relative to it, like Desktop\\Received\\x.txt, or a full one): text comes back as text, images as an image.",
             schema(json!({ "machine": m(), "path": { "type": "string" } }), &["machine", "path"]),
             ann("Read file", true, false, true, false)),
-        tool("write_file", "Write a file under C:\\Users\\agent in the machine (replaces it if it exists).",
+        tool("write_file", "Write a file in the agent's home folder in the machine (a path relative to it, like Desktop\\Outbox\\report.md, or a full one; replaces it if it exists).",
             schema(json!({ "machine": m(), "path": { "type": "string" }, "content": { "type": "string" },
                 "encoding": { "type": "string", "enum": ["utf8", "base64"], "description": "Default utf8." } }), &["machine", "path", "content"]),
             ann("Write file", false, true, true, false)),
@@ -317,7 +318,7 @@ pub fn definitions() -> Vec<Value> {
             schema(json!({ "machine": m(), "hostPath": { "type": "string", "description": "Full path of a file on this PC." } }), &["machine", "hostPath"]),
             ann("Send file to machine", false, false, true, false)),
         tool("offer_file", "Offer a file from the machine's Desktop\\Outbox folder to the person; it reaches this PC only if they approve it in GpuVM. Optionally wait for their answer.",
-            schema(json!({ "machine": m(), "path": { "type": "string", "description": "File inside C:\\Users\\agent\\Desktop\\Outbox." },
+            schema(json!({ "machine": m(), "path": { "type": "string", "description": "A file directly in Desktop\\Outbox, e.g. Desktop\\Outbox\\report.md." },
                 "note": { "type": "string", "description": "What it is and why, shown to the person." },
                 "waitSeconds": { "type": "integer", "minimum": 0, "maximum": 900, "description": "Default 0 (don't wait)." } }), &["machine", "path", "note"]),
             ann("Offer file", false, false, false, false)),
@@ -994,13 +995,36 @@ impl Tool<'_> {
         Ok(text(t))
     }
 
-    fn profile_path(&self) -> Result<String, String> {
-        let path = arg_str(self.args, "path")?.replace('/', "\\");
-        let lower = path.to_ascii_lowercase();
-        if !lower.starts_with(&PROFILE.to_ascii_lowercase()) || path.split('\\').any(|p| p == ".." || p == ".") || path.contains(':') && !lower.starts_with("c:\\") {
-            return Err("Only files under C:\\Users\\agent can be read or written (full path, no '..').".into());
+    /// The agent's home in the machine (`agent.info` home; the default user's profile otherwise), ending in `\`.
+    fn home(&self, machine: &str) -> String {
+        let home = self.find(machine).ok().flatten()
+            .and_then(|m| m["agent"]["home"].as_str().map(str::to_string))
+            .unwrap_or_else(|| PROFILE.trim_end_matches('\\').to_string());
+        format!("{}\\", home.trim_end_matches('\\'))
+    }
+
+    /// A path for files.*: relative to the agent's home (passed as is; the guest resolves it) or a full path inside
+    /// it. Never `..`, `.`, another drive, a UNC path or a stream (`:`).
+    fn home_path(&self, machine: &str, key: &str) -> Result<String, String> {
+        let path = arg_str(self.args, key)?.replace('/', "\\");
+        let bad = || Err("Use a path inside the agent's home folder, relative (like Desktop\\Outbox\\report.md) or full; no '..'.".to_string());
+        if path.split('\\').any(|p| p == ".." || p == ".") || path.starts_with('\\') {
+            return bad();
+        }
+        let colon = path.find(':');
+        if colon.is_none() {
+            return Ok(path);
+        }
+        let home = self.home(machine);
+        if colon != Some(1) || !path.to_ascii_lowercase().starts_with(&home.to_ascii_lowercase()) || path[2..].contains(':') {
+            return bad();
         }
         Ok(path)
+    }
+
+    fn profile_path(&self) -> Result<String, String> {
+        let machine = self.machine()?;
+        self.home_path(machine, "path")
     }
 
     fn read_file(&self) -> Out {
@@ -1064,11 +1088,14 @@ impl Tool<'_> {
 
     fn offer_file(&self) -> Out {
         let machine = self.machine()?;
-        let path = arg_str(self.args, "path")?.replace('/', "\\");
+        let path = self.home_path(machine, "path")?;
+        // Relative to the home: Desktop\Outbox\<file>, nothing deeper.
+        let home = self.home(machine).to_ascii_lowercase();
         let lower = path.to_ascii_lowercase();
-        let outbox = OUTBOX.to_ascii_lowercase();
-        if !lower.starts_with(&outbox) || lower[outbox.len()..].contains('\\') || path.split('\\').any(|p| p == "..") {
-            return Err(format!("Only files directly inside {OUTBOX} can be offered; write or copy the file there first."));
+        let relative = lower.strip_prefix(&home).unwrap_or(&lower);
+        let file = relative.strip_prefix(OUTBOX).unwrap_or("");
+        if file.is_empty() || file.contains('\\') {
+            return Err("Only files directly inside Desktop\\Outbox (in the agent's home) can be offered; write or copy the file there first.".into());
         }
         let note = arg_str(self.args, "note")?;
         let wait = opt_int(self.args, "waitSeconds", 0, 900)?.unwrap_or(0) as u64;

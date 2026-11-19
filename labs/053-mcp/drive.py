@@ -99,8 +99,8 @@ def phase_latency(m, machine, rounds):
         ("key", {"machine": machine, "keys": "shift"}),
         ("ui_tree", {"machine": machine}),
         ("run", {"machine": machine, "command": "echo hi", "shell": "cmd"}),
-        ("write_file", {"machine": machine, "path": "C:\\Users\\agent\\lab053.txt", "content": "x" * 1000}),
-        ("read_file", {"machine": machine, "path": "C:\\Users\\agent\\lab053.txt"}),
+        ("write_file", {"machine": machine, "path": "Desktop\\lab053.txt", "content": "x" * 1000}),
+        ("read_file", {"machine": machine, "path": "Desktop\\lab053.txt"}),
     ]
     rows = []
     for r in range(rounds):
@@ -171,7 +171,8 @@ def phase_misuse(m, machine):
         ("too big box", "screenshot", {"machine": machine, "maxWidth": 10000}),
         ("path outside profile", "read_file", {"machine": machine, "path": "C:\\Windows\\win.ini"}),
         ("dot-dot path", "write_file", {"machine": machine, "path": "C:\\Users\\agent\\..\\Public\\x.txt", "content": "x"}),
-        ("offer outside outbox", "offer_file", {"machine": machine, "path": "C:\\Users\\agent\\x.txt", "note": "n"}),
+        ("offer outside outbox", "offer_file", {"machine": machine, "path": "Desktop\\x.txt", "note": "n"}),
+        ("other drive", "read_file", {"machine": machine, "path": "D:\\x.txt"}),
         ("huge output", "run", {"machine": machine, "command": "'x' * 3000000", "timeoutSeconds": 60}),
         ("long type", "type", {"machine": machine, "text": "x" * 6000}),
         ("act with bad item", "act", {"machine": machine, "actions": [{"type": "move", "x": 1, "y": 1}, {"type": "fly"}]}),

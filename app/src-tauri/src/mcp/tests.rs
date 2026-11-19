@@ -265,7 +265,7 @@ fn misuse_gets_plain_errors() {
     assert!(h.err("act", json!({ "machine": m, "actions": [] })).contains("1 to 50"));
     assert!(h.err("screenshot", json!({ "machine": m, "zoom": [1, 2] })).contains("[x, y, width, height]"));
     assert!(h.err("screenshot", json!({ "machine": m, "maxWidth": 9000 })).contains("64 to 2576"));
-    assert!(h.err("read_file", json!({ "machine": m, "path": "C:\\Windows\\win.ini" })).contains("C:\\Users\\agent"));
+    assert!(h.err("read_file", json!({ "machine": m, "path": "C:\\Windows\\win.ini" })).contains("home folder"));
     assert!(h.err("read_file", json!({ "machine": m, "path": "C:\\Users\\agent\\..\\admin\\x.txt" })).contains("no '..'"));
     assert!(h.err("offer_file", json!({ "machine": m, "path": "C:\\Users\\agent\\x.txt", "note": "n" })).contains("Outbox"));
     assert!(h.err("send_file", json!({ "machine": m, "hostPath": "relative.txt" })).contains("full path"));
@@ -318,6 +318,12 @@ fn commands_files_and_offers() {
     assert!(blob.starts_with("Exit code 3") && blob.contains("--- stdout ---\nout-in-blob") && blob.contains("--- stderr ---\nerr-in-blob"), "{blob}");
     h.ok("write_file", json!({ "machine": m, "path": "C:/Users/agent/Desktop/Outbox/report.md", "content": "# Report\nok" }));
     assert!(h.ok("read_file", json!({ "machine": m, "path": "C:\\Users\\agent\\Desktop\\Outbox\\report.md" })).ends_with("# Report\nok"));
+    // Paths relative to the agent's home work the same.
+    assert!(h.ok("read_file", json!({ "machine": m, "path": "Desktop\\Outbox\\report.md" })).ends_with("# Report\nok"));
+    assert!(h.ok("offer_file", json!({ "machine": m, "path": "Desktop/Outbox/report.md", "note": "relative" })).contains("offer o"));
+    assert!(h.err("read_file", json!({ "machine": m, "path": "\\\\server\\share\\x" })).contains("home folder"));
+    assert!(h.err("read_file", json!({ "machine": m, "path": "D:\\x.txt" })).contains("home folder"));
+    assert!(h.err("read_file", json!({ "machine": m, "path": "C:\\Users\\agent\\x.txt:stream" })).contains("home folder"));
     h.ok("write_file", json!({ "machine": m, "path": "C:\\Users\\agent\\b.bin", "content": "AAEC/w==", "encoding": "base64" }));
     assert!(h.ok("read_file", json!({ "machine": m, "path": "C:\\Users\\agent\\b.bin" })).contains("binary file (4 bytes)"));
     h.ok("write_file", json!({ "machine": m, "path": "C:\\Users\\agent\\u16.txt", "content": "//5oAGkA", "encoding": "base64" }));
