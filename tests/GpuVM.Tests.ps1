@@ -1854,3 +1854,30 @@ InModuleScope GpuVM {
         }
     }
 }
+
+InModuleScope GpuVM {
+    Describe 'Deleting a machine never stops half-way on its agent registration' {
+        It 'the VM and its folder go even when the registration can''t be removed; a warning says so' {
+            New-Item -ItemType Directory (Join-Path $TestDrive 'GpuVM') -Force | Out-Null
+            # The long form of the path (TestDrive can be an 8.3 short path; the backend compares full paths).
+            $script:testRoot = (Get-Item -LiteralPath (Join-Path $TestDrive 'GpuVM')).FullName
+            $script:testRoot = (New-Object -ComObject Scripting.FileSystemObject).GetFolder($script:testRoot).Path
+            $script:testRoot = [IO.Path]::GetFullPath($script:testRoot)
+            $dir = Join-Path $script:testRoot 'copy1'
+            New-Item -ItemType Directory $dir -Force | Out-Null
+            Set-Content (Join-Path $dir 'copy1.vhdx') 'disk'
+            Set-Content (Join-Path $dir 'gpuvm.json') '{}'
+            Mock Get-GpuVMDefaultRoot { $script:testRoot }
+            Mock Get-VM { [pscustomobject]@{ State = 'Off'; Id = [guid]'0b5d1f53-1e33-4b7e-9f0a-2c4d6e8f0a1b' } }
+            Mock Stop-VM { }
+            Mock Remove-VM { $script:vmRemoved = $true }
+            Mock Remove-GpuVMAgentRegistration { throw 'Access to the path secret is denied.' }
+            $script:vmRemoved = $false
+            $w = Invoke-GpuVMBackend -Backend 'hyperv-gpup' -Operation Remove -Arguments 'copy1', @{ vmDir = $dir }, $true 3>&1
+            $script:vmRemoved | Should Be $true
+            Test-Path $dir | Should Be $false
+            ($w | Where-Object { $_ -is [System.Management.Automation.WarningRecord] }).Message | Should Match 'within the hour'
+            Assert-MockCalled Remove-GpuVMAgentRegistration -Times 1 -Exactly -Scope It
+        }
+    }
+}

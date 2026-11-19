@@ -530,9 +530,13 @@ Register-GpuVMBackend -Name 'hyperv-gpup'-Description 'Hyper-V with GPU Partitio
         if ($vm) {
             if ($vm.State -ne 'Off') { Stop-VM -Name $Name -TurnOff -Force }
             Remove-VM -Name $Name -Force
-            # Its agent secret and registration go with it.
-            Remove-GpuVMAgentRegistration -VMId $vm.Id.Guid
         }
         if ($dir) { Remove-Item -LiteralPath $dir -Recurse -Force }
+        # Its agent secret and registration go last, and never stop the deletion half-way (lab 054: a denied secret
+        # left the VM's folder and disk behind). The service's hourly sweep removes what is left.
+        if ($vm) {
+            try { Remove-GpuVMAgentRegistration -VMId $vm.Id.Guid }
+            catch { Write-Warning "The agent registration of '$Name' couldn't be removed now ($($_.Exception.Message)); GpuVM's service removes it within the hour." }
+        }
     }
 }
