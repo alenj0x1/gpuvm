@@ -172,6 +172,8 @@ fn host_paths(request: &Value) -> Vec<(String, PathAccess)> {
 fn needs_consent(request: &Value) -> bool {
     let cmd = request["cmd"].as_str().unwrap_or("");
     NEEDS_CONSENT.contains(&cmd) || (cmd == "Restore-GpuVMRestorePoint" && request["args"]["SaveCurrent"] != json!(true))
+        // Taking a machine back from the agent removes its user and profile.
+        || (cmd == "Set-GpuVMUse" && request["args"]["Use"] == json!("none"))
 }
 
 /// Checks each path as the user on the other end of the pipe (unelevated), then goes back to the service's identity.

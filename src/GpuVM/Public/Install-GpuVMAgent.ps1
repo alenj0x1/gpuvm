@@ -95,6 +95,8 @@ function Install-GpuVMAgent {
         signInAs    = $User
         installedAt = (Get-Date).ToString('o')
     }
+    # A machine with the agent is an agent machine (Set-GpuVMUse none takes it back).
+    $state['use'] = 'agent'
     Save-GpuVMState $state
     Write-JsonFile -Path (Join-Path $folder 'agent.json') -Data ([ordered]@{
         vmId        = $vmId

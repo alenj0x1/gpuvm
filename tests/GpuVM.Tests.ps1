@@ -1505,3 +1505,40 @@ InModuleScope GpuVM {
         }
     }
 }
+
+InModuleScope GpuVM {
+    Describe 'Set-GpuVMUse' {
+        BeforeEach {
+            $script:st = @{ statePath = 'D:\GpuVM\vm1\gpuvm.json'; config = @{ vm = @{ network = @{ isolation = $false } } } }
+            Mock Assert-Admin { }
+            Mock Get-GpuVMState { $script:st }
+            Mock Save-GpuVMState { $script:st = $State }
+            Mock Update-GpuVMNetworkIsolation { }
+            Mock Install-GpuVMAgent { [pscustomobject]@{ restarted = $true; user = $User } }
+            Mock Uninstall-GpuVMAgent { }
+            Mock Write-Warning { }
+        }
+        It 'an agent machine is always isolated; off, the agent waits for the next start' {
+            Mock Get-VM { [pscustomobject]@{ State = 'Off' } }
+            $r = Set-GpuVMUse -Name vm1 -Use agent
+            $r.pending | Should Be $true
+            $script:st['use'] | Should Be 'agent'
+            $script:st['config']['vm']['network']['isolation'] | Should Be $true
+            $script:st['agent']['pending'] | Should Be $true
+            Assert-MockCalled Update-GpuVMNetworkIsolation -Times 1 -Scope It
+            Assert-MockCalled Install-GpuVMAgent -Times 0 -Scope It
+        }
+        It 'running, it installs the agent with the chosen sign-in user' {
+            Mock Get-VM { [pscustomobject]@{ State = 'Running' } }
+            $script:st['agent'] = @{ signInAs = 'own' }
+            Set-GpuVMUse -Name vm1 -Use agent | Out-Null
+            Assert-MockCalled Install-GpuVMAgent -Times 1 -Scope It -ParameterFilter { $User -eq 'own' }
+        }
+        It 'none removes the agent and the use' {
+            $script:st['use'] = 'agent'; $script:st['agent'] = @{ version = '0.3.0' }
+            Set-GpuVMUse -Name vm1 -Use none | Out-Null
+            Assert-MockCalled Uninstall-GpuVMAgent -Times 1 -Scope It
+            $script:st.Contains('use') | Should Be $false
+        }
+    }
+}

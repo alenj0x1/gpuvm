@@ -157,3 +157,21 @@ function Copy-ToAgentSession {
     param($Session, [string]$Path, [string]$Destination)
     Copy-Item -LiteralPath $Path -ToSession $Session -Destination $Destination -ErrorAction Stop
 }
+
+# New-GpuVM / Import-GpuVM -Use agent: remembers who signs in, waits for Windows when the machine runs, then sets the
+# use (which installs the agent). Never fails the creation: a problem leaves the agent pending, with a warning.
+function Initialize-GpuVMAgentUse {
+    param([Parameter(Mandatory)][string]$Name, [ValidateSet('agent', 'own')][string]$User = 'agent')
+    $state = Get-GpuVMState -Name $Name
+    $state['agent'] = [ordered]@{ pending = $true; signInAs = $User }
+    $state['use'] = 'agent'
+    Save-GpuVMState $state
+    try {
+        if ((Get-VM -Name $Name).State -eq 'Running') {
+            $credential = Get-GpuVMGuestCredential -State $state
+            if ($credential) { Wait-GuestReady -Name $Name -Credential $credential | Out-Null }
+        }
+        Set-GpuVMUse -Name $Name -Use agent | Out-Null
+    }
+    catch { Write-Warning "The machine is ready, but GpuVM's agent isn't installed yet: $($_.Exception.Message)" }
+}

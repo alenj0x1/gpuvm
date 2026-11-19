@@ -91,6 +91,8 @@
         'Get-GpuVMAgentSettings'
         'Set-GpuVMAgentSettings'
         'Set-GpuVMAgentClient'
+        'Set-GpuVMUse'
+        'Set-GpuVMAgentUser'
     )
     CmdletsToExport   = @()
     AliasesToExport   = @()
