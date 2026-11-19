@@ -268,6 +268,8 @@ struct Conn {
     events: Mutex<Map<String, Value>>,
     /// When the agent last said its screen changed size (ms since 1970; 0 = not since it connected).
     screen_changed: AtomicU64,
+    /// An agent.info refresh is on its way (one at a time, whatever the events).
+    refreshing: AtomicBool,
 }
 
 impl Conn {
@@ -764,6 +766,7 @@ fn serve_agent(sock: Sock, vm_id: String) {
         info: Mutex::new(Value::Null),
         events: Mutex::new(Map::new()),
         screen_changed: AtomicU64::new(0),
+        refreshing: AtomicBool::new(false),
     });
     // A new connection from the same VM replaces the old one (the agent restarted).
     if let Some(old) = lock(&broker().conns).insert(vm_id.clone(), conn.clone()) {
@@ -817,8 +820,40 @@ fn note_screen(info: &Mutex<Value>, changed: &AtomicU64, data: &Value) -> bool {
     true
 }
 
+/// Someone signed in (`signed_in` event): the agent info says so at once, before its next refresh.
+fn note_signed_in(info: &Mutex<Value>, data: &Value) {
+    let mut info = lock(info);
+    if !info.is_object() {
+        *info = json!({});
+    }
+    // `user: null` is the agent saying nobody is signed in any more.
+    match data["user"].as_str().filter(|u| !u.is_empty()) {
+        Some(user) => {
+            info["signedIn"] = json!(true);
+            info["user"] = json!(clean(user, 120));
+        }
+        None => {
+            info["signedIn"] = json!(false);
+            info["user"] = Value::Null;
+        }
+    }
+}
+
+/// Asks the agent for agent.info again, in the background, one request at a time.
+fn refresh_info(conn: Arc<Conn>) {
+    if conn.refreshing.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    std::thread::spawn(move || {
+        if let Ok((info, _)) = conn.request("agent.info", &json!({}), None, Duration::from_secs(10), None) {
+            *lock(&conn.info) = bounded(&info, 3);
+        }
+        conn.refreshing.store(false, Ordering::SeqCst);
+    });
+}
+
 /// Reads the guest's frames until the connection ends; returns why it ended.
-fn read_loop(conn: &Conn, opener: &mut Opener) -> String {
+fn read_loop(conn: &Arc<Conn>, opener: &mut Opener) -> String {
     let mut stream = &conn.sock;
     let mut window = Instant::now();
     let mut frames = 0u32;
@@ -894,7 +929,16 @@ fn read_loop(conn: &Conn, opener: &mut Opener) -> String {
                 if name == "screen" {
                     note_screen(&conn.info, &conn.screen_changed, &data);
                 }
+                if name == "signed_in" {
+                    note_signed_in(&conn.info, &data);
+                }
                 lock(&conn.events).insert(name.to_string(), json!({ "data": data, "at": now_ms() }));
+                // What Get-GpuVMAgent shows follows the machine: someone signed in, or the screen changed, means its
+                // displays and sign-in are asked again (agent-mcp 2026-11-19: a stale signedIn:false made a new copy
+                // wait 600 s for "ready").
+                if name == "signed_in" || name == "screen" {
+                    refresh_info(conn.clone());
+                }
             }
             _ => return "unknown message".into(),
         }
@@ -1490,7 +1534,7 @@ fn new_request(args: &Map<String, Value>, ctx: &Ctx) -> Result<Value, CmdError> 
     if lock(&broker().machines).get(&reg.vm_id).and_then(|m| m.taken_by.clone()).as_deref() != Some(id) {
         return err("not_taken", format!("Take '{}' first.", reg.name));
     }
-    let timeout = args.get("TimeoutSec").and_then(Value::as_u64).unwrap_or(settings().2).clamp(10, 24 * 3600);
+    let timeout = args.get("TimeoutSec").and_then(seconds).unwrap_or(settings().2).clamp(10, 24 * 3600);
     let mut list = lock(&broker().requests);
     expire(&mut list);
     if list.iter().filter(|r| r.connection == id && r.state == "pending").count() >= 10 {
@@ -1538,6 +1582,13 @@ fn new_request(args: &Map<String, Value>, ctx: &Ctx) -> Result<Value, CmdError> 
     vm_log(&reg, json!({ "event": "request", "id": r.id, "kind": r.kind, "connection": id }));
     list.push(r);
     Ok(out)
+}
+
+/// Seconds as the MCP may send them: a whole number, a whole float (600.0) or digits in a text.
+fn seconds(v: &Value) -> Option<u64> {
+    v.as_u64()
+        .or_else(|| v.as_f64().filter(|f| f.is_finite() && *f >= 0.0 && f.fract() == 0.0).map(|f| f as u64))
+        .or_else(|| v.as_str().and_then(|t| t.trim().parse().ok()))
 }
 
 const REQUEST_KINDS: &[&str] = &["admin", "network", "revert", "delete", "send", "other"];
@@ -2617,6 +2668,13 @@ pub(crate) mod tests {
             let r = command("New-GpuVMAgentRequest", &json!({ "Name": "Test1", "Connection": id, "Kind": "send", "Path": path, "Title": "harmless", "TimeoutSec": 86400 }), mcp).unwrap();
             r["requestId"].as_str().unwrap().to_string()
         };
+        // The TimeoutSec the MCP sends is kept (up to 10 minutes for a send), as a number, a float or a text.
+        for t in [json!(300), json!(300.0), json!("300")] {
+            let r = command("New-GpuVMAgentRequest", &json!({ "Name": "Test1", "Connection": id, "Kind": "send", "Path": path, "TimeoutSec": t }), &mut mcp).unwrap();
+            let shown = command("Get-GpuVMAgentRequest", &json!({ "Id": r["requestId"] }), &mut app).unwrap()[0].clone();
+            assert_eq!(shown["expiresAt"].as_u64().unwrap() - shown["createdAt"].as_u64().unwrap(), 300_000);
+            command("Revoke-GpuVMAgentRequest", &json!({ "Id": r["requestId"], "Connection": id }), &mut mcp).unwrap();
+        }
         let sid = ask(&mut mcp);
         let shown = command("Get-GpuVMAgentRequest", &json!({ "Id": sid }), &mut app).unwrap()[0].clone();
         assert!(shown["title"].as_str().unwrap().contains(&path)); // GpuVM's words with the exact path, not the session's
@@ -2851,6 +2909,22 @@ pub(crate) mod tests {
         let folders = vec![(a.to_string(), old), (b.to_string(), old), (b.to_uppercase(), Duration::from_secs(5)), ("blobs".to_string(), old)];
         // The VM that exists stays; a young folder stays (an install may be writing it); other folders stay.
         assert_eq!(orphans(&folders, &[a.to_string()]), vec![b.to_string()]);
+    }
+
+    #[test]
+    fn signed_in_shows_at_once() {
+        let info = Mutex::new(json!({ "signedIn": false, "user": null, "displays": [] }));
+        note_signed_in(&info, &json!({ "user": "AGENT-BASE\\agent" }));
+        assert_eq!(lock(&info)["signedIn"], true);
+        assert_eq!(lock(&info)["user"], "AGENT-BASE\\agent");
+        note_signed_in(&info, &json!({ "user": null }));
+        assert_eq!(lock(&info)["signedIn"], false);
+        assert!(lock(&info)["user"].is_null());
+        assert_eq!(seconds(&json!(600)), Some(600));
+        assert_eq!(seconds(&json!(600.0)), Some(600));
+        assert_eq!(seconds(&json!("90")), Some(90));
+        assert_eq!(seconds(&json!(-1)), None);
+        assert_eq!(seconds(&json!(1.5)), None);
     }
 
     #[test]
