@@ -100,15 +100,12 @@ const hiddenGpu = await new Promise((ok) => {
   let o = ""; const p = spawn("pwsh", ["-NoProfile", "-Command", ps]); p.stdout.on("data", (d) => (o += d)); p.on("exit", () => ok(o.trim()));
 });
 busy = false; await busyLoop;
-// Recording B: the hidden viewer must be writing its file (a .part in the viewer's Captures folder that grows).
-// 2026-11-19: it recorded nothing while hidden (the "record" sent before the first picture was refused).
-const partBytes = () => Number(execFileSync("pwsh", ["-NoProfile", "-Command",
-  "$d = Join-Path $env:USERPROFILE 'AppData\\LocalLow\\GpuVM\\Viewer\\Captures'; $p = Get-ChildItem $d -Filter *.part -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if ($p) { $p.Length } else { -1 }"]).toString().trim());
-const part0 = partBytes();
-await tool("key", { machine, keys: "win" }); await sleep(3000); await tool("key", { machine, keys: "escape" }); await sleep(3000);
-const part1 = partBytes();
-const hiddenRecording = { firstBytes: part0, laterBytes: part1, grows: part0 >= 0 && part1 > part0 };
-console.log("hidden recording:", JSON.stringify(hiddenRecording));
+// Recording B: the hidden viewer records. The file's size on disk doesn't grow while it is written (0 bytes until it
+// closes, 2026-11-19), so the proof is the finished file: its name carries when recording started, which must be
+// before the person opened the machine (checked after the run, with the hidden viewer's time kept here).
+const hiddenAt = new Date();
+const hiddenRecording = { hiddenAt: hiddenAt.toISOString() };
+console.log("hidden recording: viewer hidden at", hiddenRecording.hiddenAt);
 console.log("hidden viewer GPU %:", hiddenGpu);
 /** A screenshot of the GpuVM window's area (what's on screen there: the app, the picture and its notch). */
 const shot = (name) => { try { console.log(name, execFileSync("pwsh", ["-NoProfile", "-File", join(here, "window-shot.ps1"), "-Out", join(out, `${name}.png`)]).toString().trim()); } catch (e) { console.log(name, "failed"); } };
@@ -116,6 +113,7 @@ shot("installed-app-recording-hidden");
 // First frame: from open_viewer until the viewer's window shows and until its picture isn't black. With ddx a still
 // desktop may stay black until something on screen changes: after 20 s black, the agent opens Start (key win) once.
 const tOpen = Date.now();
+hiddenRecording.openedAt = new Date(tOpen).toISOString();
 await tool("open_viewer", { machine });
 const luma = () => { try { return execFileSync("pwsh", ["-NoProfile", "-File", join(here, "luma.ps1")]).toString().trim(); } catch { return "none"; } };
 let tWindow = null, tPicture = null, poked = null;
@@ -269,6 +267,14 @@ if (disposable) {
     if (n === 0) closedMs = Date.now() - tGone; else await sleep(500);
   }
   report.viewerClosedAfterDestroyMs = closedMs;
+  // The recording's files (Videos\GpuVM\<machine>, named by when they started): the first one must start before
+  // open_viewer, i.e. while the viewer was hidden.
+  await sleep(5000);
+  const files = execFileSync("pwsh", ["-NoProfile", "-Command",
+    `Get-ChildItem (Join-Path ([Environment]::GetFolderPath('MyVideos')) 'GpuVM\\${machine}') -File -ErrorAction SilentlyContinue | ForEach-Object { $_.Name + '|' + $_.Length }`]).toString().trim().split(/\r?\n/).filter(Boolean);
+  hiddenRecording.files = files;
+  const starts = files.map((f) => /(\d{4}-\d{2}-\d{2}) (\d{2})\.(\d{2})\.(\d{2})/.exec(f)).filter(Boolean).map((m) => new Date(`${m[1]}T${m[2]}:${m[3]}:${m[4]}`).getTime());
+  hiddenRecording.startedWhileHidden = starts.length > 0 && Math.min(...starts) < Date.parse(hiddenRecording.openedAt);
 }
 writeFileSync(join(out, "take-control.json"), JSON.stringify(report, null, 1));
 console.log(JSON.stringify(report));

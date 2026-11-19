@@ -151,7 +151,7 @@ pub fn start(app: AppHandle) {
             // An agent holding a machine counts even while idle (thinking): its viewer must be watched without lag.
             let busy = lock(&CLIENTS).iter().any(|c| c["state"].as_str().is_some_and(|s| s != "idle" && s != "stopped") || holds(c))
                 // A delivery still copying: its result shows without waiting for the slow poll.
-                || lock(&COPIES).as_ref().is_some_and(|c| c.values().any(|(_, done)| done.is_none()));
+                || lock(&COPIES).as_ref().is_some_and(|c| c.values().any(|x| x.state == "copying" || x.state == "pending"));
             tokio::time::sleep(Duration::from_millis(if viewing && busy { 1000 } else if busy { 2000 } else { 5000 })).await;
         }
     });
@@ -593,9 +593,17 @@ pub fn on_viewer(app: &AppHandle, vm: &str, msg: &Value) {
 
 /* ---------- deliveries being copied ---------- */
 
-/// Deliveries seen copying (offer id -> machine, and when it finished): Resolve-GpuVMAgentOffer answers "copying" at
-/// once and the copy ends in the background, accepted or failed (Get-GpuVMAgentOffer).
-static COPIES: Mutex<Option<HashMap<String, (String, Option<Instant>)>>> = Mutex::new(None);
+/// Deliveries followed (offer id -> machine, the state the last poll saw, and when its result went up): Resolve-
+/// GpuVMAgentOffer answers "copying" and the copy ends in the background, accepted or failed (Get-GpuVMAgentOffer).
+/// A small file is often done before the next poll (lab 054: pending, then accepted), so the result shows for any
+/// offer that leaves pending or copying, not only for one seen copying.
+static COPIES: Mutex<Option<HashMap<String, Delivery>>> = Mutex::new(None);
+
+struct Delivery {
+    vm: String,
+    state: String,
+    shown_at: Option<Instant>,
+}
 /// How long the result stays on the notch.
 const COPY_RESULT: Duration = Duration::from_secs(6);
 
@@ -608,35 +616,49 @@ fn copy_notice(offer: &Value) -> Option<Value> {
     Some(json!({ "kind": "copy", "state": state, "name": offer["name"], "error": offer["error"] }))
 }
 
+/// What the notch does about one delivery between two polls: show "copying", show its result, or nothing.
+fn copy_step(before: Option<&str>, now: &str) -> Option<&'static str> {
+    match (before, now) {
+        (Some("copying"), "copying") => None,
+        (_, "copying") => Some("copying"),
+        (Some("pending" | "copying"), "accepted" | "failed") => Some("result"),
+        _ => None,
+    }
+}
+
 fn sync_copies(app: &AppHandle, offers: &[Value]) {
     let mut copies = lock(&COPIES);
     let copies = copies.get_or_insert_with(HashMap::new);
     for o in offers {
-        let (Some(id), Some(vm)) = (o["id"].as_str(), o["machine"].as_str()) else { continue };
+        let (Some(id), Some(vm)) = (o["id"].as_str(), o["machine"].as_str().filter(|m| !m.is_empty())) else { continue };
         let state = o["state"].as_str().unwrap_or("");
+        let before = copies.get(id).map(|c| c.state.clone());
         let key = format!("copy:{id}");
-        match (state, copies.get(id).cloned()) {
-            // Copying: shown on its machine once (the notch isn't redrawn every poll).
-            ("copying", None) => {
-                copies.insert(id.to_string(), (vm.to_string(), None));
+        match copy_step(before.as_deref(), state) {
+            Some("copying") => crate::status::set(app, vm, &key, copy_notice(o)),
+            Some(_) => {
                 crate::status::set(app, vm, &key, copy_notice(o));
+                copies.insert(id.to_string(), Delivery { vm: vm.to_string(), state: state.to_string(), shown_at: Some(Instant::now()) });
+                continue;
             }
-            // It finished while followed: its result, for a few seconds.
-            ("accepted" | "failed", Some((_, None))) => {
-                copies.insert(id.to_string(), (vm.to_string(), Some(Instant::now())));
-                crate::status::set(app, vm, &key, copy_notice(o));
-            }
-            _ => {}
+            None => {}
         }
+        let shown_at = copies.get(id).and_then(|c| c.shown_at);
+        copies.insert(id.to_string(), Delivery { vm: vm.to_string(), state: state.to_string(), shown_at });
     }
     // Results shown long enough, and deliveries no longer listed, leave the notch.
     let live: HashSet<&str> = offers.iter().filter_map(|o| o["id"].as_str()).collect();
-    let gone: Vec<(String, String)> = copies.iter()
-        .filter(|(id, (_, done))| !live.contains(id.as_str()) || done.is_some_and(|t| t.elapsed() > COPY_RESULT))
-        .map(|(id, (vm, _))| (id.clone(), vm.clone())).collect();
-    for (id, vm) in gone {
-        copies.remove(&id);
+    let gone: Vec<(String, String, bool)> = copies.iter()
+        .filter(|(id, c)| !live.contains(id.as_str()) || c.shown_at.is_some_and(|t| t.elapsed() > COPY_RESULT))
+        .map(|(id, c)| (id.clone(), c.vm.clone(), live.contains(id.as_str()))).collect();
+    for (id, vm, still_listed) in gone {
         crate::status::set(app, &vm, &format!("copy:{id}"), None);
+        if still_listed {
+            // Done showing; remembered as finished so it never shows again.
+            if let Some(c) = copies.get_mut(&id) { c.shown_at = None; c.state = "done".into(); }
+        } else {
+            copies.remove(&id);
+        }
     }
 }
 
@@ -993,6 +1015,14 @@ mod tests {
         for s in ["pending", "refused", "expired", ""] {
             assert!(copy_notice(&o(s)).is_none(), "{s}");
         }
+        // A small file done between two polls still shows its result; a finished one shows nothing again.
+        assert_eq!(copy_step(Some("pending"), "accepted"), Some("result"));
+        assert_eq!(copy_step(Some("pending"), "copying"), Some("copying"));
+        assert_eq!(copy_step(Some("copying"), "copying"), None);
+        assert_eq!(copy_step(Some("copying"), "failed"), Some("result"));
+        assert_eq!(copy_step(None, "accepted"), None); // already finished when GpuVM started
+        assert_eq!(copy_step(Some("done"), "accepted"), None);
+        assert_eq!(copy_step(Some("pending"), "refused"), None);
     }
 
     #[test]
