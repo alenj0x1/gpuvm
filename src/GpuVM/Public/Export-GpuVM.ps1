@@ -52,12 +52,12 @@ function Export-GpuVM {
     try {
         $restart = Stop-GpuVMForDisk -Name $Name -ShutdownIfRunning:$ShutdownIfRunning -Action 'exportarla'
         try {
-            Write-Step 'Copiando el disco de la máquina'
+            Write-Step 'Copying the machine''s disk'
             Convert-VHD -Path $source -DestinationPath $temp -VHDType Dynamic -ErrorAction Stop
         }
         finally {
             if ($restart) {
-                Write-Step 'Encendiendo'
+                Write-Step 'Starting'
                 try { Start-VM -Name $Name -ErrorAction Stop } catch { Write-Warning "No se pudo volver a encender ${Name}: $($_.Exception.Message)" }
             }
         }

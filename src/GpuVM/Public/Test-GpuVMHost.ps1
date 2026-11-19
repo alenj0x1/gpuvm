@@ -15,12 +15,12 @@ function Test-GpuVMHost {
     $os = Get-CimInstance Win32_OperatingSystem
     $isClientPro = $os.Caption -match 'Pro|Enterprise|Education|Server'
     $checks.Add((New-CheckResult 'Windows' ($isClientPro ? 'Ok' : 'Fail') "$($os.Caption) (build $($os.BuildNumber))"))
-    $checks.Add((New-CheckResult 'Administrador' ((Test-IsAdmin) ? 'Ok' : 'Warn') ((Test-IsAdmin) ? '' : 'Crear y modificar VMs requiere PowerShell como administrador.')))
+    $checks.Add((New-CheckResult 'Administrator' ((Test-IsAdmin) ? 'Ok' : 'Warn') ((Test-IsAdmin) ? '' : 'Creating and changing VMs needs PowerShell as administrator.')))
 
     $cs = Get-CimInstance Win32_ComputerSystem
     $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
     $virt = $cs.HypervisorPresent -or $cpu.VirtualizationFirmwareEnabled
-    $checks.Add((New-CheckResult 'Virtualización' ($virt ? 'Ok' : 'Fail') ($virt ? 'Hipervisor activo o VT-x habilitado' : 'Activa Intel VT-x / AMD-V en la BIOS.')))
+    $checks.Add((New-CheckResult 'Virtualization' ($virt ? 'Ok' : 'Fail') ($virt ? 'Hypervisor on or VT-x enabled' : 'Start Intel VT-x / AMD-V in the BIOS.')))
 
     $hostMemoryGB = $cs.TotalPhysicalMemory / 1GB
     $logical = [int]$cpu.NumberOfLogicalProcessors
@@ -45,7 +45,7 @@ function Test-GpuVMHost {
     $memStatus = if ($freeGB -ge $memGB + 0.5) { 'Ok' } else { 'Warn' }
     $memDetail = "$freeGB GB libres ahora; la VM necesita $memGB GB fijos para encender"
     if ($memStatus -eq 'Warn') { $memDetail += '. Cierra programas o usa -Override @{vm=@{memoryGB=6}}' }
-    $checks.Add((New-CheckResult 'Memoria libre' $memStatus $memDetail))
+    $checks.Add((New-CheckResult 'Free memory' $memStatus $memDetail))
 
     $gpu = Get-HostGpu -Match $config['gpu']['match'] | Select-Object -First 1
     if ($gpu) { $checks.Add((New-CheckResult 'GPU' Ok "$($gpu.Name), driver $($gpu.DriverVersion)")) }
@@ -57,15 +57,15 @@ function Test-GpuVMHost {
         $freeGB = [math]::Round($drive.SizeRemaining / 1GB)
         $needGB = if ($config['vm']['disk']['type'] -eq 'Fixed') { $config['vm']['disk']['sizeGB'] + 10 } else { 40 }
         $status = if ($freeGB -ge $needGB) { 'Ok' } else { 'Fail' }
-        $checks.Add((New-CheckResult 'Espacio' $status "$freeGB GB libres en $($root.Substring(0, 2)); se necesitan ~$needGB GB"))
+        $checks.Add((New-CheckResult 'Space' $status "$freeGB GB libres en $($root.Substring(0, 2)); se necesitan ~$needGB GB"))
     }
     else {
-        $checks.Add((New-CheckResult 'Espacio' Fail "No existe la unidad de $root"))
+        $checks.Add((New-CheckResult 'Space' Fail "No existe la unidad de $root"))
     }
 
     if ($config['streaming'] -and $config['streaming']['provider'] -ne 'none') {
         $moonlight = Get-MoonlightPath
-        $checks.Add((New-CheckResult 'Moonlight' ($moonlight ? 'Ok' : 'Warn') ($moonlight ? $moonlight : 'No está instalado; hace falta para ver la VM. Instálalo con: ./gpuvm.ps1 client-install')))
+        $checks.Add((New-CheckResult 'Moonlight' ($moonlight ? 'Ok' : 'Warn') ($moonlight ? $moonlight : 'Not installed; it''s needed to see the VM. Install it with: ./gpuvm.ps1 client-install')))
         $manifest = Get-ComponentManifest
         $components = (Get-StreamingComponentNames $config['streaming'] | ForEach-Object { "$_ $($manifest[$_]['version'])" }) -join ', '
         $checks.Add((New-CheckResult 'Streaming' Ok "$components (se descargan y verifican al crear la VM)"))

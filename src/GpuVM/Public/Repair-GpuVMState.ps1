@@ -42,7 +42,7 @@ function Repair-GpuVMState {
         }
     }
     elseif ($config['streaming'] -and $config['streaming']['provider'] -ne 'none') {
-        Write-Warning 'El invitado ya arrancó y borró sus credenciales de Sunshine; connect no podrá emparejar hasta que se restablezcan.'
+        Write-Warning 'The guest already started and erased its Sunshine credentials; connect can''t pair until they''re restored.'
     }
 
     $gpu = Get-HostGpu -Match $config['gpu']['match'] | Select-Object -First 1

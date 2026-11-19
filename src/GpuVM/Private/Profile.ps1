@@ -57,47 +57,47 @@ function Test-GpuVMProfileData {
     )
     $problems = [System.Collections.Generic.List[string]]::new()
     $vm = $Config['vm']
-    if (-not $Config['backend']) { $problems.Add('Falta "backend".') }
-    if (-not $vm) { $problems.Add('Falta la sección "vm".'); return , $problems }
+    if (-not $Config['backend']) { $problems.Add('"backend" is missing.') }
+    if (-not $vm) { $problems.Add('The "vm" section is missing.'); return , $problems }
 
     $cpu = $vm['cpu']['count']
-    if ($cpu -lt 2) { $problems.Add('vm.cpu.count debe ser al menos 2 (Windows 11 lo exige).') }
+    if ($cpu -lt 2) { $problems.Add('vm.cpu.count must be at least 2 (Windows 11 requires it).') }
     if ($HostLogicalProcessors -and $cpu -ge $HostLogicalProcessors) {
         $problems.Add("vm.cpu.count ($cpu) debe dejar al menos un hilo al host (tiene $HostLogicalProcessors).")
     }
     $reserve = $vm['cpu']['reservePercent']
-    if ($reserve -lt 0 -or $reserve -gt 100) { $problems.Add('vm.cpu.reservePercent va de 0 a 100.') }
+    if ($reserve -lt 0 -or $reserve -gt 100) { $problems.Add('vm.cpu.reservePercent goes from 0 to 100.') }
     $weight = $vm['cpu']['relativeWeight']
-    if ($weight -lt 1 -or $weight -gt 10000) { $problems.Add('vm.cpu.relativeWeight va de 1 a 10000.') }
+    if ($weight -lt 1 -or $weight -gt 10000) { $problems.Add('vm.cpu.relativeWeight goes from 1 to 10000.') }
 
     $mem = $vm['memoryGB']
-    if ($mem -lt 4) { $problems.Add('vm.memoryGB debe ser al menos 4 (Windows 11 lo exige).') }
+    if ($mem -lt 4) { $problems.Add('vm.memoryGB must be at least 4 (Windows 11 requires it).') }
     if ($HostMemoryGB -and $mem -gt ($HostMemoryGB - 4)) {
         $problems.Add("vm.memoryGB ($mem) deja menos de 4 GB al host (tiene $([math]::Round($HostMemoryGB,1)) GB).")
     }
 
     # Differencing: a VM built on a template (set by GpuVM, never by a profile).
-    if ($vm['disk']['type'] -notin 'Dynamic', 'Fixed', 'Differencing') { $problems.Add('vm.disk.type debe ser "Dynamic" o "Fixed".') }
-    if ($vm['disk']['sizeGB'] -lt 64) { $problems.Add('vm.disk.sizeGB debe ser al menos 64.') }
+    if ($vm['disk']['type'] -notin 'Dynamic', 'Fixed', 'Differencing') { $problems.Add('vm.disk.type must be "Dynamic" or "Fixed".') }
+    if ($vm['disk']['sizeGB'] -lt 64) { $problems.Add('vm.disk.sizeGB must be at least 64.') }
 
     $alloc = $Config['gpu']['allocationPercent']
-    if ($alloc -lt 1 -or $alloc -gt 100) { $problems.Add('gpu.allocationPercent va de 1 a 100.') }
+    if ($alloc -lt 1 -or $alloc -gt 100) { $problems.Add('gpu.allocationPercent goes from 1 to 100.') }
 
     $streaming = $Config['streaming']
     if ($streaming) {
-        if ($streaming['provider'] -notin 'sunshine', 'none') { $problems.Add('streaming.provider debe ser "sunshine" o "none".') }
-        if ($streaming['audio'] -and $streaming['audio'] -notin 'usb', 'vbcable', 'none') { $problems.Add('streaming.audio debe ser "usb" o "none".') }
+        if ($streaming['provider'] -notin 'sunshine', 'none') { $problems.Add('streaming.provider must be "sunshine" or "none".') }
+        if ($streaming['audio'] -and $streaming['audio'] -notin 'usb', 'vbcable', 'none') { $problems.Add('streaming.audio must be "usb" or "none".') }
         $client = $streaming['client']
         if ($client -and $client['resolution'] -and $client['resolution'] -notmatch '^\d{3,5}x\d{3,5}$') {
-            $problems.Add('streaming.client.resolution debe tener la forma 1920x1080.')
+            $problems.Add('streaming.client.resolution must look like 1920x1080.')
         }
-        if ($client -and $client['fps'] -and ($client['fps'] -lt 10 -or $client['fps'] -gt 480)) { $problems.Add('streaming.client.fps va de 10 a 480.') }
-        if ($client -and $client['codec'] -and $client['codec'] -notin 'auto', 'H.264', 'HEVC', 'AV1') { $problems.Add('streaming.client.codec debe ser auto, H.264, HEVC o AV1.') }
+        if ($client -and $client['fps'] -and ($client['fps'] -lt 10 -or $client['fps'] -gt 480)) { $problems.Add('streaming.client.fps goes from 10 to 480.') }
+        if ($client -and $client['codec'] -and $client['codec'] -notin 'auto', 'H.264', 'HEVC', 'AV1') { $problems.Add('streaming.client.codec must be auto, H.264, HEVC or AV1.') }
         if ($client -and $client.Contains('displayMode') -and $client['displayMode'] -and $client['displayMode'] -notin 'fullscreen', 'windowed', 'borderless') {
-            $problems.Add('streaming.client.displayMode debe ser fullscreen, windowed o borderless.')
+            $problems.Add('streaming.client.displayMode must be fullscreen, windowed or borderless.')
         }
         if ($streaming['disableHyperVVideo'] -and -not $streaming['virtualDisplay']) {
-            $problems.Add('streaming.disableHyperVVideo requiere virtualDisplay; sin pantalla virtual la VM se quedaría sin pantalla.')
+            $problems.Add('streaming.disableHyperVVideo needs virtualDisplay; without a virtual display the VM would have no screen.')
         }
     }
 
@@ -109,10 +109,10 @@ function Test-GpuVMProfileData {
         }
     }
     if ($guest -and $guest.Contains('cleanup') -and $guest['cleanup'] -notin 'none', 'privacy', 'apps', 'minimal') {
-        $problems.Add('guest.cleanup debe ser none, privacy, apps o minimal.')
+        $problems.Add('guest.cleanup must be none, privacy, apps or minimal.')
     }
     if ($Config.Contains('iso') -and $Config['iso'] -and [IO.Path]::GetExtension($Config['iso']) -ne '.iso') {
-        $problems.Add('iso debe ser la ruta de un archivo .iso.')
+        $problems.Add('iso must be the path to an .iso file.')
     }
 
     , $problems

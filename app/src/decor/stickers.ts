@@ -62,7 +62,7 @@ export const STICKERS: StickerDef[] = [
     },
   },
   {
-    id: "star", get name() { return t("Estrella"); },
+    id: "star", get name() { return t("Star"); },
     draw: (g) => {
       poly(g, starPts(103, 112, 80, 40), "#eda21e", 26);
       poly(g, starPts(99, 107, 76, 38), "#ffc83a", 24);
@@ -78,7 +78,7 @@ export const STICKERS: StickerDef[] = [
     },
   },
   {
-    id: "bolt", get name() { return t("Rayo"); },
+    id: "bolt", get name() { return t("Bolt"); },
     draw: (g) => {
       const pts = [[112, 14], [56, 110], [96, 110], [78, 188], [150, 80], [110, 80], [148, 14]];
       poly(g, pts.map(([x, y]) => [x + 6, y + 6]), "#e8901c", 12);
@@ -88,7 +88,7 @@ export const STICKERS: StickerDef[] = [
     },
   },
   {
-    id: "heart", get name() { return t("Corazón"); },
+    id: "heart", get name() { return t("Heart"); },
     draw: (g) => {
       heartPath(g, 5, 6); g.fillStyle = "#d8344f"; g.fill();
       heartPath(g); g.fillStyle = "#ff5a76"; g.fill();
@@ -98,7 +98,7 @@ export const STICKERS: StickerDef[] = [
     },
   },
   {
-    id: "cat", get name() { return t("Gato"); },
+    id: "cat", get name() { return t("Cat"); },
     draw: (g) => {
       const fur = "#f6a65a", dark = "#d9803a";
       poly(g, [[42, 96], [50, 26], [96, 66]], fur, 14);
@@ -125,7 +125,7 @@ export const STICKERS: StickerDef[] = [
     },
   },
   {
-    id: "dog", get name() { return t("Perro"); },
+    id: "dog", get name() { return t("Dog"); },
     draw: (g) => {
       const cream = "#f3d9b1", brown = "#9a6a3f", patch = "#c28a55";
       ell(g, 100, 108, 56, 54, cream);
@@ -151,7 +151,7 @@ export const STICKERS: StickerDef[] = [
     },
   },
   {
-    id: "spider", get name() { return t("Araña"); },
+    id: "spider", get name() { return t("Spider"); },
     draw: (g) => {
       const leg = "#3a3347";
       stroke(g, [[100, 6], [100, 66]], "#cfc9da", 3);
@@ -175,7 +175,7 @@ export const STICKERS: StickerDef[] = [
     },
   },
   {
-    id: "ghost", get name() { return t("Fantasma"); },
+    id: "ghost", get name() { return t("Ghost"); },
     draw: (g) => {
       const body = (dx: number, dy: number) => {
         g.beginPath();
@@ -198,7 +198,7 @@ export const STICKERS: StickerDef[] = [
     },
   },
   {
-    id: "rocket", get name() { return t("Cohete"); },
+    id: "rocket", get name() { return t("Rocket"); },
     draw: (g) => {
       g.save(); g.translate(100, 100); g.rotate(Math.PI / 4);
       // Flame, fins, body, nose and window.
@@ -217,7 +217,7 @@ export const STICKERS: StickerDef[] = [
     },
   },
   {
-    id: "fire", get name() { return t("Fuego"); },
+    id: "fire", get name() { return t("Fire"); },
     draw: (g) => {
       const flame = (k: number, dy: number, color: string) => {
         g.save(); g.translate(100, 180 + dy); g.scale(k, k);
@@ -239,7 +239,7 @@ export const STICKERS: StickerDef[] = [
     },
   },
   {
-    id: "gem", get name() { return t("Diamante"); },
+    id: "gem", get name() { return t("Diamond"); },
     draw: (g) => {
       const top = [[52, 70], [76, 40], [124, 40], [148, 70]], tip = [100, 170];
       poly(g, [top[0], top[1], top[2], top[3], tip], "#3fb8d6", 6);
@@ -253,7 +253,7 @@ export const STICKERS: StickerDef[] = [
     },
   },
   {
-    id: "moon", get name() { return t("Luna"); },
+    id: "moon", get name() { return t("Moon"); },
     draw: (g) => {
       g.beginPath(); g.arc(100, 104, 74, 0, Math.PI * 2); g.fillStyle = "#ffe08a"; g.fill();
       g.globalCompositeOperation = "destination-out";
@@ -266,7 +266,7 @@ export const STICKERS: StickerDef[] = [
     },
   },
   {
-    id: "gamepad", get name() { return t("Control"); },
+    id: "gamepad", get name() { return t("Controller"); },
     draw: (g, color) => {
       const body = (dy: number, color: string) => {
         g.beginPath();
@@ -303,11 +303,11 @@ export function customImage(id: string): string | null {
 /** Reads an image file, makes it at most 256 px on its longer side (keeping its transparency) and keeps it as a
  *  sticker. Returns its sticker id, or throws with a message to show. */
 export async function addCustomSticker(file: File): Promise<string> {
-  if (!/^image\/(png|webp|jpeg|gif)$/.test(file.type)) throw new Error(t("Usa una imagen PNG, WEBP, JPG o GIF."));
-  if (file.size > 8 * 1024 * 1024) throw new Error(t("La imagen pesa más de 8 MB."));
+  if (!/^image\/(png|webp|jpeg|gif)$/.test(file.type)) throw new Error(t("Use a PNG, WEBP, JPG or GIF image."));
+  if (file.size > 8 * 1024 * 1024) throw new Error(t("The image is larger than 8 MB."));
   const url = URL.createObjectURL(file);
   try {
-    const img = await new Promise<HTMLImageElement>((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => fail(new Error(t("No se pudo leer la imagen."))); i.src = url; });
+    const img = await new Promise<HTMLImageElement>((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => fail(new Error(t("The image couldn't be read."))); i.src = url; });
     const k = Math.min(1, 256 / Math.max(img.width, img.height));
     const c = document.createElement("canvas");
     c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
@@ -392,4 +392,4 @@ export function stickerImage(id: string, color: string): HTMLCanvasElement | nul
   return done;
 }
 
-export const stickerName = (id: string) => (id.startsWith("custom:") ? t("Tu imagen") : STICKERS.find((s) => s.id === id)?.name ?? id);
+export const stickerName = (id: string) => (id.startsWith("custom:") ? t("Your image") : STICKERS.find((s) => s.id === id)?.name ?? id);

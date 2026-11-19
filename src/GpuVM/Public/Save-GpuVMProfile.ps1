@@ -16,8 +16,8 @@ function Save-GpuVMProfile {
         [ValidatePattern('^[\w-]{1,40}$')][string]$Previous
     )
     if (Test-Path -LiteralPath (Join-Path (Get-ProfileDirectory) "$Name.json")) { throw "'$Name' es un perfil incluido; usa otro nombre." }
-    if ($Extends -eq $Name) { throw 'Un perfil no puede extenderse a sí mismo.' }
-    if ($Description.Length -gt 200) { throw 'La descripción es demasiado larga.' }
+    if ($Extends -eq $Name) { throw 'A profile can''t extend itself.' }
+    if ($Description.Length -gt 200) { throw 'The description is too long.' }
 
     $s = $Settings
     $vm = [ordered]@{}

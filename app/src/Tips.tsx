@@ -6,15 +6,15 @@ import { t } from "./i18n";
  *  figure is lab 020's (60 FPS adds a frame). */
 function tips(): string[] {
   return [
-    t("Ctrl+Alt+Shift+G abre el panel mientras ves una máquina."),
-    t("Ctrl+Alt+Shift+H te lleva a Inicio y la máquina sigue conectada."),
-    t("Ctrl+Alt+Shift+Z suelta el mouse sin salir de la máquina."),
-    t("El panel se ensancha arrastrando su borde izquierdo."),
-    t("Arrastra las máquinas de la barra lateral para ordenarlas o pasarlas a otro espacio."),
-    t("En Personalizar puedes poner stickers, figuras y un letrero LED en el cubo de cada máquina."),
-    t("En Overclock puedes jugar en equipo con tus otras máquinas."),
-    t("Un disco compartido lleva tus juegos de Steam de una máquina a otra sin descargarlos de nuevo."),
-    t("A 120 FPS o más, la imagen responde a tus teclas unos 5 ms antes que a 60 FPS."),
+    t("Ctrl+Alt+Shift+G opens the panel while you're on a machine."),
+    t("Ctrl+Alt+Shift+H takes you Home and the machine stays connected."),
+    t("Ctrl+Alt+Shift+Z frees the mouse without leaving the machine."),
+    t("Drag the panel's left edge to make it wider."),
+    t("Drag machines in the sidebar to reorder them or move them to another space."),
+    t("In Personalize you can add stickers, figures and an LED sign to each machine's cube."),
+    t("In Overclock you can play as a team with your other machines."),
+    t("A shared disk takes your Steam games from one machine to another without downloading them again."),
+    t("At 120 FPS or more, the picture answers your keys about 5 ms sooner than at 60 FPS."),
   ];
 }
 

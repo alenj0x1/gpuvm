@@ -34,13 +34,13 @@ const send = (vm: string, msg: Record<string, unknown>) => invoke("viewer_send",
 
 /** Why a capture failed, in words (the viewer and the app send a short reason). */
 const captureErrorText = (reason: string) => ({
-  "disk-full": t("No hay espacio en el disco"),
-  "too-slow": t("El disco no da abasto, la grabación se detuvo"),
-  "no-frame": t("No llegó la imagen, inténtalo de nuevo"),
-  "format": t("Esta imagen no se puede capturar"),
-  "replay-empty": t("Aún no hay segundos guardados"),
-  "replay-off": t("Actívalo en Ajustes, en Capturas"),
-}[reason] ?? t("No se pudo guardar"));
+  "disk-full": t("The disk is full"),
+  "too-slow": t("The disk can't keep up, the recording stopped"),
+  "no-frame": t("The picture didn't arrive, try again"),
+  "format": t("This picture can't be captured"),
+  "replay-empty": t("No seconds kept yet"),
+  "replay-off": t("Turn it on in Settings, in Captures"),
+}[reason] ?? t("Couldn't save"));
 
 /** The panel beside GpuVM's viewer: it slides in from the right while the picture moves aside. A board of widgets
  *  the person arranges (ViewerWidgets.tsx): machines to switch to, the usual actions, the picture's numbers, the time,
@@ -210,16 +210,16 @@ export function ViewerPanel({ machine, onSwitched, onResize, sample }: {
   };
 
   return (
-    <aside className={`viewer-panel${open ? " open" : ""}`} aria-label={t("Panel del visor")}>
+    <aside className={`viewer-panel${open ? " open" : ""}`} aria-label={t("Viewer panel")}>
       <div className="viewer-panel-edge" onPointerDown={startResize} onDoubleClick={() => { onResize?.(340); invoke("viewer_panel_resize", { width: 340 }); try { localStorage.removeItem(WIDTH_KEY); } catch { /* no storage */ } }} aria-hidden="true" />
       <div className="viewer-panel-top">
         <span className="viewer-panel-machine"><MachineIcon name={vm} size={20} radius={6} /><span>{vm}</span></span>
         {!game && (
           <button type="button" className={`vp-edit${edit ? " on" : ""}`} onClick={() => setEdit(!edit)}>
-            {edit ? <><IconCheck size={15} />{t("Listo")}</> : <><IconLayoutGrid size={15} />{t("Editar")}</>}
+            {edit ? <><IconCheck size={15} />{t("Done")}</> : <><IconLayoutGrid size={15} />{t("Edit")}</>}
           </button>
         )}
-        <button type="button" className="icon-btn" aria-label={t("Cerrar")} title={t("Cerrar")} onClick={() => invoke("viewer_panel_close")}><IconX size={16} /></button>
+        <button type="button" className="icon-btn" aria-label={t("Close")} title={t("Close")} onClick={() => invoke("viewer_panel_close")}><IconX size={16} /></button>
       </div>
       <div className="viewer-panel-body" onScroll={(e) => {
         // Only up and down: while the panel narrows the board is wider for a moment, and a sideways scroll left the
@@ -233,9 +233,9 @@ export function ViewerPanel({ machine, onSwitched, onResize, sample }: {
             {items.length === 0 && !edit ? (
               <div className="vp-board-empty">
                 <span className="vp-empty-icon"><IconLayoutGrid size={20} /></span>
-                <strong>{t("Sin widgets")}</strong>
-                <span>{t("Elige lo que quieres tener a mano mientras usas la máquina.")}</span>
-                <button type="button" className="vp-chip" onClick={() => setEdit(true)}><IconPlus size={14} />{t("Agregar")}</button>
+                <strong>{t("No widgets")}</strong>
+                <span>{t("Pick what you want at hand while you use the machine.")}</span>
+                <button type="button" className="vp-chip" onClick={() => setEdit(true)}><IconPlus size={14} />{t("Add")}</button>
               </div>
             ) : (
               <WidgetBoard items={items} onChange={change} edit={edit}>

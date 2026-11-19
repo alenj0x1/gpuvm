@@ -231,7 +231,7 @@ fn spawn_bridge(token: &Handle) -> Result<Bridge, String> {
     let code = dir.join("gpuvm");
     let script = code.join("src").join("bridge.ps1");
     if !pwsh.exists() || !script.exists() {
-        return Err("Faltan archivos de GpuVM. Vuelve a instalarlo.".into());
+        return Err("Some GpuVM files are missing. Install it again.".into());
     }
     let _guard = SPAWN.lock().unwrap();
     unsafe {
@@ -344,7 +344,7 @@ fn handle(pipe: HANDLE) {
             return;
         }
         let Ok(request) = serde_json::from_str::<Value>(&line) else {
-            send(&mut out, &json!({ "type": "result", "ok": false, "error": "Petición no válida." }));
+            send(&mut out, &json!({ "type": "result", "ok": false, "error": "Invalid request." }));
             continue;
         };
         let id = request["id"].clone();
@@ -368,7 +368,7 @@ fn handle(pipe: HANDLE) {
             return;
         }
         let Some(cmd) = request["cmd"].as_str() else {
-            fail(&mut out, "Petición no válida.".into());
+            fail(&mut out, "Invalid request.".into());
             continue;
         };
         if needs_consent(&request) {
@@ -398,7 +398,7 @@ fn handle(pipe: HANDLE) {
         let _busy = Busy::start();
         let forward = json!({ "id": id, "cmd": cmd, "args": request["args"] }).to_string();
         if writeln!(b.stdin, "{forward}").and_then(|_| b.stdin.flush()).is_err() {
-            fail(&mut out, "PowerShell dejó de responder.".into());
+            fail(&mut out, "PowerShell stopped responding.".into());
             return;
         }
         // Relay every event (progress, warnings) until this request's result. If the app goes away meanwhile
@@ -409,7 +409,7 @@ fn handle(pipe: HANDLE) {
             event.clear();
             if b.stdout.read_line(&mut event).unwrap_or(0) == 0 {
                 if !client_gone {
-                    fail(&mut out, "PowerShell dejó de responder.".into());
+                    fail(&mut out, "PowerShell stopped responding.".into());
                 }
                 return;
             }

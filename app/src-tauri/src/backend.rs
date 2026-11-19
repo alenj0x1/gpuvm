@@ -13,9 +13,9 @@ use std::sync::atomic::Ordering;
 use windows_sys::Win32::Foundation::*;
 
 #[cfg_attr(debug_assertions, allow(dead_code))]
-pub const SERVICE_MISSING: &str = "El servicio de GpuVM no está instalado.";
+pub const SERVICE_MISSING: &str = "The GpuVM service isn't installed.";
 #[cfg_attr(debug_assertions, allow(dead_code))]
-pub const SERVICE_STOPPED: &str = "El servicio de GpuVM está detenido.";
+pub const SERVICE_STOPPED: &str = "The GpuVM service is stopped.";
 
 /// Whether connecting may start a stopped service (preference: with GpuVM or with Windows; not when manual).
 pub static AUTO_START: AtomicBool = AtomicBool::new(true);
@@ -54,7 +54,7 @@ impl Drop for Conn {
 
 impl Conn {
     pub fn send(&mut self, request: &Value) -> Result<(), String> {
-        writeln!(self.writer, "{request}").and_then(|_| self.writer.flush()).map_err(|_| "GpuVM dejó de responder.".to_string())
+        writeln!(self.writer, "{request}").and_then(|_| self.writer.flush()).map_err(|_| "GpuVM stopped responding.".to_string())
     }
 
     /// The next event; None when the other end closed.
@@ -85,7 +85,7 @@ impl Conn {
     pub fn call(&mut self, request: &Value, mut on_event: impl FnMut(&Value)) -> Result<Value, String> {
         self.send(request)?;
         loop {
-            let event = self.next_event().ok_or("GpuVM dejó de responder.")?;
+            let event = self.next_event().ok_or("GpuVM stopped responding.")?;
             if event["type"] == "result" && event["id"] == request["id"] {
                 return Ok(event);
             }
@@ -192,7 +192,7 @@ pub fn run_elevated(file: &std::path::Path, parameters: &str, cancelled: &str) -
     info.lpParameters = params.as_ptr();
     info.nShow = 0;
     if unsafe { ShellExecuteExW(&mut info) } == 0 {
-        return Err(if unsafe { GetLastError() } == ERROR_CANCELLED { cancelled.to_string() } else { "No se pudo pedir permiso de administrador.".into() });
+        return Err(if unsafe { GetLastError() } == ERROR_CANCELLED { cancelled.to_string() } else { "Couldn't ask for administrator permission.".into() });
     }
     let mut code = 1;
     unsafe {

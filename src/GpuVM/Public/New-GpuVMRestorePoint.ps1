@@ -21,7 +21,7 @@ function New-GpuVMRestorePoint {
     try { $point = New-GpuVMRestorePointCore -Name $Name -State $state -Label $Label }
     finally {
         if ($restart) {
-            Write-Step 'Encendiendo'
+            Write-Step 'Starting'
             try { Start-VM -Name $Name -ErrorAction Stop } catch { Write-Warning "No se pudo volver a encender ${Name}: $($_.Exception.Message)" }
         }
     }

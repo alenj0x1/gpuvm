@@ -87,7 +87,7 @@ function New-WindowsVhdx {
         (Get-Item -LiteralPath $Path).IsReadOnly = $false
     }
     else {
-        Write-Step 'Copiando Windows al disco de la máquina'
+        Write-Step 'Copying Windows to the machine''s disk'
         $copy = Copy-PacedFile -Source $base -Destination $Path
         Write-Step ('Windows copiado ({0:N0} s, {1:N0} MB/s, {2} pausas para no frenar el equipo)' -f $copy[0], $copy[1], $copy[2])
     }
@@ -107,7 +107,7 @@ function New-WindowsBaseVhdx {
         [Parameter(Mandatory)][string]$ImageFile,
         [Parameter(Mandatory)][int]$ImageIndex
     )
-    Write-Step "Preparando Windows de este ISO (solo la primera vez, 5 a 15 minutos; el equipo sigue libre)"
+    Write-Step "Preparing Windows from this ISO (first time only, 5 to 15 minutes; you can keep using your PC)"
     New-VHD -Path $Path -SizeBytes ([uint64]$script:BaseDiskGB * 1GB) -Dynamic | Out-Null
     Mount-VHD -Path $Path -NoDriveLetter
     $mountRoot = Get-GpuVMMountRoot

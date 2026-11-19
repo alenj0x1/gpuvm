@@ -42,7 +42,7 @@ interface Props {
   onRenamed?: (from: string, to: string) => void;
 }
 
-const transitionText = (state: string): string | undefined => ({ Starting: t("Encendiendo"), Stopping: t("Apagando"), Saving: t("Guardando"), Pausing: t("Pausando"), Resuming: t("Reanudando") } as Record<string, string>)[state];
+const transitionText = (state: string): string | undefined => ({ Starting: t("Starting"), Stopping: t("Shutting down"), Saving: t("Saving"), Pausing: t("Pausing"), Resuming: t("Resuming") } as Record<string, string>)[state];
 
 type VmTab = "machine" | "display" | "windows" | "custom";
 // The cube's column: dragged anywhere between the two edges. Near the right edge the cube folds into a thin rail
@@ -53,14 +53,14 @@ const readCubeW = () => { try { return Number(localStorage.getItem(CUBE_KEY)) ||
 /** Where the last machine page was left, to open the next one at the same place. */
 let lastPlace: { section: VmTab; offset: number; at: number } | null = null;
 const NEW_SPACE = "__new__";
-const tabLabel = (tab: VmTab) => ({ machine: t("Máquina"), display: t("Imagen y control"), windows: t("Windows"), custom: t("Personalizar") })[tab];
+const tabLabel = (tab: VmTab) => ({ machine: t("Machine"), display: t("Picture and control"), windows: t("Windows"), custom: t("Customize") })[tab];
 
 export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRemoved, onRenamed }: Props) {
   const [variant, setVariant] = useState(() => patternVariant(vm.name));
   // What is being changed and not saved yet (resources, cleanup level, apps picked to install), for the cube.
   const [preview, setPreview] = useState<{ cpu?: number; memoryGB?: number; gpuPercent?: number; diskGB?: number; cleanup?: CleanupLevelId }>({});
   const [previewApps, setPreviewApps] = useState<string[]>([]);
-  // The name being typed in "Cambiar nombre" (and then being applied), so the cube's plate engraves it as it is typed.
+  // The name being typed in "Rename" (and then being applied), so the cube's plate engraves it as it is typed.
   const [draftName, setDraftName] = useState<string | null>(null);
   const [renameOpen, setRenameOpen] = useState(false);
   useEffect(() => { setPreview({}); setPreviewApps([]); setDraftName(null); }, [vm.name]);
@@ -180,16 +180,16 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
         }} />
 
       <div className="card stats joined">
-        <Stat icon={<IconCpu size={15} />} label={t("Procesador")} value={t("{n} hilos", { n: vm.processorCount })}
-          sub={running ? t("{n} % en uso", { n: vm.cpuPercent }) : t("Sin uso")} spark={running ? series(samples, (s) => s.cpu) : []} color="var(--chart-cpu)" />
-        <Stat icon={<IconTopologyStar3 size={15} />} label={t("Memoria")} value={`${vm.memoryStartupGB} GB`}
-          sub={running ? t("{n} GB en uso", { n: vm.memoryDemandGB }) : t("Fija al encender")}
+        <Stat icon={<IconCpu size={15} />} label={t("Processor")} value={t("{n} threads", { n: vm.processorCount })}
+          sub={running ? t("{n} % in use", { n: vm.cpuPercent }) : t("Idle")} spark={running ? series(samples, (s) => s.cpu) : []} color="var(--chart-cpu)" />
+        <Stat icon={<IconTopologyStar3 size={15} />} label={t("Memory")} value={`${vm.memoryStartupGB} GB`}
+          sub={running ? t("{n} GB in use", { n: vm.memoryDemandGB }) : t("Fixed at start")}
           spark={running ? series(samples, (s) => (s.mem / Math.max(vm.memoryAssignedGB, 0.1)) * 100) : []} color="var(--chart-mem)" />
         <Stat icon={<IconBolt size={15} />} label="GPU"
-          value={vm.hasGpu ? (running ? `${vm.gpuPercent} %` : t("{n} % asignada", { n: vm.options?.gpuPercent ?? 100 })) : t("Sin GPU")}
-          sub={vm.gpuName ?? t("Solo gráficos básicos")} spark={running && vm.hasGpu ? series(samples, (s) => s.gpu) : []} color="var(--chart-gpu)" />
-        <Stat icon={<IconClock size={15} />} label={t("Tiempo encendida")} value={running ? formatUptime(vm.uptimeSeconds) : "—"}
-          sub={running ? (vm.address ?? t("Esperando red")) : t("Sin red")}
+          value={vm.hasGpu ? (running ? `${vm.gpuPercent} %` : t("{n} % assigned", { n: vm.options?.gpuPercent ?? 100 })) : t("No GPU")}
+          sub={vm.gpuName ?? t("Basic graphics only")} spark={running && vm.hasGpu ? series(samples, (s) => s.gpu) : []} color="var(--chart-gpu)" />
+        <Stat icon={<IconClock size={15} />} label={t("Uptime")} value={running ? formatUptime(vm.uptimeSeconds) : "—"}
+          sub={running ? (vm.address ?? t("Waiting for network")) : t("No network")}
           // Its line, in the text color: how busy the machine has been overall (processor and GPU together).
           spark={running ? series(samples, (s) => (s.cpu + (vm.hasGpu ? s.gpu : s.cpu)) / 2) : []} color="var(--text)" />
       </div>
@@ -198,10 +198,10 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
       {vm.managed && vm.driverInSync === false && (
         <div className="notice">
           <IconRefreshAlert size={20} />
-          <div className="grow">{t("El driver de NVIDIA de la VM es distinto al de tu PC. Se actualiza solo la próxima vez que la enciendas desde aquí.")}</div>
+          <div className="grow">{t("The VM's NVIDIA driver differs from your PC's. It updates itself the next time you start it from here.")}</div>
           {!busy && (
             <button className="btn" onClick={() => startJob(vm.name, "Sync-GpuVMDriver", { Name: vm.name, Confirm: false, ShutdownIfRunning: true })}>
-              <IconDownload size={16} />{off ? t("Actualizar ahora") : t("Apagar y actualizar")}
+              <IconDownload size={16} />{off ? t("Update now") : t("Shut down and update")}
             </button>
           )}
         </div>
@@ -247,11 +247,11 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
       {/* The machine itself, always in view beside its options, following what is being changed before it is saved. */}
       {vm.managed && vm.options && (
         <aside className={`vm-cube${renameOpen ? " lifted" : ""}`}>
-          <div className="vm-cube-split" role="separator" aria-orientation="vertical" aria-label={t("Ancho del cubo")} title={t("Arrastra para cambiar el ancho")}
+          <div className="vm-cube-split" role="separator" aria-orientation="vertical" aria-label={t("Cube width")} title={t("Drag to change the width")}
             onPointerDown={resizeCube} onDoubleClick={() => { setCubeW(CUBE_DEFAULT); try { localStorage.setItem(CUBE_KEY, String(CUBE_DEFAULT)); } catch { /* no storage */ } }}><span /></div>
           {active === "custom" && (
-            <div className="cube-views" role="radiogroup" aria-label={t("Vista del cubo")}>
-              {([[null, t("Libre"), <IconRotate360 size={15} key="i" />, t("Girar libremente")], ["front", t("Frente"), null, t("Ver desde frente")], ["right", t("Derecha"), null, t("Ver desde derecha")], ["back", t("Atrás"), null, t("Ver desde atrás")], ["left", t("Izquierda"), null, t("Ver desde izquierda")], ["top", t("Arriba"), null, t("Ver desde arriba")]] as const).map(([v, label, icon, hint]) => (
+            <div className="cube-views" role="radiogroup" aria-label={t("Cube view")}>
+              {([[null, t("Free"), <IconRotate360 size={15} key="i" />, t("Rotate freely")], ["front", t("Front"), null, t("View from the front")], ["right", t("Right"), null, t("View from the right")], ["back", t("Back"), null, t("View from the back")], ["left", t("Left"), null, t("View from the left")], ["top", t("Top"), null, t("View from the top")]] as const).map(([v, label, icon, hint]) => (
                 <button key={label} type="button" role="radio" aria-checked={cubeView === v} className={cubeView === v ? "on" : ""} title={hint} onClick={() => setCubeView(v)}>
                   {icon ?? <FaceGlyph face={v!} />}<span>{label}</span>
                 </button>
@@ -295,7 +295,7 @@ export function SharedDisks({ vm, busy, startJob }: Pick<Props, "vm" | "busy" | 
           const here = d.vm === vm.name;
           // Another running machine has it: it has to be taken away there first.
           const elsewhere = !!d.vm && !here;
-          const state = here ? t("Conectado") : elsewhere ? t("En {vm}", { vm: d.vm! }) : t("Libre");
+          const state = here ? t("Connected") : elsewhere ? t("In {vm}", { vm: d.vm! }) : t("Free");
           return (
             <div className="opt-row disk-row" key={d.name}>
               <span className="opt-icon">{d.purpose === "games" ? <IconDeviceGamepad2 size={17} /> : <IconFolders size={17} />}</span>
@@ -305,22 +305,22 @@ export function SharedDisks({ vm, busy, startJob }: Pick<Props, "vm" | "busy" | 
                 </span>
                 {/* What a shared disk is, said plainly: its name alone ("juegos") doesn't tell. */}
                 <span className="opt-desc">{d.purpose === "games"
-                  ? t("Disco compartido de {size} para juegos. Se instalan una sola vez y se conecta a la máquina que los necesite.", { size: gb(d.sizeGB) })
-                  : t("Disco compartido de {size}. Tus archivos, en la máquina que lo conecte.", { size: gb(d.sizeGB) })}</span>
-                <div className="disk-use" title={t("Ocupa {size} en tu PC", { size: gb(d.fileGB) })}>
+                  ? t("Shared {size} disk for games. Install them once and connect it to whichever machine needs them.", { size: gb(d.sizeGB) })
+                  : t("Shared {size} disk. Your files, on whichever machine connects it.", { size: gb(d.sizeGB) })}</span>
+                <div className="disk-use" title={t("Takes {size} on your PC", { size: gb(d.fileGB) })}>
                   <div className="disk-use-bar"><span style={{ width: `${Math.min(100, (d.fileGB / Math.max(d.sizeGB, 1)) * 100)}%` }} /></div>
-                  <span>{t("{used} de {size}", { used: gb(d.fileGB), size: gb(d.sizeGB) })}</span>
+                  <span>{t("{used} of {size}", { used: gb(d.fileGB), size: gb(d.sizeGB) })}</span>
                 </div>
               </div>
               <div className="opt-ctl">
                 {here ? (
                   <button className="btn" disabled={!!busy} onClick={() => startJob(vm.name, "Disconnect-GpuVMSharedDisk", { Name: d.name }, load)}>
-                    {working ? <IconLoader2 size={16} className="spin" /> : <IconPlugOff size={16} />}{working ? translateModule(busy!.message) : t("Desconectar")}
+                    {working ? <IconLoader2 size={16} className="spin" /> : <IconPlugOff size={16} />}{working ? translateModule(busy!.message) : t("Disconnect")}
                   </button>
                 ) : (
                   <button className="btn" disabled={!!busy || (elsewhere && d.vmRunning)} onClick={() => startJob(vm.name, "Connect-GpuVMSharedDisk", { Name: d.name, VMName: vm.name }, load)}
-                    title={elsewhere && d.vmRunning ? t("Desconéctalo en {vm} o apágala para traerlo", { vm: d.vm! }) : undefined}>
-                    <IconPlugConnected size={16} />{elsewhere ? t("Traer desde {vm}", { vm: d.vm! }) : t("Conectar")}
+                    title={elsewhere && d.vmRunning ? t("Disconnect it in {vm} or shut that machine down to bring it here", { vm: d.vm! }) : undefined}>
+                    <IconPlugConnected size={16} />{elsewhere ? t("Bring from {vm}", { vm: d.vm! }) : t("Connect")}
                   </button>
                 )}
               </div>
@@ -351,30 +351,30 @@ export function Cleanup({ vm, busy, startJob, onPreview }: Pick<Props, "vm" | "b
   return (
     <div className="card">
       <div className="opt-rows">
-        <OptionRow icon={<IconSparkles size={17} />} title={t("Limpieza de Windows")} desc={t("Cada nivel incluye lo de los anteriores.")}>
+        <OptionRow icon={<IconSparkles size={17} />} title={t("Windows cleanup")} desc={t("Each level includes the ones before it.")}>
           {(chosen !== current || applying) && (
             <button className="btn" disabled={!!busy} onClick={() => startJob(vm.name, "Set-GpuVMCleanup", { Name: vm.name, Level: chosen })}>
               {applying ? <IconLoader2 size={16} className="spin" /> : <IconSparkles size={16} />}
-              {applying ? translateModule(busy!.message) : vm.state === "Off" ? t("Encender y aplicar") : t("Aplicar")}
+              {applying ? translateModule(busy!.message) : vm.state === "Off" ? t("Start and apply") : t("Apply")}
             </button>
           )}
         </OptionRow>
       </div>
       <div className="cleanup-body">
-        <div className="level-list" role="radiogroup" aria-label={t("Nivel de limpieza")}>
+        <div className="level-list" role="radiogroup" aria-label={t("Cleanup level")}>
           {levels.map((l) => (
             <button key={l.id} type="button" role="radio" aria-checked={l.id === chosen} className={`level-row${l.id === chosen ? " on" : ""}`}
               onClick={() => setChosen(l.id)}>
               <span className="level-icon">{LEVEL_LOOK[l.id]?.icon ?? <IconSparkles size={18} />}</span>
               <span className="level-text"><span className="level-name">{translateModule(l.name)}</span><span className="level-tagline">{LEVEL_LOOK[l.id]?.tagline ?? ""}</span></span>
-              {l.id === current && <span className="level-applied"><IconCheck size={12} />{t("Aplicado")}</span>}
+              {l.id === current && <span className="level-applied"><IconCheck size={12} />{t("Applied")}</span>}
             </button>
           ))}
         </div>
         <CleanupFlow items={all.map((i) => i.id)} removed={removedIds} />
         <CleanupItems items={all} removed={removedIds} />
       </div>
-      <p className="levels-safe"><IconShieldCheck size={14} />{t("Microsoft Defender, Windows Update, SmartScreen y el firewall nunca se tocan.")}</p>
+      <p className="levels-safe"><IconShieldCheck size={14} />{t("Microsoft Defender, Windows Update, SmartScreen and the firewall are never touched.")}</p>
     </div>
   );
 }
@@ -447,10 +447,10 @@ export function Apps({ vm, busy, startJob, onPreview }: Pick<Props, "vm" | "busy
   return (
     <div className="card apps-card">
       <div className="opt-rows">
-        <OptionRow icon={<IconApps size={17} />} title={t("Apps")} desc={t("Desde su fuente oficial, verificadas antes de instalarse.")}>
+        <OptionRow icon={<IconApps size={17} />} title={t("Apps")} desc={t("From their official source, verified before installing.")}>
           <Segmented<AppsView> value={view} onChange={setView} options={[
-            { value: "tiles", label: <><IconLayoutGrid size={15} />{t("Mosaico")}</> },
-            { value: "list", label: <><IconList size={15} />{t("Lista")}</> },
+            { value: "tiles", label: <><IconLayoutGrid size={15} />{t("Tiles")}</> },
+            { value: "list", label: <><IconList size={15} />{t("List")}</> },
           ]} />
         </OptionRow>
       </div>
@@ -458,11 +458,11 @@ export function Apps({ vm, busy, startJob, onPreview }: Pick<Props, "vm" | "busy
       <div className="apps-layout">
         {/* Left: the catalog, by category; it renews with a short animation whenever the category or view changes. */}
         <div className="apps-catalog">
-          <Segmented value={category} onChange={setCategory} options={[{ value: "all", label: t("Todas") }, ...categories.map(([id, name]) => ({ value: id, label: name }))]} />
+          <Segmented value={category} onChange={setCategory} options={[{ value: "all", label: t("All") }, ...categories.map(([id, name]) => ({ value: id, label: name }))]} />
           {available.length === 0 ? (
-            <p className="app-none">{t("Ninguna app se llama «{query}»", { query: query.trim() })}</p>
+            <p className="app-none">{t("No app is called “{query}”", { query: query.trim() })}</p>
           ) : view === "tiles" ? (
-            <div key={`${category}-${q}`} ref={listRef} className={`app-tiles app-scroll appear ${listFade}`} role="group" aria-label={t("Apps para instalar")}>
+            <div key={`${category}-${q}`} ref={listRef} className={`app-tiles app-scroll appear ${listFade}`} role="group" aria-label={t("Apps to install")}>
               {available.map((a, n) => {
                 const on = chosen.includes(a.id);
                 const has = installed.includes(a.id);
@@ -472,7 +472,7 @@ export function Apps({ vm, busy, startJob, onPreview }: Pick<Props, "vm" | "busy
                     {on && <span className="app-tile-check"><IconCheck size={12} stroke={2.4} /></span>}
                     <span className="app-tile-logo"><AppLogo id={a.id} /></span>
                     <span className="app-tile-name">{a.name}</span>
-                    {has ? <span className="app-installed"><IconCheck size={12} />{t("Instalada")}</span> : <span className="app-tile-cat">{translateModule(a.categoryName ?? "")}</span>}
+                    {has ? <span className="app-installed"><IconCheck size={12} />{t("Installed")}</span> : <span className="app-tile-cat">{translateModule(a.categoryName ?? "")}</span>}
                   </button>
                 );
               })}
@@ -483,9 +483,9 @@ export function Apps({ vm, busy, startJob, onPreview }: Pick<Props, "vm" | "busy
                 <div key={a.id} className="app-row" style={{ "--n": n } as React.CSSProperties}>
                   <span className="app-row-logo"><AppLogo id={a.id} /></span>
                   <span className="app-row-text"><strong>{a.name}</strong><span>{translateModule(a.categoryName ?? "")}</span></span>
-                  {installed.includes(a.id) ? <span className="app-installed"><IconCheck size={14} />{t("Instalada")}</span> : (
+                  {installed.includes(a.id) ? <span className="app-installed"><IconCheck size={14} />{t("Installed")}</span> : (
                     <button type="button" className="btn" disabled={!!busy} onClick={() => install([a.id])}>
-                      <IconDownload size={15} />{vm.state === "Off" ? t("Encender e instalar") : t("Instalar")}
+                      <IconDownload size={15} />{vm.state === "Off" ? t("Start and install") : t("Install")}
                     </button>
                   )}
                 </div>
@@ -495,11 +495,11 @@ export function Apps({ vm, busy, startJob, onPreview }: Pick<Props, "vm" | "busy
           {/* The tiles' selection: what is chosen and the one button that installs it. */}
           {view === "tiles" && (chosen.length > 0 || working) && (
             <div className="apps-selection">
-              <span>{working ? translateModule(busy!.message) : tn(chosen.length, "{n} app elegida", "{n} apps elegidas")}</span>
-              {!working && <button type="button" className="btn ghost" onClick={() => setChosen([])}>{t("Quitar")}</button>}
+              <span>{working ? translateModule(busy!.message) : tn(chosen.length, "{n} app picked", "{n} apps picked")}</span>
+              {!working && <button type="button" className="btn ghost" onClick={() => setChosen([])}>{t("Remove")}</button>}
               <button type="button" className="primary compact" disabled={!!busy} onClick={() => install(chosen, () => setChosen([]))}>
                 {working ? <IconLoader2 size={16} className="spin" /> : <IconDownload size={16} />}
-                {vm.state === "Off" ? t("Encender e instalar") : t("Instalar")}
+                {vm.state === "Off" ? t("Start and install") : t("Install")}
               </button>
             </div>
           )}
@@ -509,16 +509,16 @@ export function Apps({ vm, busy, startJob, onPreview }: Pick<Props, "vm" | "busy
         <div className="apps-mine">
           <label className="search-box">
             <IconSearch size={16} />
-            <input className="text-input" placeholder={t("Buscar")} value={query} onChange={(e) => setQuery(e.target.value)} />
+            <input className="text-input" placeholder={t("Search")} value={query} onChange={(e) => setQuery(e.target.value)} />
           </label>
-          <span className="apps-mine-title">{t("En esta máquina")}</span>
+          <span className="apps-mine-title">{t("On this machine")}</span>
           {mineShown.length ? (
             <div className="apps-mine-list">
               {mineShown.map((a) => (
                 <div key={a.id} className="app-row mine" onContextMenu={(e) => { e.preventDefault(); if (!busy) openMenu(a, e.currentTarget); }}>
                   <span className="app-row-logo"><AppLogo id={a.id} /></span>
                   <span className="app-row-text"><strong>{a.name}</strong><span>{translateModule(a.categoryName ?? "")}</span></span>
-                  <button type="button" className="icon-btn" aria-label={t("Opciones de {name}", { name: a.name })} disabled={!!busy}
+                  <button type="button" className="icon-btn" aria-label={t("Options for {name}", { name: a.name })} disabled={!!busy}
                     onClick={(e) => (menu?.app.id === a.id ? setMenu(null) : openMenu(a, e.currentTarget))}><IconDots size={15} /></button>
                 </div>
               ))}
@@ -526,7 +526,7 @@ export function Apps({ vm, busy, startJob, onPreview }: Pick<Props, "vm" | "busy
           ) : (
             <div className="empty-small">
               <span className="empty-small-icon">{q ? <IconSearch size={18} /> : <IconApps size={18} />}</span>
-              <strong>{q ? t("Ninguna con ese nombre") : t("Sin apps instaladas")}</strong>
+              <strong>{q ? t("None with that name") : t("No apps installed")}</strong>
             </div>
           )}
         </div>
@@ -534,8 +534,8 @@ export function Apps({ vm, busy, startJob, onPreview }: Pick<Props, "vm" | "busy
 
       {menu && createPortal(
         <div ref={menuRef} className="menu floating" role="menu" style={{ left: Math.max(8, menu.x), top: menu.y }}>
-          <button role="menuitem" onClick={() => { setMenu(null); reinstall(menu.app); }}><IconRefresh size={16} />{t("Reinstalar")}</button>
-          <button role="menuitem" className="danger" onClick={() => { setMenu(null); setUninstalling(menu.app); }}><IconTrash size={16} />{t("Desinstalar")}</button>
+          <button role="menuitem" onClick={() => { setMenu(null); reinstall(menu.app); }}><IconRefresh size={16} />{t("Reinstall")}</button>
+          <button role="menuitem" className="danger" onClick={() => { setMenu(null); setUninstalling(menu.app); }}><IconTrash size={16} />{t("Uninstall")}</button>
         </div>,
         document.body,
       )}
@@ -558,17 +558,17 @@ function ConfirmUninstall({ vm, app, onClose, onConfirm }: { vm: VmOverview; app
   // In a portal: inside the card, the overlay would be laid out within it.
   return createPortal(
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="dialog narrow" role="dialog" aria-modal="true" aria-label={t("Desinstalar {name}", { name: app.name })}>
-        <div className="dialog-head"><span className="choice-icon dialog-logo"><AppLogo id={app.id} /></span><h2>{t("Desinstalar {name}", { name: app.name })}</h2></div>
+      <div className="dialog narrow" role="dialog" aria-modal="true" aria-label={t("Uninstall {name}", { name: app.name })}>
+        <div className="dialog-head"><span className="choice-icon dialog-logo"><AppLogo id={app.id} /></span><h2>{t("Uninstall {name}", { name: app.name })}</h2></div>
         <p className="dialog-text">
           {app.interactiveUninstall
-            ? t("Su desinstalador se abre en la ventana de {name}. Termínalo ahí.", { name: vm.name })
-            : t("Se quita de {name} con su propio desinstalador, junto con lo que guarda en su carpeta.", { name: vm.name })}
-          {vm.state === "Off" && ` ${t("La máquina se enciende para hacerlo.")}`}
+            ? t("Its uninstaller opens in {name}'s window. Finish it there.", { name: vm.name })
+            : t("It's removed from {name} with its own uninstaller, along with what it keeps in its folder.", { name: vm.name })}
+          {vm.state === "Off" && ` ${t("The machine starts to do it.")}`}
         </p>
         <div className="dialog-foot">
-          <button ref={cancelRef} className="btn ghost" onClick={onClose}>{t("Cancelar")}</button>
-          <button className="btn danger-fill" onClick={onConfirm}><IconTrash size={16} />{t("Desinstalar")}</button>
+          <button ref={cancelRef} className="btn ghost" onClick={onClose}>{t("Cancel")}</button>
+          <button className="btn danger-fill" onClick={onConfirm}><IconTrash size={16} />{t("Uninstall")}</button>
         </div>
       </div>
     </div>,
@@ -630,21 +630,21 @@ function Header({ vm, vms = [], busy, variant, startJob, run, onRemoved, onRenam
   let primary: { label: string; icon: React.ReactNode; onClick: () => void; disabled?: boolean; title?: string };
   // Off and doesn't fit in the free memory as configured: said before the click, with a way out.
   const short = off && !vm.fits;
-  if (paused) primary = { label: t("Reanudar"), icon: <IconPlayerPlay size={17} />, onClick: () => power("Resume", t("Reanudando")) };
+  if (paused) primary = { label: t("Resume"), icon: <IconPlayerPlay size={17} />, onClick: () => power("Resume", t("Resuming")) };
   else if (short && vm.managed && vm.streaming && vm.fitGB >= 4 && vm.fitGB < vm.memoryStartupGB) {
     // Opens with what does fit; it is saved, like changing it in Options.
-    primary = { label: t("Abrir con {gb} GB", { gb: vm.fitGB }), icon: <IconPlayerPlay size={17} />, onClick: () => job("Connect-GpuVM", { Name: vm.name, MemoryGB: vm.fitGB }),
-      title: t("Usa {gb} GB de memoria en vez de {total} GB; puedes volver a subirla en Opciones", { gb: vm.fitGB, total: vm.memoryStartupGB }) };
+    primary = { label: t("Open with {gb} GB", { gb: vm.fitGB }), icon: <IconPlayerPlay size={17} />, onClick: () => job("Connect-GpuVM", { Name: vm.name, MemoryGB: vm.fitGB }),
+      title: t("Uses {gb} GB of memory instead of {total} GB; you can raise it again in Options", { gb: vm.fitGB, total: vm.memoryStartupGB }) };
   } else if (short) {
-    primary = { label: t("Falta memoria"), icon: <IconAlertTriangle size={17} />, onClick: () => {}, disabled: true, title: t("Cierra programas en este equipo para encenderla") };
+    primary = { label: t("Not enough memory"), icon: <IconAlertTriangle size={17} />, onClick: () => {}, disabled: true, title: t("Close programs on this PC to start it") };
   } else if (vm.managed && vm.streaming) {
     primary = running
-      ? { label: t("Abrir"), icon: <IconExternalLink size={17} />, onClick: () => job("Connect-GpuVM", { Name: vm.name }) }
-      : { label: t("Encender y abrir"), icon: <IconPlayerPlay size={17} />, onClick: () => job("Connect-GpuVM", { Name: vm.name }) };
+      ? { label: t("Open"), icon: <IconExternalLink size={17} />, onClick: () => job("Connect-GpuVM", { Name: vm.name }) }
+      : { label: t("Start and open"), icon: <IconPlayerPlay size={17} />, onClick: () => job("Connect-GpuVM", { Name: vm.name }) };
   } else {
     primary = running
-      ? { label: t("Ver consola"), icon: <IconDeviceDesktop size={17} />, onClick: () => openConsole(vm.name) }
-      : { label: t("Encender"), icon: <IconPlayerPlay size={17} />, onClick: () => power("Start", t("Encendiendo")) };
+      ? { label: t("View console"), icon: <IconDeviceDesktop size={17} />, onClick: () => openConsole(vm.name) }
+      : { label: t("Start"), icon: <IconPlayerPlay size={17} />, onClick: () => power("Start", t("Starting")) };
   }
   const consoleIsPrimary = !vm.streaming && running;
   const locked = !!working;
@@ -654,7 +654,7 @@ function Header({ vm, vms = [], busy, variant, startJob, run, onRemoved, onRenam
       <div className="scene-wrap"><Scene name={vm.name} variant={variant} style={banner} state={vm.state}
         activity={{ cpu: vm.cpuPercent, gpu: vm.gpuPercent, mem: (vm.memoryDemandGB / Math.max(vm.memoryAssignedGB, 0.1)) * 100 }} /></div>
       <div className="head-info">
-      <button type="button" className="pattern-btn" title={t("Otro ícono")} aria-label={t("Otro ícono")} onClick={onPattern}>
+      <button type="button" className="pattern-btn" title={t("Another icon")} aria-label={t("Another icon")} onClick={onPattern}>
         <MachineIcon name={vm.name} variant={variant} size={48} radius={12} />
       </button>
       <div style={{ minWidth: 0 }}>
@@ -664,24 +664,24 @@ function Header({ vm, vms = [], busy, variant, startJob, run, onRemoved, onRenam
           {/* What the machine is, as small labeled pieces: its Windows, its GPU and the profile it was made from. */}
           {vm.edition && <span className="spec-chip" title="Windows"><IconBrandWindows size={13} />{vm.edition}</span>}
           {vm.hasGpu && vm.gpuName && <span className="spec-chip" title="GPU"><IconBolt size={13} />{vm.gpuName.replace("NVIDIA GeForce ", "")}</span>}
-          {vm.profile && <span className="spec-chip" title={t("Perfil")}><IconLayoutGrid size={13} />{profileLabel(vm.profile)}</span>}
-          {short && <span className="warn-text">{t("Le faltan {gb} GB de memoria libre", { gb: vm.missingGB.toLocaleString(locale()) })}</span>}
+          {vm.profile && <span className="spec-chip" title={t("Profile")}><IconLayoutGrid size={13} />{profileLabel(vm.profile)}</span>}
+          {short && <span className="warn-text">{t("It needs {gb} GB more free memory", { gb: vm.missingGB.toLocaleString(locale()) })}</span>}
         </div>
       </div>
       </div>
       <div className="actions" ref={menuRef}>
         {running && vm.managed && vm.guestCredential && (
-          <button className="icon-btn" aria-label={t("Pegar en la VM")} title={t("Pegar en la VM lo copiado en este equipo")} disabled={pasting === "busy"}
+          <button className="icon-btn" aria-label={t("Paste in the VM")} title={t("Paste in the VM what you copied on this PC")} disabled={pasting === "busy"}
             onClick={async () => {
               setPasting("busy");
-              const ok = await run(vm.name, t("Pegando"), () => api.pasteToVm(vm.name));
+              const ok = await run(vm.name, t("Pasting"), () => api.pasteToVm(vm.name));
               setPasting(ok ? "done" : null);
               if (ok) setTimeout(() => setPasting(null), 2000);
             }}>
             {pasting === "busy" ? <IconLoader2 size={18} className="spin" /> : pasting === "done" ? <IconCheck size={18} /> : <IconClipboardText size={18} />}
           </button>
         )}
-        <button className="icon-btn" aria-label={t("Más opciones")} aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((m) => !m)}><IconDots size={18} /></button>
+        <button className="icon-btn" aria-label={t("More options")} aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((m) => !m)}><IconDots size={18} /></button>
         {working ? (
           <span className="primary busy" role="status" title={working}><IconLoader2 size={17} className="spin" /><span className="ellipsis">{working}</span></span>
         ) : (
@@ -690,42 +690,42 @@ function Header({ vm, vms = [], busy, variant, startJob, run, onRemoved, onRenam
         {menu && (
           <div className="menu" role="menu">
             {!locked && off && vm.streaming && (
-              <button role="menuitem" onClick={() => power("Start", t("Encendiendo"))}><IconPower size={16} />{t("Encender sin abrir")}</button>
+              <button role="menuitem" onClick={() => power("Start", t("Starting"))}><IconPower size={16} />{t("Start without opening")}</button>
             )}
             {!locked && !off && (
               <>
-                <button role="menuitem" onClick={() => job("Invoke-GpuVMPower", { Name: vm.name, Action: "Shutdown" })}><IconPower size={16} />{t("Apagar")}</button>
+                <button role="menuitem" onClick={() => job("Invoke-GpuVMPower", { Name: vm.name, Action: "Shutdown" })}><IconPower size={16} />{t("Shut down")}</button>
                 <button role="menuitem" className={confirmOff ? "danger" : ""}
-                  onClick={() => confirmOff ? power("TurnOff", t("Forzando el apagado")) : setConfirmOff(true)}>
-                  <IconPlugOff size={16} />{confirmOff ? t("Forzar: se pierde lo no guardado") : t("Forzar apagado")}
+                  onClick={() => confirmOff ? power("TurnOff", t("Forcing shutdown")) : setConfirmOff(true)}>
+                  <IconPlugOff size={16} />{confirmOff ? t("Force: unsaved work is lost") : t("Force shutdown")}
                 </button>
-                <button role="menuitem" onClick={() => power("Restart", t("Reiniciando"))}><IconRefresh size={16} />{t("Reiniciar")}</button>
+                <button role="menuitem" onClick={() => power("Restart", t("Restarting"))}><IconRefresh size={16} />{t("Restart")}</button>
                 {paused
-                  ? <button role="menuitem" onClick={() => power("Resume", t("Reanudando"))}><IconPlayerPlay size={16} />{t("Reanudar")}</button>
-                  : <button role="menuitem" onClick={() => power("Pause", t("Pausando"))}><IconPlayerPause size={16} />{t("Pausar")}</button>}
+                  ? <button role="menuitem" onClick={() => power("Resume", t("Resuming"))}><IconPlayerPlay size={16} />{t("Resume")}</button>
+                  : <button role="menuitem" onClick={() => power("Pause", t("Pausing"))}><IconPlayerPause size={16} />{t("Pause")}</button>}
               </>
             )}
             {locked && vm.state !== "Off" && (
               <button role="menuitem" className={confirmOff ? "danger" : ""}
-                onClick={() => confirmOff ? power("TurnOff", t("Forzando el apagado")) : setConfirmOff(true)}>
-                <IconPlugOff size={16} />{confirmOff ? t("Forzar: se pierde lo no guardado") : t("Forzar apagado")}
+                onClick={() => confirmOff ? power("TurnOff", t("Forcing shutdown")) : setConfirmOff(true)}>
+                <IconPlugOff size={16} />{confirmOff ? t("Force: unsaved work is lost") : t("Force shutdown")}
               </button>
             )}
             {!consoleIsPrimary && (
-              <button role="menuitem" onClick={() => { setMenu(false); openConsole(vm.name); }}><IconDeviceDesktop size={16} />{t("Ver consola de Hyper-V")}</button>
+              <button role="menuitem" onClick={() => { setMenu(false); openConsole(vm.name); }}><IconDeviceDesktop size={16} />{t("View Hyper-V console")}</button>
             )}
             {!locked && vm.managed && vm.streaming && (
-              <button role="menuitem" onClick={() => job("Connect-GpuVM", { Name: vm.name, Pair: true })}><IconLink size={16} />{t("Volver a emparejar el visor")}</button>
+              <button role="menuitem" onClick={() => job("Connect-GpuVM", { Name: vm.name, Pair: true })}><IconLink size={16} />{t("Pair the viewer again")}</button>
             )}
             <hr />
             {!locked && vm.managed && (
               <button role="menuitem" onClick={() => job("Sync-GpuVMDriver", { Name: vm.name, Confirm: false, ShutdownIfRunning: true })}>
-                <IconDownload size={16} />{off ? t("Actualizar driver de la GPU") : t("Apagar y actualizar driver")}
+                <IconDownload size={16} />{off ? t("Update GPU driver") : t("Shut down and update driver")}
               </button>
             )}
             {!locked && vm.managed && !vm.disposable && (
               <button role="menuitem" onClick={() => { setMenu(false); setTemplating(true); }}>
-                <IconTemplate size={16} />{off ? t("Crear plantilla") : t("Apagar y crear plantilla")}
+                <IconTemplate size={16} />{off ? t("Create template") : t("Shut down and create template")}
               </button>
             )}
             {!locked && vm.managed && !vm.disposable && (
@@ -734,18 +734,18 @@ function Header({ vm, vms = [], busy, variant, startJob, run, onRemoved, onRenam
                 const path = await pickExportFile(vm.name);
                 if (path) startJob(vm.name, "Export-GpuVM", { Name: vm.name, Path: path, ShutdownIfRunning: true, Confirm: false });
               }}>
-                <IconFileExport size={16} />{off ? t("Exportar a un archivo") : t("Apagar y exportar")}
+                <IconFileExport size={16} />{off ? t("Export to a file") : t("Shut down and export")}
               </button>
             )}
             {!locked && vm.managed && off && (
-              <button role="menuitem" onClick={() => { setMenu(false); setRenaming(true); onRenameDraft(vm.name); }}><IconPencil size={16} />{t("Cambiar nombre")}</button>
+              <button role="menuitem" onClick={() => { setMenu(false); setRenaming(true); onRenameDraft(vm.name); }}><IconPencil size={16} />{t("Rename")}</button>
             )}
-            <button role="menuitem" onClick={() => { setMenu(false); onPattern(); }}><IconPalette size={16} />{t("Otro ícono")}</button>
-            <button role="menuitem" onClick={() => { setMenu(false); setBanner(nextSceneStyle(vm.name)); }}><IconLayoutBoard size={16} />{t("Otro banner")}</button>
+            <button role="menuitem" onClick={() => { setMenu(false); onPattern(); }}><IconPalette size={16} />{t("Another icon")}</button>
+            <button role="menuitem" onClick={() => { setMenu(false); setBanner(nextSceneStyle(vm.name)); }}><IconLayoutBoard size={16} />{t("Another banner")}</button>
             {!locked && vm.managed && (
               <>
                 <hr />
-                <button role="menuitem" className="danger" onClick={() => { setMenu(false); setConfirm(true); }}><IconTrash size={16} />{t("Eliminar máquina")}</button>
+                <button role="menuitem" className="danger" onClick={() => { setMenu(false); setConfirm(true); }}><IconTrash size={16} />{t("Delete machine")}</button>
               </>
             )}
           </div>
@@ -790,35 +790,35 @@ export function NewTemplate({ vm: fixed, vms, onClose, onCreate }: {
     return () => window.removeEventListener("keydown", key);
   }, [onClose]);
   const trimmed = name.trim();
-  const nameError = !trimmed ? "" : !/^[\w-]{1,40}$/.test(trimmed) ? t("Usa letras, números o guiones, sin espacios")
-    : existing.some((x) => x.toLowerCase() === trimmed.toLowerCase()) ? t("Ya hay una plantilla con ese nombre") : "";
+  const nameError = !trimmed ? "" : !/^[\w-]{1,40}$/.test(trimmed) ? t("Use letters, numbers or hyphens, no spaces")
+    : existing.some((x) => x.toLowerCase() === trimmed.toLowerCase()) ? t("There's already a template with that name") : "";
   const complete = !!trimmed && !nameError && !!vm;
   const running = !!vm && vm.state !== "Off";
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="dialog narrow" role="dialog" aria-modal="true" aria-label={t("Crear plantilla")}>
-        <div className="dialog-head"><MachineIcon name={`plantilla-${trimmed || vm?.name || "nueva"}`} size={40} radius={10} /><h2>{t("Crear plantilla")}</h2></div>
+      <div className="dialog narrow" role="dialog" aria-modal="true" aria-label={t("Create template")}>
+        <div className="dialog-head"><MachineIcon name={`plantilla-${trimmed || vm?.name || "nueva"}`} size={40} radius={10} /><h2>{t("Create template")}</h2></div>
         <form className="dialog-form" onSubmit={(e) => { e.preventDefault(); if (complete && vm) onCreate(trimmed, vm.name); }}>
           <div className="dialog-body">
             {!fixed && (
               <div className="field">
-                <div className="field-top"><span>{t("Máquina")}</span></div>
+                <div className="field-top"><span>{t("Machine")}</span></div>
                 {vms && vms.length ? (
-                  <Dropdown label={t("Máquina")} value={picked} onChange={setPicked}
+                  <Dropdown label={t("Machine")} value={picked} onChange={setPicked}
                     options={vms.map((v) => ({ value: v.name, label: v.name, detail: [v.edition, stateText(v.state)].filter(Boolean).join(" · "), icon: <MachineIcon name={v.name} size={22} radius={6} /> }))} />
-                ) : <span className="hint">{t("Primero crea una máquina: la plantilla guarda su Windows.")}</span>}
+                ) : <span className="hint">{t("Create a machine first: the template saves its Windows.")}</span>}
               </div>
             )}
-            {vm && <p className="dialog-text">{t("Guarda el Windows de {name}, con sus apps y ajustes, para crear otras máquinas en segundos. {name} sigue igual.", { name: vm.name })}</p>}
+            {vm && <p className="dialog-text">{t("Saves {name}'s Windows, with its apps and settings, to create other machines in seconds. {name} stays as it is.", { name: vm.name })}</p>}
             <div className="field">
-              <label className="field-top" htmlFor="tpl-name"><span>{t("Nombre")}</span></label>
+              <label className="field-top" htmlFor="tpl-name"><span>{t("Name")}</span></label>
               <input id="tpl-name" className="text-input" value={name} autoFocus onChange={(e) => { setName(e.target.value); setNamed(true); }} />
               {nameError && <span className="error-text">{nameError}</span>}
             </div>
           </div>
           <div className="dialog-foot">
-            <button type="button" className="btn ghost" onClick={onClose}>{t("Cancelar")}</button>
-            <button type="submit" className="primary compact" disabled={!complete}><IconTemplate size={16} />{running ? t("Apagar y crear") : t("Crear plantilla")}</button>
+            <button type="button" className="btn ghost" onClick={onClose}>{t("Cancel")}</button>
+            <button type="submit" className="primary compact" disabled={!complete}><IconTemplate size={16} />{running ? t("Shut down and create") : t("Create template")}</button>
           </div>
         </form>
       </div>
@@ -854,13 +854,13 @@ function RenameMachine({ vm, vms, onClose, onDraft, onRename }: {
   // In a portal: inside the page, its fade would clip the scrim and the dialog.
   return createPortal(
     <div className="overlay" style={besideCube ? { paddingRight: besideCube } : undefined} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="dialog narrow" role="dialog" aria-modal="true" aria-label={t("Cambiar el nombre de {name}", { name: vm.name })}>
-        <div className="dialog-head"><MachineIcon name={vm.name} size={40} radius={10} /><h2>{t("Cambiar nombre")}</h2></div>
+      <div className="dialog narrow" role="dialog" aria-modal="true" aria-label={t("Rename {name}", { name: vm.name })}>
+        <div className="dialog-head"><MachineIcon name={vm.name} size={40} radius={10} /><h2>{t("Rename")}</h2></div>
         <form className="dialog-form" onSubmit={(e) => { e.preventDefault(); if (complete) onRename(trimmed); }}>
           <div className="dialog-body">
-            <p className="dialog-text">{t("Cambian también su carpeta y su disco. El visor sigue emparejado y los discos compartidos siguen conectados.")}</p>
+            <p className="dialog-text">{t("Its folder and disk are renamed too. The viewer stays paired and shared disks stay connected.")}</p>
             <div className="field">
-              <label className="field-top" htmlFor="vm-rename"><span>{t("Nombre")}</span></label>
+              <label className="field-top" htmlFor="vm-rename"><span>{t("Name")}</span></label>
               <input id="vm-rename" className="text-input" value={name} autoFocus spellCheck={false} maxLength={60}
                 onFocus={(e) => e.currentTarget.select()}
                 onChange={(e) => { setName(e.target.value); onDraft(e.target.value.trim() || vm.name); }} />
@@ -868,8 +868,8 @@ function RenameMachine({ vm, vms, onClose, onDraft, onRename }: {
             </div>
           </div>
           <div className="dialog-foot">
-            <button type="button" className="btn ghost" onClick={onClose}>{t("Cancelar")}</button>
-            <button type="submit" className="primary compact" disabled={!complete}><IconPencil size={16} />{t("Cambiar nombre")}</button>
+            <button type="button" className="btn ghost" onClick={onClose}>{t("Cancel")}</button>
+            <button type="submit" className="primary compact" disabled={!complete}><IconPencil size={16} />{t("Rename")}</button>
           </div>
         </form>
       </div>
@@ -888,25 +888,25 @@ function ConfirmRemove({ vm, run, onClose, onRemoved }: { vm: VmOverview; run: P
   }, [onClose]);
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="dialog narrow" role="dialog" aria-modal="true" aria-label={t("Eliminar {name}", { name: vm.name })}>
-        <div className="dialog-head"><MachineIcon name={vm.name} size={40} radius={10} /><h2>{t("Eliminar {name}", { name: vm.name })}</h2></div>
-        <p className="dialog-text">{t("La máquina se quita de Hyper-V. Esto no se puede deshacer.")}</p>
+      <div className="dialog narrow" role="dialog" aria-modal="true" aria-label={t("Delete {name}", { name: vm.name })}>
+        <div className="dialog-head"><MachineIcon name={vm.name} size={40} radius={10} /><h2>{t("Delete {name}", { name: vm.name })}</h2></div>
+        <p className="dialog-text">{t("The machine is removed from Hyper-V. This can't be undone.")}</p>
         <div className="choice-list" role="radiogroup">
           <button role="radio" aria-checked={!deleteDisk} className={`choice ${!deleteDisk ? "on" : ""}`} onClick={() => setDeleteDisk(false)}>
             <span className="check">{!deleteDisk && <CheckMark />}</span>
-            <span className="grow"><span className="title">{t("Conservar el disco")}</span><span className="desc">{t("Puedes volver a usar el archivo .vhdx después.")}</span></span>
+            <span className="grow"><span className="title">{t("Keep the disk")}</span><span className="desc">{t("You can use the .vhdx file again later.")}</span></span>
           </button>
           <button role="radio" aria-checked={deleteDisk} className={`choice ${deleteDisk ? "on" : ""}`} onClick={() => setDeleteDisk(true)}>
             <span className="check">{deleteDisk && <CheckMark />}</span>
-            <span className="grow"><span className="title">{t("Borrar también el disco")}</span><span className="desc">{t("Libera el espacio de la carpeta de la VM.")}</span></span>
+            <span className="grow"><span className="title">{t("Delete the disk too")}</span><span className="desc">{t("Frees the space in the VM's folder.")}</span></span>
           </button>
         </div>
         <div className="dialog-foot">
-          <button ref={cancelRef} className="btn ghost" onClick={onClose}>{t("Cancelar")}</button>
+          <button ref={cancelRef} className="btn ghost" onClick={onClose}>{t("Cancel")}</button>
           <button className="btn danger-fill" onClick={async () => {
             onClose();
-            if (await run(vm.name, t("Eliminando"), () => api.remove(vm.name, deleteDisk))) onRemoved();
-          }}><IconTrash size={16} />{t("Eliminar")}</button>
+            if (await run(vm.name, t("Deleting"), () => api.remove(vm.name, deleteDisk))) onRemoved();
+          }}><IconTrash size={16} />{t("Delete")}</button>
         </div>
       </div>
     </div>
@@ -921,24 +921,24 @@ function GuestPassword({ vm, run }: { vm: VmOverview; run: Props["run"] }) {
     <div className="notice info">
       <IconKey size={20} />
       <div className="grow">
-        {t("Guarda la contraseña de Windows de esta máquina para que GpuVM corrija problemas dentro de ella sin preguntarte.")}
-        <span className="notice-sub">{t("Usuario: {user}", { user: "gpuvm" })}</span>
+        {t("Save this machine's Windows password so GpuVM can fix problems inside it without asking you.")}
+        <span className="notice-sub">{t("User: {user}", { user: "gpuvm" })}</span>
       </div>
       <form className="notice-form" onSubmit={async (e) => {
         e.preventDefault();
-        if (!password) { setError(t("Escribe la contraseña")); return; }
+        if (!password) { setError(t("Type the password")); return; }
         setError("");
         setSaving(true);
-        await run(vm.name, t("Guardando"), () => api.saveGuestPassword(vm.name, "gpuvm", password));
+        await run(vm.name, t("Saving"), () => api.saveGuestPassword(vm.name, "gpuvm", password));
         setSaving(false);
       }}>
         <div className="field-stack">
-          <input type="password" aria-label={t("Contraseña de Windows")} placeholder={t("Contraseña de Windows")} value={password}
+          <input type="password" aria-label={t("Windows password")} placeholder={t("Windows password")} value={password}
             onChange={(e) => { setPassword(e.target.value); setError(""); }} />
           {error && <span className="error-text">{error}</span>}
         </div>
         <button className="btn" type="submit" disabled={saving}>
-          {saving ? <IconLoader2 size={16} className="spin" /> : <IconDeviceFloppy size={16} />}{saving ? t("Guardando") : t("Guardar")}
+          {saving ? <IconLoader2 size={16} className="spin" /> : <IconDeviceFloppy size={16} />}{saving ? t("Saving") : t("Save")}
         </button>
       </form>
     </div>
@@ -958,15 +958,15 @@ export function DiskRoom({ budget, sizeGB }: { budget: DiskBudget; sizeGB: numbe
   const gb = (n: number) => `${Math.round(n).toLocaleString(locale())} GB`;
   return (
     <div className="disk-room">
-      <div className="disk-bar" role="img" aria-label={t("En {drive} quedarían {free} libres con todos los discos llenos", { drive: budget.drive, free: gb(left) })}>
+      <div className="disk-bar" role="img" aria-label={t("{drive} would have {free} free with every disk full", { drive: budget.drive, free: gb(left) })}>
         <span className="seg own" style={{ width: pct(used) }} />
         <span className="seg own-room" style={{ width: pct(ownPromised) }} />
         <span className="seg others" style={{ width: pct(budget.promisedGB) }} />
       </div>
       <ul className="disk-legend">
-        <li><i className="own" />{t("Esta máquina, {used} usados de {size}", { used: gb(used), size: gb(sizeGB) })}</li>
-        {budget.promisedGB > 0 && <li><i className="others" />{t("Reservado para {who}, {size}", { who: others || t("otras máquinas"), size: gb(budget.promisedGB) })}</li>}
-        <li><i className="free" />{t("Libre en {drive} con todo lleno, {free}", { drive: budget.drive, free: gb(left) })}</li>
+        <li><i className="own" />{t("This machine, {used} used of {size}", { used: gb(used), size: gb(sizeGB) })}</li>
+        {budget.promisedGB > 0 && <li><i className="others" />{t("Reserved for {who}, {size}", { who: others || t("other machines"), size: gb(budget.promisedGB) })}</li>}
+        <li><i className="free" />{t("Free on {drive} with everything full, {free}", { drive: budget.drive, free: gb(left) })}</li>
       </ul>
     </div>
   );
@@ -1033,7 +1033,7 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
   const clientDirty = draft.resolution !== initial.resolution || draft.fps !== initial.fps || draft.displayMode !== initial.displayMode
     || Object.keys(streamChanges).length > 0;
   const use = streamUseOf(draft);
-  // "Personalizado" picked by hand stays chosen until a use is picked; a change by hand also lands there.
+  // "Custom" picked by hand stays chosen until a use is picked; a change by hand also lands there.
   const [customUse, setCustomUse] = useState(false);
   const shownUse = customUse ? null : use;
   const [advanced, setAdvanced] = useState(false);
@@ -1045,16 +1045,16 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
   const off = vm.state === "Off";
 
   const save = async () => {
-    if (clientDirty && !(await run(vm.name, t("Guardando"), () => api.setClient(vm.name, draft.resolution, draft.fps, draft.displayMode !== initial.displayMode ? draft.displayMode : undefined, streamChanges)))) return;
-    if (captureDirty && !(await run(vm.name, t("Cambiando la captura"), () => api.setCapture(vm.name, draft.captureMode)))) return;
-    if (networkDirty && !(await run(vm.name, t("Cambiando la red"), () => api.setNetworkIsolation(vm.name, draft.networkIsolation)))) return;
-    if (monitorDirty && !(await run(vm.name, t("Guardando"), () => api.setMonitor(vm.name, draft.monitor)))) return;
+    if (clientDirty && !(await run(vm.name, t("Saving"), () => api.setClient(vm.name, draft.resolution, draft.fps, draft.displayMode !== initial.displayMode ? draft.displayMode : undefined, streamChanges)))) return;
+    if (captureDirty && !(await run(vm.name, t("Changing capture"), () => api.setCapture(vm.name, draft.captureMode)))) return;
+    if (networkDirty && !(await run(vm.name, t("Changing network"), () => api.setNetworkIsolation(vm.name, draft.networkIsolation)))) return;
+    if (monitorDirty && !(await run(vm.name, t("Saving"), () => api.setMonitor(vm.name, draft.monitor)))) return;
     if (!vmDirty) { setSaved(true); return; }
     const override = {
       vm: { cpu: { count: draft.cpu }, memoryGB: draft.memoryGB, disk: { sizeGB: draft.diskGB } },
       gpu: { allocationPercent: draft.gpuPercent },
     };
-    if (off) { if (await run(vm.name, t("Aplicando"), () => api.applyOptions(vm.name, override))) setSaved(true); }
+    if (off) { if (await run(vm.name, t("Applying"), () => api.applyOptions(vm.name, override))) setSaved(true); }
     else startJob(vm.name, "Update-GpuVMSettings", { Name: vm.name, Override: override });
   };
 
@@ -1063,28 +1063,28 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
       <div className="opt-rows">
         {part === "machine" && (
           <>
-        <OptionRow icon={<IconCpu size={17} />} title={t("Procesador")} value={t("{n} hilos", { n: draft.cpu })} desc={t("Quedan {n} hilos para tu PC", { n: hostCpu - draft.cpu })}>
-          <Slider label={t("Hilos")} value={Math.min(draft.cpu, maxCpu)} min={2} max={maxCpu} onChange={(cpu) => setDraft({ ...draft, cpu })} />
+        <OptionRow icon={<IconCpu size={17} />} title={t("Processor")} value={t("{n} threads", { n: draft.cpu })} desc={t("{n} threads left for your PC", { n: hostCpu - draft.cpu })}>
+          <Slider label={t("Threads")} value={Math.min(draft.cpu, maxCpu)} min={2} max={maxCpu} onChange={(cpu) => setDraft({ ...draft, cpu })} />
         </OptionRow>
-        <OptionRow icon={<IconTopologyStar3 size={17} />} title={t("Memoria")} value={`${draft.memoryGB} GB`} desc={t("Quedan {n} GB para tu PC, se reserva entera al encender", { n: hostMem - draft.memoryGB })}>
-          <Slider label={t("Memoria")} value={Math.min(draft.memoryGB, maxMem)} min={4} max={maxMem} onChange={(memoryGB) => setDraft({ ...draft, memoryGB })} />
+        <OptionRow icon={<IconTopologyStar3 size={17} />} title={t("Memory")} value={`${draft.memoryGB} GB`} desc={t("{n} GB left for your PC, all reserved at start", { n: hostMem - draft.memoryGB })}>
+          <Slider label={t("Memory")} value={Math.min(draft.memoryGB, maxMem)} min={4} max={maxMem} onChange={(memoryGB) => setDraft({ ...draft, memoryGB })} />
         </OptionRow>
-        <OptionRow icon={<IconBolt size={17} />} title={t("GPU para la VM")} value={`${draft.gpuPercent} %`} desc={draft.gpuPercent === 100 ? t("Puede usar toda la GPU, tu PC la comparte") : t("Hasta el {n} % de la GPU", { n: draft.gpuPercent })}>
+        <OptionRow icon={<IconBolt size={17} />} title={t("GPU for the VM")} value={`${draft.gpuPercent} %`} desc={draft.gpuPercent === 100 ? t("Can use the whole GPU, shared with your PC") : t("Up to {n} % of the GPU", { n: draft.gpuPercent })}>
           <Slider label="GPU" value={draft.gpuPercent} min={10} max={100} step={10} onChange={(gpuPercent) => setDraft({ ...draft, gpuPercent })} />
         </OptionRow>
-        <OptionRow icon={<IconDeviceFloppy size={17} />} title={t("Disco")} value={`${draft.diskGB} GB`}
-          desc={vm.options!.diskType === "Differencing" ? t("Sobre una plantilla, mide lo mismo que ella")
-            : maxDisk > initial.diskGB ? t("Se puede ampliar, no reducir") : t("Sin espacio libre en el equipo para ampliarlo")}
+        <OptionRow icon={<IconDeviceFloppy size={17} />} title={t("Disk")} value={`${draft.diskGB} GB`}
+          desc={vm.options!.diskType === "Differencing" ? t("Built on a template, same size as it")
+            : maxDisk > initial.diskGB ? t("Can grow, not shrink") : t("No free space on this PC to grow it")}
           below={budget && vm.options!.diskType !== "Differencing" ? <DiskRoom budget={budget} sizeGB={draft.diskGB} /> : undefined}>
           {vm.options!.diskType !== "Differencing" && maxDisk > initial.diskGB
-            && <Slider label={t("Disco")} value={draft.diskGB} min={initial.diskGB} max={maxDisk} step={8} onChange={(diskGB) => setDraft({ ...draft, diskGB })} />}
+            && <Slider label={t("Disk")} value={draft.diskGB} min={initial.diskGB} max={maxDisk} step={8} onChange={(diskGB) => setDraft({ ...draft, diskGB })} />}
         </OptionRow>
-        <OptionRow icon={<IconWorld size={17} />} title={t("Red")} desc={draft.networkIsolation
-          ? t("La VM no llega a este equipo ni a tu red local. Si se infecta, no puede salir de ahí.")
-          : t("La VM llega a este equipo y a los demás de tu red. Úsalo solo si necesitas, por ejemplo, un NAS.")}>
+        <OptionRow icon={<IconWorld size={17} />} title={t("Network")} desc={draft.networkIsolation
+          ? t("The VM can't reach this PC or your local network. If it gets infected, it can't get out.")
+          : t("The VM can reach this PC and the others on your network. Use it only if you need, say, a NAS.")}>
           <Segmented value={draft.networkIsolation} onChange={(networkIsolation) => setDraft({ ...draft, networkIsolation })} options={[
-            { value: true, label: <><IconWorld size={15} />{t("Solo internet")}</> },
-            { value: false, label: <><IconNetwork size={15} />{t("Internet y red local")}</> },
+            { value: true, label: <><IconWorld size={15} />{t("Internet only")}</> },
+            { value: false, label: <><IconNetwork size={15} />{t("Internet and local network")}</> },
           ]} />
         </OptionRow>
           </>
@@ -1092,98 +1092,98 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
         {part === "display" && (
           <>
         {vm.streaming && (
-          <OptionRow icon={<IconDeviceGamepad2 size={17} />} title={t("Tipo de uso")} section
-            desc={shownUse ? USES.find((u) => u.id === shownUse)!.description : t("Ajustado a mano. Elige un tipo para volver a sus valores.")}>
+          <OptionRow icon={<IconDeviceGamepad2 size={17} />} title={t("Use|machine")} section
+            desc={shownUse ? USES.find((u) => u.id === shownUse)!.description : t("Set by hand. Pick a use to go back to its values.")}>
             <Segmented value={shownUse ?? "custom"} onChange={(id) => {
               if (id === "custom") { setCustomUse(true); return; }
               setCustomUse(false);
               setDraft({ ...draft, ...USES.find((u) => u.id === id)!.client });
             }} options={[...USES.map((u) => ({ value: u.id as string, label: <><u.icon size={15} />{u.label}</> })),
-              { value: "custom", label: <><IconAdjustments size={15} />{t("Personalizado")}</> }]} />
+              { value: "custom", label: <><IconAdjustments size={15} />{t("Custom")}</> }]} />
           </OptionRow>
         )}
         {vm.streaming && (
-          <OptionRow sub icon={<IconGauge size={17} />} title={t("Cuadros por segundo")}
-            desc={draft.fps === 0 ? t("Siempre al ritmo del monitor donde se abre") : t("{n} FPS fijos", { n: draft.fps })}>
+          <OptionRow sub icon={<IconGauge size={17} />} title={t("Frames per second")}
+            desc={draft.fps === 0 ? t("Always at the pace of the monitor it opens on") : t("Fixed {n} FPS", { n: draft.fps })}>
             <FpsPicker value={draft.fps} monitor={resolveMonitor(monitors, draft.monitor, prefs.monitor)} onChange={(fps) => setDraft({ ...draft, fps })} />
           </OptionRow>
         )}
         {vm.streaming && (
-          <OptionRow sub icon={<IconRectangle size={17} />} title={t("Sincronización vertical")} desc={draft.vsync
-            ? t("Cada cuadro llega entero al monitor. Al ritmo del monitor no agrega espera.")
-            : t("Cada cuadro sale apenas llega, aunque el monitor esté a mitad de dibujar el anterior.")}>
+          <OptionRow sub icon={<IconRectangle size={17} />} title={t("Vertical sync")} desc={draft.vsync
+            ? t("Every frame reaches the monitor whole. At the monitor's pace it adds no wait.")
+            : t("Each frame goes out as soon as it arrives, even if the monitor is halfway through drawing the last one.")}>
             <Segmented value={draft.vsync} onChange={(vsync) => setDraft({ ...draft, vsync, framePacing: vsync && draft.framePacing })} options={[
-              { value: true, label: <><IconRectangle size={15} />{t("Imagen entera")}</> },
-              { value: false, label: <><IconBolt size={15} />{t("Más rápida")}</> },
+              { value: true, label: <><IconRectangle size={15} />{t("Whole picture")}</> },
+              { value: false, label: <><IconBolt size={15} />{t("Faster")}</> },
             ]} />
           </OptionRow>
         )}
         {vm.streaming && (
-          <OptionRow sub icon={<IconWaveSine size={17} />} title={t("Ritmo de cuadros")} desc={!draft.vsync
-            ? t("Solo con la imagen entera.")
-            : draft.framePacing ? t("Reparte los cuadros a ritmo constante, ideal a 60 FPS.") : t("Muestra cada cuadro apenas está listo.")}>
+          <OptionRow sub icon={<IconWaveSine size={17} />} title={t("Frame pacing")} desc={!draft.vsync
+            ? t("Only with the whole picture.")
+            : draft.framePacing ? t("Spaces frames at a steady pace, ideal at 60 FPS.") : t("Shows each frame as soon as it's ready.")}>
             <div className={`segment-row${draft.vsync ? "" : " disabled"}`}>
               <Segmented value={draft.framePacing} onChange={(framePacing) => draft.vsync && setDraft({ ...draft, framePacing })} options={[
-                { value: true, label: <><IconWaveSine size={15} />{t("Parejo")}</> },
-                { value: false, label: <><IconPlayerTrackNext size={15} />{t("Al instante")}</> },
+                { value: true, label: <><IconWaveSine size={15} />{t("Even")}</> },
+                { value: false, label: <><IconPlayerTrackNext size={15} />{t("Instant")}</> },
               ]} />
             </div>
           </OptionRow>
         )}
         {vm.streaming && (
           <OptionRow sub icon={<IconPointer size={17} />} title={t("Mouse")} desc={draft.mouse === "capture"
-            ? t("La VM toma el mouse, como necesitan los juegos para girar la cámara. Ctrl+Alt+Shift+Z lo libera sin cerrar.")
-            : t("El puntero entra y sale de la ventana como en escritorio remoto. No sirve en la mayoría de juegos.")}>
+            ? t("The VM takes the mouse, as games need to turn the camera. Ctrl+Alt+Shift+Z releases it without closing.")
+            : t("The pointer moves in and out of the window as in remote desktop. Doesn't work in most games.")}>
             <Segmented value={draft.mouse} onChange={(mouse) => setDraft({ ...draft, mouse })} options={[
-              { value: "capture", label: <><IconDeviceGamepad2 size={15} />{t("Para juegos")}</> },
-              { value: "absolute", label: <><IconPointer size={15} />{t("Libre")}</> },
+              { value: "capture", label: <><IconDeviceGamepad2 size={15} />{t("For games")}</> },
+              { value: "absolute", label: <><IconPointer size={15} />{t("Free")}</> },
             ]} />
           </OptionRow>
         )}
         {vm.streaming && (
-          <OptionRow icon={<IconDeviceDesktop size={17} />} title={t("Resolución")} desc={t("Tamaño de la imagen de la máquina")}>
+          <OptionRow icon={<IconDeviceDesktop size={17} />} title={t("Resolution")} desc={t("Size of the machine's picture")}>
             <Segmented value={draft.resolution} onChange={(resolution) => setDraft({ ...draft, resolution })}
               options={RESOLUTIONS.map((r) => ({ value: r, label: r.split("x")[1] + "p" }))} />
           </OptionRow>
         )}
         {vm.streaming && (
-          <OptionRow icon={<IconArrowsMaximize size={17} />} title={t("Ventana")}
-            desc={draft.displayMode === "fullscreen" ? t("Ocupa todo el monitor") : t("Se abre en una ventana que puedes mover")}>
+          <OptionRow icon={<IconArrowsMaximize size={17} />} title={t("Window")}
+            desc={draft.displayMode === "fullscreen" ? t("Fills the whole monitor") : t("Opens in a window you can move")}>
             <Segmented value={draft.displayMode} onChange={(displayMode) => setDraft({ ...draft, displayMode })} options={[
-              { value: "fullscreen", label: <><IconArrowsMaximize size={15} />{t("Pantalla completa")}</> },
-              { value: "windowed", label: <><IconAppWindow size={15} />{t("Ventana")}</> },
+              { value: "fullscreen", label: <><IconArrowsMaximize size={15} />{t("Full screen")}</> },
+              { value: "windowed", label: <><IconAppWindow size={15} />{t("Window")}</> },
             ]} />
           </OptionRow>
         )}
         {vm.streaming && monitors.length > 1 && (
-          <OptionRow icon={<IconScreenShare size={17} />} title={t("Abrir en")} desc={t("Monitor donde se abre la máquina")}>
+          <OptionRow icon={<IconScreenShare size={17} />} title={t("Open on")} desc={t("Monitor the machine opens on")}>
             <MonitorPicker monitors={monitors} value={draft.monitor} inherited={prefs.monitor} onChange={(monitor) => setDraft({ ...draft, monitor })} />
           </OptionRow>
         )}
         {vm.streaming && (
-          <OptionRow icon={<IconScreenShare size={17} />} title={t("Captura")} desc={draft.captureMode === "wgc"
-            ? t("La imagen aparece apenas te conectas y se ven los juegos en pantalla completa exclusiva. Los avisos de administrador de Windows se responden desde GpuVM.")
-            : t("Los avisos de administrador se ven en el visor, pero la imagen puede tardar en aparecer al conectar y los juegos en pantalla completa exclusiva se ven en negro.")}>
+          <OptionRow icon={<IconScreenShare size={17} />} title={t("Capture")} desc={draft.captureMode === "wgc"
+            ? t("The picture shows up as soon as you connect and exclusive full-screen games are visible. Windows admin prompts are answered from GpuVM.")
+            : t("Admin prompts show in the viewer, but the picture can take a while to appear when connecting and exclusive full-screen games show black.")}>
             <Segmented value={draft.captureMode} onChange={(captureMode) => setDraft({ ...draft, captureMode })} options={[
-              { value: "wgc", label: <><IconBolt size={15} />{t("Rápida")}</> },
-              { value: "ddx", label: <><IconScreenShare size={15} />{t("Clásica")}</> },
+              { value: "wgc", label: <><IconBolt size={15} />{t("Fast")}</> },
+              { value: "ddx", label: <><IconScreenShare size={15} />{t("Classic")}</> },
             ]} />
           </OptionRow>
         )}
         {vm.streaming && (
           <button type="button" className="disclosure opt-disclosure" aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}>
-            <IconChevronRight size={15} />{t("Avanzado")}
+            <IconChevronRight size={15} />{t("Advanced")}
           </button>
         )}
         {vm.streaming && advanced && (
           <>
-            <OptionRow icon={<IconAppWindow size={17} />} title={t("Códec")}
-              desc={draft.codec === "auto" ? t("El visor elige el mejor que tu equipo puede mostrar.") : t("Si la imagen no aparece, vuelve a Automático.")}>
+            <OptionRow icon={<IconAppWindow size={17} />} title={t("Codec")}
+              desc={draft.codec === "auto" ? t("The viewer picks the best one your PC can show.") : t("If the picture doesn't appear, go back to Automatic.")}>
               <Segmented value={draft.codec} onChange={(codec) => setDraft({ ...draft, codec })} options={CODECS} />
             </OptionRow>
-            <OptionRow icon={<IconSparkles size={17} />} title={t("Calidad de imagen")} value={draft.bitrateKbps ? `${draft.bitrateKbps / 1000} Mbps` : t("Automática")}
-              desc={t("Más calidad usa más red. Al mínimo, el visor la ajusta a la resolución y los FPS.")}>
-              <Slider label={t("Calidad de imagen")} value={draft.bitrateKbps / 1000} min={0} max={150} step={5} format={(v) => (v ? String(v) : "Auto")}
+            <OptionRow icon={<IconSparkles size={17} />} title={t("Picture quality")} value={draft.bitrateKbps ? `${draft.bitrateKbps / 1000} Mbps` : t("Automatic")}
+              desc={t("More quality uses more network. At the minimum, the viewer sets it from the resolution and FPS.")}>
+              <Slider label={t("Picture quality")} value={draft.bitrateKbps / 1000} min={0} max={150} step={5} format={(v) => (v ? String(v) : "Auto")}
                 onChange={(mbps) => setDraft({ ...draft, bitrateKbps: mbps * 1000 })} />
             </OptionRow>
           </>
@@ -1194,12 +1194,12 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
       {(vmDirty || clientDirty || captureDirty || networkDirty || monitorDirty || saved) && (
         <div className="options-foot">
           {saved && !vmDirty && !clientDirty && !captureDirty && !networkDirty && !monitorDirty ? (
-            <span className="saved"><IconCheck size={16} />{t("Guardado")}</span>
+            <span className="saved"><IconCheck size={16} />{t("Saved|settings")}</span>
           ) : (
             <>
-              <button className="btn ghost" onClick={() => setDraft(initial)}>{t("Descartar")}</button>
+              <button className="btn ghost" onClick={() => setDraft(initial)}>{t("Discard")}</button>
               <button className="primary compact" disabled={!!busy} onClick={save}>
-                <IconDeviceFloppy size={16} />{vmDirty && !off ? t("Apagar y aplicar") : t("Guardar")}
+                <IconDeviceFloppy size={16} />{vmDirty && !off ? t("Shut down and apply") : t("Save")}
               </button>
             </>
           )}
@@ -1219,14 +1219,14 @@ function SpaceRow({ name, vms }: { name: string; vms: VmOverview[] }) {
     <div className="opt-row">
       <span className="opt-icon"><Icon size={17} /></span>
       <div className="opt-text">
-        <span className="opt-title">{t("Espacio")}</span>
-        <span className="opt-desc">{t("Dónde está con otras máquinas, y su ambiente. En Inicio se ven juntas.")}</span>
+        <span className="opt-title">{t("Space")}</span>
+        <span className="opt-desc">{t("Where it sits with other machines, and its ambience. On Home they show together.")}</span>
       </div>
       <div className="opt-ctl space-row-ctl">
-        <Dropdown label={t("Espacio")} value={space.id} onChange={(id) => (id === NEW_SPACE ? setCreating(true) : moveToSpace(name, id))}
+        <Dropdown label={t("Space")} value={space.id} onChange={(id) => (id === NEW_SPACE ? setCreating(true) : moveToSpace(name, id))}
           options={[...spaces.map((x) => { const I = ambientInfo(x.ambient).icon; return { value: x.id, label: x.name, detail: ambientInfo(x.ambient).name, icon: <I size={16} /> }; }),
-            { value: NEW_SPACE, label: t("Nuevo espacio"), detail: t("Con {name} y un ambiente propio", { name }), icon: <IconPlus size={16} /> }]} />
-        <button type="button" className="btn ghost" onClick={() => { showSpace(space.id); location.hash = encodeURIComponent(":inicio"); }}>{t("Ver espacio")}</button>
+            { value: NEW_SPACE, label: t("New space"), detail: t("With {name} and its own ambience", { name }), icon: <IconPlus size={16} /> }]} />
+        <button type="button" className="btn ghost" onClick={() => { showSpace(space.id); location.hash = encodeURIComponent(":inicio"); }}>{t("View space")}</button>
       </div>
       {creating && createPortal(<SpaceDialog vms={vms} initialMachines={[name]} onClose={() => setCreating(false)} />, portalRoot())}
     </div>

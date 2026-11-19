@@ -3,7 +3,7 @@ import { decorColor, useDecor } from "./decor/store";
 import { t } from "./i18n";
 
 // A machine's icon (a tile tinted with its color): the app logo's chip with one of its four parts in the machine's color — the part of the GPU it gets.
-// Each name always gets the same part and color; "Otro ícono" moves to the next variant.
+// Each name always gets the same part and color; "Another icon" moves to the next variant.
 
 // Muted, dark-friendly colors. Blue stays out: it is the accent for actions.
 const NORMAL = ["#4f9a86", "#c4775e", "#8a7fd0", "#c9a24f", "#c46f8e"];
@@ -135,7 +135,7 @@ export function PatternButton({ name, onChange, ...props }: Omit<Props, "variant
     window.dispatchEvent(new Event("gpuvm-pattern"));
   };
   return (
-    <button type="button" className="pattern-btn" title={t("Otro ícono")} aria-label={t("Otro ícono")} onClick={next}>
+    <button type="button" className="pattern-btn" title={t("Another icon")} aria-label={t("Another icon")} onClick={next}>
       <MachineIcon name={name} variant={variant} {...props} />
     </button>
   );

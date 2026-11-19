@@ -15,7 +15,7 @@ type World = "studio" | "board" | "blocks" | "space";
 interface Floor { x: number; w: number; color: string; world: World }
 const ORDER: World[] = ["blocks", "board", "studio", "space"];
 const FLOORS_PER_ZONE = 8;
-const zoneName = (w: World) => (w === "blocks" ? t("Bloques") : w === "board" ? t("Placa base") : w === "studio" ? t("Estudio") : t("Espacio"));
+const zoneName = (w: World) => (w === "blocks" ? t("Blocks") : w === "board" ? t("Motherboard") : w === "studio" ? t("Studio") : t("Space"));
 interface Piece { x: number; y: number; w: number; vx: number; vy: number; rot: number; vr: number; color: string }
 interface Spark { x: number; y: number; vx: number; vy: number; life: number; color: string; size: number }
 
@@ -259,7 +259,7 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     // A new world: its name on a small plate at the top, for a moment.
     const sinceZone = clock - bannerAt;
     if (sinceZone < 2.2 && !demo) {
-      const a = Math.min(1, sinceZone * 4, (2.2 - sinceZone) * 3), text = t("Zona {name}", { name: zoneName(world) });
+      const a = Math.min(1, sinceZone * 4, (2.2 - sinceZone) * 3), text = t("{name} zone", { name: zoneName(world) });
       g.globalAlpha = a; g.font = `600 ${14 * u}px 'Plus Jakarta Sans', sans-serif`;
       const tw = g.measureText(text).width + 28, x = W / 2 - tw / 2, y = 20 * u;
       g.fillStyle = host.light ? "rgba(255,255,255,.9)" : "rgba(28,28,28,.9)"; g.beginPath(); g.roundRect(x, y, tw, 30 * u, 8); g.fill();
@@ -280,7 +280,7 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     last = now;
     if (running) step(dt);
     draw(dt);
-    if (running && now - hudAt > 100) { hudAt = now; host.onHud({ score, lives: 1, power: streak >= 2 ? t("{n} perfectos seguidos", { n: streak }) : undefined }); }
+    if (running && now - hudAt > 100) { hudAt = now; host.onHud({ score, lives: 1, power: streak >= 2 ? t("{n} Perfects in a row", { n: streak }) : undefined }); }
     if (running || falling.length || sparks.length) frame = requestAnimationFrame(loop);
   };
   const kick = () => { cancelAnimationFrame(frame); last = performance.now(); frame = requestAnimationFrame(loop); };
@@ -309,20 +309,20 @@ export const BRICK_TOWER: GameDef = {
   // Getters: the texts come out in the language in use.
   // One name in every language, like Overclock.
   name: "Stack",
-  get description() { return t("Suelta cada bloque justo sobre el anterior. Lo que sobresale se cae y la torre se angosta."); },
+  get description() { return t("Drop each block right on the one below. What hangs over falls off and the tower narrows."); },
   get modes() {
     return [
-      { id: "blocks", name: t("Bloques"), description: t("Empieza entre bloques de juguete de colores.") },
-      { id: "studio", name: t("Estudio"), description: t("Empieza con placas de holograma sobre el gris de la app.") },
-      { id: "board", name: t("Placa base"), description: t("Empieza con chips sobre las pistas de la placa.") },
+      { id: "blocks", name: t("Blocks"), description: t("Starts among colorful toy bricks.") },
+      { id: "studio", name: t("Studio"), description: t("Starts with hologram slabs on the app's gray.") },
+      { id: "board", name: t("Motherboard"), description: t("Starts with chips over the board's traces.") },
     ];
   },
   get controls() {
     return [
-      { label: t("Soltar"), mouse: "left" as const, keys: [t("Espacio"), "↓"] },
-      { label: t("Pausa"), keys: ["P"] },
+      { label: t("Drop"), mouse: "left" as const, keys: [t("Space"), "↓"] },
+      { label: t("Pause|game"), keys: ["P"] },
     ];
   },
-  get tips() { return [t("Encima justo es Perfecto y vale doble"), t("Tres perfectos seguidos hacen crecer el bloque"), t("Cada 8 pisos subes a otro mundo y se pone más difícil")]; },
+  get tips() { return [t("Right on top is a Perfect, worth double"), t("Three Perfects in a row grow the block back"), t("Every 8 floors you climb into another world, and it gets harder")]; },
   create,
 };

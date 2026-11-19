@@ -10,7 +10,7 @@ function Install-GpuVMClient {
         return
     }
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        throw 'No se encontró winget. Descarga Moonlight desde https://moonlight-stream.org'
+        throw 'winget wasn''t found. Download Moonlight from https://moonlight-stream.org'
     }
     if (-not $PSCmdlet.ShouldProcess('Moonlight (MoonlightGameStreamingProject.Moonlight)', 'Instalar con winget')) { return }
     & winget install --id MoonlightGameStreamingProject.Moonlight --exact --silent

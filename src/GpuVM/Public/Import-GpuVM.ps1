@@ -56,11 +56,11 @@ function Import-GpuVM {
         try { $copy = Copy-StreamWithHash -Source $in -Destination $out -Length $diskBytes -Limit $diskBytes -Label 'Importando' }
         finally { $out.Dispose(); $in.Dispose() }
         if ($copy.Bytes -ne $diskBytes -or $copy.Sha256 -ne $manifest['disk']['sha256']) {
-            throw 'El disco del archivo no coincide con su huella: el archivo está dañado o fue modificado. No se importa.'
+            throw 'The file''s disk doesn''t match its fingerprint: the file is damaged or was changed. It isn''t imported.'
         }
-        Write-Step 'Huella del disco verificada'
+        Write-Step 'Disk fingerprint checked'
         $vhd = Get-VHD -Path $vhdPath
-        if ($vhd.VhdType -eq 'Differencing') { throw 'El disco del archivo depende de otro disco; no se importa.' }
+        if ($vhd.VhdType -eq 'Differencing') { throw 'The file''s disk depends on another disk; it isn''t imported.' }
 
         # The disk comes from a file of unknown origin: it is never mounted on this PC. Sunshine's identity and web login
         # are reset inside the VM, over PowerShell Direct, the first time it is opened (Connect-GpuVM).
@@ -96,7 +96,7 @@ function Import-GpuVM {
     }
     catch {
         if ($vmName -and $vmDir) {
-            Write-Step 'La importación falló; limpiando lo que se alcanzó a crear'
+            Write-Step 'The import failed; cleaning up what was made'
             if (Get-VM -Name $vmName -ErrorAction SilentlyContinue) { Remove-VM -Name $vmName -Force -ErrorAction SilentlyContinue }
             $disk = Join-Path $vmDir "Virtual Hard Disks\$vmName.vhdx"
             $vhdInfo = Get-VHD -Path $disk -ErrorAction SilentlyContinue; if ($vhdInfo -and $vhdInfo.Attached) { Dismount-VHD -Path $disk -ErrorAction SilentlyContinue }

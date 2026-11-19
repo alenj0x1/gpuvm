@@ -20,7 +20,7 @@ function Send-GpuVMFile {
         [ValidatePattern('^[a-f0-9]{8,32}$')][string]$TransferId = ([guid]::NewGuid().ToString('n'))
     )
     Assert-Admin
-    if ($FromVM -and $FromVM -eq $Name) { throw 'Elige otra máquina como destino.' }
+    if ($FromVM -and $FromVM -eq $Name) { throw 'Choose another machine to send to.' }
     $target = Open-TransferSession -Name $Name
     $source = $null
     $marker = Get-TransferMarker -Id $TransferId
@@ -32,7 +32,7 @@ function Send-GpuVMFile {
             $list = Get-GuestTransferEntries -Session $source -Path $Path
         }
         else {
-            Write-Step 'Midiendo'
+            Write-Step 'Measuring'
             $list = Get-HostTransferEntries -Path $Path
         }
         $entries = $list.Entries
@@ -91,7 +91,7 @@ function Send-GpuVMFile {
         [ordered]@{ name = $Name; from = $FromVM; folder = $Folder; items = @($done.Names); files = $files; bytes = $total }
     }
     catch [OperationCanceledException] {
-        throw 'Envío cancelado.'
+        throw 'Copy cancelled.'
     }
     finally {
         if ($receiving) { try { $null = Close-GuestReceiver -Session $target -Id $TransferId -Cancel } catch { } }

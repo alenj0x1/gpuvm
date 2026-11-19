@@ -150,9 +150,9 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
   const short = home.machines.filter((m) => m.state === "Off" && !m.fits);
   // Named one by one while it is short; with many machines, counted, so the panel never turns into a list.
   const memoryHint = fits.length + short.length > 3
-    ? [fits.length && tn(fits.length, "Cabe {n} máquina más.", "Caben {n} máquinas más."), short.length && tn(short.length, "{n} necesita más memoria libre.", "{n} necesitan más memoria libre.")].filter(Boolean).join(" ")
-    : (fits.length ? t("Cabe {names}.", { names: fits.join(", ") }) : short.length ? "" : t("Todas están encendidas."))
-      + short.map((m) => { const need = gb(Math.max(0, m.needGB - home.host.memoryFreeGB)); return " " + t("{name} necesita {gb} más.", { name: m.name, gb: need }); }).join("");
+    ? [fits.length && tn(fits.length, "{n} more machine fits.", "{n} more machines fit."), short.length && tn(short.length, "{n} needs more free memory.", "{n} need more free memory.")].filter(Boolean).join(" ")
+    : (fits.length ? t("There's room for {names}.", { names: fits.join(", ") }) : short.length ? "" : t("They're all on."))
+      + short.map((m) => { const need = gb(Math.max(0, m.needGB - home.host.memoryFreeGB)); return " " + t("{name} needs {gb} more.", { name: m.name, gb: need }); }).join("");
 
   const action = (vm: VmOverview, compact = false) => {
     const busy = busyFor(vm.name);
@@ -161,14 +161,14 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
     const off = vm.state === "Off";
     if (off && m && !m.fits) {
       return m.fitGB >= 4 && m.fitGB < m.memoryGB && vm.managed && vm.streaming
-        ? <button className="btn" onClick={() => startJob(vm.name, "Connect-GpuVM", { Name: vm.name, MemoryGB: m.fitGB })}><IconPlayerPlay size={15} />{t("Abrir con {gb} GB", { gb: m.fitGB })}</button>
-        : <span className="home-short">{t("Faltan {gb}", { gb: gb(Math.max(0, m.needGB - home.host.memoryFreeGB)) })}</span>;
+        ? <button className="btn" onClick={() => startJob(vm.name, "Connect-GpuVM", { Name: vm.name, MemoryGB: m.fitGB })}><IconPlayerPlay size={15} />{t("Open with {gb} GB", { gb: m.fitGB })}</button>
+        : <span className="home-short">{t("{gb} short", { gb: gb(Math.max(0, m.needGB - home.host.memoryFreeGB)) })}</span>;
     }
-    if (!vm.managed || !vm.streaming) return <button className="btn ghost" onClick={() => onOpenVm(vm.name)}>{t("Ver")}<IconArrowRight size={15} /></button>;
+    if (!vm.managed || !vm.streaming) return <button className="btn ghost" onClick={() => onOpenVm(vm.name)}>{t("View")}<IconArrowRight size={15} /></button>;
     return (
       <button className={compact ? "btn" : "primary"} onClick={() => startJob(vm.name, "Connect-GpuVM", { Name: vm.name })}>
         {vm.state === "Running" ? <IconExternalLink size={16} /> : <IconPlayerPlay size={16} />}
-        <span className="ellipsis">{vm.state === "Running" ? t("Abrir") : compact ? t("Encender") : t("Encender y abrir")}</span>
+        <span className="ellipsis">{vm.state === "Running" ? t("Open") : compact ? t("Start") : t("Start and open")}</span>
       </button>
     );
   };
@@ -176,10 +176,10 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
   // How much the machine in front is using: processor, memory and GPU, each in its resource color.
   const running = hero?.state === "Running";
   const meters = hero ? [
-    { cls: "res-cpu", icon: <IconCpu size={15} />, label: t("Procesador"), value: running ? `${hero.cpuPercent} %` : tn(hero.options?.cpu ?? hero.processorCount, "{n} hilo", "{n} hilos"), pct: running ? hero.cpuPercent : 0 },
-    { cls: "res-mem", icon: <IconTopologyStar3 size={15} />, label: t("Memoria"), value: running ? t("{used} de {total}", { used: gb(hero.memoryDemandGB), total: gb(hero.memoryAssignedGB) }) : gb(hero.memoryStartupGB),
+    { cls: "res-cpu", icon: <IconCpu size={15} />, label: t("Processor"), value: running ? `${hero.cpuPercent} %` : tn(hero.options?.cpu ?? hero.processorCount, "{n} thread", "{n} threads"), pct: running ? hero.cpuPercent : 0 },
+    { cls: "res-mem", icon: <IconTopologyStar3 size={15} />, label: t("Memory"), value: running ? t("{used} of {total}", { used: gb(hero.memoryDemandGB), total: gb(hero.memoryAssignedGB) }) : gb(hero.memoryStartupGB),
       pct: running ? (hero.memoryDemandGB / Math.max(hero.memoryAssignedGB, 0.1)) * 100 : 0 },
-    { cls: "res-gpu", icon: <IconBolt size={15} />, label: "GPU", value: !hero.hasGpu ? t("Sin GPU") : running ? `${hero.gpuPercent} %` : t("{pct} % asignada", { pct: hero.options?.gpuPercent ?? 100 }), pct: running && hero.hasGpu ? hero.gpuPercent : 0 },
+    { cls: "res-gpu", icon: <IconBolt size={15} />, label: "GPU", value: !hero.hasGpu ? t("No GPU") : running ? `${hero.gpuPercent} %` : t("{pct} % assigned", { pct: hero.options?.gpuPercent ?? 100 }), pct: running && hero.hasGpu ? hero.gpuPercent : 0 },
   ] : [];
 
   return (
@@ -195,11 +195,11 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
           <div className="home-panel home-empty-panel">
             <div className="home-empty-text">
               <h1>{space.name}</h1>
-              <p>{t("Un espacio sin máquinas todavía. Mueve aquí las que ya tienes o crea una nueva para {space}.", { space: space.name })}</p>
+              <p>{t("A space with no machines yet. Move the ones you have here or create a new one for {space}.", { space: space.name })}</p>
             </div>
             <div className="home-panel-actions">
-              <button className="btn" onClick={() => setEditing(space)}><IconArrowsExchange size={16} />{t("Mover máquinas")}</button>
-              <button className="primary" onClick={() => onCreate(space.id)}><IconPlus size={17} />{t("Crear máquina")}</button>
+              <button className="btn" onClick={() => setEditing(space)}><IconArrowsExchange size={16} />{t("Move machines")}</button>
+              <button className="primary" onClick={() => onCreate(space.id)}><IconPlus size={17} />{t("Create machine")}</button>
             </div>
           </div>
         </div>
@@ -212,7 +212,7 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
             </SpaceWithGames>
             <SpaceBar spaces={spaces} space={space} onEdit={setEditing} />
           </div>
-          <div className="home-split home-split-panel" role="separator" aria-orientation="vertical" aria-label={t("Ancho del panel")}
+          <div className="home-split home-split-panel" role="separator" aria-orientation="vertical" aria-label={t("Panel width")}
             onPointerDown={drag("panel")} onDoubleClick={() => setPanelW(PANEL_DEFAULT)}><span /></div>
           <div className="home-panel">
             <div className="home-hero-name">
@@ -235,22 +235,22 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
               ))}
             </div>
             <div className="home-memory">
-              <span className="home-side-title">{t("Memoria libre para máquinas")}</span>
-              <strong>{t("{used} de {total}", { used: gb(home.host.memoryFreeGB), total: gb(home.host.memoryTotalGB) })}</strong>
+              <span className="home-side-title">{t("Free memory for machines")}</span>
+              <strong>{t("{used} of {total}", { used: gb(home.host.memoryFreeGB), total: gb(home.host.memoryTotalGB) })}</strong>
               <div className="bar"><span style={{ width: `${Math.min(100, (memUsed / home.host.memoryTotalGB) * 100)}%` }} /></div>
               <span className="hint">
                 {memoryHint}
               </span>
             </div>
             <div className="home-panel-actions">
-              <button className="btn ghost" onClick={() => onOpenVm(hero.name)}>{t("Ver máquina")}</button>
+              <button className="btn ghost" onClick={() => onOpenVm(hero.name)}>{t("View machine")}</button>
               {action(hero)}
             </div>
           </div>
         </div>
       )}
 
-      <div className="home-split home-split-row" role="separator" aria-orientation="horizontal" aria-label={t("Alto de la fila de abajo")}
+      <div className="home-split home-split-row" role="separator" aria-orientation="horizontal" aria-label={t("Height of the bottom row")}
         onPointerDown={drag("row")} onDoubleClick={() => setRowH(ROW_DEFAULT)}><span /></div>
 
       <div ref={rowRef} className={`home-row${home.attention.length ? " with-attention" : ""}`}>
@@ -269,9 +269,9 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
               <MachineIcon name={vm.name} size={30} radius={8} />
               <div className="home-machine-text">
                 <strong>{vm.name}</strong>
-                <span>{t("En {space}", { space: spaceOf(vm.name, spaces).name })}</span>
+                <span>{t("In {space}", { space: spaceOf(vm.name, spaces).name })}</span>
               </div>
-              <button className="btn compact" onClick={() => moveToSpace(vm.name, space.id)}><IconArrowsExchange size={15} />{t("Traer aquí")}</button>
+              <button className="btn compact" onClick={() => moveToSpace(vm.name, space.id)}><IconArrowsExchange size={15} />{t("Bring here")}</button>
             </div>
           </div>
         ))}
@@ -283,7 +283,7 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
             m?.fits, m?.fitGB, m?.needGB, home.host.memoryFreeGB].join("|");
           return <Memo key={vm.id} sig={sig} render={() => (
           <div className="card home-machine" data-vm={vm.name} draggable onDragStart={(e) => dragMachine(e, vm.name)}>
-            <button type="button" className="home-machine-scene" onClick={() => onOpenVm(vm.name)} aria-label={t("Ver {name}", { name: vm.name })}>
+            <button type="button" className="home-machine-scene" onClick={() => onOpenVm(vm.name)} aria-label={t("View {name}", { name: vm.name })}>
               <Scene name={vm.name} style={sceneStyle(vm.name)} state={vm.state}
                 activity={{ cpu: vm.cpuPercent, gpu: vm.gpuPercent, mem: (vm.memoryDemandGB / Math.max(vm.memoryAssignedGB, 0.1)) * 100 }} />
             </button>
@@ -300,19 +300,19 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
         })}
         </div>
 
-        <div className="home-split home-split-col" role="separator" aria-orientation="vertical" aria-label={t("Ancho de la Biblioteca")}
+        <div className="home-split home-split-col" role="separator" aria-orientation="vertical" aria-label={t("Library width")}
           onPointerDown={drag("lib")} onDoubleClick={() => setLibW(LIB_DEFAULT)}><span /></div>
         <div className="card home-library">
           <div className="home-card-head">
-            <span className="home-side-title">{t("Biblioteca")}</span>
+            <span className="home-side-title">{t("Library")}</span>
             {/* Creating a machine lives with what it is made from, as a quiet action, not a big tile. */}
-            <button type="button" className="btn ghost compact" onClick={() => onCreate(space.id)}><IconPlus size={15} />{t("Crear máquina")}</button>
+            <button type="button" className="btn ghost compact" onClick={() => onCreate(space.id)}><IconPlus size={15} />{t("Create machine")}</button>
           </div>
           <div className="home-library-grid">
             {[
-              { icon: <IconLayoutGrid size={16} />, n: library?.profiles, label: t("Perfiles"), route: ":biblioteca:perfiles" },
-              { icon: <IconTemplate size={16} />, n: library?.templates, label: t("Plantillas"), route: ":biblioteca:plantillas" },
-              { icon: <IconStack2 size={16} />, n: library?.shared, label: t("Discos compartidos"), route: ":biblioteca:compartidos" },
+              { icon: <IconLayoutGrid size={16} />, n: library?.profiles, label: t("Profiles"), route: ":biblioteca:perfiles" },
+              { icon: <IconTemplate size={16} />, n: library?.templates, label: t("Templates"), route: ":biblioteca:plantillas" },
+              { icon: <IconStack2 size={16} />, n: library?.shared, label: t("Shared disks"), route: ":biblioteca:compartidos" },
               { icon: <IconDisc size={16} />, n: library?.isos, label: t("ISOs"), route: ":biblioteca:isos" },
             ].map((x) => (
               <button key={x.route} type="button" className="home-library-item" onClick={() => onRoute(x.route)}>
@@ -325,7 +325,7 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
         </div>
 
         {home.attention.length > 0 && (
-          <div className="home-split home-split-col" role="separator" aria-orientation="vertical" aria-label={t("Ancho de lo pendiente")}
+          <div className="home-split home-split-col" role="separator" aria-orientation="vertical" aria-label={t("Notices width")}
             onPointerDown={drag("att")} onDoubleClick={() => setAttW(ATT_DEFAULT)}><span /></div>
         )}
         {home.attention.length > 0 && (
@@ -343,7 +343,7 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
                 <div className="home-attention-row" key={`${a.vm}-${a.kind}-${i}`}>
                   <span className="notice-icon">{ISSUE_ICONS[a.kind] ?? <IconDeviceGamepad2 size={17} />}</span>
                   <div className="home-attention-text">
-                    <strong>{a.vm ?? t("Equipo")}</strong>
+                    <strong>{a.vm ?? t("This PC")}</strong>
                     <span className={mine ? "home-attention-progress" : ""}>{mine ? translateModule(busy!.message) : translateModule(a.text)}</span>
                   </div>
                   <button className="btn compact" disabled={!!busy} onClick={act}>
@@ -388,8 +388,8 @@ function SpaceBar({ spaces, space, onEdit }: { spaces: Space[]; space: Space; on
         const I = ambientInfo(x.ambient).icon;
         return { value: x.id, label: <><I size={15} /><span className="ellipsis">{x.name}</span></> };
       })} />
-      <button type="button" className="icon-btn" title={t("Editar {name}", { name: space.name })} aria-label={t("Editar {name}", { name: space.name })} onClick={() => onEdit(space)}><IconPencil size={16} /></button>
-      <button type="button" className="icon-btn" title={t("Nuevo espacio")} aria-label={t("Nuevo espacio")} onClick={() => onEdit("new")}><IconPlus size={16} /></button>
+      <button type="button" className="icon-btn" title={t("Edit {name}", { name: space.name })} aria-label={t("Edit {name}", { name: space.name })} onClick={() => onEdit(space)}><IconPencil size={16} /></button>
+      <button type="button" className="icon-btn" title={t("New space")} aria-label={t("New space")} onClick={() => onEdit("new")}><IconPlus size={16} /></button>
     </div>
   );
 }
@@ -400,16 +400,16 @@ function NewMachineCard({ space, onCreate }: { space: Space; onCreate: () => voi
   const [look] = useState(() => ({ name: `nueva-${Math.random().toString(36).slice(2, 8)}`, style: SCENE_STYLES[Math.floor(Math.random() * SCENE_STYLES.length)] }));
   return (
     <div className="card home-machine">
-      <button type="button" className="home-machine-scene" onClick={onCreate} aria-label={t("Crear máquina")}>
+      <button type="button" className="home-machine-scene" onClick={onCreate} aria-label={t("Create machine")}>
         <Scene name={look.name} style={look.style} state="Off" activity={{ cpu: 0, gpu: 0, mem: 0 }} />
       </button>
       <div className="home-machine-row">
         <MachineIcon name={look.name} size={30} radius={8} />
         <button type="button" className="home-machine-text" onClick={onCreate}>
-          <strong>{t("Nueva máquina")}</strong>
-          <span>{t("En {space}", { space: space.name })}</span>
+          <strong>{t("New machine")}</strong>
+          <span>{t("In {space}", { space: space.name })}</span>
         </button>
-        <button className="btn compact" onClick={onCreate}><IconPlus size={15} />{t("Crear máquina")}</button>
+        <button className="btn compact" onClick={onCreate}><IconPlus size={15} />{t("Create machine")}</button>
       </div>
     </div>
   );
@@ -446,9 +446,9 @@ export function EmptyHome({ gpuName, onCreate, onRoute }: { gpuName: string | nu
       .catch(() => {});
   }, []);
   const ready = [
-    { icon: <IconLayoutGrid size={16} />, n: library?.profiles, one: t("perfil listo"), many: t("perfiles listos"), route: ":biblioteca:perfiles" },
-    { icon: <IconTemplate size={16} />, n: library?.templates, one: t("plantilla"), many: t("plantillas"), route: ":biblioteca:plantillas" },
-    { icon: <IconDisc size={16} />, n: library?.isos, one: t("imagen de Windows"), many: t("imágenes de Windows"), route: ":biblioteca:isos" },
+    { icon: <IconLayoutGrid size={16} />, n: library?.profiles, one: t("profile ready"), many: t("profiles ready"), route: ":biblioteca:perfiles" },
+    { icon: <IconTemplate size={16} />, n: library?.templates, one: t("template"), many: t("templates"), route: ":biblioteca:plantillas" },
+    { icon: <IconDisc size={16} />, n: library?.isos, one: t("Windows image|count"), many: t("Windows images"), route: ":biblioteca:isos" },
   ].filter((x) => x.n);
   return (
     <div className="main home">
@@ -457,8 +457,8 @@ export function EmptyHome({ gpuName, onCreate, onRoute }: { gpuName: string | nu
         <div className="home-split home-split-panel" aria-hidden="true" />
         <div className="home-panel home-empty-panel">
           <div className="home-empty-text">
-            <h1>{t("Crea tu primera máquina")}</h1>
-            <p>{t("Windows 10 u 11 con tu {gpu}, lista para abrir en un clic.", { gpu: gpuName ? gpuName.replace("NVIDIA GeForce ", "") : "GPU" })}</p>
+            <h1>{t("Create your first machine")}</h1>
+            <p>{t("Windows 10 or 11 with your {gpu}, ready to open with one click.", { gpu: gpuName ? gpuName.replace("NVIDIA GeForce ", "") : "GPU" })}</p>
           </div>
           {ready.length > 0 && (
             <div className="home-library-grid home-empty-ready">
@@ -470,7 +470,7 @@ export function EmptyHome({ gpuName, onCreate, onRoute }: { gpuName: string | nu
             </div>
           )}
           <div className="home-panel-actions">
-            <button className="primary" onClick={() => onCreate()}><IconPlus size={17} />{t("Crear máquina")}</button>
+            <button className="primary" onClick={() => onCreate()}><IconPlus size={17} />{t("Create machine")}</button>
           </div>
         </div>
       </div>

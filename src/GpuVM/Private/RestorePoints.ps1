@@ -49,7 +49,7 @@ function Stop-GpuVMForDisk {
     $vm = Get-VM -Name $Name -ErrorAction Stop
     if ($vm.State -eq 'Off') { return $false }
     if ($vm.State -ne 'Running' -or -not $ShutdownIfRunning) { throw "Apaga la máquina '$Name' para $Action." }
-    Write-Step 'Apagando la máquina'
+    Write-Step 'Shutting the machine down'
     Stop-VM -Name $Name -Force -ErrorAction Stop
     $true
 }
@@ -120,7 +120,7 @@ function New-GpuVMRestorePointCore {
     if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
     if ((Get-Item -LiteralPath $dir -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "$dir es un enlace; GpuVM no lo usa." }
 
-    Write-Step 'Guardando el punto de restauración'
+    Write-Step 'Saving the restore point'
     $moved = $false
     try {
         # Same folder tree, same volume: a rename, nothing is copied.
@@ -172,7 +172,7 @@ function Restore-GpuVMRestorePointCore {
     if ($top.VhdType -ne 'Differencing' -or -not $top.ParentPath) { throw "El disco de '$Name' no está sobre un punto de restauración." }
     # The VM's disk is only ever a top disk on a point: never a point or a template (they are other disks).
     $fresh = Join-Path (Split-Path $current -Parent) ".restore-$Id.vhdx"
-    Write-Step 'Volviendo al punto de restauración'
+    Write-Step 'Going back to the restore point'
     New-VHD -Path $fresh -ParentPath $pointPath -Differencing -ErrorAction Stop | Out-Null
     # The current top disk is set aside (not deleted) until the new one is in its place: if anything fails, it goes back
     # and the VM is never left without a disk.
@@ -216,12 +216,12 @@ function Remove-GpuVMRestorePointCore {
     if (-not $point) { throw "No existe el punto de restauración '$Id'." }
     $pointPath = Get-RestorePointPath -State $State -Id $Id
     $children = @(if (Test-Path -LiteralPath $pointPath) { Get-RestorePointChild -State $State -Path $pointPath })
-    if ($children.Count -gt 1) { throw 'Otros dos puntos parten de este; borra uno de ellos primero.' }
+    if ($children.Count -gt 1) { throw 'Two other points start from this one; delete one of them first.' }
     $vm = Get-VM -Name $Name -ErrorAction Stop
 
     if (-not (Test-Path -LiteralPath $pointPath)) { Write-Warning "El disco del punto ya no existía ($pointPath)." }
     elseif (-not $children.Count) {
-        Write-Step 'Borrando el punto de restauración'
+        Write-Step 'Deleting the restore point'
         Set-FileReadOnly -Path $pointPath -Value $false
         Remove-Item -LiteralPath $pointPath -Force
     }

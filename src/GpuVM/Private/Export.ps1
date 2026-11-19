@@ -26,7 +26,7 @@ function Copy-StreamWithHash {
     try {
         while (($read = $Source.Read($buffer, 0, $buffer.Length)) -gt 0) {
             $done += $read
-            if ($done -gt $Limit) { throw 'El archivo tiene más datos de los que declara; no se importa.' }
+            if ($done -gt $Limit) { throw 'The file holds more data than it says; it isn''t imported.' }
             $sha.AppendData($buffer, 0, $read)
             $Destination.Write($buffer, 0, $read)
             if ($lastReport.ElapsedMilliseconds -ge 1000) {
@@ -76,15 +76,15 @@ function New-TransferManifest {
 # A manifest comes from a file of unknown origin: each value is checked and only known fields are kept.
 function Read-TransferManifest {
     param([Parameter(Mandatory)][string]$Text)
-    if ($Text.Length -gt 64KB) { throw 'El archivo no es una máquina de GpuVM.' }
-    try { $m = $Text | ConvertFrom-Json -AsHashtable -ErrorAction Stop } catch { throw 'El archivo no es una máquina de GpuVM.' }
-    if ($m -isnot [System.Collections.IDictionary] -or $m['kind'] -ne 'gpuvm-machine') { throw 'El archivo no es una máquina de GpuVM.' }
-    if ($m['format'] -isnot [long] -and $m['format'] -isnot [int]) { throw 'El archivo no es una máquina de GpuVM.' }
-    if ([int]$m['format'] -gt $script:TransferFormat) { throw 'La máquina se exportó con una versión más nueva de GpuVM. Actualiza GpuVM para importarla.' }
+    if ($Text.Length -gt 64KB) { throw 'The file isn''t a GpuVM machine.' }
+    try { $m = $Text | ConvertFrom-Json -AsHashtable -ErrorAction Stop } catch { throw 'The file isn''t a GpuVM machine.' }
+    if ($m -isnot [System.Collections.IDictionary] -or $m['kind'] -ne 'gpuvm-machine') { throw 'The file isn''t a GpuVM machine.' }
+    if ($m['format'] -isnot [long] -and $m['format'] -isnot [int]) { throw 'The file isn''t a GpuVM machine.' }
+    if ([int]$m['format'] -gt $script:TransferFormat) { throw 'The machine was exported with a newer GpuVM. Update GpuVM to import it.' }
     $disk = $m['disk']
     if ($disk -isnot [System.Collections.IDictionary] -or "$($disk['sha256'])" -notmatch '^[0-9a-f]{64}$' -or
         ($disk['bytes'] -isnot [long] -and $disk['bytes'] -isnot [int]) -or [int64]$disk['bytes'] -le 0) {
-        throw 'El archivo está incompleto: le falta el disco o su huella.'
+        throw 'The file is incomplete: its disk or its fingerprint is missing.'
     }
     # Not $text: PowerShell names ignore case and that is the -Text parameter.
     $pick = { param($v, $pattern) if ($v -is [string] -and $v -match $pattern) { $v } else { $null } }
@@ -112,14 +112,14 @@ function Open-TransferArchive {
     # checked it as the user), and read only through this handle.
     $stream = Open-GpuVMSafeFile -Path ([IO.Path]::GetFullPath($Path))
     try { $zip = [IO.Compression.ZipArchive]::new($stream, [IO.Compression.ZipArchiveMode]::Read, $false) }
-    catch { $stream.Dispose(); throw 'El archivo no es una máquina de GpuVM.' }
+    catch { $stream.Dispose(); throw 'The file isn''t a GpuVM machine.' }
     $manifestEntry = $zip.GetEntry('manifest.json')
     $diskEntry = $zip.GetEntry('disk.vhdx')
-    if (-not $manifestEntry -or -not $diskEntry) { $zip.Dispose(); throw 'El archivo no es una máquina de GpuVM.' }
+    if (-not $manifestEntry -or -not $diskEntry) { $zip.Dispose(); throw 'The file isn''t a GpuVM machine.' }
     try {
         $reader = [IO.StreamReader]::new($manifestEntry.Open())
         try { $manifest = Read-TransferManifest -Text $reader.ReadToEnd() } finally { $reader.Dispose() }
-        if ($diskEntry.Length -ne $manifest['disk']['bytes']) { throw 'El archivo está dañado: el disco no mide lo que dice.' }
+        if ($diskEntry.Length -ne $manifest['disk']['bytes']) { throw 'The file is damaged: the disk isn''t the size it says.' }
     }
     catch { $zip.Dispose(); throw }
     [pscustomobject]@{ Zip = $zip; Manifest = $manifest; DiskEntry = $diskEntry; Length = $stream.Length }
@@ -130,7 +130,7 @@ function Open-TransferArchive {
 function Assert-GpuVMExportPath {
     param([Parameter(Mandatory)][string]$Path)
     $full = [IO.Path]::GetFullPath($Path)
-    if ($full -notmatch '^[A-Za-z]:\\') { throw 'Elige una carpeta de un disco de este equipo.' }
+    if ($full -notmatch '^[A-Za-z]:\\') { throw 'Choose a folder on a drive of this PC.' }
     $protected = @(
         [Environment]::GetFolderPath('Windows'), [Environment]::GetFolderPath('ProgramFiles'),
         [Environment]::GetFolderPath('ProgramFilesX86'), [Environment]::GetFolderPath('CommonApplicationData'),

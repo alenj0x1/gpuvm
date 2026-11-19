@@ -54,7 +54,7 @@ function Get-GpuDriverFileSet {
         }
         if ($attempt -lt 3) { Start-Sleep -Seconds 5 }
     }
-    Write-Warning 'WMI no devolvió los archivos del driver; se usa el método alternativo basado en el .inf.'
+    Write-Warning 'WMI didn''t return the driver files; using the fallback method based on the .inf.'
     Get-GpuDriverFileSetFromInf -PnpDeviceId $PnpDeviceId
 }
 

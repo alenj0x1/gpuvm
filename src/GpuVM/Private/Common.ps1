@@ -5,7 +5,7 @@
 
 function Assert-Admin {
     if (-not (Test-IsAdmin)) {
-        throw 'Este comando necesita PowerShell 7 abierto como administrador.'
+        throw 'This command needs PowerShell 7 opened as administrator.'
     }
 }
 

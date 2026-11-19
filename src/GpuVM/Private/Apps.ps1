@@ -76,11 +76,11 @@ function Start-GuestForApp {
     param([Parameter(Mandatory)][string]$Name)
     $state = Get-GpuVMState -Name $Name
     $guest = Get-GpuVMGuestCredential -State $state
-    if (-not $guest) { throw 'Guarda la contraseña de Windows de la VM para que GpuVM pueda instalar apps.' }
+    if (-not $guest) { throw 'Save the VM''s Windows password so GpuVM can install apps.' }
     $vm = Get-VM -Name $Name
     if ($vm.State -eq 'Off') {
         Assert-VMCanStart -Name $Name
-        Write-Step 'Encendiendo'
+        Write-Step 'Starting'
         Start-VM -Name $Name
     }
     Wait-GuestReady -Name $Name -Credential $guest

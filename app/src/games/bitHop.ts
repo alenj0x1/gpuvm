@@ -3,7 +3,7 @@ import { settledResize } from "./types";
 import { drawFigureThumb } from "../decor/figureGL";
 import { t } from "../i18n";
 
-// "Bit a bit": your machine keeps going forward and falls unless you make it jump; it has to get through the gaps
+// "Bit by bit": your machine keeps going forward and falls unless you make it jump; it has to get through the gaps
 // between columns. The world is picked on the start card: the studio (pillars of hologram on the app's gray), a
 // motherboard (towers of capacitors and chips) or a world of blocks (brick towers on a baseplate). Bits of data float
 // in some gaps and count double. The gaps narrow and the columns come faster as the score grows. In a demo (the
@@ -216,21 +216,21 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
 export const BIT_HOP: GameDef = {
   id: "bit-hop",
   // Getters: the texts come out in the language in use.
-  get name() { return t("Bit a bit"); },
-  get description() { return t("Haz saltar tu máquina entre las columnas sin tocarlas. Cada hueco suma, los bits valen doble."); },
+  get name() { return t("Bit by bit"); },
+  get description() { return t("Hop your machine between the columns without touching them. Every gap scores, bits count double."); },
   get modes() {
     return [
-      { id: "studio", name: t("Estudio"), description: t("Pilares de holograma sobre el gris de la app.") },
-      { id: "board", name: t("Placa base"), description: t("Torres de condensadores y chips sobre las pistas de la placa.") },
-      { id: "blocks", name: t("Bloques"), description: t("Torres de bloques de colores bajo un cielo con nubes de bloques.") },
+      { id: "studio", name: t("Studio"), description: t("Hologram pillars on the app's gray.") },
+      { id: "board", name: t("Motherboard"), description: t("Towers of capacitors and chips on the board's traces.") },
+      { id: "blocks", name: t("Blocks"), description: t("Towers of colored blocks under a sky of block clouds.") },
     ];
   },
   get controls() {
     return [
-      { label: t("Saltar"), mouse: "left" as const, keys: [t("Espacio"), "↑"] },
-      { label: t("Pausa"), keys: ["P"] },
+      { label: t("Jump"), mouse: "left" as const, keys: [t("Space"), "↑"] },
+      { label: t("Pause|game"), keys: ["P"] },
     ];
   },
-  get tips() { return [t("Cada hueco que cruzas suma un punto"), t("Los bits de los huecos valen doble"), t("Los huecos se angostan con el puntaje")]; },
+  get tips() { return [t("Every gap you get through scores a point"), t("Bits in the gaps count double"), t("The gaps narrow as your score grows")]; },
   create,
 };

@@ -25,20 +25,20 @@ function Send-GpuVMClipboard {
     switch ($kind) {
         'text' {
             if (-not $PSBoundParameters.ContainsKey('Text')) { $Text = Get-Clipboard -Raw }
-            if ([string]::IsNullOrEmpty($Text)) { throw 'No hay texto copiado en este equipo.' }
-            if ($Text.Length -gt 1MB) { throw 'El texto copiado es demasiado largo (más de un millón de caracteres).' }
+            if ([string]::IsNullOrEmpty($Text)) { throw 'There''s no copied text on this PC.' }
+            if ($Text.Length -gt 1MB) { throw 'The copied text is too long (more than a million characters).' }
             $payload = [Text.Encoding]::UTF8.GetBytes($Text)
         }
         'image' {
-            if ($Image.Length -gt 40MB) { throw 'La imagen copiada es demasiado grande (más de 30 MB).' }
-            try { $payload = [Convert]::FromBase64String($Image) } catch { throw 'La imagen copiada no es válida.' }
+            if ($Image.Length -gt 40MB) { throw 'The copied image is too large (over 30 MB).' }
+            try { $payload = [Convert]::FromBase64String($Image) } catch { throw 'The copied image isn''t valid.' }
             # Only a PNG goes in: the guest decodes it, so nothing else is handed to its image code.
-            if ($payload.Length -lt 8 -or [BitConverter]::ToString($payload, 0, 8) -ne '89-50-4E-47-0D-0A-1A-0A') { throw 'La imagen copiada no es válida.' }
+            if ($payload.Length -lt 8 -or [BitConverter]::ToString($payload, 0, 8) -ne '89-50-4E-47-0D-0A-1A-0A') { throw 'The copied image isn''t valid.' }
         }
     }
     $state = Get-GpuVMState -Name $Name
     $guest = Get-GpuVMGuestCredential -State $state
-    if (-not $guest) { throw 'Guarda la contraseña de Windows de la VM para pegar en ella.' }
+    if (-not $guest) { throw 'Save the VM''s Windows password to paste into it.' }
     if ((Get-VM -Name $Name).State -ne 'Running') { throw "La VM '$Name' está apagada." }
 
     $received = @()
@@ -92,9 +92,9 @@ Set-Content -LiteralPath '$done' -Value ok
         if (Test-Path $done) { 'ok' } else { 'timeout' }
     }
     switch ([string](@($raw)[0])) {
-        'ok' { Write-Step 'Listo en la VM: pégalo con Ctrl+V' }
-        'nosession' { throw 'No hay una sesión iniciada en la pantalla de la VM.' }
-        default { throw 'La VM no respondió a tiempo; vuelve a intentarlo.' }
+        'ok' { Write-Step 'Ready in the VM: paste it with Ctrl+V' }
+        'nosession' { throw 'No one is signed in on the VM''s screen.' }
+        default { throw 'The VM didn''t answer in time; try again.' }
     }
     $out = [ordered]@{ name = $Name; kind = $kind }
     if ($kind -eq 'text') { $out['characters'] = $Text.Length }

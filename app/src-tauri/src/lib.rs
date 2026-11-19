@@ -89,23 +89,23 @@ pub(crate) async fn query(state: &AppState, request: Value) -> Result<Value, Str
             }
             return result;
         }
-        Err("GpuVM dejó de responder.".to_string())
+        Err("GpuVM stopped responding.".to_string())
     });
     match tokio::time::timeout(std::time::Duration::from_secs(180), work).await {
         Ok(Ok(result)) => result,
-        Ok(Err(_)) => Err("GpuVM dejó de responder.".into()),
+        Ok(Err(_)) => Err("GpuVM stopped responding.".into()),
         Err(_) => {
             if let Some(a) = aborter.lock().unwrap().take() {
                 a.abort();
             }
-            Err("La operación tardó demasiado; vuelve a intentarlo.".into())
+            Err("That took too long; try again.".into())
         }
     }
 }
 
 fn recv_result(conn: &mut backend::Conn, request: &Value) -> Result<Value, String> {
     loop {
-        let event = conn.next_event().ok_or("GpuVM dejó de responder.")?;
+        let event = conn.next_event().ok_or("GpuVM stopped responding.")?;
         if event["type"] == "result" && event["id"] == request["id"] {
             return Ok(event);
         }
@@ -116,7 +116,7 @@ pub(crate) fn into_data(result: Value) -> Result<Value, String> {
     if result["ok"] == json!(true) {
         Ok(result["data"].clone())
     } else {
-        Err(result["error"].as_str().unwrap_or("Error desconocido").to_string())
+        Err(result["error"].as_str().unwrap_or("Unknown error").to_string())
     }
 }
 
@@ -131,12 +131,12 @@ async fn ps(state: State<'_, AppState>, cmd: String, args: Option<Value>) -> Res
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let parameters = format!("--consent {code}");
     let exit = tauri::async_runtime::spawn_blocking(move || {
-        backend::run_elevated(&exe, &parameters, "Cancelaste el permiso de administrador; no se borró nada.")
+        backend::run_elevated(&exe, &parameters, "You canceled the administrator permission; nothing was deleted.")
     })
     .await
     .map_err(|e| e.to_string())??;
     if exit != 0 {
-        return Err("No se pudo confirmar el permiso de administrador; no se borró nada.".into());
+        return Err("Couldn't confirm the administrator permission; nothing was deleted.".into());
     }
     into_data(query(&state, json!({ "id": next_id(&state), "cmd": cmd, "args": args, "consent": code })).await?)
 }
@@ -163,7 +163,7 @@ async fn job(app: AppHandle, job_id: String, cmd: String, args: Option<Value>) -
         // ps does; the same request goes again with the code.
         if let Some(code) = outcome.as_ref().ok().and_then(|r| r["consent"].as_str()).map(str::to_string) {
             let confirmed = std::env::current_exe().map_err(|e| e.to_string()).and_then(|exe| {
-                backend::run_elevated(&exe, &format!("--consent {code}"), "Cancelaste el permiso de administrador; no se borró nada.")
+                backend::run_elevated(&exe, &format!("--consent {code}"), "You canceled the administrator permission; nothing was deleted.")
             });
             outcome = match confirmed {
                 Ok(0) => {
@@ -171,7 +171,7 @@ async fn job(app: AppHandle, job_id: String, cmd: String, args: Option<Value>) -
                     again["consent"] = json!(code);
                     conn.call(&again, |event| emit(event.clone()))
                 }
-                Ok(_) => Ok(json!({ "type": "result", "ok": false, "error": "No se pudo confirmar el permiso de administrador; no se borró nada." })),
+                Ok(_) => Ok(json!({ "type": "result", "ok": false, "error": "Couldn't confirm the administrator permission; nothing was deleted." })),
                 Err(error) => Ok(json!({ "type": "result", "ok": false, "error": error })),
             };
         }
@@ -185,7 +185,7 @@ async fn job(app: AppHandle, job_id: String, cmd: String, args: Option<Value>) -
                 }
             }
             Ok(result) => emit(result),
-            Err(_) => emit(json!({ "type": "result", "ok": false, "error": "El trabajo terminó sin respuesta." })),
+            Err(_) => emit(json!({ "type": "result", "ok": false, "error": "The job ended without an answer." })),
         }
     });
     Ok(())
@@ -207,12 +207,12 @@ async fn repair_service() -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let host = exe.parent().map(|d| d.join("gpuvm-host.exe")).ok_or("sin carpeta")?;
     if !host.exists() {
-        return Err("Faltan archivos de GpuVM. Vuelve a instalarlo.".into());
+        return Err("Some GpuVM files are missing. Install it again.".into());
     }
-    let exit = tauri::async_runtime::spawn_blocking(move || backend::run_elevated(&host, "install", "Cancelaste el permiso de administrador."))
+    let exit = tauri::async_runtime::spawn_blocking(move || backend::run_elevated(&host, "install", "You canceled the administrator permission."))
         .await
         .map_err(|e| e.to_string())??;
-    if exit == 0 { Ok(()) } else { Err("No se pudo reparar el servicio de GpuVM. Vuelve a instalar GpuVM.".into()) }
+    if exit == 0 { Ok(()) } else { Err("Couldn't repair the GpuVM service. Install GpuVM again.".into()) }
 }
 
 /// State of the GpuVM service: `{ state, withWindows }` (state: running, starting, stopping, stopped, missing).
@@ -248,10 +248,10 @@ async fn set_service_startup(with_windows: bool) -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let host = exe.parent().map(|d| d.join("gpuvm-host.exe")).ok_or("sin carpeta")?;
     let mode = if with_windows { "startup auto" } else { "startup demand" };
-    let exit = tauri::async_runtime::spawn_blocking(move || backend::run_elevated(&host, mode, "Cancelaste el permiso de administrador."))
+    let exit = tauri::async_runtime::spawn_blocking(move || backend::run_elevated(&host, mode, "You canceled the administrator permission."))
         .await
         .map_err(|e| e.to_string())??;
-    if exit == 0 { Ok(()) } else { Err("No se pudo cambiar cómo inicia el servicio de GpuVM.".into()) }
+    if exit == 0 { Ok(()) } else { Err("Couldn't change how the GpuVM service starts.".into()) }
 }
 
 /// Development only: relaunches the app as administrator (it starts the bridge itself) and closes this instance.

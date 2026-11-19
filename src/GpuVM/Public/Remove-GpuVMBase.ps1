@@ -7,10 +7,10 @@ function Remove-GpuVMBase {
     param([Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{16}$')][string]$Key)
     Assert-Admin
     $base = Read-WindowsBase -Key $Key
-    if (-not $base) { throw 'Ese Windows preparado ya no existe.' }
-    if ((Get-VHD -Path $base['vhdPath'] -ErrorAction SilentlyContinue).Attached) { throw 'Se está usando para crear una máquina; espera a que termine.' }
+    if (-not $base) { throw 'That prepared Windows no longer exists.' }
+    if ((Get-VHD -Path $base['vhdPath'] -ErrorAction SilentlyContinue).Attached) { throw 'It''s being used to create a machine; wait for it to finish.' }
     if (-not $PSCmdlet.ShouldProcess($base['edition'], 'Eliminar Windows preparado')) { return }
     (Get-Item -LiteralPath $base['vhdPath']).IsReadOnly = $false
     Remove-Item -LiteralPath $base['dir'] -Recurse -Force
-    Write-Step "Windows preparado eliminado"
+    Write-Step "Prepared Windows deleted"
 }

@@ -40,22 +40,22 @@ function Get-GpuVMHome {
         if (-not $hostGpus.ContainsKey($match)) { $hostGpus[$match] = Get-HostGpu -Match $match | Select-Object -First 1 }
         $hostGpu = $hostGpus[$match]
         if ($hostGpu -and $state['gpu'] -and $hostGpu.DriverVersion -ne $state['gpu']['driverVersion']) {
-            & $issue 'driver' "Su driver de la GPU no es el del equipo ($($hostGpu.DriverVersion))" 'Actualizar driver' 'Sync-GpuVMDriver' @{ Name = $vm.Name; Confirm = $false; ShutdownIfRunning = $true }
+            & $issue 'driver' "Su driver de la GPU no es el del equipo ($($hostGpu.DriverVersion))" 'Update driver' 'Sync-GpuVMDriver' @{ Name = $vm.Name; Confirm = $false; ShutdownIfRunning = $true }
         }
         if (-not $state['guest']) {
-            & $issue 'password' 'Falta su contraseña de Windows para arreglar cosas dentro de ella' 'Guardar contraseña' $null $null
+            & $issue 'password' 'Its Windows password is missing, so things inside it can''t be fixed' 'Save password' $null $null
         }
         elseif ($state['streaming'] -and -not $state['streaming']['pairedClient']) {
-            & $issue 'pairing' 'Moonlight todavía no está emparejado con ella' 'Emparejar' 'Connect-GpuVM' @{ Name = $vm.Name; Pair = $true }
+            & $issue 'pairing' 'Moonlight isn''t paired with it yet' 'Pair' 'Connect-GpuVM' @{ Name = $vm.Name; Pair = $true }
         }
         $pending = @(if ($state.Contains('pendingApps')) { $state['pendingApps'] | Where-Object { $_ } })
         if ($pending.Count) {
             $names = @($pending | ForEach-Object { $entry = (Get-AppCatalog)[$_]; if ($entry) { $entry['name'] } else { $_ } })
-            & $issue 'apps' "Faltan por instalar: $($names -join ', ')" $(if ($vm.State -eq 'Off') { 'Encender e instalar' } else { 'Instalar' }) 'Install-GpuVMApp' @{ Name = $vm.Name; App = $pending }
+            & $issue 'apps' "Faltan por instalar: $($names -join ', ')" $(if ($vm.State -eq 'Off') { 'Start and install' } else { 'Install' }) 'Install-GpuVMApp' @{ Name = $vm.Name; App = $pending }
         }
     }
     if ($diskFreeGB -lt 40) {
-        $attention.Add([ordered]@{ vm = $null; kind = 'disk'; text = "Quedan $diskFreeGB GB libres en el disco de las máquinas"; label = 'Ver discos'; cmd = $null; args = $null })
+        $attention.Add([ordered]@{ vm = $null; kind = 'disk'; text = "Quedan $diskFreeGB GB libres en el disco de las máquinas"; label = 'See disks'; cmd = $null; args = $null })
     }
 
     # What uses the most memory, so a machine that doesn't fit says what to close. VM worker processes are left

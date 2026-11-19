@@ -29,11 +29,11 @@ function Connect-GpuVM {
     if (-not $state['streaming']) { throw "La VM '$Name' se creó sin streaming." }
     if ($Viewer) {
         $moonlight = Get-GpuVMViewerPath
-        if (-not $moonlight) { throw 'El visor de GpuVM no está instalado. Reinstala GpuVM.' }
+        if (-not $moonlight) { throw 'GpuVM''s viewer isn''t installed. Install GpuVM again.' }
     }
     else {
         $moonlight = Get-MoonlightPath
-        if (-not $moonlight) { throw 'Moonlight no está instalado en este equipo. Instálalo con: ./gpuvm.ps1 client-install' }
+        if (-not $moonlight) { throw 'Moonlight isn''t installed on this PC. Install it with: ./gpuvm.ps1 client-install' }
     }
     Initialize-GpuVMRoot -Path $state['config']['vm']['root']
 
@@ -42,7 +42,7 @@ function Connect-GpuVM {
         # While the VM is off is the time to copy the driver if the host's changed (avoids a black screen or code 43).
         $hostGpu = Get-HostGpu -Match $state['config']['gpu']['match'] | Select-Object -First 1
         if ($hostGpu -and $hostGpu.DriverVersion -ne $state['gpu']['driverVersion']) {
-            Write-Step 'Actualizando el driver de la GPU'
+            Write-Step 'Updating the GPU driver'
             Sync-GpuVMDriver -Name $Name -Confirm:$false | Out-Null
             $state = Get-GpuVMState -Name $Name
         }
@@ -52,7 +52,7 @@ function Connect-GpuVM {
             $state = Get-GpuVMState -Name $Name
         }
         Assert-VMCanStart -Name $Name
-        Write-Step 'Encendiendo'
+        Write-Step 'Starting'
         Start-VM -Name $Name
     }
     else {
@@ -63,7 +63,7 @@ function Connect-GpuVM {
         if (-not $Pair) {
             $open = try { Find-MoonlightStream -Address (Get-GpuVMEndpoint -Name $Name).Address } catch { $null }
             if ($open) {
-                Write-Step 'Ya está abierta'
+                Write-Step 'It''s already open'
                 Show-ProcessWindow -Id $open
                 return
             }
@@ -73,22 +73,22 @@ function Connect-GpuVM {
     $guest = Get-GpuVMGuestCredential -State $state
     if ($guest) {
         # Updates found when GpuVM shut the VM down finish installing while Windows starts.
-        $bootMessage = if ($state.Contains('updatesPending') -and $state['updatesPending']) { 'Terminando actualizaciones' } else { 'Esperando a Windows' }
+        $bootMessage = if ($state.Contains('updatesPending') -and $state['updatesPending']) { 'Finishing updates' } else { 'Waiting for Windows' }
         Wait-GuestReady -Name $Name -Credential $guest -BootMessage $bootMessage
         Open-GuestSession -Name $Name -Credential $guest
         $null = Wait-GuestSignIn -Name $Name -Credential $guest
         # An imported machine still has the streaming identity it was exported with: it gets its own, inside the VM,
         # before Sunshine is used for anything (Import-GpuVM never mounts the file's disk on this PC).
         if ($state.Contains('pendingIdentityReset') -and $state['pendingIdentityReset']) {
-            Write-Step 'Dando a la máquina su propia identidad de streaming'
+            Write-Step 'Giving the machine its own streaming identity'
             Reset-GuestStreamingIdentity -Name $Name -Credential $guest -WebCredential (Get-SunshineCredential -State $state)
             $state = Get-GpuVMState -Name $Name
             $state['pendingIdentityReset'] = $false
             Save-GpuVMState $state
-            Write-Step 'Reiniciando Windows para terminar'
+            Write-Step 'Restarting Windows to finish'
             # -Wait -For Heartbeat: the next checks must see the restarted Windows, not the one still shutting down.
             Restart-VM -Name $Name -Type Reboot -Force -Wait -For Heartbeat -Timeout 600
-            Wait-GuestReady -Name $Name -Credential $guest -BootMessage 'Esperando a Windows'
+            Wait-GuestReady -Name $Name -Credential $guest -BootMessage 'Waiting for Windows'
             Open-GuestSession -Name $Name -Credential $guest
             $null = Wait-GuestSignIn -Name $Name -Credential $guest
         }
@@ -129,7 +129,7 @@ function Connect-GpuVM {
             # The display is set in the user's session, so it has to be on the screen Sunshine captures first.
             try {
                 if ((Repair-GuestConsoleSession -Name $Name -Credential $guest) -eq 'moved') {
-                    Write-Step 'Sesión de Windows devuelta a la pantalla de la GPU'
+                    Write-Step 'Windows session moved back to the GPU''s display'
                 }
             }
             catch { Write-Warning "No se pudo revisar la sesión dentro de la VM: $($_.Exception.Message)" }
@@ -169,7 +169,7 @@ function Connect-GpuVM {
         if ($guest -and $done['capture'] -eq $captureMode -and -not $restartSunshine) { $prepared['capture'] = $captureMode }
         elseif ($guest) {
             try {
-                if ($restartSunshine) { Write-Step 'Sunshine se reinicia para tomar los cambios' }
+                if ($restartSunshine) { Write-Step 'Sunshine is restarting to pick up the changes' }
                 $null = Set-GuestCaptureMode -Name $Name -Credential $guest -Mode $captureMode -Restart:$restartSunshine
                 $prepared['capture'] = $captureMode
             }
@@ -180,7 +180,7 @@ function Connect-GpuVM {
             if ($done['adminPrompt']) { $prepared['adminPrompt'] = $true }
             else {
                 try {
-                    if (Install-GuestAdminPrompt -Name $Name -Credential $guest) { Write-Step 'Avisos de administrador de la VM en GpuVM' }
+                    if (Install-GuestAdminPrompt -Name $Name -Credential $guest) { Write-Step 'The VM''s administrator prompts now show in GpuVM' }
                     $prepared['adminPrompt'] = $true
                 }
                 catch { Write-Warning "No se pudo preparar los avisos de administrador de la VM: $($_.Exception.Message)" }
@@ -198,7 +198,7 @@ function Connect-GpuVM {
         # Without the guest password GpuVM can't tell whether Windows is still setting itself up; a VM that has been on
         # for a while is past that, so the first-boot message only shows when it can still be the case.
         $firstBoot = -not $guest -and (Get-VM -Name $Name).Uptime.TotalMinutes -lt 15
-        $waiting = if ($firstBoot) { 'Esperando a Sunshine (el primer arranque instala Windows y el streaming; puede tardar varios minutos)' } else { 'Esperando a Sunshine' }
+        $waiting = if ($firstBoot) { 'Waiting for Sunshine (the first start installs Windows and streaming; it can take several minutes)' } else { 'Waiting for Sunshine' }
         Wait-SunshineReady -Address $address -Credential $credential -Message $waiting
         if ($state['config']['streaming']['virtualDisplay']) {
             Set-SunshineVirtualDisplay -Address $address -Credential $credential -OnlyDisplay:([bool]$state['config']['streaming']['disableHyperVVideo']) -Name $Name -GuestCredential $guest
@@ -224,7 +224,7 @@ function Connect-GpuVM {
                     $audioCheck = $null
                     $installed = Install-GuestAudio -Name $Name -Credential $guest
                     if ($installed) {
-                        Wait-SunshineReady -Address $address -Credential $credential -TimeoutSec 120 -Message 'Sunshine se reinicia con el audio nuevo'
+                        Wait-SunshineReady -Address $address -Credential $credential -TimeoutSec 120 -Message 'Sunshine is restarting with the new audio'
                     }
                     # VMs from before 0.3 had VB-CABLE; from now on they have the speaker.
                     if ($state['config']['streaming']['audio'] -ne 'usb') {
@@ -242,7 +242,7 @@ function Connect-GpuVM {
             else {
                 $sunshineConfig = try { Invoke-SunshineApi -Address $address -Credential $credential -Path '/api/config' } catch { $null }
                 if ($sunshineConfig -and "$($sunshineConfig.PSObject.Properties['virtual_sink']?.Value)" -notlike '*GpuVM Audio*') {
-                    Write-Warning 'El audio de la VM todavía no está listo. Guarda la contraseña de Windows de la VM para que GpuVM lo prepare.'
+                    Write-Warning 'The VM''s audio isn''t ready yet. Save the VM''s Windows password so GpuVM can set it up.'
                 }
             }
         }
@@ -259,9 +259,9 @@ function Connect-GpuVM {
         if ($boot) { $state['guestPrepared'] = $prepared }
         Save-GpuVMState $state
         if (-not $audioLater) { Stop-GuestAudioCheck $audioCheck -TimeoutSec 0 }
-        else { Write-Warning 'El audio de la VM quedará listo en unos segundos o la próxima vez que la abras.'; Stop-GuestAudioCheck $audioCheck -TimeoutSec 0 }
+        else { Write-Warning 'The VM''s audio will be ready in a few seconds or the next time you open it.'; Stop-GuestAudioCheck $audioCheck -TimeoutSec 0 }
         # The app waits for the viewer's first picture before the button goes back to "Abrir".
-        Write-Step 'Conectando la imagen'
+        Write-Step 'Connecting the picture'
         return [pscustomobject]@{
             viewerLaunch = [pscustomobject]@{
                 arguments = @(Get-MoonlightStreamArguments -Address $address -Client $client)
@@ -284,7 +284,7 @@ function Connect-GpuVM {
     try {
         Wait-MoonlightStream -Since $launched
         if ($audioLater) {
-            Write-Step 'Preparando el audio'
+            Write-Step 'Setting up the audio'
             Stop-GuestAudioCheck $audioCheck
             $audioCheck = $null
             try {
@@ -294,7 +294,7 @@ function Connect-GpuVM {
                 $sink = Get-GuestAudioSink -Name $Name -Credential $guest
                 $config = Invoke-SunshineApi -Address $address -Credential $credential -Path '/api/config'
                 if (-not $sink -or "$($config.PSObject.Properties['virtual_sink']?.Value)" -ne $sink) {
-                    Write-Warning 'El audio de la VM quedará listo la próxima vez que la abras.'
+                    Write-Warning 'The VM''s audio will be ready the next time you open it.'
                 }
             }
             catch { Write-Warning "No se pudo preparar el audio dentro de la VM: $($_.Exception.Message)" }

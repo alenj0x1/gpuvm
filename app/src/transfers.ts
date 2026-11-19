@@ -25,7 +25,7 @@ export const transferAmount = (tr: Transfer) => {
   const m = /· ([\d.]+) de ([\d.]+) (\w+)$/.exec(tr.message);
   if (!m) return "";
   const n = (v: string) => Number(v).toLocaleString(locale(), { maximumFractionDigits: 1 });
-  return t("{sent} de {total}", { sent: n(m[1]), total: `${n(m[2])} ${m[3]}` });
+  return t("{sent} of {total}", { sent: n(m[1]), total: `${n(m[2])} ${m[3]}` });
 };
 
 const SAMPLE: Transfer[] = [

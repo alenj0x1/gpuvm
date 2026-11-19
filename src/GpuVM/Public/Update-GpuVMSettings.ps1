@@ -21,16 +21,16 @@ function Update-GpuVMSettings {
         $currentGB = (Get-VM -Name $Name).MemoryStartup / 1GB
         # Shutting down frees the VM's current memory, so it counts as available.
         Assert-FreeMemory -RequiredGB $newMemory -ExtraFreeGB $currentGB
-        Write-Step 'Apagando'
+        Write-Step 'Shutting down'
         Stop-VM -Name $Name -Force
     }
     try {
-        Write-Step 'Aplicando'
+        Write-Step 'Applying'
         Set-GpuVM -Name $Name -Override $Override -Confirm:$false | Out-Null
     }
     finally {
         if ($wasRunning) {
-            Write-Step 'Encendiendo'
+            Write-Step 'Starting'
             try { Start-VM -Name $Name -ErrorAction Stop }
             catch {
                 Write-Warning "La VM no encendió con los ajustes nuevos ($($_.Exception.Message)); se restauraron los anteriores."

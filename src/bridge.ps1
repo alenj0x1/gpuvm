@@ -39,7 +39,7 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
     # A line that is not valid JSON gets an error back instead of ending the bridge.
     try { $request = $line | ConvertFrom-Json -AsHashtable }
     catch {
-        Send-Event @{ id = $null; type = 'result'; ok = $false; error = 'Petición no válida.' }
+        Send-Event @{ id = $null; type = 'result'; ok = $false; error = 'Invalid request.' }
         continue
     }
     $id = $request['id']

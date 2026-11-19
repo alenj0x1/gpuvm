@@ -292,7 +292,7 @@ fn check_dir(dir: Option<String>) -> Result<Option<PathBuf>, String> {
         None => Ok(None),
         Some(d) => {
             let p = PathBuf::from(d);
-            if p.is_absolute() && p.is_dir() { Ok(Some(p)) } else { Err("Esa carpeta no existe.".into()) }
+            if p.is_absolute() && p.is_dir() { Ok(Some(p)) } else { Err("That folder doesn't exist.".into()) }
         }
     }
 }
@@ -367,7 +367,7 @@ fn shell_open(target: &Path) -> Result<(), String> {
     let file = wide(target.as_os_str());
     // SAFETY: NUL-terminated strings that live through the call.
     let r = unsafe { ShellExecuteW(std::ptr::null_mut(), verb.as_ptr(), file.as_ptr(), std::ptr::null(), std::ptr::null(), 1) };
-    if r as isize > 32 { Ok(()) } else { Err("No se pudo abrir.".into()) }
+    if r as isize > 32 { Ok(()) } else { Err("Couldn't open it.".into()) }
 }
 
 fn recent(path: &str) -> Result<PathBuf, String> {
@@ -375,7 +375,7 @@ fn recent(path: &str) -> Result<PathBuf, String> {
     if RECENT.lock().unwrap_or_else(|e| e.into_inner()).iter().any(|r| r == &p) && p.is_file() {
         Ok(p)
     } else {
-        Err("Ese archivo ya no está.".into())
+        Err("That file is no longer there.".into())
     }
 }
 
@@ -392,14 +392,14 @@ pub fn capture_reveal(path: String) -> Result<(), String> {
     let explorer = std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("C:\\Windows")).join("explorer.exe");
     let mut arg = std::ffi::OsString::from("/select,");
     arg.push(p.as_os_str());
-    std::process::Command::new(explorer).arg(arg).spawn().map(|_| ()).map_err(|_| "No se pudo abrir el Explorador.".into())
+    std::process::Command::new(explorer).arg(arg).spawn().map(|_| ()).map_err(|_| "Couldn't open File Explorer.".into())
 }
 
 /// Opens the screenshots or videos folder (created if it doesn't exist yet).
 #[tauri::command]
 pub fn capture_open_folder(video: bool) -> Result<(), String> {
-    let dir = folder(video).ok_or("No se encontró la carpeta.")?;
-    std::fs::create_dir_all(&dir).map_err(|_| "No se pudo crear la carpeta.".to_string())?;
+    let dir = folder(video).ok_or("The folder wasn't found.")?;
+    std::fs::create_dir_all(&dir).map_err(|_| "Couldn't create the folder.".to_string())?;
     shell_open(&dir)
 }
 

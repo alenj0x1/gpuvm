@@ -138,7 +138,7 @@ function Initialize-GuestSharedDisk {
 function Assert-ImportableFolder {
     param([Parameter(Mandatory)][string]$Path)
     $source = [IO.Path]::GetFullPath($Path).TrimEnd('\')
-    if ($source.Length -le 3) { throw 'No se puede importar una unidad entera; elige una carpeta.' }
+    if ($source.Length -le 3) { throw 'A whole drive can''t be imported; choose a folder.' }
     $inside = @((Get-GpuVMDefaultRoot), $script:DataRoot, $env:SystemRoot)
     $notAbove = @($inside + [Environment]::GetFolderPath('ProgramFiles') + ${env:ProgramFiles(x86)} + $env:ProgramData +
         (Split-Path ([Environment]::GetFolderPath('UserProfile')) -Parent)) | Where-Object { $_ }

@@ -158,7 +158,7 @@ public static class GpuVMPacedCopy {
                     uint aligned = (want + 4095) & ~4095u;
                     uint read, written;
                     if (!ReadFile(src, buffer, aligned, out read, IntPtr.Zero)) throw new System.ComponentModel.Win32Exception();
-                    if (read < want) throw new IOException("El disco base terminó antes de lo esperado.");
+                    if (read < want) throw new IOException("The base disk ended sooner than expected.");
                     write.Restart();
                     if (!WriteFile(dst, buffer, aligned, out written, IntPtr.Zero)) throw new System.ComponentModel.Win32Exception();
                     double ms = write.Elapsed.TotalMilliseconds;

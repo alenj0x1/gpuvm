@@ -165,7 +165,7 @@ function Resolve-HostMonitor {
     if ($Monitor -and $Monitor -ne 'primary') {
         $chosen = $all | Where-Object { $_['id'] -eq $Monitor } | Select-Object -First 1
         if ($chosen) { return $chosen }
-        Write-Step 'El monitor elegido no está conectado: se abre en el principal'
+        Write-Step 'The chosen monitor isn''t connected: opening on the main one'
     }
     $primary = $all | Where-Object { $_['primary'] } | Select-Object -First 1
     if ($primary) { $primary } else { $all[0] }

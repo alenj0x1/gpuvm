@@ -17,11 +17,11 @@ export type AccentPref = "blue" | "violet" | "teal" | "green" | "amber";
 /** Each accent as it looks in light and in dark (the same values as styles.css). `name` is a getter, so it comes out in
  *  the current language wherever it is read. */
 export const ACCENTS: { id: AccentPref; name: string; light: string; dark: string }[] = [
-  { id: "blue", get name() { return t("Azul"); }, light: "#2f5bd3", dark: "#7d9cf0" },
-  { id: "violet", get name() { return t("Violeta"); }, light: "#6a4fd2", dark: "#a796f2" },
-  { id: "teal", get name() { return t("Turquesa"); }, light: "#1d7f7c", dark: "#6ccfca" },
-  { id: "green", get name() { return t("Verde"); }, light: "#2f8550", dark: "#7dd19c" },
-  { id: "amber", get name() { return t("Ámbar"); }, light: "#a8650f", dark: "#e7b45e" },
+  { id: "blue", get name() { return t("Blue"); }, light: "#2f5bd3", dark: "#7d9cf0" },
+  { id: "violet", get name() { return t("Violet"); }, light: "#6a4fd2", dark: "#a796f2" },
+  { id: "teal", get name() { return t("Teal"); }, light: "#1d7f7c", dark: "#6ccfca" },
+  { id: "green", get name() { return t("Green"); }, light: "#2f8550", dark: "#7dd19c" },
+  { id: "amber", get name() { return t("Amber"); }, light: "#a8650f", dark: "#e7b45e" },
 ];
 
 export interface Prefs {

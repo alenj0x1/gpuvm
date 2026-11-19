@@ -9,30 +9,30 @@ import { t } from "./i18n";
 /** How each cleanup item looks: an icon and a color, a short name and one line that says what it is. Several pieces
  *  can stand for one item (the preinstalled apps). Items the UI doesn't know yet get a neutral piece. */
 export const CLEANUP_LOOK: Record<string, { pieces: { icon: Icon; color: string }[]; readonly name: string; readonly line: string; readonly done: string }> = {
-  "telemetry-minimum": { pieces: [{ icon: IconActivity, color: "#c2410c" }], get name() { return t("Datos de diagnóstico"); }, get line() { return t("Windows envía datos de uso a Microsoft"); }, get done() { return t("Windows envía lo mínimo a Microsoft"); } },
-  advertising: { pieces: [{ icon: IconAd, color: "#b45309" }], get name() { return t("ID de publicidad"); }, get line() { return t("Anuncios hechos con tus datos"); }, get done() { return t("Sin anuncios hechos con tus datos"); } },
-  "activity-history": { pieces: [{ icon: IconHistory, color: "#c2410c" }], get name() { return t("Historial de actividad"); }, get line() { return t("Tu actividad se envía a la nube"); }, get done() { return t("Tu actividad se queda en la máquina"); } },
-  suggestions: { pieces: [{ icon: IconSpeakerphone, color: "#be185d" }], get name() { return t("Apps promocionadas"); }, get line() { return t("Sugerencias y apps que se instalan solas"); }, get done() { return t("Sin sugerencias ni apps que se instalen solas"); } },
-  "web-search": { pieces: [{ icon: IconBrandBing, color: "#0e7490" }], get name() { return t("Bing en Inicio"); }, get line() { return t("Tus búsquedas del equipo van a la web"); }, get done() { return t("Tus búsquedas se quedan en el equipo"); } },
-  "copilot-recall": { pieces: [{ icon: IconSparkles, color: "#7c3aed" }], get name() { return t("Copilot y Recall"); }, get line() { return t("Asistente y capturas de pantalla con IA"); }, get done() { return t("Sin asistente ni capturas de pantalla"); } },
+  "telemetry-minimum": { pieces: [{ icon: IconActivity, color: "#c2410c" }], get name() { return t("Diagnostic data"); }, get line() { return t("Windows sends usage data to Microsoft"); }, get done() { return t("Windows sends the minimum to Microsoft"); } },
+  advertising: { pieces: [{ icon: IconAd, color: "#b45309" }], get name() { return t("Advertising ID"); }, get line() { return t("Ads built from your data"); }, get done() { return t("No ads built from your data"); } },
+  "activity-history": { pieces: [{ icon: IconHistory, color: "#c2410c" }], get name() { return t("Activity history"); }, get line() { return t("Your activity is sent to the cloud"); }, get done() { return t("Your activity stays on the machine"); } },
+  suggestions: { pieces: [{ icon: IconSpeakerphone, color: "#be185d" }], get name() { return t("Promoted apps"); }, get line() { return t("Suggestions and apps that install themselves"); }, get done() { return t("No suggestions or self-installing apps"); } },
+  "web-search": { pieces: [{ icon: IconBrandBing, color: "#0e7490" }], get name() { return t("Bing in Start"); }, get line() { return t("Your PC searches go to the web"); }, get done() { return t("Your searches stay on the PC"); } },
+  "copilot-recall": { pieces: [{ icon: IconSparkles, color: "#7c3aed" }], get name() { return t("Copilot and Recall"); }, get line() { return t("AI assistant and screenshots"); }, get done() { return t("No assistant or screenshots"); } },
   "store-apps": {
     pieces: [{ icon: IconNews, color: "#dc2626" }, { icon: IconCards, color: "#15803d" }, { icon: IconMovie, color: "#7e22ce" }, { icon: IconBrandTeams, color: "#4f46e5" }],
-    get name() { return t("Apps preinstaladas"); }, get line() { return t("Noticias, Clima, Solitario, Clipchamp, Teams…"); }, get done() { return t("Windows llega sin apps preinstaladas"); },
+    get name() { return t("Preinstalled apps"); }, get line() { return t("News, Weather, Solitaire, Clipchamp, Teams…"); }, get done() { return t("Windows arrives without preinstalled apps"); },
   },
-  onedrive: { pieces: [{ icon: IconBrandOnedrive, color: "#1d4ed8" }], get name() { return t("OneDrive"); }, get line() { return t("Se instala y se vuelve a instalar solo"); }, get done() { return t("Quitado, no vuelve a instalarse"); } },
-  widgets: { pieces: [{ icon: IconLayoutDashboard, color: "#0369a1" }], get name() { return t("Widgets"); }, get line() { return t("Noticias e intereses en la barra de tareas"); }, get done() { return t("La barra de tareas queda limpia"); } },
-  "telemetry-services": { pieces: [{ icon: IconBug, color: "#c2410c" }], get name() { return t("Envío de errores"); }, get line() { return t("Servicios que reportan a Microsoft"); }, get done() { return t("Los errores no se reportan a Microsoft"); } },
-  "unneeded-services": { pieces: [{ icon: IconMap, color: "#475569" }], get name() { return t("Servicios sin uso"); }, get line() { return t("Mapas, ubicación, fax, modo demo"); }, get done() { return t("Mapas, ubicación, fax y modo demo apagados"); } },
-  "background-apps": { pieces: [{ icon: IconPlayerPlay, color: "#475569" }], get name() { return t("Apps de fondo"); }, get line() { return t("Apps de la Store corriendo siempre"); }, get done() { return t("Las apps de la Store solo corren al abrirlas"); } },
+  onedrive: { pieces: [{ icon: IconBrandOnedrive, color: "#1d4ed8" }], get name() { return t("OneDrive"); }, get line() { return t("Installs and reinstalls itself"); }, get done() { return t("Removed, won't reinstall"); } },
+  widgets: { pieces: [{ icon: IconLayoutDashboard, color: "#0369a1" }], get name() { return t("Widgets"); }, get line() { return t("News and interests on the taskbar"); }, get done() { return t("The taskbar stays clean"); } },
+  "telemetry-services": { pieces: [{ icon: IconBug, color: "#c2410c" }], get name() { return t("Error reporting"); }, get line() { return t("Services that report to Microsoft"); }, get done() { return t("Errors aren't reported to Microsoft"); } },
+  "unneeded-services": { pieces: [{ icon: IconMap, color: "#475569" }], get name() { return t("Unused services"); }, get line() { return t("Maps, location, fax, demo mode"); }, get done() { return t("Maps, location, fax and demo mode off"); } },
+  "background-apps": { pieces: [{ icon: IconPlayerPlay, color: "#475569" }], get name() { return t("Background apps"); }, get line() { return t("Store apps always running"); }, get done() { return t("Store apps only run when you open them"); } },
 };
 const UNKNOWN = { icon: IconPuzzle, color: "#525252" };
 
 /** Each cleanup level's icon and what it is about, in a few words. */
 export const LEVEL_LOOK: Record<string, { icon: React.ReactNode; readonly tagline: string }> = {
-  none: { icon: <IconBrandWindows size={18} />, get tagline() { return t("Como viene"); } },
-  privacy: { icon: <IconEyeOff size={18} />, get tagline() { return t("Menos datos a Microsoft"); } },
-  apps: { icon: <IconTrash size={18} />, get tagline() { return t("Quita lo preinstalado"); } },
-  minimal: { icon: <IconBolt size={18} />, get tagline() { return t("Solo lo necesario"); } },
+  none: { icon: <IconBrandWindows size={18} />, get tagline() { return t("As it comes"); } },
+  privacy: { icon: <IconEyeOff size={18} />, get tagline() { return t("Less data to Microsoft"); } },
+  apps: { icon: <IconTrash size={18} />, get tagline() { return t("Removes the preinstalled"); } },
+  minimal: { icon: <IconBolt size={18} />, get tagline() { return t("Only the essentials"); } },
 };
 
 interface Piece { item: string; color: string; image: HTMLImageElement }

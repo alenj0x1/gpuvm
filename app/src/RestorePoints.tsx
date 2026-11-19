@@ -40,12 +40,12 @@ export function RestorePoints({ vm, busy, startJob, run }: Props) {
           <div className="opt-row">
             <span className="opt-icon"><IconFlask size={17} /></span>
             <div className="opt-text">
-              <span className="opt-title">{t("Máquina desechable")}</span>
-              <span className="opt-desc">{t("Se borra con su disco al apagarse. Conservarla la vuelve una máquina normal.")}</span>
+              <span className="opt-title">{t("Disposable machine")}</span>
+              <span className="opt-desc">{t("It's deleted with its disk when it shuts down. Keeping it makes it a regular machine.")}</span>
             </div>
             <div className="opt-ctl">
-              <button className="btn" disabled={!!busy} onClick={() => run(vm.name, t("Conservando"), () => api.keepDisposable(vm.name))}>
-                <IconBookmark size={16} />{t("Conservar")}
+              <button className="btn" disabled={!!busy} onClick={() => run(vm.name, t("Keeping"), () => api.keepDisposable(vm.name))}>
+                <IconBookmark size={16} />{t("Keep")}
               </button>
             </div>
           </div>
@@ -67,15 +67,15 @@ export function RestorePoints({ vm, busy, startJob, run }: Props) {
         <div className="opt-row">
           <span className="opt-icon"><IconHistory size={17} /></span>
           <div className="opt-text">
-            <span className="opt-title">{t("Puntos de restauración")}</span>
+            <span className="opt-title">{t("Restore points")}</span>
             <span className="opt-desc">{points.length
-              ? t("Windows vuelve a como estaba en ese momento, con sus apps y archivos. Los ajustes de la máquina no cambian.")
-              : t("Guarda cómo está Windows ahora para volver a ese momento si algo sale mal.")}</span>
+              ? t("Windows goes back to how it was at that moment, with its apps and files. The machine's settings don't change.")
+              : t("Save Windows as it is now to go back to this moment if something goes wrong.")}</span>
           </div>
           <div className="opt-ctl">
-            <button className="btn" disabled={!!busy || full} onClick={create} title={full ? t("Borra uno para crear otro") : undefined}>
+            <button className="btn" disabled={!!busy || full} onClick={create} title={full ? t("Delete one to create another") : undefined}>
               {working && busy?.cmd === "New-GpuVMRestorePoint" ? <IconLoader2 size={16} className="spin" /> : <IconPlus size={16} />}
-              {working && busy?.cmd === "New-GpuVMRestorePoint" ? translateModule(busy.message ?? "") : off ? t("Crear punto") : t("Apagar y crear punto")}
+              {working && busy?.cmd === "New-GpuVMRestorePoint" ? translateModule(busy.message ?? "") : off ? t("Create point") : t("Shut down and create point")}
             </button>
           </div>
         </div>
@@ -87,16 +87,16 @@ export function RestorePoints({ vm, busy, startJob, run }: Props) {
               <span className="opt-title">{(p.label ? translateModule(p.label) : when(p.createdAt))}</span>
               <span className="opt-desc">{[
                 p.label ? when(p.createdAt) : null,
-                p.missing ? t("Falta su disco") : p.sizeGB !== null ? t("Ocupa {size}", { size: gb(p.sizeGB) }) : null,
-                p.current && list?.changesGB != null ? t("Cambios desde entonces {size}", { size: gb(list.changesGB) }) : null,
+                p.missing ? t("Its disk is missing") : p.sizeGB !== null ? t("Takes {size}", { size: gb(p.sizeGB) }) : null,
+                p.current && list?.changesGB != null ? t("Changes since then {size}", { size: gb(list.changesGB) }) : null,
               ].filter(Boolean).join(" · ")}</span>
             </div>
             <div className="opt-ctl">
-              <button className="btn ghost" disabled={!!busy || p.missing} onClick={() => setBack(p)}><IconArrowBackUp size={16} />{t("Volver")}</button>
+              <button className="btn ghost" disabled={!!busy || p.missing} onClick={() => setBack(p)}><IconArrowBackUp size={16} />{t("Go back")}</button>
               {armed === p.id ? (
-                <button className="btn danger-fill" onClick={() => remove(p)}><IconTrash size={16} />{t("Borrar punto")}</button>
+                <button className="btn danger-fill" onClick={() => remove(p)}><IconTrash size={16} />{t("Delete point")}</button>
               ) : (
-                <button className="icon-btn" aria-label={t("Borrar punto")} title={t("Borrar punto")} disabled={!!busy} onClick={() => setArmed(p.id)}><IconTrash size={17} /></button>
+                <button className="icon-btn" aria-label={t("Delete point")} title={t("Delete point")} disabled={!!busy} onClick={() => setArmed(p.id)}><IconTrash size={17} /></button>
               )}
             </div>
           </div>
@@ -125,27 +125,27 @@ function ConfirmGoBack({ vm, point, canSave, onClose, onConfirm }: {
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [onClose]);
-  const title = t("Volver a {point}", { point: (point.label ? translateModule(point.label) : when(point.createdAt)) });
+  const title = t("Go back to {point}", { point: (point.label ? translateModule(point.label) : when(point.createdAt)) });
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="dialog narrow" role="dialog" aria-modal="true" aria-label={title}>
         <div className="dialog-head"><MachineIcon name={vm.name} size={40} radius={10} /><h2>{title}</h2></div>
         <p className="dialog-text">{vm.state === "Off"
-          ? t("Windows vuelve a como estaba el {date}. Los ajustes de la máquina no cambian.", { date: when(point.createdAt) })
-          : t("La máquina se apaga y Windows vuelve a como estaba el {date}. Los ajustes de la máquina no cambian.", { date: when(point.createdAt) })}</p>
+          ? t("Windows goes back to how it was on {date}. The machine's settings don't change.", { date: when(point.createdAt) })
+          : t("The machine shuts down and Windows goes back to how it was on {date}. The machine's settings don't change.", { date: when(point.createdAt) })}</p>
         <div className="choice-list">
           <button type="button" role="checkbox" aria-checked={save} disabled={!canSave} className={`choice ${save ? "on" : ""}`} onClick={() => setSave((s) => !s)}>
             <span className="check">{save && <CheckMark />}</span>
             <span className="grow">
-              <span className="title">{t("Guardar cómo está ahora")}</span>
-              <span className="desc">{canSave ? t("Se crea un punto antes de volver, por si lo necesitas.") : t("Ya tiene el máximo de puntos; borra uno para guardarlo.")}</span>
+              <span className="title">{t("Save how it is now")}</span>
+              <span className="desc">{canSave ? t("A point is created before going back, in case you need it.") : t("It already has the most points it can keep; delete one to save it.")}</span>
             </span>
           </button>
         </div>
         <div className="dialog-foot">
-          <button ref={cancelRef} className="btn ghost" onClick={onClose}>{t("Cancelar")}</button>
+          <button ref={cancelRef} className="btn ghost" onClick={onClose}>{t("Cancel")}</button>
           <button className={`btn ${save ? "" : "danger-fill"}`} onClick={() => onConfirm(save)}>
-            <IconArrowBackUp size={16} />{save ? t("Volver") : t("Volver y descartar lo de ahora")}
+            <IconArrowBackUp size={16} />{save ? t("Go back") : t("Go back and discard the present")}
           </button>
         </div>
       </div>

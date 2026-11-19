@@ -38,7 +38,7 @@ const editors: DecorSource[] = [];
 export function useDecorEdit(source: DecorSource) {
   const [selected, setSelected] = useState<string[]>([]);
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
-  // Each "Decorar al azar" turns the cube once, as Home's showcase does.
+  // Each "Decorate at random" turns the cube once, as Home's showcase does.
   const [spins, setSpins] = useState(0);
   useEffect(() => { setSelected([]); setMenu(null); }, [source]);
   const edit: CubeEdit = { selected, onSelect: setSelected, onMenu: (id, x, y) => setMenu({ id, x, y }), write: source.set };
@@ -118,16 +118,16 @@ export function useDecorEdit(source: DecorSource) {
   const menuNode = menu && createPortal(
     <div ref={menuRef} className="menu floating decor-menu" role="menu"
       style={{ left: Math.min(menu.x, window.innerWidth - 228), top: Math.min(menu.y, window.innerHeight - 260) }}>
-      <button role="menuitem" onClick={act(() => ops.turn(targets, -15))}><IconRotate2 size={16} />{t("Girar a la izquierda")}</button>
-      <button role="menuitem" onClick={act(() => ops.turn(targets, 15))}><IconRotateClockwise2 size={16} />{t("Girar a la derecha")}</button>
-      <button role="menuitem" onClick={act(() => ops.grow(targets, 1.15))}><IconZoomIn size={16} />{t("Más grande")}</button>
-      <button role="menuitem" onClick={act(() => ops.grow(targets, 1 / 1.15))}><IconZoomOut size={16} />{t("Más pequeño")}</button>
-      <button role="menuitem" onClick={act(() => ops.duplicate(targets))}><IconCopy size={16} />{t("Duplicar")}<kbd>Ctrl+D</kbd></button>
-      <button role="menuitem" onClick={act(() => ops.copy(targets))}><IconClipboard size={16} />{t("Copiar")}<kbd>Ctrl+C</kbd></button>
-      <button role="menuitem" onClick={act(() => ops.cut(targets))}><IconCut size={16} />{t("Cortar")}<kbd>Ctrl+X</kbd></button>
-      {clipboard && <button role="menuitem" onClick={act(() => ops.paste())}><IconClipboard size={16} />{t("Pegar")}<kbd>Ctrl+V</kbd></button>}
+      <button role="menuitem" onClick={act(() => ops.turn(targets, -15))}><IconRotate2 size={16} />{t("Turn left")}</button>
+      <button role="menuitem" onClick={act(() => ops.turn(targets, 15))}><IconRotateClockwise2 size={16} />{t("Turn right")}</button>
+      <button role="menuitem" onClick={act(() => ops.grow(targets, 1.15))}><IconZoomIn size={16} />{t("Bigger")}</button>
+      <button role="menuitem" onClick={act(() => ops.grow(targets, 1 / 1.15))}><IconZoomOut size={16} />{t("Smaller")}</button>
+      <button role="menuitem" onClick={act(() => ops.duplicate(targets))}><IconCopy size={16} />{t("Duplicate")}<kbd>Ctrl+D</kbd></button>
+      <button role="menuitem" onClick={act(() => ops.copy(targets))}><IconClipboard size={16} />{t("Copy")}<kbd>Ctrl+C</kbd></button>
+      <button role="menuitem" onClick={act(() => ops.cut(targets))}><IconCut size={16} />{t("Cut")}<kbd>Ctrl+X</kbd></button>
+      {clipboard && <button role="menuitem" onClick={act(() => ops.paste())}><IconClipboard size={16} />{t("Paste")}<kbd>Ctrl+V</kbd></button>}
       <hr />
-      <button role="menuitem" className="danger" onClick={act(() => ops.remove(targets))}><IconTrash size={16} />{t("Quitar")}<kbd>{t("Supr")}</kbd></button>
+      <button role="menuitem" className="danger" onClick={act(() => ops.remove(targets))}><IconTrash size={16} />{t("Remove")}<kbd>{t("Del")}</kbd></button>
     </div>,
     portalRoot(),
   );
@@ -246,7 +246,7 @@ function Tile({ kind, id, label, onAdd, onContext, children }: {
   kind: "sticker" | "figure"; id: string; label: string; onAdd: () => void; onContext?: (e: React.MouseEvent) => void; children: React.ReactNode;
 }) {
   return (
-    <button type="button" className="app-tile decor-tile" title={t("{name}. Arrástralo al cubo o haz clic para ponerlo", { name: label })} draggable
+    <button type="button" className="app-tile decor-tile" title={t("{name}. Drag it onto the cube or click to add it", { name: label })} draggable
       onDragStart={(e) => { e.dataTransfer.setData(DND, `${kind}|${id}`); e.dataTransfer.effectAllowed = "copy"; }}
       onClick={onAdd} onContextMenu={onContext}>
       {children}
@@ -271,7 +271,7 @@ function Placed({ items, selected, onPick, onRemove, onMenu }: {
         <div key={it.id} className={`decor-chip${selected.includes(it.id) ? " on" : ""}`}
           onContextMenu={(e) => { e.preventDefault(); if (!selected.includes(it.id)) onPick(it.id, false); onMenu(it.id, e.clientX, e.clientY); }}>
           <button type="button" className="decor-chip-main" onClick={(e) => onPick(it.id, e.shiftKey || e.ctrlKey || e.metaKey)}>{it.thumb}<span>{it.label}</span></button>
-          <button type="button" className="decor-chip-x" title={t("Quitar")} aria-label={t("Quitar {name}", { name: it.label })} onClick={() => onRemove(it.id)}><IconX size={13} /></button>
+          <button type="button" className="decor-chip-x" title={t("Remove")} aria-label={t("Remove {name}", { name: it.label })} onClick={() => onRemove(it.id)}><IconX size={13} /></button>
         </div>
       ))}
     </div>
@@ -316,22 +316,22 @@ export function Customize({ source, ops, selected, setSelected, openMenu, bare, 
         <div className="opt-row">
           <span className="opt-icon"><IconDice5 size={17} /></span>
           <div className="opt-text">
-            <span className="opt-title">{t("Al azar")}</span>
-            <span className="opt-desc">{t("Color, letrero, stickers y figuras elegidos al azar. Puedes seguir cambiando lo que quieras.")}</span>
+            <span className="opt-title">{t("Random")}</span>
+            <span className="opt-desc">{t("Color, sign, stickers and figures picked at random. You can keep changing whatever you like.")}</span>
           </div>
           <div className="opt-ctl">
-            <button type="button" className="btn" onClick={ops.randomize}><IconDice5 size={16} />{t("Decorar al azar")}</button>
+            <button type="button" className="btn" onClick={ops.randomize}><IconDice5 size={16} />{t("Decorate at random")}</button>
           </div>
         </div>
         <div className="opt-row">
           <span className="opt-icon"><IconPalette size={17} /></span>
           <div className="opt-text">
             <span className="opt-title">{t("Color")}</span>
-            <span className="opt-desc">{t("El holograma, los rayos y el ícono de la máquina. Sin elegir, usa el color de énfasis.")}</span>
+            <span className="opt-desc">{t("The hologram, the beams and the machine's icon. If none is picked, it uses the accent color.")}</span>
           </div>
           <div className="opt-ctl">
-            <div className="swatches" role="radiogroup" aria-label={t("Color de la máquina")}>
-              <Swatch light={accent.light} dark={accent.dark} on={!decor.color} title={t("Color de énfasis")} onClick={() => save({ color: null })} />
+            <div className="swatches" role="radiogroup" aria-label={t("Machine color")}>
+              <Swatch light={accent.light} dark={accent.dark} on={!decor.color} title={t("Accent color")} onClick={() => save({ color: null })} />
               {MACHINE_COLORS.map((c) => <Swatch key={c.id} light={c.light} dark={c.dark} on={decor.color === c.id} title={c.name} onClick={() => save({ color: c.id })} />)}
             </div>
           </div>
@@ -340,11 +340,11 @@ export function Customize({ source, ops, selected, setSelected, openMenu, bare, 
         <div className="opt-row section">
           <span className="opt-icon"><IconTypography size={17} /></span>
           <div className="opt-text">
-            <span className="opt-title">{t("Letrero LED")}</span>
-            <span className="opt-desc">{t("Un texto que corre alrededor del vidrio.")}</span>
+            <span className="opt-title">{t("LED sign")}</span>
+            <span className="opt-desc">{t("Text that scrolls around the glass.")}</span>
           </div>
           <div className="opt-ctl">
-            <Segmented value={!!led} options={[{ value: false, label: t("Apagado") }, { value: true, label: t("Encendido") }]}
+            <Segmented value={!!led} options={[{ value: false, label: t("Off|light") }, { value: true, label: t("On|light") }]}
               onChange={(on) => save({ led: on ? { text: "", color: "amber", live: false } : null })} />
           </div>
         </div>
@@ -352,17 +352,17 @@ export function Customize({ source, ops, selected, setSelected, openMenu, bare, 
           <>
             <div className="opt-row sub">
               <span className="opt-icon"><IconLetterCase size={17} /></span>
-              <div className="opt-text"><span className="opt-title">{t("Texto")}</span><span className="opt-desc">{t("Sin texto, muestra el nombre de la máquina.")}</span></div>
+              <div className="opt-text"><span className="opt-title">{t("Text")}</span><span className="opt-desc">{t("With no text, it shows the machine's name.")}</span></div>
               <div className="opt-ctl">
-                <input className="text-input" value={led.text} maxLength={60} placeholder={(name || "GpuVM").toUpperCase()} aria-label={t("Texto del letrero")}
+                <input className="text-input" value={led.text} maxLength={60} placeholder={(name || "GpuVM").toUpperCase()} aria-label={t("Sign text")}
                   onChange={(e) => save({ led: { ...led, text: e.target.value } })} />
               </div>
             </div>
             <div className="opt-row sub">
               <span className="opt-icon"><IconPalette size={17} /></span>
-              <div className="opt-text"><span className="opt-title">{t("Color del letrero")}</span><span className="opt-desc">{t("Como las luces de un letrero de la calle, o el color de la máquina.")}</span></div>
+              <div className="opt-text"><span className="opt-title">{t("Sign color")}</span><span className="opt-desc">{t("Like the lights of a street sign, or the machine's color.")}</span></div>
               <div className="opt-ctl">
-                <div className="swatches" role="radiogroup" aria-label={t("Color del letrero")}>
+                <div className="swatches" role="radiogroup" aria-label={t("Sign color")}>
                   {LED_COLORS.map((c) => {
                     const hex = c.id === "machine" ? color : c.hex;
                     return (
@@ -380,17 +380,17 @@ export function Customize({ source, ops, selected, setSelected, openMenu, bare, 
             </div>
             <div className="opt-row sub">
               <span className="opt-icon"><IconArrowsVertical size={17} /></span>
-              <div className="opt-text"><span className="opt-title">{t("Altura")}</span><span className="opt-desc">{t("También se sube o se baja arrastrándolo en el cubo.")}</span></div>
+              <div className="opt-text"><span className="opt-title">{t("Height")}</span><span className="opt-desc">{t("You can also drag it up or down on the cube.")}</span></div>
               <div className="opt-ctl">
-                <Slider label={t("Altura")} value={Math.round((led.y ?? 0) * 100)} min={0} max={100} step={5} marks={[0, 50, 100]}
-                  format={(v) => (v === 0 ? t("Abajo") : v === 100 ? t("Arriba") : `${v} %`)} onChange={(v) => save({ led: { ...led, y: v / 100 } })} />
+                <Slider label={t("Height")} value={Math.round((led.y ?? 0) * 100)} min={0} max={100} step={5} marks={[0, 50, 100]}
+                  format={(v) => (v === 0 ? t("Bottom") : v === 100 ? t("Top") : `${v} %`)} onChange={(v) => save({ led: { ...led, y: v / 100 } })} />
               </div>
             </div>
             <div className="opt-row sub">
               <span className="opt-icon"><IconActivity size={17} /></span>
-              <div className="opt-text"><span className="opt-title">{t("Uso en vivo")}</span><span className="opt-desc">{t("Agrega el uso de la GPU y del procesador mientras está encendida.")}</span></div>
+              <div className="opt-text"><span className="opt-title">{t("Live usage")}</span><span className="opt-desc">{t("Adds GPU and CPU usage while the machine is on.")}</span></div>
               <div className="opt-ctl">
-                <Segmented value={led.live} options={[{ value: false, label: t("Solo el texto") }, { value: true, label: t("Con el uso") }]}
+                <Segmented value={led.live} options={[{ value: false, label: t("Text only") }, { value: true, label: t("With usage") }]}
                   onChange={(live) => save({ led: { ...led, live } })} />
               </div>
             </div>
@@ -401,7 +401,7 @@ export function Customize({ source, ops, selected, setSelected, openMenu, bare, 
           <span className="opt-icon"><IconSticker size={17} /></span>
           <div className="opt-text">
             <span className="opt-title">{t("Stickers")}</span>
-            <span className="opt-desc">{t("Arrástralos a cualquier cara del vidrio. Para girarlos, mantén el clic derecho y arrastra; un clic derecho abre su menú.")}</span>
+            <span className="opt-desc">{t("Drag them onto any side of the glass. To turn them, hold the right button and drag; a right click opens their menu.")}</span>
           </div>
           <div className="opt-below">
             <Placed selected={selected} onPick={pick} onRemove={removeOne} onMenu={openMenu}
@@ -412,15 +412,15 @@ export function Customize({ source, ops, selected, setSelected, openMenu, bare, 
               ))}
               {customs.map((c) => (
                 <span key={c} className="decor-tile-custom">
-                  <Tile kind="sticker" id={`custom:${c}`} label={t("Tu imagen")} onAdd={() => ops.addSticker(`custom:${c}`)}>
+                  <Tile kind="sticker" id={`custom:${c}`} label={t("Your image")} onAdd={() => ops.addSticker(`custom:${c}`)}>
                     <StickerThumb id={`custom:${c}`} color={color} />
                   </Tile>
-                  <button type="button" className="decor-tile-x" title={t("Quitar de tus stickers")} aria-label={t("Quitar de tus stickers")} onClick={() => removeCustomSticker(c)}><IconX size={13} /></button>
+                  <button type="button" className="decor-tile-x" title={t("Remove from your stickers")} aria-label={t("Remove from your stickers")} onClick={() => removeCustomSticker(c)}><IconX size={13} /></button>
                 </span>
               ))}
               <button type="button" className="app-tile decor-tile decor-add" onClick={() => fileRef.current?.click()}>
                 <span className="decor-thumb decor-add-icon"><IconPhotoPlus size={22} /></span>
-                <span className="app-tile-name">{t("Subir imagen")}</span>
+                <span className="app-tile-name">{t("Upload image")}</span>
               </button>
               <input ref={fileRef} type="file" accept="image/png,image/webp,image/jpeg,image/gif" hidden
                 onChange={(e) => { upload(e.target.files?.[0]); e.target.value = ""; }} />
@@ -432,8 +432,8 @@ export function Customize({ source, ops, selected, setSelected, openMenu, bare, 
         <div className="opt-row wide">
           <span className="opt-icon"><IconCat size={17} /></span>
           <div className="opt-text">
-            <span className="opt-title">{t("Figuras")}</span>
-            <span className="opt-desc">{t("Se paran sobre el cubo. Arrástralas para moverlas y gíralas con el clic derecho sostenido.")}</span>
+            <span className="opt-title">{t("Figures")}</span>
+            <span className="opt-desc">{t("They stand on top of the cube. Drag them to move them and hold the right button to turn them.")}</span>
           </div>
           <div className="opt-below">
             <Placed selected={selected} onPick={pick} onRemove={removeOne} onMenu={openMenu}
@@ -453,26 +453,26 @@ export function Customize({ source, ops, selected, setSelected, openMenu, bare, 
             <span className="opt-icon">{pickedSticker ? <IconSticker size={17} /> : <IconCat size={17} />}</span>
             <div className="opt-text">
               <span className="opt-title">{pickedName}</span>
-              <span className="opt-desc">{pickedSticker ? t("En el vidrio. Suprimir lo quita.") : t("Sobre el cubo. Suprimir lo quita.")}</span>
+              <span className="opt-desc">{pickedSticker ? t("On the glass. Delete removes it.") : t("On top of the cube. Delete removes it.")}</span>
             </div>
             <div className="opt-ctl decor-picked-ctl">
               {/* Size in percent of how it is first placed (a sticker starts at half a face). */}
               <div className="field">
-                <div className="field-top"><span>{t("Tamaño")}</span><strong>{Math.round(picked.size * (pickedSticker ? 100 / STICKER_SIZE : 100))} %</strong></div>
-                <Slider label={t("Tamaño")} value={Math.round(picked.size * (pickedSticker ? 100 / STICKER_SIZE : 100))} step={5}
+                <div className="field-top"><span>{t("Size")}</span><strong>{Math.round(picked.size * (pickedSticker ? 100 / STICKER_SIZE : 100))} %</strong></div>
+                <Slider label={t("Size")} value={Math.round(picked.size * (pickedSticker ? 100 / STICKER_SIZE : 100))} step={5}
                   min={Math.round((pickedSticker ? STICKER_MIN / STICKER_SIZE : FIGURE_MIN) * 100)} max={Math.round((pickedSticker ? STICKER_MAX / STICKER_SIZE : FIGURE_MAX) * 100)}
                   marks={pickedSticker ? [40, 100, 150, 200] : [50, 100, 150, 180]}
                   format={(v) => `${v} %`} onChange={(v) => ops.set(picked.id, picked.rot, v / 100 * (pickedSticker ? STICKER_SIZE : 1))} />
               </div>
               <div className="field">
-                <div className="field-top"><span>{t("Giro")}</span><strong>{Math.round(picked.rot > 180 ? picked.rot - 360 : picked.rot)}°</strong></div>
-                <Slider label={t("Giro")} value={Math.round(picked.rot > 180 ? picked.rot - 360 : picked.rot)} min={-180} max={180} step={5} marks={[-180, -90, 0, 90, 180]}
+                <div className="field-top"><span>{t("Turn")}</span><strong>{Math.round(picked.rot > 180 ? picked.rot - 360 : picked.rot)}°</strong></div>
+                <Slider label={t("Turn")} value={Math.round(picked.rot > 180 ? picked.rot - 360 : picked.rot)} min={-180} max={180} step={5} marks={[-180, -90, 0, 90, 180]}
                   format={(v) => `${v}°`} onChange={(v) => ops.set(picked.id, (v + 360) % 360, picked.size)} />
               </div>
               <div className="decor-picked-actions">
-                <button className="btn" onClick={() => ops.duplicate([picked.id])}><IconCopy size={16} />{t("Duplicar")}</button>
-                <button className="btn" onClick={() => ops.remove([picked.id])}><IconTrash size={16} />{t("Quitar")}</button>
-                <button className="btn ghost" onClick={() => setSelected([])}>{t("Listo")}</button>
+                <button className="btn" onClick={() => ops.duplicate([picked.id])}><IconCopy size={16} />{t("Duplicate")}</button>
+                <button className="btn" onClick={() => ops.remove([picked.id])}><IconTrash size={16} />{t("Remove")}</button>
+                <button className="btn ghost" onClick={() => setSelected([])}>{t("Done")}</button>
               </div>
             </div>
           </div>
@@ -481,14 +481,14 @@ export function Customize({ source, ops, selected, setSelected, openMenu, bare, 
           <div className="opt-row decor-picked">
             <span className="opt-icon"><IconSticker size={17} /></span>
             <div className="opt-text">
-              <span className="opt-title">{t("{n} elegidos", { n: selected.length })}</span>
-              <span className="opt-desc">{t("Se mueven juntos arrastrando cualquiera de ellos, o con las flechas de a una celda. Ctrl+C y Ctrl+V los copian a esta u otra máquina.")}</span>
+              <span className="opt-title">{t("{n} picked|stickers", { n: selected.length })}</span>
+              <span className="opt-desc">{t("Drag any of them to move them together, or use the arrows to move one cell at a time. Ctrl+C and Ctrl+V copy them to this or another machine.")}</span>
             </div>
             <div className="opt-ctl decor-picked-ctl">
               <div className="decor-picked-actions">
-                <button className="btn" onClick={() => ops.duplicate(selected)}><IconCopy size={16} />{t("Duplicar")}</button>
-                <button className="btn" onClick={() => ops.remove(selected)}><IconTrash size={16} />{t("Quitar")}</button>
-                <button className="btn ghost" onClick={() => setSelected([])}>{t("Listo")}</button>
+                <button className="btn" onClick={() => ops.duplicate(selected)}><IconCopy size={16} />{t("Duplicate")}</button>
+                <button className="btn" onClick={() => ops.remove(selected)}><IconTrash size={16} />{t("Remove")}</button>
+                <button className="btn ghost" onClick={() => setSelected([])}>{t("Done")}</button>
               </div>
             </div>
           </div>

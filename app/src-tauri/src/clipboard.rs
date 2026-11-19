@@ -295,7 +295,7 @@ pub fn clear() {
 async fn send(vm: String, id: u64, folder: String) -> Result<Value, String> {
     let args = {
         let items = ITEMS.lock().unwrap_or_else(|e| e.into_inner());
-        let item = items.iter().find(|i| i.id == id).ok_or("Esa copia ya no está.")?;
+        let item = items.iter().find(|i| i.id == id).ok_or("That copy is no longer there.")?;
         match &item.payload {
             Payload::Text(text) => json!({ "Name": vm, "Text": text }),
             Payload::Png(png) => json!({ "Name": vm, "Image": base64::engine::general_purpose::STANDARD.encode(png) }),

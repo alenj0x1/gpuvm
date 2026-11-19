@@ -203,7 +203,7 @@ function Wait-SunshineReady {
         [Parameter(Mandatory)][pscredential]$Credential,
         [int]$TimeoutSec = 900,
         # What is shown while waiting: only the caller knows whether this is the first boot or just a restart.
-        [string]$Message = 'Esperando a Sunshine'
+        [string]$Message = 'Waiting for Sunshine'
     )
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     $announced = $false
@@ -242,7 +242,7 @@ function Set-SunshineVirtualDisplay {
     )
     $lines = (Invoke-SunshineApi -Address $Address -Credential $Credential -Path '/api/logs') -split "`n"
     $vdd = ConvertFrom-SunshineDisplayLog -Lines $lines | Where-Object { $_.edid -and $_.edid.manufacturer_id -eq 'MTT' } | Select-Object -First 1
-    if (-not $vdd) { Write-Warning 'Sunshine no ve la pantalla virtual; la imagen puede salir en negro. Revisa C:\GpuVM\setup.log en la VM.'; return }
+    if (-not $vdd) { Write-Warning 'Sunshine doesn''t see the virtual display; the picture may be black. Check C:\GpuVM\setup.log in the VM.'; return }
 
     $mode = if ($OnlyDisplay) { 'disabled' } else { 'ensure_only_display' }
     # nvenc_twopass: NVENC without its quarter-resolution first pass, ~1.1 ms less from capture to packet (lab 041);
@@ -287,7 +287,7 @@ function Update-SunshineConfig {
         try { Invoke-SunshineApi -Address $Address -Credential $Credential -Method POST -Path '/api/restart' -Body @{} | Out-Null } catch { }
     }
     Start-Sleep -Seconds 5
-    Wait-SunshineReady -Address $Address -Credential $Credential -TimeoutSec 120 -Message 'Sunshine se reinicia con la configuración nueva'
+    Wait-SunshineReady -Address $Address -Credential $Credential -TimeoutSec 120 -Message 'Sunshine is restarting with the new settings'
     $true
 }
 
@@ -310,7 +310,7 @@ function Install-GuestAudio {
     $answer = ConvertTo-GuestString (@($answer)[-1])
     $installed = $answer -eq 'install'
     if ($installed) {
-        Write-Step 'Instalando el audio de la VM'
+        Write-Step 'Installing the VM''s audio'
         $installer = Save-GpuVMComponent -Name 'usbip'
         $session = New-PSSession -VMName $Name -Credential $Credential -ErrorAction Stop
         try {
@@ -343,7 +343,7 @@ function Install-GuestGamepad {
         [bool](Get-CimInstance Win32_SystemDriver -Filter "Name='ViGEmBus'" -ErrorAction SilentlyContinue)
     }
     if (@($present)[-1] -eq $true) { return $false }
-    Write-Step 'Instalando el soporte de mandos en la VM'
+    Write-Step 'Installing controller support in the VM'
     $installer = Save-GpuVMComponent -Name 'vigembus'
     $hash = (Get-ComponentManifest)['vigembus']['sha256']
     $session = New-PSSession -VMName $Name -Credential $Credential -ErrorAction Stop
@@ -431,7 +431,7 @@ function Set-SunshineAudioSink {
         [Parameter(Mandatory)][pscredential]$Credential
     )
     $sink = Get-GuestAudioSink -Name $Name -Credential $GuestCredential
-    if (-not $sink) { Write-Warning 'No se encontró la salida de audio GpuVM Audio en la VM; la imagen se verá sin sonido.'; return }
+    if (-not $sink) { Write-Warning 'The GpuVM Audio output wasn''t found in the VM; the picture will have no sound.'; return }
     if (Update-SunshineConfig -Address $Address -Credential $Credential -Settings ([ordered]@{ virtual_sink = $sink }) -Name $Name -GuestCredential $GuestCredential) {
         Write-Step "Sunshine captura el audio de $sink"
     }
@@ -495,7 +495,7 @@ function Wait-GuestReady {
         [Parameter(Mandatory)][pscredential]$Credential,
         [int]$TimeoutSec = 1800,
         # What the wait for Windows to start is called (it finishes installing updates first when they were pending).
-        [string]$BootMessage = 'Esperando a Windows'
+        [string]$BootMessage = 'Waiting for Windows'
     )
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     $announced = $null
@@ -521,11 +521,11 @@ function Wait-GuestReady {
         $ready = $answer.Count -eq 1 -and $answer[0] -is [bool] -and $answer[0]
         if ($ready) { return }
         # No answer is Windows still booting; an answer of "not done" is the first-time setup.
-        $message = if ($answer.Count) { 'Windows termina de configurarse (solo la primera vez)' } else { $BootMessage }
+        $message = if ($answer.Count) { 'Windows is finishing its setup (first time only)' } else { $BootMessage }
         if ($announced -ne $message) { Write-Step $message; $announced = $message }
         Start-Sleep -Seconds 3
     }
-    Write-Warning 'La configuración inicial de la VM está tardando más de lo normal; se continúa igual.'
+    Write-Warning 'The VM''s first-time setup is taking longer than usual; carrying on anyway.'
 }
 
 # Windows signs in on its own after it starts (automatic sign-in), but the display, Sunshine's capture (which runs in
@@ -555,23 +555,23 @@ function Wait-GuestSignIn {
         $status = [string](@($status)[-1])
         if ($status -eq 'ready') { return $true }
         $message = switch ($status) {
-            'updating' { 'Terminando actualizaciones' }
-            'restarting' { 'Windows se está reiniciando' }
-            default { 'Iniciando sesión en Windows' }
+            'updating' { 'Finishing updates' }
+            'restarting' { 'Windows is restarting' }
+            default { 'Signing in to Windows' }
         }
         if ($announced -ne $message) { Write-Step $message; $announced = $message }
         if ($status -eq 'restarting') {
             # The session died with the restart: wait for Windows again, then reconnect.
             Close-GuestSession -Name $Name
             Start-Sleep -Seconds 3
-            Wait-GuestReady -Name $Name -Credential $Credential -TimeoutSec ([math]::Max(30, ($deadline - (Get-Date)).TotalSeconds)) -BootMessage 'Windows se está reiniciando'
+            Wait-GuestReady -Name $Name -Credential $Credential -TimeoutSec ([math]::Max(30, ($deadline - (Get-Date)).TotalSeconds)) -BootMessage 'Windows is restarting'
             Open-GuestSession -Name $Name -Credential $Credential
             $announced = $null
             continue
         }
         Start-Sleep -Seconds 2
     }
-    Write-Warning 'Windows no inició sesión en la VM a tiempo; la pantalla y el sonido podrían no quedar listos.'
+    Write-Warning 'Windows didn''t sign in on the VM in time; the display and sound might not be ready.'
     $false
 }
 
@@ -628,14 +628,14 @@ function Set-GuestDisplayResolution {
         Set-Content -Path $script -Value $code -Encoding UTF8
         Remove-Item $out -Force -ErrorAction SilentlyContinue
         $user = (Get-CimInstance Win32_ComputerSystem).UserName
-        if (-not $user) { return [pscustomobject]@{ ok = $false; error = 'No hay una sesión iniciada en la pantalla.' } }
+        if (-not $user) { return [pscustomobject]@{ ok = $false; error = 'No one is signed in on the screen.' } }
         $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$script`" -Width $width -Height $height -Refresh $fps"
         $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
         Register-ScheduledTask -TaskName 'GpuVM-Resolution' -Action $action -Principal $principal -Force | Out-Null
         Start-ScheduledTask -TaskName 'GpuVM-Resolution'
         for ($i = 0; $i -lt 30 -and -not (Test-Path $out); $i++) { Start-Sleep -Milliseconds 500 }
         Unregister-ScheduledTask -TaskName 'GpuVM-Resolution' -Confirm:$false
-        if (Test-Path $out) { Get-Content -Raw $out | ConvertFrom-Json } else { [pscustomobject]@{ ok = $false; error = 'La tarea no respondió.' } }
+        if (Test-Path $out) { Get-Content -Raw $out | ConvertFrom-Json } else { [pscustomobject]@{ ok = $false; error = 'The task didn''t answer.' } }
     }
     # The answer is rebuilt from primitives only: it comes from the guest and ends up in messages on the host.
     $raw = @($raw)[0]
@@ -798,7 +798,7 @@ function Show-ProcessWindow {
 # Ends early if Moonlight closes (it shows its own error) or writes no log here (it runs under another account).
 function Wait-MoonlightStream {
     param([Parameter(Mandatory)][datetime]$Since, [int]$TimeoutSec = 60)
-    Write-Step 'Conectando la imagen'
+    Write-Step 'Connecting the picture'
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     $firstSeen = $null
     while ((Get-Date) -lt $deadline) {
@@ -827,7 +827,7 @@ function Select-MoonlightPairingRequest {
         if ($address) { ($address -replace '^::ffff:', '' -replace ':\d+$', '') -eq $HostAddress }
         else { $_.PSObject.Properties['name'] -and [string]$_.name -eq $ClientName }
     })
-    if ($matched.Count -gt 1) { throw 'Hay varias solicitudes de emparejamiento desde este equipo; vuelve a intentarlo.' }
+    if ($matched.Count -gt 1) { throw 'There are several pairing requests from this PC; try again.' }
     if ($matched.Count) { $matched[0] }
 }
 
@@ -858,22 +858,22 @@ function Register-MoonlightPairing {
             if ($request) {
                 $result = Invoke-SunshineApi -Address $Address -Credential $Credential -Method POST -Path '/api/pin' `
                     -Body @{ pairing_id = [string]$request.id; pin = $pin; name = $ClientName }
-                if ($result.status -eq $false) { throw 'Sunshine rechazó el PIN de emparejamiento.' }
+                if ($result.status -eq $false) { throw 'Sunshine rejected the pairing PIN.' }
                 $submitted = $true
             }
             else { Start-Sleep -Seconds 1 }
         }
-        if (-not $submitted) { throw 'Moonlight no pidió emparejarse a tiempo.' }
+        if (-not $submitted) { throw 'Moonlight didn''t ask to pair in time.' }
 
         # Moonlight is not a child of this process: its exit code is the task's last result.
         $deadline = (Get-Date).AddSeconds($TimeoutSec)
         while (-not ($state = Get-UnelevatedTaskState -TaskName $task).Finished) {
-            if ((Get-Date) -gt $deadline) { throw 'Moonlight no terminó el emparejamiento.' }
+            if ((Get-Date) -gt $deadline) { throw 'Moonlight didn''t finish pairing.' }
             Start-Sleep -Seconds 1
         }
         if ($state.ExitCode -ne 0) { throw "Moonlight terminó el emparejamiento con código $($state.ExitCode)." }
         if (-not (Test-SunshineClientPaired -Address $Address -Credential $Credential -ClientName $ClientName)) {
-            throw 'Sunshine no registró el emparejamiento de Moonlight.'
+            throw 'Sunshine didn''t record Moonlight''s pairing.'
         }
     }
     finally {

@@ -17,15 +17,15 @@ function Set-GpuVMCleanup {
     Assert-Admin
     $state = Get-GpuVMState -Name $Name
     $guest = Get-GpuVMGuestCredential -State $state
-    if (-not $guest) { throw 'Guarda la contraseña de Windows de la VM para que GpuVM pueda limpiar Windows.' }
+    if (-not $guest) { throw 'Save the VM''s Windows password so GpuVM can clean up Windows.' }
     $vm = Get-VM -Name $Name
     if ($vm.State -eq 'Off') {
         Assert-VMCanStart -Name $Name
-        Write-Step 'Encendiendo'
+        Write-Step 'Starting'
         Start-VM -Name $Name
     }
     Wait-GuestReady -Name $Name -Credential $guest
-    Write-Step 'Limpiando Windows'
+    Write-Step 'Cleaning up Windows'
     $code = Get-Content -Raw -Encoding UTF8 -LiteralPath (Get-RepoPath 'guest\cleanup.ps1')
     $results = Invoke-Command -VMName $Name -Credential $guest -ErrorAction Stop -ArgumentList $code, $Level -ScriptBlock {
         param($code, $level)
@@ -39,6 +39,6 @@ function Set-GpuVMCleanup {
     $state = Get-GpuVMState -Name $Name
     $state['config']['guest']['cleanup'] = $Level
     Save-GpuVMState $state
-    Write-Step $(if ($failed) { 'Limpieza aplicada con avisos' } else { 'Limpieza aplicada' })
+    Write-Step $(if ($failed) { 'Cleanup applied with warnings' } else { 'Cleanup applied' })
     [ordered]@{ name = $Name; cleanup = $Level; failed = @($failed | ForEach-Object { $_['name'] }) }
 }

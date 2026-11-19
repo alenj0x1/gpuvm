@@ -64,7 +64,7 @@ for (let i = vms.length; i < Number(params.get("vms") ?? 0); i++) {
 let samplePrompt = params.has("prompt") || params.has("prompt-dock");
 export const showSamplePrompt = () => { samplePrompt = true; };
 export const adminPrompts = async () =>
-  samplePrompt ? [{ name: "win10", id: 4242, app: "Procesador de comandos de Windows", publisher: params.get("prompt") === "unknown" ? "Desconocido" : "Microsoft Windows" }] : [];
+  samplePrompt ? [{ name: "win10", id: 4242, app: "Windows Command Processor", publisher: params.get("prompt") === "unknown" ? "Desconocido" : "Microsoft Windows" }] : [];
 
 const builtIn = (cpu: number, diskGB: number, diskType: "Dynamic" | "Fixed"): ProfileSettings =>
   ({ cpu, memoryGB: 8, gpuPercent: 100, diskGB, diskType, iso: null, apps: [], cleanup: "none", resolution: "1920x1080", fps: 0, displayMode: "fullscreen", vsync: true, framePacing: false, mouse: "capture" });
@@ -99,9 +99,9 @@ const installed: Record<string, string[]> = { win10: ["steam", "discord", "chrom
 
 export async function ps(cmd: string, args: Record<string, unknown>): Promise<unknown[]> {
   await wait(250);
-  if (scenario === "noadmin") throw new Error("Este comando necesita PowerShell 7 abierto como administrador.");
-  if (scenario === "noservice") throw new Error("El servicio de GpuVM no está instalado.");
-  if (scenario === "servicestopped") throw new Error("El servicio de GpuVM está detenido.");
+  if (scenario === "noadmin") throw new Error("This command needs PowerShell 7 opened as administrator.");
+  if (scenario === "noservice") throw new Error("The GpuVM service isn't installed.");
+  if (scenario === "servicestopped") throw new Error("The GpuVM service is stopped.");
   // ?mock=loading keeps every screen in its loading state, to design the skeletons.
   if (scenario === "loading") return new Promise(() => {});
   switch (cmd) {
@@ -265,8 +265,8 @@ function renameVm(from: string, to: string) {
 }
 
 let attention = [
-  { vm: "win11-pruebas", kind: "driver", text: "Su driver de la GPU no es el del equipo (32.0.15.8180)", label: "Actualizar driver", cmd: "Sync-GpuVMDriver", args: { Name: "win11-pruebas" } },
-  { vm: "win11-pruebas", kind: "apps", text: "Faltan por instalar: Steam, Discord", label: "Encender e instalar", cmd: "Install-GpuVMApp", args: { Name: "win11-pruebas", App: ["steam", "discord"] } },
+  { vm: "win11-pruebas", kind: "driver", text: "Su driver de la GPU no es el del equipo (32.0.15.8180)", label: "Update driver", cmd: "Sync-GpuVMDriver", args: { Name: "win11-pruebas" } },
+  { vm: "win11-pruebas", kind: "apps", text: "Faltan por instalar: Steam, Discord", label: "Start and install", cmd: "Install-GpuVMApp", args: { Name: "win11-pruebas", App: ["steam", "discord"] } },
 ];
 const APP_NAMES: Record<string, string> = Object.fromEntries(Object.entries(catalog.apps).map(([id, a]) => [id, (a as { name: string }).name]));
 
@@ -280,7 +280,7 @@ let shared: SharedDiskInfo[] = [
 // Same levels and texts as guest/cleanup.ps1 (Get-GpuVMCleanup), shortened to what the UI needs.
 const CLEANUP_LEVELS = [
   { id: "none", name: "Normal", items: [] },
-  { id: "privacy", name: "Privacidad", items: [
+  { id: "privacy", name: "Privacy", items: [
     { id: "telemetry-minimum", description: "Datos de diagnóstico al mínimo que permite la edición (en Pro, «Requerido»; en Enterprise y Education, apagados)." },
     { id: "advertising", description: "Sin identificador de publicidad ni experiencias personalizadas con tus datos de diagnóstico." },
     { id: "activity-history", description: "Sin historial de actividad ni envío de actividad a Microsoft." },
@@ -288,12 +288,12 @@ const CLEANUP_LEVELS = [
     { id: "web-search", description: "La búsqueda de Inicio busca solo en el equipo, sin Bing." },
     { id: "copilot-recall", description: "Sin Copilot ni Recall (las capturas de pantalla que guarda Windows 11)." },
   ] },
-  { id: "apps", name: "Sin apps de más", items: [
+  { id: "apps", name: "No extra apps", items: [
     { id: "store-apps", description: "Quita apps preinstaladas que no hacen falta (noticias, clima, Solitario, Clipchamp, Teams personal, Outlook nuevo...), también para usuarios nuevos. Se pueden volver a instalar desde Microsoft Store." },
     { id: "onedrive", description: "Quita OneDrive y evita que se vuelva a instalar." },
     { id: "widgets", description: "Sin widgets ni «Noticias e intereses» en la barra de tareas." },
   ] },
-  { id: "minimal", name: "Mínimo", items: [
+  { id: "minimal", name: "Minimal", items: [
     { id: "telemetry-services", description: "Apaga los servicios que envían telemetría y el informe de errores a Microsoft." },
     { id: "unneeded-services", description: "Apaga servicios que una VM no usa: mapas, ubicación, fax, modo demo y uso compartido de Windows Media." },
     { id: "background-apps", description: "Las apps de Microsoft Store no corren en segundo plano." },
@@ -302,23 +302,23 @@ const CLEANUP_LEVELS = [
 
 export async function job(jobId: string, cmd: string, args: Record<string, unknown>) {
   const emit = (e: Omit<JobEvent, "jobId">) => listeners.forEach((l) => l({ jobId, ...e }));
-  const steps = cmd === "New-GpuVMTemplate" ? ["Apagando", "Copiando el disco de win10 (puede tardar unos minutos)", "Encendiendo", "Plantilla lista (61.4 GB)"]
-    : cmd === "Import-GpuVMSharedDisk" ? ["Midiendo la carpeta", "Copiando a SteamLibrary\\steamapps", "Copiando 18 %", "Copiando 47 %", "Copiando 83 %", "Copiado: 92,4 GB en SteamLibrary\\steamapps"]
+  const steps = cmd === "New-GpuVMTemplate" ? ["Shutting down", "Copiando el disco de win10 (puede tardar unos minutos)", "Starting", "Plantilla lista (61.4 GB)"]
+    : cmd === "Import-GpuVMSharedDisk" ? ["Measuring the folder", "Copiando a SteamLibrary\\steamapps", "Copiando 18 %", "Copiando 47 %", "Copiando 83 %", "Copiado: 92,4 GB en SteamLibrary\\steamapps"]
     : cmd === "Connect-GpuVMSharedDisk" ? ["Conectando el disco", "Disco en G: dentro de la VM", "Biblioteca de Steam en G:\\SteamLibrary"]
     : cmd === "Disconnect-GpuVMSharedDisk" ? ["Cerrando el disco dentro de la VM", "Quitando el disco"]
-    : cmd === "Set-GpuVMCleanup" ? ["Esperando a Windows", "Limpiando Windows", "Limpieza aplicada"]
+    : cmd === "Set-GpuVMCleanup" ? ["Waiting for Windows", "Cleaning up Windows", "Cleanup applied"]
     : cmd === "Sync-GpuVMDriver" ? ["Leyendo archivos del driver 32.0.15.8180", "Driver copiado: 4 carpetas del DriverStore y 31 archivos"]
-    : cmd === "Install-GpuVMApp" ? ["Esperando a Windows", ...((args.App as string[]) ?? []).flatMap((id) => [
+    : cmd === "Install-GpuVMApp" ? ["Waiting for Windows", ...((args.App as string[]) ?? []).flatMap((id) => [
       ...(args.Reinstall ? [`Desinstalando ${APP_NAMES[id] ?? id}`, `${APP_NAMES[id] ?? id} desinstalado`] : []),
       `Instalando ${APP_NAMES[id] ?? id}`, `${APP_NAMES[id] ?? id} instalado`])]
-    : cmd === "Uninstall-GpuVMApp" ? ["Esperando a Windows", ...((args.App as string[]) ?? []).flatMap((id) => [`Desinstalando ${APP_NAMES[id] ?? id}`, `${APP_NAMES[id] ?? id} desinstalado`])]
-    : cmd === "Invoke-GpuVMPower" ? ["Instalando actualizaciones"]
-    : cmd === "Rename-GpuVM" ? [`Cambiando el nombre en Hyper-V a '${args.NewName}'`, "Moviendo la configuración de la VM a su nueva carpeta", "Cambiando el nombre del disco", `La VM ahora se llama '${args.NewName}'.`]
-    : cmd === "Connect-GpuVM" && args.MemoryGB ? [`Memoria: ${args.MemoryGB} GB`, "Encendiendo", "Esperando a Windows", "Esperando a Sunshine", "Abriendo a 1920x1080 y 60 FPS"]
-    : cmd === "New-GpuVM" && args.Template ? [`Copia diferencial de ${args.Template}`, "Identidad propia: nombre de equipo y Sunshine", "Encendiendo", "Esperando a Windows"]
+    : cmd === "Uninstall-GpuVMApp" ? ["Waiting for Windows", ...((args.App as string[]) ?? []).flatMap((id) => [`Desinstalando ${APP_NAMES[id] ?? id}`, `${APP_NAMES[id] ?? id} desinstalado`])]
+    : cmd === "Invoke-GpuVMPower" ? ["Installing updates"]
+    : cmd === "Rename-GpuVM" ? [`Cambiando el nombre en Hyper-V a '${args.NewName}'`, "Moving the VM's settings to its new folder", "Renaming the disk", `La VM ahora se llama '${args.NewName}'.`]
+    : cmd === "Connect-GpuVM" && args.MemoryGB ? [`Memoria: ${args.MemoryGB} GB`, "Starting", "Waiting for Windows", "Waiting for Sunshine", "Abriendo a 1920x1080 y 60 FPS"]
+    : cmd === "New-GpuVM" && args.Template ? [`Copia diferencial de ${args.Template}`, "Identidad propia: nombre de equipo y Sunshine", "Starting", "Waiting for Windows"]
     : cmd === "New-GpuVM"
-    ? ["Edición: Windows 10 Pro (es-MX)", "Leyendo archivos del driver", "Creando disco Fixed de 96 GB", "Aplicando la imagen de Windows", "Copiando el driver de la GPU al invitado", "Registrando la VM en Hyper-V"]
-    : ["Encendiendo", "Esperando a Windows", "Iniciando sesión en Windows", "Esperando a Sunshine", "Sunshine capturará la pantalla virtual (Virtual Display)", "Abriendo a 1920x1080 y 60 FPS", "Conectando la imagen"];
+    ? ["Edición: Windows 10 Pro (es-MX)", "Leyendo archivos del driver", "Creando disco Fixed de 96 GB", "Aplicando la imagen de Windows", "Copying the GPU driver to the guest", "Registrando la VM en Hyper-V"]
+    : ["Starting", "Waiting for Windows", "Signing in to Windows", "Waiting for Sunshine", "Sunshine capturará la pantalla virtual (Virtual Display)", "Abriendo a 1920x1080 y 60 FPS", "Connecting the picture"];
   for (const message of steps) {
     emit({ type: "progress", message });
     await wait(900);

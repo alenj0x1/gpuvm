@@ -26,7 +26,7 @@ const WHITE = "#f6f2ea", INK = "#2a2522", PINK = "#f29aa8", RED = "#d8443c", GOL
 
 export const FIGURES: FigureDef[] = [
   {
-    id: "lucky-cat", get name() { return t("Gato de la suerte"); },
+    id: "lucky-cat", get name() { return t("Lucky cat"); },
     build: (b) => {
       b.box(-4, 4, 0, 0, -3, 3, RED);
       for (const [x, z] of [[-4, -3], [4, -3], [-4, 3], [4, 3]]) b.set(x, 0, z, GOLD);
@@ -47,7 +47,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "succulent", get name() { return t("Planta"); },
+    id: "succulent", get name() { return t("Plant"); },
     build: (b) => {
       b.box(-3, 3, 0, 3, -3, 3, "#c2714a");
       b.box(-4, 4, 4, 4, -4, 4, "#d27f56");
@@ -62,7 +62,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "duck", get name() { return t("Patito"); },
+    id: "duck", get name() { return t("Duckling"); },
     build: (b) => {
       const y = "#ffd23f";
       b.box(-3, 3, 0, 3, -3, 3, y);
@@ -111,7 +111,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "mushroom", get name() { return t("Hongos"); },
+    id: "mushroom", get name() { return t("Mushrooms"); },
     build: (b) => {
       const red = "#d9473f", spot = "#fbf6ec";
       b.box(-4, 4, 0, 0, -3, 3, "#7cb36a");
@@ -127,7 +127,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "gamepad", get name() { return t("Control"); },
+    id: "gamepad", get name() { return t("Controller"); },
     build: (b) => {
       const body = "#3a3d44";
       b.box(-4, 4, 0, 1, -1, 1, body);
@@ -140,7 +140,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "mug", get name() { return t("Taza"); },
+    id: "mug", get name() { return t("Mug"); },
     build: (b) => {
       b.box(-3, 3, 0, 0, -3, 3, "#ece6da");
       b.box(-2, 2, 1, 5, -2, 2, "$");
@@ -151,7 +151,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "penguin", get name() { return t("Pingüino"); },
+    id: "penguin", get name() { return t("Penguin"); },
     build: (b) => {
       const k = "#2c2f36";
       b.set(-1, 0, 3, ORANGE); b.set(1, 0, 3, ORANGE);
@@ -165,7 +165,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "rocket", get name() { return t("Cohete"); },
+    id: "rocket", get name() { return t("Rocket"); },
     build: (b) => {
       b.set(0, 0, 0, "#ffd34d"); b.set(0, 1, 0, ORANGE);
       b.box(-1, 1, 2, 9, -1, 1, WHITE);
@@ -178,7 +178,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "dog", get name() { return t("Perro"); },
+    id: "dog", get name() { return t("Dog"); },
     build: (b) => {
       const brown = "#b07b4b", cream = "#f3d9b1", ear = "#7a5233";
       b.box(-2, 2, 0, 2, -3, 1, brown);
@@ -196,7 +196,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "cat", get name() { return t("Gato"); },
+    id: "cat", get name() { return t("Cat"); },
     build: (b) => {
       const gray = "#8d9098", dark = "#666971";
       b.box(-2, 2, 0, 4, -2, 1, gray);
@@ -213,7 +213,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "spider", get name() { return t("Araña"); },
+    id: "spider", get name() { return t("Spider"); },
     build: (b) => {
       const body = "#3f3752", leg = "#2e2840";
       b.box(-2, 2, 1, 3, -3, -1, body);
@@ -228,7 +228,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "magic-cube", get name() { return t("Cubo mágico"); },
+    id: "magic-cube", get name() { return t("Magic cube"); },
     build: (b) => {
       // Ten blocks a side: a black frame and lines, and three by three tiles of two by two blocks on each face,
       // mixed as if it were half solved.
@@ -247,7 +247,7 @@ export const FIGURES: FigureDef[] = [
   },
   // Pastel animals, sitting or standing, with dark eyes and a little blush.
   {
-    id: "bunny", get name() { return t("Conejo"); },
+    id: "bunny", get name() { return t("Bunny"); },
     build: (b) => {
       const c = "#ebe5f6", inner = "#f6bfd2", belly = "#fbf8ff";
       b.box(-2, -1, 0, 0, 0, 2, belly); b.box(1, 2, 0, 0, 0, 2, belly);
@@ -263,7 +263,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "bear", get name() { return t("Oso"); },
+    id: "bear", get name() { return t("Bear"); },
     build: (b) => {
       const c = "#e9b9a3", light = "#f8e4d6";
       b.box(-2, -1, 0, 1, 0, 1, c); b.box(1, 2, 0, 1, 0, 1, c);
@@ -280,7 +280,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "unicorn", get name() { return t("Unicornio"); },
+    id: "unicorn", get name() { return t("Unicorn"); },
     build: (b) => {
       const c = "#fbf8ff", lilac = "#c9b5f0", pink = "#f6b9d3", mint = "#b5e8d5", hoof = "#c9b5f0";
       for (const [x, z] of [[-2, -3], [2, -3], [-2, 1], [2, 1]]) { b.box(x, x, 1, 2, z, z, c); b.set(x, 0, z, hoof); }
@@ -298,7 +298,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "tiger", get name() { return t("Tigre"); },
+    id: "tiger", get name() { return t("Tiger"); },
     build: (b) => {
       const o = "#f4b37a", d = "#c9824a", w = "#fff4e6";
       b.box(-2, 2, 0, 4, -2, 1, o);
@@ -316,7 +316,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "fawn", get name() { return t("Cervatillo"); },
+    id: "fawn", get name() { return t("Fawn"); },
     build: (b) => {
       const c = "#dcab82", spot = "#fbf3e8", hoof = "#7a5233";
       for (const [x, z] of [[-2, -3], [2, -3], [-2, 1], [2, 1]]) { b.box(x, x, 1, 2, z, z, c); b.set(x, 0, z, hoof); }
@@ -333,7 +333,7 @@ export const FIGURES: FigureDef[] = [
     },
   },
   {
-    id: "bonsai", get name() { return t("Bonsái"); },
+    id: "bonsai", get name() { return t("Bonsai"); },
     build: (b) => {
       b.box(-4, 4, 0, 1, -2, 2, "#3f4a5c");
       b.box(-3, 3, 2, 2, -1, 1, "#5a3d2b");

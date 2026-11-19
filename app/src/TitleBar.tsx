@@ -40,11 +40,11 @@ export function TitleBar({ children }: { children?: React.ReactNode } = {}) {
       <div className="titlebar-side" data-tauri-drag-region>{children}</div>
       <div className="titlebar-main" data-tauri-drag-region>
         <div className="win-controls">
-          <button aria-label={t("Minimizar")} onClick={() => act("minimize")}><IconMinus size={16} /></button>
-          <button aria-label={maximized ? t("Restaurar") : t("Maximizar")} onClick={() => act("toggleMaximize")}>
+          <button aria-label={t("Minimize")} onClick={() => act("minimize")}><IconMinus size={16} /></button>
+          <button aria-label={maximized ? t("Restore") : t("Maximize")} onClick={() => act("toggleMaximize")}>
             {maximized ? <IconCopy size={14} /> : <IconSquare size={13} />}
           </button>
-          <button className="win-close" aria-label={t("Cerrar")} onClick={() => act("close")}><IconX size={16} /></button>
+          <button className="win-close" aria-label={t("Close")} onClick={() => act("close")}><IconX size={16} /></button>
         </div>
       </div>
     </div>

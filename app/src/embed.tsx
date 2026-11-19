@@ -60,7 +60,7 @@ function seed() {
     localStorage.setItem(SEED, "1");
     for (const [name, d] of Object.entries(DECOR)) localStorage.setItem(`gpuvm.decor.${name}`, JSON.stringify(d));
     localStorage.setItem("gpuvm.spaces", JSON.stringify([
-      { id: "main", name: "Mis máquinas", ambient: "blocks", time: "day", machines: ["win10", "win11-pruebas"] },
+      { id: "main", name: "My machines", ambient: "blocks", time: "day", machines: ["win10", "win11-pruebas"] },
       { id: "lab", name: LAB_NAME[site.lang], ambient: "board", machines: ["estudio"] },
     ]));
     localStorage.setItem("gpuvm.space.shown", "main");
@@ -87,7 +87,7 @@ function configure(change: Partial<Omit<Site, "dice">>) {
   document.documentElement.dataset.theme = site.theme;
   siteSubs.forEach((l) => l());
 }
-/** "Decorar al azar" on the hero's cube. */
+/** "Decorate at random" on the hero's cube. */
 function randomize() { site = { ...site, dice: site.dice + 1 }; siteSubs.forEach((l) => l()); }
 
 // The app's own Settings (in the window demo) changed the theme, accent or language: the page follows.
@@ -118,7 +118,7 @@ onJob((e) => {
 });
 function start(vm: string, cmd: string, args: Record<string, unknown>, after?: () => void) {
   const id = `${cmd}-${Date.now()}`;
-  jobs = { ...jobs, [id]: { vm, cmd, message: t("Trabajando"), log: [], after } };
+  jobs = { ...jobs, [id]: { vm, cmd, message: t("Working"), log: [], after } };
   changed();
   runJob(id, cmd, args);
 }
@@ -150,43 +150,43 @@ function Stream({ vm }: { vm: VmOverview }) {
   const use = custom ? null : streamUseOf(draft);
   return (
     <div className="card opt-rows">
-      <OptionRow icon={<IconDeviceGamepad2 size={17} />} title={t("Tipo de uso")} section
-        desc={use ? USES.find((u) => u.id === use)!.description : t("Ajustado a mano. Elige un tipo para volver a sus valores.")}>
+      <OptionRow icon={<IconDeviceGamepad2 size={17} />} title={t("Use|machine")} section
+        desc={use ? USES.find((u) => u.id === use)!.description : t("Set by hand. Pick a use to go back to its values.")}>
         <Segmented value={use ?? "custom"} onChange={(id) => {
           if (id === "custom") { setCustom(true); return; }
           setCustom(false);
           setDraft({ ...draft, ...USES.find((u) => u.id === id)!.client });
         }} options={[...USES.map((u) => ({ value: u.id as string, label: <><u.icon size={15} />{u.label}</> })),
-          { value: "custom", label: <><IconAdjustments size={15} />{t("Personalizado")}</> }]} />
+          { value: "custom", label: <><IconAdjustments size={15} />{t("Custom")}</> }]} />
       </OptionRow>
-      <OptionRow sub icon={<IconGauge size={17} />} title={t("Cuadros por segundo")}
-        desc={draft.fps === 0 ? t("Siempre al ritmo del monitor donde se abre") : t("{n} FPS fijos", { n: draft.fps })}>
+      <OptionRow sub icon={<IconGauge size={17} />} title={t("Frames per second")}
+        desc={draft.fps === 0 ? t("Always at the pace of the monitor it opens on") : t("Fixed {n} FPS", { n: draft.fps })}>
         <FpsPicker value={draft.fps} monitor={MONITOR} onChange={(fps) => setDraft({ ...draft, fps })} />
       </OptionRow>
-      <OptionRow sub icon={<IconRectangle size={17} />} title={t("Sincronización vertical")} desc={draft.vsync
-        ? t("Cada cuadro llega entero al monitor. Al ritmo del monitor no agrega espera.")
-        : t("Cada cuadro sale apenas llega, aunque el monitor esté a mitad de dibujar el anterior.")}>
+      <OptionRow sub icon={<IconRectangle size={17} />} title={t("Vertical sync")} desc={draft.vsync
+        ? t("Every frame reaches the monitor whole. At the monitor's pace it adds no wait.")
+        : t("Each frame goes out as soon as it arrives, even if the monitor is halfway through drawing the last one.")}>
         <Segmented value={draft.vsync} onChange={(vsync) => setDraft({ ...draft, vsync, framePacing: vsync && draft.framePacing })} options={[
-          { value: true, label: <><IconRectangle size={15} />{t("Imagen entera")}</> },
-          { value: false, label: <><IconBolt size={15} />{t("Más rápida")}</> },
+          { value: true, label: <><IconRectangle size={15} />{t("Whole picture")}</> },
+          { value: false, label: <><IconBolt size={15} />{t("Faster")}</> },
         ]} />
       </OptionRow>
-      <OptionRow sub icon={<IconWaveSine size={17} />} title={t("Ritmo de cuadros")} desc={!draft.vsync
-        ? t("Solo con la imagen entera.")
-        : draft.framePacing ? t("Reparte los cuadros a ritmo constante, ideal a 60 FPS.") : t("Muestra cada cuadro apenas está listo.")}>
+      <OptionRow sub icon={<IconWaveSine size={17} />} title={t("Frame pacing")} desc={!draft.vsync
+        ? t("Only with the whole picture.")
+        : draft.framePacing ? t("Spaces frames at a steady pace, ideal at 60 FPS.") : t("Shows each frame as soon as it's ready.")}>
         <div className={`segment-row${draft.vsync ? "" : " disabled"}`}>
           <Segmented value={draft.framePacing} onChange={(framePacing) => draft.vsync && setDraft({ ...draft, framePacing })} options={[
-            { value: true, label: <><IconWaveSine size={15} />{t("Parejo")}</> },
-            { value: false, label: <><IconPlayerTrackNext size={15} />{t("Al instante")}</> },
+            { value: true, label: <><IconWaveSine size={15} />{t("Even")}</> },
+            { value: false, label: <><IconPlayerTrackNext size={15} />{t("Instant")}</> },
           ]} />
         </div>
       </OptionRow>
       <OptionRow sub icon={<IconPointer size={17} />} title={t("Mouse")} desc={draft.mouse === "capture"
-        ? t("La VM toma el mouse, como necesitan los juegos para girar la cámara. Ctrl+Alt+Shift+Z lo libera sin cerrar.")
-        : t("El puntero entra y sale de la ventana como en escritorio remoto. No sirve en la mayoría de juegos.")}>
+        ? t("The VM takes the mouse, as games need to turn the camera. Ctrl+Alt+Shift+Z releases it without closing.")
+        : t("The pointer moves in and out of the window as in remote desktop. Doesn't work in most games.")}>
         <Segmented value={draft.mouse} onChange={(mouse) => setDraft({ ...draft, mouse })} options={[
-          { value: "capture", label: <><IconDeviceGamepad2 size={15} />{t("Para juegos")}</> },
-          { value: "absolute", label: <><IconPointer size={15} />{t("Libre")}</> },
+          { value: "capture", label: <><IconDeviceGamepad2 size={15} />{t("For games")}</> },
+          { value: "absolute", label: <><IconPointer size={15} />{t("Free")}</> },
         ]} />
       </OptionRow>
     </div>
@@ -259,7 +259,7 @@ function useNeighbors(vms: VmOverview[]) {
   return useMemo(() => vms.filter((v) => NEIGHBORS.includes(v.name)).map((v) => ({ name: v.name, machine: cubeOf(v) })), [vms]);
 }
 
-/** The hero: a machine decorated at random, in the world the page picked; "Decorar al azar" redecorates it. */
+/** The hero: a machine decorated at random, in the world the page picked; "Decorate at random" redecorates it. */
 function HeroCube() {
   const s = useSite();
   const vms = useVms();
@@ -269,7 +269,7 @@ function HeroCube() {
   useEffect(() => { if (s.dice !== first.current) setDecor(randomDecor()); }, [s.dice]);
   const usage = useLiveUsage({ cpu: 42, gpu: 66, mem: 58, disk: 12 }, reducedMotion());
   const machine: CubeMachine = useMemo(() => ({ power: "on", cores: 12, memoryGB: 16, gpuPercent: 80, diskGB: 256, usage, apps: ["steam", "discord", "spotify", "obs", "chrome"], removed: 8 }), [usage]);
-  return <MachineCube machine={machine} name="win10" decorShown={decor} spin={s.dice} ambient={s.world} time={s.time} spaceName={t("Mis máquinas")} others={others} />;
+  return <MachineCube machine={machine} name="win10" decorShown={decor} spin={s.dice} ambient={s.world} time={s.time} spaceName={t("My machines")} others={others} />;
 }
 
 /** The machine's options beside its cube: the camera closes in on the piece that changes. */
@@ -283,15 +283,15 @@ function MachineDemo() {
   const hostCpu = 16, hostMem = 32;
   return (
     <div className="site-machine">
-      <div className="card site-cube"><MachineCube machine={machine} name="win10" ambient={s.world} time={s.time} spaceName={t("Mis máquinas")} others={others} /></div>
+      <div className="card site-cube"><MachineCube machine={machine} name="win10" ambient={s.world} time={s.time} spaceName={t("My machines")} others={others} /></div>
       <div className="card opt-rows">
-        <OptionRow icon={<IconCpu size={17} />} title={t("Procesador")} value={t("{n} hilos", { n: draft.cpu })} desc={t("Quedan {n} hilos para tu PC", { n: hostCpu - draft.cpu })}>
-          <Slider label={t("Hilos")} value={draft.cpu} min={2} max={12} onChange={(cpu) => setDraft({ ...draft, cpu })} />
+        <OptionRow icon={<IconCpu size={17} />} title={t("Processor")} value={t("{n} threads", { n: draft.cpu })} desc={t("{n} threads left for your PC", { n: hostCpu - draft.cpu })}>
+          <Slider label={t("Threads")} value={draft.cpu} min={2} max={12} onChange={(cpu) => setDraft({ ...draft, cpu })} />
         </OptionRow>
-        <OptionRow icon={<IconTopologyStar3 size={17} />} title={t("Memoria")} value={`${draft.memoryGB} GB`} desc={t("Quedan {n} GB para tu PC, se reserva entera al encender", { n: hostMem - draft.memoryGB })}>
-          <Slider label={t("Memoria")} value={draft.memoryGB} min={4} max={24} onChange={(memoryGB) => setDraft({ ...draft, memoryGB })} />
+        <OptionRow icon={<IconTopologyStar3 size={17} />} title={t("Memory")} value={`${draft.memoryGB} GB`} desc={t("{n} GB left for your PC, all reserved at start", { n: hostMem - draft.memoryGB })}>
+          <Slider label={t("Memory")} value={draft.memoryGB} min={4} max={24} onChange={(memoryGB) => setDraft({ ...draft, memoryGB })} />
         </OptionRow>
-        <OptionRow icon={<IconBolt size={17} />} title={t("GPU para la VM")} value={`${draft.gpuPercent} %`} desc={draft.gpuPercent === 100 ? t("Puede usar toda la GPU, tu PC la comparte") : t("Hasta el {n} % de la GPU", { n: draft.gpuPercent })}>
+        <OptionRow icon={<IconBolt size={17} />} title={t("GPU for the VM")} value={`${draft.gpuPercent} %`} desc={draft.gpuPercent === 100 ? t("Can use the whole GPU, shared with your PC") : t("Up to {n} % of the GPU", { n: draft.gpuPercent })}>
           <Slider label="GPU" value={draft.gpuPercent} min={10} max={100} step={10} onChange={(gpuPercent) => setDraft({ ...draft, gpuPercent })} />
         </OptionRow>
       </div>
@@ -310,7 +310,7 @@ function CustomizeDemo() {
     <div className="site-customize">
       <div className="card site-cube">
         <MachineCube machine={{ power: "on", cores: 8, memoryGB: 16, gpuPercent: 80, diskGB: 256, usage: { cpu: 30, gpu: 50, mem: 50, disk: 5 }, apps: ["steam", "discord"], removed: 0 }}
-          name="win10" decorOf="win10" decorShown={decor} spin={d.spins} ambient={s.world} time={s.time} spaceName={t("Mis máquinas")}
+          name="win10" decorOf="win10" decorShown={decor} spin={d.spins} ambient={s.world} time={s.time} spaceName={t("My machines")}
           edit={{ ...d.edit, onMenu: noMenu, holdStill: true }} />
       </div>
       <div className="site-customize-panel">
@@ -328,7 +328,7 @@ function GamesDemo() {
     <div className="home-space site-games">
       <SpaceWithGames decorOf="win10" world={s.world} machines={["win10", ...NEIGHBORS]}>
         <MachineCube machine={vms.length ? cubeOf(vms[0], ["steam", "discord"]) : { power: "on", cores: 8, memoryGB: 8, gpuPercent: 100, diskGB: 200, usage: { cpu: 30, gpu: 60, mem: 60, disk: 5 }, apps: [], removed: 0 }}
-          name="win10" ambient={s.world} time={s.time} spaceName={t("Mis máquinas")} others={others} />
+          name="win10" ambient={s.world} time={s.time} spaceName={t("My machines")} others={others} />
       </SpaceWithGames>
     </div>
   );

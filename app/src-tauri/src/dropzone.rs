@@ -417,7 +417,7 @@ pub async fn transfer_start(app: AppHandle, vm: String, paths: Vec<String>, from
 
 async fn start(app: &AppHandle, vm: String, paths: Vec<String>, from: Option<String>, folder: String) -> Result<String, String> {
     if paths.is_empty() || paths.len() > 1000 {
-        return Err("Elige entre 1 y 1000 elementos.".into());
+        return Err("Choose between 1 and 1000 items.".into());
     }
     let from = from.filter(|f| !f.is_empty());
     let id = new_id();
@@ -460,8 +460,8 @@ async fn start(app: &AppHandle, vm: String, paths: Vec<String>, from: Option<Str
                 t["folder"] = r["data"][0]["folder"].clone();
             }
             Ok(r) => {
-                let error = r["error"].as_str().unwrap_or("No se pudo copiar.").to_string();
-                t["state"] = json!(if error == "Envío cancelado." { "cancelled" } else { "error" });
+                let error = r["error"].as_str().unwrap_or("It couldn't be copied.").to_string();
+                t["state"] = json!(if error == "Copy cancelled." { "cancelled" } else { "error" });
                 t["error"] = json!(error);
             }
             Err(e) => {
@@ -476,7 +476,7 @@ async fn start(app: &AppHandle, vm: String, paths: Vec<String>, from: Option<Str
 #[tauri::command]
 pub async fn transfer_cancel(state: tauri::State<'_, crate::AppState>, id: String) -> Result<(), String> {
     if !id.chars().all(|c| c.is_ascii_hexdigit()) || id.len() != 32 {
-        return Err("Copia desconocida.".into());
+        return Err("Unknown copy.".into());
     }
     let request = json!({ "id": crate::next_id(&state), "cmd": "Stop-GpuVMTransfer", "args": { "TransferId": id } });
     crate::into_data(crate::query(&state, request).await?).map(|_| ())

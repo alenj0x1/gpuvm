@@ -72,10 +72,10 @@ export const api = {
 /** What is wrong with a new machine name, as New-GpuVM and Rename-GpuVM check it, or "" when it can be used.
  * `current` is the machine being renamed: its own name, even in another case, is not taken. */
 export function vmNameError(name: string, vms: { name: string }[], current?: string): string {
-  if (!name) return t("Escribe un nombre");
-  if (!/^[\w-]{1,40}$/.test(name)) return name.length > 40 ? t("Hasta 40 caracteres") : t("Usa letras, números o guiones, sin espacios");
+  if (!name) return t("Enter a name");
+  if (!/^[\w-]{1,40}$/.test(name)) return name.length > 40 ? t("Up to 40 characters") : t("Use letters, numbers or hyphens, no spaces");
   const taken = vms.some((v) => v.name.toLowerCase() === name.toLowerCase() && v.name.toLowerCase() !== current?.toLowerCase());
-  return taken ? t("Ya hay una máquina con ese nombre") : "";
+  return taken ? t("There's already a machine with that name") : "";
 }
 
 export async function startJob(jobId: string, cmd: string, args: Record<string, unknown>) {
@@ -146,7 +146,7 @@ export async function relaunchAsAdmin() {
 export async function pickIso(): Promise<string | null> {
   if (!inTauri) return "D:\\ISOs\\Win11_24H2_Spanish_x64.iso";
   const { open } = await import("@tauri-apps/plugin-dialog");
-  const file = await open({ multiple: false, filters: [{ name: t("Imagen de Windows"), extensions: ["iso"] }] });
+  const file = await open({ multiple: false, filters: [{ name: t("Windows image"), extensions: ["iso"] }] });
   return typeof file === "string" ? file : null;
 }
 
@@ -154,7 +154,7 @@ export async function pickIso(): Promise<string | null> {
 export async function pickExportFile(name: string): Promise<string | null> {
   if (!inTauri) return `C:\\Users\\Usuario\\Documents\\${name}.gpuvm`;
   const { save } = await import("@tauri-apps/plugin-dialog");
-  const file = await save({ defaultPath: `${name}.gpuvm`, filters: [{ name: t("Máquina de GpuVM"), extensions: ["gpuvm"] }] });
+  const file = await save({ defaultPath: `${name}.gpuvm`, filters: [{ name: t("GpuVM machine"), extensions: ["gpuvm"] }] });
   return typeof file === "string" ? file : null;
 }
 
@@ -162,7 +162,7 @@ export async function pickExportFile(name: string): Promise<string | null> {
 export async function pickMachineFile(): Promise<string | null> {
   if (!inTauri) return "C:\\Users\\Usuario\\Documents\\win10.gpuvm";
   const { open } = await import("@tauri-apps/plugin-dialog");
-  const file = await open({ multiple: false, filters: [{ name: t("Máquina de GpuVM"), extensions: ["gpuvm"] }] });
+  const file = await open({ multiple: false, filters: [{ name: t("GpuVM machine"), extensions: ["gpuvm"] }] });
   return typeof file === "string" ? file : null;
 }
 

@@ -1,8 +1,9 @@
-// Checks the English catalog against the code: every t()/tn() key has its English, no English is left unused,
-// and Spanish text that is not wrapped in t() is pointed out (lines with accents or ¿¡ outside t(), as a hint).
+// Checks the Spanish catalog against the code: every t()/tn() key (the English text) has its Spanish, both carry the
+// same {values}, no Spanish is left unused, and Spanish text left in the code is pointed out (lines with accents or
+// ¿¡ outside comments, as a hint: the code's text is English and its Spanish lives in src/i18n/es/).
 //
 //   node scripts/i18n-check.mjs            report
-//   node scripts/i18n-check.mjs --strict   exit 1 when a key is missing (CI)
+//   node scripts/i18n-check.mjs --strict   exit 1 when a key is missing or its values differ (CI)
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
@@ -11,22 +12,28 @@ const files = [];
 (function walk(dir) {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
-    if (statSync(p).isDirectory()) { if (name !== "en") walk(p); }
+    if (statSync(p).isDirectory()) { if (name !== "es") walk(p); }
     else if (/\.(tsx?|mts)$/.test(name) && !name.endsWith(".d.ts")) files.push(p);
   }
 })(root);
 
-// The catalog: one `"Spanish": "English",` per line in src/i18n/en/*.ts.
+// The catalog: one `"English": "Spanish",` per line in src/i18n/es/*.ts (module*.ts: their fixed messages, before
+// `patterns`).
 const catalog = new Map();
-const enDir = join(root, "i18n", "en");
-for (const name of readdirSync(enDir)) {
-  const text = readFileSync(join(enDir, name), "utf8");
+const esDir = join(root, "i18n", "es");
+for (const name of readdirSync(esDir)) {
+  let text = readFileSync(join(esDir, name), "utf8");
+  if (name.startsWith("module")) text = text.split("export const patterns")[0];
   for (const m of text.matchAll(/^\s*("(?:[^"\\]|\\.)*")\s*:\s*("(?:[^"\\]|\\.)*")\s*,?\s*$/gm)) {
     const key = JSON.parse(m[1]);
     if (catalog.has(key) && catalog.get(key).value !== JSON.parse(m[2])) console.log(`dup  ${name}: ${m[1]} (also in ${catalog.get(key).file})`);
     catalog.set(key, { value: JSON.parse(m[2]), file: name });
   }
 }
+
+// {values} must be the same on both sides; the context after "|" is not shown.
+const values = (s) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(",");
+const mismatched = [...catalog].filter(([k, v]) => values(k.split("|")[0]) !== values(v.value)).map(([k, v]) => `${v.file}: ${JSON.stringify(k)} -> ${JSON.stringify(v.value)}`);
 
 const str = `(?:"((?:[^"\\\\]|\\\\.)*)"|'((?:[^'\\\\]|\\\\.)*)')`;
 const callT = new RegExp(`\\bt\\(\\s*${str}`, "g");
@@ -49,19 +56,17 @@ for (const file of files) {
       if (!catalog.has(key)) missing.push(`${rel}: ${JSON.stringify(key)}`);
     }
   }
-  if (rel === "mock.ts") continue;
   text.split(/\r?\n/).forEach((line, i) => {
     const code = line.replace(/\/\/.*$/, "").replace(/\/\*.*?\*\//g, "");
     if (/^\s*(\*|\/\*)/.test(line) || line.includes("i18n-ignore")) return;
-    if (!/[áéíóúñÁÉÍÓÚÑ¿¡]/.test(code)) return;
-    const stripped = code.replace(/\btn?\((?:[^()]|\([^()]*\))*\)/g, "");
-    if (/[áéíóúñÁÉÍÓÚÑ¿¡]/.test(stripped)) hints.push(`${rel}:${i + 1}: ${line.trim().slice(0, 110)}`);
+    if (/[áéíóúñÁÉÍÓÚÑ¿¡]/.test(code)) hints.push(`${rel}:${i + 1}: ${line.trim().slice(0, 110)}`);
   });
 }
 
-const unused = [...catalog.keys()].filter((k) => !used.has(k) && catalog.get(k).file !== "module.ts" && catalog.get(k).file !== "dynamic.ts");
-console.log(`${catalog.size} textos en inglés, ${used.size} usados en el código`);
-if (missing.length) console.log(`\nSin inglés (${missing.length}):\n  ` + [...new Set(missing)].join("\n  "));
-if (unused.length) console.log(`\nInglés sin uso (${unused.length}):\n  ` + unused.map((k) => JSON.stringify(k)).join("\n  "));
-if (hints.length) console.log(`\nPosible español sin t() (${hints.length}):\n  ` + hints.join("\n  "));
-if (process.argv.includes("--strict") && missing.length) process.exit(1);
+const unused = [...catalog.keys()].filter((k) => !used.has(k) && !catalog.get(k).file.startsWith("module"));
+console.log(`${catalog.size} Spanish texts, ${used.size} keys used in the code`);
+if (missing.length) console.log(`\nNo Spanish (${missing.length}):\n  ` + [...new Set(missing)].join("\n  "));
+if (mismatched.length) console.log(`\nDifferent {values} (${mismatched.length}):\n  ` + mismatched.join("\n  "));
+if (unused.length) console.log(`\nUnused Spanish (${unused.length}):\n  ` + unused.map((k) => JSON.stringify(k)).join("\n  "));
+if (hints.length) console.log(`\nPossible Spanish left in the code (${hints.length}):\n  ` + hints.join("\n  "));
+if (process.argv.includes("--strict") && (missing.length || mismatched.length)) process.exit(1);

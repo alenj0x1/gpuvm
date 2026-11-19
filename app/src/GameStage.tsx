@@ -81,23 +81,23 @@ export function GameStage({ game, machines, first, fallback, world, onClose }: {
       {phase !== "ready" && (
         <div className="game-hud">
           <span className="game-score">{hud.score.toLocaleString(locale())}</span>
-          <span className="game-lives" aria-label={tn(hud.lives, "{n} vida", "{n} vidas")}>
+          <span className="game-lives" aria-label={tn(hud.lives, "{n} life", "{n} lives")}>
             {Array.from({ length: Math.max(0, hud.lives) }, (_, i) => <IconHeart key={i} size={15} />)}
           </span>
           {hud.meter !== undefined && (
-            <span className={`game-meter${hud.frenzy ? " on" : ""}`} title={t("Frenesí")}><span style={{ width: `${Math.round(hud.meter * 100)}%` }} /></span>
+            <span className={`game-meter${hud.frenzy ? " on" : ""}`} title={t("Frenzy")}><span style={{ width: `${Math.round(hud.meter * 100)}%` }} /></span>
           )}
           {hud.power && <span className="game-power">{hud.power}</span>}
           {hud.ability && (
             <span className={`game-ability${hud.ability.charge >= 1 && hud.ability.active === undefined ? " ready" : ""}${hud.ability.active !== undefined ? " on" : ""}`}
-              title={hud.ability.charge >= 1 ? t("Clic derecho o E para usarla") : t("Se carga al disparar y derribar")}>
+              title={hud.ability.charge >= 1 ? t("Right click or E to use it") : t("Charges as you shoot and take things down")}>
               <IconBolt size={13} />{hud.ability.name}
               <span className="game-ability-bar"><span style={{ width: `${Math.round((hud.ability.active ?? hud.ability.charge) * 100)}%` }} /></span>
             </span>
           )}
           <span className="grow" />
-          {phase === "playing" && <button type="button" className="icon-btn" title={t("Pausa")} aria-label={t("Pausa")} onClick={() => { inst.current?.pause(); setPhase("paused"); }}><IconPlayerPause size={16} /></button>}
-          <button type="button" className="icon-btn" title={t("Salir")} aria-label={t("Salir del juego")} onClick={onClose}><IconX size={16} /></button>
+          {phase === "playing" && <button type="button" className="icon-btn" title={t("Pause|game")} aria-label={t("Pause|game")} onClick={() => { inst.current?.pause(); setPhase("paused"); }}><IconPlayerPause size={16} /></button>}
+          <button type="button" className="icon-btn" title={t("Exit")} aria-label={t("Exit the game")} onClick={onClose}><IconX size={16} /></button>
         </div>
       )}
       {phase === "ready" && (
@@ -106,7 +106,7 @@ export function GameStage({ game, machines, first, fallback, world, onClose }: {
           <div className="game-start-preview">
             <GameDemo game={game} player={player} fallback={fallback} world={world} mode={mode}
               team={modeInfo?.team ? machines.filter((n) => n !== player).slice(0, 3) : []} />
-            {best > 0 && <span className="game-start-record"><IconTrophy size={14} />{t("Récord {n}", { n: fmt(best) })}</span>}
+            {best > 0 && <span className="game-start-record"><IconTrophy size={14} />{t("Best {n}", { n: fmt(best) })}</span>}
           </div>
           <div className="game-start-side">
             <div className="game-start-head">
@@ -115,8 +115,8 @@ export function GameStage({ game, machines, first, fallback, world, onClose }: {
             </div>
             {machines.length > 1 && (
               <div className="game-start-group">
-                <span className="game-start-label">{t("Máquina")}</span>
-                <div className="game-start-list" role="radiogroup" aria-label={t("Máquina con la que juegas")}>
+                <span className="game-start-label">{t("Machine")}</span>
+                <div className="game-start-list" role="radiogroup" aria-label={t("Machine you play with")}>
                   {machines.map((n) => (
                     <button key={n} type="button" role="radio" aria-checked={n === player} className={`game-start-option${n === player ? " on" : ""}`} onClick={() => setPlayer(n)}>
                       <MachineIcon name={n} size={28} radius={8} />
@@ -128,15 +128,15 @@ export function GameStage({ game, machines, first, fallback, world, onClose }: {
             )}
             {game.modes && game.modes.length > 1 && (
               <div className="game-start-group">
-                <span className="game-start-label">{game.modes.some((m) => m.team) ? t("Modo") : t("Mundo")}</span>
-                <div className="game-start-list" role="radiogroup" aria-label={t("Modo")}>
+                <span className="game-start-label">{game.modes.some((m) => m.team) ? t("Mode") : t("World")}</span>
+                <div className="game-start-list" role="radiogroup" aria-label={t("Mode")}>
                   {game.modes.map((m) => {
                     const off = !!m.team && !teamReady;
                     const Icon = m.id === "solo" ? IconUser : m.team ? IconUsersGroup : ambientInfo(m.id).icon;
                     return (
                       <button key={m.id} type="button" role="radio" aria-checked={m.id === mode} disabled={off} className={`game-start-option${m.id === mode ? " on" : ""}`} onClick={() => setMode(m.id)}>
                         <span className="game-start-option-icon"><Icon size={16} /></span>
-                        <span className="grow"><span className="title">{m.name}</span><span className="desc">{off ? t("Necesitas al menos dos máquinas.") : m.description}</span></span>
+                        <span className="grow"><span className="title">{m.name}</span><span className="desc">{off ? t("You need at least two machines.") : m.description}</span></span>
                       </button>
                     );
                   })}
@@ -144,38 +144,38 @@ export function GameStage({ game, machines, first, fallback, world, onClose }: {
               </div>
             )}
             <div className="game-start-group">
-              <span className="game-start-label">{t("Controles")}</span>
+              <span className="game-start-label">{t("Controls")}</span>
               <div className="game-controls">
                 {game.controls.map((c) => <ControlRow key={c.label} c={c} />)}
               </div>
             </div>
             {game.tips && <ul className="game-tips">{game.tips.map((tip) => <li key={tip}>{tip}</li>)}</ul>}
             <div className="game-start-actions">
-              <button type="button" className="btn ghost" onClick={onClose}><IconArrowLeft size={16} />{t("Atrás")}</button>
-              <button type="button" className="primary" disabled={!!modeInfo?.team && !teamReady} onClick={play}><IconPlayerPlay size={16} />{t("Jugar")}</button>
+              <button type="button" className="btn ghost" onClick={onClose}><IconArrowLeft size={16} />{t("Back")}</button>
+              <button type="button" className="primary" disabled={!!modeInfo?.team && !teamReady} onClick={play}><IconPlayerPlay size={16} />{t("Play")}</button>
             </div>
           </div>
         </div>
       )}
       {phase === "paused" && (
         <div className="game-card">
-          <strong>{t("En pausa")}</strong>
-          <span className="game-card-desc">{tn(hud.score, "{n} punto", "{n} puntos")}</span>
+          <strong>{t("Paused")}</strong>
+          <span className="game-card-desc">{tn(hud.score, "{n} point", "{n} points")}</span>
           <div className="game-card-actions">
-            <button type="button" className="btn ghost" onClick={onClose}>{t("Salir")}</button>
-            <button type="button" className="primary compact" onClick={() => { inst.current?.resume(); setPhase("playing"); }}><IconPlayerPlay size={16} />{t("Seguir")}</button>
+            <button type="button" className="btn ghost" onClick={onClose}>{t("Exit")}</button>
+            <button type="button" className="primary compact" onClick={() => { inst.current?.resume(); setPhase("playing"); }}><IconPlayerPlay size={16} />{t("Resume|game")}</button>
           </div>
         </div>
       )}
       {phase === "over" && (
         <div className="game-card">
           <span className="game-card-icon"><IconTrophy size={22} /></span>
-          <strong>{record ? t("Nuevo récord") : t("Fin del juego")}</strong>
+          <strong>{record ? t("New record") : t("Game over")}</strong>
           <span className="game-final">{final.toLocaleString(locale())}</span>
-          <span className="game-card-desc">{record ? t("Superaste tu mejor marca.") : t("Récord {n}", { n: fmt(best) })}</span>
+          <span className="game-card-desc">{record ? t("You beat your best score.") : t("Best {n}", { n: fmt(best) })}</span>
           <div className="game-card-actions">
-            <button type="button" className="btn ghost" onClick={() => setPhase("ready")}>{t("Cambiar máquina")}</button>
-            <button type="button" className="primary compact" onClick={play}><IconRefresh size={16} />{t("Otra vez")}</button>
+            <button type="button" className="btn ghost" onClick={() => setPhase("ready")}>{t("Change machine")}</button>
+            <button type="button" className="primary compact" onClick={play}><IconRefresh size={16} />{t("Play again")}</button>
           </div>
         </div>
       )}
@@ -207,7 +207,7 @@ export function SpaceWithGames({ decor: shown, decorOf, machines = [], world, ch
     <>
       {children}
       <div className="space-games">
-        <button type="button" className="btn space-play" onClick={() => setGallery(true)}><IconDeviceGamepad2 size={16} />{t("Jugar")}</button>
+        <button type="button" className="btn space-play" onClick={() => setGallery(true)}><IconDeviceGamepad2 size={16} />{t("Play")}</button>
       </div>
     </>
   );
@@ -258,23 +258,23 @@ export function GameGallery({ player, fallback, world, onPick, onClose }: { play
   return (
     <div className="game-gallery">
       <div className="game-gallery-head">
-        <IconDeviceGamepad2 size={18} /><strong>{t("Juegos")}</strong>
-        <button type="button" className="icon-btn" aria-label={t("Cerrar")} title={t("Cerrar")} onClick={onClose}><IconX size={16} /></button>
+        <IconDeviceGamepad2 size={18} /><strong>{t("Games")}</strong>
+        <button type="button" className="icon-btn" aria-label={t("Close")} title={t("Close")} onClick={onClose}><IconX size={16} /></button>
       </div>
       <div className="game-gallery-grid">
         {GAMES.map((gd) => {
           const best = Math.max(bestScore(gd.id), ...(gd.modes ?? []).map((m) => bestScore(`${gd.id}.${m.id}`)));
           return (
             <div key={gd.id} className="game-tile">
-              <button type="button" className="game-tile-art" aria-label={t("Jugar {name}", { name: gd.name })} onClick={() => onPick(gd)}>
+              <button type="button" className="game-tile-art" aria-label={t("Play {name}", { name: gd.name })} onClick={() => onPick(gd)}>
                 <GameDemo game={gd} player={player} fallback={fallback} world={world} />
               </button>
               <div className="game-tile-row">
                 <div className="game-tile-text">
                   <strong>{gd.name}</strong>
-                  <span>{best > 0 ? <><IconTrophy size={13} />{t("Récord {n}", { n: fmt(best) })}</> : t("Sin récord todavía")}</span>
+                  <span>{best > 0 ? <><IconTrophy size={13} />{t("Best {n}", { n: fmt(best) })}</> : t("No record yet")}</span>
                 </div>
-                <button type="button" className="primary compact" onClick={() => onPick(gd)}><IconPlayerPlay size={15} />{t("Jugar")}</button>
+                <button type="button" className="primary compact" onClick={() => onPick(gd)}><IconPlayerPlay size={15} />{t("Play")}</button>
               </div>
             </div>
           );
@@ -305,10 +305,10 @@ function ControlRow({ c }: { c: Control }) {
     <div className="game-control">
       <span className="game-control-input">
         {c.mouse && <Mouse part={c.mouse} />}
-        {c.mouse && c.keys && <span className="game-control-or">{t("o")}</span>}
+        {c.mouse && c.keys && <span className="game-control-or">{t("or")}</span>}
         {wasd ? (
           <span className="keys-wasd"><span><Key k="W" /></span><span><Key k="A" /><Key k="S" /><Key k="D" /></span></span>
-        ) : c.keys?.map((k, i) => <span key={k} className="keys-row">{i > 0 && <span className="game-control-or">{t("o")}</span>}<Key k={k} /></span>)}
+        ) : c.keys?.map((k, i) => <span key={k} className="keys-row">{i > 0 && <span className="game-control-or">{t("or")}</span>}<Key k={k} /></span>)}
       </span>
       <span className="game-control-label">{c.label}</span>
     </div>

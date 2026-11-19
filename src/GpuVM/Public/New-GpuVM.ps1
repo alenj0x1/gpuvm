@@ -25,14 +25,14 @@ function New-GpuVM {
     )
     Assert-Admin
     if ($Disposable) {
-        if (-not $Template) { throw 'Una máquina desechable se crea desde una plantilla (-Template).' }
+        if (-not $Template) { throw 'A disposable machine is made from a template (-Template).' }
         if (-not $Name) { $Name = Get-FreeGpuVMName -Base ($Template.Substring(0, [math]::Min($Template.Length, 29)) + '-desechable') }
         $Start = $true
     }
-    if (-not $Name) { throw 'Elige un nombre para la máquina (-Name).' }
+    if (-not $Name) { throw 'Choose a name for the machine (-Name).' }
     Assert-GpuVMNameFree -Name $Name
     if ($Template) {
-        if ($IsoPath -or $Edition -or $Credential) { throw 'Con -Template, Windows, su edición y su contraseña vienen de la plantilla; quita -IsoPath, -Edition y -Credential.' }
+        if ($IsoPath -or $Edition -or $Credential) { throw 'With -Template, Windows, its edition and its password come from the template; remove -IsoPath, -Edition and -Credential.' }
         if (-not $PSCmdlet.ShouldProcess($Name, "Crear VM desde la plantilla $Template")) { return }
         return New-GpuVMFromTemplate -Name $Name -Template $Template -Profile $Profile -Override $Override -Start:$Start -Disposable:$Disposable
     }
@@ -44,12 +44,12 @@ function New-GpuVM {
 
     $config = Resolve-GpuVMProfile -Name $Profile -Override $Override
     if (-not $IsoPath) { $IsoPath = if ($config.Contains('iso')) { $config['iso'] } }
-    if (-not $IsoPath) { throw 'Elige la imagen de Windows (ISO).' }
+    if (-not $IsoPath) { throw 'Choose the Windows image (ISO).' }
     $editionName = if ($Edition) { $Edition } else { $config['guest']['edition'] }
     if (-not $Credential) {
         $Credential = Get-Credential -UserName $config['guest']['userName'] -Message 'Usuario y contraseña de la cuenta local del invitado'
     }
-    if (-not $Credential) { throw 'Se necesita un usuario para la VM.' }
+    if (-not $Credential) { throw 'The VM needs a user name.' }
 
     $iso = Mount-WindowsIso -IsoPath $IsoPath
     try {

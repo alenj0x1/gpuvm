@@ -48,7 +48,7 @@ function Get-WindowsBaseDisk {
     $key = Get-WindowsImageKey -ImageFile $ImageFile -ImageIndex $ImageIndex
     $base = Read-WindowsBase -Key $key
     if ($base) {
-        Write-Step 'Windows de este ISO ya está preparado; se copia'
+        Write-Step 'Windows from this ISO is already prepared; copying it'
         return $base['vhdPath']
     }
 

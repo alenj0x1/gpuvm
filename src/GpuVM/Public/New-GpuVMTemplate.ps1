@@ -37,7 +37,7 @@ function New-GpuVMTemplate {
     if ($needGB -gt $freeGB) { throw "No hay espacio para la plantilla: hacen falta unos $needGB GB y quedan $freeGB GB libres." }
     if (-not $PSCmdlet.ShouldProcess($Name, "Crear plantilla desde $VMName")) { return }
     if ($wasRunning) {
-        Write-Step 'Apagando'
+        Write-Step 'Shutting down'
         Stop-VM -Name $VMName -Force
     }
 
@@ -82,7 +82,7 @@ function New-GpuVMTemplate {
     }
     finally {
         if ($wasRunning) {
-            Write-Step 'Encendiendo'
+            Write-Step 'Starting'
             try { Start-VM -Name $VMName -ErrorAction Stop } catch { Write-Warning "No se pudo volver a encender ${VMName}: $($_.Exception.Message)" }
         }
     }

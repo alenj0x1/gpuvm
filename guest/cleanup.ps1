@@ -6,7 +6,7 @@
 # Runs on Windows PowerShell 5.1 inside the VM, as the VM's user with administrator rights.
 
 $GpuVMCleanupLevels = @('none', 'privacy', 'apps', 'minimal')
-$GpuVMCleanupLevelNames = @{ none = 'Normal'; privacy = 'Privacidad'; apps = 'Sin apps de más'; minimal = 'Mínimo' }
+$GpuVMCleanupLevelNames = @{ none = 'Normal'; privacy = 'Privacidad'; apps = 'No extra apps'; minimal = 'Mínimo' }
 
 $GpuVMCleanup = [ordered]@{
     'telemetry-minimum'    = @{

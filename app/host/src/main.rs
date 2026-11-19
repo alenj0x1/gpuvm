@@ -184,7 +184,7 @@ fn startup(mode: Option<&str>) -> Result<(), String> {
         Some("demand") => SERVICE_DEMAND_START,
         _ => return Err("uso: gpuvm-host startup auto|demand".into()),
     };
-    let svc = open_service(&manager()?).ok_or("El servicio de GpuVM no está instalado.")?;
+    let svc = open_service(&manager()?).ok_or("The GpuVM service isn't installed.")?;
     let n = std::ptr::null();
     if unsafe { ChangeServiceConfigW(svc.0, SERVICE_NO_CHANGE, start, SERVICE_NO_CHANGE, n, n, std::ptr::null_mut(), n, n, n, n) } == 0 {
         return Err(last_error("ChangeServiceConfigW"));

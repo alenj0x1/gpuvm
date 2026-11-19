@@ -59,8 +59,8 @@ export function DropZone() {
     <div className={`drop-veil${over ? " over" : ""}`}>
       <div className="drop-card">
         <span className="drop-icon"><IconDownload size={22} /></span>
-        <strong>{t("Soltar para enviar")}</strong>
-        <span>{t("{vm} · Escritorio › {folder}", { vm, folder: t("Recibidos") })}</span>
+        <strong>{t("Drop to send")}</strong>
+        <span>{t("{vm} · Desktop › {folder}", { vm, folder: t("Received") })}</span>
       </div>
     </div>
   );

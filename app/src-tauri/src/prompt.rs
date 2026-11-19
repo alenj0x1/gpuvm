@@ -155,7 +155,7 @@ pub async fn card_answer(app: AppHandle, name: String, id: i64, allow: bool) -> 
         .and_then(|v| v.as_array().map(|list| list.iter().any(|p| key(p) == (name.clone(), id))))
         .unwrap_or(false);
     if !shown {
-        return Err("El aviso ya cambió o se cerró. Revisa el nuevo antes de responder.".into());
+        return Err("The prompt changed or closed. Check the new one before answering.".into());
     }
     let state = app.state::<crate::AppState>();
     let request = json!({ "id": crate::next_id(&state), "cmd": "Resolve-GpuVMAdminPrompt",
