@@ -56,6 +56,10 @@ pub fn install_dir() -> PathBuf {
 }
 
 pub fn log(line: &str) {
+    // Unit tests never write into the real service's log.
+    if cfg!(test) {
+        return;
+    }
     // Next to the module's data (ProgramData\GpuVM, administrators only), and only once the module created it.
     let dir = PathBuf::from(std::env::var("ProgramData").unwrap_or(r"C:\ProgramData".into())).join("GpuVM");
     if !dir.is_dir() {

@@ -28,7 +28,8 @@ use crate::wire::{self, Frame, Opener, Sealer};
 
 /// The agent channel's Hyper-V socket service id (protocol.md).
 pub const SERVICE_ID: u128 = 0x94aca5ef_a5b6_45a9_8c15_c7724a63f3da;
-const SERVICE_KEY: &str = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization\GuestCommunicationServices\{94aca5ef-a5b6-45a9-8c15-c7724a63f3da}";
+const SERVICE_KEY: &str = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization\GuestCommunicationServices\94aca5ef-a5b6-45a9-8c15-c7724a63f3da";
+const LEGACY_SERVICE_KEY: &str = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization\GuestCommunicationServices\{94aca5ef-a5b6-45a9-8c15-c7724a63f3da}";
 /// Mixed into the DPAPI encryption of each VM's secret (Install-GpuVMAgent uses the same).
 const SECRET_ENTROPY: &[u8] = b"GpuVM agent secret v1";
 
@@ -145,6 +146,8 @@ fn load_secret(vm_id: &str) -> Result<[u8; 32], String> {
 
 /// Registers the channel's service id with Hyper-V, so guests may dial it (the installer and the service at start).
 pub fn register_service_id() -> Result<(), String> {
+    // The first builds wrote the name with braces; Hyper-V's own entries (and its docs) have none.
+    unsafe { RegDeleteKeyW(HKEY_LOCAL_MACHINE, wide(LEGACY_SERVICE_KEY).as_ptr()) };
     let mut key: HKEY = std::ptr::null_mut();
     let status = unsafe {
         RegCreateKeyExW(HKEY_LOCAL_MACHINE, wide(SERVICE_KEY).as_ptr(), 0, std::ptr::null(), REG_OPTION_NON_VOLATILE, KEY_SET_VALUE,
@@ -160,7 +163,10 @@ pub fn register_service_id() -> Result<(), String> {
 }
 
 pub fn unregister_service_id() {
-    unsafe { RegDeleteKeyW(HKEY_LOCAL_MACHINE, wide(SERVICE_KEY).as_ptr()) };
+    unsafe {
+        RegDeleteKeyW(HKEY_LOCAL_MACHINE, wide(SERVICE_KEY).as_ptr());
+        RegDeleteKeyW(HKEY_LOCAL_MACHINE, wide(LEGACY_SERVICE_KEY).as_ptr());
+    }
 }
 
 // ---------------------------------------------------------------- the per-VM request log

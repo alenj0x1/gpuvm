@@ -15,7 +15,7 @@ every choice is in labs 047-050. Change this file first (and tell the other piec
 ## Transport (lab 047)
 
 - Hyper-V sockets, `SOCK_STREAM`. Service id **`94aca5ef-a5b6-45a9-8c15-c7724a63f3da`**, registered on the host under
-  `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization\GuestCommunicationServices\{id}`
+  `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization\GuestCommunicationServices\<id>` (the GUID without braces, like Hyper-V's own entries)
   (`ElementName` = `GpuVM agent`) by the installer / service.
 - The **host broker listens** on `HV_GUID_CHILDREN:{id}` inside the elevated service (if it can't bind, it alerts: a
   non-elevated process must not get the name first, lab 050). The **guest dials** `HV_GUID_PARENT:{id}`, redialing
