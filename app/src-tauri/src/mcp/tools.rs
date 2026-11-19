@@ -258,9 +258,8 @@ pub fn definitions() -> Vec<Value> {
         // create
         tool("list_templates", "List the templates (ready Windows images with the GpuVM agent) and size profiles a disposable machine can be created from.",
             schema(json!({}), &[]), ann("List templates", true, false, true, false)),
-        tool("create_disposable", "Create a disposable Windows machine from a template, start it and take it (it is deleted when it shuts down). Waits until the agent inside is ready. Takes a few minutes.",
+        tool("create_disposable", "Create a disposable Windows machine from a template, start it and take it (it is deleted when it shuts down). Waits until the agent inside is ready. Takes a minute or two. Only processors and memory can be chosen (4 GB by default).",
             schema(json!({ "template": { "type": "string" }, "name": { "type": "string", "description": "Optional name (letters, digits, -)." },
-                "profile": { "type": "string", "description": "Size profile from list_templates." },
                 "cpu": { "type": "integer", "minimum": 1, "maximum": 16 }, "memoryGB": { "type": "integer", "minimum": 2, "maximum": 64 }, "task": { "type": "string", "description": "What you are going to do with it, in a few words (shown to the person in GpuVM)." } }), &["template"]),
             ann("Create disposable machine", false, false, false, false)),
         // get
@@ -684,12 +683,7 @@ impl Tool<'_> {
         if lines.len() == 1 {
             lines.push("(none: the person has to make a template with the GpuVM agent first)".into());
         }
-        let profiles: Vec<String> = r.data["profiles"].as_array().into_iter().flatten()
-            .map(|p| format!("- {} ({} CPU, {} GB)", p["name"].as_str().unwrap_or("?"), p["cpu"], p["memoryGB"])).collect();
-        if !profiles.is_empty() {
-            lines.push("Profiles:".into());
-            lines.extend(profiles);
-        }
+        lines.push("create_disposable takes cpu and memoryGB (4 GB by default) for the size.".into());
         Ok(text(lines.join("\n")))
     }
 
@@ -703,8 +697,8 @@ impl Tool<'_> {
         }
         let cpu = opt_int(self.args, "cpu", 1, 16)?;
         let mem = opt_int(self.args, "memoryGB", 2, 64)?;
-        let r = self.broker("machine.create", "", json!({ "template": template, "name": name,
-            "profile": opt_str(self.args, "profile")?, "cpu": cpu, "memoryGB": mem, "task": self.task()? }))?;
+        // Only what the service allows an agent: the template, a name, and processors/memory (no profile, no other override).
+        let r = self.broker("machine.create", "", json!({ "template": template, "name": name, "cpu": cpu, "memoryGB": mem, "task": self.task()? }))?;
         let created = r.data["name"].as_str().ok_or("GpuVM didn't say which machine it created.")?.to_string();
         let ready = self.wait_ready(&created, 600)?;
         Ok(text(format!("Created disposable machine {created} from {template}; {ready}")))
