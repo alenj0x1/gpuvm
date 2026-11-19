@@ -15,6 +15,12 @@ $made = $false
 try {
     Import-Module (Join-Path $root 'src\GpuVM\GpuVM.psd1') -Force
     $m = Get-Module GpuVM
+    # A copy an earlier run of this lab left behind (same name) goes first.
+    if (Get-VM -Name $Name -ErrorAction SilentlyContinue) {
+        Stop-VM -Name $Name -TurnOff -Force -ErrorAction SilentlyContinue
+        Remove-GpuVM -Name $Name -DeleteDisk -Confirm:$false
+        Line "left-over $Name deleted"
+    }
     New-GpuVM -Name $Name -Template $Template | Out-Null
     $made = $true
     Set-VMMemory -VMName $Name -DynamicMemoryEnabled $false -StartupBytes 3GB
