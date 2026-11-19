@@ -23,7 +23,7 @@ const PROFILE: &str = r"C:\Users\agent\";
 const OUTBOX: &str = r"desktop\outbox\";
 const APPROVAL_TTL: Duration = Duration::from_secs(600);
 /// Tools that ask the person through the client first when the connection's "approvals" setting is on.
-const CONFIRM: &[&str] = &["run", "write_file", "send_file"];
+const CONFIRM: &[&str] = &["run", "write_file"];
 
 #[derive(Clone, Debug)]
 pub struct Settings {
@@ -317,8 +317,9 @@ pub fn definitions() -> Vec<Value> {
             schema(json!({ "machine": m(), "path": { "type": "string" }, "content": { "type": "string" },
                 "encoding": { "type": "string", "enum": ["utf8", "base64"], "description": "Default utf8." } }), &["machine", "path", "content"]),
             ann("Write file", false, true, true, false)),
-        tool("send_file", "Copy a file from this PC into the machine's Desktop\\Received folder.",
-            schema(json!({ "machine": m(), "hostPath": { "type": "string", "description": "Full path of a file on this PC." } }), &["machine", "hostPath"]),
+        tool("send_file", "Copy a file or folder from this PC into the machine's Desktop\\Received folder. The person must allow it in GpuVM first (this waits for their answer).",
+            schema(json!({ "machine": m(), "hostPath": { "type": "string", "description": "Full path of a file or folder on this PC." },
+                "reason": { "type": "string", "description": "Why you need it in the machine, shown to the person." } }), &["machine", "hostPath"]),
             ann("Send file to machine", false, false, true, false)),
         tool("offer_file", "Offer a file from the machine's Desktop\\Outbox folder to the person; it reaches this PC only if they approve it in GpuVM. Optionally wait for their answer.",
             schema(json!({ "machine": m(), "path": { "type": "string", "description": "A file directly in Desktop\\Outbox, e.g. Desktop\\Outbox\\report.md." },
@@ -468,18 +469,22 @@ fn approve(ctx: &Ctx, name: &str, call: &Call) -> Approval {
     let what = match name {
         "run" => format!("run `{}` in {machine}", call.args["command"].as_str().unwrap_or("")),
         "write_file" => format!("write {} in {machine}", call.args["path"].as_str().unwrap_or("")),
-        "send_file" => format!("copy {} from this PC into {machine}", call.args["hostPath"].as_str().unwrap_or("")),
         _ => name.to_string(),
     };
     let message = format!("Allow the agent to {}?", cap_to(what, 400));
+    // The person turned approvals on for this client: without a way to ask, the answer is no (never go ahead unasked).
+    let cannot_ask = || Approval::Reply(tool_error(format!(
+        "The person asked GpuVM to confirm each {name} from this client, but this client can't show the question (no MCP elicitation). \
+Ask the person to answer it another way: turn off approvals for this client in GpuVM's Agents settings, or use a client that supports them.")));
     if call.client.legacy {
         return match (call.ask_legacy)(&message) {
+            Some(true) => Approval::Go,
             Some(false) => Approval::Reply(tool_error("The person declined this. Don't retry it; ask them what to do instead.")),
-            _ => Approval::Go,
+            None => cannot_ask(),
         };
     }
     if !call.client.elicitation {
-        return Approval::Go;
+        return cannot_ask();
     }
     let args = call.args.to_string();
     if let Some(state) = call.request_state {
@@ -586,8 +591,13 @@ impl Tool<'_> {
         let mut args = self.args.clone();
         if let Some(map) = args.as_object_mut() {
             map.remove("machine");
-            if let Some(Value::String(c)) = map.get_mut("content") {
-                *c = format!("({} characters)", c.chars().count());
+            redact(map);
+            if let Some(Value::Array(actions)) = map.get_mut("actions") {
+                for a in actions.iter_mut() {
+                    if let Some(m) = a.as_object_mut() {
+                        redact(m);
+                    }
+                }
             }
         }
         let text = if args.as_object().is_some_and(|m| m.is_empty()) { self.name.to_string() } else { format!("{} {args}", self.name) };
@@ -1097,8 +1107,17 @@ impl Tool<'_> {
         if !p.is_absolute() {
             return Err("`hostPath` must be a full path on this PC.".into());
         }
+        self.mine(machine)?;
+        // Data leaves this PC for an untrusted machine: the person allows it in GpuVM first, for this exact path, size
+        // and number of files (the service checks the approval against them).
+        let (bytes, files) = host_size(p)?;
+        let what = if files == 1 && p.is_file() { human_size(bytes) } else { format!("{files} files, {}", human_size(bytes)) };
+        let title = format!("Copy {} ({what}) from this PC into {machine}", p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| host.to_string()));
+        let reason = opt_str(self.args, "reason")?.unwrap_or("The agent wants to use this file in the machine.");
+        let approval = self.approval_with(machine, "send", &title, reason, self.settings.approval_timeout,
+            json!({ "path": host, "sizeBytes": bytes, "files": files }))?;
         self.step(machine)?;
-        self.broker("file.send", machine, json!({ "hostPath": host }))?;
+        self.broker("file.send", machine, json!({ "hostPath": host, "approval": approval }))?;
         // Check it arrived instead of trusting the copy's "done" (lab 053: a 106 MB installer was reported copied
         // and never reached the machine). Folders are only checked for existence.
         let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
@@ -1160,8 +1179,17 @@ impl Tool<'_> {
 
     /// Asks the person in GpuVM (never through the client) and waits for their answer; the allowed request's id.
     fn approval(&self, machine: &str, kind: &str, title: &str, reason: &str, wait: u64) -> Result<String, String> {
-        let r = self.broker("approval.request", machine, json!({ "kind": kind, "title": cap_to(title.to_string(), 120),
-            "reason": cap_to(reason.to_string(), 500), "timeoutSec": wait.max(30) }))?;
+        self.approval_with(machine, kind, title, reason, wait, json!({}))
+    }
+
+    /// `extra`: what the request is about, checked by the service when the approval is used (send: path, sizeBytes, files).
+    fn approval_with(&self, machine: &str, kind: &str, title: &str, reason: &str, wait: u64, extra: Value) -> Result<String, String> {
+        let mut args = json!({ "kind": kind, "title": cap_to(title.to_string(), 120),
+            "reason": cap_to(reason.to_string(), 500), "timeoutSec": wait.max(30) });
+        if let (Some(a), Value::Object(e)) = (args.as_object_mut(), extra) {
+            a.extend(e);
+        }
+        let r = self.broker("approval.request", machine, args)?;
         let id = r.data["requestId"].as_str().ok_or("GpuVM didn't return a request id.")?.to_string();
         let mut state = String::from("pending");
         self.wait(wait, || {
@@ -1170,7 +1198,7 @@ impl Tool<'_> {
         })?;
         match state.as_str() {
             "allowed" => Ok(id),
-            "denied" => Err("The person said no in GpuVM. Don't try again; ask them what to do instead.".into()),
+            "denied" => Err(format!("The person said no in GpuVM to: {title}. Don't try again; ask them what to do instead.")),
             "pending" => {
                 // Withdrawn so the person isn't asked later about something nobody waits for; a request answered in
                 // the meantime keeps its answer (the broker refuses to withdraw it).
@@ -1257,6 +1285,8 @@ impl Tool<'_> {
 
     fn open_viewer(&self) -> Out {
         let machine = self.machine()?;
+        // Only a machine this connection took: the viewer can start or resume a machine (lab 053 security review).
+        self.mine(machine)?;
         self.broker("viewer.open", machine, json!({}))?;
         Ok(text(format!("GpuVM's viewer shows {machine} to the person now.")))
     }
@@ -1322,6 +1352,58 @@ impl Tool<'_> {
     }
 }
 
+/// Text the model wrote (file contents, commands, typed text, values, stdin) never goes into the step notes the app
+/// shows and logs: only its length.
+fn redact(map: &mut serde_json::Map<String, Value>) {
+    for key in ["content", "command", "text", "value", "stdin"] {
+        if let Some(Value::String(c)) = map.get_mut(key) {
+            *c = format!("({} characters)", c.chars().count());
+        }
+    }
+}
+
+/// What a host path holds: total bytes and number of files (folders walked without following links; capped so a
+/// huge tree can't stall the call).
+fn host_size(p: &std::path::Path) -> Result<(u64, u64), String> {
+    let meta = std::fs::symlink_metadata(p).map_err(|_| format!("{} can't be read from this PC.", p.display()))?;
+    if meta.is_file() {
+        return Ok((meta.len(), 1));
+    }
+    if !meta.is_dir() {
+        return Err(format!("{} isn't a file or folder.", p.display()));
+    }
+    let (mut bytes, mut files, mut seen) = (0u64, 0u64, 0u32);
+    let mut stack = vec![p.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).map_err(|_| format!("{} can't be read from this PC.", dir.display()))?.flatten() {
+            seen += 1;
+            if seen > 100_000 {
+                return Err(format!("{} has too many files to send at once.", p.display()));
+            }
+            let Ok(m) = entry.metadata() else { continue };
+            if m.file_type().is_symlink() {
+                continue;
+            }
+            if m.is_dir() {
+                stack.push(entry.path());
+            } else {
+                bytes += m.len();
+                files += 1;
+            }
+        }
+    }
+    Ok((bytes, files))
+}
+
+fn human_size(bytes: u64) -> String {
+    match bytes {
+        b if b >= 1 << 30 => format!("{:.1} GB", b as f64 / (1u64 << 30) as f64),
+        b if b >= 1 << 20 => format!("{:.1} MB", b as f64 / (1u64 << 20) as f64),
+        b if b >= 1 << 10 => format!("{:.0} KB", b as f64 / 1024.0),
+        b => format!("{b} bytes"),
+    }
+}
+
 /// Fields of a machine as the broker lists it.
 fn screen(m: &Value) -> Option<(u32, u32)> {
     let s = &m["agent"]["screen"];
@@ -1351,7 +1433,8 @@ fn run_output(d: &Value, blob: Option<&[u8]>) -> (String, String) {
 
 fn offer_text(id: &str, d: &Value) -> String {
     match d["state"].as_str() {
-        Some("accepted") => format!("The person accepted offer {id}{}.", d["savedTo"].as_str().map(|p| format!("; the file is at {p} on this PC")).unwrap_or_default()),
+        Some("accepted") => format!("The person accepted offer {id}{}; it is saved in the person's Downloads\\GpuVM folder.",
+            d["savedTo"].as_str().and_then(|p| p.rsplit(['\\', '/']).next()).map(|n| format!(" ({n})")).unwrap_or_default()),
         Some("refused") => format!("The person refused offer {id}."),
         Some("pending") => format!("Offer {id} is still waiting for the person."),
         Some("copying") => format!("Offer {id} was accepted and is being copied."),

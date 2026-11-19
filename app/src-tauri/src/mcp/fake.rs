@@ -41,6 +41,10 @@ pub struct State {
     pub approval_answer: String,
     pub approvals: HashMap<String, (String, String)>,
     pub calls: Vec<String>,
+    /// The step notes the app would show (agent.invoke's `note`).
+    pub notes: Vec<String>,
+    /// The arguments of the last approval request.
+    pub last_approval: Value,
     next: u32,
 }
 
@@ -99,6 +103,9 @@ impl Broker for FakeBroker {
     fn call(&self, op: &str, args: Value) -> Result<Reply> {
         let mut st = self.state.lock().unwrap();
         st.calls.push(op.to_string());
+        if let Some(n) = args["note"].as_str() {
+            st.notes.push(n.to_string());
+        }
         if st.killed && op != "client.disconnect" {
             return Err(err("killed", "The person stopped this connection."));
         }
@@ -159,7 +166,8 @@ impl Broker for FakeBroker {
             "offer.get" => {
                 let id = s(&args, "offerId");
                 return match st.offers.get(id) {
-                    Some((_, state)) => Ok(Reply::of(json!({ "offerId": id, "state": state }))),
+                    Some((path, state)) => Ok(Reply::of(json!({ "offerId": id, "state": state,
+                        "savedTo": (state == "accepted").then(|| format!(r"C:\Users\person\Downloads\GpuVM\vm\{}", path.rsplit('\\').next().unwrap_or(""))) }))),
                     None => Err(err("not_found", "There is no such offer.")),
                 };
             }
@@ -177,6 +185,7 @@ impl Broker for FakeBroker {
             let id = format!("r{}", st.next);
             let answer = st.approval_answer.clone();
             st.approvals.insert(id.clone(), (s(&args, "kind").to_string(), answer));
+            st.last_approval = args.clone();
             return Ok(Reply::of(json!({ "requestId": id, "expiresAt": "later" })));
         }
         if op == "request.revoke" {
@@ -236,6 +245,11 @@ impl Broker for FakeBroker {
                 guest(m, s(&args, "method"), &params)
             }
             "file.send" => {
+                // Like the service: only with the person's allowed `send` request.
+                match st_approvals.get(s(&args, "approval")) {
+                    Some((kind, state)) if kind == "send" && state == "allowed" => {}
+                    _ => return Err(err("needs_approval", "Sending files needs the person's approval.")),
+                }
                 let host = s(&args, "hostPath");
                 let file = host.rsplit(['\\', '/']).next().unwrap_or("file").to_string();
                 let path = format!(r"C:\Users\agent\Desktop\Received\{file}");

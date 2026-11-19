@@ -70,7 +70,12 @@ pub trait Broker: Send + Sync {
 pub struct PipeBroker {
     conn: Mutex<Option<crate::backend::Conn>>,
     next: std::sync::atomic::AtomicU64,
+    /// The agent session registered on the shared connection (for the hello on other connections).
+    session: Mutex<Option<String>>,
 }
+
+/// The first request on an extra pipe connection: which agent session it belongs to (name proposed to agent-broker).
+pub const HELLO: &str = "Hello-GpuVMAgent";
 
 impl Default for PipeBroker {
     fn default() -> Self {
@@ -101,7 +106,7 @@ pub fn list(v: Value) -> Vec<Value> {
 
 impl PipeBroker {
     pub fn new() -> Self {
-        PipeBroker { conn: Mutex::new(None), next: std::sync::atomic::AtomicU64::new(1) }
+        PipeBroker { conn: Mutex::new(None), next: std::sync::atomic::AtomicU64::new(1), session: Mutex::new(None) }
     }
 
     fn request(&self, cmd: &str, args: Value) -> Value {
@@ -140,6 +145,19 @@ impl PipeBroker {
         let request = self.request(cmd, args);
         if long {
             let mut conn = crate::backend::connect().map_err(|e| BrokerError::new("unavailable", e))?;
+            // A second pipe connection of this process says first which agent session it belongs to, so the service
+            // applies the session's limits to it too (agent-broker's "hello as agent"). The shared connection is the
+            // session's own; when it breaks, tools.rs registers a new session on the next call instead.
+            if let Some(id) = self.session.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+                let hello = self.request(HELLO, json!({ "Connection": id }));
+                if let Err(e) = Self::run(&mut conn, &hello) {
+                    // A service from before the hello: nothing to announce to.
+                    let older = e.message.contains(HELLO) && ["not allowed", "Unknown", "can't run"].iter().any(|t| e.message.contains(t));
+                    if !older {
+                        return Err(e);
+                    }
+                }
+            }
             return Self::run(&mut conn, &request);
         }
         let mut guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
@@ -198,7 +216,13 @@ impl Broker for PipeBroker {
         let name = s(&args, "name");
         let connection = s(&args, "connection");
         match op {
-            "client.connect" => self.cmd("Connect-GpuVMAgentClient", json!({ "Client": s(&args, "client") })),
+            "client.connect" => {
+                // A new session lives on a fresh shared connection (the old one's session ended with it).
+                *self.conn.lock().unwrap_or_else(|e| e.into_inner()) = None;
+                let r = self.cmd("Connect-GpuVMAgentClient", json!({ "Client": s(&args, "client") }))?;
+                *self.session.lock().unwrap_or_else(|e| e.into_inner()) = r.data["connection"].as_str().map(str::to_string);
+                Ok(r)
+            }
             "client.disconnect" => self.cmd("Disconnect-GpuVMAgentClient", json!({ "Connection": connection })),
             "templates.list" => self.templates(),
             "machine.create" => create_disposable(&self.runner(), &args, &std::thread::sleep),
@@ -209,7 +233,8 @@ impl Broker for PipeBroker {
             "agent.invoke" => self.cmd("Invoke-GpuVMAgent", json!({ "Name": name, "Method": s(&args, "method"), "Params": s(&args, "params"),
                 "TimeoutSec": s(&args, "timeoutSec"), "Connection": connection, "Blob": s(&args, "blob"), "Note": s(&args, "note") })),
             "approval.request" => self.cmd("New-GpuVMAgentRequest", json!({ "Name": name, "Connection": connection, "Kind": s(&args, "kind"),
-                "Title": s(&args, "title"), "Reason": s(&args, "reason"), "TimeoutSec": s(&args, "timeoutSec") })),
+                "Title": s(&args, "title"), "Reason": s(&args, "reason"), "TimeoutSec": s(&args, "timeoutSec"),
+                "Path": s(&args, "path"), "SizeBytes": s(&args, "sizeBytes"), "Files": s(&args, "files") })),
             "approval.get" => {
                 let id = s(&args, "requestId");
                 list(self.cmd("Get-GpuVMAgentRequest", json!({ "Id": id }))?.data).into_iter().find(|r| r["id"] == id).map(Reply::of)
@@ -217,7 +242,7 @@ impl Broker for PipeBroker {
             }
             "file.send" => {
                 let host = args["hostPath"].as_str().unwrap_or("");
-                self.cmd_long("Send-GpuVMFile", json!({ "Name": name, "Path": [host] }))?;
+                self.cmd_long("Send-GpuVMFile", json!({ "Name": name, "Path": [host], "Approval": s(&args, "approval") }))?;
                 let file = host.rsplit(['\\', '/']).next().unwrap_or(host);
                 Ok(Reply::of(json!({ "path": format!(r"C:\Users\agent\Desktop\Received\{file}") })))
             }
