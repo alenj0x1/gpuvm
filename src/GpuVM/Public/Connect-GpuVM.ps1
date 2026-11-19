@@ -293,6 +293,7 @@ function Connect-GpuVM {
     Save-GpuVMState $state
     try {
         Wait-MoonlightStream -Since $launched
+        $null = Invoke-AgentScreenRefresh -Name $Name
         if ($audioLater) {
             Write-Step 'Setting up the audio'
             Stop-GuestAudioCheck $audioCheck
