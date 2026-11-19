@@ -23,7 +23,7 @@ try {
     (Get-Service GpuVM).WaitForStatus('Stopped', '00:01:00')
     Copy-Item (Join-Path $root 'app\host\target\release\gpuvm-host.exe') $installed -Force
     # What the installer runs: registers (updates) the service and the agent channel's service id.
-    $key = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization\GuestCommunicationServices\{94aca5ef-a5b6-45a9-8c15-c7724a63f3da}'
+    $key = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization\GuestCommunicationServices\94aca5ef-a5b6-45a9-8c15-c7724a63f3da'
     if (Test-Path $key) { Remove-Item $key }
     & $installed install
     $result['installRegistersServiceId'] = (Get-ItemProperty $key -ErrorAction SilentlyContinue).ElementName

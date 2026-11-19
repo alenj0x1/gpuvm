@@ -15,7 +15,7 @@ every choice is in labs 047-050. Change this file first (and tell the other piec
 ## Transport (lab 047)
 
 - Hyper-V sockets, `SOCK_STREAM`. Service id **`94aca5ef-a5b6-45a9-8c15-c7724a63f3da`**, registered on the host under
-  `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization\GuestCommunicationServices\{id}`
+  `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization\GuestCommunicationServices\<id>` (the GUID without braces, like Hyper-V's own entries)
   (`ElementName` = `GpuVM agent`) by the installer / service.
 - The **host broker listens** on `HV_GUID_CHILDREN:{id}` inside the elevated service (if it can't bind, it alerts: a
   non-elevated process must not get the name first, lab 050). The **guest dials** `HV_GUID_PARENT:{id}`, redialing
@@ -109,7 +109,7 @@ counts its budget. Requests without `Connection` are the person's (the app) or t
 | `New-GpuVMAgentRequest` | `Name, Connection, Kind: admin\|network\|revert\|delete\|other, Title?, Reason, TimeoutSec?` | `{requestId, expiresAt}`; the session shows `waiting` |
 | `Get-GpuVMAgentRequest` | `Id?` | `{id, connection, clientName, machine, kind, title, reason, createdAt, expiresAt, state: pending\|allowed\|denied\|expired, forTask}` |
 | `Resolve-GpuVMAgentRequest` | `Id, Allow, ForTask?` | the request (person only) |
-| `New-GpuVMAgentOffer` | `Name, Path (directly in C:\Users\agent\Desktop\Outbox), Note?, Connection?` | `{offerId}` (`Invoke-GpuVMAgent -Method outbox.offer` does the same) |
+| `New-GpuVMAgentOffer` | `Name, Path (a file directly in the agent's Outbox: "Desktop\Outbox\x", or absolute under the agent.info home), Note?, Connection?` | `{offerId}` (`Invoke-GpuVMAgent -Method outbox.offer` does the same) |
 | `Get-GpuVMAgentOffer` | `Id?, Name?` | `{id, machine, connection, clientName, name, path, sizeBytes, note, createdAt, expiresAt, state: pending\|copying\|accepted\|refused\|expired\|failed, savedTo, error}` |
 | `Resolve-GpuVMAgentOffer` | `Id, Accept` | the offer (person only): copied as the person to `Downloads\GpuVM\<machine>\`, `Zone.Identifier` ZoneId=3, never overwriting (`name (2).ext`), 2 GB cap |
 | `Get-GpuVMAgentSettings` / `Set-GpuVMAgentSettings` | – / `MaxSteps?, MaxMinutes?, ApprovalTimeoutSec?` | `{maxSteps, maxMinutes, approvalTimeoutSec, clients: {<name>: {clientApprovals}}}` (set: person only) |

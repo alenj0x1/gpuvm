@@ -96,6 +96,8 @@ impl Out {
 /// On the host (loopback runs) the agent's Outbox is a lab folder: STUB052_OUTBOX.
 fn local_path(path: &str) -> String {
     const OUTBOX: &str = r"C:\Users\agent\Desktop\Outbox";
+    // Paths relative to the agent's home, like the real agent takes them.
+    let path = &if path.len() > 1 && path.as_bytes()[1] != b':' { format!(r"C:\Users\agent\{path}") } else { path.to_string() };
     match std::env::var("STUB052_OUTBOX") {
         Ok(dir) if path.to_lowercase().starts_with(&OUTBOX.to_lowercase()) => format!("{dir}{}", &path[OUTBOX.len()..]),
         _ => path.to_string(),

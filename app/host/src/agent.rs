@@ -28,7 +28,8 @@ use crate::wire::{self, Frame, Opener, Sealer};
 
 /// The agent channel's Hyper-V socket service id (protocol.md).
 pub const SERVICE_ID: u128 = 0x94aca5ef_a5b6_45a9_8c15_c7724a63f3da;
-const SERVICE_KEY: &str = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization\GuestCommunicationServices\{94aca5ef-a5b6-45a9-8c15-c7724a63f3da}";
+const SERVICE_KEY: &str = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization\GuestCommunicationServices\94aca5ef-a5b6-45a9-8c15-c7724a63f3da";
+const LEGACY_SERVICE_KEY: &str = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization\GuestCommunicationServices\{94aca5ef-a5b6-45a9-8c15-c7724a63f3da}";
 /// Mixed into the DPAPI encryption of each VM's secret (Install-GpuVMAgent uses the same).
 const SECRET_ENTROPY: &[u8] = b"GpuVM agent secret v1";
 
@@ -45,7 +46,9 @@ const MAX_IN_FLIGHT: usize = 32;
 const MAX_TIMEOUT_SEC: u64 = 600;
 const MAX_OFFER_BYTES: u64 = 2 << 30;
 const READ_CHUNK: u64 = 8 << 20;
-const OUTBOX: &str = r"C:\Users\agent\Desktop\Outbox\";
+/// The agent's Outbox, relative to its home (files.* take paths relative to the agent's home).
+const OUTBOX: &str = r"Desktop\Outbox\";
+const DEFAULT_HOME: &str = r"C:\Users\agent";
 
 /// The guest methods of protocol.md; anything else is refused before it reaches a guest.
 const METHODS: &[&str] = &["agent.info", "screen.capture", "screen.state", "input.act", "ui.tree", "ui.invoke", "exec.run", "files.list",
@@ -145,6 +148,8 @@ fn load_secret(vm_id: &str) -> Result<[u8; 32], String> {
 
 /// Registers the channel's service id with Hyper-V, so guests may dial it (the installer and the service at start).
 pub fn register_service_id() -> Result<(), String> {
+    // The first builds wrote the name with braces; Hyper-V's own entries (and its docs) have none.
+    unsafe { RegDeleteKeyW(HKEY_LOCAL_MACHINE, wide(LEGACY_SERVICE_KEY).as_ptr()) };
     let mut key: HKEY = std::ptr::null_mut();
     let status = unsafe {
         RegCreateKeyExW(HKEY_LOCAL_MACHINE, wide(SERVICE_KEY).as_ptr(), 0, std::ptr::null(), REG_OPTION_NON_VOLATILE, KEY_SET_VALUE,
@@ -160,7 +165,10 @@ pub fn register_service_id() -> Result<(), String> {
 }
 
 pub fn unregister_service_id() {
-    unsafe { RegDeleteKeyW(HKEY_LOCAL_MACHINE, wide(SERVICE_KEY).as_ptr()) };
+    unsafe {
+        RegDeleteKeyW(HKEY_LOCAL_MACHINE, wide(SERVICE_KEY).as_ptr());
+        RegDeleteKeyW(HKEY_LOCAL_MACHINE, wide(LEGACY_SERVICE_KEY).as_ptr());
+    }
 }
 
 // ---------------------------------------------------------------- the per-VM request log
@@ -1513,12 +1521,23 @@ pub fn safe_file_name(name: &str) -> Option<String> {
 
 /// Only a file directly inside the agent's Outbox: no subfolders, links are the guest's problem (it reads as
 /// `agent` and the host only receives bytes).
-pub fn outbox_file(path: &str) -> Option<String> {
-    let lower = path.to_lowercase();
-    if !lower.starts_with(&OUTBOX.to_lowercase()) || path.contains('/') {
+/// `path` is relative to the agent's home (`Desktop\Outbox\x`) or absolute under it; `home` is what the agent
+/// reported (agent.info), `C:\Users\agent` when it hasn't yet. Returns the file's name.
+pub fn outbox_file(path: &str, home: Option<&str>) -> Option<String> {
+    if path.contains('/') {
         return None;
     }
-    let rest = &path[OUTBOX.len()..];
+    let home = home.filter(|h| !h.is_empty()).unwrap_or(DEFAULT_HOME).trim_end_matches('\\');
+    let absolute = format!("{home}\\{OUTBOX}");
+    let lower = path.to_lowercase();
+    let prefix = if lower.starts_with(&OUTBOX.to_lowercase()) {
+        OUTBOX.len()
+    } else if lower.starts_with(&absolute.to_lowercase()) {
+        absolute.len()
+    } else {
+        return None;
+    };
+    let rest = &path[prefix..];
     if rest.is_empty() || rest.contains('\\') || rest.contains(':') || rest == "." || rest == ".." {
         return None;
     }
@@ -1532,11 +1551,15 @@ fn new_offer(name: &str, path: &str, note: &str, client: Option<&str>, ctx: &Ctx
     } else if ctx.is_agent_side() {
         return err("not_taken", "Connection is required.");
     }
-    let Some(guest_name) = outbox_file(path) else {
-        return err("denied", format!("Only files directly inside {OUTBOX} can leave the machine."));
+    let conn = conn_of(&reg.vm_id);
+    let home = conn.as_ref().and_then(|c| lock(&c.info)["home"].as_str().map(str::to_string));
+    let Some(guest_name) = outbox_file(path, home.as_deref()) else {
+        return err("denied", format!("Only files directly inside the agent's {OUTBOX} can leave the machine."));
     };
+    let conn = conn.ok_or_else(|| CmdError { code: "off".into(), message: format!("The agent on '{}' isn't connected.", reg.name) })?;
     let Some(file_name) = safe_file_name(&guest_name) else { return err("bad_request", "That file name can't be saved on this PC.") };
-    let conn = conn_of(&reg.vm_id).ok_or_else(|| CmdError { code: "off".into(), message: format!("The agent on '{}' isn't connected.", reg.name) })?;
+    // Kept relative to the agent's home: what the guest's files.read takes, whatever its profile folder is called.
+    let path = &format!("{OUTBOX}{guest_name}");
     // The size, as the guest reports it (shown to the person; the copy re-checks every byte count).
     let size = conn.request("files.list", &json!({ "path": OUTBOX.trim_end_matches('\\') }), None, Duration::from_secs(10), client).ok()
         .and_then(|(v, _)| {
@@ -1762,15 +1785,22 @@ pub(crate) mod tests {
 
     #[test]
     fn outbox_paths() {
-        assert_eq!(outbox_file(r"C:\Users\agent\Desktop\Outbox\report.html").as_deref(), Some("report.html"));
-        assert_eq!(outbox_file(r"c:\users\AGENT\desktop\outbox\a.png").as_deref(), Some("a.png"));
-        assert!(outbox_file(r"C:\Users\agent\Desktop\Outbox\..\secret").is_none());
-        assert!(outbox_file(r"C:\Users\agent\Desktop\Outbox\sub\a.txt").is_none());
-        assert!(outbox_file(r"C:\Users\agent\Desktop\Outbox\a.txt:stream").is_none());
-        assert!(outbox_file(r"C:\Users\agent\Desktop\Outbox\").is_none());
-        assert!(outbox_file(r"C:\Users\agent\Desktop\Outboxx\a").is_none());
-        assert!(outbox_file(r"C:\Windows\a.txt").is_none());
-        assert!(outbox_file("C:/Users/agent/Desktop/Outbox/a.txt").is_none());
+        let o = |p: &str| outbox_file(p, None);
+        assert_eq!(o(r"C:\Users\agent\Desktop\Outbox\report.html").as_deref(), Some("report.html"));
+        assert_eq!(o(r"c:\users\AGENT\desktop\outbox\a.png").as_deref(), Some("a.png"));
+        assert_eq!(o(r"Desktop\Outbox\x.txt").as_deref(), Some("x.txt"));
+        assert!(o(r"C:\Users\agent\Desktop\Outbox\..\secret").is_none());
+        assert!(o(r"Desktop\Outbox\..\..\secret").is_none());
+        assert!(o(r"C:\Users\agent\Desktop\Outbox\sub\a.txt").is_none());
+        assert!(o(r"C:\Users\agent\Desktop\Outbox\a.txt:stream").is_none());
+        assert!(o(r"C:\Users\agent\Desktop\Outbox\").is_none());
+        assert!(o(r"C:\Users\agent\Desktop\Outboxx\a").is_none());
+        assert!(o(r"C:\Windows\a.txt").is_none());
+        assert!(o("C:/Users/agent/Desktop/Outbox/a.txt").is_none());
+        // The home the agent reports (a profile folder named otherwise).
+        let home = Some(r"C:\Users\agent.AGENT051");
+        assert_eq!(outbox_file(r"C:\Users\agent.AGENT051\Desktop\Outbox\r.txt", home).as_deref(), Some("r.txt"));
+        assert!(outbox_file(r"C:\Users\agent\Desktop\Outbox\r.txt", home).is_none());
     }
 
     #[test]
