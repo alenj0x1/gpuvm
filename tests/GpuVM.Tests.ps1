@@ -895,6 +895,16 @@ InModuleScope GpuVM {
             $a['usedGB'] | Should Be 40
             $a['maxGB'] | Should Be ([math]::Floor(128 + [math]::Max(0, [math]::Floor($free - 0 - 88 - $script:DiskMarginGB))))
         }
+        It 'works with no other VM on the drive (no disks at all, or only its own)' {
+            $free = [math]::Round(([IO.DriveInfo]::new('C:')).AvailableFreeSpace / 1GB, 1)
+            Mock Get-VMDiskUsage { }
+            $none = Get-GpuVMDiskBudget -Root 'C:\GpuVM'
+            $none['promisedGB'] | Should Be 0
+            $none['availableGB'] | Should Be ([math]::Max(0, [math]::Floor($free - $script:DiskMarginGB)))
+            @($none['others']).Count | Should Be 0
+            Mock Get-VMDiskUsage { [pscustomobject]@{ VM = 'a'; Path = 'C:\vm\a.vhdx'; Drive = 'C:'; SizeGB = 64; FileGB = 14; GrowthGB = 50; Type = 'Dynamic' } }
+            (Get-GpuVMDiskBudget -Root 'C:\GpuVM' -VMName 'a')['promisedGB'] | Should Be 0
+        }
     }
 }
 

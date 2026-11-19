@@ -36,7 +36,7 @@ function Send-GpuVMFile {
             $list = Get-HostTransferEntries -Path $Path
         }
         $entries = $list.Entries
-        $total = [int64]($entries | Measure-Object -Property Size -Sum).Sum
+        $total = [int64]($entries | Measure-Object -Property Size -Sum | ForEach-Object Sum)
         $files = @($entries | Where-Object { -not $_.Dir }).Count
         $receiver = Open-GuestReceiver -Session $target -Id $TransferId -Folder $Folder
         $receiving = $true

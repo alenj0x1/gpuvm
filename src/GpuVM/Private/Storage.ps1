@@ -50,7 +50,8 @@ function Get-GpuVMDiskBudget {
     $all = @(Get-VMDiskUsage | Where-Object Drive -eq $drive)
     $others = @($all | Where-Object { $_.VM -ne $VMName })
     $own = @($all | Where-Object { $VMName -and $_.VM -eq $VMName } | Select-Object -First 1)
-    $promised = [math]::Round(($others | Measure-Object GrowthGB -Sum).Sum, 1)
+    # With no other disk on the drive Measure-Object gets no input and returns nothing (no .Sum under StrictMode).
+    $promised = if ($others) { [math]::Round([double]($others | Measure-Object GrowthGB -Sum).Sum, 1) } else { 0 }
     $ownGrowth = if ($own) { $own[0].GrowthGB } else { 0 }
     # What a new or bigger disk can take without being able to fill the drive when every disk is full.
     $available = [math]::Max(0, [math]::Floor($free - $promised - $ownGrowth - $script:DiskMarginGB))

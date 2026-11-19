@@ -31,7 +31,7 @@ function Import-GpuVMSharedDisk {
     }
     Write-Step 'Measuring the folder'
     # Links in the source are skipped (robocopy /XJ), so they are not counted either.
-    $total = [int64](Get-ChildItem -LiteralPath $source -Recurse -File -Force -Attributes !ReparsePoint -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
+    $total = [int64](Get-ChildItem -LiteralPath $source -Recurse -File -Force -Attributes !ReparsePoint -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum | ForEach-Object Sum)
 
     $accessPath = Join-Path (Get-GpuVMMountRoot) ([guid]::NewGuid().ToString('n'))
     $partition = $null

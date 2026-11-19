@@ -433,7 +433,7 @@ function Copy-TransferBigFiles {
         [Parameter(Mandatory)][string]$Staging,
         [Parameter(Mandatory)][hashtable]$Pipe
     )
-    $sum = [int64]($Big | Measure-Object -Property Size -Sum).Sum
+    $sum = [int64]($Big | Measure-Object -Property Size -Sum | ForEach-Object Sum)
     # One lane per 64 MB, up to 8: opening a session costs ~0.2 s and a small file gains nothing from more.
     $lanes = [int][math]::Min($script:TransferLanes, [math]::Max(1, [math]::Ceiling($sum / 64MB)))
     $targetCred = Get-GpuVMGuestCredential -State (Get-GpuVMState -Name $Name)
