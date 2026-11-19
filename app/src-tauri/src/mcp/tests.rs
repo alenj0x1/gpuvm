@@ -543,3 +543,51 @@ fn approvals_fail_closed_when_the_client_cannot_ask() {
     // Tools outside the confirmation list are unaffected.
     h.ok("key", json!({ "machine": m, "keys": "enter" }));
 }
+
+
+#[test]
+fn review_three_fixes() {
+    let mut h = H::new(false);
+    let m = h.machine();
+    // (7) The screen changed size after the screenshot: coordinates from it are refused, a new one works.
+    h.fake.with(|s| s.machines.iter_mut().find(|x| x.name == m).unwrap().screen_changed_at = Some(1_000));
+    let stale = h.err("click", json!({ "machine": m, "x": 1, "y": 1 }));
+    assert!(stale.contains("changed size after screenshot"), "{stale}");
+    h.ok("screenshot", json!({ "machine": m }));
+    h.ok("click", json!({ "machine": m, "x": 1, "y": 1 }));
+    // (11) act: the broker waits as long as the actions can take.
+    h.ok("act", json!({ "machine": m, "actions": (0..12).map(|_| json!({ "type": "wait", "ms": 5000 })).collect::<Vec<_>>() }));
+    let t = h.fake.with(|s| *s.timeouts.last().unwrap());
+    assert!(t.unwrap() >= 12 * 6, "{t:?}");
+    h.ok("key", json!({ "machine": m, "keys": "enter" }));
+    assert_eq!(h.fake.with(|s| *s.timeouts.last().unwrap()), Some(30));
+    // (14) run: at most 580 s, the broker waits 20 s more.
+    assert!(h.err("run", json!({ "machine": m, "command": "x", "timeoutSeconds": 600 })).contains("1 to 580"));
+    h.ok("run", json!({ "machine": m, "command": "x", "timeoutSeconds": 580 }));
+    assert_eq!(h.fake.with(|s| *s.timeouts.last().unwrap()), Some(600));
+    // (8) A second copy gets "name (2).ext" in the machine: that's the name checked and reported.
+    let host = std::env::temp_dir().join(format!("gpuvm-mcp-twice-{}.txt", std::process::id()));
+    std::fs::write(&host, b"twice").unwrap();
+    let hp = host.to_string_lossy().to_string();
+    h.ok("send_file", json!({ "machine": m, "hostPath": hp }));
+    let second = h.ok("send_file", json!({ "machine": m, "hostPath": hp }));
+    assert!(second.contains(&format!("gpuvm-mcp-twice-{} (2).txt", std::process::id())) && second.contains("5 bytes, checked"), "{second}");
+    let _ = std::fs::remove_file(&host);
+    // (15) The person allows just as the wait ends: the answer counts, not "hasn't answered".
+    let mut h2 = H::new(false);
+    h2.ok("take_machine", json!({ "machine": "work-pc" }));
+    h2.fake.with(|s| s.answer_late = true);
+    assert!(h2.ok("request_approval", json!({ "machine": "work-pc", "kind": "other", "title": "x", "reason": "y", "waitSeconds": 0 })).contains("allowed"));
+}
+
+#[test]
+fn closing_stdin_ends_waits_at_once() {
+    let mut h = H::new(false);
+    let m = h.machine();
+    let started = Instant::now();
+    h.send("tools/call", json!({ "name": "request_human", "arguments": { "machine": m, "message": "x", "waitSeconds": 1800 } }));
+    std::thread::sleep(Duration::from_millis(50));
+    h.server.finish();
+    assert!(started.elapsed() < Duration::from_secs(5), "finish waited {:?}", started.elapsed());
+    assert!(h.fake.with(|s| s.connections.is_empty()), "the session was closed");
+}

@@ -21,6 +21,8 @@ pub struct Machine {
     pub drop_sends: bool,
     /// The agent's pending request_human (None once answered, withdrawn or replaced by the person's take-control).
     pub human_request: Option<String>,
+    /// When the guest last said its screen changed size (broker ms), as Get-GpuVMAgent/Invoke report it.
+    pub screen_changed_at: Option<u64>,
     pub elevated_foreground: bool,
     pub secure_desktop: bool,
     pub files: HashMap<String, Vec<u8>>,
@@ -45,6 +47,10 @@ pub struct State {
     pub notes: Vec<String>,
     /// The arguments of the last approval request.
     pub last_approval: Value,
+    /// The broker wait (timeoutSec) of every agent.invoke.
+    pub timeouts: Vec<Option<u64>>,
+    /// The next approval.get answers "pending" once (the answer arrives right at the deadline).
+    pub answer_late: bool,
     next: u32,
 }
 
@@ -83,6 +89,7 @@ fn machine(name: &str, disposable: bool, template: &str) -> Machine {
         off: false,
         drop_sends: false,
         human_request: None,
+        screen_changed_at: None,
         elevated_foreground: false,
         secure_desktop: false,
         files: HashMap::new(),
@@ -105,6 +112,15 @@ impl Broker for FakeBroker {
         st.calls.push(op.to_string());
         if let Some(n) = args["note"].as_str() {
             st.notes.push(n.to_string());
+        }
+        if op == "agent.invoke" {
+            st.timeouts.push(args["timeoutSec"].as_u64());
+        }
+        // An answer that lands just as the agent stops waiting: the first get still says pending.
+        if op == "approval.get" && st.answer_late {
+            st.answer_late = false;
+            let id = s(&args, "requestId").to_string();
+            return Ok(Reply::of(json!({ "id": id, "state": "pending" })));
         }
         if st.killed && op != "client.disconnect" {
             return Err(err("killed", "The person stopped this connection."));
@@ -132,7 +148,7 @@ impl Broker for FakeBroker {
                 let list: Vec<Value> = st.machines.iter().map(|m| json!({
                     "name": m.name, "state": if m.off { "off" } else { "ready" }, "disposable": m.disposable, "template": m.template,
                     "agent": if m.off { Value::Null } else { json!({ "version": "fake", "home": r"C:\Users\agent", "screen": { "w": m.screen.0, "h": m.screen.1 }, "signedIn": true }) },
-                    "desktop": if m.secure_desktop { "secure" } else { "default" },
+                    "desktop": if m.secure_desktop { "secure" } else { "default" }, "screenChangedAt": m.screen_changed_at,
                     "takenBy": m.taken_by.as_ref().map(|c| json!({ "connection": c, "client": { "name": "fake client", "version": "1" } })),
                     "paused": if m.paused { json!({ "by": if m.paused_by == "human" { "agent" } else { "person" }, "reason": m.paused_by, "message": "" }) } else { Value::Null } })).collect();
                 return Ok(Reply::of(Value::Array(list)));
@@ -252,13 +268,19 @@ impl Broker for FakeBroker {
                 }
                 let host = s(&args, "hostPath");
                 let file = host.rsplit(['\\', '/']).next().unwrap_or("file").to_string();
-                let path = format!(r"C:\Users\agent\Desktop\Received\{file}");
+                let mut saved = file.clone();
+                let mut n = 2;
+                while m.files.contains_key(&format!(r"C:\Users\agent\Desktop\Received\{saved}")) {
+                    saved = match file.rsplit_once('.') { Some((stem, ext)) => format!("{stem} ({n}).{ext}"), None => format!("{file} ({n})") };
+                    n += 1;
+                }
+                let path = format!(r"C:\Users\agent\Desktop\Received\{saved}");
                 // The real file's size when it exists; `drop_sends` loses it like lab 053's transfer did.
                 let size = std::fs::metadata(host).map(|m| m.len() as usize).unwrap_or(9);
                 if !m.drop_sends {
                     m.files.insert(path.clone(), vec![b'x'; size]);
                 }
-                Ok(Reply::of(json!({ "path": path })))
+                Ok(Reply::of(json!({ "path": r"C:\Users\agent\Desktop\Received\".to_string() + &saved, "files": 1, "bytes": size })))
             }
             "offer.create" => {
                 let path = resolve(s(&args, "path"));
@@ -333,7 +355,7 @@ fn guest(m: &mut Machine, method: &str, p: &Value) -> Result<Reply> {
             let max_h = p["maxH"].as_u64().unwrap_or(800) as u32;
             let (w, h) = super::geometry::fit(region[2], region[3], max_w, max_h);
             let png = draw(region, (w, h));
-            Ok(Reply { data: json!({ "w": w, "h": h, "scale": w as f64 / region[2] as f64, "format": "png",
+            Ok(Reply { meta: json!({ "screenChangedAt": m.screen_changed_at }), data: json!({ "w": w, "h": h, "scale": w as f64 / region[2] as f64, "format": "png",
                 "screen": { "w": fw, "h": fh } }), blob: Some(png) })
         }
         "screen.state" => Ok(Reply::of(json!({ "desktop": if m.secure_desktop { "secure" } else { "default" },
@@ -376,7 +398,7 @@ fn guest(m: &mut Machine, method: &str, p: &Value) -> Result<Reply> {
             if file == "blob" {
                 let mut b = b"out-in-blob".to_vec();
                 b.extend_from_slice(b"err-in-blob");
-                return Ok(Reply { data: json!({ "exitCode": 3, "outputInBlob": true, "stdoutBytes": 11, "stderrBytes": 11, "truncated": false }), blob: Some(b) });
+                return Ok(Reply { data: json!({ "exitCode": 3, "outputInBlob": true, "stdoutBytes": 11, "stderrBytes": 11, "truncated": false }), blob: Some(b), meta: Value::Null });
             }
             Ok(Reply::of(json!({ "exitCode": 0, "stdout": format!("{file} {}\r\n", args.join(" ")), "stderr": "", "truncated": false })))
         }
@@ -384,7 +406,7 @@ fn guest(m: &mut Machine, method: &str, p: &Value) -> Result<Reply> {
             let path = resolve(p["path"].as_str().unwrap_or(""));
             let path = path.as_str();
             let len = p["length"].as_u64().unwrap_or(u64::MAX) as usize;
-            m.files.get(path).map(|b| Reply { data: json!({ "size": b.len() }), blob: Some(b[..b.len().min(len)].to_vec()) })
+            m.files.get(path).map(|b| Reply { data: json!({ "size": b.len() }), blob: Some(b[..b.len().min(len)].to_vec()), meta: Value::Null })
                 .ok_or_else(|| err("not_found", "No such file."))
         }
         "files.write" => {

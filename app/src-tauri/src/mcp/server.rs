@@ -104,9 +104,12 @@ impl Server {
         self.finish();
     }
 
+    /// stdin closed: running waits end at once, the session is closed (the broker cancels its requests), then the
+    /// calls still running are waited for.
     pub fn finish(&self) {
-        self.join();
+        self.ctx.shutting_down.store(true, std::sync::atomic::Ordering::Relaxed);
         self.ctx.disconnect();
+        self.join();
     }
 
     /// Waits for the tool calls running now.
