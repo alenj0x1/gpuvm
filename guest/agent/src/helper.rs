@@ -191,7 +191,18 @@ pub fn run() {
     };
     // the virtual display alone and primary BEFORE the helper announces itself: the host treats `signed_in` as
     // ready, and a client that captured at 800x600 a moment before the change got stale sizes (lab 053)
-    let arranged = crate::display::ensure();
+    // right after sign-in the input desktop is still Winlogon's: captures are refused and Windows refuses the display
+    // layout (ERROR_ACCESS_DENIED, lab 051). Wait for the normal desktop (<= 60 s), then retry the layout (<= 10 s).
+    let t = Instant::now();
+    while t.elapsed() < Duration::from_secs(60) && state::desktop_state() != "default" {
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    let t = Instant::now();
+    let mut arranged = crate::display::ensure();
+    while arranged.is_err() && t.elapsed() < Duration::from_secs(10) {
+        std::thread::sleep(Duration::from_millis(500));
+        arranged = crate::display::ensure();
+    }
     if matches!(arranged, Ok(Some(_))) {
         // wait (<= 2 s) until Windows reports the new layout
         let t = std::time::Instant::now();

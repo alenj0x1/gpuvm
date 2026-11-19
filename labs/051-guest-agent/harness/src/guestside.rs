@@ -67,6 +67,105 @@ pub fn system_window(exe: &str) {
     let _ = std::fs::write(out, text);
 }
 
+/// `guest-dup-refresh <rounds>` (as the agent user): does screen.refresh's repaint give a duplication-based
+/// capture (what Sunshine's ddx uses) a new frame of a STILL desktop? Per round, interleaved: wait until no frame
+/// came for 1.5 s, then A) do nothing / B) RedrawWindow like screen.refresh, and wait up to 1 s for a frame with a
+/// new present. Writes C:\Users\Public\lab051-dup.json.
+pub fn dup_refresh(rounds: u32) {
+    use windows::core::Interface;
+    use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_UNKNOWN;
+    use windows::Win32::Graphics::Direct3D11::*;
+    use windows::Win32::Graphics::Dxgi::*;
+    use windows::Win32::Graphics::Gdi::*;
+    let out = r"C:\Users\Public\lab051-dup.json";
+    let res = (|| -> Result<String, String> {
+        unsafe {
+            let _ = windows::Win32::UI::HiDpi::SetProcessDpiAwarenessContext(windows::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+            let f: IDXGIFactory1 = CreateDXGIFactory1().map_err(|e| e.to_string())?;
+            // the output at 0,0 (the agent's display after 0.3.3+)
+            let mut found = None;
+            let mut i = 0;
+            while let Ok(a) = f.EnumAdapters1(i) {
+                i += 1;
+                let mut j = 0;
+                while let Ok(o) = a.EnumOutputs(j) {
+                    j += 1;
+                    let d = o.GetDesc().map_err(|e| e.to_string())?;
+                    if d.AttachedToDesktop.as_bool() && d.DesktopCoordinates.left == 0 && d.DesktopCoordinates.top == 0 {
+                        found = Some((a.clone(), o));
+                    }
+                }
+            }
+            let (adapter, output) = found.ok_or("no output at 0,0")?;
+            let mut dev = None;
+            D3D11CreateDevice(&adapter, D3D_DRIVER_TYPE_UNKNOWN, windows::Win32::Foundation::HMODULE::default(), D3D11_CREATE_DEVICE_BGRA_SUPPORT, None, D3D11_SDK_VERSION, Some(&mut dev), None, None)
+                .map_err(|e| format!("device {e}"))?;
+            let dev = dev.unwrap();
+            let o1: IDXGIOutput1 = output.cast().map_err(|e| e.to_string())?;
+            let mut dup = o1.DuplicateOutput(&dev).map_err(|e| format!("DuplicateOutput {e}"))?;
+            // one acquire: Some(present?) or None on timeout; re-open on access lost
+            let mut acquire = |ms: u32, dup: &mut IDXGIOutputDuplication| -> Result<Option<bool>, String> {
+                let mut info = DXGI_OUTDUPL_FRAME_INFO::default();
+                let mut r = None;
+                match dup.AcquireNextFrame(ms, &mut info, &mut r) {
+                    Ok(()) => {
+                        let _ = dup.ReleaseFrame();
+                        Ok(Some(info.LastPresentTime != 0))
+                    }
+                    Err(e) if e.code() == DXGI_ERROR_WAIT_TIMEOUT => Ok(None),
+                    Err(e) if e.code() == DXGI_ERROR_ACCESS_LOST => {
+                        // a mode change may still be running: retry the re-open for up to 5 s
+                        let t = std::time::Instant::now();
+                        loop {
+                            match o1.DuplicateOutput(&dev) {
+                                Ok(d) => {
+                                    *dup = d;
+                                    break;
+                                }
+                                Err(e) if t.elapsed() < Duration::from_secs(5) => {
+                                    let _ = e;
+                                    std::thread::sleep(Duration::from_millis(200));
+                                }
+                                Err(e) => return Err(format!("re-open {e}")),
+                            }
+                        }
+                        Ok(None)
+                    }
+                    Err(e) => Err(format!("acquire {e}")),
+                }
+            };
+            let mut rows = Vec::new();
+            for r in 0..rounds {
+                // still: 1.5 s without a presented frame (max 20 s)
+                let t = std::time::Instant::now();
+                let mut quiet = std::time::Instant::now();
+                while quiet.elapsed() < Duration::from_millis(1500) && t.elapsed() < Duration::from_secs(20) {
+                    if let Some(true) = acquire(100, &mut dup)? {
+                        quiet = std::time::Instant::now();
+                    }
+                }
+                let still = quiet.elapsed() >= Duration::from_millis(1500);
+                let variant = if r % 2 == 0 { "none" } else { "refresh" };
+                let t0 = std::time::Instant::now();
+                if variant == "refresh" {
+                    let _ = RedrawWindow(None, None, None, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN | RDW_UPDATENOW);
+                }
+                let mut got = None;
+                while t0.elapsed() < Duration::from_millis(1000) {
+                    if let Some(true) = acquire(50, &mut dup)? {
+                        got = Some(t0.elapsed().as_secs_f64() * 1e3);
+                        break;
+                    }
+                }
+                rows.push(format!("{{\"round\":{r},\"variant\":\"{variant}\",\"still\":{still},\"frameMs\":{}}}", got.map(|m| format!("{m:.1}")).unwrap_or("null".into())));
+            }
+            Ok(format!("[{}]", rows.join(",")))
+        }
+    })();
+    let text = res.unwrap_or_else(|e| format!("{{\"error\":{}}}", serde_json::Value::from(e)));
+    let _ = std::fs::write(out, text);
+}
+
 /// `guest-window-rect <class>` (as the agent user): the rect of the first visible top-level window of that class
 /// (OSKMainClass for the on-screen keyboard), to C:\Users\Public\lab051-rect.json.
 pub fn window_rect(class: &str) {
