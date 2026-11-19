@@ -247,9 +247,10 @@ fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Ve
     lock(&ANSWERED).retain(|id| live.contains(id));
 }
 
-/// The agent holds a machine and may act on it now or at any moment: the person's input there takes control.
+/// The agent holds a machine and may act on it now or at any moment (working, thinking between steps, or waiting for
+/// an answer): the person's input there takes control, so its next click never fights theirs (code review).
 fn holds(c: &Value) -> bool {
-    c["machine"].is_string() && matches!(c["state"].as_str(), Some("working") | Some("idle"))
+    c["machine"].is_string() && matches!(c["state"].as_str(), Some("working") | Some("idle") | Some("waiting"))
 }
 
 fn main_in_front(app: &AppHandle) -> bool {
@@ -392,8 +393,12 @@ fn send_shown(request: &Value) -> bool {
     if request["kind"].as_str() != Some("send") {
         return true;
     }
-    let path = request["path"].as_str().or_else(|| request["send"]["path"].as_str()).or_else(|| request["hostPath"].as_str());
-    path.is_some_and(|p| !p.trim().is_empty())
+    send_paths(request).next().is_some()
+}
+
+/// The exact paths of a "send" request (Get-GpuVMAgentRequest: `paths`), blank ones left out.
+fn send_paths(request: &Value) -> impl Iterator<Item = &str> {
+    request["paths"].as_array().into_iter().flatten().filter_map(Value::as_str).filter(|p| !p.trim().is_empty())
 }
 
 /// Allow / Refuse (and, from its right click, Allow for this task) in the dock. Only which button, for the request
@@ -491,7 +496,8 @@ pub fn docked_vm() -> Option<String> {
 /// Connection: a session holding several machines gets back only this one, never the one the person still has), with
 /// a fresh screenshot and a note that the person had control.
 pub async fn resume(app: &AppHandle, client: &str, vm: &str) -> Result<(), String> {
-    if client.is_empty() || vm.is_empty() {
+    // A pause whose session is gone (the service clears orphans) resumes by Name alone.
+    if vm.is_empty() {
         return Err("The agent isn't valid.".into());
     }
     call(app, "Resume-GpuVMAgent", resume_args(client, vm)).await?;
@@ -502,7 +508,7 @@ pub async fn resume(app: &AppHandle, client: &str, vm: &str) -> Result<(), Strin
 }
 
 fn resume_args(client: &str, vm: &str) -> Value {
-    json!({ "Name": vm, "Connection": client })
+    if client.is_empty() { json!({ "Name": vm }) } else { json!({ "Name": vm, "Connection": client }) }
 }
 
 /// The viewer saw the person's input over the picture: the agent working there pauses (take control).
@@ -742,13 +748,18 @@ fn notify(app: &AppHandle, request: &Value) {
     let what = request["title"].as_str().unwrap_or("");
     let vm = request["machine"].as_str().unwrap_or("").to_string();
     let human = request["human"].as_bool() == Some(true);
-    let send_path = request["path"].as_str().or_else(|| request["send"]["path"].as_str());
+    let paths: Vec<&str> = send_paths(request).collect();
+    let send_body = match paths.len() {
+        0 => String::new(),
+        1 => paths[0].to_string(),
+        n => tr(&format!("{} and {} more", paths[0], n - 1), &format!("{} y {} más", paths[0], n - 1)),
+    };
     let (title, body) = if human {
         // The agent's own words: what it needs the person to do.
         (tr(&format!("{who} needs you"), &format!("{who} te necesita")), format!("{} · {vm}", spanish_or(what)))
     } else if request["kind"].as_str() == Some("send") {
         // What it would copy from this PC, by its exact path (answered only in GpuVM).
-        (tr(&format!("{who} wants to copy to {vm}"), &format!("{who} quiere copiar a {vm}")), send_path.unwrap_or("").to_string())
+        (tr(&format!("{who} wants to copy to {vm}"), &format!("{who} quiere copiar a {vm}")), send_body)
     } else if english() {
         (format!("{who} asks: {what}"), format!("{vm} · Waiting for your answer"))
     } else {
@@ -871,7 +882,8 @@ mod tests {
     fn take_control_watches_working_and_idle_only() {
         assert!(holds(&client("m", "working")));
         assert!(holds(&client("m", "idle")));
-        for s in ["control", "paused", "human", "waiting", "stopped"] {
+        assert!(holds(&client("m", "waiting")));
+        for s in ["control", "paused", "human", "stopped"] {
             assert!(!holds(&client("m", s)), "{s}");
         }
         assert!(!holds(&json!({ "machine": null, "state": "working" })));
@@ -889,12 +901,13 @@ mod tests {
 
     #[test]
     fn a_copy_from_the_pc_is_answered_one_at_a_time_and_only_with_its_path() {
-        let send = json!({ "id": "s", "kind": "send", "path": "C:\\Users\\a\\file.zip", "sizeBytes": 10 });
+        // The broker's shape (Get-GpuVMAgentRequest): paths, files, bytes.
+        let send = json!({ "id": "s", "kind": "send", "paths": ["C:\\Users\\a\\file.zip"], "files": 1, "bytes": 10 });
         assert!(!task_allowed(&send));
         assert!(send_shown(&send));
-        assert!(send_shown(&json!({ "kind": "send", "send": { "path": "C:\\x" } })));
         assert!(!send_shown(&json!({ "kind": "send" })));
-        assert!(!send_shown(&json!({ "kind": "send", "path": "  " })));
+        assert!(!send_shown(&json!({ "kind": "send", "paths": [] })));
+        assert!(!send_shown(&json!({ "kind": "send", "paths": ["  ", 3] })));
         assert!(task_allowed(&json!({ "kind": "network" })));
         assert!(send_shown(&json!({ "kind": "network" })));
     }
@@ -902,5 +915,7 @@ mod tests {
     #[test]
     fn return_to_agent_names_the_machine() {
         assert_eq!(resume_args("c1", "lab054-1"), json!({ "Name": "lab054-1", "Connection": "c1" }));
+        // A pause left without a session: by Name alone.
+        assert_eq!(resume_args("", "lab054-1"), json!({ "Name": "lab054-1" }));
     }
 }

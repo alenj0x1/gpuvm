@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { IconCheck, IconFileDownload, IconFileUpload, IconHistory, IconLoader2, IconLock, IconRobot, IconShieldLock, IconTrash, IconWorld, IconX, type Icon } from "@tabler/icons-react";
 import { inTauri } from "./api";
-import { bytes, sendOf } from "./agentStore";
+import { bytes, middlePath, sendOf } from "./agentStore";
 import { humanError } from "./ui";
 import { useReportDockSize } from "./dockSize";
 import { locale, t, translateModule } from "./i18n";
@@ -29,8 +29,8 @@ function sample(kind: string | null): AgentRequest | null {
     case "deliver": return { ...base, kind: "deliver", title: "Deliver report.md", reason: "Results of the installer test", file: { name: "report.md", sizeBytes: 18432 } };
     case "revert": return { ...base, kind: "revert", title: "Go back to the restore point Before installing", reason: "The installer left the machine broken" };
     case "human": return { ...base, kind: "admin", title: "Windows asks for a password", reason: null, human: true };
-    case "send": return { ...base, kind: "send", title: "", reason: "The installer to test", send: { path: "C:\\Users\\you\\Downloads\\GpuVM_0.9.0_x64-setup.exe", sizeBytes: 48_234_496, files: 1 } };
-    case "send-folder": return { ...base, kind: "send", title: "", reason: null, send: { path: "C:\\Users\\you\\Desktop\\gpu-vm\\labs\\054-agent-ui\\out\\a-very-long-folder-name-for-the-test", sizeBytes: 1_288_490_188, files: 342 } };
+    case "send": return { ...base, kind: "send", title: "", reason: "The installer to test", send: { paths: ["C:\\Users\\you\\Downloads\\GpuVM_0.9.0_x64-setup.exe"], bytes: 48_234_496, files: 1 } };
+    case "send-folder": return { ...base, kind: "send", title: "", reason: null, send: { paths: ["C:\\Users\\you\\Desktop\\gpu-vm\\labs\\054-agent-ui\\out\\a-very-long-folder-name-for-the-test", "C:\\Users\\you\\Documents\\notes.txt"], bytes: 1_288_490_188, files: 342 } };
     default: return { ...base, kind: "network", title: "Connect to github.com", reason: "Download the latest release of GpuVM" };
   }
 }
@@ -91,7 +91,7 @@ export function AgentDock() {
   const send = request.kind === "send" ? (request.send ?? sendOf(request as unknown as Record<string, unknown>)) : null;
   const title = request.kind === "send" ? t("{name} wants to copy to {machine}", { name: request.clientName, machine: request.machine }) : translateModule(request.title);
   const detail = send
-    ? [send.files > 1 ? t("{n} files", { n: send.files }) : null, bytes(send.sizeBytes, locale()), request.reason].filter(Boolean).join(" · ")
+    ? [send.files > 1 ? t("{n} files", { n: send.files }) : null, bytes(send.bytes, locale()), request.reason].filter(Boolean).join(" · ")
     : [request.clientName, request.reason, request.file && bytes(request.file.sizeBytes, locale())].filter(Boolean).join(" · ");
   const canAllow = request.kind !== "send" || !!send;
 
@@ -131,7 +131,7 @@ export function AgentDock() {
         <span className={`dock-icon${risky ? " ag-dock-risky" : request.kind === "network" ? " ag-dock-warn" : ""}`}><I size={18} /></span>
         <div className="dock-text">
           <strong id="ag-dock-title" title={title}>{title}</strong>
-          {send && <span className="ag-dock-path" title={send.path}>{send.path}</span>}
+          {send?.paths.map((p) => <span key={p} className="ag-dock-path" title={p}>{middlePath(p)}</span>)}
           <span id="ag-dock-detail">{detail}</span>
           {error && <span className="dock-error">{error}</span>}
         </div>

@@ -5,7 +5,7 @@ import {
   IconLock, IconPhoto, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconPlugConnectedX, IconRobot, IconShieldLock, IconTerminal2, IconTrash, IconVideo, IconWorld, IconX, type Icon,
 } from "@tabler/icons-react";
 import { agents, inTauri } from "./api";
-import { actionThumb, bytes, clientOn, refreshAgents, useAgents } from "./agentStore";
+import { actionThumb, bytes, clientOn, middlePath, refreshAgents, useAgents } from "./agentStore";
 import { MachineIcon } from "./machineIcon";
 import { CheckMark, humanError, portalRoot } from "./ui";
 import { locale, t, tn, translateModule } from "./i18n";
@@ -187,9 +187,9 @@ export function RequestRow({ r, showMachine = true, onView }: { r: AgentRequest;
         {r.kind === "send"
           ? <strong className="ellipsis">{t("{name} wants to copy to {machine}", { name: r.clientName, machine: r.machine })}</strong>
           : <strong className="ellipsis">{translateModule(r.title)}{r.file && <span className="ag-request-size">{bytes(r.file.sizeBytes, locale())}</span>}</strong>}
-        {send && <span className="ag-request-path" title={send.path}>{send.path}</span>}
+        {send?.paths.map((p) => <span key={p} className="ag-request-path" title={p}>{middlePath(p)}</span>)}
         <span className="ellipsis">{send
-          ? [send.files > 1 ? t("{n} files", { n: send.files }) : null, bytes(send.sizeBytes, locale()), r.reason].filter(Boolean).join(" · ")
+          ? [send.files > 1 ? t("{n} files", { n: send.files }) : null, bytes(send.bytes, locale()), r.reason].filter(Boolean).join(" · ")
           : [showMachine ? `${r.clientName} · ${r.machine}` : r.clientName, r.reason].filter(Boolean).join(" · ")}</span>
         {error && <span className="error-text">{error}</span>}
       </div>

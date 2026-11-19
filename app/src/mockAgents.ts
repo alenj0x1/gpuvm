@@ -65,7 +65,7 @@ switch (scenario) {
       reason: "Download the latest release of GpuVM to test it", createdAt: ago(6), expiresAt: later(54) },
       // A copy from this PC into the machine (broker's "send"): the exact path, its size and files.
       { id: "r-send", client: "c1", clientName: "Claude Code", machine: "win-agent", kind: "send", title: "", reason: "The installer to test",
-        createdAt: ago(3), expiresAt: later(57), send: { path: "C:\\Users\\you\\Downloads\\GpuVM_0.9.0_x64-setup.exe", sizeBytes: 48_234_496, files: 1 } }];
+        createdAt: ago(3), expiresAt: later(57), send: { paths: ["C:\\Users\\you\\Downloads\\GpuVM_0.9.0_x64-setup.exe"], bytes: 48_234_496, files: 1 } }];
     offers = [deliver("o1", "report.md", 18_432, "Results of the installer test, with 6 screenshots", 40)];
     break;
   case "many":

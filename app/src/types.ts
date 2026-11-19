@@ -295,8 +295,9 @@ export interface AgentRequest {
   expiresAt: string;
   /** A delivery: the file waiting in the machine's Outbox. */
   file?: { name: string; sizeBytes: number } | null;
-  /** A copy into the machine: the exact path on this PC, its size and how many files (a folder counts its files). */
-  send?: { path: string; sizeBytes: number; files: number } | null;
+  /** A copy into the machine (Get-GpuVMAgentRequest "send"): the exact paths on this PC, and what they held when the
+   *  agent asked (files, bytes). */
+  send?: { paths: string[]; bytes: number; files: number } | null;
   /** "human": only the person can do it in the viewer (no buttons). */
   human?: boolean;
 }
