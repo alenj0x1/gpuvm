@@ -80,6 +80,10 @@ fn bounded(v: &Value, depth: usize) -> Value {
 // ---------------------------------------------------------------- registrations and secrets
 
 pub fn agents_dir() -> PathBuf {
+    #[cfg(test)]
+    if let Some(dir) = tests::TEST_AGENTS.get() {
+        return dir.clone();
+    }
     PathBuf::from(std::env::var("ProgramData").unwrap_or(r"C:\ProgramData".into())).join("GpuVM").join("agents")
 }
 
@@ -685,6 +689,7 @@ impl Drop for Ctx {
     }
 }
 
+#[derive(Debug)]
 pub struct CmdError {
     pub code: String,
     pub message: String,
@@ -1198,8 +1203,92 @@ pub(crate) const MAX_OFFER: u64 = MAX_OFFER_BYTES;
 pub(crate) const CHUNK: u64 = READ_CHUNK;
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+
+    pub static TEST_AGENTS: OnceLock<PathBuf> = OnceLock::new();
+
+    fn code(r: Result<Value, CmdError>) -> String {
+        match r {
+            Ok(v) if v["ok"] == json!(false) => v["error"]["code"].as_str().unwrap_or("?").to_string(),
+            Ok(_) => "ok".into(),
+            Err(e) => e.code,
+        }
+    }
+
+    /// The policy the MCP server can't bypass: one client per machine, pause, kill switch, budget, and only the
+    /// person approves. No agent is connected, so an admitted request ends in "off".
+    #[test]
+    fn agent_session_policy() {
+        let dir = std::env::temp_dir().join(format!("gpuvm-agent-test-{}", std::process::id()));
+        let vm = "0b5d1f53-1e33-4b7e-9f0a-2c4d6e8f0a1b";
+        std::fs::create_dir_all(dir.join(vm)).unwrap();
+        std::fs::write(dir.join(vm).join("agent.json"), json!({ "vmId": vm, "name": "Test1", "folder": dir.display().to_string() }).to_string()).unwrap();
+        std::fs::write(dir.join("settings.json"), r#"{"maxSteps": 6}"#).unwrap();
+        TEST_AGENTS.set(dir.clone()).unwrap();
+        let null = std::ptr::null_mut();
+        let mut mcp = Ctx::new(null, 100, false);
+        let mut other = Ctx::new(null, 200, false);
+        let mut app = Ctx::new(null, 300, false);
+        let invoke = |ctx: &mut Ctx, conn: Option<&str>| {
+            let mut a = json!({ "Name": "test1", "Method": "agent.info" });
+            if let Some(c) = conn {
+                a["Connection"] = json!(c);
+            }
+            code(command("Invoke-GpuVMAgent", &a, ctx))
+        };
+        let c = command("Connect-GpuVMAgentClient", &json!({ "Client": { "name": "claude-code", "version": "1" } }), &mut mcp).unwrap();
+        assert_eq!(c["settings"]["maxSteps"], 6);
+        assert_eq!(c["settings"]["elicitation"], false);
+        let id = c["connection"].as_str().unwrap().to_string();
+        let id2 = command("Connect-GpuVMAgentClient", &json!({ "Client": { "name": "other" } }), &mut other).unwrap()["connection"].as_str().unwrap().to_string();
+        // Exact argument names; unknown ones are refused.
+        assert_eq!(code(command("Invoke-GpuVMAgent", &json!({ "name": "Test1", "Method": "agent.info" }), &mut app)), "bad_request");
+        assert_eq!(code(command("Invoke-GpuVMAgent", &json!({ "Name": "Test1", "Method": "rm" }), &mut app)), "bad_request");
+        // The MCP side must name its connection and take the machine first.
+        assert_eq!(invoke(&mut mcp, None), "not_taken");
+        assert_eq!(invoke(&mut mcp, Some(&id)), "not_taken"); // step 1
+        // A connection id only works from the process that registered it.
+        assert_eq!(code(command("Lock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id }), &mut other)), "not_found");
+        assert_eq!(code(command("Lock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id }), &mut mcp)), "ok");
+        assert_eq!(code(command("Lock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id2 }), &mut other)), "taken");
+        assert_eq!(invoke(&mut other, Some(&id2)), "taken");
+        assert_eq!(invoke(&mut mcp, Some(&id)), "off"); // admitted (step 2), no agent connected
+        // The person (app) may use the machine without a connection.
+        assert_eq!(invoke(&mut app, None), "off");
+        // Only the person pauses, resumes, stops and approves.
+        assert_eq!(code(command("Suspend-GpuVMAgent", &json!({ "Name": "Test1" }), &mut mcp)), "denied");
+        assert_eq!(code(command("Resume-GpuVMAgent", &json!({ "Name": "Test1" }), &mut mcp)), "denied");
+        assert_eq!(code(command("Stop-GpuVMAgentClient", &json!({ "All": true }), &mut mcp)), "denied");
+        assert_eq!(code(command("Resolve-GpuVMAgentOffer", &json!({ "Id": "x", "Answer": "approve" }), &mut mcp)), "denied");
+        assert_eq!(code(command("Suspend-GpuVMAgent", &json!({ "Name": "Test1", "Message": "mine" }), &mut app)), "ok");
+        assert_eq!(invoke(&mut mcp, Some(&id)), "paused"); // step 3
+        let agents = get_agents(Some("Test1"));
+        assert_eq!(agents[0]["paused"]["by"], "person");
+        assert_eq!(agents[0]["takenBy"]["connection"], json!(id));
+        assert_eq!(code(command("Resume-GpuVMAgent", &json!({ "Name": "Test1" }), &mut app)), "ok");
+        // The agent asks for a human: paused until the person resumes.
+        let r = command("Request-GpuVMHuman", &json!({ "Name": "Test1", "Connection": id, "Message": "Please sign in" }), &mut mcp).unwrap();
+        assert!(r["requestId"].is_string());
+        assert_eq!(get_agents(Some("Test1"))[0]["paused"]["by"], "agent");
+        assert_eq!(invoke(&mut mcp, Some(&id)), "paused"); // step 4
+        command("Resume-GpuVMAgent", &json!({ "Name": "Test1" }), &mut app).unwrap();
+        assert_eq!(invoke(&mut mcp, Some(&id)), "off"); // step 5
+        assert_eq!(invoke(&mut mcp, Some(&id)), "off"); // step 6
+        assert_eq!(invoke(&mut mcp, Some(&id)), "budget");
+        // Outbox offers are checked before anything reaches the guest.
+        assert_eq!(code(command("New-GpuVMAgentOffer", &json!({ "Name": "Test1", "Path": r"C:\Windows\win.ini" }), &mut app)), "denied");
+        // Kill switch: everything of that session stops and its machines are freed.
+        let r = command("Stop-GpuVMAgentClient", &json!({ "Connection": id2 }), &mut app).unwrap();
+        assert_eq!(r["stopped"][0], json!(id2));
+        assert_eq!(invoke(&mut other, Some(&id2)), "killed");
+        // Closing the MCP pipe connection ends its session and frees the machine.
+        drop(mcp);
+        assert!(get_agents(Some("Test1"))[0]["takenBy"].is_null());
+        assert_eq!(code(command("Lock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id }), &mut app)), "not_found");
+        assert_eq!(get_agents(Some("Nope"))[0]["state"], "no-agent");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn outbox_paths() {
