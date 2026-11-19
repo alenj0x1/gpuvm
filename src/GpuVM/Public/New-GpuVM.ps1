@@ -206,6 +206,11 @@ function Start-NewGpuVM {
 # The machine's info with how its start went (started, startError, neededGB, freeGB), when it was asked to start.
 function Add-StartResult {
     param($Info, [System.Collections.IDictionary]$Start)
+    # The copy's VM id: GpuVM's service keys what an agent session made by it, not by a name that can be reused.
+    if ($Info -and $Info.PSObject.Properties['Name'] -and -not $Info.PSObject.Properties['vmId']) {
+        $id = try { [string](Get-VM -Name $Info.Name -ErrorAction Stop).Id.Guid } catch { $null }
+        if ($id) { $Info | Add-Member -NotePropertyName vmId -NotePropertyValue $id.ToLowerInvariant() -Force }
+    }
     if ($Start -and $Info) {
         foreach ($k in 'started', 'startError', 'neededGB', 'freeGB') {
             $Info | Add-Member -NotePropertyName $k -NotePropertyValue $Start[$k] -Force

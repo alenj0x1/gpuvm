@@ -1999,3 +1999,14 @@ InModuleScope GpuVM {
         }
     }
 }
+
+InModuleScope GpuVM {
+    Describe 'A new machine says its VM id' {
+        It 'the service keys an agent''s copies by it' {
+            Mock Get-VM { [pscustomobject]@{ Id = [guid]'3A4B5C6D-7E8F-4A1B-9C2D-3E4F5A6B7C8D' } }
+            (Add-StartResult -Info ([pscustomobject]@{ Name = 'copy1' }) -Start $null).vmId | Should Be '3a4b5c6d-7e8f-4a1b-9c2d-3e4f5a6b7c8d'
+            Mock Get-VM { throw 'gone' }
+            (Add-StartResult -Info ([pscustomobject]@{ Name = 'copy1' }) -Start $null).PSObject.Properties['vmId'] | Should Be $null
+        }
+    }
+}
