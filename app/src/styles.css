@@ -1774,3 +1774,21 @@ html.viewer-panel-window body::after { display: none; }
 .ag-widget-empty { height: 100%; justify-content: center; padding: 8px; }
 .ag-request-actions .btn { min-width: 92px; justify-content: center; }
 .ag-tiny-btn { flex: none; width: 30px; height: 30px; padding: 0; display: grid; place-items: center; }
+/* The agent's windows over the picture (AgentDock.tsx): the dock reuses dock B; the notch rises from the bottom edge. */
+.dock-icon.ag-dock-warn { color: #e7b45e; }
+.dock-icon.ag-dock-risky { color: #ef7a66; }
+.ag-dock-left { flex: none; font-size: 12px; color: #a8a59e; font-variant-numeric: tabular-nums; }
+.dock.ag-dock { width: min(540px, calc(100% - 32px)); }
+.dock.ag-dock-human { width: min(420px, calc(100% - 16px)); }
+.ag-dock-menu { z-index: 60; background: #1c1c1c; color: #ebe8e1; box-shadow: inset 0 0 0 1px #2f2f2f; }
+.ag-dock-menu button:hover { background: #262626; }
+.ag-dock-menu-catch { position: fixed; inset: 0; z-index: 55; }
+.ag-banner-stage { --dk-bg: #1c1c1c; --dk-fg: #ebe8e1; }
+.ag-banner { position: absolute; bottom: 0; left: 50%; box-sizing: border-box; display: flex; align-items: center; gap: 10px; max-width: calc(100% - 16px);
+  padding: 8px 8px 8px 14px; border-radius: 14px 14px 0 0; background: #1c1c1c; color: #ebe8e1; font-size: 13px; white-space: nowrap;
+  transform: translate(-50%, 110%); transition: transform 320ms cubic-bezier(.2, .8, .2, 1); }
+.ag-banner.on { transform: translate(-50%, 0); }
+.ag-banner-icon { color: #7d9cf0; flex: none; display: block; }
+.ag-banner-text { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.ag-banner .dock-btn { flex: none; }
+html.agent-dock-window, html.agent-dock-window body, html.agent-dock-window #root, html.agent-banner-window, html.agent-banner-window body, html.agent-banner-window #root { background: transparent; min-height: 0; height: 100%; overflow: hidden; }

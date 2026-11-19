@@ -45,6 +45,9 @@ windows-sys = { version = "0.61", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 
+# WinRT for the agents' Windows notifications (agent.rs); the version Tauri already builds.
+windows = { version = "0.62.2", features = ["UI_Notifications", "Data_Xml_Dom", "Foundation"] }
+
 [profile.release]
 codegen-units = 1
 lto = true

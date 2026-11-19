@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "agent",
+  "description": "The agent's dock and take-control notch over a machine's picture: they read what they show and answer it, nothing else",
+  "windows": ["agent-dock", "agent-banner"],
+  "permissions": ["core:default", "allow-agent-dock-request", "allow-agent-dock-answer", "allow-agent-banner-info", "allow-agent-banner-return"]
+}

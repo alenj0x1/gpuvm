@@ -25,7 +25,7 @@ import { leaveViewer, showViewer } from "./viewerStore";
 import { Toasts, humanError, stateText, useToasts, useScrollFade } from "./ui";
 import { t, translateModule } from "./i18n";
 import { AgentsView } from "./Agents";
-import { useAgents } from "./agentStore";
+import { refreshAgents, useAgents } from "./agentStore";
 
 const NEW_VM = "__new__";
 // Route of the preferences screen in the URL hash, shaped so it doesn't look like a VM name.
@@ -203,6 +203,17 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     if (renamed.current?.to === selected) return;
     if (selected !== PREFS && selected !== HOME && selected !== AGENTS && !libraryTab(selected) && vms && vms.length && !vms.some((v) => v.name === selected)) setSelected(HOME);
   }, [vms, selected]);
+
+  // A Windows notification of an agent's request opens Agents (agent.rs); answers there are read again at once.
+  useEffect(() => {
+    if (!inTauri) return;
+    const offs: Promise<() => void>[] = [];
+    import("@tauri-apps/api/event").then(({ listen }) => {
+      offs.push(listen<string>("open-route", (e) => { if (e.payload === AGENTS) setSelected(AGENTS); }));
+      offs.push(listen("agents-changed", () => { refreshAgents(); }));
+    });
+    return () => { offs.forEach((p) => p.then((off) => off())); };
+  }, []);
 
   // "Another pattern" is reflected instantly in the sidebar too.
   const [, repaint] = useState(0);

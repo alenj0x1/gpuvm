@@ -1,5 +1,5 @@
 import { useEffect, useSyncExternalStore } from "react";
-import { agents } from "./api";
+import { agents, inTauri } from "./api";
 import type { AgentClient, AgentOffer, AgentRequest } from "./types";
 
 /** What every agent screen shows, read once for all of them (one poll, however many components look). */
@@ -12,13 +12,23 @@ let users = 0;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let running = false;
 
+function take(clients: AgentClient[], requests: AgentRequest[], offers: AgentOffer[]) {
+  const next = { clients, requests, offers, loaded: true, error: null };
+  const j = JSON.stringify(next);
+  if (j !== json) { json = j; snap = next; subs.forEach((f) => f()); }
+}
+
+// In the app, agent.rs polls the service already and sends what it saw to every window: the pages take that, and
+// ask themselves only on start, after a button, and slowly as a fallback.
+if (inTauri) {
+  import("@tauri-apps/api/event").then(({ listen }) => listen<{ clients: AgentClient[]; requests: AgentRequest[]; offers: AgentOffer[] }>("agents-state",
+    (e) => take(e.payload.clients ?? [], e.payload.requests ?? [], e.payload.offers ?? []))).catch(() => {});
+}
+
 async function read() {
   try {
     const [clients, requests, offers] = await Promise.all([agents.clients(), agents.requests(), agents.offers()]);
-    const next = { clients, requests, offers, loaded: true, error: null };
-    const j = JSON.stringify(next);
-    // Nothing re-renders when nothing changed.
-    if (j !== json) { json = j; snap = next; subs.forEach((f) => f()); }
+    take(clients, requests, offers);
   } catch (e) {
     snap = { ...snap, loaded: true, error: String(e) };
     subs.forEach((f) => f());
@@ -33,7 +43,7 @@ async function loop() {
   running = false;
   if (!users) return;
   const busy = snap.clients.some((c) => c.state !== "idle") || snap.requests.length > 0;
-  timer = setTimeout(loop, document.hidden ? 10000 : busy ? 1500 : 5000);
+  timer = setTimeout(loop, inTauri ? 15000 : document.hidden ? 10000 : busy ? 1500 : 5000);
 }
 
 /** Read again now (after an answer or a button), instead of waiting for the next poll. */

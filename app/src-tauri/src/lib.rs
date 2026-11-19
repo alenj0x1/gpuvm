@@ -18,6 +18,7 @@ mod viewer;
 #[cfg(debug_assertions)]
 mod direct;
 mod dock;
+mod agent;
 
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -265,7 +266,7 @@ fn relaunch_as_admin(app: AppHandle) -> Result<(), String> {
 }
 
 /// Brings the main window back (from the tray, minimized or behind other windows).
-fn show_main(app: &AppHandle) {
+pub(crate) fn show_main(app: &AppHandle) {
     use tauri::Manager;
     notices::leave(app);
     if let Some(window) = app.get_webview_window("main") {
@@ -424,10 +425,11 @@ pub fn run() {
         })
         .setup(|app| {
             prompt::start(app.handle().clone());
+            agent::start(app.handle().clone());
             clipboard::start(app.handle());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![ps, job, prompt::admin_prompts, prompt::card_answer, dock::dock_prompt, dock::dock_answer, viewer::viewer_send, viewer::viewer_is_open, viewer::viewer_home, viewer::viewer_show, viewer::viewer_list, viewer::viewer_reveal, viewer::viewer_covered, overlay::viewer_panel_resize, overlay::viewer_panel_close, overlay::viewer_panel_vm, dropzone::transfer_start, dropzone::transfer_cancel, dropzone::transfer_list, dropzone::viewer_drop_hide, dropzone::viewer_drop_state, clipboard::clipboard_items, clipboard::clipboard_send, clipboard::clipboard_auto, clipboard::clipboard_clear, capture::set_capture_prefs, capture::capture_folders, capture::capture_open, capture::capture_reveal, capture::capture_open_folder, capture::capture_state, capture::capture_get_hevc, open_console, repair_service, relaunch_as_admin, service_status, start_service, stop_service, set_service_mode, set_service_startup, set_close_to_tray, set_stop_vms_on_quit, set_language, notices::set_notices_after_quit])
+        .invoke_handler(tauri::generate_handler![ps, job, prompt::admin_prompts, prompt::card_answer, dock::dock_prompt, dock::dock_answer, agent::agent_dock_request, agent::agent_dock_answer, agent::agent_banner_info, agent::agent_banner_return, agent::set_agent_prefs, agent::mcp_exe_path, viewer::viewer_send, viewer::viewer_is_open, viewer::viewer_home, viewer::viewer_show, viewer::viewer_list, viewer::viewer_reveal, viewer::viewer_covered, overlay::viewer_panel_resize, overlay::viewer_panel_close, overlay::viewer_panel_vm, dropzone::transfer_start, dropzone::transfer_cancel, dropzone::transfer_list, dropzone::viewer_drop_hide, dropzone::viewer_drop_state, clipboard::clipboard_items, clipboard::clipboard_send, clipboard::clipboard_auto, clipboard::clipboard_clear, capture::set_capture_prefs, capture::capture_folders, capture::capture_open, capture::capture_reveal, capture::capture_open_folder, capture::capture_state, capture::capture_get_hevc, open_console, repair_service, relaunch_as_admin, service_status, start_service, stop_service, set_service_mode, set_service_startup, set_close_to_tray, set_stop_vms_on_quit, set_language, notices::set_notices_after_quit])
         .build(tauri::generate_context!())
         .expect("failed to start GpuVM")
         .run(|app, event| {

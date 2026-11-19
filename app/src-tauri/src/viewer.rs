@@ -34,9 +34,11 @@ const PANEL_GAP: Duration = Duration::from_millis(250);
 /// Messages the viewer may send.
 const FROM_VIEWER: &[&str] = &["hello", "stage", "stage-failed", "connected", "error", "app-running", "window", "first-frame", "stats", "panel", "home", "ended", "drag",
     // Screenshots and recordings (capture.rs).
-    "capture", "capture-error", "recording"];
+    "capture", "capture-error", "recording",
+    // The person moved the mouse or pressed a key over the picture while an agent works (agent.rs): nothing more.
+    "input"];
 /// Commands this app may send.
-const TO_VIEWER: &[&str] = &["inset", "capture", "fullscreen", "stats", "quit", "focus", "screenshot", "record", "replay-save"];
+const TO_VIEWER: &[&str] = &["inset", "capture", "fullscreen", "stats", "quit", "focus", "screenshot", "record", "replay-save", "agent-watch"];
 
 struct Pipe(HANDLE);
 // SAFETY: a pipe handle can be used from any thread; reads and writes are overlapped, each with its own event.
@@ -436,6 +438,11 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
                 }
                 continue;
             }
+            // Input over the picture: only agent.rs hears it (take control), never the pages.
+            if kind == "input" {
+                crate::agent::on_input(&app, &vm);
+                continue;
+            }
             if kind == "recording" {
                 crate::capture::on_recording(&vm, msg["on"].as_bool().unwrap_or(false));
             }
@@ -455,6 +462,7 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
             let _ = app.emit("viewer", json!({ "vm": vm, "msg": msg }));
             crate::overlay::on_viewer(&app, &vm, &msg);
             crate::dock::on_viewer(&app, &vm, &msg);
+            crate::agent::on_viewer(&app, &vm, &msg);
             // The first picture: the app zooms into the machine and then reveals the viewer (viewer_reveal). If the
             // page doesn't (hidden, busy), the viewer comes out on its own a moment later.
             if kind == "first-frame" && viewer.embed && !viewer.first_frame.swap(true, Ordering::AcqRel) {
