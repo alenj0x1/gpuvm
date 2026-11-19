@@ -10,6 +10,7 @@ function Set-GpuVMAgentUser {
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][ValidateSet('agent', 'own')][string]$User
     )
+    $ErrorActionPreference = 'Stop'
     Assert-Admin
     $state = Get-GpuVMState -Name $Name
     if (-not $state['agent']) { throw "'$Name' doesn't have GpuVM's agent. Set its use to Agent first." }

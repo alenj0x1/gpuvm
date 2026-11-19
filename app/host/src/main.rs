@@ -60,16 +60,28 @@ unsafe extern "system" fn control(code: u32, _: u32, _: *mut c_void, _: *mut c_v
         // Windows is shutting down: Hyper-V shuts the machines down by itself.
         std::thread::spawn(|| stop_now());
     } else if code == SERVICE_CONTROL_STOP {
-        // Stopping from the app or Windows: what is running finishes first (a VM being created, shutting the
-        // machines down), up to 10 minutes; new requests are refused meanwhile.
+        // Stopping from the app or Windows: a job that changes machines (a VM being created, shutting them down)
+        // finishes first, up to 10 minutes; reading requests and agent requests get 5 s (a hung Get-* or a long
+        // agent request no longer holds the stop). New requests are refused meanwhile. Then the service ends and
+        // its job object ends every bridge with it, idle or hung. The installer bounds it further (stop_and_wait).
         server::STOPPING.store(true, Ordering::SeqCst);
-        std::thread::spawn(|| {
+        let long = 600;
+        std::thread::spawn(move || {
             let start = std::time::Instant::now();
             let mut checkpoint = 1;
-            while server::BUSY.load(Ordering::SeqCst) > 0 && start.elapsed() < Duration::from_secs(600) {
-                set_state(SERVICE_STOP_PENDING, checkpoint);
-                checkpoint += 1;
-                std::thread::sleep(Duration::from_millis(500));
+            let mut wait = |counter: &std::sync::atomic::AtomicUsize, limit: u64| {
+                let since = std::time::Instant::now();
+                while counter.load(Ordering::SeqCst) > 0 && since.elapsed() < Duration::from_secs(limit) {
+                    set_state(SERVICE_STOP_PENDING, checkpoint);
+                    checkpoint += 1;
+                    std::thread::sleep(Duration::from_millis(250));
+                }
+            };
+            wait(&server::BUSY, long);
+            wait(&server::QUICK, 5);
+            let (busy, quick) = (server::BUSY.load(Ordering::SeqCst), server::QUICK.load(Ordering::SeqCst));
+            if busy + quick > 0 {
+                server::log(&format!("stopping after {:.1} s with {busy} job(s) and {quick} request(s) still running: ended", start.elapsed().as_secs_f64()));
             }
             stop_now();
         });
@@ -112,10 +124,41 @@ fn state(svc: &ScHandle) -> u32 {
 }
 
 fn stop_and_wait(svc: &ScHandle) {
+    let process_info = || {
+        let mut info: SERVICE_STATUS_PROCESS = unsafe { std::mem::zeroed() };
+        let mut needed = 0;
+        let ok = unsafe {
+            QueryServiceStatusEx(svc.0, SC_STATUS_PROCESS_INFO, &mut info as *mut _ as *mut u8, std::mem::size_of::<SERVICE_STATUS_PROCESS>() as u32, &mut needed)
+        };
+        (ok != 0).then_some(info)
+    };
+    // The process asked to stop: a service started again meanwhile (another process id) is never touched.
+    let asked = process_info().map(|i| i.dwProcessId).unwrap_or(0);
     let mut status: SERVICE_STATUS = unsafe { std::mem::zeroed() };
     unsafe { ControlService(svc.0, SERVICE_CONTROL_STOP, &mut status) };
-    // Up to a minute: the service lets what is running finish first.
-    for _ in 0..600 {
+    // The installer (and install/uninstall) waits 30 s for what is running to finish, then ends the service's
+    // process: its job object takes every bridge with it. An upgrade never hangs on a stuck PowerShell.
+    for _ in 0..300 {
+        match process_info() {
+            Some(i) if i.dwCurrentState == SERVICE_STOPPED || i.dwProcessId != asked => return,
+            None => return,
+            _ => {}
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let info = process_info().filter(|i| i.dwProcessId == asked && i.dwCurrentState != SERVICE_STOPPED);
+    if let Some(info) = info.filter(|i| i.dwProcessId != 0) {
+        use windows_sys::Win32::System::Threading::{OpenProcess, TerminateProcess, PROCESS_TERMINATE};
+        let process = unsafe { OpenProcess(PROCESS_TERMINATE, 0, info.dwProcessId) };
+        if !process.is_null() {
+            unsafe {
+                TerminateProcess(process, 1);
+                CloseHandle(process);
+            }
+            server::log(&format!("the service didn't stop in 30 s (state {}); its process {} was ended", info.dwCurrentState, info.dwProcessId));
+        }
+    }
+    for _ in 0..100 {
         if state(svc) == SERVICE_STOPPED {
             break;
         }

@@ -20,6 +20,9 @@ function Install-GpuVMAgent {
         # Who Windows signs in as: the agent's own standard user (default), or the person's user as configured before.
         [ValidateSet('agent', 'own')][string]$User = 'agent'
     )
+    # Any failure stops the install: it never reports success with a step left undone (lab 052: a denied secret
+    # move was a non-terminating error and the caller was told it worked).
+    $ErrorActionPreference = 'Stop'
     Assert-Admin
     $state = Get-GpuVMState -Name $Name
     $vm = Get-VM -Name $Name -ErrorAction Stop

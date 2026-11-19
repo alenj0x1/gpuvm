@@ -40,7 +40,7 @@ fn handle(pipe: HANDLE) {
         let id = request["id"].clone();
         let reply = match request["cmd"].as_str() {
             Some(cmd) if agent::is_command(cmd) => {
-                let _busy = crate::server::Busy::start();
+                let _busy = crate::server::Busy::quick();
                 agent::result_line(&id, agent::command(cmd, &request["args"], &mut ctx))
             }
             _ => json!({ "id": id, "type": "result", "ok": false, "error": "Invalid request.", "code": "bad_request" }),

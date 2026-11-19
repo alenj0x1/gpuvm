@@ -44,6 +44,8 @@ const CONSENT_TTL: Duration = Duration::from_secs(120);
 
 /// Requests running right now: a stop waits for them.
 pub static BUSY: AtomicUsize = AtomicUsize::new(0);
+/// Requests that only read or that can be cut (Get-*, agent requests): a stop waits for them a few seconds at most.
+pub static QUICK: AtomicUsize = AtomicUsize::new(0);
 /// Set while the service stops: new requests are refused.
 pub static STOPPING: AtomicBool = AtomicBool::new(false);
 /// Open connections, and whether the app asked the service to stop once none is left (when it quits).
@@ -289,17 +291,25 @@ fn spawn_bridge(token: &Handle) -> Result<Bridge, String> {
 
 // ---------------------------------------------------------------- one connection
 
-/// Counts a request as running while it lives.
-pub struct Busy;
+/// Counts a request as running while it lives: a job that changes machines (a stop lets it finish), or a quick one.
+pub struct Busy(bool);
 impl Busy {
     pub fn start() -> Self {
         BUSY.fetch_add(1, Ordering::SeqCst);
-        Busy
+        Busy(true)
+    }
+    pub fn quick() -> Self {
+        QUICK.fetch_add(1, Ordering::SeqCst);
+        Busy(false)
+    }
+    /// A module command: reading ones (Get-*, Test-*) are quick, the rest change something and are let finish.
+    pub fn for_command(cmd: &str) -> Self {
+        if cmd.starts_with("Get-") || cmd.starts_with("Test-") { Busy::quick() } else { Busy::start() }
     }
 }
 impl Drop for Busy {
     fn drop(&mut self) {
-        BUSY.fetch_sub(1, Ordering::SeqCst);
+        if self.0 { BUSY.fetch_sub(1, Ordering::SeqCst) } else { QUICK.fetch_sub(1, Ordering::SeqCst) };
     }
 }
 
@@ -381,7 +391,7 @@ fn handle(pipe: HANDLE) {
             continue;
         };
         if crate::agent::is_command(&cmd) {
-            let _busy = Busy::start();
+            let _busy = Busy::quick();
             let reply = crate::agent::result_line(&id, crate::agent::command(&cmd, &request["args"], &mut agent_ctx));
             if !send(&mut out, &reply) {
                 return;
@@ -422,7 +432,7 @@ fn handle(pipe: HANDLE) {
             }
         }
         let b = bridge.as_mut().unwrap();
-        let _busy = Busy::start();
+        let _busy = Busy::for_command(&cmd);
         let forward = json!({ "id": id, "cmd": cmd, "args": request["args"] }).to_string();
         if writeln!(b.stdin, "{forward}").and_then(|_| b.stdin.flush()).is_err() {
             fail(&mut out, "PowerShell stopped responding.".into());

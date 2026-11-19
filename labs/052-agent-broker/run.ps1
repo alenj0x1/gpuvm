@@ -10,14 +10,24 @@ param(
     [switch]$Loopback,
     # The real guest agent instead of the stub: a checkout of the guest agent's branch (install.ps1 and the built
     # target\release\gpuvm-agent.exe are used from there; the stub only plays the attacker, copied into the guest).
-    [string]$AgentFrom
+    [string]$AgentFrom,
+    # The real guest agent is installed in the VM (an installed GpuVM gives it): attacks use a copy of the stub.
+    [switch]$Real,
+    # Another GpuVM module (the installed one) instead of this checkout's.
+    [string]$ModulePath
 )
 $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 $out = Join-Path $PSScriptRoot 'out'
 New-Item -ItemType Directory -Force $out | Out-Null
-Import-Module (Join-Path $root 'src\GpuVM\GpuVM.psd1') -Force
+if ($AgentFrom) { $Real = $true }
+# common.ps1 imports this checkout's module; -ModulePath replaces it afterwards so only one GpuVM module is loaded.
 . (Join-Path $root 'tools\latency\common.ps1')
+if ($ModulePath) {
+    Get-Module GpuVM | Remove-Module -Force
+    Import-Module $ModulePath -Force
+}
+if (@(Get-Module GpuVM).Count -ne 1) { throw 'more than one GpuVM module loaded' }
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $stub = Join-Path $PSScriptRoot 'stub\target\release\stub052.exe'
 $loopDir = 'C:\GpuVM\lab052\loopback'
@@ -34,11 +44,16 @@ if ($Loopback) {
 }
 else { $cred = (Get-LatencyVM -Name $Name).Guest }
 $outboxDir = if ($Loopback) { $env:STUB052_OUTBOX } else { 'C:\Users\agent\Desktop\Outbox' }
+# The real agent says where its home is (a profile folder can be named otherwise).
+if ($Real) {
+    $home052 = (Invoke-GpuVMAgent -Name $Name -Method agent.info).result.home
+    if ($home052) { $outboxDir = Join-Path $home052 'Desktop\Outbox' }
+}
 
 # One hostile behaviour of the stub, in the guest (as an administrator, who can read the secret like SYSTEM) or here.
 function Invoke-StubAttack([string]$case) {
     if ($Loopback) { return & $stub attack $case --secret "$loopDir\secret.raw" --vm-id $loopId }
-    if ($AgentFrom) {
+    if ($Real) {
         if (-not $script:stubInGuest) {
             $s = New-PSSession -VMName $Name -Credential $cred
             Invoke-Command -Session $s { New-Item -ItemType Directory -Force 'C:\Windows\Temp\GpuVMLab052' | Out-Null }
@@ -58,7 +73,7 @@ function Set-RealAgent([bool]$Running) {
         else { Stop-Process -Id $script:stubProcess.Id -Force; Start-Sleep -Milliseconds 300 }
         return
     }
-    if ($AgentFrom) {
+    if ($Real) {
         Invoke-Guest { param($on) if ($on) { Start-Service GpuVMAgent } else { Stop-Service GpuVMAgent -Force } } @($Running)
         Start-Sleep -Milliseconds 300
         return
@@ -182,7 +197,7 @@ foreach ($part in $Parts) {
             # End to end through the broker's module pipe: raw line (instrument), the cmdlet, and blob sizes.
             $raw = Open-Raw
             $samples = @{}
-            $cases = if ($AgentFrom) {
+            $cases = if ($Real) {
                 [ordered]@{
                     'agent.info raw'          = @{ Method = 'agent.info'; Params = @{} }
                     'screen.state'            = @{ Method = 'screen.state'; Params = @{} }
@@ -265,7 +280,7 @@ foreach ($part in $Parts) {
             # A request the guest holds for 5 s with a 1 s timeout: the caller gets "timeout" at ~1 s, the guest gets a
             # cancel, and the next request works at once. Then 40 requests in flight (the cap is 32).
             $sw = [Diagnostics.Stopwatch]::StartNew()
-            $r = Invoke-GpuVMAgent -Name $Name -Method input.act -Params @{ actions = @(@{ wait = @{ ms = 5000 } }) } -TimeoutSec 1
+            $r = Invoke-GpuVMAgent -Name $Name -Method input.act -Params @{ actions = @(@{ type = 'wait'; ms = 5000 }) } -TimeoutSec 1
             $timeoutMs = $sw.Elapsed.TotalMilliseconds
             $sw.Restart()
             $next = Invoke-GpuVMAgent -Name $Name -Method agent.info
@@ -273,7 +288,7 @@ foreach ($part in $Parts) {
             $burst = 1..40 | ForEach-Object -ThrottleLimit 40 -Parallel {
                 $p = [IO.Pipes.NamedPipeClientStream]::new('.', 'gpuvm-agent', [IO.Pipes.PipeDirection]::InOut); $p.Connect(3000)
                 $r = [IO.StreamReader]::new($p); $w = [IO.StreamWriter]::new($p)
-                $w.Write((@{ id = 1; cmd = 'Invoke-GpuVMAgent'; args = @{ Name = $using:Name; Method = 'input.act'; Params = @{ actions = @(@{ wait = @{ ms = 2000 } }) }; TimeoutSec = 10 } } | ConvertTo-Json -Compress -Depth 6) + "`n"); $w.Flush()
+                $w.Write((@{ id = 1; cmd = 'Invoke-GpuVMAgent'; args = @{ Name = $using:Name; Method = 'input.act'; Params = @{ actions = @(@{ type = 'wait'; ms = 2000 }) }; TimeoutSec = 10 } } | ConvertTo-Json -Compress -Depth 6) + "`n"); $w.Flush()
                 $d = ($r.ReadLine() | ConvertFrom-Json).data[0]
                 $p.Dispose()
                 if ($d.ok) { 'ok' } else { $d.error.code }
@@ -326,18 +341,18 @@ foreach ($part in $Parts) {
             $rows = [ordered]@{}
             try {
                 foreach ($f in 'report.txt', 'report.txt', 'big.bin') {
-                    $o = New-GpuVMAgentOffer -Name $Name -Path "C:\Users\agent\Desktop\Outbox\$f" -Note 'lab 052'
+                    $o = New-GpuVMAgentOffer -Name $Name -Path "Desktop\Outbox\$f" -Note 'lab 052'
                     $pending = Get-GpuVMAgentOffer -Id $o.offerId
                     $sw = [Diagnostics.Stopwatch]::StartNew()
                     $done = Resolve-GpuVMAgentOffer -Id $o.offerId -Accept $true
                     $ms = $sw.Elapsed.TotalMilliseconds
-                    $made.Add($done.hostPath)
-                    $zone = Get-Content -Raw -LiteralPath $done.hostPath -Stream Zone.Identifier
-                    $rows["$f#$($made.Count)"] = [ordered]@{ sizeShown = $pending.size; state = $done.state; hostPath = $done.hostPath; ms = [math]::Round($ms)
-                        sameBytes = ((Get-FileHash $done.hostPath).Hash -eq $sha[$f.Split('.')[0]]); zone = $zone.Trim()
-                        owner = (Get-Acl $done.hostPath).Owner }
+                    $made.Add($done.savedTo)
+                    $zone = Get-Content -Raw -LiteralPath $done.savedTo -Stream Zone.Identifier
+                    $rows["$f#$($made.Count)"] = [ordered]@{ sizeShown = $pending.sizeBytes; state = $done.state; hostPath = $done.savedTo; ms = [math]::Round($ms)
+                        sameBytes = ((Get-FileHash $done.savedTo).Hash -eq $sha[$f.Split('.')[0]]); zone = $zone.Trim()
+                        owner = (Get-Acl $done.savedTo).Owner }
                 }
-                $declined = New-GpuVMAgentOffer -Name $Name -Path 'C:\Users\agent\Desktop\Outbox\report.txt'
+                $declined = New-GpuVMAgentOffer -Name $Name -Path 'Desktop\Outbox\report.txt'
                 $rows['decline'] = (Resolve-GpuVMAgentOffer -Id $declined.offerId -Accept $false).state
                 $rows['answer twice'] = try { Resolve-GpuVMAgentOffer -Id $declined.offerId -Accept $true; 'accepted!' } catch { $_.Exception.Message }
                 foreach ($bad in 'C:\Users\agent\secret.txt', 'C:\Users\agent\Desktop\Outbox\..\..\secret.txt', 'C:\Users\agent\Desktop\Outbox\sub\x.txt', 'C:\Windows\win.ini') {

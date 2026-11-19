@@ -508,7 +508,7 @@ InModuleScope GpuVM {
             Mock Save-GpuVMComponent { 'C:\cache\usbip\USBip-0.9.8.0-x64.exe' }
             Mock New-PSSession { [Runtime.Serialization.FormatterServices]::GetUninitializedObject([System.Management.Automation.Runspaces.PSSession]) }
             Mock Copy-Item { $script:copied += @($LiteralPath) }
-            Mock Close-AgentSession { }
+            Mock Remove-PSSession { }
             Mock Write-Step { }
             $script:copied = @()
             Install-GuestAudio -Name 'vm' -Credential $cred | Should Be $true
@@ -1404,15 +1404,12 @@ InModuleScope GpuVM {
             Remove-GpuVMAgentRegistration -VMId $id
             Test-Path $dir | Should Be $false
         }
-        It 'the secret file is DPAPI-protected and readable by SYSTEM only' {
-            $dir = Join-Path $TestDrive 'secret-test'
-            New-Item -ItemType Directory $dir -Force | Out-Null
-            Write-AgentSecret -Folder $dir -Secret ([byte[]](1..32))
-            $acl = Get-Acl (Join-Path $dir 'secret')
-            $acl.AreAccessRulesProtected | Should Be $true
-            $sids = @($acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value })
-            ($sids -join ',') | Should Be 'S-1-5-18'
-            Test-Path (Join-Path $dir 'secret.new') | Should Be $false
+        It 'the secret goes to the service, which stores it as SYSTEM' {
+            Mock Invoke-AgentBroker { $script:sent = @{ Command = $Command; Arguments = $Arguments } }
+            Write-AgentSecret -Folder 'C:\ProgramData\GpuVM\agents\0b5d1f53-1e33-4b7e-9f0a-2c4d6e8f0a1b' -Secret ([byte[]](1..32))
+            $script:sent.Command | Should Be 'Set-GpuVMAgentSecret'
+            $script:sent.Arguments['VmId'] | Should Be '0b5d1f53-1e33-4b7e-9f0a-2c4d6e8f0a1b'
+            ([Convert]::FromBase64String($script:sent.Arguments['Secret'])).Length | Should Be 32
         }
     }
 
