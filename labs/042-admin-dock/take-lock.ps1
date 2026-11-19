@@ -9,7 +9,7 @@ function Get-Queue { if (Test-Path $queue) { @(Get-Content $queue | ForEach-Obje
 if ((Test-Path $queue) -and (Get-Queue) -notcontains $Me) { Add-Content $queue $Me }
 $end = (Get-Date).AddMinutes($MaxMinutes)
 while ((Get-Date) -lt $end) {
-    $line = Get-Queue
+    $line = @(Get-Queue)   # @(): a one-line queue would otherwise be a string and $line[0] its first letter
     if (-not $line.Count -or $line[0] -eq $Me) {
         try {
             $fs = [IO.File]::Open($file, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::Read)
