@@ -1794,6 +1794,20 @@ InModuleScope GpuVM {
             Get-GpuVMCaptureMode -State @{ use = 'agent'; config = @{ streaming = @{} } } | Should Be 'ddx'
             Get-GpuVMCaptureMode -State @{ use = 'agent'; config = @{ streaming = @{ captureMode = 'wgc' } } } | Should Be 'ddx'
         }
+        It 'a guest with a standard user signed in keeps the service: WGC comes back as ddx' {
+            $cred = [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force))
+            Mock Write-Step { }
+            Mock Invoke-Guest { 'standard-changed' }
+            $e = 'wgc'
+            Set-GuestCaptureMode -Name a -Credential $cred -Mode wgc -Effective ([ref]$e) | Should Be $true
+            $e | Should Be 'ddx'
+            Mock Invoke-Guest { 'standard-unchanged' }
+            Set-GuestCaptureMode -Name a -Credential $cred -Mode wgc -Effective ([ref]$e) | Should Be $false
+            Mock Invoke-Guest { 'unchanged' }
+            Set-GuestCaptureMode -Name a -Credential $cred -Mode wgc -Effective ([ref]$e) | Should Be $false
+            $e | Should Be 'wgc'
+            Set-GuestCaptureMode -Name a -Credential $cred -Mode wgc | Should Be $false
+        }
         It 'WGC is refused on an agent machine' {
             Mock Assert-Admin { }
             Mock Save-GpuVMState { $script:saved = $true }

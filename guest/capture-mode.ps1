@@ -19,11 +19,34 @@ $confChanged = ([string]$current).Trim() -ne $(if ($Mode -eq 'wgc') { 'wgc' } el
 # The service also starts sunshine.exe in the user's session (as SYSTEM), so the user-mode instance is told apart by its task.
 $userTask = Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue
 
+$standard = $false
+if ($Mode -eq 'wgc') {
+    $user = (Get-CimInstance Win32_ComputerSystem).UserName
+    if (-not $user) { return 'nosession' }
+    # WGC runs Sunshine as the signed-in user. A standard user (an agent machine's `agent`) can't run it (its config is
+    # administrators-only: nothing listens and the viewer waits for ever, lab 052) and must never own it: the service
+    # (SYSTEM) captures instead.
+    # The Administrators group's members through ADSI (Get-LocalGroupMember fails on a group with an orphaned SID).
+    # When it can't be told, the service captures (the safe side).
+    $admin = try {
+        $sid = (New-Object Security.Principal.NTAccount $user).Translate([Security.Principal.SecurityIdentifier]).Value
+        $group = (New-Object Security.Principal.SecurityIdentifier 'S-1-5-32-544').Translate([Security.Principal.NTAccount]).Value.Split('\')[-1]
+        $members = @(([ADSI]"WinNT://$env:COMPUTERNAME/$group,group").Invoke('Members') | ForEach-Object {
+                $bytes = [byte[]]$_.GetType().InvokeMember('objectSid', 'GetProperty', $null, $_, $null)
+                (New-Object Security.Principal.SecurityIdentifier $bytes, 0).Value })
+        $sid -in $members
+    }
+    catch { $false }
+    if (-not $admin) { $Mode = 'ddx'; $standard = $true }
+}
+if ($standard) {
+    $lines = @(Get-Content -LiteralPath $conf -ErrorAction SilentlyContinue | Where-Object { $_ -notmatch '^\s*capture\s*=' })
+    $confChanged = ([string]$current).Trim() -ne ''
+}
+
 if ($Mode -eq 'wgc') {
     $ready = -not $confChanged -and $service.Status -ne 'Running' -and $userTask -and $userTask.State -eq 'Running'
     if ($ready -and -not $Restart) { return 'unchanged' }
-    $user = (Get-CimInstance Win32_ComputerSystem).UserName
-    if (-not $user) { return 'nosession' }
     if ($confChanged) { [IO.File]::WriteAllLines($conf, [string[]]$lines, (New-Object Text.UTF8Encoding $false)) }
     Stop-Service $service.Name -Force -ErrorAction SilentlyContinue
     Set-Service $service.Name -StartupType Manual
@@ -38,8 +61,10 @@ if ($Mode -eq 'wgc') {
     return 'changed'
 }
 
+# A standard user signed in: the result says so, and the caller treats the machine as ddx.
+$prefix = if ($standard) { 'standard-' } else { '' }
 $ready = -not $confChanged -and $service.Status -eq 'Running' -and -not $userTask
-if ($ready -and -not $Restart) { return 'unchanged' }
+if ($ready -and -not $Restart) { return "${prefix}unchanged" }
 if ($userTask) {
     Stop-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName $task -Confirm:$false
@@ -48,4 +73,4 @@ if ($userTask) {
 if ($confChanged) { [IO.File]::WriteAllLines($conf, [string[]]$lines, (New-Object Text.UTF8Encoding $false)) }
 Set-Service $service.Name -StartupType Automatic
 Restart-Service $service.Name -Force
-'changed'
+"${prefix}changed"
