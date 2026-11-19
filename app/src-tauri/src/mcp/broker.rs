@@ -160,7 +160,18 @@ impl PipeBroker {
     /// A disposable machine from a template: created and started, its agent installed (each machine gets its own
     /// secret, so a template's copy can't be used as is), and taken by this connection.
     fn create(&self, args: &Value) -> Result<Reply> {
-        let mut new = json!({ "Template": s(args, "template"), "Name": s(args, "name"), "Profile": s(args, "profile"), "Disposable": true });
+        // Agent sessions must name the machine; `Connection` makes the service claim it for this session once it is
+        // created (validated and stripped by the service), so only this session can install its agent and take it.
+        let name = match args["name"].as_str() {
+            Some(n) if !n.is_empty() => n.to_string(),
+            _ => {
+                let template: String = args["template"].as_str().unwrap_or("agent").chars().take(30).collect();
+                let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(0);
+                format!("{template}-{:06x}", (nanos ^ std::process::id().rotate_left(12)) & 0xff_ffff)
+            }
+        };
+        let mut new = json!({ "Template": s(args, "template"), "Name": name, "Profile": s(args, "profile"), "Disposable": true,
+            "Connection": s(args, "connection") });
         let mut vm = serde_json::Map::new();
         if let Some(cpu) = args["cpu"].as_u64() {
             vm.insert("cpu".into(), json!({ "count": cpu }));
@@ -172,21 +183,30 @@ impl PipeBroker {
             new["Override"] = json!({ "vm": Value::Object(vm) });
         }
         let created = self.cmd_long("New-GpuVM", new)?;
-        let name = created.data["name"].as_str().or(args["name"].as_str())
-            .ok_or_else(|| BrokerError::new("internal", "GpuVM didn't say which machine it created."))?.to_string();
+        let name = created.data["name"].as_str().unwrap_or(&name).to_string();
+        // Errors that retrying can't fix: someone else has it, the session ended, or it isn't allowed.
+        let fatal = |e: &BrokerError| matches!(e.code.as_str(), "unavailable" | "taken" | "not_taken" | "killed" | "denied" | "bad_request");
         // PowerShell Direct answers once Windows has started: retry the install for a few minutes.
         let end = Instant::now() + Duration::from_secs(300);
         loop {
             match self.cmd_long("Install-GpuVMAgent", json!({ "Name": name })) {
                 Ok(_) => break,
-                Err(e) if Instant::now() < end && e.code != "unavailable" => {
+                Err(e) if Instant::now() < end && !fatal(&e) => {
                     super::server::log(&format!("installing the agent in {name}: {} (retrying)", e.message));
                     std::thread::sleep(Duration::from_secs(10));
                 }
                 Err(e) => return Err(BrokerError::new(&e.code, format!("{name} was created but its agent couldn't be installed: {}", e.message))),
             }
         }
-        self.cmd("Lock-GpuVMAgent", json!({ "Name": name, "Connection": s(args, "connection"), "Task": s(args, "task") }))?;
+        // The claim becomes the lock once the agent inside has registered (it may restart Windows first).
+        let end = Instant::now() + Duration::from_secs(300);
+        loop {
+            match self.cmd("Lock-GpuVMAgent", json!({ "Name": name, "Connection": s(args, "connection"), "Task": s(args, "task") })) {
+                Ok(_) => break,
+                Err(e) if Instant::now() < end && !fatal(&e) => std::thread::sleep(Duration::from_secs(3)),
+                Err(e) => return Err(BrokerError::new(&e.code, format!("{name} was created but couldn't be taken: {}", e.message))),
+            }
+        }
         Ok(Reply::of(json!({ "name": name })))
     }
 
