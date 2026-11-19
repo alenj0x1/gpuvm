@@ -40,6 +40,10 @@ Driver: `drive.py` (a minimal MCP client over stdio, both eras; phases `latency`
 
 ## Part 2: real machines (pending integration)
 
+Ready to run once the coordinator installs the integrated build: `pwsh -NoProfile -File labs/053-mcp/part2.ps1 -Template <t>`
+(lab lock as `agent-mcp`, preflight, both eras, coords against the real cursor, misuse, destroy-then-use, then a
+real-model Claude Code scenario; every disposable it creates is destroyed).
+
 Needs the broker (claude/agent-broker-*), the guest agent and a template with it, in an installed build. Plan:
 `python drive.py --exe "C:\Program Files\GpuVM\gpuvm.exe" --template <t> --phases latency,coords,misuse`
 (coords: random screenshot pixels at five sizes → `act move` → the VM's real cursor position read with `run`),

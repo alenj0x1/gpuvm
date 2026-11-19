@@ -184,6 +184,14 @@ def phase_misuse(m, machine):
     return {"rows": rows}
 
 
+def phase_finale(m, machine):
+    """Destroy the disposable, then use it: the error must say it's gone."""
+    d = m.tool("destroy", machine=machine)
+    after = m.tool("screenshot", machine=machine)
+    return {"rows": [{"case": "destroy", "error": d["error"], "ms": round(d["ms"]), "text": d["text"][:200]},
+                     {"case": "screenshot after destroy", "error": after["error"], "ms": round(after["ms"]), "text": after["text"][:300]}]}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--exe", required=True)
@@ -198,6 +206,7 @@ def main():
 
     m = Mcp(a.exe, a.fake, a.era)
     report = {"exe": a.exe, "fake": a.fake, "era": a.era, "version": m.version}
+    created = None
     try:
         t0 = time.perf_counter()
         if a.template:
@@ -205,6 +214,7 @@ def main():
             report["create"] = {"ms": c["ms"], "text": c["text"], "error": c["error"]}
             print("create:", round(c["ms"]), "ms", c["text"][:200])
             machine = c["text"].split("machine ")[1].split(" ")[0] if not c["error"] else None
+            created = machine
         else:
             machine = a.machine or "work-pc"
             t = m.tool("take_machine", machine=machine)
@@ -221,6 +231,9 @@ def main():
                 r = phase_coords(m, machine, a.samples)
             elif ph == "misuse":
                 r = phase_misuse(m, machine)
+            elif ph == "finale":
+                r = phase_finale(m, machine)
+                created = None
             else:
                 continue
             report[ph] = r
@@ -228,6 +241,12 @@ def main():
             print(json.dumps(r.get("summary") or r["rows"], indent=1)[:6000])
         report["total_s"] = round(time.perf_counter() - t0, 1)
     finally:
+        # A disposable this run created never outlives it (the finale phase destroys it on purpose).
+        if created:
+            try:
+                report["cleanup"] = m.tool("destroy", machine=created)["text"]
+            except Exception as e:
+                report["cleanup"] = f"failed: {e}"
         m.close()
         report["server_stderr"] = m.stderr[-50:]
         print("saved", save("run", report))
