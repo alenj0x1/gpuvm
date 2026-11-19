@@ -1,12 +1,11 @@
-//! files.list / files.read / files.write / outbox.offer, limited to the `agent` user's profile (`C:\Users\agent`).
+//! files.list / files.read / files.write, limited to the `agent` user's profile (`C:\Users\agent`).
 //! Run by the helper as that user, so Windows' own ACLs apply too. On top of them: no `..`, no device names or
 //! alternate streams, no links anywhere on the path (junctions, symlinks, hard links with more than one name), and
 //! the opened handle's final path must still be inside the profile.
 use crate::capture::CallResult;
 use crate::proto::{hex, sha256};
-use crate::util::{random, wide, wstr};
+use crate::util::{wide, wstr};
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
 use std::os::windows::io::{FromRawHandle, OwnedHandle};
 use std::path::{Path, PathBuf};
@@ -173,23 +172,34 @@ pub fn list(p: &Value) -> CallResult {
     Ok((json!({"path": path.to_string_lossy(), "entries": entries, "truncated": truncated}), None))
 }
 
+/// files.read {path, offset?, length?}: the bytes from `offset` (at most `length` and 16 MiB) as the blob, with the
+/// whole file's size, so the host can copy big files (Outbox deliveries up to 2 GB) in pieces.
 pub fn read(p: &Value) -> CallResult {
+    use std::io::{Seek, SeekFrom};
     let path = resolve(p["path"].as_str().unwrap_or(""))?;
     let (h, info, _) = open_checked(&path, FILE_GENERIC_READ.0, OPEN_EXISTING, false)?;
     if info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY.0 != 0 {
         return Err(("bad_request", "that's a folder: use files.list".into()));
     }
     let size = ((info.nFileSizeHigh as u64) << 32) | info.nFileSizeLow as u64;
-    if size > MAX_FILE {
-        return Err(("too_large", format!("the file has {size} bytes; files.read takes up to 16 MiB")));
+    let ranged = !p["offset"].is_null() || !p["length"].is_null();
+    let offset = p["offset"].as_u64().unwrap_or(0);
+    if offset > size {
+        return Err(("bad_request", format!("offset {offset} is past the end ({size} bytes)")));
+    }
+    let want = if ranged { p["length"].as_u64().unwrap_or(MAX_FILE).min(MAX_FILE).min(size - offset) } else { size };
+    if !ranged && size > MAX_FILE {
+        return Err(("too_large", format!("the file has {size} bytes: read it in pieces with offset/length (up to 16 MiB each)")));
     }
     let mut f = std::fs::File::from(h);
-    let mut buf = Vec::with_capacity(size as usize);
-    Read::by_ref(&mut f).take(MAX_FILE + 1).read_to_end(&mut buf).map_err(|e| ("internal", e.to_string()))?;
-    if buf.len() as u64 > MAX_FILE {
-        return Err(("too_large", "the file grew over 16 MiB while reading".into()));
+    f.seek(SeekFrom::Start(offset)).map_err(|e| ("internal", e.to_string()))?;
+    let mut buf = Vec::with_capacity(want as usize);
+    Read::by_ref(&mut f).take(want).read_to_end(&mut buf).map_err(|e| ("internal", e.to_string()))?;
+    let mut r = json!({"path": path.to_string_lossy(), "size": size, "offset": offset, "length": buf.len()});
+    if !ranged {
+        r["sha256"] = json!(hex(&sha256(&buf)));
     }
-    Ok((json!({"path": path.to_string_lossy(), "size": buf.len(), "sha256": hex(&sha256(&buf))}), Some(buf)))
+    Ok((r, Some(buf)))
 }
 
 pub fn write(p: &Value, blob: Option<Vec<u8>>) -> CallResult {
@@ -212,37 +222,4 @@ pub fn write(p: &Value, blob: Option<Vec<u8>>) -> CallResult {
     let mut f = std::fs::File::from(h);
     f.set_len(0).and_then(|_| f.write_all(&data)).and_then(|_| f.flush()).map_err(|e| ("internal", e.to_string()))?;
     Ok((json!({"path": path.to_string_lossy(), "size": data.len(), "sha256": hex(&sha256(&data))}), None))
-}
-
-/// The Outbox: files placed here can leave the VM, but only after the person approves in GpuVM (host side).
-pub fn outbox_offer(p: &Value) -> CallResult {
-    let path = resolve(p["path"].as_str().unwrap_or(""))?;
-    let outbox = root()?.join("Desktop").join("Outbox");
-    let pl = lower(&path);
-    if !pl.starts_with(&(lower(&outbox) + "\\")) {
-        return Err(("denied", format!("only files inside {} can be offered", outbox.display())));
-    }
-    let note: String = p["note"].as_str().unwrap_or("").chars().take(2000).collect();
-    let (h, info, _) = open_checked(&path, FILE_GENERIC_READ.0, OPEN_EXISTING, false)?;
-    if info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY.0 != 0 {
-        return Err(("bad_request", "offer files, not folders (zip a folder first)".into()));
-    }
-    let mut f = std::fs::File::from(h);
-    let mut hasher = Sha256::new();
-    let mut buf = vec![0u8; 1 << 20];
-    let mut size = 0u64;
-    loop {
-        let n = f.read(&mut buf).map_err(|e| ("internal", e.to_string()))?;
-        if n == 0 {
-            break;
-        }
-        size += n as u64;
-        hasher.update(&buf[..n]);
-    }
-    let offer = hex(&random::<8>());
-    Ok((
-        json!({"offerId": offer, "path": path.to_string_lossy(), "name": path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default(),
-               "size": size, "sha256": hex(&hasher.finalize()), "note": note}),
-        None,
-    ))
 }

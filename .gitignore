@@ -39,3 +39,4 @@ tools/screenshots/out/
 /viewer/
 labs/040-viewer-widgets/report.json
 guest/agent/target/
+guest/agent/dist/

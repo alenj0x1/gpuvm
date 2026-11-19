@@ -40,7 +40,7 @@ fn sleep_stop(ms: u64) {
 
 pub const METHODS: &[&str] = &[
     "agent.info", "screen.capture", "screen.state", "input.act", "ui.tree", "ui.invoke", "exec.run", "files.list", "files.read",
-    "files.write", "outbox.offer",
+    "files.write",
 ];
 const HELPER_EVENTS: &[&str] = &["secure_desktop", "foreground", "error_box"];
 const MAX_PENDING: usize = 32;
@@ -48,7 +48,6 @@ const MAX_PENDING: usize = 32;
 struct HostLink {
     stream: Arc<HvStream>,
     sealer: Sealer,
-    conn: u64,
 }
 
 struct HelperLink {
@@ -77,23 +76,22 @@ fn err_res(id: u64, code: &str, msg: &str) -> Value {
     json!({"t": "res", "id": id, "ok": false, "error": {"code": code, "message": msg}})
 }
 
-/// The VmId the host will use: getsockname on the guest side when Windows fills it in, else the KVP parameter
-/// `VirtualMachineId` that Hyper-V writes into the guest (public, not a secret).
+/// The VmId the host sees in accept(): the KVP parameter `VirtualMachineId` that Hyper-V writes into the guest
+/// (public, not a secret). getsockname's local VmId is NOT it (lab 051: the handshake failed with it), so it is only
+/// a fallback when KVP is off.
 fn vm_id(s: &HvStream) -> Option<(String, &'static str)> {
-    if let Some(a) = s.local() {
-        let v = guid_u128(&a.vm_id);
-        if v != 0 && v != HV_GUID_PARENT {
-            return Some((fmt_guid(&a.vm_id), "getsockname"));
-        }
+    if let Some(g) = reg_hklm(r"SOFTWARE\Microsoft\Virtual Machine\Guest\Parameters", "VirtualMachineId").and_then(|r| parse_guid(&r)) {
+        return Some((fmt_guid(&g), "kvp"));
     }
-    let r = reg_hklm(r"SOFTWARE\Microsoft\Virtual Machine\Guest\Parameters", "VirtualMachineId")?;
-    parse_guid(&r).map(|g| (fmt_guid(&g), "kvp"))
+    let a = s.local()?;
+    let v = guid_u128(&a.vm_id);
+    (v != 0 && v != HV_GUID_PARENT).then(|| (fmt_guid(&a.vm_id), "getsockname"))
 }
 
 fn method_deadline(method: &str, params: &Value) -> Duration {
     match method {
         "exec.run" => Duration::from_millis(params["timeoutMs"].as_u64().unwrap_or(60_000).min(600_000) + 10_000),
-        "input.act" | "files.read" | "files.write" | "files.list" | "outbox.offer" => Duration::from_secs(60),
+        "input.act" | "files.read" | "files.write" | "files.list" => Duration::from_secs(60),
         _ => Duration::from_secs(30),
     }
 }
@@ -200,7 +198,7 @@ impl Agent {
             let key = match self.handshake(&s, &k, &vm) {
                 Ok(key) => key,
                 Err(e) => {
-                    note(format!("handshake failed: {e}"));
+                    note(format!("handshake failed (vm {vm} from {vm_src}): {e}"));
                     sleep_stop(1000);
                     continue;
                 }
@@ -208,7 +206,7 @@ impl Agent {
             s.set_timeouts(DEAD_AFTER_MS as u32, 5000);
             let conn = self.conn.fetch_add(1, Ordering::SeqCst) + 1;
             let stream = Arc::new(s);
-            *self.host.lock().unwrap() = Some(HostLink { stream: stream.clone(), sealer: Sealer::new(key), conn });
+            *self.host.lock().unwrap() = Some(HostLink { stream: stream.clone(), sealer: Sealer::new(key) });
             let uptime = unsafe { windows::Win32::System::SystemInformation::GetTickCount64() };
             note(format!(
                 "connected to the host (conn {conn}, vm {vm} from {vm_src}, dial {dial_ms:.1} ms, handshake {:.1} ms, {:.1} s after boot)",
@@ -254,7 +252,8 @@ impl Agent {
                                 return e;
                             }
                         }
-                        _ => return "unknown frame type".into(),
+                        Some("cancel") => self.cancel(v["id"].as_u64().unwrap_or(0)),
+                        _ => {} // unknown types are ignored (newer hosts), never acted on
                     }
                 }
                 Frame::Blob(b) => {
@@ -324,6 +323,18 @@ impl Agent {
             self.send_host(err_res(id, "internal", "the session helper isn't reading"), None);
         }
         Ok(())
+    }
+
+    /// Host cancel: answer `cancelled` now, drop the helper's late answer, and ask the helper to stop the work.
+    fn cancel(&self, id: u64) {
+        let p = self.pending.lock().unwrap().remove(&id);
+        if p.is_none() {
+            return;
+        }
+        if let Some(h) = self.helper.lock().unwrap().as_mut() {
+            let _ = write_frame(&mut h.writer, KIND_JSON, &serde_json::to_vec(&json!({"t": "cancel", "id": id})).unwrap());
+        }
+        self.send_host(err_res(id, "cancelled", "cancelled by the host"), None);
     }
 
     /// Heartbeat every 2 s and request deadlines.

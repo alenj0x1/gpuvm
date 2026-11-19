@@ -294,7 +294,7 @@ fn do_action(a: &Value, m: &Mapper, waited: &mut u64) -> Result<(), Fail> {
     }
 }
 
-pub fn input_act(p: &Value) -> CallResult {
+pub fn input_act(p: &Value, id: u64) -> CallResult {
     let actions = p["actions"].as_array().ok_or(("bad_request", "actions is a list".to_string()))?;
     if actions.is_empty() || actions.len() > MAX_ACTIONS {
         return Err(("bad_request", format!("1 to {MAX_ACTIONS} actions per request")));
@@ -305,6 +305,9 @@ pub fn input_act(p: &Value) -> CallResult {
     let mut waited = 0;
     let mut failed = Vec::new();
     for (i, a) in actions.iter().enumerate() {
+        if crate::helper::is_cancelled(id) {
+            return Err(("cancelled", format!("cancelled by the host (done: {done})")));
+        }
         match do_action(a, &m, &mut waited) {
             Ok(()) => done += 1,
             Err((code, msg)) if stop => return Err((code, format!("action {i}: {msg} (done: {done})"))),

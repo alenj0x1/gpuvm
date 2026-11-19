@@ -814,13 +814,23 @@ fn serve(a: &[String]) {
     let scen = arg(a, "--scenarios").unwrap_or_else(|| "info,capture,latency,uia,exec,files,secure,elevated,abuse,acl,errorbox,reboot".into());
     // bound to this VM's id (not HV_GUID_CHILDREN) so a broker listening for all VMs can run at the same time
     let bind_vm = if vm.is_empty() { HV_GUID_CHILDREN } else { guid_u128(&parse_guid(&vm).expect("--vm")) };
-    let l = match HvListener::bind(bind_vm, SERVICE_ID) {
-        Ok(l) => l,
-        Err(e) => {
-            eprintln!("can't listen on the agent service id ({e}): is GpuVM's broker (or another harness) holding it?");
-            std::process::exit(3);
+    // the name may be held by a broker under test: retry for --wait-bind seconds
+    let wait_bind: u64 = arg(a, "--wait-bind").and_then(|v| v.parse().ok()).unwrap_or(0);
+    let tb = Instant::now();
+    let l = loop {
+        match HvListener::bind(bind_vm, SERVICE_ID) {
+            Ok(l) => break l,
+            Err(e) if tb.elapsed() < Duration::from_secs(wait_bind) => {
+                let _ = e;
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(e) => {
+                eprintln!("can't listen on the agent service id ({e}): is GpuVM's broker (or another harness) holding it?");
+                std::process::exit(3);
+            }
         }
     };
+    println!("listening after {:.1} s", tb.elapsed().as_secs_f64());
     let file = std::fs::OpenOptions::new().create(true).append(true).open(dir.join("results.jsonl")).unwrap();
     let mut lab = Lab { l, secret, vm, name, psd, out: Out { dir, file, t0: Instant::now() } };
     lab.out.rec("start", json!({"scenarios": scen}));

@@ -88,7 +88,7 @@ fn drain(h: HANDLE, out: &mut Vec<u8>, dropped: &mut usize) -> bool {
     }
 }
 
-pub fn exec_run(p: &Value) -> CallResult {
+pub fn exec_run(p: &Value, id: u64) -> CallResult {
     let root = crate::files::root()?;
     let file = p["file"].as_str().filter(|f| !f.is_empty()).ok_or(("bad_request", "file is required".to_string()))?;
     let args: Vec<String> = match &p["args"] {
@@ -186,6 +186,7 @@ pub fn exec_run(p: &Value) -> CallResult {
     let (mut out, mut err) = (Vec::new(), Vec::new());
     let (mut dout, mut derr) = (0usize, 0usize);
     let mut timed_out = false;
+    let mut cancelled = false;
     let deadline = Duration::from_millis(timeout);
     loop {
         drain(out_r.0, &mut out, &mut dout);
@@ -193,8 +194,9 @@ pub fn exec_run(p: &Value) -> CallResult {
         if unsafe { WaitForSingleObject(proc_.0, 5) } == WAIT_OBJECT_0 {
             break;
         }
-        if t0.elapsed() >= deadline {
-            timed_out = true;
+        cancelled = crate::helper::is_cancelled(id);
+        if t0.elapsed() >= deadline || cancelled {
+            timed_out = !cancelled;
             unsafe {
                 let _ = TerminateJobObject(job.0, 1);
                 WaitForSingleObject(proc_.0, 2000);
@@ -218,6 +220,9 @@ pub fn exec_run(p: &Value) -> CallResult {
     }
     drop(job); // no kill-on-close: what the program started on its own keeps running
     let _ = writer.join();
+    if cancelled {
+        return Err(("cancelled", "cancelled by the host: the program and what it started were ended".into()));
+    }
     let stdout = decode(&out);
     let stderr = decode(&err);
     let truncated = dout > 0 || derr > 0;

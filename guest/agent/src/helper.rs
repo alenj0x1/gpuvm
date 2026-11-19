@@ -17,6 +17,15 @@ use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
 
 type Out = Arc<Mutex<File>>;
 
+/// Requests the host cancelled: long work (exec.run, input.act) checks this and stops.
+static CANCELLED: Mutex<Vec<u64>> = Mutex::new(Vec::new());
+/// One input.act at a time (they run off the main thread so a cancel can reach them).
+static INPUT: Mutex<()> = Mutex::new(());
+
+pub fn is_cancelled(id: u64) -> bool {
+    CANCELLED.lock().unwrap().contains(&id)
+}
+
 fn send(out: &Out, v: &Value, blob: Option<&[u8]>) {
     let mut f = out.lock().unwrap();
     let mut bytes = serde_json::to_vec(v).unwrap();
@@ -48,19 +57,21 @@ fn info() -> Value {
            "integrity": crate::token::il_name(state::own_integrity()), "agentUser": crate::files::root().is_ok()})
 }
 
-fn dispatch(method: &str, p: &Value, blob: Option<Vec<u8>>) -> CallResult {
+fn dispatch(method: &str, p: &Value, blob: Option<Vec<u8>>, id: u64) -> CallResult {
     match method {
         "agent.info" => Ok((info(), None)),
         "screen.capture" => capture::screen_capture(p),
         "screen.state" => Ok((state::screen_state(), None)),
-        "input.act" => crate::input::input_act(p),
+        "input.act" => {
+            let _one = INPUT.lock().unwrap_or_else(|e| e.into_inner());
+            crate::input::input_act(p, id)
+        }
         "ui.tree" => crate::uia::ui_tree(p),
         "ui.invoke" => crate::uia::ui_invoke(p),
-        "exec.run" => crate::exec::exec_run(p),
+        "exec.run" => crate::exec::exec_run(p, id),
         "files.list" => crate::files::list(p),
         "files.read" => crate::files::read(p),
         "files.write" => crate::files::write(p, blob),
-        "outbox.offer" => crate::files::outbox_offer(p),
         _ => Err(("bad_request", "unknown method".into())),
     }
 }
@@ -72,8 +83,10 @@ fn reply(out: &Out, id: u64, r: CallResult) {
     }
 }
 
-fn guarded(method: &str, p: &Value, blob: Option<Vec<u8>>) -> CallResult {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| dispatch(method, p, blob))).unwrap_or_else(|_| Err(("internal", format!("{method} failed unexpectedly"))))
+fn guarded(method: &str, p: &Value, blob: Option<Vec<u8>>, id: u64) -> CallResult {
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| dispatch(method, p, blob, id))).unwrap_or_else(|_| Err(("internal", format!("{method} failed unexpectedly"))));
+    CANCELLED.lock().unwrap().retain(|x| *x != id);
+    r
 }
 
 /// secure_desktop on change, foreground at most 4/s (latest wins), error_box once per box; closes an idle capture.
@@ -153,17 +166,28 @@ pub fn run() {
             None
         };
         let Some(id) = v["id"].as_u64() else { continue };
+        if v["t"] == "cancel" {
+            let mut c = CANCELLED.lock().unwrap();
+            if c.len() > 256 {
+                c.clear();
+            }
+            c.push(id);
+            continue;
+        }
+        if v["t"] != "req" {
+            continue;
+        }
         let method = v["method"].as_str().unwrap_or("").to_string();
         let params = v.get("params").cloned().unwrap_or(json!({}));
-        if method == "exec.run" || method.starts_with("files.") || method == "outbox.offer" {
-            // long or disk-bound: off the main thread so screenshots and input stay responsive
+        if method == "exec.run" || method == "input.act" || method.starts_with("files.") {
+            // long or disk-bound: off the main thread so screenshots stay responsive and a cancel can reach them
             let o = out.clone();
             std::thread::spawn(move || {
-                let r = guarded(&method, &params, blob);
+                let r = guarded(&method, &params, blob, id);
                 reply(&o, id, r);
             });
         } else {
-            let r = guarded(&method, &params, blob);
+            let r = guarded(&method, &params, blob, id);
             reply(&out, id, r);
         }
     }

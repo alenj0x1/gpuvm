@@ -4,7 +4,9 @@
 param(
     [string]$Name = 'agent051',
     [string]$Scenarios = 'info,capture,latency,uia,exec,files,secure,elevated,abuse,acl,errorbox,reboot',
-    [string]$Me = 'agent-guest'
+    [string]$Me = 'agent-guest',
+    # seconds to wait for the listener name when a broker under test holds it
+    [int]$WaitBind = 0
 )
 $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
@@ -19,7 +21,7 @@ try {
     $reg
     $vmId = (Get-VM -Name $Name).Id.Guid
     & (Join-Path $PSScriptRoot 'harness\target\release\harness.exe') serve --secret (Join-Path $out 'secret.bin') --vm $vmId --name $Name `
-        --out $run --psd (Join-Path $PSScriptRoot 'psd.ps1') --scenarios $Scenarios
+        --out $run --psd (Join-Path $PSScriptRoot 'psd.ps1') --scenarios $Scenarios --wait-bind $WaitBind
     "results: $run"
 }
 finally {

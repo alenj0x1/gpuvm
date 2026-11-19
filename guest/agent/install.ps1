@@ -21,20 +21,37 @@
     - Machine-wide, backed up and restored on uninstall: the new-user privacy screen and the first sign-in animation
       are skipped (they would block the agent's first sign-in). Nothing else of the person's user, data or UAC changes.
 
+    - Fast path (a disposable clone of a template, or the same version again): only a new secret if given, a NEW
+      random password for `agent` (autologon LSA secret updated) and a service restart. -Full forces everything.
+    - -PrepareTemplate: stops the service and removes the secret and the agent's logs, so a template never carries a
+      secret; a clone waits (no dialing) until the host gives it its own secret and runs this script again.
+
+.NOTES
+    The host runs it over PowerShell Direct as the guest's administrator, as a script block or with
+    Invoke-Command -FilePath (guests keep the Restricted execution policy, which blocks .ps1 files on disk). The
+    staging folder holds the contents of guest/agent/dist (gpuvm-agent.exe, VERSION), copied with Copy-VMFile; it is
+    deleted after a successful run when it is inside C:\ProgramData\GpuVM\Agent. The `agent` password is only in the
+    output object (never written to disk in the guest, never logged). Restart from inside the guest
+    (Restart-Computer) when rebootNeeded: Restart-VM -Force right after the install lost its registry changes (lab 051).
+
 .OUTPUTS
-    One object: ok, version, user, password (only when it was set this run), signInAs, secret, rebootNeeded, notes.
+    One object: ok, version, user, password (set this run), signInAs, secret, rebootNeeded, fastPath, notes.
 #>
 [CmdletBinding()]
 param(
-    # folder that holds gpuvm-agent.exe (copied into the guest by the host)
-    [string]$Source = $PSScriptRoot,
-    # the per-VM secret (32 bytes); optional when the host copies it with Copy-VMFile afterwards
+    # folder that holds gpuvm-agent.exe and VERSION (the host copies guest/agent/dist there)
+    [string]$Staging = 'C:\ProgramData\GpuVM\Agent\staging',
+    # the per-VM secret (32 bytes); optional when the host already copied it to C:\ProgramData\GpuVM\Agent\secret
     [byte[]]$Secret,
     # who Windows signs in automatically: the agent user, or whatever was configured before (the person)
     [ValidateSet('agent', 'previous')][string]$SignInAs = 'agent',
     [switch]$Uninstall,
     # with -Uninstall: also delete the agent user and its profile
-    [switch]$RemoveUser
+    [switch]$RemoveUser,
+    # stop the service and remove the secret and logs before the VM is saved as a template
+    [switch]$PrepareTemplate,
+    # the full install even when the same version is already installed
+    [switch]$Full
 )
 $ErrorActionPreference = 'Stop'
 
@@ -289,10 +306,51 @@ if ($Uninstall) {
     return
 }
 
+# --- template: no secret, no logs ----------------------------------------------------------------------------------
+function Remove-Staging {
+    if ($Staging -and (Test-Path $Staging) -and ([IO.Path]::GetFullPath($Staging) + '\').StartsWith($DataDir + '\', 'OrdinalIgnoreCase')) {
+        Remove-Item -LiteralPath $Staging -Recurse -Force
+    }
+}
+
+if ($PrepareTemplate) {
+    $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    if ($svc -and $svc.Status -ne 'Stopped') { Stop-Service -Name $ServiceName -Force }
+    Remove-Item -LiteralPath (Join-Path $DataDir 'secret') -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $DataDir 'logs') -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Staging
+    [pscustomobject]@{ ok = $true; template = $true; secret = 'removed'; notes = @('the service starts at boot and waits for a secret; run this script again on each clone with a new secret') }
+    return
+}
+
 # --- install / update ---------------------------------------------------------------------------------------------
-$srcExe = Join-Path $Source 'gpuvm-agent.exe'
-if (-not (Test-Path $srcExe)) { throw "gpuvm-agent.exe not found in $Source" }
+$srcExe = Join-Path $Staging 'gpuvm-agent.exe'
+if (-not (Test-Path $srcExe)) { throw "gpuvm-agent.exe not found in $Staging" }
 if ($Secret -and $Secret.Length -ne 32) { throw 'the secret must be 32 bytes' }
+$newVersion = (& $srcExe version 2>$null | Out-String).Trim()
+
+# fast path: same version installed, user and service there -> new secret (if any), new password, restart
+$svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+$user = Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue
+$oldVersion = if (Test-Path $Exe) { (& $Exe version 2>$null | Out-String).Trim() } else { '' }
+if (-not $Full -and $svc -and $user -and $SignInAs -eq 'agent' -and $oldVersion -and $oldVersion -eq $newVersion) {
+    if ($svc.Status -ne 'Stopped') { Stop-Service -Name $ServiceName -Force }
+    if (-not (Test-Path $DataDir)) { New-Item -ItemType Directory -Path $DataDir -Force | Out-Null }
+    if ($Secret) { [IO.File]::WriteAllBytes((Join-Path $DataDir 'secret'), $Secret) }
+    Set-ProtectedAcl $DataDir $false
+    $password = New-Password
+    Set-LocalUser -Name $UserName -Password (ConvertTo-SecureString $password -AsPlainText -Force)
+    $before = "$(Get-Reg $Winlogon 'AutoAdminLogon')|$(Get-Reg $Winlogon 'DefaultUserName')"
+    Set-AgentAutologon $password
+    Start-Service -Name $ServiceName
+    Remove-Staging
+    [pscustomobject]@{
+        ok = $true; version = $newVersion; user = $UserName; password = $password; signInAs = 'agent'
+        secret = $(if (Test-Path (Join-Path $DataDir 'secret')) { 'present' } else { 'missing' })
+        rebootNeeded = ($before -ne "1|$UserName"); fastPath = $true; notes = @()
+    }
+    return
+}
 
 # 1. data folder: SYSTEM + Administrators only (checked again by the service before every connection)
 if (-not (Test-Path $DataDir)) { New-Item -ItemType Directory -Path $DataDir -Force | Out-Null }
@@ -303,7 +361,6 @@ if ($Secret) {
 }
 
 # 2. binaries + service
-$svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($svc -and $svc.Status -ne 'Stopped') { Stop-Service -Name $ServiceName -Force }
 if (-not (Test-Path $AppDir)) { New-Item -ItemType Directory -Path $AppDir -Force | Out-Null }
 Copy-Item -LiteralPath $srcExe -Destination $Exe -Force
@@ -424,5 +481,7 @@ if ($secretState -eq 'missing') { $notes.Add("copy the 32-byte secret to $DataDi
     signInAs = $SignInAs
     secret = $secretState
     rebootNeeded = $reboot
+    fastPath = $false
     notes = @($notes)
 }
+Remove-Staging
