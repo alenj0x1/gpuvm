@@ -1526,11 +1526,14 @@ InModuleScope GpuVM {
             Assert-MockCalled Update-GpuVMNetworkIsolation -Times 1 -Scope It
             Assert-MockCalled Install-GpuVMAgent -Times 0 -Scope It
         }
-        It 'running, it installs the agent with the chosen sign-in user' {
+        It 'running, it installs the agent with the chosen sign-in user and leaves the display to the agent' {
             Mock Get-VM { [pscustomobject]@{ State = 'Running' } }
+            Mock Set-GuestDisplayResolution { throw 'the agent keeps its own display' }
             $script:st['agent'] = @{ signInAs = 'own' }
-            Set-GpuVMUse -Name vm1 -Use agent | Out-Null
+            $r = Set-GpuVMUse -Name vm1 -Use agent
             Assert-MockCalled Install-GpuVMAgent -Times 1 -Scope It -ParameterFilter { $User -eq 'own' }
+            Assert-MockCalled Set-GuestDisplayResolution -Times 0 -Scope It
+            $r.Contains('display') | Should Be $false
         }
         It 'none removes the agent and the use' {
             $script:st['use'] = 'agent'; $script:st['agent'] = @{ version = '0.3.0' }
