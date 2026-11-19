@@ -14,12 +14,12 @@ function Read-GpuVMTemplate {
     param([Parameter(Mandatory)][ValidatePattern('^[\w-]{1,40}$')][string]$Name)
     $dir = Get-TemplateDirectory -Name $Name
     $metaPath = Join-Path $dir 'template.json'
-    if (-not (Test-Path -LiteralPath $metaPath)) { throw "No existe la plantilla '$Name'." }
+    if (-not (Test-Path -LiteralPath $metaPath)) { throw "The template '$Name' doesn't exist." }
     $meta = Read-JsonFile $metaPath
     $meta['name'] = $Name
     $meta['dir'] = $dir
     $meta['vhdPath'] = Join-Path $dir "$Name.vhdx"
-    if (-not (Test-Path -LiteralPath $meta['vhdPath'])) { throw "Falta el disco de la plantilla '$Name'." }
+    if (-not (Test-Path -LiteralPath $meta['vhdPath'])) { throw "The template '$Name' is missing its disk." }
     $meta
 }
 
@@ -70,9 +70,9 @@ function Reset-ClonedGuestIdentity {
 function Protect-GpuVMSharedFolder {
     param([Parameter(Mandatory)][string]$Path)
     $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
-    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "$Path es un enlace; GpuVM no lo usa." }
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "$Path is a link; GpuVM doesn't use it." }
     & icacls.exe $Path /inheritance:r /grant:r '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' /Q | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "No se pudieron ajustar los permisos de $Path." }
+    if ($LASTEXITCODE -ne 0) { throw "Couldn't set the permissions of $Path." }
 }
 
 # A copy's settings: processors, memory, GPU and Moonlight from the profile; what lives inside Windows (user, apps,

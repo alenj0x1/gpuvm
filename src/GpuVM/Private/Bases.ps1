@@ -48,7 +48,7 @@ function Get-WindowsBaseDisk {
     $key = Get-WindowsImageKey -ImageFile $ImageFile -ImageIndex $ImageIndex
     $base = Read-WindowsBase -Key $key
     if ($base) {
-        Write-Step 'Windows de este ISO ya está preparado; se copia'
+        Write-Step 'Windows from this ISO is already prepared; copying it'
         return $base['vhdPath']
     }
 
@@ -60,7 +60,7 @@ function Get-WindowsBaseDisk {
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
     # The base takes about what Windows uses (~10-15 GB), and the VM's copy as much again.
     $freeGB = Get-DriveFreeGB $root
-    if ($freeGB -lt 40) { throw "No hay espacio para preparar Windows: hacen falta unos 40 GB libres y quedan $freeGB GB." }
+    if ($freeGB -lt 40) { throw "There's no room to prepare Windows: about 40 GB free are needed and there are $freeGB GB." }
     # A build cut short (GpuVM closed, PC off) leaves its file behind; one still mounted is another build in progress.
     foreach ($old in Get-ChildItem -LiteralPath $dir -Filter 'building-*.vhdx' -File -ErrorAction SilentlyContinue) {
         if (-not (Get-VHD -Path $old.FullName -ErrorAction SilentlyContinue).Attached) { Remove-Item -LiteralPath $old.FullName -Force }

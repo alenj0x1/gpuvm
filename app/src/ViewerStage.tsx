@@ -16,7 +16,7 @@ export function ViewerStage({ vm, phase, step }: { vm: VmOverview | null; phase:
   // the machine changing state (on, its usage) right before the zoom made it move twice.
   const frozen = useRef<{ name: string; machine: CubeMachine } | null>(null);
   if (vm && frozen.current?.name !== vm.name) frozen.current = { name: vm.name, machine: cubeOf(vm) };
-  // The last step stays when the job ends (it went back to "Preparando" for a moment, right before the zoom).
+  // The last step stays when the job ends (it went back to "Preparing" for a moment, right before the zoom).
   const lastStep = useRef<string>("");
   if (step) lastStep.current = step;
   const shown = step ?? lastStep.current;
@@ -28,7 +28,7 @@ export function ViewerStage({ vm, phase, step }: { vm: VmOverview | null; phase:
             <MachineCube machine={frozen.current.machine} name={vm.name} />
           </div>
           <div className="viewer-stage-steps" aria-live="polite">
-            <span>{shown ? translateModule(shown) : t("Preparando")}</span>
+            <span>{shown ? translateModule(shown) : t("Preparing")}</span>
             <div className="viewer-stage-bar"><i /></div>
           </div>
         </div>

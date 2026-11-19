@@ -15,12 +15,12 @@ function Test-GpuVMHost {
     $os = Get-CimInstance Win32_OperatingSystem
     $isClientPro = $os.Caption -match 'Pro|Enterprise|Education|Server'
     $checks.Add((New-CheckResult 'Windows' ($isClientPro ? 'Ok' : 'Fail') "$($os.Caption) (build $($os.BuildNumber))"))
-    $checks.Add((New-CheckResult 'Administrador' ((Test-IsAdmin) ? 'Ok' : 'Warn') ((Test-IsAdmin) ? '' : 'Crear y modificar VMs requiere PowerShell como administrador.')))
+    $checks.Add((New-CheckResult 'Administrator' ((Test-IsAdmin) ? 'Ok' : 'Warn') ((Test-IsAdmin) ? '' : 'Creating and changing VMs needs PowerShell as administrator.')))
 
     $cs = Get-CimInstance Win32_ComputerSystem
     $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
     $virt = $cs.HypervisorPresent -or $cpu.VirtualizationFirmwareEnabled
-    $checks.Add((New-CheckResult 'Virtualización' ($virt ? 'Ok' : 'Fail') ($virt ? 'Hipervisor activo o VT-x habilitado' : 'Activa Intel VT-x / AMD-V en la BIOS.')))
+    $checks.Add((New-CheckResult 'Virtualization' ($virt ? 'Ok' : 'Fail') ($virt ? 'Hypervisor on or VT-x enabled' : 'Start Intel VT-x / AMD-V in the BIOS.')))
 
     $hostMemoryGB = $cs.TotalPhysicalMemory / 1GB
     $logical = [int]$cpu.NumberOfLogicalProcessors
@@ -28,14 +28,14 @@ function Test-GpuVMHost {
     try {
         $config = Resolve-GpuVMProfile -Name $Profile -Override $Override
         $problems = Test-GpuVMProfileData -Config $config -HostLogicalProcessors $logical -HostMemoryGB $hostMemoryGB
-        if ($problems.Count) { $checks.Add((New-CheckResult "Perfil $Profile" Fail ($problems -join ' '))) }
+        if ($problems.Count) { $checks.Add((New-CheckResult "Profile $Profile" Fail ($problems -join ' '))) }
         else {
             $c = $config['vm']
-            $checks.Add((New-CheckResult "Perfil $Profile" Ok "$($c['cpu']['count'])/$logical hilos, $($c['memoryGB'])/$([math]::Round($hostMemoryGB)) GB, disco $($c['disk']['type']) de $($c['disk']['sizeGB']) GB"))
+            $checks.Add((New-CheckResult "Profile $Profile" Ok "$($c['cpu']['count'])/$logical threads, $($c['memoryGB'])/$([math]::Round($hostMemoryGB)) GB, $($c['disk']['type']) disk of $($c['disk']['sizeGB']) GB"))
         }
     }
     catch {
-        $checks.Add((New-CheckResult "Perfil $Profile" Fail $_.Exception.Message))
+        $checks.Add((New-CheckResult "Profile $Profile" Fail $_.Exception.Message))
         return $checks
     }
 
@@ -43,13 +43,13 @@ function Test-GpuVMHost {
     $freeGB = [math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1MB, 1)
     $memGB = $config['vm']['memoryGB']
     $memStatus = if ($freeGB -ge $memGB + 0.5) { 'Ok' } else { 'Warn' }
-    $memDetail = "$freeGB GB libres ahora; la VM necesita $memGB GB fijos para encender"
-    if ($memStatus -eq 'Warn') { $memDetail += '. Cierra programas o usa -Override @{vm=@{memoryGB=6}}' }
-    $checks.Add((New-CheckResult 'Memoria libre' $memStatus $memDetail))
+    $memDetail = "$freeGB GB free now; the VM needs a fixed $memGB GB to turn on"
+    if ($memStatus -eq 'Warn') { $memDetail += '. Close programs or use -Override @{vm=@{memoryGB=6}}' }
+    $checks.Add((New-CheckResult 'Free memory' $memStatus $memDetail))
 
     $gpu = Get-HostGpu -Match $config['gpu']['match'] | Select-Object -First 1
     if ($gpu) { $checks.Add((New-CheckResult 'GPU' Ok "$($gpu.Name), driver $($gpu.DriverVersion)")) }
-    else { $checks.Add((New-CheckResult 'GPU' Fail "No hay una GPU que coincida con '$($config['gpu']['match'])'.")) }
+    else { $checks.Add((New-CheckResult 'GPU' Fail "There's no GPU matching '$($config['gpu']['match'])'.")) }
 
     $root = $config['vm']['root']
     $drive = Get-Volume -DriveLetter $root.Substring(0, 1) -ErrorAction SilentlyContinue
@@ -57,18 +57,18 @@ function Test-GpuVMHost {
         $freeGB = [math]::Round($drive.SizeRemaining / 1GB)
         $needGB = if ($config['vm']['disk']['type'] -eq 'Fixed') { $config['vm']['disk']['sizeGB'] + 10 } else { 40 }
         $status = if ($freeGB -ge $needGB) { 'Ok' } else { 'Fail' }
-        $checks.Add((New-CheckResult 'Espacio' $status "$freeGB GB libres en $($root.Substring(0, 2)); se necesitan ~$needGB GB"))
+        $checks.Add((New-CheckResult 'Space' $status "$freeGB GB free on $($root.Substring(0, 2)); about $needGB GB are needed"))
     }
     else {
-        $checks.Add((New-CheckResult 'Espacio' Fail "No existe la unidad de $root"))
+        $checks.Add((New-CheckResult 'Space' Fail "The drive for $root doesn't exist"))
     }
 
     if ($config['streaming'] -and $config['streaming']['provider'] -ne 'none') {
         $moonlight = Get-MoonlightPath
-        $checks.Add((New-CheckResult 'Moonlight' ($moonlight ? 'Ok' : 'Warn') ($moonlight ? $moonlight : 'No está instalado; hace falta para ver la VM. Instálalo con: ./gpuvm.ps1 client-install')))
+        $checks.Add((New-CheckResult 'Moonlight' ($moonlight ? 'Ok' : 'Warn') ($moonlight ? $moonlight : 'Not installed; it''s needed to see the VM. Install it with: ./gpuvm.ps1 client-install')))
         $manifest = Get-ComponentManifest
         $components = (Get-StreamingComponentNames $config['streaming'] | ForEach-Object { "$_ $($manifest[$_]['version'])" }) -join ', '
-        $checks.Add((New-CheckResult 'Streaming' Ok "$components (se descargan y verifican al crear la VM)"))
+        $checks.Add((New-CheckResult 'Streaming' Ok "$components (downloaded and verified when the VM is created)"))
     }
 
     foreach ($check in (Invoke-GpuVMBackend -Backend $config['backend'] -Operation Test -Arguments (, $config))) { $checks.Add($check) }

@@ -86,11 +86,11 @@ public static class GpuVMSafeFile {
 # A plain-words error for what GpuVMSafeFile throws.
 function ConvertTo-SafeFileError {
     param([Parameter(Mandatory)][string]$Message, [Parameter(Mandatory)][string]$Path)
-    if ($Message -match 'REDIRECTED:(.+)') { return "$Path pasa por un enlace a otra carpeta; elige la ubicación real." }
-    if ($Message -match 'CREATE:80\b|CREATE:183\b') { return "Ya existe $Path. Elige otro nombre." }
-    if ($Message -match ':(2|3)\b') { return "No existe $Path." }
-    if ($Message -match ':5\b') { return "No hay permiso para usar $Path." }
-    "No se pudo abrir $Path."
+    if ($Message -match 'REDIRECTED:(.+)') { return "$Path goes through a link to another folder; choose the real location." }
+    if ($Message -match 'CREATE:80\b|CREATE:183\b') { return "$Path already exists. Choose another name." }
+    if ($Message -match ':(2|3)\b') { return "$Path doesn't exist." }
+    if ($Message -match ':5\b') { return "There's no permission to use $Path." }
+    "Couldn't open $Path."
 }
 
 # A FileStream over a new file at $Path, checked as above. On failure, Close-GpuVMNewFile -Discard deletes it.

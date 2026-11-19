@@ -11,10 +11,10 @@ function Sync-GpuVMDriver {
     )
     Assert-Admin
     $state = Get-GpuVMState -Name $Name
-    if (-not $PSCmdlet.ShouldProcess($Name, 'Sincronizar driver de GPU')) { return }
+    if (-not $PSCmdlet.ShouldProcess($Name, 'Sync the GPU driver')) { return }
     $wasRunning = (Get-VM -Name $Name).State -eq 'Running'
     if ($wasRunning -and $ShutdownIfRunning) {
-        Write-Step 'Apagando'
+        Write-Step 'Shutting down'
         Stop-VM -Name $Name -Force
     }
     try {
@@ -31,7 +31,7 @@ function Sync-GpuVMDriver {
     finally {
         # Even if the copy fails, the VM returns to the state it was in.
         if ($wasRunning -and $ShutdownIfRunning) {
-            Write-Step 'Encendiendo'
+            Write-Step 'Starting'
             Start-VM -Name $Name
         }
     }

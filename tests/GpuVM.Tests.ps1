@@ -132,14 +132,14 @@ InModuleScope GpuVM {
         It 'waits for Windows to sign in, saying when it installs updates or restarts' {
             $script:answers = [System.Collections.Generic.Queue[object]]::new([object[]]@('updating', 'restart', 'signing-in', 'ready'))
             $script:steps = @()
-            Mock Invoke-Guest { $a = $script:answers.Dequeue(); if ($a -eq 'restart') { throw 'la VM se reinició' }; $a }
+            Mock Invoke-Guest { $a = $script:answers.Dequeue(); if ($a -eq 'restart') { throw 'the VM restarted' }; $a }
             Mock Write-Step { $script:steps += $Message }
             Mock Start-Sleep { }
             Mock Wait-GuestReady { $script:steps += "ready:$BootMessage" }
             Mock Open-GuestSession { }
             Mock Close-GuestSession { }
             Wait-GuestSignIn -Name vm -Credential ([pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force))) | Should Be $true
-            ($script:steps -join '|') | Should Be 'Terminando actualizaciones|Windows se está reiniciando|ready:Windows se está reiniciando|Iniciando sesión en Windows'
+            ($script:steps -join '|') | Should Be 'Finishing updates|Windows is restarting|ready:Windows is restarting|Signing in to Windows'
         }
 
         It 'remembers pending updates when GpuVM shuts a VM down, and never fails the shutdown' {
@@ -153,7 +153,7 @@ InModuleScope GpuVM {
             $script:saved['updatesPending'] | Should Be $true
             Mock Test-GuestUpdatePending { $false }
             Register-GuestUpdateBeforeShutdown -Name vm | Should Be $false
-            Mock Test-GuestUpdatePending { throw 'sin conexión' }
+            Mock Test-GuestUpdatePending { throw 'no connection' }
             Register-GuestUpdateBeforeShutdown -Name vm | Should Be $false
         }
 
@@ -496,11 +496,11 @@ InModuleScope GpuVM {
         It 'installs the guest speaker only when it is missing or its server changed' {
             $cred = [pscredential]::new('gpuvm', (ConvertTo-SecureString 'x' -AsPlainText -Force))
             Mock Invoke-Command { 'ok' }
-            Mock Save-GpuVMComponent { throw 'no debe descargar' }
+            Mock Save-GpuVMComponent { throw 'must not download' }
             Install-GuestAudio -Name 'vm' -Credential $cred | Should Be $false
             Assert-MockCalled Save-GpuVMComponent -Times 0 -Scope It
 
-            Mock Invoke-Command { 'error: la salida de audio GpuVM Audio no aparece' }
+            Mock Invoke-Command { 'error: the GpuVM Audio output doesn''t show up' }
             Test-Throws { Install-GuestAudio -Name 'vm' -Credential $cred } | Should Be $true
 
             Mock Invoke-Command { 'install' } -ParameterFilter { $VMName }
@@ -727,7 +727,7 @@ InModuleScope GpuVM {
             Mock Get-VMNetworkAdapterExtendedAcl { @() }
             Mock Get-VMNetworkAdapter { [pscustomobject]@{ SwitchName = 'Default Switch' } }
             Mock Get-VMSwitch { [pscustomobject]@{ SwitchType = 'Internal' } }
-            Mock Get-GpuVMHostNetwork { throw 'sin dirección' }
+            Mock Get-GpuVMHostNetwork { throw 'no address' }
             Mock Add-VMNetworkAdapterExtendedAcl {}
             Update-GpuVMNetworkIsolation -Name 'vm' -State $state -WarningAction SilentlyContinue
             Assert-MockCalled Add-VMNetworkAdapterExtendedAcl -Times 7 -Exactly -Scope It -ParameterFilter { $Action -eq 'Deny' }
@@ -961,10 +961,10 @@ InModuleScope GpuVM {
             $f = New-RenameFixture
             Set-HyperVMocks $f.Dir
             $before = Get-Content -Raw $f.State['statePath']
-            Mock Set-VMHardDiskDrive { throw 'disco ocupado' } -ParameterFilter { $Path -like '*juegos.vhdx' }
+            Mock Set-VMHardDiskDrive { throw 'disk busy' } -ParameterFilter { $Path -like '*juegos.vhdx' }
             $message = try { Rename-HyperVGpuPVM -Name 'win10' -NewName 'juegos' -State $f.State 6>$null; '' } catch { $_.Exception.Message }
-            $message | Should Match 'disco ocupado'
-            $message | Should Match 'quedó como estaba'
+            $message | Should Match 'disk busy'
+            $message | Should Match 'left as it was'
             Test-Path (Join-Path $f.Root 'juegos') | Should Be $false
             Test-Path (Join-Path $f.Dir 'Virtual Hard Disks\win10.vhdx') | Should Be $true
             Get-Content -Raw $f.State['statePath'] | Should Be $before
@@ -1266,7 +1266,7 @@ InModuleScope GpuVM {
             # The swap: sub becomes a junction to another folder, keeping the same names below it.
             Remove-Item (Join-Path $top 'sub') -Recurse -Force
             New-Item -ItemType Junction -Path (Join-Path $top 'sub') -Target $outside | Out-Null
-            Get-InnerError { [GpuVM.UserFiles]::OpenFile((Join-Path $top 'sub\a.txt'), $root) } | Should Match 'fuera de la carpeta elegida'
+            Get-InnerError { [GpuVM.UserFiles]::OpenFile((Join-Path $top 'sub\a.txt'), $root) } | Should Match 'outside the chosen folder'
         }
 
         It 'refuses a chosen item that is a link or goes through one' {
@@ -1274,7 +1274,7 @@ InModuleScope GpuVM {
             $link = Join-Path $TestDrive 'uf3-link'; New-Item -ItemType Junction -Path $link -Target $real | Out-Null
             'x' | Set-Content (Join-Path $real 'b.txt')
             Get-InnerError { [GpuVM.UserFiles]::Root($link, $true) } | Should Not Be ''
-            Get-InnerError { [GpuVM.UserFiles]::Root((Join-Path $link 'b.txt'), $false) } | Should Match 'enlace'
+            Get-InnerError { [GpuVM.UserFiles]::Root((Join-Path $link 'b.txt'), $false) } | Should Match 'link'
         }
 
         It 'refuses a file or a folder only administrators can read, even from an elevated bridge' {
@@ -1295,9 +1295,9 @@ InModuleScope GpuVM {
             # The elevated process itself can read it (that was the hole).
             [IO.File]::ReadAllText($secret).Trim() | Should Be 'clave'
             $root = [GpuVM.UserFiles]::Root($top, $true)
-            Get-InnerError { [GpuVM.UserFiles]::OpenFile($secret, $root) } | Should Match 'no tiene acceso'
+            Get-InnerError { [GpuVM.UserFiles]::OpenFile($secret, $root) } | Should Match "can't access"
             $links = 0
-            Get-InnerError { [GpuVM.UserFiles]::List($top, 'Proyecto', $root, [ref]$links) } | Should Match 'no tiene acceso|No se pudo leer'
+            Get-InnerError { [GpuVM.UserFiles]::List($top, 'Proyecto', $root, [ref]$links) } | Should Match "can't access|couldn't be read"
             # Back to inherited rights, so the test drive can be deleted afterwards.
             $null = icacls $top /reset /T /Q
         }
@@ -1324,8 +1324,8 @@ InModuleScope GpuVM {
                 Test-Throws { Send-GpuVMFile -Name x -Path 'C:\x' -Folder $bad } | Should Be $true
                 Test-Throws { Send-GpuVMClipboard -Name x -Files 'C:\x' -Folder $bad } | Should Be $true
             }
-            Mock Assert-Admin { throw 'llegó' }
-            (Get-InnerError { Send-GpuVMFile -Name x -Path 'C:\x' -Folder 'Recibidos' }) | Should Be 'llegó'
+            Mock Assert-Admin { throw 'reached' }
+            (Get-InnerError { Send-GpuVMFile -Name x -Path 'C:\x' -Folder 'Recibidos' }) | Should Be 'reached'
         }
     }
 }

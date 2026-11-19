@@ -28,16 +28,16 @@ interface Spec { icon: Icon; name: () => string; minW: number; maxW: number; min
 // Each kind's sizes: up to where its content still gains something (the games' covers fit in three rows; the
 // machines can grow with a long list).
 export const SPEC: Record<WidgetType, Spec> = {
-  machines: { icon: IconDeviceDesktop, name: () => t("Máquinas"), minW: 1, maxW: 3, minH: 1, maxH: 6, w: 2, h: 2 },
-  actions: { icon: IconBolt, name: () => t("Acciones"), minW: 1, maxW: 3, minH: 1, maxH: 2, w: 2, h: 1 },
-  capture: { icon: IconCamera, name: () => t("Captura"), minW: 1, maxW: 3, minH: 1, maxH: 2, w: 2, h: 2 },
-  stats: { icon: IconActivity, name: () => t("Imagen"), minW: 1, maxW: 3, minH: 1, maxH: 3, w: 1, h: 2 },
-  clock: { icon: IconClock, name: () => t("Reloj"), minW: 1, maxW: 3, minH: 1, maxH: 2, w: 1, h: 1 },
-  shelf: { icon: IconBooks, name: () => t("Estantería"), minW: 1, maxW: 3, minH: 1, maxH: 4, w: 2, h: 2 },
-  games: { icon: IconDeviceGamepad2, name: () => t("Juegos"), minW: 1, maxW: 3, minH: 1, maxH: 3, w: 2, h: 2 },
-  weather: { icon: IconCloud, name: () => t("Clima"), minW: 1, maxW: 3, minH: 1, maxH: 2, w: 1, h: 1 },
-  files: { icon: IconFiles, name: () => t("Archivos"), minW: 2, maxW: 3, minH: 2, maxH: 5, w: 2, h: 2 },
-  clipboard: { icon: IconClipboard, name: () => t("Portapapeles"), minW: 2, maxW: 3, minH: 2, maxH: 5, w: 2, h: 3 },
+  machines: { icon: IconDeviceDesktop, name: () => t("Machines"), minW: 1, maxW: 3, minH: 1, maxH: 6, w: 2, h: 2 },
+  actions: { icon: IconBolt, name: () => t("Actions"), minW: 1, maxW: 3, minH: 1, maxH: 2, w: 2, h: 1 },
+  capture: { icon: IconCamera, name: () => t("Capture"), minW: 1, maxW: 3, minH: 1, maxH: 2, w: 2, h: 2 },
+  stats: { icon: IconActivity, name: () => t("Picture"), minW: 1, maxW: 3, minH: 1, maxH: 3, w: 1, h: 2 },
+  clock: { icon: IconClock, name: () => t("Clock"), minW: 1, maxW: 3, minH: 1, maxH: 2, w: 1, h: 1 },
+  shelf: { icon: IconBooks, name: () => t("Shelf"), minW: 1, maxW: 3, minH: 1, maxH: 4, w: 2, h: 2 },
+  games: { icon: IconDeviceGamepad2, name: () => t("Games"), minW: 1, maxW: 3, minH: 1, maxH: 3, w: 2, h: 2 },
+  weather: { icon: IconCloud, name: () => t("Weather"), minW: 1, maxW: 3, minH: 1, maxH: 2, w: 1, h: 1 },
+  files: { icon: IconFiles, name: () => t("Files"), minW: 2, maxW: 3, minH: 2, maxH: 5, w: 2, h: 2 },
+  clipboard: { icon: IconClipboard, name: () => t("Clipboard"), minW: 2, maxW: 3, minH: 2, maxH: 5, w: 2, h: 3 },
 };
 const ORDER: WidgetType[] = ["machines", "actions", "capture", "stats", "clock", "files", "clipboard", "shelf", "games", "weather"];
 // The shelf and the games ask for the whole width: two columns in a narrow panel, three in a wide one (no empty
@@ -299,7 +299,7 @@ export function WidgetBoard({ items, onChange, edit, children }: {
             onPointerDown={(e) => startDrag(e, it.id)}>
             {children(it, { w: c.w, h: c.h, px: p.w, py: p.h })}
             {edit && (
-              <button type="button" className="vp-remove" aria-label={t("Quitar")} title={t("Quitar")} onClick={() => commit(items.filter((o) => o.id !== it.id))}>
+              <button type="button" className="vp-remove" aria-label={t("Remove")} title={t("Remove")} onClick={() => commit(items.filter((o) => o.id !== it.id))}>
                 <IconMinus size={14} />
               </button>
             )}
@@ -338,7 +338,7 @@ export function MachinesWidget({ vms, current, size, onSwitch }: { vms: VmOvervi
   const list = useMemo(() => vms.filter((v) => v.streaming).sort((a, b) => (a.name === current ? -1 : b.name === current ? 1 : 0)), [vms, current]);
   const cubesRef = useFade<HTMLDivElement>(), listRef = useFade<HTMLUListElement>();
   if (list.length <= 1) {
-    return <WidgetEmpty icon={IconDeviceDesktop} title={t("Sin otras máquinas")} />;
+    return <WidgetEmpty icon={IconDeviceDesktop} title={t("No other machines")} />;
   }
   // One column, or a single row: the cubes alone (name on hover). With room: a list with name, state and action,
   // roomier and with the machine's size when it is tall and wide.
@@ -347,7 +347,7 @@ export function MachinesWidget({ vms, current, size, onSwitch }: { vms: VmOvervi
       <div className={`vp-cubes vp-scroll${size.h >= 3 ? " big" : ""}`} ref={cubesRef}>
         {list.map((v) => {
           const here = v.name === current, on = v.state === "Running";
-          const label = here ? v.name : `${on ? t("Cambiar a {name}", { name: v.name }) : t("Encender {name}", { name: v.name })}`;
+          const label = here ? v.name : `${on ? t("Switch to {name}", { name: v.name }) : t("Start {name}", { name: v.name })}`;
           return (
             <button key={v.name} type="button" className={here ? "here" : ""} title={label} aria-label={label} disabled={!here && !on && !v.fits} onClick={() => !here && onSwitch(v.name)}>
               <MiniCube machine={miniOf(v)} ghost={!on} />
@@ -361,17 +361,17 @@ export function MachinesWidget({ vms, current, size, onSwitch }: { vms: VmOvervi
     <ul className={`vp-machines vp-scroll${size.h >= 3 ? " roomy" : ""}`} ref={listRef}>
       {list.map((v) => {
         const here = v.name === current, on = v.state === "Running", m = miniOf(v);
-        const state = here ? t("Viendo ahora") : on ? t("Encendida") : t("Apagada");
+        const state = here ? t("Watching now") : on ? t("On") : t("Off");
         return (
           <li key={v.name} className={here ? "here" : ""}>
             <MiniCube machine={m} ghost={!on} />
             <span className="vp-machine-text">
               <span className="name">{v.name}</span>
-              <span className="sub">{size.px >= 400 && m.cores ? `${state} · ${t("{n} hilos", { n: m.cores })} · ${m.memoryGB} GB` : state}</span>
+              <span className="sub">{size.px >= 400 && m.cores ? `${state} · ${t("{n} threads", { n: m.cores })} · ${m.memoryGB} GB` : state}</span>
             </span>
             {!here && (
               <button type="button" className="vp-chip" disabled={!on && !v.fits} onClick={() => onSwitch(v.name)}>
-                {on ? t("Cambiar") : t("Encender")}
+                {on ? t("Switch") : t("Start")}
               </button>
             )}
           </li>
@@ -386,10 +386,10 @@ export function ActionsWidget({ size, fullScreen, overlay, onHome, onFullscreen,
   size: WidgetSize; fullScreen: boolean; overlay: boolean; onHome: () => void; onFullscreen: () => void; onOverlay: () => void; onDisconnect: () => void;
 }) {
   const actions: { icon: Icon; label: string; on?: boolean; run: () => void }[] = [
-    { icon: IconHome, label: t("Inicio"), run: onHome },
-    fullScreen ? { icon: IconArrowsMinimize, label: t("Dentro de GpuVM"), run: onFullscreen } : { icon: IconArrowsMaximize, label: t("Pantalla completa"), run: onFullscreen },
-    { icon: IconChartLine, label: t("Datos sobre la imagen"), on: overlay, run: onOverlay },
-    { icon: IconPlugConnectedX, label: t("Desconectar"), run: onDisconnect },
+    { icon: IconHome, label: t("Home"), run: onHome },
+    fullScreen ? { icon: IconArrowsMinimize, label: t("Inside GpuVM"), run: onFullscreen } : { icon: IconArrowsMaximize, label: t("Full screen"), run: onFullscreen },
+    { icon: IconChartLine, label: t("Stats on the picture"), on: overlay, run: onOverlay },
+    { icon: IconPlugConnectedX, label: t("Disconnect"), run: onDisconnect },
   ];
   // Labels when each button has room for one; otherwise icons in a row (or a square of four, or a column).
   // Two rows of room: each button with its name, beside the icon when wide, under it when narrow (never cut).
@@ -443,26 +443,26 @@ export function CaptureWidget({ size, state, onShot, onRecord, onReplay, onOpen,
 }) {
   const now = useNow(state.recording || !!state.last);
   const labels = size.px >= 220, under = size.h >= 2 && size.px < 300;
-  const replayTitle = state.replay ? t("Guardar los últimos 30 s") : t("Actívalo en Ajustes, en Capturas");
+  const replayTitle = state.replay ? t("Save the last 30 s") : t("Turn it on in Settings, in Captures");
   const buttons = (
     <div className={`vp-capture-buttons${labels ? (under ? " labels under" : " labels") : ""}`}>
-      <button type="button" title={t("Capturar")} aria-label={t("Capturar")} onClick={onShot}>
-        <IconCamera size={18} />{labels && <span>{t("Capturar")}</span>}
+      <button type="button" title={t("Screenshot")} aria-label={t("Screenshot")} onClick={onShot}>
+        <IconCamera size={18} />{labels && <span>{t("Screenshot")}</span>}
       </button>
-      <button type="button" className={state.recording ? "rec" : ""} title={state.recording ? t("Detener") : t("Grabar")} aria-label={state.recording ? t("Detener") : t("Grabar")} aria-pressed={state.recording} onClick={onRecord}>
+      <button type="button" className={state.recording ? "rec" : ""} title={state.recording ? t("Stop") : t("Record")} aria-label={state.recording ? t("Stop") : t("Record")} aria-pressed={state.recording} onClick={onRecord}>
         {state.recording ? <span className="vp-rec-dot" aria-hidden="true" /> : <IconVideo size={18} />}
         {state.recording
-          ? <span>{labels && <>{t("Detener")} </>}<span className="vp-rec-time">{clock(now - state.since)}</span></span>
-          : labels && <span>{t("Grabar")}</span>}
+          ? <span>{labels && <>{t("Stop")} </>}<span className="vp-rec-time">{clock(now - state.since)}</span></span>
+          : labels && <span>{t("Record")}</span>}
       </button>
       <button type="button" title={replayTitle} aria-label={replayTitle} disabled={!state.replay} onClick={onReplay}>
-        <IconHistory size={18} />{labels && <span>{t("Guardar 30 s")}</span>}
+        <IconHistory size={18} />{labels && <span>{t("Save 30 s")}</span>}
       </button>
     </div>
   );
   if (size.h < 2) return <div className="vp-capture">{buttons}</div>;
   const last = state.last;
-  const when = last ? (now - last.at < 60000 ? t("Hace un momento") : t("Hace {n} min", { n: Math.floor((now - last.at) / 60000) })) : "";
+  const when = last ? (now - last.at < 60000 ? t("Just now") : t("{n} min ago", { n: Math.floor((now - last.at) / 60000) })) : "";
   return (
     <div className="vp-capture tall">
       {buttons}
@@ -470,7 +470,7 @@ export function CaptureWidget({ size, state, onShot, onRecord, onReplay, onOpen,
         <div className="vp-capture-last"><span className="vp-error">{state.error}</span></div>
       ) : last ? (
         <div className="vp-capture-last">
-          <button type="button" className="vp-capture-thumb" title={t("Abrir")} aria-label={t("Abrir {name}", { name: last.name })} onClick={() => onOpen(last)}>
+          <button type="button" className="vp-capture-thumb" title={t("Open")} aria-label={t("Open {name}", { name: last.name })} onClick={() => onOpen(last)}>
             {last.thumb ? <img src={last.thumb} alt="" draggable={false} /> : last.kind === "shot" ? <IconPhoto size={16} /> : <IconVideo size={16} />}
             {last.kind !== "shot" && last.durationMs > 0 && <small>{clock(last.durationMs)}</small>}
           </button>
@@ -478,12 +478,12 @@ export function CaptureWidget({ size, state, onShot, onRecord, onReplay, onOpen,
             <span className="name" title={last.name}>{last.name}</span>
             <span className="sub">{when}</span>
           </span>
-          <button type="button" className="vp-icon" title={t("Mostrar en la carpeta")} aria-label={t("Mostrar en la carpeta")} onClick={() => onReveal(last)}>
+          <button type="button" className="vp-icon" title={t("Show in folder")} aria-label={t("Show in folder")} onClick={() => onReveal(last)}>
             <IconFolder size={15} />
           </button>
         </div>
       ) : (
-        <div className="vp-capture-last empty"><span className="vp-empty-icon"><IconPhoto size={16} /></span><strong>{t("Sin capturas todavía")}</strong></div>
+        <div className="vp-capture-last empty"><span className="vp-empty-icon"><IconPhoto size={16} /></span><strong>{t("No captures yet")}</strong></div>
       )}
     </div>
   );
@@ -497,14 +497,14 @@ export function StatsWidget({ stats, history, size }: { stats: ViewerStats | nul
   // One row: the number and one delay (two delays beside it when wide). Taller: its recent history and more numbers.
   const tall = size.h >= 2, wide = size.px >= 220;
   const rows: [string, string][] = tall || wide
-    ? [[t("Red"), ms(stats?.networkLatencyMs)], [t("Máquina"), ms(stats?.hostLatencyMs)]]
-    : [[t("Latencia"), ms(stats ? stats.networkLatencyMs + stats.hostLatencyMs : 0)]];
-  if (tall) rows.push([wide ? t("Pérdidas de red") : t("Pérdidas"), stats ? `${stats.networkDropPercent.toLocaleString(locale(), { maximumFractionDigits: 1, minimumFractionDigits: 1 })} %` : "—"]);
-  if (size.h >= 3) rows.push([t("Decodificación"), ms(stats?.decodeMs)]);
+    ? [[t("Network"), ms(stats?.networkLatencyMs)], [t("Machine"), ms(stats?.hostLatencyMs)]]
+    : [[t("Latency"), ms(stats ? stats.networkLatencyMs + stats.hostLatencyMs : 0)]];
+  if (tall) rows.push([wide ? t("Network loss") : t("Loss"), stats ? `${stats.networkDropPercent.toLocaleString(locale(), { maximumFractionDigits: 1, minimumFractionDigits: 1 })} %` : "—"]);
+  if (size.h >= 3) rows.push([t("Decoding"), ms(stats?.decodeMs)]);
   const chartH = Math.min(size.h >= 3 ? 110 : 64, size.py - 48 - 18 * rows.length - 24);
   return (
     <div className={`vp-stats${tall ? " tall" : wide ? " side" : ""}`}>
-      <div className="vp-big"><strong>{stats ? Math.round(stats.renderedFps) : "—"}</strong><span>{t("cuadros/s")}</span></div>
+      <div className="vp-big"><strong>{stats ? Math.round(stats.renderedFps) : "—"}</strong><span>{t("frames/s")}</span></div>
       {tall && chartH > 18 && <Spark values={history} height={chartH} />}
       <dl>{rows.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
     </div>
@@ -590,7 +590,7 @@ export function ShelfWidget({ vms, size }: { vms: VmOverview[]; size: WidgetSize
   const names = useMemo(() => vms.map((v) => v.name), [vms]);
   const figures = useAllDecor(names);
   const accent = useAccent();
-  if (!figures.length) return <WidgetEmpty icon={IconBooks} title={t("Sin figuras todavía")} text={size.h >= 2 ? t("Se ponen sobre cada máquina desde Personalizar.") : undefined} />;
+  if (!figures.length) return <WidgetEmpty icon={IconBooks} title={t("No figures yet")} text={size.h >= 2 ? t("They go on each machine from Customize.") : undefined} />;
   // The figures grow with the boards (one board per row of the widget), as many on each as fit, spread evenly.
   const fig = Math.round(clamp((size.py - 12) / size.h - 14, 40, 84));
   const perRow = Math.max(1, Math.floor((size.px - 20) / (fig + 4)));
@@ -629,12 +629,12 @@ export function GamesWidget({ size, player, fallback, onPlay }: { size: WidgetSi
         {GAMES.map((g) => {
           const best = record(g);
           return (
-            <button key={g.id} type="button" className="vp-cover" aria-label={t("Jugar {name}", { name: g.name })} onClick={() => onPlay(g)}>
+            <button key={g.id} type="button" className="vp-cover" aria-label={t("Play {name}", { name: g.name })} onClick={() => onPlay(g)}>
               <GameCover game={g} player={player} fallback={fallback} />
               <span className="vp-cover-row">
                 <span className="vp-game-text">
                   <span className="name">{g.name}</span>
-                  {cardH >= 130 && cardW >= 140 && <span className="sub">{best > 0 ? <><IconTrophy size={12} />{best.toLocaleString(locale())}</> : t("Sin récord todavía")}</span>}
+                  {cardH >= 130 && cardW >= 140 && <span className="sub">{best > 0 ? <><IconTrophy size={12} />{best.toLocaleString(locale())}</> : t("No record yet")}</span>}
                 </span>
                 <IconPlayerPlay size={15} className="vp-cover-play" />
               </span>
@@ -652,9 +652,9 @@ export function GamesWidget({ size, player, fallback, onPlay }: { size: WidgetSi
           <li key={g.id}>
             <span className="vp-game-text">
               <span className="name">{g.name}</span>
-              {size.w >= 2 && <span className="sub">{best > 0 ? <><IconTrophy size={12} />{best.toLocaleString(locale())}</> : t("Sin récord todavía")}</span>}
+              {size.w >= 2 && <span className="sub">{best > 0 ? <><IconTrophy size={12} />{best.toLocaleString(locale())}</> : t("No record yet")}</span>}
             </span>
-            <button type="button" className="vp-icon" aria-label={t("Jugar {name}", { name: g.name })} title={t("Jugar {name}", { name: g.name })} onClick={() => onPlay(g)}>
+            <button type="button" className="vp-icon" aria-label={t("Play {name}", { name: g.name })} title={t("Play {name}", { name: g.name })} onClick={() => onPlay(g)}>
               <IconPlayerPlay size={15} />
             </button>
           </li>
@@ -712,12 +712,12 @@ async function getJson<T>(url: string): Promise<T> {
 }
 
 function weatherLook(code: number, day: boolean): { icon: Icon; label: string } {
-  if (code === 0 || code === 1) return { icon: day ? IconSun : IconMoon, label: t("Despejado") };
-  if (code <= 3) return { icon: IconCloud, label: t("Nublado") };
-  if (code === 45 || code === 48) return { icon: IconCloudFog, label: t("Niebla") };
-  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return { icon: IconCloudSnow, label: t("Nieve") };
-  if (code >= 95) return { icon: IconCloudStorm, label: t("Tormenta") };
-  return { icon: IconCloudRain, label: t("Lluvia") };
+  if (code === 0 || code === 1) return { icon: day ? IconSun : IconMoon, label: t("Clear|weather") };
+  if (code <= 3) return { icon: IconCloud, label: t("Cloudy") };
+  if (code === 45 || code === 48) return { icon: IconCloudFog, label: t("Fog") };
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return { icon: IconCloudSnow, label: t("Snow") };
+  if (code >= 95) return { icon: IconCloudStorm, label: t("Storm") };
+  return { icon: IconCloudRain, label: t("Rain") };
 }
 
 export function WeatherWidget({ size, open }: { size: WidgetSize; open: boolean }) {
@@ -735,7 +735,7 @@ export function WeatherWidget({ size, open }: { size: WidgetSize; open: boolean 
     const load = () => getJson<{ current: { temperature_2m: number; weather_code: number; is_day: number } }>(
       `https://api.open-meteo.com/v1/forecast?latitude=${place.lat.toFixed(2)}&longitude=${place.lon.toFixed(2)}&current=temperature_2m,weather_code,is_day`)
       .then((d) => { if (alive) { setNow({ temp: d.current.temperature_2m, code: d.current.weather_code, day: !!d.current.is_day, at: Date.now() }); setError(""); } })
-      .catch(() => { if (alive) setError(t("Sin conexión")); });
+      .catch(() => { if (alive) setError(t("No connection")); });
     if (!now || Date.now() - now.at > 30 * 60000) load();
     const timer = setInterval(load, 30 * 60000);
     return () => { alive = false; clearInterval(timer); };
@@ -744,25 +744,25 @@ export function WeatherWidget({ size, open }: { size: WidgetSize; open: boolean 
   const find = async (e: React.FormEvent) => {
     e.preventDefault();
     const q = city.trim();
-    if (!q) { setError(t("Escribe una ciudad")); return; }
+    if (!q) { setError(t("Enter a city")); return; }
     setBusy(true); setError("");
     try {
       const r = await getJson<{ results?: { name: string; latitude: number; longitude: number }[] }>(
         `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1&language=${locale().slice(0, 2)}&format=json`);
       const hit = r.results?.[0];
-      if (!hit) { setError(t("No se encontró esa ciudad")); return; }
+      if (!hit) { setError(t("City not found")); return; }
       const p = { name: hit.name, lat: hit.latitude, lon: hit.longitude };
       try { localStorage.setItem(WEATHER_KEY, JSON.stringify(p)); } catch { /* no storage */ }
       setNow(null); setPlace(p); setAsking(false); setCity("");
-    } catch { setError(t("Sin conexión")); } finally { setBusy(false); }
+    } catch { setError(t("No connection")); } finally { setBusy(false); }
   };
 
   if (asking) {
     return (
       <form className="vp-weather-ask" onSubmit={find} data-nodrag>
-        <input autoFocus value={city} placeholder={t("Ciudad")} aria-label={t("Ciudad")} onChange={(e) => { setCity(e.target.value); setError(""); }}
+        <input autoFocus value={city} placeholder={t("City")} aria-label={t("City")} onChange={(e) => { setCity(e.target.value); setError(""); }}
           onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setAsking(false); setError(""); } }} />
-        <button type="submit" className="vp-icon" disabled={busy} aria-label={t("Buscar")} title={t("Buscar")}><IconCloudSearch size={16} /></button>
+        <button type="submit" className="vp-icon" disabled={busy} aria-label={t("Search")} title={t("Search")}><IconCloudSearch size={16} /></button>
         {error && <span className="vp-error">{error}</span>}
       </form>
     );
@@ -771,14 +771,14 @@ export function WeatherWidget({ size, open }: { size: WidgetSize; open: boolean 
     return (
       <div className={`vp-weather${size.px < 220 || size.h >= 2 ? " stack" : ""}`}>
         <IconCloud size={size.h >= 2 ? 32 : 22} className="vp-weather-off" />
-        <button type="button" className="vp-chip" onClick={() => setAsking(true)}>{t("Activar clima")}</button>
+        <button type="button" className="vp-chip" onClick={() => setAsking(true)}>{t("Turn on weather")}</button>
       </div>
     );
   }
   const look = now ? weatherLook(now.code, now.day) : null;
   const Ico = look?.icon ?? IconCloud;
   return (
-    <button type="button" className={`vp-weather${size.h >= 2 ? " tall" : ""}`} title={t("Cambiar ciudad")} onClick={() => setAsking(true)}>
+    <button type="button" className={`vp-weather${size.h >= 2 ? " tall" : ""}`} title={t("Change city")} onClick={() => setAsking(true)}>
       <Ico size={size.h >= 2 ? 40 : size.w >= 2 ? 30 : 24} className="vp-weather-icon" />
       <span className="vp-weather-text">
         <strong>{now ? `${Math.round(now.temp)}°` : "—"}</strong>
@@ -816,7 +816,7 @@ export function WidgetTray({ items, onAdd, onReset }: { items: WidgetItem[]; onA
           </button>
         );
       })}
-      <button type="button" className="vp-chip ghost" onClick={onReset}>{t("Restablecer")}</button>
+      <button type="button" className="vp-chip ghost" onClick={onReset}>{t("Reset")}</button>
     </div>
   );
 }

@@ -15,8 +15,8 @@ function Set-GpuVMGuestCredential {
         try { Invoke-Command -VMName $Name -Credential $Credential -ScriptBlock { $true } -ErrorAction Stop | Out-Null }
         catch {
             $message = $_.Exception.Message
-            if ($message -match 'password|contraseña|credential|credencial|logon|inicio de sesión') { throw 'La contraseña no es correcta para la cuenta de la VM.' }
-            throw "No se pudo comprobar la contraseña dentro de la VM (¿sigue arrancando?): $message"
+            if ($message -match 'password|contraseña|credential|credencial|logon|inicio de sesión') { throw 'The password isn''t right for the VM''s account.' }
+            throw "Couldn't check the password inside the VM (is it still starting?): $message"
         }
     }
     $state['guest'] = [ordered]@{

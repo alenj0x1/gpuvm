@@ -14,10 +14,10 @@ function Set-GpuVMDisposable {
     Assert-Admin
     $state = Get-GpuVMState -Name $Name
     if (-not (Test-GpuVMDisposable -State $state)) { return [ordered]@{ name = $Name; disposable = $false } }
-    if (-not $PSCmdlet.ShouldProcess($Name, 'Conservar la máquina')) { return }
+    if (-not $PSCmdlet.ShouldProcess($Name, 'Keep the machine')) { return }
     $state.Remove('disposable')
     $state['keptAt'] = (Get-Date).ToString('o')
     Save-GpuVMState $state
-    Write-Step "La máquina '$Name' se conserva"
+    Write-Step "The machine '$Name' is kept"
     [ordered]@{ name = $Name; disposable = $false }
 }

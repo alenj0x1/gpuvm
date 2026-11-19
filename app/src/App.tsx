@@ -46,7 +46,7 @@ interface RunningJob extends JobInfo {
 
 /** `embedded`: the app runs inside another page (the website), so its route stays in memory and off the page's URL. */
 export function App({ embedded = false }: { embedded?: boolean } = {}) {
-  // The machine list fades only where it keeps going: never over "Crear máquina" when everything fits.
+  // The machine list fades only where it keeps going: never over "Create machine" when everything fits.
   const [sideRef, sideFade] = useScrollFade<HTMLElement>();
   const [vms, setVms] = useState<VmOverview[] | null>(null);
   const [host, setHost] = useState<HostInfo | null>(null);
@@ -58,7 +58,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
   const [selected, setSelected] = useState(() => embedded ? HOME : decodeURIComponent(location.hash.slice(1)));
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem("gpuvm.collapsed") === "1"; } catch { return false; } });
   const [creating, setCreating] = useState(false);
-  // Template preselected when "Crear máquina" is opened from a template in the library.
+  // Template preselected when "Create machine" is opened from a template in the library.
   const [createTemplate, setCreateTemplate] = useState<string | null>(null);
   // The space a new machine goes into (the one Home shows, or the one it was created from).
   const [createSpace, setCreateSpace] = useState<string | null>(null);
@@ -101,11 +101,11 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       setBlocked(null);
       setReadError(null);
     } catch (e) {
-      // Recognized in the module's own (Spanish) words, before they are translated.
+      // Recognized in the module's own (English) words, before they are translated.
       const raw = String(e), msg = humanError(e);
-      if (/servicio de GpuVM est. detenido/.test(raw)) setBlocked("stopped");
-      else if (/servicio de GpuVM no est. instalado/.test(raw)) setBlocked("missing");
-      else if (raw.includes("administrador")) setBlocked("admin");
+      if (/GpuVM service is stopped/.test(raw)) setBlocked("stopped");
+      else if (/GpuVM service isn't installed/.test(raw)) setBlocked("missing");
+      else if (raw.includes("administrator")) setBlocked("admin");
       else setReadError(msg);
       setVms((v) => v ?? []);
     }
@@ -137,7 +137,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     api.sweepDisposable().then((gone) => {
       if (!gone.length) return;
       refresh();
-      push("ok", gone.length === 1 ? t("{name} se borró al apagarse.", { name: gone[0] }) : t("{n} máquinas desechables se borraron al apagarse.", { n: gone.length }));
+      push("ok", gone.length === 1 ? t("{name} was deleted when it shut down.", { name: gone[0] }) : t("{n} disposable machines were deleted when they shut down.", { n: gone.length }));
     }).catch(() => {});
   }, [disposableOff]);
 
@@ -186,7 +186,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     if (selected !== PREFS && selected !== HOME && !libraryTab(selected) && vms && vms.length && !vms.some((v) => v.name === selected)) setSelected(HOME);
   }, [vms, selected]);
 
-  // "Otro patrón" (another pattern) is reflected instantly in the sidebar too.
+  // "Another pattern" is reflected instantly in the sidebar too.
   const [, repaint] = useState(0);
   useEffect(() => {
     const onPattern = () => repaint((n) => n + 1);
@@ -213,7 +213,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       else if (job.vm === NEW_VM) {
         setCreateError(humanError(e.error));
         // If the dialog was closed, reopen it to show what failed.
-        if (!creatingRef.current) { push("error", t("No se pudo crear {name}.", { name: job.name })); setCreating(true); }
+        if (!creatingRef.current) { push("error", t("Couldn't create {name}.", { name: job.name })); setCreating(true); }
       } else push("error", humanError(e.error));
       refresh();
     }).then((fn) => { if (cancelled) fn(); else off = fn; });
@@ -238,7 +238,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
         .catch(() => { setViewing((v) => (v?.vm === vm ? null : v)); fallback?.(); });
     }, ZOOM_MS);
   }, []);
-  // Machines whose connected viewer turned out to be gone: the next "Abrir" opens them from scratch.
+  // Machines whose connected viewer turned out to be gone: the next "Open" opens them from scratch.
   const staleViewer = useRef(new Set<string>());
 
   const startJob = useCallback((vm: string, cmd: string, args: Record<string, unknown>, after?: () => void, failed?: () => void) => {
@@ -265,7 +265,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       const done = after, fail = failed;
       after = () => {
         enterMachine(vm, () => import("@tauri-apps/api/core").then(({ invoke }) => invoke("viewer_reveal", { vm })),
-          () => push("error", translateModule("El visor se cerró antes de mostrar la imagen.")));
+          () => push("error", translateModule("The viewer closed before showing the picture.")));
         done?.();
       };
       failed = () => { setViewing((v) => (v?.vm === vm ? null : v)); fail?.(); };
@@ -275,7 +275,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       args = { ...args, Monitor: readPrefs().monitor };
     }
     const jobId = `${cmd}-${Date.now()}`;
-    const first = cmd === "Connect-GpuVM" ? t("Preparando") : cmd === "New-GpuVM" ? t("Revisando el equipo") : cmd === "Invoke-GpuVMPower" ? t("Apagando") : t("Trabajando");
+    const first = cmd === "Connect-GpuVM" ? t("Preparing") : cmd === "New-GpuVM" ? t("Checking this PC") : cmd === "Invoke-GpuVMPower" ? t("Shutting down") : t("Working");
     const job = { vm, cmd, message: first, log: [first], after, failed, name: String(args.Name ?? "") };
     // Also registered in the ref so events arriving before the next render are not lost.
     jobsRef.current = { ...jobsRef.current, [jobId]: job };
@@ -370,10 +370,10 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
         <TitleBar />
         <div className="empty">
           <Logo className="empty-logo" size={96} />
-          <h2>{stopped ? t("El servicio de GpuVM está detenido") : t("Falta el servicio de GpuVM")}</h2>
-          <p>{stopped ? t("Es la parte de GpuVM que controla Hyper-V. En Ajustes está en modo manual.") : t("Es la parte de GpuVM que controla Hyper-V. Repararlo pide permiso de administrador una vez.")}</p>
+          <h2>{stopped ? t("The GpuVM service is stopped") : t("The GpuVM service is missing")}</h2>
+          <p>{stopped ? t("It's the part of GpuVM that controls Hyper-V. It's set to manual in Settings.") : t("It's the part of GpuVM that controls Hyper-V. Repairing it asks for administrator permission once.")}</p>
           <button className="primary" onClick={fix} disabled={repair.busy}>
-            {stopped ? <><IconPlugConnected size={17} />{repair.busy ? t("Iniciando…") : t("Iniciar servicio")}</> : <><IconShieldLock size={17} />{repair.busy ? t("Reparando…") : t("Reparar")}</>}
+            {stopped ? <><IconPlugConnected size={17} />{repair.busy ? t("Starting…") : t("Start service")}</> : <><IconShieldLock size={17} />{repair.busy ? t("Repairing…") : t("Repair")}</>}
           </button>
           {repair.error && <span className="error-text">{repair.error}</span>}
         </div>
@@ -387,9 +387,9 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
         <TitleBar />
         <div className="empty">
           <Logo className="empty-logo" size={96} />
-          <h2>{t("GpuVM necesita permisos de administrador")}</h2>
-          <p>{t("Hyper-V solo deja crear y controlar máquinas a un administrador.")}</p>
-          <button className="primary" onClick={relaunchAsAdmin}><IconShieldLock size={17} />{t("Abrir como administrador")}</button>
+          <h2>{t("GpuVM needs administrator permission")}</h2>
+          <p>{t("Hyper-V only lets an administrator create and control machines.")}</p>
+          <button className="primary" onClick={relaunchAsAdmin}><IconShieldLock size={17} />{t("Open as administrator")}</button>
         </div>
       </div>
     );
@@ -401,7 +401,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       <div className={`app viewing ${viewing.phase}`}>
         <TitleBar>
           <button className="titlebar-back" onClick={() => leaveToHome(viewing.vm)} disabled={viewing.phase !== "live"}>
-            <IconHome size={15} />{t("Inicio")}
+            <IconHome size={15} />{t("Home")}
           </button>
           <span className="titlebar-machine"><MachineIcon name={viewing.vm} size={20} radius={6} />{viewing.vm}</span>
         </TitleBar>
@@ -440,14 +440,14 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
             if (p) flashMachine(p.name);
           }}>
           {(
-            <button className={`side-item side-home ${selected === HOME ? "active" : ""}`} onClick={() => setSelected(HOME)} title={t("Inicio")}>
-              <span className="add-icon"><IconHome size={16} /></span><span className="name">{t("Inicio")}</span>
+            <button className={`side-item side-home ${selected === HOME ? "active" : ""}`} onClick={() => setSelected(HOME)} title={t("Home")}>
+              <span className="add-icon"><IconHome size={16} /></span><span className="name">{t("Home")}</span>
             </button>
           )}
-          <button className={`side-item side-home ${libraryTab(selected) ? "active" : ""}`} onClick={() => setSelected(LIBRARY)} title={t("Perfiles, discos e ISOs")}>
-            <span className="add-icon"><IconStack2 size={16} /></span><span className="name">{t("Biblioteca")}</span>
+          <button className={`side-item side-home ${libraryTab(selected) ? "active" : ""}`} onClick={() => setSelected(LIBRARY)} title={t("Profiles, disks and ISOs")}>
+            <span className="add-icon"><IconStack2 size={16} /></span><span className="name">{t("Library")}</span>
           </button>
-          {/* With one space the list is just "Máquinas"; with several, each space heads its own machines and opens it in Home. */}
+          {/* With one space the list is just "Machines"; with several, each space heads its own machines and opens it in Home. */}
           {(() => {
             // The groups as shown: the spaces in their (previewed) order, each with its machines, and the dragged
             // machine where it would land.
@@ -505,11 +505,11 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
 >
                 {sp ? (
                   <button type="button" data-space-row={sp.id} draggable onDragStart={(e) => dragSpace(e, sp.id)}
-                    className={`side-label side-space${spaceOrder && dragging.space === sp.id ? " dragged" : ""}${selected === HOME && shownSpaceId === sp.id ? " on" : ""}`} title={t("Ver {name}", { name: sp.name })}
+                    className={`side-label side-space${spaceOrder && dragging.space === sp.id ? " dragged" : ""}${selected === HOME && shownSpaceId === sp.id ? " on" : ""}`} title={t("View {name}", { name: sp.name })}
                     onClick={() => { showSpace(sp.id); setSelected(HOME); }}>
                     {Icon && <Icon size={13} />}<span className="ellipsis">{sp.name}</span>
                   </button>
-                ) : <span className="side-label">{t("Máquinas")}</span>}
+                ) : <span className="side-label">{t("Machines")}</span>}
                 {vms === null && [0, 1, 2].map((i) => (
                   <div key={i} className="side-item side-skeleton" aria-hidden="true">
                     <span className="skeleton icon" />
@@ -526,7 +526,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
                       <span className="side-icon"><MachineIcon name={vm.name} size={28} radius={8} /><span className={`dot badge ${vm.state}`} /></span>
                       <span className="name">{vm.name}</span>
                       {busy ? <IconLoader2 size={15} className="spin side-meta" />
-                        : vm.state === "Running" ? <span className="side-meta" title={t("Procesador {cpu} %, memoria {mem} GB, GPU {gpu} %", { cpu: vm.cpuPercent, mem: vm.memoryDemandGB, gpu: vm.gpuPercent })}>
+                        : vm.state === "Running" ? <span className="side-meta" title={t("Processor {cpu} %, memory {mem} GB, GPU {gpu} %", { cpu: vm.cpuPercent, mem: vm.memoryDemandGB, gpu: vm.gpuPercent })}>
                           <TripleSpark samples={history.current[vm.name] ?? []} memGB={vm.memoryAssignedGB} /></span> : null}
                     </button>
                   );
@@ -536,27 +536,27 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
           });
           })()}
           {createJob && (
-            <button className="side-item" onClick={() => setCreating(true)} title={t("Ver avance")}>
+            <button className="side-item" onClick={() => setCreating(true)} title={t("View progress")}>
               <span className="add-icon"><IconLoader2 size={16} className="spin" /></span>
               <span className="name">{createJob.name}<span className="sub">{translateModule(createJob.message)}</span></span>
             </button>
           )}
-          <button className="side-item side-add" onClick={() => { setCreateError(null); setCreateSpace(null); setCreating(true); }} title={t("Crear máquina")}>
-            <span className="add-icon"><IconPlus size={16} /></span><span className="name">{t("Crear máquina")}</span>
+          <button className="side-item side-add" onClick={() => { setCreateError(null); setCreateSpace(null); setCreating(true); }} title={t("Create machine")}>
+            <span className="add-icon"><IconPlus size={16} /></span><span className="name">{t("Create machine")}</span>
           </button>
         </nav>
         {/* Ajustes stays at the foot of the sidebar, however long the list of machines gets. */}
-        <button className={`side-item side-home side-foot ${selected === PREFS ? "active" : ""}`} onClick={() => setSelected(PREFS)} title={t("Ajustes")}>
-          <span className="add-icon"><IconSettings size={16} /></span><span className="name">{t("Ajustes")}</span>
+        <button className={`side-item side-home side-foot ${selected === PREFS ? "active" : ""}`} onClick={() => setSelected(PREFS)} title={t("Settings")}>
+          <span className="add-icon"><IconSettings size={16} /></span><span className="name">{t("Settings")}</span>
         </button>
       </aside>
       {/* The sidebar's edge: drag it to resize (or fold) the sidebar; its tab, shown on hover, folds and unfolds it. */}
-      <div className="side-edge" role="separator" aria-orientation="vertical" aria-label={t("Ancho de la barra")}
+      <div className="side-edge" role="separator" aria-orientation="vertical" aria-label={t("Sidebar width")}
         onPointerDown={startResize} onPointerMove={resize}
         onPointerUp={() => { const p = press.current; press.current = null; setResizing(false); if (p && !p.moved && p.onLine) setCollapsed((c) => !c); }}
         onPointerCancel={() => { press.current = null; setResizing(false); }}>
         {/* The line itself: drag it to resize, click it to fold or unfold. */}
-        <button type="button" className="side-handle" aria-label={collapsed ? t("Expandir barra") : t("Contraer barra")} title={collapsed ? t("Expandir barra") : t("Contraer barra")}
+        <button type="button" className="side-handle" aria-label={collapsed ? t("Expand sidebar") : t("Collapse sidebar")} title={collapsed ? t("Expand sidebar") : t("Collapse sidebar")}
           onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setCollapsed((c) => !c); } }} />
       </div>
 
@@ -564,8 +564,8 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
         {readError && (
           <div className="notice error-notice">
             <IconAlertTriangle size={20} />
-            <div className="grow">{t("No se pudo leer Hyper-V: {error}", { error: readError })}</div>
-            <button className="btn" onClick={refresh}><IconRefresh size={16} />{t("Reintentar")}</button>
+            <div className="grow">{t("Couldn't read Hyper-V: {error}", { error: readError })}</div>
+            <button className="btn" onClick={refresh}><IconRefresh size={16} />{t("Retry")}</button>
           </div>
         )}
         {vms === null ? (
@@ -609,7 +609,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
               setCreateTemplate(null);
               // Open the new machine once the list has it; before that, the route would fall back to Home.
               refresh().then(() => setSelected(name));
-              push("ok", template || file ? t("{name} está lista.", { name }) : t("{name} está lista. Windows termina de configurarse solo en unos minutos.", { name }));
+              push("ok", template || file ? t("{name} is ready.", { name }) : t("{name} is ready. Windows finishes setting itself up in a few minutes.", { name }));
             });
           }} />
       )}

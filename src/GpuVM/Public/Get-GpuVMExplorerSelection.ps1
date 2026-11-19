@@ -12,8 +12,8 @@ function Get-GpuVMExplorerSelection {
     Assert-Admin
     $state = Get-GpuVMState -Name $Name
     $guest = Get-GpuVMGuestCredential -State $state
-    if (-not $guest) { throw "Guarda la contraseña de Windows de '$Name' para enviar desde ella." }
-    if ((Get-VM -Name $Name).State -ne 'Running') { throw "La VM '$Name' está apagada." }
+    if (-not $guest) { throw "Save the Windows password of '$Name' to send from it." }
+    if ((Get-VM -Name $Name).State -ne 'Running') { throw "The VM '$Name' is off." }
     $raw = Invoke-Command -VMName $Name -Credential $guest -ErrorAction Stop -ScriptBlock {
         $dir = 'C:\GpuVM'
         $out = Join-Path $dir 'selection.txt'
@@ -45,9 +45,9 @@ Add-Type -Namespace GpuVM -Name W -MemberDefinition '[DllImport("user32.dll")] p
     }
     $raw = @($raw)[-1]
     switch (ConvertTo-GuestString $raw['state']) {
-        'nosession' { throw "No hay una sesión iniciada en la pantalla de '$Name'." }
+        'nosession' { throw "Nobody is signed in on the screen of '$Name'." }
         'ok' { }
-        default { throw "'$Name' no respondió a tiempo; vuelve a intentarlo." }
+        default { throw "'$Name' didn't answer in time; try again." }
     }
     # From the guest: at most 1000 paths, each a plain full path of bounded length.
     $paths = @($raw['paths'] | Select-Object -First 1000 | ForEach-Object { ConvertTo-GuestString $_ -MaxLength 1024 } |

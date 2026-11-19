@@ -221,7 +221,7 @@ export function Segmented<T extends string | number | boolean>({ value, options,
       <span className={`segmented-pill${animate ? " animate" : ""}`} aria-hidden="true"
         style={pill ? { left: pill.left, top: pill.top, width: pill.width, height: pill.height } : { opacity: 0 }} />
       {options.map((o) => (
-        // type="button": inside a form (Crear máquina, profiles) a plain button would submit it.
+        // type="button": inside a form (Create machine, profiles) a plain button would submit it.
         <button type="button" key={String(o.value)} role="radio" aria-checked={o.value === value} className={o.value === value ? "on" : ""}
           onClick={() => onChange(o.value)}>
           {o.label}
@@ -255,7 +255,7 @@ export function Toasts({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: num
         <div key={toast.id} className={`toast ${toast.kind}`}>
           {toast.kind === "error" ? <IconCircleX size={18} /> : toast.kind === "warning" ? <IconAlertTriangle size={18} /> : <IconCircleCheck size={18} />}
           <span style={{ flex: 1, lineHeight: 1.45 }}>{toast.text}</span>
-          <button className="icon-btn" style={{ width: 24, height: 24 }} aria-label={t("Cerrar")} onClick={() => dismiss(toast.id)}><IconX size={14} /></button>
+          <button className="icon-btn" style={{ width: 24, height: 24 }} aria-label={t("Close")} onClick={() => dismiss(toast.id)}><IconX size={14} /></button>
         </div>
       ))}
     </div>
@@ -282,22 +282,22 @@ export function formatUptime(seconds: number) {
 }
 
 export const stateLabel: Record<string, string> = {
-  Running: "Encendida",
-  Off: "Apagada",
-  Paused: "En pausa",
-  Saved: "Guardada",
-  Starting: "Encendiendo",
-  Stopping: "Apagando",
-  Saving: "Guardando estado",
-  Pausing: "Pausando",
-  Resuming: "Reanudando",
+  Running: "On",
+  Off: "Off",
+  Paused: "Paused",
+  Saved: "Saved",
+  Starting: "Starting",
+  Stopping: "Shutting down",
+  Saving: "Saving state",
+  Pausing: "Pausing",
+  Resuming: "Resuming",
 };
 
-/** The machine state in the current language: stateText("Running") is "Encendida" or "On". Prefer it to stateLabel,
+/** The machine state in the current language: stateText("Running") is "On" or "On". Prefer it to stateLabel,
  *  which stays in Spanish (it is read once, at import). */
 export const stateText = (state: string) => ({
-  Running: t("Encendida"), Off: t("Apagada"), Paused: t("En pausa"), Saved: t("Guardada"), Starting: t("Encendiendo"),
-  Stopping: t("Apagando"), Saving: t("Guardando estado"), Pausing: t("Pausando"), Resuming: t("Reanudando"),
+  Running: t("On"), Off: t("Off"), Paused: t("Paused"), Saved: t("Saved"), Starting: t("Starting"),
+  Stopping: t("Shutting down"), Saving: t("Saving state"), Pausing: t("Pausing"), Resuming: t("Resuming"),
 } as Record<string, string>)[state] ?? state;
 
 /** For a box that scrolls: "fade-start" / "fade-end" while there is hidden content on that side, so the edge fades. */

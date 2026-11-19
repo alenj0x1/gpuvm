@@ -43,7 +43,7 @@ export function DropZone() {
   }, []);
 
   const tr = card === "sample"
-    ? { id: "sample", vm, from: null, names: ["fotos-vacaciones", "informe.pdf"], state: "running" as const, percent: 42, message: "Enviando 42 % · 1.2 de 2.9 GB", error: null, items: [] }
+    ? { id: "sample", vm, from: null, names: ["fotos-vacaciones", "informe.pdf"], state: "running" as const, percent: 42, message: "Sending 42 % · 1.2 of 2.9 GB", error: null, items: [] }
     : transfers.find((x) => x.id === card);
   const ended = !!tr && tr.state !== "running";
   useEffect(() => {
@@ -59,8 +59,8 @@ export function DropZone() {
     <div className={`drop-veil${over ? " over" : ""}`}>
       <div className="drop-card">
         <span className="drop-icon"><IconDownload size={22} /></span>
-        <strong>{t("Soltar para enviar")}</strong>
-        <span>{t("{vm} · Escritorio › {folder}", { vm, folder: t("Recibidos") })}</span>
+        <strong>{t("Drop to send")}</strong>
+        <span>{t("{vm} · Desktop › {folder}", { vm, folder: t("Received") })}</span>
       </div>
     </div>
   );

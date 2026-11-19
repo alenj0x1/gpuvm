@@ -1,0 +1,21 @@
+// Spanish for the games Stack and Cache (their names are the same in every language).
+export default {
+  "Drop each block right on the one below. What hangs over falls off and the tower narrows.": "Suelta cada bloque justo sobre el anterior. Lo que sobresale se cae y la torre se angosta.",
+  "Starts among colorful toy bricks.": "Empieza entre bloques de juguete de colores.",
+  "Starts with hologram slabs on the app's gray.": "Empieza con placas de holograma sobre el gris de la app.",
+  "Starts with chips over the board's traces.": "Empieza con chips sobre las pistas de la placa.",
+  "Drop": "Soltar",
+  "Right on top is a Perfect, worth double": "Encima justo es Perfecto y vale doble",
+  "Three Perfects in a row grow the block back": "Tres perfectos seguidos hacen crecer el bloque",
+  "Every 8 floors you climb into another world, and it gets harder": "Cada 8 pisos subes a otro mundo y se pone más difícil",
+  "{n} Perfects in a row": "{n} perfectos seguidos",
+  "Catch the falling figures before they hit the floor. Each one that falls costs a heart.": "Atrapa las figuras que caen antes de que toquen el suelo. Cada una que se cae cuesta un corazón.",
+  "On the app's gray.": "Sobre el gris de la app.",
+  "Over the board's traces.": "Sobre las pistas de la placa.",
+  "Under a sky with block clouds.": "Bajo un cielo con nubes de bloques.",
+  "Clone": "Clon",
+  "Wider": "Más ancho",
+  "Golden ones are worth five; spiders are better left to fall": "Las doradas valen cinco; las arañas, mejor dejarlas caer",
+  "Stickers help: a clone that catches beside you, wider, slow time, a magnet, a shield or a heart": "Los stickers ayudan: un clon que atrapa a tu lado, más ancho, tiempo lento, imán, escudo o un corazón",
+  "Ten in a row without a miss score one extra each": "Diez seguidas sin perder ninguna suman uno extra cada una",
+} as Record<string, string>;

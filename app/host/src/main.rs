@@ -147,7 +147,7 @@ fn install() -> Result<(), String> {
             ScHandle(h)
         }
     };
-    let mut description = wide("Hace el trabajo de Hyper-V para la app GpuVM, que se abre sin permisos de administrador.");
+    let mut description = wide("Does the Hyper-V work for the GpuVM app, which opens without administrator rights.");
     let info = SERVICE_DESCRIPTIONW { lpDescription: description.as_mut_ptr() };
     unsafe { ChangeServiceConfig2W(svc.0, SERVICE_CONFIG_DESCRIPTION, &info as *const _ as *const c_void) };
     // If it ever crashes, Windows starts it again (after 2 s, then 10 s; the counter resets after a day).
@@ -182,9 +182,9 @@ fn startup(mode: Option<&str>) -> Result<(), String> {
     let start = match mode {
         Some("auto") => SERVICE_AUTO_START,
         Some("demand") => SERVICE_DEMAND_START,
-        _ => return Err("uso: gpuvm-host startup auto|demand".into()),
+        _ => return Err("usage: gpuvm-host startup auto|demand".into()),
     };
-    let svc = open_service(&manager()?).ok_or("El servicio de GpuVM no está instalado.")?;
+    let svc = open_service(&manager()?).ok_or("The GpuVM service isn't installed.")?;
     let n = std::ptr::null();
     if unsafe { ChangeServiceConfigW(svc.0, SERVICE_NO_CHANGE, start, SERVICE_NO_CHANGE, n, n, std::ptr::null_mut(), n, n, n, n) } == 0 {
         return Err(last_error("ChangeServiceConfigW"));
@@ -223,7 +223,7 @@ fn main() {
         Some("stop") => stop(),
         Some("startup") => startup(std::env::args().nth(2).as_deref()),
         Some("uninstall") => uninstall(),
-        _ => Err("uso: gpuvm-host install | stop | uninstall".into()),
+        _ => Err("usage: gpuvm-host install | stop | uninstall".into()),
     };
     if let Err(e) = result {
         server::log(&e);

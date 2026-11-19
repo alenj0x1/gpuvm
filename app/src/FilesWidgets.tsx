@@ -21,15 +21,15 @@ const bytes = (n: number) => n >= 1 << 30
   : n >= 1 << 20 ? `${(n / (1 << 20)).toLocaleString(locale(), { maximumFractionDigits: 1 })} MB`
     : `${Math.max(1, Math.round(n / 1024)).toLocaleString(locale())} KB`;
 
-/** "foto.png", "foto.png y 2 más". */
-export const namesOf = (names: string[]) => names.length <= 1 ? names[0] ?? "" : t("{first} y {n} más", { first: names[0], n: names.length - 1 });
+/** "photo.png", "photo.png and 2 more". */
+export const namesOf = (names: string[]) => names.length <= 1 ? names[0] ?? "" : t("{first} and {n} more", { first: names[0], n: names.length - 1 });
 
 /** One copy: the percent before the name (a long name never hides it), its bar and Cancelar; once done, where it went. */
 export function TransferRow({ tr }: { tr: Transfer }) {
   const running = tr.state === "running";
-  const sub = running ? (transferAmount(tr) || t("Preparando…"))
-    : tr.state === "done" ? t("En {vm} › {folder}", { vm: tr.vm, folder: tr.folder ?? t("Recibidos") })
-      : tr.state === "cancelled" ? t("Cancelado") : humanError(tr.error ?? "");
+  const sub = running ? (transferAmount(tr) || t("Preparing…"))
+    : tr.state === "done" ? t("In {vm} › {folder}", { vm: tr.vm, folder: tr.folder ?? t("Received") })
+      : tr.state === "cancelled" ? t("Cancelled") : humanError(tr.error ?? "");
   return (
     <li className={`vp-transfer ${tr.state}`}>
       <span className="vp-transfer-mark">
@@ -41,7 +41,7 @@ export function TransferRow({ tr }: { tr: Transfer }) {
         <span className="sub">{sub}</span>
       </span>
       {running && (
-        <button type="button" className="vp-icon" aria-label={t("Cancelar")} title={t("Cancelar")} onClick={() => cancelTransfer(tr.id)}>
+        <button type="button" className="vp-icon" aria-label={t("Cancel")} title={t("Cancel")} onClick={() => cancelTransfer(tr.id)}>
           <IconX size={15} />
         </button>
       )}
@@ -63,15 +63,15 @@ export function FilesWidget({ vm, vms, size }: { vm: string; vms: VmOverview[]; 
     setBusy(target);
     try {
       const sel = await api.explorerSelection(vm);
-      if (!sel?.paths?.length) setError(t("Selecciona archivos en el Explorador de {vm}.", { vm }));
-      else await startTransfer(target, sel.paths, t("Recibidos"), vm);
+      if (!sel?.paths?.length) setError(t("Select files in {vm}'s File Explorer.", { vm }));
+      else await startTransfer(target, sel.paths, t("Received"), vm);
     } catch (e) { setError(humanError(e)); }
     setBusy("");
   };
 
   const sendRow = others.length > 0 && (
     <div className="vp-send">
-      <span className="vp-send-label">{t("Enviar lo seleccionado a")}</span>
+      <span className="vp-send-label">{t("Send what is selected to")}</span>
       <div className="vp-send-targets">
         {others.slice(0, 4).map((o) => (
           <button key={o.name} type="button" className="vp-chip" disabled={!!busy} onClick={() => sendTo(o.name)}>
@@ -88,8 +88,8 @@ export function FilesWidget({ vm, vms, size }: { vm: string; vms: VmOverview[]; 
       <div className="vp-files">
         <div className="vp-files-empty">
           <span className="vp-empty-icon"><IconDownload size={18} /></span>
-          <strong>{t("Suelta archivos sobre la imagen")}</strong>
-          {size.h >= 2 && <span>{t("Llegan al escritorio de {vm}, carpeta {folder}.", { vm, folder: t("Recibidos") })}</span>}
+          <strong>{t("Drop files on the picture")}</strong>
+          {size.h >= 2 && <span>{t("They arrive on {vm}'s desktop, in {folder}.", { vm, folder: t("Received") })}</span>}
         </div>
         {sendRow}
       </div>
@@ -128,7 +128,7 @@ function useClipboard(): ClipItem[] {
 }
 
 /** Portapapeles: the last copies made on this PC while a machine is open (text, images, files), each pasted into
- *  this machine with a click; "Al copiar" sends every new text or image on its own. Kept in memory only. */
+ *  this machine with a click; "On copy" sends every new text or image on its own. Kept in memory only. */
 export function ClipboardWidget({ vm, size }: { vm: string; size: WidgetSize }) {
   const items = useClipboard();
   const [state, setState] = useState<Record<number, "busy" | "done" | string>>({});
@@ -147,14 +147,14 @@ export function ClipboardWidget({ vm, size }: { vm: string; size: WidgetSize }) 
   const send = async (it: ClipItem) => {
     setState((s) => ({ ...s, [it.id]: "busy" }));
     try {
-      await invoke("clipboard_send", { vm, id: it.id, folder: t("Recibidos") });
+      await invoke("clipboard_send", { vm, id: it.id, folder: t("Received") });
       setState((s) => ({ ...s, [it.id]: "done" }));
     } catch (e) { setState((s) => ({ ...s, [it.id]: humanError(e) })); }
   };
 
   const toggle = (
-    <button type="button" className={`vp-chip${auto ? " on" : ""}`} aria-pressed={auto} title={t("Lo que copies en el PC llega solo a {vm}", { vm })} onClick={() => setAuto(!auto)}>
-      <IconBolt size={14} />{t("Al copiar")}
+    <button type="button" className={`vp-chip${auto ? " on" : ""}`} aria-pressed={auto} title={t("What you copy on the PC goes to {vm} on its own", { vm })} onClick={() => setAuto(!auto)}>
+      <IconBolt size={14} />{t("On copy")}
     </button>
   );
   if (!items.length) {
@@ -162,8 +162,8 @@ export function ClipboardWidget({ vm, size }: { vm: string; size: WidgetSize }) 
       <div className="vp-clip">
         <div className="vp-files-empty">
           <span className="vp-empty-icon"><IconClipboard size={18} /></span>
-          <strong>{t("Copia algo en el PC")}</strong>
-          {size.h >= 2 && <span>{t("Lo copiado mientras usas la máquina queda aquí para pegarlo en ella.")}</span>}
+          <strong>{t("Copy something on the PC")}</strong>
+          {size.h >= 2 && <span>{t("What you copy while using the machine stays here to paste into it.")}</span>}
         </div>
         <div className="vp-clip-foot">{toggle}</div>
       </div>
@@ -175,7 +175,7 @@ export function ClipboardWidget({ vm, size }: { vm: string; size: WidgetSize }) 
         {items.map((it) => {
           const st = state[it.id];
           const label = it.kind === "text" ? (it.text ?? "")
-            : it.kind === "image" ? t("Imagen {w} × {h}", { w: it.width ?? 0, h: it.height ?? 0 })
+            : it.kind === "image" ? t("Image {w} × {h}", { w: it.width ?? 0, h: it.height ?? 0 })
               : `${namesOf(it.names ?? [])}${it.bytes ? ` · ${bytes(it.bytes)}` : ""}`;
           return (
             <li key={it.id}>
@@ -185,7 +185,7 @@ export function ClipboardWidget({ vm, size }: { vm: string; size: WidgetSize }) 
                 <span className={it.kind === "text" ? "text" : "name"}>{label}</span>
                 {st && st !== "busy" && st !== "done" && <span className="sub err">{st}</span>}
               </span>
-              <button type="button" className="vp-icon" disabled={st === "busy"} aria-label={t("Pegar en {vm}", { vm })} title={t("Pegar en {vm}", { vm })} onClick={() => send(it)}>
+              <button type="button" className="vp-icon" disabled={st === "busy"} aria-label={t("Paste in {vm}", { vm })} title={t("Paste in {vm}", { vm })} onClick={() => send(it)}>
                 {st === "busy" ? <IconLoader2 size={15} className="spin" /> : st === "done" ? <IconCheck size={15} /> : <IconSend size={15} />}
               </button>
             </li>
@@ -194,7 +194,7 @@ export function ClipboardWidget({ vm, size }: { vm: string; size: WidgetSize }) 
       </ul>
       <div className="vp-clip-foot">
         {toggle}
-        <button type="button" className="vp-icon" aria-label={t("Borrar")} title={t("Borrar")} onClick={() => invoke("clipboard_clear")}><IconTrash size={15} /></button>
+        <button type="button" className="vp-icon" aria-label={t("Clear")} title={t("Clear")} onClick={() => invoke("clipboard_clear")}><IconTrash size={15} /></button>
       </div>
     </div>
   );

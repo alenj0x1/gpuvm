@@ -46,7 +46,7 @@ struct Item {
 
 static ITEMS: Mutex<Vec<Item>> = Mutex::new(Vec::new());
 static NEXT: AtomicU64 = AtomicU64::new(1);
-/// Machine every new text or image goes to on its own ("Al copiar"), if any. Off by default.
+/// Machine every new text or image goes to on its own ("On copy"), if any. Off by default.
 static AUTO: Mutex<Option<String>> = Mutex::new(None);
 static APP: Mutex<Option<AppHandle>> = Mutex::new(None);
 
@@ -295,7 +295,7 @@ pub fn clear() {
 async fn send(vm: String, id: u64, folder: String) -> Result<Value, String> {
     let args = {
         let items = ITEMS.lock().unwrap_or_else(|e| e.into_inner());
-        let item = items.iter().find(|i| i.id == id).ok_or("Esa copia ya no está.")?;
+        let item = items.iter().find(|i| i.id == id).ok_or("That copy is no longer there.")?;
         match &item.payload {
             Payload::Text(text) => json!({ "Name": vm, "Text": text }),
             Payload::Png(png) => json!({ "Name": vm, "Image": base64::engine::general_purpose::STANDARD.encode(png) }),
@@ -324,7 +324,7 @@ pub async fn clipboard_send(vm: String, id: u64, folder: String) -> Result<Value
     send(vm, id, folder).await
 }
 
-/// "Al copiar": every new text or image goes to `vm` on its own; None turns it off.
+/// "On copy": every new text or image goes to `vm` on its own; None turns it off.
 #[tauri::command]
 pub fn clipboard_auto(vm: Option<String>) {
     *AUTO.lock().unwrap_or_else(|e| e.into_inner()) = vm.filter(|v| !v.is_empty());

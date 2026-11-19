@@ -25,11 +25,11 @@ function Set-GuestCaptureMode {
     }
     switch ([string](@($raw)[-1])) {
         'changed' {
-            if (-not $Restart) { Write-Step $(if ($Mode -eq 'wgc') { 'Sunshine se reinicia con la captura de pantalla completa exclusiva' } else { 'Sunshine se reinicia con la captura estándar' }) }
+            if (-not $Restart) { Write-Step $(if ($Mode -eq 'wgc') { 'Sunshine is restarting with exclusive fullscreen capture' } else { 'Sunshine is restarting with standard capture' }) }
             $true
         }
         'unchanged' { $false }
-        'nosession' { throw 'No hay una sesión iniciada en la pantalla de la VM.' }
-        default { throw 'Sunshine no está instalado en la VM.' }
+        'nosession' { throw 'No one is signed in on the VM''s screen.' }
+        default { throw 'Sunshine isn''t installed in the VM.' }
     }
 }

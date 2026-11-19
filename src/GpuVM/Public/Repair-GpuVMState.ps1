@@ -15,8 +15,8 @@ function Repair-GpuVMState {
     Assert-Admin
     $vm = Get-VM -Name $Name -ErrorAction Stop
     $existing = try { Get-GpuVMState -Name $Name } catch { $null }
-    if ($existing) { Write-Step "La VM '$Name' ya tiene su estado; no hay nada que reparar."; return }
-    if ($vm.State -ne 'Off') { throw "Apaga la VM '$Name' antes de repararla." }
+    if ($existing) { Write-Step "The VM '$Name' already has its state; there's nothing to repair."; return }
+    if ($vm.State -ne 'Off') { throw "Turn off the VM '$Name' before repairing it." }
 
     $config = Resolve-GpuVMProfile -Name $Profile -Override $Override
     $vhdPath = (Get-VMHardDiskDrive -VMName $Name | Select-Object -First 1).Path
@@ -42,7 +42,7 @@ function Repair-GpuVMState {
         }
     }
     elseif ($config['streaming'] -and $config['streaming']['provider'] -ne 'none') {
-        Write-Warning 'El invitado ya arrancó y borró sus credenciales de Sunshine; connect no podrá emparejar hasta que se restablezcan.'
+        Write-Warning 'The guest already started and erased its Sunshine credentials; connect can''t pair until they''re restored.'
     }
 
     $gpu = Get-HostGpu -Match $config['gpu']['match'] | Select-Object -First 1
@@ -66,8 +66,8 @@ function Repair-GpuVMState {
         toolVersion = $script:ToolVersion
         statePath   = Join-Path $vmDir 'gpuvm.json'
     }
-    if (-not $PSCmdlet.ShouldProcess($Name, "Reconstruir estado en $($state['statePath'])")) { return }
+    if (-not $PSCmdlet.ShouldProcess($Name, "Rebuild the state in $($state['statePath'])")) { return }
     Save-GpuVMState $state
-    Write-Step "Estado reconstruido. Se asume el driver $($gpu.DriverVersion) del host; si dudas, ejecuta sync-driver."
+    Write-Step "State rebuilt. Assuming the host's driver $($gpu.DriverVersion); if in doubt, run sync-driver."
     Get-GpuVM -Name $Name
 }

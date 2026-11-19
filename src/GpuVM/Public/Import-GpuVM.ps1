@@ -40,12 +40,12 @@ function Import-GpuVM {
         # The unpacked disk must fit now, and the VM must be able to grow to its size like any other (lab 027 budget).
         $freeGB = Get-DriveFreeGB $root
         $needGB = [math]::Ceiling($diskBytes / 1GB) + $script:DiskMarginGB
-        if ($needGB -gt $freeGB) { throw "No hay espacio para importar: el disco ocupa $([math]::Ceiling($diskBytes / 1GB)) GB y quedan $freeGB GB libres." }
+        if ($needGB -gt $freeGB) { throw "There's no room to import: the disk takes $([math]::Ceiling($diskBytes / 1GB)) GB and $freeGB GB are free." }
         # Same rule as any new machine: its disk at full size must fit next to what the other disks may still grow.
         $checkOverride = if ($Override) { Merge-Hashtable -Base $Override -Override $diskOverride } else { $diskOverride }
         $failed = @(Test-GpuVMHost -Profile $Profile -Override $checkOverride | Where-Object Status -eq 'Fail')
-        if ($failed) { throw ('El equipo no pasa la revisión: ' + (($failed | ForEach-Object { "$($_.Name): $($_.Detail)" }) -join '; ')) }
-        if (-not $PSCmdlet.ShouldProcess($vmName, "Importar desde $Path")) { return }
+        if ($failed) { throw ("This PC doesn't pass the check: " + (($failed | ForEach-Object { "$($_.Name): $($_.Detail)" }) -join '; ')) }
+        if (-not $PSCmdlet.ShouldProcess($vmName, "Import from $Path")) { return }
 
         Initialize-GpuVMRoot -Path $root
         $vmDir = Join-Path $root $vmName
@@ -56,17 +56,17 @@ function Import-GpuVM {
         try { $copy = Copy-StreamWithHash -Source $in -Destination $out -Length $diskBytes -Limit $diskBytes -Label 'Importando' }
         finally { $out.Dispose(); $in.Dispose() }
         if ($copy.Bytes -ne $diskBytes -or $copy.Sha256 -ne $manifest['disk']['sha256']) {
-            throw 'El disco del archivo no coincide con su huella: el archivo está dañado o fue modificado. No se importa.'
+            throw 'The file''s disk doesn''t match its fingerprint: the file is damaged or was changed. It isn''t imported.'
         }
-        Write-Step 'Huella del disco verificada'
+        Write-Step 'Disk fingerprint checked'
         $vhd = Get-VHD -Path $vhdPath
-        if ($vhd.VhdType -eq 'Differencing') { throw 'El disco del archivo depende de otro disco; no se importa.' }
+        if ($vhd.VhdType -eq 'Differencing') { throw 'The file''s disk depends on another disk; it isn''t imported.' }
 
         # The disk comes from a file of unknown origin: it is never mounted on this PC. Sunshine's identity and web login
         # are reset inside the VM, over PowerShell Direct, the first time it is opened (Connect-GpuVM).
         $webPassword = New-RandomPassword
 
-        Write-Step "Registrando la máquina '$vmName' en Hyper-V"
+        Write-Step "Registering the machine '$vmName' in Hyper-V"
         New-VM -Name $vmName -Generation 2 -MemoryStartupBytes ([int64]$config['vm']['memoryGB'] * 1GB) -VHDPath $vhdPath -Path $root | Out-Null
         Invoke-GpuVMBackend -Backend $config['backend'] -Operation Apply -Arguments $vmName, $config
 
@@ -96,7 +96,7 @@ function Import-GpuVM {
     }
     catch {
         if ($vmName -and $vmDir) {
-            Write-Step 'La importación falló; limpiando lo que se alcanzó a crear'
+            Write-Step 'The import failed; cleaning up what was made'
             if (Get-VM -Name $vmName -ErrorAction SilentlyContinue) { Remove-VM -Name $vmName -Force -ErrorAction SilentlyContinue }
             $disk = Join-Path $vmDir "Virtual Hard Disks\$vmName.vhdx"
             $vhdInfo = Get-VHD -Path $disk -ErrorAction SilentlyContinue; if ($vhdInfo -and $vhdInfo.Attached) { Dismount-VHD -Path $disk -ErrorAction SilentlyContinue }
@@ -106,10 +106,10 @@ function Import-GpuVM {
     }
     finally { $archive.Zip.Dispose() }
 
-    Write-Step "Máquina '$vmName' importada"
+    Write-Step "Machine '$vmName' imported"
     if ($Start) {
         try { Assert-VMCanStart -Name $vmName; Start-VM -Name $vmName -ErrorAction Stop }
-        catch { Write-Warning "La máquina se importó pero no pudo encender: $($_.Exception.Message)" }
+        catch { Write-Warning "The machine was imported but couldn't turn on: $($_.Exception.Message)" }
     }
     Get-GpuVM -Name $vmName
 }

@@ -76,17 +76,17 @@ export function PromptDock() {
         <span className="dock-icon"><IconShieldLock size={18} /></span>
         <div className="dock-text">
           {prompt.reading ? <><span className="dock-skeleton" /><span className="dock-skeleton short" /></> : <>
-            <strong id="dock-app">{prompt.app ? translateModule(prompt.app) : t("Un programa")}</strong>
-            <span id="dock-publisher" className={unknown ? "unknown" : undefined}>{unknown ? t("Editor desconocido") : prompt.publisher}</span>
+            <strong id="dock-app">{prompt.app ? translateModule(prompt.app) : t("A program")}</strong>
+            <span id="dock-publisher" className={unknown ? "unknown" : undefined}>{unknown ? t("Unknown publisher") : prompt.publisher}</span>
           </>}
           {error && <span className="dock-error">{error}</span>}
         </div>
         <div className="dock-actions">
           <button type="button" className="dock-btn dock-deny" disabled={!ready && busy !== "Deny"} aria-busy={busy === "Deny"} onClick={() => answer("Deny")}>
-            {busy === "Deny" ? <IconLoader2 size={15} className="spin" /> : <IconX size={15} />}{busy === "Deny" ? t("Rechazando") : t("Rechazar")}
+            {busy === "Deny" ? <IconLoader2 size={15} className="spin" /> : <IconX size={15} />}{busy === "Deny" ? t("Denying") : t("Deny")}
           </button>
           <button type="button" className="dock-btn dock-allow" disabled={!ready && busy !== "Allow"} aria-busy={busy === "Allow"} onClick={() => answer("Allow")}>
-            {busy === "Allow" ? <IconLoader2 size={15} className="spin" /> : <IconCheck size={15} />}{busy === "Allow" ? t("Permitiendo") : t("Permitir")}
+            {busy === "Allow" ? <IconLoader2 size={15} className="spin" /> : <IconCheck size={15} />}{busy === "Allow" ? t("Allowing") : t("Allow")}
           </button>
         </div>
       </div>

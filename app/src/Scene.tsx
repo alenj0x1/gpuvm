@@ -7,7 +7,7 @@ export type SceneStyle = "wafer" | "partition" | "mosaic";
 export const SCENE_STYLES: SceneStyle[] = ["wafer", "partition", "mosaic"];
 
 const STYLE_KEY = "gpuvm.banner.";
-/** The banner a machine shows: picked by hand ("Otro banner") or, until then, by its name. */
+/** The banner a machine shows: picked by hand ("Another banner") or, until then, by its name. */
 export function sceneStyle(name: string): SceneStyle {
   try {
     const saved = localStorage.getItem(STYLE_KEY + name) as SceneStyle | null;

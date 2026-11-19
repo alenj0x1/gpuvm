@@ -8,7 +8,7 @@
 function Compress-GpuVMDiskCopy {
     param([Parameter(Mandatory)][string]$Path)
     $before = (Get-Item -LiteralPath $Path).Length
-    Write-Step 'Liberando el espacio que Windows ya no usa'
+    Write-Step 'Giving back the space Windows no longer uses'
     Mount-VHD -Path $Path -ReadOnly -NoDriveLetter
     try { Optimize-VHD -Path $Path -Mode Retrim }
     finally { Dismount-VHD -Path $Path }

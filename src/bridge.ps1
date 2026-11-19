@@ -39,7 +39,7 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
     # A line that is not valid JSON gets an error back instead of ending the bridge.
     try { $request = $line | ConvertFrom-Json -AsHashtable }
     catch {
-        Send-Event @{ id = $null; type = 'result'; ok = $false; error = 'Petición no válida.' }
+        Send-Event @{ id = $null; type = 'result'; ok = $false; error = 'Invalid request.' }
         continue
     }
     $id = $request['id']
@@ -47,12 +47,12 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
     try {
         # Names must match exactly, letter case included: the service decides consent and checks paths by the exact
         # command and argument names, and PowerShell itself would accept "remove-gpuvm" or "path" (or a prefix).
-        if ($request['cmd'] -isnot [string] -or $request['cmd'] -cnotin $allowed) { throw "Comando no permitido: $($request['cmd'])" }
+        if ($request['cmd'] -isnot [string] -or $request['cmd'] -cnotin $allowed) { throw "Command not allowed: $($request['cmd'])" }
         $parameters = (Get-Command -Name $request['cmd'] -Module GpuVM).Parameters.Keys
         $arguments = @{}
         if ($request['args']) {
             foreach ($key in $request['args'].Keys) {
-                if ($key -cnotin $parameters) { throw "Argumento no permitido: $key" }
+                if ($key -cnotin $parameters) { throw "Argument not allowed: $key" }
                 $arguments[$key] = ConvertTo-Argument $request['args'][$key]
             }
         }

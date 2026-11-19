@@ -18,7 +18,7 @@ function Get-SharedDiskLabel {
 function Read-SharedDisk {
     param([Parameter(Mandatory)][ValidatePattern('^[\w-]{1,40}$')][string]$Name)
     $path = Get-SharedDiskPath -Name $Name
-    if (-not (Test-Path -LiteralPath $path)) { throw "No existe el disco compartido '$Name'." }
+    if (-not (Test-Path -LiteralPath $path)) { throw "The shared disk '$Name' doesn't exist." }
     $metaPath = [IO.Path]::ChangeExtension($path, '.json')
     $meta = if (Test-Path -LiteralPath $metaPath) { Read-JsonFile $metaPath } else { [ordered]@{ purpose = 'general' } }
     $meta['name'] = $Name
@@ -121,13 +121,13 @@ function Initialize-GuestSharedDisk {
     $letter = [string]$r['letter']
     if ($letter -notmatch '^[A-Z]$') { $letter = '' }
     switch ($status) {
-        'ready' { Write-Step "Disco '$($Disk['name'])' en $letter`: dentro de la VM" }
-        default { Write-Warning "La VM no muestra el disco '$($Disk['name'])' todavía." }
+        'ready' { Write-Step "Disk '$($Disk['name'])' at $letter`: inside the VM" }
+        default { Write-Warning "The VM doesn't show the disk '$($Disk['name'])' yet." }
     }
     switch ([string]$r['steam']) {
-        'registered' { Write-Step "Biblioteca de Steam en $letter`:\SteamLibrary" }
-        'link' { Write-Warning "El disco '$($Disk['name'])' tiene un enlace en SteamLibrary (lo dejó otra máquina); no se suma a Steam. Revísalo antes de usarlo." }
-        'running' { Write-Warning "Steam no se pudo cerrar en la VM (¿hay un juego abierto?): ciérralo y vuelve a conectar el disco para sumar $letter`:\SteamLibrary a sus bibliotecas." }
+        'registered' { Write-Step "Steam library at $letter`:\SteamLibrary" }
+        'link' { Write-Warning "The disk '$($Disk['name'])' has a link in SteamLibrary (left by another machine); it won't be added to Steam. Check it before using it." }
+        'running' { Write-Warning "Steam couldn't be closed in the VM (is a game open?): close it and connect the disk again to add $letter`:\SteamLibrary to its libraries." }
     }
     $letter
 }
@@ -138,7 +138,7 @@ function Initialize-GuestSharedDisk {
 function Assert-ImportableFolder {
     param([Parameter(Mandatory)][string]$Path)
     $source = [IO.Path]::GetFullPath($Path).TrimEnd('\')
-    if ($source.Length -le 3) { throw 'No se puede importar una unidad entera; elige una carpeta.' }
+    if ($source.Length -le 3) { throw 'A whole drive can''t be imported; choose a folder.' }
     $inside = @((Get-GpuVMDefaultRoot), $script:DataRoot, $env:SystemRoot)
     $notAbove = @($inside + [Environment]::GetFolderPath('ProgramFiles') + ${env:ProgramFiles(x86)} + $env:ProgramData +
         (Split-Path ([Environment]::GetFolderPath('UserProfile')) -Parent)) | Where-Object { $_ }
@@ -146,7 +146,7 @@ function Assert-ImportableFolder {
         $p = [IO.Path]::GetFullPath($protected).TrimEnd('\')
         $sourceAbove = "$p\".StartsWith("$source\", [StringComparison]::OrdinalIgnoreCase)
         $sourceInside = $p -in $inside -and "$source\".StartsWith("$p\", [StringComparison]::OrdinalIgnoreCase)
-        if ($sourceAbove -or $sourceInside) { throw "No se puede importar ${source}: contiene o está dentro de $p." }
+        if ($sourceAbove -or $sourceInside) { throw "${source} can't be imported: it contains or is inside $p." }
     }
 }
 
@@ -162,10 +162,10 @@ function Assert-NoReparsePointBelow {
     while ($pending.Count) {
         $dir = $pending.Pop()
         try { $entries = [IO.DirectoryInfo]::new($dir).GetFileSystemInfos() }
-        catch { throw "No se pudo revisar $($dir.Substring($Root.Length)) en el disco; no se copia en él." }
+        catch { throw "Couldn't check $($dir.Substring($Root.Length)) on the disk; nothing is copied into it." }
         foreach ($entry in $entries) {
             if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) {
-                throw "El disco tiene un enlace en $($entry.FullName.Substring($Root.Length)); no se copia en él."
+                throw "The disk has a link at $($entry.FullName.Substring($Root.Length)); nothing is copied into it."
             }
             if ($entry -is [IO.DirectoryInfo]) { $pending.Push($entry.FullName) }
         }

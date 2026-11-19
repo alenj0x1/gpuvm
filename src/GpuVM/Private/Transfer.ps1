@@ -25,15 +25,15 @@ function Get-TransferMarker {
 function Assert-SendablePath {
     param([Parameter(Mandatory)][string]$Path)
     # A full path as given (a relative one would be resolved against this process's folder, not checked by the service).
-    if ($Path -notmatch '^[A-Za-z]:\\.' -or $Path -match '\\\.\.?(\\|$)') { throw "$Path no es un archivo o carpeta de un disco de este equipo." }
+    if ($Path -notmatch '^[A-Za-z]:\\.' -or $Path -match '\\\.\.?(\\|$)') { throw "$Path isn't a file or folder on a disk of this PC." }
     $full = [IO.Path]::GetFullPath($Path).TrimEnd('\')
     $item = Get-Item -LiteralPath $full -Force -ErrorAction SilentlyContinue
-    if (-not $item) { throw "No existe $full." }
-    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "$full es un enlace; elige la ubicación real." }
+    if (-not $item) { throw "$full doesn't exist." }
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "$full is a link; choose the real location." }
     if ($item -is [IO.DirectoryInfo]) { Assert-ImportableFolder -Path $full; return }
     foreach ($protected in @((Get-GpuVMDefaultRoot), $script:DataRoot, $env:SystemRoot) | Where-Object { $_ }) {
         $p = [IO.Path]::GetFullPath($protected).TrimEnd('\')
-        if ("$full\".StartsWith("$p\", [StringComparison]::OrdinalIgnoreCase)) { throw "No se puede enviar ${full}: está dentro de $p." }
+        if ("$full\".StartsWith("$p\", [StringComparison]::OrdinalIgnoreCase)) { throw "${full} can't be sent: it's inside $p." }
     }
 }
 
@@ -41,10 +41,10 @@ function Assert-SendablePath {
 # or reserved characters. A guest that sends anything else is trying to write outside the folder of the other VM.
 function Assert-TransferName {
     param([AllowEmptyString()][string]$Name)
-    if (-not $Name -or $Name.Length -gt $script:TransferMaxName) { throw 'Un nombre de archivo no es válido; no se copia.' }
+    if (-not $Name -or $Name.Length -gt $script:TransferMaxName) { throw 'A file name isn''t valid; nothing is copied.' }
     foreach ($part in $Name.Split('\')) {
         if (-not $part -or $part -eq '.' -or $part -eq '..' -or $part.Length -gt 255 -or $part -match '[\x00-\x1f<>:"/|?*]' -or $part -match '[ .]$') {
-            throw "El nombre $Name no es válido; no se copia."
+            throw "The name $Name isn't valid; nothing is copied."
         }
     }
 }
@@ -164,7 +164,7 @@ function Open-GuestReceiver {
         }
         if (-not $desktop) { $desktop = [Environment]::GetFolderPath('Desktop') }
         $tar = Join-Path $env:SystemRoot 'System32\tar.exe'
-        if (-not (Test-Path $tar)) { return @{ error = 'Windows en la máquina no tiene tar.exe (hace falta Windows 10 1803 o posterior).' } }
+        if (-not (Test-Path $tar)) { return @{ error = 'Windows in the machine has no tar.exe (Windows 10 1803 or later is needed).' } }
         $dest = Join-Path $desktop $folder
         $staging = Join-Path $dest ".gpuvm-$id"
         New-Item -ItemType Directory -Force -Path $staging | Out-Null
@@ -200,7 +200,7 @@ function Close-GuestReceiver {
     $answer = Invoke-Command -Session $Session -ErrorAction Stop -ArgumentList @($Id, $Cancel.IsPresent) -ScriptBlock {
         param($id, $cancel)
         $r = $global:GpuVMReceive[$id]
-        if (-not $r) { return @{ ok = $false; error = 'sin recepción' } }
+        if (-not $r) { return @{ ok = $false; error = 'nothing was receiving' } }
         $global:GpuVMReceive.Remove($id)
         $p = $r.process
         try { $p.StandardInput.Close() } catch { }
@@ -219,7 +219,7 @@ function Close-GuestReceiver {
             }
         }
         Remove-Item -LiteralPath $r.staging -Recurse -Force -ErrorAction SilentlyContinue
-        $err = if ($ok -or $cancel) { '' } else { "tar $(if ($p.HasExited) { $p.ExitCode } else { 'sigue abierto' }): $("$($r.error.Result)".Trim())" }
+        $err = if ($ok -or $cancel) { '' } else { "tar $(if ($p.HasExited) { $p.ExitCode } else { 'still running' }): $("$($r.error.Result)".Trim())" }
         @{ ok = $ok; names = $names; error = $err }
     }
     $answer = @($answer)[-1]
@@ -253,7 +253,7 @@ function Write-TransferBytes {
 function Send-TransferChunk {
     param([hashtable]$Pipe)
     if ($Pipe.Fill -eq 0) { return }
-    if (Test-Path -LiteralPath $Pipe.Marker) { throw [OperationCanceledException]::new('Envío cancelado.') }
+    if (Test-Path -LiteralPath $Pipe.Marker) { throw [OperationCanceledException]::new('Copy cancelled.') }
     # Assigned in each branch: "$x = if (...) { $array }" unrolls the array into loose objects (4 million of them).
     if ($Pipe.Fill -eq $Pipe.Buffer.Length) { $piece = $Pipe.Buffer } else { $piece = [byte[]]::new($Pipe.Fill); [Array]::Copy($Pipe.Buffer, $piece, $Pipe.Fill) }
     Send-GuestBytes -Session $Pipe.Session -Id $Pipe.Id -Bytes $piece
@@ -270,7 +270,7 @@ function Write-TransferProgress {
     $Sent = [math]::Min($Sent, $Total)
     $unit = if ($Total -ge 1GB) { 1GB, 'GB' } else { 1MB, 'MB' }
     $fmt = { param($n) [math]::Round($n / $unit[0], 1).ToString([cultureinfo]::InvariantCulture) }
-    Write-Step "Enviando $Percent % · $(& $fmt $Sent) de $(& $fmt $Total) $($unit[1])"
+    Write-Step "Sending $Percent % · $(& $fmt $Sent) of $(& $fmt $Total) $($unit[1])"
 }
 
 # ---------------------------------------------------------------- sessions and the source VM
@@ -280,8 +280,8 @@ function Open-TransferSession {
     param([Parameter(Mandatory)][string]$Name)
     $state = Get-GpuVMState -Name $Name
     $guest = Get-GpuVMGuestCredential -State $state
-    if (-not $guest) { throw "Guarda la contraseña de Windows de '$Name' para pasarle archivos." }
-    if ((Get-VM -Name $Name).State -ne 'Running') { throw "La VM '$Name' está apagada." }
+    if (-not $guest) { throw "Save the Windows password of '$Name' to send files to it." }
+    if ((Get-VM -Name $Name).State -ne 'Running') { throw "The VM '$Name' is off." }
     New-PSSession -VMName $Name -Credential $guest -ErrorAction Stop
 }
 
@@ -320,16 +320,16 @@ function Get-GuestTransferEntries {
     param([Parameter(Mandatory)]$Session, [Parameter(Mandatory)][string[]]$Path)
     $raw = @(Get-GuestRawEntries -Session $Session -Path $Path)[-1]
     $list = @($raw['entries'])
-    if ($list.Count -gt $script:TransferMaxEntries) { throw "Son más de $($script:TransferMaxEntries) archivos; elige menos." }
-    if (-not $list.Count) { throw 'No se encontró nada para enviar en esa máquina.' }
+    if ($list.Count -gt $script:TransferMaxEntries) { throw "There are more than $($script:TransferMaxEntries) files; choose fewer." }
+    if (-not $list.Count) { throw 'Nothing to send was found in that machine.' }
     $entries = [System.Collections.Generic.List[object]]::new()
     $tops = @{}; $topFrom = $null; $topTo = $null
     foreach ($e in $list) {
         $rel = [string]$e['rel']
         Assert-TransferName -Name $rel
         $size = $e['size']
-        if ($size -isnot [int64] -and $size -isnot [int32]) { throw 'La máquina de origen dio un tamaño que no es válido.' }
-        if ($size -lt 0) { throw 'La máquina de origen dio un tamaño que no es válido.' }
+        if ($size -isnot [int64] -and $size -isnot [int32]) { throw 'The source machine gave a size that isn''t valid.' }
+        if ($size -lt 0) { throw 'The source machine gave a size that isn''t valid.' }
         # Each chosen item comes first, then what is under it: two items with the same name get " (2)", like from
         # this PC (otherwise the second would overwrite the first in the other VM).
         $parts = $rel.Split('\')
@@ -340,7 +340,7 @@ function Get-GuestTransferEntries {
             $rel = $topTo
         }
         elseif ($parts[0] -eq $topFrom) { $rel = $topTo + $rel.Substring($topFrom.Length) }
-        else { throw "El nombre $rel no es válido; no se copia." }
+        else { throw "The name $rel isn't valid; nothing is copied." }
         $entries.Add([pscustomobject]@{ Rel = $rel; Full = [string]$e['full']; Size = [int64]$size; Dir = [bool]$e['dir'] })
     }
     [pscustomobject]@{ Entries = $entries; Skipped = [int]$raw['skipped'] }
@@ -360,10 +360,10 @@ function Copy-GuestFilesToPipe {
     # One file comes back as a byte[]; several as a list of them. Never through @(), which unrolls a byte[].
     $got = [System.Collections.Generic.List[object]]::new()
     if ($answer -is [byte[]]) { $got.Add($answer) } else { foreach ($a in $answer) { $got.Add($a) } }
-    if ($got.Count -ne $Entries.Count) { throw 'La máquina de origen no devolvió todos los archivos; vuelve a intentarlo.' }
+    if ($got.Count -ne $Entries.Count) { throw 'The source machine didn''t send back every file; try again.' }
     for ($i = 0; $i -lt $Entries.Count; $i++) {
         $entry = $Entries[$i]; $bytes = $got[$i]
-        if ($bytes -isnot [byte[]] -or $bytes.Length -ne $entry.Size) { throw "$($entry.Rel) cambió mientras se enviaba; vuelve a intentarlo." }
+        if ($bytes -isnot [byte[]] -or $bytes.Length -ne $entry.Size) { throw "$($entry.Rel) changed while it was sent; try again." }
         Write-TransferBytes -Pipe $Pipe -Bytes (New-TarHeader -Name $entry.Rel -Size $entry.Size)
         if ($bytes.Length) { Write-TransferBytes -Pipe $Pipe -Bytes $bytes }
         $pad = (512 - ($entry.Size % 512)) % 512
@@ -440,7 +440,7 @@ function Copy-TransferBigFiles {
                         }
                         # Exactly the size the file had when it was measured: more or less means it changed (or the
                         # source VM lies), and the copy stops.
-                        if ($bytes -isnot [byte[]] -or $bytes.Length -ne $want) { $state.error = "$($entry.Rel) cambió mientras se enviaba; vuelve a intentarlo."; break }
+                        if ($bytes -isnot [byte[]] -or $bytes.Length -ne $want) { $state.error = "$($entry.Rel) changed while it was sent; try again."; break }
                         Invoke-Command -Session $t -ErrorAction Stop -ArgumentList $at, $bytes -ScriptBlock {
                             param([int64]$from, [byte[]]$b)
                             $null = $global:lane.Seek($from, 'Begin'); $global:lane.Write($b, 0, $b.Length)
@@ -464,7 +464,7 @@ function Copy-TransferBigFiles {
                 }
             }
             finally { $job | Remove-Job -Force }
-            if (Test-Path -LiteralPath $marker) { throw [OperationCanceledException]::new('Envío cancelado.') }
+            if (Test-Path -LiteralPath $marker) { throw [OperationCanceledException]::new('Copy cancelled.') }
             if ($state.error) { throw $state.error }
             $Pipe.Sent += $file.Size
         }

@@ -13,19 +13,19 @@ function Remove-GpuVMRestorePoint {
     )
     Assert-Admin
     $state = Get-GpuVMState -Name $Name
-    Assert-GpuVMNotDisposable -State $state -Action 'cambiar sus puntos de restauración'
-    if (-not $PSCmdlet.ShouldProcess($Name, "Borrar el punto $Id")) { return }
+    Assert-GpuVMNotDisposable -State $state -Action 'change its restore points'
+    if (-not $PSCmdlet.ShouldProcess($Name, "Delete the point $Id")) { return }
     # A point nothing sits on is deleted with the VM on; merging into one needs it off.
     $restart = $false
     $pointPath = Get-RestorePointPath -State $state -Id $Id
     if ((Test-Path -LiteralPath $pointPath) -and @(Get-RestorePointChild -State $state -Path $pointPath).Count) {
-        $restart = Stop-GpuVMForDisk -Name $Name -ShutdownIfRunning:$ShutdownIfRunning -Action 'borrar este punto de restauración'
+        $restart = Stop-GpuVMForDisk -Name $Name -ShutdownIfRunning:$ShutdownIfRunning -Action 'delete this restore point'
     }
     try { Remove-GpuVMRestorePointCore -Name $Name -State $state -Id $Id }
     finally {
         if ($restart) {
-            Write-Step 'Encendiendo'
-            try { Start-VM -Name $Name -ErrorAction Stop } catch { Write-Warning "No se pudo volver a encender ${Name}: $($_.Exception.Message)" }
+            Write-Step 'Starting'
+            try { Start-VM -Name $Name -ErrorAction Stop } catch { Write-Warning "Couldn't turn ${Name} back on: $($_.Exception.Message)" }
         }
     }
 }

@@ -101,7 +101,7 @@ fn default_folder(video: bool) -> Option<PathBuf> {
     Some(base.join("GpuVM"))
 }
 
-/// Where screenshots (or videos) go: the folder chosen in Ajustes, or Pictures\GpuVM (Videos\GpuVM).
+/// Where screenshots (or videos) go: the folder chosen in Settings, or Pictures\GpuVM (Videos\GpuVM).
 fn folder(video: bool) -> Option<PathBuf> {
     let p = prefs();
     let chosen = if video { p.videos } else { p.shots };
@@ -281,7 +281,7 @@ pub fn on_file(app: &AppHandle, vm: &str, msg: &Value) {
     });
 }
 
-/// What the viewer needs to know (sent when it connects and whenever Ajustes change).
+/// What the viewer needs to know (sent when it connects and whenever Settings change).
 pub fn setup_message() -> Value {
     let p = prefs();
     json!({ "type": "capture-setup", "replay": p.replay, "seconds": 30, "lang": if p.lang == "en" { "en" } else { "es" } })
@@ -292,12 +292,12 @@ fn check_dir(dir: Option<String>) -> Result<Option<PathBuf>, String> {
         None => Ok(None),
         Some(d) => {
             let p = PathBuf::from(d);
-            if p.is_absolute() && p.is_dir() { Ok(Some(p)) } else { Err("Esa carpeta no existe.".into()) }
+            if p.is_absolute() && p.is_dir() { Ok(Some(p)) } else { Err("That folder doesn't exist.".into()) }
         }
     }
 }
 
-/// Ajustes › Capturas: the last 30 s on or off, and the folders (empty = Pictures\GpuVM, Videos\GpuVM).
+/// Settings › Captures: the last 30 s on or off, and the folders (empty = Pictures\GpuVM, Videos\GpuVM).
 #[tauri::command]
 pub fn set_capture_prefs(replay: bool, shots_dir: Option<String>, videos_dir: Option<String>, lang: String) -> Result<(), String> {
     let next = Prefs { replay, shots: check_dir(shots_dir)?, videos: check_dir(videos_dir)?, lang };
@@ -344,7 +344,7 @@ fn windows_decodes(fourcc: &[u8; 4]) -> bool {
     count > 0
 }
 
-/// The folders in use, as shown in Ajustes, and which recorded formats Windows' own players can open.
+/// The folders in use, as shown in Settings, and which recorded formats Windows' own players can open.
 #[tauri::command]
 pub fn capture_folders() -> Value {
     json!({
@@ -367,7 +367,7 @@ fn shell_open(target: &Path) -> Result<(), String> {
     let file = wide(target.as_os_str());
     // SAFETY: NUL-terminated strings that live through the call.
     let r = unsafe { ShellExecuteW(std::ptr::null_mut(), verb.as_ptr(), file.as_ptr(), std::ptr::null(), std::ptr::null(), 1) };
-    if r as isize > 32 { Ok(()) } else { Err("No se pudo abrir.".into()) }
+    if r as isize > 32 { Ok(()) } else { Err("Couldn't open it.".into()) }
 }
 
 fn recent(path: &str) -> Result<PathBuf, String> {
@@ -375,7 +375,7 @@ fn recent(path: &str) -> Result<PathBuf, String> {
     if RECENT.lock().unwrap_or_else(|e| e.into_inner()).iter().any(|r| r == &p) && p.is_file() {
         Ok(p)
     } else {
-        Err("Ese archivo ya no está.".into())
+        Err("That file is no longer there.".into())
     }
 }
 
@@ -392,14 +392,14 @@ pub fn capture_reveal(path: String) -> Result<(), String> {
     let explorer = std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("C:\\Windows")).join("explorer.exe");
     let mut arg = std::ffi::OsString::from("/select,");
     arg.push(p.as_os_str());
-    std::process::Command::new(explorer).arg(arg).spawn().map(|_| ()).map_err(|_| "No se pudo abrir el Explorador.".into())
+    std::process::Command::new(explorer).arg(arg).spawn().map(|_| ()).map_err(|_| "Couldn't open File Explorer.".into())
 }
 
 /// Opens the screenshots or videos folder (created if it doesn't exist yet).
 #[tauri::command]
 pub fn capture_open_folder(video: bool) -> Result<(), String> {
-    let dir = folder(video).ok_or("No se encontró la carpeta.")?;
-    std::fs::create_dir_all(&dir).map_err(|_| "No se pudo crear la carpeta.".to_string())?;
+    let dir = folder(video).ok_or("The folder wasn't found.")?;
+    std::fs::create_dir_all(&dir).map_err(|_| "Couldn't create the folder.".to_string())?;
     shell_open(&dir)
 }
 

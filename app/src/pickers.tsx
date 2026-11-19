@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { api } from "./api";
 import type { AppInfo, CleanupLevel, CleanupLevelId, HostMonitor, IsoFile, MouseMode, ProfileSettings } from "./types";
 import { CheckMark, Dropdown, Segmented, useScrollFade, type DropdownOption } from "./ui";
-import { t, tn } from "./i18n";
+import { getLang, t, tn, translateModule } from "./i18n";
 
 export const RESOLUTIONS = ["1280x720", "1920x1080", "2560x1440", "3840x2160"];
 export const FPS = [30, 60, 120, 144];
@@ -14,8 +14,8 @@ export const FPS = [30, 60, 120, 144];
 export const MONITOR_FPS = 0;
 // Labels read through getters, so lists made once at import still come out in the current language.
 export const FPS_OPTIONS = [...FPS.map((f) => ({ value: f, label: `${f} FPS` })), { value: MONITOR_FPS, get label() { return t("Monitor"); } }];
-export const fpsLabel = (fps: number | null | undefined) => (fps === MONITOR_FPS ? t("al ritmo del monitor") : `${fps ?? 60} FPS`);
-export const CODECS = [{ value: "auto", get label() { return t("Automático"); } }, { value: "H.264", label: "H.264" }, { value: "HEVC", label: "HEVC" }, { value: "AV1", label: "AV1" }];
+export const fpsLabel = (fps: number | null | undefined) => (fps === MONITOR_FPS ? t("at the monitor's rate") : `${fps ?? 60} FPS`);
+export const CODECS = [{ value: "auto", get label() { return t("Automatic|codec"); } }, { value: "H.264", label: "H.264" }, { value: "HEVC", label: "HEVC" }, { value: "AV1", label: "AV1" }];
 
 /** What a VM is used for: each use sets the stream settings measured for it (labs 020-022). At the monitor's own
  * refresh rate V-Sync costs no latency and halves the stutters, so no use has to trade one for the other. */
@@ -29,14 +29,14 @@ export interface StreamUseInfo {
 }
 // label and description are getters: read where they are shown, they come out in the current language.
 export const USES: StreamUseInfo[] = [
-  { id: "games", get label() { return t("Juegos"); }, icon: IconDeviceGamepad2,
-    get description() { return t("Al ritmo de tu monitor, con la respuesta más rápida y la imagen siempre entera."); },
+  { id: "games", get label() { return t("Games"); }, icon: IconDeviceGamepad2,
+    get description() { return t("At your monitor's rate, with the fastest response and the picture always whole."); },
     client: { fps: MONITOR_FPS, vsync: true, framePacing: false, mouse: "capture" } },
-  { id: "video", get label() { return t("Películas y video"); }, icon: IconMovie,
-    get description() { return t("Movimiento parejo para películas y series, con menos uso de red."); },
+  { id: "video", get label() { return t("Movies and video"); }, icon: IconMovie,
+    get description() { return t("Even motion for movies and shows, with less network use."); },
     client: { fps: 60, vsync: true, framePacing: true, mouse: "absolute" } },
-  { id: "work", get label() { return t("Trabajo"); }, icon: IconBriefcase,
-    get description() { return t("Todo el monitor fluido, con el mouse libre como en escritorio remoto."); },
+  { id: "work", get label() { return t("Work"); }, icon: IconBriefcase,
+    get description() { return t("The whole monitor smooth, with a free mouse like remote desktop."); },
     client: { fps: MONITOR_FPS, vsync: true, framePacing: false, mouse: "absolute" } },
 ];
 
@@ -46,7 +46,7 @@ export function streamUseOf(c: { fps: number; vsync: boolean; framePacing: boole
 }
 
 /** A built-in profile's name in the current language; a person's own profile keeps its name. */
-export const profileLabel = (name: string) => name === "balanced" ? t("Equilibrado") : name === "max-performance" ? t("Máximo rendimiento") : name;
+export const profileLabel = (name: string) => name === "balanced" ? t("Balanced") : name === "max-performance" ? t("Maximum performance") : name;
 
 // Each app's own icon, in color (tools/app-icons/extract.ps1 takes them from the official installers).
 const APP_ICONS = import.meta.glob<string>("./assets/apps/*.{png,svg}", { eager: true, query: "?url", import: "default" });
@@ -60,12 +60,12 @@ export function AppLogo({ id }: { id: string }) {
 /** hardwareOnly: for a VM built on a template, whose Windows, apps and cleanup come from the template. */
 export function profileSummary(s: ProfileSettings, apps: AppInfo[] = [], hardwareOnly = false) {
   const parts = [
-    tn(s.cpu, "{n} hilo", "{n} hilos"), `${s.memoryGB} GB`, `GPU ${s.gpuPercent} %`,
-    s.diskType === "Fixed" ? t("disco fijo de {gb} GB", { gb: s.diskGB }) : t("disco dinámico de {gb} GB", { gb: s.diskGB }),
+    tn(s.cpu, "{n} thread", "{n} threads"), `${s.memoryGB} GB`, `GPU ${s.gpuPercent} %`,
+    s.diskType === "Fixed" ? t("{gb} GB fixed disk", { gb: s.diskGB }) : t("{gb} GB dynamic disk", { gb: s.diskGB }),
   ];
   if (s.resolution) {
     const vars = { p: s.resolution.split("x")[1], fps: fpsLabel(s.fps) };
-    parts.push(s.displayMode === "windowed" ? t("{p}p {fps} en ventana", vars) : `${vars.p}p ${vars.fps}`);
+    parts.push(s.displayMode === "windowed" ? t("{p}p {fps} windowed", vars) : `${vars.p}p ${vars.fps}`);
   }
   if (hardwareOnly) return parts.slice(0, 3).join(" · ");
   const cleanup = cleanupCache?.find((l) => l.id === s.cleanup);
@@ -77,7 +77,7 @@ export function profileSummary(s: ProfileSettings, apps: AppInfo[] = [], hardwar
 
 export const fileName = (path: string) => path.split("\\").pop() ?? path;
 
-// Accents and case do not matter when searching ("comunicacion" finds "Comunicación").
+// Accents and case do not matter when searching ("comunicacion" finds "Chat").
 const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 
 /** Apps from the catalog as toggles: a search box, category tabs and a grid that scrolls within a fixed height. */
@@ -126,13 +126,14 @@ export function AppPicker({ apps, value, onChange, scroll = true, installed = []
   const [category, setCategory] = useState<string | null>(null);
   const categories = useMemo(() => {
     const seen = new Map<string, string>();
-    for (const a of apps) if (a.category && !seen.has(a.category)) seen.set(a.category, a.categoryName ?? a.category);
+    // The module names categories in English; they show in the app's language.
+    for (const a of apps) if (a.category && !seen.has(a.category)) seen.set(a.category, translateModule(a.categoryName ?? a.category));
     return [...seen];
-  }, [apps]);
+  }, [apps, getLang()]);
   const q = fold(query.trim());
   // A search looks through every category, so a result is never hidden by the tab that happens to be open.
   const shown = apps.filter((a) => q
-    ? fold(`${a.name} ${a.categoryName ?? ""}`).includes(q)
+    ? fold(`${a.name} ${a.categoryName ?? ""} ${translateModule(a.categoryName ?? "")}`).includes(q)
     : !category || a.category === category);
   const [gridRef, gridFade] = useScrollFade<HTMLDivElement>();
   const [tabsRef, tabFade] = useScrollFade<HTMLDivElement>("x");
@@ -141,13 +142,13 @@ export function AppPicker({ apps, value, onChange, scroll = true, installed = []
       <div className="app-picker-bar">
         <label className="search-box">
           <IconSearch size={16} />
-          <input className="text-input" value={query} placeholder={t("Buscar")} aria-label={t("Buscar apps")}
+          <input className="text-input" value={query} placeholder={t("Search")} aria-label={t("Search apps")}
             onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape" && query) { e.stopPropagation(); setQuery(""); } }} />
-          {query && <button type="button" className="search-clear" aria-label={t("Borrar búsqueda")} onClick={() => setQuery("")}><IconX size={14} /></button>}
+          {query && <button type="button" className="search-clear" aria-label={t("Clear search")} onClick={() => setQuery("")}><IconX size={14} /></button>}
         </label>
         {categories.length > 1 && !q && (
           <div ref={tabsRef} className={`segmented app-tabs ${tabFade}`} role="tablist">
-            <button type="button" role="tab" aria-selected={!category} className={!category ? "on" : ""} onClick={() => setCategory(null)}>{t("Todas")}</button>
+            <button type="button" role="tab" aria-selected={!category} className={!category ? "on" : ""} onClick={() => setCategory(null)}>{t("All")}</button>
             {categories.map(([id, label]) => (
               <button type="button" role="tab" key={id} aria-selected={category === id} className={category === id ? "on" : ""} onClick={() => setCategory(id)}>{label}</button>
             ))}
@@ -160,7 +161,7 @@ export function AppPicker({ apps, value, onChange, scroll = true, installed = []
             const open = menu?.app.id === a.id;
             return (
               <button type="button" key={a.id} className={`choice installed ${open ? "open" : ""}`} aria-haspopup="menu" aria-expanded={open}
-                disabled={locked} title={t("{name} está instalada", { name: a.name })} aria-label={t("{name}, instalada", { name: a.name })}
+                disabled={locked} title={t("{name} is installed", { name: a.name })} aria-label={t("{name}, installed", { name: a.name })}
                 onClick={(e) => (open ? setMenu(null) : openMenu(a, e.currentTarget))}
                 onContextMenu={(e) => { e.preventDefault(); if (!locked) openMenu(a, e.currentTarget, { x: e.clientX, y: e.clientY }); }}>
                 <span className="check done"><IconCheck size={14} stroke={2} /></span>
@@ -180,13 +181,13 @@ export function AppPicker({ apps, value, onChange, scroll = true, installed = []
             </button>
           );
         })}
-        {!shown.length && <p className="app-none">{t("Ninguna app se llama «{query}»", { query: query.trim() })}</p>}
+        {!shown.length && <p className="app-none">{t("No app is called “{query}”", { query: query.trim() })}</p>}
       </div>
       {/* At app level: the scrolling content's fade mask would clip it. */}
       {menu && createPortal(
         <div ref={menuRef} className="menu floating" role="menu" style={{ left: menu.x, top: menu.y }}>
-          <button role="menuitem" onClick={() => { setMenu(null); onReinstall?.(menu.app); }}><IconRefresh size={16} />{t("Reinstalar")}</button>
-          <button role="menuitem" className="danger" onClick={() => { setMenu(null); onUninstall?.(menu.app); }}><IconTrash size={16} />{t("Desinstalar")}</button>
+          <button role="menuitem" onClick={() => { setMenu(null); onReinstall?.(menu.app); }}><IconRefresh size={16} />{t("Reinstall")}</button>
+          <button role="menuitem" className="danger" onClick={() => { setMenu(null); onUninstall?.(menu.app); }}><IconTrash size={16} />{t("Uninstall")}</button>
         </div>,
         document.body,
       )}
@@ -211,14 +212,14 @@ export function CleanupPicker({ levels, value, onChange }: { levels: CleanupLeve
   return (
     <div className="cleanup-picker">
       <div className="segment-row">
-        <Segmented value={value} onChange={onChange} options={levels.map((l) => ({ value: l.id, label: l.name }))} />
+        <Segmented value={value} onChange={onChange} options={levels.map((l) => ({ value: l.id, label: translateModule(l.name) }))} />
       </div>
       {items.length ? (
         <ul className="cleanup-items">
-          {items.map((i) => <li key={i.id}><IconCheck size={14} />{i.description}</li>)}
+          {items.map((i) => <li key={i.id}><IconCheck size={14} />{translateModule(i.description)}</li>)}
         </ul>
-      ) : <span className="hint">{t("Windows tal como viene, con sus apps y ajustes de fábrica.")}</span>}
-      {items.length > 0 && <span className="hint">{t("Microsoft Defender, Windows Update, SmartScreen y el firewall no se tocan.")}</span>}
+      ) : <span className="hint">{t("Windows as it comes, with its stock apps and settings.")}</span>}
+      {items.length > 0 && <span className="hint">{t("Microsoft Defender, Windows Update, SmartScreen and the firewall are left alone.")}</span>}
     </div>
   );
 }
@@ -233,7 +234,7 @@ export function IsoPicker({ isos, value, onChange, onBrowse, allowNone }: {
       {allowNone && (
         <button type="button" role="radio" aria-checked={value === null} className={`choice ${value === null ? "on" : ""}`} onClick={() => onChange(null)}>
           <span className="check">{value === null && <CheckMark />}</span>
-          <span className="grow"><span className="title">{t("Elegir al crear la máquina")}</span></span>
+          <span className="grow"><span className="title">{t("Choose when creating the machine")}</span></span>
         </button>
       )}
       {isos?.map((f) => (
@@ -249,18 +250,18 @@ export function IsoPicker({ isos, value, onChange, onBrowse, allowNone }: {
       ))}
       <button type="button" className="choice" onClick={onBrowse}>
         <span className="check plain"><IconFolderOpen size={16} /></span>
-        <span className="grow"><span className="title">{isos?.length ? t("Buscar otro ISO") : t("Elegir ISO")}</span></span>
+        <span className="grow"><span className="title">{isos?.length ? t("Find another ISO") : t("Choose ISO")}</span></span>
       </button>
     </div>
   );
 }
 
 export function isoDetail(f: IsoFile) {
-  if (f.missing) return t("Ya no está en esta ruta");
+  if (f.missing) return t("No longer at this path");
   const parts = [];
   if (f.sizeGB > 0) parts.push(`${f.sizeGB} GB`);
-  if (f.usedBy?.length) parts.push(t("Usada en {names}", { names: f.usedBy.join(", ") }));
-  else if (!f.remembered) parts.push(f.path.includes("\\Desktop\\") ? t("En el escritorio") : t("En descargas"));
+  if (f.usedBy?.length) parts.push(t("Used in {names}", { names: f.usedBy.join(", ") }));
+  else if (!f.remembered) parts.push(f.path.includes("\\Desktop\\") ? t("On the desktop") : t("In Downloads"));
   return parts.join(" · ");
 }
 
@@ -275,7 +276,7 @@ export function useMonitors() {
 /** Where Moonlight opens: the primary monitor (follows Windows), a given one, or (per VM) what Preferences say. */
 export function MonitorPicker({ monitors, value, onChange, inherited }: {
   monitors: HostMonitor[]; value: string; onChange: (v: string) => void;
-  /** Per VM: the monitor Preferences choose, offered as "Predeterminado". */
+  /** Per VM: the monitor Preferences choose, offered as "Default". */
   inherited?: string;
 }) {
   const primary = monitors.find((m) => m.primary) ?? monitors[0];
@@ -283,11 +284,11 @@ export function MonitorPicker({ monitors, value, onChange, inherited }: {
   const detail = (m: HostMonitor) => `${m.width}×${m.height} · ${m.hz} Hz`;
   const inheritedName = inherited === undefined ? "" : inherited === "primary" ? primary?.name ?? "" : monitors.find((m) => m.id === inherited)?.name ?? "";
   const options: DropdownOption<string>[] = [
-    ...(inherited !== undefined ? [{ value: "default", label: t("Predeterminado"), detail: inheritedName ? t("Como en Ajustes, {name}", { name: inheritedName }) : t("Como en Ajustes"), icon: <IconAdjustments size={17} /> }] : []),
-    { value: "primary", label: t("Principal"), detail: primary ? t("El de Windows, ahora {name}", { name: primary.name }) : t("El de Windows"), icon: <IconDeviceDesktopStar size={17} /> },
+    ...(inherited !== undefined ? [{ value: "default", label: t("Default"), detail: inheritedName ? t("As in Settings, {name}", { name: inheritedName }) : t("As in Settings"), icon: <IconAdjustments size={17} /> }] : []),
+    { value: "primary", label: t("Main"), detail: primary ? t("Windows' main one, now {name}", { name: primary.name }) : t("Windows' main one"), icon: <IconDeviceDesktopStar size={17} /> },
     ...monitors.map((m) => ({ value: m.id, label: m.name, detail: detail(m), icon: <IconDeviceDesktop size={17} /> })),
     // A saved monitor that is unplugged stays chosen until another is picked.
-    ...(known ? [] : [{ value, label: t("Desconectado"), detail: t("Se abre en el principal"), icon: <IconDeviceDesktopOff size={17} /> }]),
+    ...(known ? [] : [{ value, label: t("Disconnected"), detail: t("Opens on the main one"), icon: <IconDeviceDesktopOff size={17} /> }]),
   ];
   return <Dropdown label={t("Monitor")} value={value} options={options} onChange={onChange} />;
 }
@@ -322,13 +323,13 @@ export function FpsPicker({ value, monitor, onChange }: { value: number; monitor
   const [picked, setPicked] = useState(false);
 
   const options: DropdownOption<string>[] = [
-    { value: "monitor", label: t("{hz} FPS, como el monitor", { hz }), detail: monitor ? t("Lo más fluido en {name}", { name: monitor.name }) : t("Lo más fluido en tu monitor"), icon: <IconDeviceDesktop size={17} />, tone: "accent" as const },
+    { value: "monitor", label: t("{hz} FPS, like the monitor", { hz }), detail: monitor ? t("Smoothest on {name}", { name: monitor.name }) : t("Smoothest on your monitor"), icon: <IconDeviceDesktop size={17} />, tone: "accent" as const },
     // Rates that divide the monitor's show every frame for the same time and come first; the others can't, and say so.
     ...[...listed.filter((f) => hz % f === 0), ...listed.filter((f) => hz % f !== 0)].map((f) => hz % f === 0
-      ? { value: String(f), label: `${f} FPS`, detail: f === 60 ? t("Parejo, para películas y video") : f <= 30 ? t("Parejo, la menor carga para la GPU") : t("Parejo, menos carga para la GPU"),
+      ? { value: String(f), label: `${f} FPS`, detail: f === 60 ? t("Even, for movies and video") : f <= 30 ? t("Even, the lightest load on the GPU") : t("Even, less load on the GPU"),
         icon: f === 60 ? <IconMovie size={17} /> : <IconWaveSine size={17} />, tone: "ok" as const }
-      : { value: String(f), label: `${f} FPS`, detail: t("Puede dar tirones"), icon: <IconWaveSawTool size={17} />, tone: "warn" as const }),
-    { value: "custom", label: t("Personalizado"), detail: t("De 10 a 480, puede no verse parejo"), icon: <IconAdjustments size={17} /> },
+      : { value: String(f), label: `${f} FPS`, detail: t("May stutter"), icon: <IconWaveSawTool size={17} />, tone: "warn" as const }),
+    { value: "custom", label: t("Custom"), detail: t("10 to 480, may not look even"), icon: <IconAdjustments size={17} /> },
   ];
   const chosen = custom ? "custom" : value === MONITOR_FPS ? "monitor" : String(value);
   const typed = Number(text);
@@ -336,7 +337,7 @@ export function FpsPicker({ value, monitor, onChange }: { value: number; monitor
 
   return (
     <div className="fps-picker">
-      <Dropdown label={t("Cuadros por segundo")} value={chosen} options={options} onChange={(v) => {
+      <Dropdown label={t("Frames per second")} value={chosen} options={options} onChange={(v) => {
         if (v === "custom") {
           // Starts from the rate in use, already saved as a fixed value, so the row never says one thing and shows another.
           const start = value === MONITOR_FPS ? hz : value;
@@ -348,7 +349,7 @@ export function FpsPicker({ value, monitor, onChange }: { value: number; monitor
       {custom && (
         <div className="fps-custom">
           <label className="fps-input">
-            <input className="text-input" inputMode="numeric" value={text} aria-label={t("FPS personalizados")} autoFocus={picked}
+            <input className="text-input" inputMode="numeric" value={text} aria-label={t("Custom FPS")} autoFocus={picked}
               onChange={(e) => {
                 const typedText = e.target.value.replace(/\D/g, "").slice(0, 3);
                 setText(typedText);
@@ -357,7 +358,7 @@ export function FpsPicker({ value, monitor, onChange }: { value: number; monitor
               }} />
             <span>FPS</span>
           </label>
-          {!valid && <span className="error-text">{t("Escribe un valor de 10 a 480")}</span>}
+          {!valid && <span className="error-text">{t("Enter a value from 10 to 480")}</span>}
         </div>
       )}
     </div>

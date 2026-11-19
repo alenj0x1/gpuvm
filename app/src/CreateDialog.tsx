@@ -121,15 +121,15 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
   }, [onClose]);
 
   const sections: { id: Section; label: string; icon: React.ReactNode }[] = [
-    { id: "name", label: t("Nombre y espacio"), icon: <IconTag size={16} /> },
-    { id: "start", label: t("Punto de partida"), icon: <IconLayoutGrid size={16} /> },
-    { id: "resources", label: t("Recursos"), icon: <IconCpu size={16} /> },
+    { id: "name", label: t("Name and space"), icon: <IconTag size={16} /> },
+    { id: "start", label: t("Starting point"), icon: <IconLayoutGrid size={16} /> },
+    { id: "resources", label: t("Resources"), icon: <IconCpu size={16} /> },
     ...(prebuilt ? [] : [
-      { id: "windows" as Section, label: t("Windows y cuenta"), icon: <IconBrandWindows size={16} /> },
+      { id: "windows" as Section, label: t("Windows and account"), icon: <IconBrandWindows size={16} /> },
       { id: "apps" as Section, label: t("Apps"), icon: <IconApps size={16} /> },
-      { id: "cleanup" as Section, label: t("Limpieza"), icon: <IconSparkles size={16} /> },
+      { id: "cleanup" as Section, label: t("Cleanup"), icon: <IconSparkles size={16} /> },
     ]),
-    { id: "custom", label: t("Personalizar"), icon: <IconPalette size={16} /> },
+    { id: "custom", label: t("Customize"), icon: <IconPalette size={16} /> },
   ];
   // The section in view is marked on the left as the body scrolls; a click there scrolls to it.
   useEffect(() => {
@@ -162,12 +162,12 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
   const [blurred, setBlurred] = useState<Record<string, boolean>>({});
   const blur = (field: string) => setBlurred((b) => ({ ...b, [field]: true }));
 
-  // Checked as you type; "Crear máquina" stays disabled until everything is valid.
+  // Checked as you type; "Create machine" stays disabled until everything is valid.
   const nameError = !name ? "" : vmNameError(name, existing);
-  const userError = !user ? t("Escribe un usuario") : !/^[A-Za-z0-9._-]{1,20}$/.test(user) || user.endsWith(".") ? t("Hasta 20 letras, números, puntos o guiones")
-    : RESERVED_USERS.includes(user.toLowerCase()) ? t("Windows reserva ese nombre") : "";
-  const passwordError = password.length >= MIN_PASSWORD || (!blurred.password && repeat.length === 0) || !password ? "" : t("Usa al menos {n} caracteres", { n: MIN_PASSWORD });
-  const repeatError = repeat && password !== repeat && (blurred.repeat || repeat.length >= password.length) ? t("Las contraseñas no coinciden") : "";
+  const userError = !user ? t("Enter a user name") : !/^[A-Za-z0-9._-]{1,20}$/.test(user) || user.endsWith(".") ? t("Up to 20 letters, numbers, dots or hyphens")
+    : RESERVED_USERS.includes(user.toLowerCase()) ? t("Windows reserves that name") : "";
+  const passwordError = password.length >= MIN_PASSWORD || (!blurred.password && repeat.length === 0) || !password ? "" : t("Use at least {n} characters", { n: MIN_PASSWORD });
+  const repeatError = repeat && password !== repeat && (blurred.repeat || repeat.length >= password.length) ? t("The passwords don't match") : "";
   const complete = !!name && !nameError && !!res && (fromTemplate
     ? !!template
     : fromFile ? !!file && !!password
@@ -191,7 +191,7 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
   const saveProfile = async () => {
     if (!saving || !settings) return;
     const n = saving.name.trim();
-    if (!/^[\w-]{1,40}$/.test(n)) { setSaving({ ...saving, error: t("Usa letras, números o guiones") }); return; }
+    if (!/^[\w-]{1,40}$/.test(n)) { setSaving({ ...saving, error: t("Use letters, numbers or hyphens") }); return; }
     setSaving({ ...saving, busy: true, error: "" });
     try {
       await api.saveProfile(n, "", profile, settings);
@@ -229,7 +229,8 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
   const maxCpu = Math.max(2, (host?.logicalProcessors ?? 12) - 1);
   const maxMem = Math.max(4, Math.round(host?.memoryGB ?? 16) - 4);
   const isoName = isos?.find((f) => f.path === iso)?.name;
-  const level = cleanupLevels.find((l) => l.id === cleanup)?.name;
+  const levelName = cleanupLevels.find((l) => l.id === cleanup)?.name;
+  const level = levelName ? translateModule(levelName) : undefined;
   const allItems = cleanupLevels.flatMap((l) => l.items);
   const dropped = new Set(cleanupLevels.slice(0, Math.max(0, cleanupLevels.findIndex((l) => l.id === cleanup)) + 1).flatMap((l) => l.items.map((i) => i.id)));
   const section = (id: Section, title: string, desc: string, children: React.ReactNode) => (
@@ -242,11 +243,11 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
   return (
     // Clicking outside only closes when nothing was typed; Esc always closes.
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && (busy || !dirty) && onClose()}>
-      <div className={`dialog ${busy ? "" : "create-dialog"}`} role="dialog" aria-modal="true" aria-label={t("Crear máquina")}>
+      <div className={`dialog ${busy ? "" : "create-dialog"}`} role="dialog" aria-modal="true" aria-label={t("Create machine")}>
         <div className="dialog-head">
           <PatternButton name={name || "nueva"} size={44} radius={12} onChange={() => repaint((n) => n + 1)} />
-          <h2>{busy ? t("Creando {name}", { name }) : t("Crear máquina")}</h2>
-          <button className="icon-btn" aria-label={t("Cerrar")} onClick={onClose}><IconX size={18} /></button>
+          <h2>{busy ? t("Creating {name}", { name }) : t("Create machine")}</h2>
+          <button className="icon-btn" aria-label={t("Close")} onClick={onClose}><IconX size={18} /></button>
         </div>
 
         {busy ? (
@@ -256,7 +257,7 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
                 {i === job!.log.length - 1 ? <IconLoader2 size={14} className="spin" /> : <IconCheck size={14} />}{translateModule(line)}
               </span>
             ))}
-            <span className="log-hint">{t("Puedes cerrar esta ventana: el avance sigue en la barra lateral.")}</span>
+            <span className="log-hint">{t("You can close this window: progress continues in the sidebar.")}</span>
           </div>
         ) : (
           <form className="dialog-form create-form" onSubmit={submit}>
@@ -267,30 +268,30 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
             </nav>
 
             <div ref={bodyRef} className="create-body">
-              {section("name", t("Nombre y espacio"), t("Cómo se llama en GpuVM y en Hyper-V, y el espacio donde va a estar."), (
+              {section("name", t("Name and space"), t("Its name in GpuVM and Hyper-V, and the space it will live in."), (
                 <div className="create-account pair">
                   <div className="field">
-                    <label className="field-top" htmlFor="vm-name"><span>{t("Nombre")}</span></label>
-                    <input id="vm-name" ref={nameRef} className="text-input" aria-label={t("Nombre")} value={name} onChange={(e) => { setName(e.target.value); setNameTouched(true); touch(); }} />
+                    <label className="field-top" htmlFor="vm-name"><span>{t("Name")}</span></label>
+                    <input id="vm-name" ref={nameRef} className="text-input" aria-label={t("Name")} value={name} onChange={(e) => { setName(e.target.value); setNameTouched(true); touch(); }} />
                     {nameError && <span className="error-text">{nameError}</span>}
                   </div>
                   <div className="field">
-                    <div className="field-top"><span>{t("Espacio")}</span></div>
-                    <SpaceDropdown label={t("Espacio")} value={space.id} onChange={(v) => { if (v === NEW_SPACE) setCreatingSpace(true); else { setSpaceId(v); touch(); } }}
+                    <div className="field-top"><span>{t("Space")}</span></div>
+                    <SpaceDropdown label={t("Space")} value={space.id} onChange={(v) => { if (v === NEW_SPACE) setCreatingSpace(true); else { setSpaceId(v); touch(); } }}
                       options={[...spaces.map((x) => { const I = ambientInfo(x.ambient).icon; return { value: x.id, label: x.name, detail: ambientInfo(x.ambient).name, icon: <I size={16} /> }; }),
-                        { value: NEW_SPACE, label: t("Nuevo espacio"), detail: t("Con un ambiente propio"), icon: <IconPlus size={16} /> }]} />
+                        { value: NEW_SPACE, label: t("New space"), detail: t("With its own ambience"), icon: <IconPlus size={16} /> }]} />
                     {creatingSpace && createPortal(<SpaceDialog vms={[]} onSaved={(s) => { setSpaceId(s.id); touch(); }} onClose={() => setCreatingSpace(false)} />, portalRoot())}
                   </div>
                 </div>
               ))}
 
-              {section("start", t("Punto de partida"), t("Un perfil llena todo lo de abajo; puedes cambiar lo que quieras."), (
+              {section("start", t("Starting point"), t("A profile fills in everything below; change anything you like."), (
                 <>
                   <div className="segment-row">
                     <Segmented value={source} onChange={(v) => { setSource(v); touch(); }} options={[
-                      { value: "iso", label: <><IconDisc size={15} />{t("Instalar Windows")}</> },
-                      ...(templates.length > 0 ? [{ value: "template" as const, label: <><IconTemplate size={15} />{t("Desde plantilla")}</> }] : []),
-                      { value: "file", label: <><IconFileImport size={15} />{t("Desde archivo")}</> },
+                      { value: "iso", label: <><IconDisc size={15} />{t("Install Windows")}</> },
+                      ...(templates.length > 0 ? [{ value: "template" as const, label: <><IconTemplate size={15} />{t("From template")}</> }] : []),
+                      { value: "file", label: <><IconFileImport size={15} />{t("From a file")}</> },
                     ]} />
                   </div>
                   {fromFile && (
@@ -299,26 +300,26 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
                         <button type="button" className={`choice ${file ? "on" : ""}`} onClick={pickFile} disabled={reading}>
                           <span className="check">{reading ? <IconLoader2 size={14} className="spin" /> : file ? <CheckMark /> : <IconFileImport size={15} />}</span>
                           <span className="grow">
-                            <span className="title">{file ? file.path.split("\\").pop() : t("Elegir archivo")}</span>
+                            <span className="title">{file ? file.path.split("\\").pop() : t("Choose file")}</span>
                             <span className="desc">{file
                               ? [file.edition, tn(file.installedApps.length, "{n} app", "{n} apps"), `${file.diskGB.toLocaleString(locale())} GB`,
-                                file.exportedAt ? t("Exportada el {date}", { date: new Date(file.exportedAt).toLocaleDateString(locale()) }) : null].filter(Boolean).join(" · ")
-                              : t("Una máquina exportada con GpuVM (.gpuvm)")}</span>
+                                file.exportedAt ? t("Exported on {date}", { date: new Date(file.exportedAt).toLocaleDateString(locale()) }) : null].filter(Boolean).join(" · ")
+                              : t("A machine exported with GpuVM (.gpuvm)")}</span>
                           </span>
                         </button>
                       </div>
                       {fileError && <span className="error-text">{fileError}</span>}
                       {file && file.diskGB + 20 > file.freeGB && (
-                        <span className="error-text">{t("Faltan {gb} GB libres para importarla", { gb: Math.ceil(file.diskGB + 20 - file.freeGB) })}</span>
+                        <span className="error-text">{t("{gb} GB more free space is needed to import it", { gb: Math.ceil(file.diskGB + 20 - file.freeGB) })}</span>
                       )}
                       {file && (
                         <div className="create-account">
                           <div className="field">
-                            <label className="field-top" htmlFor="vm-user-file"><span>{t("Usuario")}</span></label>
+                            <label className="field-top" htmlFor="vm-user-file"><span>{t("User")}</span></label>
                             <input id="vm-user-file" className="text-input" value={file.user ?? user} readOnly />
                           </div>
                           <div className="field">
-                            <label className="field-top" htmlFor="vm-pass-file"><span>{t("Contraseña de Windows")}</span></label>
+                            <label className="field-top" htmlFor="vm-pass-file"><span>{t("Windows password")}</span></label>
                             <input id="vm-pass-file" className="text-input" type="password" value={password} onChange={(e) => { setPassword(e.target.value); touch(); }} />
                           </div>
                         </div>
@@ -326,14 +327,14 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
                     </>
                   )}
                   {fromTemplate && (
-                    <div className="choice-list" role="radiogroup" aria-label={t("Plantilla")}>
+                    <div className="choice-list" role="radiogroup" aria-label={t("Template")}>
                       {templates.map((tpl) => (
                         <button type="button" role="radio" aria-checked={template === tpl.name} key={tpl.name} className={`choice ${template === tpl.name ? "on" : ""}`}
                           onClick={() => { setTemplate(tpl.name); touch(); }}>
                           <span className="check">{template === tpl.name && <CheckMark />}</span>
                           <span className="grow">
                             <span className="title">{tpl.name}</span>
-                            <span className="desc">{[t("Desde {vm}", { vm: tpl.fromVM }), tpl.edition, `${tpl.sizeGB} GB`].filter(Boolean).join(" · ")}</span>
+                            <span className="desc">{[t("From {vm}", { vm: tpl.fromVM }), tpl.edition, `${tpl.sizeGB} GB`].filter(Boolean).join(" · ")}</span>
                           </span>
                         </button>
                       ))}
@@ -341,17 +342,17 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
                         onClick={() => { setDisposable((d) => !d); touch(); }}>
                         <span className="check">{disposable ? <CheckMark /> : <IconFlask size={15} />}</span>
                         <span className="grow">
-                          <span className="title">{t("Desechable")}</span>
-                          <span className="desc">{t("Se borra con su disco al apagarla. Para probar algo sin tocar tus máquinas.")}</span>
+                          <span className="title">{t("Disposable")}</span>
+                          <span className="desc">{t("It's deleted with its disk when you shut it down. To try something without touching your machines.")}</span>
                         </span>
                       </button>
                     </div>
                   )}
-                  <div className="create-profiles" role="radiogroup" aria-label={t("Perfil")}>
+                  <div className="create-profiles" role="radiogroup" aria-label={t("Profile")}>
                     {profiles.map((p) => (
                       <button type="button" role="radio" aria-checked={profile === p.Name} key={p.Name} className={`create-profile${profile === p.Name ? " on" : ""}`}
                         onClick={() => { applyProfile(p); touch(); }}>
-                        <span className="create-profile-name">{profileLabel(p.Name)}{profile === p.Name && changed && <span className="tag">{t("Cambiado")}</span>}</span>
+                        <span className="create-profile-name">{profileLabel(p.Name)}{profile === p.Name && changed && <span className="tag">{t("Changed")}</span>}</span>
                         {p.Settings && <ResourceChips s={p.Settings} apps={catalog} />}
                       </button>
                     ))}
@@ -359,38 +360,38 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
                 </>
               ))}
 
-              {section("resources", t("Recursos"), t("Lo que la máquina toma de tu PC al encenderse."), res && (
+              {section("resources", t("Resources"), t("What the machine takes from your PC when it starts."), res && (
                 <div className="create-resources">
-                  <div className="field"><div className="field-top"><span className="res-cpu"><IconCpu size={15} /> {t("Procesador")}</span><strong>{tn(res.cpu, "{n} hilo", "{n} hilos")}</strong></div>
-                    <Slider label={t("Hilos")} value={Math.min(res.cpu, maxCpu)} min={2} max={maxCpu} onChange={(cpu) => { setRes({ ...res, cpu }); touch(); }} /></div>
-                  <div className="field"><div className="field-top"><span className="res-mem"><IconTopologyStar3 size={15} /> {t("Memoria")}</span><strong>{res.memoryGB} GB</strong></div>
-                    <Slider label={t("Memoria")} value={Math.min(res.memoryGB, maxMem)} min={4} max={maxMem} onChange={(memoryGB) => { setRes({ ...res, memoryGB }); touch(); }} /></div>
+                  <div className="field"><div className="field-top"><span className="res-cpu"><IconCpu size={15} /> {t("Processor")}</span><strong>{tn(res.cpu, "{n} thread", "{n} threads")}</strong></div>
+                    <Slider label={t("Threads")} value={Math.min(res.cpu, maxCpu)} min={2} max={maxCpu} onChange={(cpu) => { setRes({ ...res, cpu }); touch(); }} /></div>
+                  <div className="field"><div className="field-top"><span className="res-mem"><IconTopologyStar3 size={15} /> {t("Memory")}</span><strong>{res.memoryGB} GB</strong></div>
+                    <Slider label={t("Memory")} value={Math.min(res.memoryGB, maxMem)} min={4} max={maxMem} onChange={(memoryGB) => { setRes({ ...res, memoryGB }); touch(); }} /></div>
                   <div className="field"><div className="field-top"><span className="res-gpu"><IconBolt size={15} /> GPU</span><strong>{res.gpuPercent} %</strong></div>
                     <Slider label="GPU" value={res.gpuPercent} min={10} max={100} step={10} onChange={(gpuPercent) => { setRes({ ...res, gpuPercent }); touch(); }} /></div>
-                  <div className="field"><div className="field-top"><span className="res-disk"><IconDatabase size={15} /> {t("Disco")}</span><strong>{res.diskGB} GB</strong></div>
-                    <Slider label={t("Disco")} value={res.diskGB} min={64} max={1024} step={16} onChange={(diskGB) => { setRes({ ...res, diskGB }); touch(); }} /></div>
+                  <div className="field"><div className="field-top"><span className="res-disk"><IconDatabase size={15} /> {t("Disk")}</span><strong>{res.diskGB} GB</strong></div>
+                    <Slider label={t("Disk")} value={res.diskGB} min={64} max={1024} step={16} onChange={(diskGB) => { setRes({ ...res, diskGB }); touch(); }} /></div>
                 </div>
               ))}
 
-              {!prebuilt && section("windows", t("Windows y cuenta"), t("La imagen que se instala y la cuenta con la que entras."), (
+              {!prebuilt && section("windows", t("Windows and account"), t("The image that gets installed and the account you sign in with."), (
                 <>
                   <div className="field">
-                    <div className="field-top"><span>{t("Imagen de Windows")}</span></div>
+                    <div className="field-top"><span>{t("Windows image")}</span></div>
                     <IsoPicker isos={isos?.filter((f) => !f.missing) ?? null} value={iso} onChange={(v) => { setIso(v); touch(); }} onBrowse={browse} />
                   </div>
                   <div className="create-account">
                     <div className="field">
-                      <label className="field-top" htmlFor="vm-user"><span>{t("Usuario")}</span></label>
+                      <label className="field-top" htmlFor="vm-user"><span>{t("User")}</span></label>
                       <input id="vm-user" className="text-input" value={user} onChange={(e) => { setUser(e.target.value); touch(); }} />
                       {userError && <span className="error-text">{userError}</span>}
                     </div>
                     <div className="field">
-                      <label className="field-top" htmlFor="vm-pass"><span>{t("Contraseña")}</span></label>
+                      <label className="field-top" htmlFor="vm-pass"><span>{t("Password")}</span></label>
                       <input id="vm-pass" className="text-input" type="password" value={password} onBlur={() => blur("password")} onChange={(e) => { setPassword(e.target.value); touch(); }} />
                       {passwordError && <span className="error-text">{passwordError}</span>}
                     </div>
                     <div className="field">
-                      <label className="field-top" htmlFor="vm-pass2"><span>{t("Repetir contraseña")}</span></label>
+                      <label className="field-top" htmlFor="vm-pass2"><span>{t("Repeat password")}</span></label>
                       <input id="vm-pass2" className="text-input" type="password" value={repeat} onBlur={() => blur("repeat")} onChange={(e) => { setRepeat(e.target.value); touch(); }} />
                       {repeatError && <span className="error-text">{repeatError}</span>}
                     </div>
@@ -398,18 +399,18 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
                 </>
               ))}
 
-              {!prebuilt && catalog.length > 0 && section("apps", t("Apps"), t("Se instalan desde su fuente oficial al abrirla por primera vez."), (
+              {!prebuilt && catalog.length > 0 && section("apps", t("Apps"), t("Installed from their official source the first time you open it."), (
                 <AppPicker apps={catalog} value={apps} onChange={(v) => { setApps(v); touch(); }} scroll={false} />
               ))}
 
-              {!prebuilt && cleanupLevels.length > 0 && section("cleanup", t("Limpieza de Windows"), t("Cada nivel incluye lo de los anteriores. La seguridad no se toca."), (
+              {!prebuilt && cleanupLevels.length > 0 && section("cleanup", t("Windows cleanup"), t("Each level includes the ones before. Security is left alone."), (
                 <>
-                <div className="level-list create-levels" role="radiogroup" aria-label={t("Limpieza")}>
+                <div className="level-list create-levels" role="radiogroup" aria-label={t("Cleanup")}>
                   {cleanupLevels.map((l) => (
                     <button key={l.id} type="button" role="radio" aria-checked={l.id === cleanup} className={`level-row${l.id === cleanup ? " on" : ""}`}
                       onClick={() => { setCleanup(l.id); touch(); }}>
                       <span className="level-icon">{LEVEL_LOOK[l.id]?.icon ?? <IconSparkles size={18} />}</span>
-                      <span className="level-text"><span className="level-name">{l.name}</span><span className="level-tagline">{LEVEL_LOOK[l.id]?.tagline ?? ""}</span></span>
+                      <span className="level-text"><span className="level-name">{translateModule(l.name)}</span><span className="level-tagline">{LEVEL_LOOK[l.id]?.tagline ?? ""}</span></span>
                     </button>
                   ))}
                 </div>
@@ -422,7 +423,7 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
                 </>
               ))}
 
-              {section("custom", t("Personalizar"), t("Su color, un letrero, stickers y figuras. Se arrastran al cubo de al lado."), (
+              {section("custom", t("Customize"), t("Its color, a sign, stickers and figures. Drag them onto the cube beside."), (
                 <Customize bare source={decorEdit.source} ops={decorEdit.ops} selected={decorEdit.selected} setSelected={decorEdit.setSelected} openMenu={decorEdit.openMenu} />
               ))}
               {decorEdit.menu}
@@ -439,52 +440,52 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
                     others={existing.map((v) => ({ name: v.name, machine: cubeOf(v) }))} />
                 </div>
               )}
-              <span className="create-summary-title">{t("Resumen")}</span>
-              <strong className="create-summary-name">{name || t("Sin nombre")}</strong>
+              <span className="create-summary-title">{t("Summary")}</span>
+              <strong className="create-summary-name">{name || t("No name")}</strong>
               {res && (
                 <div className="create-summary-chips">
-                  <Chip kind="cpu">{tn(res.cpu, "{n} hilo", "{n} hilos")}</Chip>
+                  <Chip kind="cpu">{tn(res.cpu, "{n} thread", "{n} threads")}</Chip>
                   <Chip kind="mem">{res.memoryGB} GB</Chip>
                   <Chip kind="gpu">GPU {res.gpuPercent} %</Chip>
                   <Chip kind="disk">{res.diskGB} GB</Chip>
                 </div>
               )}
-              <span className="create-summary-line"><IconLayoutGrid size={14} /><span>{changed ? t("{profile}, con cambios", { profile: profileLabel(profile) }) : profileLabel(profile)}</span></span>
+              <span className="create-summary-line"><IconLayoutGrid size={14} /><span>{changed ? t("{profile}, with changes", { profile: profileLabel(profile) }) : profileLabel(profile)}</span></span>
               {fromTemplate ? (
-                <span className="create-summary-line"><IconTemplate size={14} /><span>{t("Plantilla {name}", { name: template ?? "—" })}</span></span>
+                <span className="create-summary-line"><IconTemplate size={14} /><span>{t("Template {name}", { name: template ?? "—" })}</span></span>
               ) : fromFile ? (
-                <span className="create-summary-line cut" title={file?.path}><IconFileImport size={14} /><span>{file ? file.path.split("\\").pop() : t("Sin archivo")}</span></span>
+                <span className="create-summary-line cut" title={file?.path}><IconFileImport size={14} /><span>{file ? file.path.split("\\").pop() : t("No file")}</span></span>
               ) : (
                 <>
-                  <span className="create-summary-line cut" title={isoName}><IconDisc size={14} /><span>{isoName ?? t("Sin imagen de Windows")}</span></span>
+                  <span className="create-summary-line cut" title={isoName}><IconDisc size={14} /><span>{isoName ?? t("No Windows image")}</span></span>
                   <span className="create-summary-line"><IconUser size={14} /><span>{user || "—"}</span></span>
-                  <span className="create-summary-line"><IconApps size={14} /><span>{apps.length ? apps.map((id) => catalog.find((a) => a.id === id)?.name ?? id).join(", ") : t("Sin apps")}</span></span>
+                  <span className="create-summary-line"><IconApps size={14} /><span>{apps.length ? apps.map((id) => catalog.find((a) => a.id === id)?.name ?? id).join(", ") : t("No apps")}</span></span>
                   <span className="create-summary-line"><IconSparkles size={14} /><span>{level ?? t("Normal")}</span></span>
                 </>
               )}
               {changed && settings && (saving ? (
                 <div className="create-save">
-                  <input className="text-input" autoFocus placeholder={t("Nombre del perfil")} value={saving.name} onChange={(e) => setSaving({ ...saving, name: e.target.value, error: "" })}
+                  <input className="text-input" autoFocus placeholder={t("Profile name")} value={saving.name} onChange={(e) => setSaving({ ...saving, name: e.target.value, error: "" })}
                     onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); saveProfile(); } }} />
                   {saving.error && <span className="error-text">{saving.error}</span>}
                   <div className="create-save-actions">
-                    <button type="button" className="btn ghost" onClick={() => setSaving(null)}>{t("Cancelar")}</button>
+                    <button type="button" className="btn ghost" onClick={() => setSaving(null)}>{t("Cancel")}</button>
                     <button type="button" className="btn" disabled={saving.busy || !saving.name.trim()} onClick={saveProfile}>
-                      {saving.busy ? <IconLoader2 size={15} className="spin" /> : <IconDeviceFloppy size={15} />}{t("Guardar")}
+                      {saving.busy ? <IconLoader2 size={15} className="spin" /> : <IconDeviceFloppy size={15} />}{t("Save")}
                     </button>
                   </div>
                 </div>
               ) : (
                 <button type="button" className="btn ghost create-save-open" onClick={() => setSaving({ name: "", busy: false, error: "" })}>
-                  <IconDeviceFloppy size={15} />{t("Guardar como perfil")}
+                  <IconDeviceFloppy size={15} />{t("Save as profile")}
                 </button>
               ))}
             </aside>
 
             {error && <div className="notice error-notice create-error"><span className="grow">{error}</span></div>}
             <div className="dialog-foot create-foot">
-              <button type="button" className="btn ghost" onClick={onClose}>{t("Cancelar")}</button>
-              <button type="submit" className="primary compact" disabled={!complete}><IconPlus size={16} />{t("Crear máquina")}</button>
+              <button type="button" className="btn ghost" onClick={onClose}>{t("Cancel")}</button>
+              <button type="submit" className="primary compact" disabled={!complete}><IconPlus size={16} />{t("Create machine")}</button>
             </div>
           </form>
         )}

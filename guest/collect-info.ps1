@@ -23,4 +23,4 @@ $os = Get-CimInstance Win32_OperatingSystem
 } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $OutDir "info-$stamp.json") -Encoding UTF8
 
 dxdiag.exe /t (Join-Path $OutDir "dxdiag-$stamp.txt")
-Write-Host "Información guardada en $OutDir"
+Write-Host "Information saved to $OutDir"

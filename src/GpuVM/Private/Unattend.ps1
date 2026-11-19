@@ -58,7 +58,7 @@ function New-UnattendXml {
     foreach ($key in $values.Keys) { $xml = $xml.Replace("{{$key}}", (& $esc $values[$key])) }
     $xml = $xml.Replace('{{AutoLogon}}', $autoLogonXml)
 
-    if ($xml -match '\{\{\w+\}\}') { throw "Quedó un marcador sin reemplazar en unattend.xml: $($Matches[0])" }
+    if ($xml -match '\{\{\w+\}\}') { throw "A placeholder was left unreplaced in unattend.xml: $($Matches[0])" }
     [void][xml]$xml
     $xml
 }

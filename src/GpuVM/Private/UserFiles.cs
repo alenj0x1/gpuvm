@@ -67,13 +67,13 @@ namespace GpuVM
             {
                 if (token != null) return token;
                 IntPtr own, admins, restricted;
-                if (!OpenProcessToken(GetCurrentProcess(), 0x000F01FF, out own)) throw new IOException("No se pudo leer el token del proceso.");
+                if (!OpenProcessToken(GetCurrentProcess(), 0x000F01FF, out own)) throw new IOException("Couldn't read the process's token.");
                 try
                 {
-                    if (!ConvertStringSidToSidW("S-1-5-32-544", out admins)) throw new IOException("SID de Administradores no válido.");
+                    if (!ConvertStringSidToSidW("S-1-5-32-544", out admins)) throw new IOException("The Administrators SID isn't valid.");
                     var deny = new[] { new SID_AND_ATTRIBUTES { Sid = admins } };
                     if (!CreateRestrictedToken(own, DISABLE_MAX_PRIVILEGE, 1, deny, 0, IntPtr.Zero, 0, IntPtr.Zero, out restricted))
-                        throw new IOException("No se pudo crear el token del usuario (" + Marshal.GetLastWin32Error() + ").");
+                        throw new IOException("Couldn't create the user's token (" + Marshal.GetLastWin32Error() + ").");
                 }
                 finally { CloseHandle(own); }
                 token = new SafeAccessTokenHandle(restricted);
@@ -93,8 +93,8 @@ namespace GpuVM
             });
             if (handle == null || handle.IsInvalid)
             {
-                if (error == 5) throw new UnauthorizedAccessException("Tu usuario no tiene acceso a " + path + "; no se envía nada.");
-                throw new IOException("No se pudo abrir " + path + " (error " + error + "); no se envía nada.");
+                if (error == 5) throw new UnauthorizedAccessException("Your user can't access " + path + "; nothing is sent.");
+                throw new IOException(path + " couldn't be opened (error " + error + "); nothing is sent.");
             }
             return handle;
         }
@@ -103,7 +103,7 @@ namespace GpuVM
         {
             var buffer = new StringBuilder(32768);
             uint length = GetFinalPathNameByHandleW(handle, buffer, (uint)buffer.Capacity, 0);
-            if (length == 0 || length >= buffer.Capacity) throw new IOException("No se pudo saber dónde está un archivo; no se envía nada.");
+            if (length == 0 || length >= buffer.Capacity) throw new IOException("Couldn't tell where a file is; nothing is sent.");
             string path = buffer.ToString();
             if (path.StartsWith(@"\\?\UNC\", StringComparison.Ordinal)) return @"\\" + path.Substring(8);
             if (path.StartsWith(@"\\?\", StringComparison.Ordinal)) return path.Substring(4);
@@ -113,8 +113,8 @@ namespace GpuVM
         static BY_HANDLE_FILE_INFORMATION Info(SafeFileHandle handle, string path)
         {
             BY_HANDLE_FILE_INFORMATION info;
-            if (!GetFileInformationByHandle(handle, out info)) throw new IOException("No se pudo leer " + path + "; no se envía nada.");
-            if ((info.Attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) throw new IOException(path + " es un enlace; elige la ubicación real.");
+            if (!GetFileInformationByHandle(handle, out info)) throw new IOException(path + " couldn't be read; nothing is sent.");
+            if ((info.Attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) throw new IOException(path + " is a link; choose the real location.");
             return info;
         }
 
@@ -131,14 +131,14 @@ namespace GpuVM
             using (var handle = Open(path, directory))
             {
                 var info = Info(handle, path);
-                if (((info.Attributes & FILE_ATTRIBUTE_DIRECTORY) != 0) != directory) throw new IOException(path + " cambió mientras se preparaba; vuelve a intentarlo.");
+                if (((info.Attributes & FILE_ATTRIBUTE_DIRECTORY) != 0) != directory) throw new IOException(path + " changed while it was being prepared; try again.");
                 string real = FinalPath(handle);
                 // Short (8.3) names are the same place: compare with the long form of what was asked.
                 var longPath = new StringBuilder(32768);
                 uint n = GetLongPathNameW(path, longPath, (uint)longPath.Capacity);
                 string asked = n > 0 && n < longPath.Capacity ? longPath.ToString() : path;
                 if (!real.TrimEnd('\\').Equals(asked.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
-                    throw new IOException(path + " pasa por un enlace a otra carpeta; elige la ubicación real.");
+                    throw new IOException(path + " goes through a link to another folder; choose the real location.");
                 return real;
             }
         }
@@ -151,9 +151,9 @@ namespace GpuVM
             try
             {
                 var info = Info(handle, path);
-                if ((info.Attributes & FILE_ATTRIBUTE_DIRECTORY) != 0) throw new IOException(path + " cambió mientras se enviaba; vuelve a intentarlo.");
+                if ((info.Attributes & FILE_ATTRIBUTE_DIRECTORY) != 0) throw new IOException(path + " changed while it was sent; try again.");
                 string real = FinalPath(handle);
-                if (!Under(real, root)) throw new IOException(path + " ahora lleva fuera de la carpeta elegida; no se envía nada.");
+                if (!Under(real, root)) throw new IOException(path + " now leads outside the chosen folder; nothing is sent.");
                 return new FileStream(handle, FileAccess.Read, 1, false);
             }
             catch
@@ -179,11 +179,11 @@ namespace GpuVM
                     using (var handle = Open(current.Key, true))
                     {
                         Info(handle, current.Key);
-                        if (!Under(FinalPath(handle), root)) throw new IOException(current.Key + " ahora lleva fuera de la carpeta elegida; no se envía nada.");
+                        if (!Under(FinalPath(handle), root)) throw new IOException(current.Key + " now leads outside the chosen folder; nothing is sent.");
                     }
                     FileSystemInfo[] children;
                     try { children = new DirectoryInfo(current.Key).GetFileSystemInfos(); }
-                    catch (Exception) { throw new UnauthorizedAccessException("No se pudo leer " + current.Key + "; no se envía nada."); }
+                    catch (Exception) { throw new UnauthorizedAccessException(current.Key + " couldn't be read; nothing is sent."); }
                     foreach (var child in children)
                     {
                         if ((child.Attributes & FileAttributes.ReparsePoint) != 0) { links++; continue; }

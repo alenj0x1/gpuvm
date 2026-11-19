@@ -20,20 +20,20 @@ function Get-HyperVGpuPChecks {
     $checks = [System.Collections.Generic.List[object]]::new()
 
     if (-not (Get-Module -ListAvailable Hyper-V)) {
-        $checks.Add((New-CheckResult 'Hyper-V' Fail 'El módulo Hyper-V no está instalado. Actívalo en "Características de Windows".'))
+        $checks.Add((New-CheckResult 'Hyper-V' Fail 'The Hyper-V module isn''t installed. Turn it on in "Windows Features".'))
         return $checks
     }
     if (-not (Test-IsAdmin)) {
-        $checks.Add((New-CheckResult 'Hyper-V' Warn 'Sin permisos de administrador no se puede revisar Hyper-V ni las GPU particionables.'))
+        $checks.Add((New-CheckResult 'Hyper-V' Warn 'Without administrator rights, Hyper-V and the partitionable GPUs can''t be checked.'))
         return $checks
     }
 
     try {
         $vmHost = Get-VMHost -ErrorAction Stop
-        $checks.Add((New-CheckResult 'Hyper-V' Ok "Activo. VMs en $($vmHost.VirtualMachinePath)"))
+        $checks.Add((New-CheckResult 'Hyper-V' Ok "On. VMs in $($vmHost.VirtualMachinePath)"))
     }
     catch {
-        $checks.Add((New-CheckResult 'Hyper-V' Fail 'Hyper-V no está activo. Ejecuta: Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All, y reinicia.'))
+        $checks.Add((New-CheckResult 'Hyper-V' Fail 'Hyper-V isn''t on. Run: Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All, and restart.'))
         return $checks
     }
 
@@ -41,18 +41,18 @@ function Get-HyperVGpuPChecks {
     $target = Get-HostGpu -Match $match | Select-Object -First 1
     $partitionable = @(Get-PartitionableGpuList)
     if (-not $partitionable) {
-        $checks.Add((New-CheckResult 'GPU particionable' Fail 'Ninguna GPU admite GPU-P con el driver actual.'))
+        $checks.Add((New-CheckResult 'Partitionable GPU' Fail 'No GPU supports GPU-P with the current driver.'))
     }
     elseif ($target -and -not ($partitionable | Where-Object VendorId -eq $target.VendorId)) {
-        $checks.Add((New-CheckResult 'GPU particionable' Fail "$($target.Name) no aparece como particionable. Actualiza el driver."))
+        $checks.Add((New-CheckResult 'Partitionable GPU' Fail "$($target.Name) doesn't show up as partitionable. Update the driver."))
     }
     else {
-        $checks.Add((New-CheckResult 'GPU particionable' Ok "$($partitionable.Count) disponible(s): $(($partitionable.VendorId | ForEach-Object { "VEN_$_" }) -join ', ')"))
+        $checks.Add((New-CheckResult 'Partitionable GPU' Ok "$($partitionable.Count) available: $(($partitionable.VendorId | ForEach-Object { "VEN_$_" }) -join ', ')"))
     }
 
     if ($partitionable.Count -gt 1 -and -not (Test-GpuInstancePathSupport)) {
-        $checks.Add((New-CheckResult 'Selección de GPU' Warn ('Hay más de una GPU particionable y Windows 10 no permite elegir cuál recibe la VM. ' +
-            'Si la VM recibe la integrada, desactívala en el Administrador de dispositivos antes de encender la VM (ver labs/001).')))
+        $checks.Add((New-CheckResult 'GPU choice' Warn ('There''s more than one partitionable GPU and Windows 10 can''t choose which one the VM gets. ' +
+            'If the VM gets the integrated one, disable it in Device Manager before turning on the VM (see labs/001).')))
     }
 
     # The new disk must fit once every VM disk on the drive is full (dynamic disks grow up to their size).
@@ -60,20 +60,20 @@ function Get-HyperVGpuPChecks {
     if ($sizeGB -and $Config['vm']['root']) {
         $budget = Get-GpuVMDiskBudget -Root $Config['vm']['root']
         if ($sizeGB -gt $budget['availableGB']) {
-            $checks.Add((New-CheckResult 'Disco' Fail ("Un disco de $sizeGB GB no cabe en $($budget['drive']): quedan $([math]::Floor($budget['freeGB'])) GB libres y " +
-                "$([math]::Ceiling($budget['promisedGB'])) GB ya están reservados para los discos de otras máquinas. Elige como máximo $($budget['availableGB']) GB.")))
+            $checks.Add((New-CheckResult 'Disk' Fail ("A $sizeGB GB disk doesn't fit on $($budget['drive']): $([math]::Floor($budget['freeGB'])) GB are free and " +
+                "$([math]::Ceiling($budget['promisedGB'])) GB are already set aside for other machines' disks. Choose $($budget['availableGB']) GB at most.")))
         }
         else {
-            $checks.Add((New-CheckResult 'Disco' Ok "$sizeGB GB en $($budget['drive']); quedan $($budget['availableGB'] - $sizeGB) GB para más máquinas"))
+            $checks.Add((New-CheckResult 'Disk' Ok "$sizeGB GB on $($budget['drive']); $($budget['availableGB'] - $sizeGB) GB left for more machines"))
         }
     }
 
     $switch = $Config['vm']['network']['switch']
     if ($switch -and -not (Get-VMSwitch -Name $switch -ErrorAction SilentlyContinue)) {
-        $checks.Add((New-CheckResult 'Red' Warn "No existe el switch '$switch'; la VM se creará sin red."))
+        $checks.Add((New-CheckResult 'Network' Warn "The switch '$switch' doesn't exist; the VM will be created without a network."))
     }
     elseif ($switch) {
-        $checks.Add((New-CheckResult 'Red' Ok "Switch '$switch'"))
+        $checks.Add((New-CheckResult 'Network' Ok "Switch '$switch'"))
     }
     $checks
 }
@@ -84,19 +84,19 @@ function Set-HyperVGpuPVM {
         [Parameter(Mandatory)][System.Collections.IDictionary]$Config
     )
     $vm = Get-VM -Name $Name -ErrorAction Stop
-    if ($vm.State -ne 'Off') { throw "La VM '$Name' debe estar apagada para aplicar el perfil." }
+    if ($vm.State -ne 'Off') { throw "The VM '$Name' must be off to apply the profile." }
     $c = $Config['vm']
 
-    Write-Step "CPU: $($c['cpu']['count']) hilos, reserva $($c['cpu']['reservePercent']) %, peso $($c['cpu']['relativeWeight'])"
+    Write-Step "CPU: $($c['cpu']['count']) threads, $($c['cpu']['reservePercent']) % reserved, weight $($c['cpu']['relativeWeight'])"
     # Migration compatibility would hide CPU features (AVX2 and later) that modern games require.
     Set-VMProcessor -VMName $Name -Count $c['cpu']['count'] -Reserve $c['cpu']['reservePercent'] `
         -RelativeWeight $c['cpu']['relativeWeight'] -ExposeVirtualizationExtensions $false -CompatibilityForMigrationEnabled $false
     if ($null -ne $c['cpu']['hwThreadsPerCore']) {
         try { Set-VMProcessor -VMName $Name -HwThreadCountPerCore $c['cpu']['hwThreadsPerCore'] -ErrorAction Stop }
-        catch { Write-Warning "No se pudo ajustar la topología SMT (requiere configuración de VM 9.0 o superior): $_" }
+        catch { Write-Warning "Couldn't set the SMT topology (needs VM configuration 9.0 or later): $_" }
     }
 
-    Write-Step "Memoria fija: $($c['memoryGB']) GB"
+    Write-Step "Fixed memory: $($c['memoryGB']) GB"
     Set-VMMemory -VMName $Name -DynamicMemoryEnabled $false -StartupBytes ([int64]$c['memoryGB'] * 1GB)
 
     $vhdPath = (Get-VMHardDiskDrive -VMName $Name | Select-Object -First 1).Path
@@ -106,7 +106,7 @@ function Set-HyperVGpuPVM {
     Set-VM -Name $Name -CheckpointType Disabled -AutomaticCheckpointsEnabled $false `
         -AutomaticStopAction ShutDown -AutomaticStartAction Nothing -GuestControlledCacheTypes $true `
         -LowMemoryMappedIoSpace ([int64]$c['mmio']['lowGB'] * 1GB) -HighMemoryMappedIoSpace ([int64]$c['mmio']['highGB'] * 1GB) `
-        -Notes "Creada con GpuVM. Perfil: $($Config['name'])"
+        -Notes "Created with GpuVM. Profile: $($Config['name'])"
 
     $secureBoot = if ($c['secureBoot']) { 'On' } else { 'Off' }
     # Only what changed: Hyper-V refuses to touch the Secure Boot template once the vTPM is initialized,
@@ -129,7 +129,7 @@ function Set-HyperVGpuPVM {
     Update-GpuVMNetworkIsolation -Name $Name -State @{ config = $Config }
 
     $percent = $Config['gpu']['allocationPercent']
-    Write-Step "GPU: partición al $percent %"
+    Write-Step "GPU: $percent % partition"
     Get-VMGpuPartitionAdapter -VMName $Name -ErrorAction SilentlyContinue | Remove-VMGpuPartitionAdapter
     $gpuParams = Get-GpuPartitionSettings -Percent $percent
     Add-VMGpuPartitionAdapter -VMName $Name @gpuParams
@@ -145,26 +145,26 @@ function Expand-HyperVGpuPDisk {
     $vhd = Get-VHD -Path $Path
     $target = [uint64]$SizeGB * 1GB
     if ($target -lt $vhd.Size) {
-        Write-Warning "El disco ya mide $([math]::Round($vhd.Size / 1GB)) GB; un disco no se puede reducir."
+        Write-Warning "The disk is already $([math]::Round($vhd.Size / 1GB)) GB; a disk can't be shrunk."
         return
     }
     if ($target -eq $vhd.Size) { return }
-    if ($vhd.VhdType -eq 'Differencing') { throw 'El disco de una máquina creada desde una plantilla mide lo mismo que la plantilla y no se amplía.' }
+    if ($vhd.VhdType -eq 'Differencing') { throw 'The disk of a machine created from a template is the same size as the template and can''t be enlarged.' }
     # Never more than the drive can really hold once every VM disk on it is full (the app shows the same limit).
     $script:DiskCache = $null
     $owner = Get-VMDiskUsage | Where-Object { $_.Path -eq $Path } | Select-Object -First 1
     $budget = Get-GpuVMDiskBudget -Root $Path -VMName $(if ($owner) { $owner.VM })
     if ($SizeGB -gt $budget['maxGB']) {
-        throw "No hay espacio para un disco de $SizeGB GB: en $($budget['drive']) quedan $([math]::Floor($budget['freeGB'])) GB libres y $([math]::Ceiling($budget['promisedGB'])) GB ya están reservados para los discos de otras máquinas. Como máximo $($budget['maxGB']) GB."
+        throw "There's no room for a $SizeGB GB disk: $($budget['drive']) has $([math]::Floor($budget['freeGB'])) GB free and $([math]::Ceiling($budget['promisedGB'])) GB are already set aside for other machines' disks. $($budget['maxGB']) GB at most."
     }
     if ($vhd.VhdType -eq 'Fixed') {
         $free = (Get-Volume -DriveLetter (Split-Path $Path -Qualifier).TrimEnd(':')).SizeRemaining
         $needed = $target - $vhd.Size
         if ($needed + 10GB -gt $free) {
-            throw "No hay espacio para ampliar el disco: hacen falta $([math]::Ceiling($needed / 1GB)) GB y quedan $([math]::Floor($free / 1GB)) GB libres."
+            throw "There's no room to enlarge the disk: $([math]::Ceiling($needed / 1GB)) GB are needed and $([math]::Floor($free / 1GB)) GB are free."
         }
     }
-    Write-Step "Ampliando el disco a $SizeGB GB"
+    Write-Step "Enlarging the disk to $SizeGB GB"
     Resize-VHD -Path $Path -SizeBytes $target
 }
 
@@ -174,17 +174,17 @@ function Sync-HyperVGpuPDriver {
         [Parameter(Mandatory)][System.Collections.IDictionary]$State
     )
     $vm = Get-VM -Name $Name -ErrorAction Stop
-    if ($vm.State -ne 'Off') { throw "Apaga la VM '$Name' antes de sincronizar el driver." }
+    if ($vm.State -ne 'Off') { throw "Turn off the VM '$Name' before syncing the driver." }
     $gpu = Get-HostGpu -Match $State['config']['gpu']['match'] | Select-Object -First 1
-    if (-not $gpu) { throw "No se encontró la GPU '$($State['config']['gpu']['match'])' en el host." }
+    if (-not $gpu) { throw "The GPU '$($State['config']['gpu']['match'])' wasn't found on the host." }
 
-    Write-Step "Leyendo archivos del driver $($gpu.DriverVersion) de $($gpu.Name)"
+    Write-Step "Reading the files of driver $($gpu.DriverVersion) for $($gpu.Name)"
     $fileSet = Get-GpuDriverFileSet -PnpDeviceId $gpu.PnpDeviceId -DriverVersion $gpu.DriverVersion
     $vhd = (Get-VMHardDiskDrive -VMName $Name | Select-Object -First 1).Path
     Invoke-WithMountedWindows -Path $vhd -ScriptBlock {
         param($root)
         $result = Copy-GpuDriverToWindows -FileSet $fileSet -WindowsRoot $root
-        Write-Step "Driver copiado: $($result.Folders) carpetas del DriverStore y $($result.Files) archivos"
+        Write-Step "Driver copied: $($result.Folders) DriverStore folders and $($result.Files) files"
     }
     $gpu
 }
@@ -236,7 +236,7 @@ function Move-GpuVMFolderContent {
         elseif ($item.PSIsContainer -and (Test-Path -LiteralPath $target -PathType Container)) {
             Move-GpuVMFolderContent -From $item.FullName -To $target -Done $Done
         }
-        else { throw "Ya existe $target." }
+        else { throw "$target already exists." }
     }
 }
 
@@ -290,16 +290,16 @@ function Rename-HyperVGpuPVM {
     $vm = Get-VM -Name $Name -ErrorAction Stop
     $done = [System.Collections.Generic.List[hashtable]]::new()
     try {
-        Write-Step "Cambiando el nombre en Hyper-V a '$NewName'"
+        Write-Step "Renaming it in Hyper-V to '$NewName'"
         Rename-VM -Name $Name -NewName $NewName -ErrorAction Stop
         $done.Add(@{ step = 'name' })
 
         if ($moveFolder) {
-            if (Test-Path -LiteralPath $newDir) { throw "Ya existe la carpeta $newDir. Elige otro nombre o bórrala." }
+            if (Test-Path -LiteralPath $newDir) { throw "The folder $newDir already exists. Choose another name or delete it." }
             New-Item -ItemType Directory -Path $newDir -Force | Out-Null
             $done.Add(@{ step = 'folder'; path = $newDir })
 
-            Write-Step 'Moviendo la configuración de la VM a su nueva carpeta'
+            Write-Step 'Moving the VM''s settings to its new folder'
             $move = @{}
             $back = @{}
             foreach ($pair in @(('VirtualMachinePath', $vm.ConfigurationLocation), ('SnapshotFilePath', $vm.SnapshotFileLocation),
@@ -312,7 +312,7 @@ function Rename-HyperVGpuPVM {
                 $done.Add(@{ step = 'storage'; back = $back })
             }
 
-            Write-Step 'Cambiando el nombre del disco'
+            Write-Step 'Renaming the disk'
             foreach ($drive in @(Get-VMHardDiskDrive -VMName $NewName)) {
                 $target = Get-RenamedVMPath -Path $drive.Path @paths
                 if (-not $target) { continue }
@@ -339,12 +339,12 @@ function Rename-HyperVGpuPVM {
     }
     catch {
         $failure = $_.Exception.Message
-        Write-Step 'No se pudo cambiar el nombre; dejando la VM como estaba'
+        Write-Step 'Couldn''t rename it; putting the VM back as it was'
         $problems = Undo-HyperVGpuPRename -Done $done -Name $Name -NewName $NewName
         if ($problems.Count) {
-            throw "No se pudo cambiar el nombre de '$Name': $failure Tampoco se pudo dejar todo como estaba: $($problems -join ' ') Revisa la VM en el Administrador de Hyper-V."
+            throw "Couldn't rename '$Name': $failure Nor could everything be put back as it was: $($problems -join ' ') Check the VM in Hyper-V Manager."
         }
-        throw "No se pudo cambiar el nombre de '$Name': $failure La VM quedó como estaba."
+        throw "Couldn't rename '$Name': $failure The VM was left as it was."
     }
 
     # Only empty folders are left in the old one; a leftover never undoes a rename that worked.
@@ -354,7 +354,7 @@ function Rename-HyperVGpuPVM {
     $renamed
 }
 
-Register-GpuVMBackend -Name 'hyperv-gpup'-Description 'Hyper-V con GPU Partitioning; la GPU se comparte con el host.' -Operations @{
+Register-GpuVMBackend -Name 'hyperv-gpup'-Description 'Hyper-V with GPU Partitioning; the GPU is shared with the host.' -Operations @{
     Test       = { param($Config) Get-HyperVGpuPChecks -Config $Config }
 
     New        = {
@@ -364,13 +364,13 @@ Register-GpuVMBackend -Name 'hyperv-gpup'-Description 'Hyper-V con GPU Partition
         $vmDir = Join-Path $config['vm']['root'] $name
         $vhdPath = Join-Path $vmDir "Virtual Hard Disks\$name.vhdx"
         if (Test-Path -LiteralPath $vmDir) {
-            throw "Ya existe la carpeta $vmDir de un intento anterior. Elige otro nombre o bórrala."
+            throw "The folder $vmDir already exists from an earlier attempt. Choose another name or delete it."
         }
         Initialize-GpuVMRoot -Path $config['vm']['root']
 
         $gpu = Get-HostGpu -Match $config['gpu']['match'] | Select-Object -First 1
-        if (-not $gpu) { throw "No se encontró la GPU '$($config['gpu']['match'])' en el host." }
-        Write-Step "Leyendo archivos del driver $($gpu.DriverVersion) de $($gpu.Name)"
+        if (-not $gpu) { throw "The GPU '$($config['gpu']['match'])' wasn't found on the host." }
+        Write-Step "Reading the files of driver $($gpu.DriverVersion) for $($gpu.Name)"
         $fileSet = Get-GpuDriverFileSet -PnpDeviceId $gpu.PnpDeviceId -DriverVersion $gpu.DriverVersion
 
         New-Item -ItemType Directory -Path (Split-Path $vhdPath -Parent) -Force | Out-Null
@@ -379,7 +379,7 @@ Register-GpuVMBackend -Name 'hyperv-gpup'-Description 'Hyper-V con GPU Partition
         New-WindowsVhdx -Path $vhdPath -SizeGB $config['vm']['disk']['sizeGB'] -Type $config['vm']['disk']['type'] `
             -ImageFile $Context.ImageFile -ImageIndex $Context.ImageIndex -Edition $Context.Edition -Language $Context.Language -Customize {
             param($root)
-            Write-Step 'Preparando instalación desatendida y scripts del invitado'
+            Write-Step 'Preparing the unattended install and the guest scripts'
             $panther = Join-Path $root 'Windows\Panther'
             New-Item -ItemType Directory -Path $panther -Force | Out-Null
             Set-Content -LiteralPath (Join-Path $panther 'unattend.xml') -Value $Context.UnattendXml -Encoding utf8
@@ -391,7 +391,7 @@ Register-GpuVMBackend -Name 'hyperv-gpup'-Description 'Hyper-V con GPU Partition
             foreach ($file in @($Context.GuestFiles)) {
                 if (-not $file) { continue }
                 if ($file.Sha256 -and (Get-FileSha256 $file.Source) -ne $file.Sha256) {
-                    throw "El archivo $($file.Source) cambió desde que se verificó; no se copia a la VM."
+                    throw "The file $($file.Source) changed since it was verified; it won't be copied to the VM."
                 }
                 $target = Join-Path $guestDir $file.Destination
                 New-Item -ItemType Directory -Path $target -Force | Out-Null
@@ -403,12 +403,12 @@ Register-GpuVMBackend -Name 'hyperv-gpup'-Description 'Hyper-V con GPU Partition
                 }
             }
 
-            Write-Step 'Copiando el driver de la GPU al invitado'
+            Write-Step 'Copying the GPU driver to the guest'
             $result = Copy-GpuDriverToWindows -FileSet $fileSet -WindowsRoot $root
-            Write-Step "Driver copiado: $($result.Folders) carpetas del DriverStore y $($result.Files) archivos"
+            Write-Step "Driver copied: $($result.Folders) DriverStore folders and $($result.Files) files"
         }
 
-        Write-Step "Registrando la VM '$name' en Hyper-V"
+        Write-Step "Registering the VM '$name' in Hyper-V"
         $switch = $config['vm']['network']['switch']
         $vmParams = @{
             Name               = $name
@@ -422,7 +422,7 @@ Register-GpuVMBackend -Name 'hyperv-gpup'-Description 'Hyper-V con GPU Partition
         Set-HyperVGpuPVM -Name $name -Config $config
         }
         catch {
-            Write-Step 'La creación falló; limpiando lo que se alcanzó a crear'
+            Write-Step 'Creation failed; cleaning up what was already made'
             if (Get-VM -Name $name -ErrorAction SilentlyContinue) { Remove-VM -Name $name -Force -ErrorAction SilentlyContinue }
             if ((Get-VHD -Path $vhdPath -ErrorAction SilentlyContinue).Attached) { Dismount-VHD -Path $vhdPath -ErrorAction SilentlyContinue }
             Remove-Item -LiteralPath $vmDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -458,20 +458,20 @@ Register-GpuVMBackend -Name 'hyperv-gpup'-Description 'Hyper-V con GPU Partition
         $vmDir = Join-Path $config['vm']['root'] $name
         $vhdPath = Join-Path $vmDir "Virtual Hard Disks\$name.vhdx"
         if (Test-Path -LiteralPath $vmDir) {
-            throw "Ya existe la carpeta $vmDir de un intento anterior. Elige otro nombre o bórrala."
+            throw "The folder $vmDir already exists from an earlier attempt. Choose another name or delete it."
         }
         Initialize-GpuVMRoot -Path $config['vm']['root']
         New-Item -ItemType Directory -Path (Split-Path $vhdPath -Parent) -Force | Out-Null
         try {
-            Write-Step "Creando el disco sobre la plantilla '$($template['name'])'"
+            Write-Step "Creating the disk on top of the template '$($template['name'])'"
             New-VHD -Path $vhdPath -ParentPath $template['vhdPath'] -Differencing | Out-Null
             Invoke-WithMountedWindows -Path $vhdPath -ScriptBlock {
                 param($root)
-                Write-Step 'Dando a la copia su propia identidad de streaming'
+                Write-Step 'Giving the copy its own streaming identity'
                 Reset-ClonedGuestIdentity -WindowsRoot $root
             }
 
-            Write-Step "Registrando la VM '$name' en Hyper-V"
+            Write-Step "Registering the VM '$name' in Hyper-V"
             $switch = $config['vm']['network']['switch']
             $vmParams = @{
                 Name               = $name
@@ -485,7 +485,7 @@ Register-GpuVMBackend -Name 'hyperv-gpup'-Description 'Hyper-V con GPU Partition
             Set-HyperVGpuPVM -Name $name -Config $config
         }
         catch {
-            Write-Step 'La creación falló; limpiando lo que se alcanzó a crear'
+            Write-Step 'Creation failed; cleaning up what was already made'
             if (Get-VM -Name $name -ErrorAction SilentlyContinue) { Remove-VM -Name $name -Force -ErrorAction SilentlyContinue }
             if ((Get-VHD -Path $vhdPath -ErrorAction SilentlyContinue).Attached) { Dismount-VHD -Path $vhdPath -ErrorAction SilentlyContinue }
             Remove-Item -LiteralPath $vmDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -523,7 +523,7 @@ Register-GpuVMBackend -Name 'hyperv-gpup'-Description 'Hyper-V con GPU Partition
             $root = Get-GpuVMDefaultRoot
             $dir = [IO.Path]::GetFullPath($State['vmDir']).TrimEnd('\')
             if ($dir -ne (Join-Path $root $Name)) {
-                throw "No se borra la VM con su disco: $dir no es la carpeta de la VM dentro de $root. Elimínala conservando el disco."
+                throw "The VM won't be deleted with its disk: $dir isn't the VM's folder inside $root. Delete it keeping the disk."
             }
         }
         $vm = Get-VM -Name $Name -ErrorAction SilentlyContinue

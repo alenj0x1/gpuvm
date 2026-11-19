@@ -19,8 +19,8 @@ function Invoke-GpuVMPower {
         'Shutdown' {
             # Windows installs its pending updates while it shuts down, which can take minutes: said, and remembered for
             # the next start (it finishes them then).
-            if (Register-GuestUpdateBeforeShutdown -Name $Name) { Write-Step 'Instalando actualizaciones' }
-            else { Write-Step 'Apagando' }
+            if (Register-GuestUpdateBeforeShutdown -Name $Name) { Write-Step 'Installing updates' }
+            else { Write-Step 'Shutting down' }
             Stop-VM -Name $Name -Force
         }
         'TurnOff' { Stop-VM -Name $Name -TurnOff -Force }

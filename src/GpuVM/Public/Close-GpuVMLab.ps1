@@ -15,7 +15,7 @@ function Close-GpuVMLab {
     $data['closedAt'] = (Get-Date).ToString('o')
     Save-Lab $data
     if ($Status -eq 'adopted') {
-        Write-Step 'Recuerda llevar la configuración candidata al perfil correspondiente en profiles/.'
+        Write-Step 'Remember to carry the candidate settings over to the matching profile in profiles/.'
     }
     Get-GpuVMLab -Lab $Lab
 }

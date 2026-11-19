@@ -16,7 +16,7 @@ function Add-GpuVMLabResult {
         [string]$Notes
     )
     $data = Read-Lab $Lab
-    if ($data['status'] -ne 'open') { throw "El laboratorio $($data['id']) ya está cerrado ($($data['status']))." }
+    if ($data['status'] -ne 'open') { throw "The lab $($data['id']) is already closed ($($data['status']))." }
     $data['results'] = @($data['results']) + [ordered]@{
         variant       = $Variant
         metric        = $Metric

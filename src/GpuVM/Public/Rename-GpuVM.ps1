@@ -15,20 +15,20 @@ function Rename-GpuVM {
     $state = Get-GpuVMState -Name $Name
     if ($NewName -ceq $Name) { return Get-GpuVM -Name $Name }
     $vm = Get-VM -Name $Name -ErrorAction Stop
-    if ($vm.State -ne 'Off') { throw "Apaga la VM '$Name' para cambiarle el nombre." }
+    if ($vm.State -ne 'Off') { throw "Turn off the VM '$Name' to rename it." }
     if (@(Get-VMSnapshot -VMName $Name -ErrorAction SilentlyContinue).Count) {
-        throw "La VM '$Name' tiene puntos de control; elimínalos en el Administrador de Hyper-V para cambiarle el nombre."
+        throw "The VM '$Name' has checkpoints; delete them in Hyper-V Manager to rename it."
     }
     # A name that only changes case is the same VM and keeps its folder.
     $root = if ($NewName -ne $Name) { Split-Path ([IO.Path]::GetFullPath($state['vmDir']).TrimEnd('\')) -Parent }
     Assert-GpuVMNameFree -Name $NewName -Root $root -Except $vm.Id
-    if (-not $PSCmdlet.ShouldProcess($Name, "Cambiar el nombre a $NewName")) { return }
+    if (-not $PSCmdlet.ShouldProcess($Name, "Rename to $NewName")) { return }
 
     Close-GuestSession -Name $Name
     Invoke-GpuVMBackend -Backend $state['backend'] -Operation Rename -Arguments $Name, $NewName, $state | Out-Null
     # The ISO list only remembers which VMs used each ISO: a failure there never undoes the rename.
     try { Rename-GpuVMIsoUse -Name $Name -NewName $NewName }
-    catch { Write-Warning "No se pudo actualizar la lista de ISO: $($_.Exception.Message)" }
-    Write-Step "La VM ahora se llama '$NewName'."
+    catch { Write-Warning "Couldn't update the ISO list: $($_.Exception.Message)" }
+    Write-Step "The VM is now called '$NewName'."
     Get-GpuVM -Name $NewName
 }

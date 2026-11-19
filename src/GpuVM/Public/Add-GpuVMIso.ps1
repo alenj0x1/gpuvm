@@ -8,7 +8,7 @@ function Add-GpuVMIso {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Path)
     if ([IO.Path]::GetExtension($Path) -ne '.iso' -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        throw "No se encontró la imagen $Path."
+        throw "The image $Path wasn't found."
     }
     Register-GpuVMIsoUse -Path $Path
 }

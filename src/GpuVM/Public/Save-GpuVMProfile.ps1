@@ -15,9 +15,9 @@ function Save-GpuVMProfile {
         # When renaming, the profile saved under this name is replaced.
         [ValidatePattern('^[\w-]{1,40}$')][string]$Previous
     )
-    if (Test-Path -LiteralPath (Join-Path (Get-ProfileDirectory) "$Name.json")) { throw "'$Name' es un perfil incluido; usa otro nombre." }
-    if ($Extends -eq $Name) { throw 'Un perfil no puede extenderse a sí mismo.' }
-    if ($Description.Length -gt 200) { throw 'La descripción es demasiado larga.' }
+    if (Test-Path -LiteralPath (Join-Path (Get-ProfileDirectory) "$Name.json")) { throw "'$Name' is a built-in profile; use another name." }
+    if ($Extends -eq $Name) { throw 'A profile can''t extend itself.' }
+    if ($Description.Length -gt 200) { throw 'The description is too long.' }
 
     $s = $Settings
     $vm = [ordered]@{}
@@ -56,9 +56,9 @@ function Save-GpuVMProfile {
     $path = Join-Path $dir "$Name.json"
     $renamed = $Previous -and $Previous -ne $Name
     if ($renamed) {
-        if (Test-Path -LiteralPath $path) { throw "Ya hay un perfil llamado '$Name'." }
+        if (Test-Path -LiteralPath $path) { throw "There's already a profile called '$Name'." }
         $children = @(Get-ChildItem $dir -Filter *.json | Where-Object { (Read-JsonFile $_.FullName)['extends'] -eq $Previous })
-        if ($children) { throw "No se puede renombrar: lo usan otros perfiles ($(($children.BaseName) -join ', '))." }
+        if ($children) { throw "It can't be renamed: other profiles use it ($(($children.BaseName) -join ', '))." }
     }
     # The new file is written first, so a failed write never loses the profile.
     Write-JsonFile -Path $path -Data $data

@@ -38,20 +38,20 @@ function Save-GpuVMComponent {
         [Parameter(Mandatory)][string]$Name,
         [System.Collections.IDictionary]$Manifest = (Get-ComponentManifest)
     )
-    if (-not $Manifest.Contains($Name)) { throw "Componente desconocido '$Name'." }
+    if (-not $Manifest.Contains($Name)) { throw "Unknown component '$Name'." }
     $c = $Manifest[$Name]
     $dir = Join-Path (Get-ComponentCacheRoot) "$Name\$($c['version'])"
     $path = Join-Path $dir $c['file']
     if ((Test-Path -LiteralPath $path) -and (Get-FileSha256 $path) -eq $c['sha256']) { return $path }
 
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
-    Write-Step "Descargando $Name $($c['version'])"
+    Write-Step "Downloading $Name $($c['version'])"
     $partial = "$path.part"
     Invoke-WebRequest -Uri $c['url'] -OutFile $partial -UseBasicParsing
     $hash = Get-FileSha256 $partial
     if ($hash -ne $c['sha256']) {
         Remove-Item -LiteralPath $partial -Force
-        throw "El SHA-256 de $Name no coincide (esperado $($c['sha256']), recibido $hash). No se usará el archivo."
+        throw "The SHA-256 of $Name doesn't match (expected $($c['sha256']), got $hash). The file won't be used."
     }
     Move-Item -LiteralPath $partial -Destination $path -Force
     $path

@@ -1,0 +1,27 @@
+// Spanish for files into machines and the clipboard: the drop area over the viewer and the panel's widgets.
+export default {
+  // Drop area and progress card (DropZone.tsx)
+  "Drop to send": "Soltar para enviar",
+  "{vm} · Desktop › {folder}": "{vm} · Escritorio › {folder}",
+  "Received": "Recibidos",
+  // Archivos (FilesWidgets.tsx)
+  "Files": "Archivos",
+  "{first} and {n} more": "{first} y {n} más",
+  "Preparing…": "Preparando…",
+  "In {vm} › {folder}": "En {vm} › {folder}",
+  "Cancelled": "Cancelado",
+  "Select files in {vm}'s File Explorer.": "Selecciona archivos en el Explorador de {vm}.",
+  "Send what is selected to": "Enviar lo seleccionado a",
+  "Drop files on the picture": "Suelta archivos sobre la imagen",
+  "They arrive on {vm}'s desktop, in {folder}.": "Llegan al escritorio de {vm}, carpeta {folder}.",
+  // Portapapeles (FilesWidgets.tsx)
+  "Clipboard": "Portapapeles",
+  "What you copy on the PC goes to {vm} on its own": "Lo que copies en el PC llega solo a {vm}",
+  "On copy": "Al copiar",
+  "Copy something on the PC": "Copia algo en el PC",
+  "What you copy while using the machine stays here to paste into it.": "Lo copiado mientras usas la máquina queda aquí para pegarlo en ella.",
+  "Image {w} × {h}": "Imagen {w} × {h}",
+  "Paste in {vm}": "Pegar en {vm}",
+  "Clear": "Borrar",
+  "{sent} of {total}": "{sent} de {total}",
+} as Record<string, string>;

@@ -158,7 +158,7 @@ public static class GpuVMPacedCopy {
                     uint aligned = (want + 4095) & ~4095u;
                     uint read, written;
                     if (!ReadFile(src, buffer, aligned, out read, IntPtr.Zero)) throw new System.ComponentModel.Win32Exception();
-                    if (read < want) throw new IOException("El disco base terminó antes de lo esperado.");
+                    if (read < want) throw new IOException("The base disk ended sooner than expected.");
                     write.Restart();
                     if (!WriteFile(dst, buffer, aligned, out written, IntPtr.Zero)) throw new System.ComponentModel.Win32Exception();
                     double ms = write.Elapsed.TotalMilliseconds;
@@ -207,10 +207,10 @@ function Copy-PacedFile {
         [Parameter(Mandatory)][string]$Source,
         [Parameter(Mandatory)][string]$Destination
     )
-    if (Test-Path -LiteralPath $Destination) { throw "Ya existe $Destination." }
+    if (Test-Path -LiteralPath $Destination) { throw "$Destination already exists." }
     try { [GpuVMPacedCopy]::Copy($Source, $Destination) }
     catch {
         Remove-Item -LiteralPath $Destination -Force -ErrorAction SilentlyContinue
-        throw "No se pudo copiar el disco: $($_.Exception.InnerException.Message ?? $_.Exception.Message)"
+        throw "Couldn't copy the disk: $($_.Exception.InnerException.Message ?? $_.Exception.Message)"
     }
 }

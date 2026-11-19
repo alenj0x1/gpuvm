@@ -20,8 +20,8 @@ export type AmbientTime = "day" | "evening" | "night" | "auto";
 type Tod = Exclude<AmbientTime, "auto">;
 // Names are getters so they are read in the language shown.
 export const AMBIENT_TIMES: { id: AmbientTime; readonly name: string }[] = [
-  { id: "day", get name() { return t("Día"); } }, { id: "evening", get name() { return t("Tarde"); } },
-  { id: "night", get name() { return t("Noche"); } }, { id: "auto", get name() { return t("Según la hora"); } },
+  { id: "day", get name() { return t("Day"); } }, { id: "evening", get name() { return t("Evening"); } },
+  { id: "night", get name() { return t("Night"); } }, { id: "auto", get name() { return t("By the clock"); } },
 ];
 /** The time of day for "auto": day from 6:30, evening from 17:00, night from 19:30. */
 export function resolveTime(t: AmbientTime = "day"): Tod {
@@ -32,9 +32,9 @@ export function resolveTime(t: AmbientTime = "day"): Tod {
 
 export interface AmbientInfo { id: AmbientId; readonly name: string; readonly desc: string; icon: Icon; times?: boolean }
 export const AMBIENTS: AmbientInfo[] = [
-  { id: "board", get name() { return t("Placa base"); }, get desc() { return t("Sobre su propio circuito, con chips, pistas y datos que corren."); }, icon: IconCircuitResistor },
-  { id: "blocks", get name() { return t("Bloques"); }, get desc() { return t("Un mundo de bloques, con árboles, casas y figuras, de día, de tarde o de noche."); }, icon: IconLego, times: true },
-  { id: "studio", get name() { return t("Estudio"); }, get desc() { return t("El fondo gris de la app, sin escenario."); }, icon: IconCube },
+  { id: "board", get name() { return t("Motherboard"); }, get desc() { return t("On their own circuit board, with chips, traces and running data."); }, icon: IconCircuitResistor },
+  { id: "blocks", get name() { return t("Blocks"); }, get desc() { return t("A world of bricks, with trees, houses and figures, by day, evening or night."); }, icon: IconLego, times: true },
+  { id: "studio", get name() { return t("Studio"); }, get desc() { return t("The app's gray background, no scenery."); }, icon: IconCube },
 ];
 export const ambientInfo = (id: string) => AMBIENTS.find((a) => a.id === normalizeAmbient(id)) ?? AMBIENTS[2];
 /** Ambients from earlier versions become the closest one that exists now. */

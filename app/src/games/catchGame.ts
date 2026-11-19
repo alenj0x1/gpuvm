@@ -19,12 +19,12 @@ interface Drop { kind: Kind; x: number; y: number; vy: number; rot: number; vr: 
 interface Spark { x: number; y: number; vx: number; vy: number; life: number; color: string; size: number }
 
 const PICKS: Record<Pick, { sticker: string; secs: number; label: () => string }> = {
-  clone: { sticker: "rocket", secs: 10, label: () => t("Clon") },
-  wide: { sticker: "gem", secs: 10, label: () => t("Más ancho") },
-  slow: { sticker: "moon", secs: 6, label: () => t("Tiempo lento") },
-  magnet: { sticker: "bolt", secs: 8, label: () => t("Imán") },
-  shield: { sticker: "star", secs: 12, label: () => t("Escudo") },
-  heart: { sticker: "heart", secs: 0, label: () => t("Vida") },
+  clone: { sticker: "rocket", secs: 10, label: () => t("Clone") },
+  wide: { sticker: "gem", secs: 10, label: () => t("Wider") },
+  slow: { sticker: "moon", secs: 6, label: () => t("Slow time") },
+  magnet: { sticker: "bolt", secs: 8, label: () => t("Magnet") },
+  shield: { sticker: "star", secs: 12, label: () => t("Shield") },
+  heart: { sticker: "heart", secs: 0, label: () => t("Life") },
 };
 const MAX_LIVES = 5;
 
@@ -214,25 +214,25 @@ export const CATCH: GameDef = {
   // Getters: the texts come out in the language in use.
   // One name in every language, like Overclock: it catches, and a cache keeps.
   name: "Cache",
-  get description() { return t("Atrapa las figuras que caen antes de que toquen el suelo. Cada una que se cae cuesta un corazón."); },
+  get description() { return t("Catch the falling figures before they hit the floor. Each one that falls costs a heart."); },
   get modes() {
     return [
-      { id: "studio", name: t("Estudio"), description: t("Sobre el gris de la app.") },
-      { id: "board", name: t("Placa base"), description: t("Sobre las pistas de la placa.") },
-      { id: "blocks", name: t("Bloques"), description: t("Bajo un cielo con nubes de bloques.") },
+      { id: "studio", name: t("Studio"), description: t("On the app's gray.") },
+      { id: "board", name: t("Motherboard"), description: t("Over the board's traces.") },
+      { id: "blocks", name: t("Blocks"), description: t("Under a sky with block clouds.") },
     ];
   },
   get controls() {
     return [
-      { label: t("Moverte"), mouse: "move" as const, keys: ["A", "D"] },
-      { label: t("Pausa"), keys: ["P"] },
+      { label: t("Move"), mouse: "move" as const, keys: ["A", "D"] },
+      { label: t("Pause|game"), keys: ["P"] },
     ];
   },
   get tips() {
     return [
-      t("Las doradas valen cinco; las arañas, mejor dejarlas caer"),
-      t("Los stickers ayudan: un clon que atrapa a tu lado, más ancho, tiempo lento, imán, escudo o un corazón"),
-      t("Diez seguidas sin perder ninguna suman uno extra cada una"),
+      t("Golden ones are worth five; spiders are better left to fall"),
+      t("Stickers help: a clone that catches beside you, wider, slow time, a magnet, a shield or a heart"),
+      t("Ten in a row without a miss score one extra each"),
     ];
   },
   create,

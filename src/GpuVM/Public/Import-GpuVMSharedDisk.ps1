@@ -15,11 +15,11 @@ function Import-GpuVMSharedDisk {
     Assert-Admin
     $disk = Read-SharedDisk -Name $Name
     $source = [IO.Path]::GetFullPath($Path).TrimEnd('\')
-    if (-not (Test-Path -LiteralPath $source -PathType Container)) { throw "No existe la carpeta $source." }
+    if (-not (Test-Path -LiteralPath $source -PathType Container)) { throw "The folder $source doesn't exist." }
     Assert-ImportableFolder -Path $source
     $attachment = Get-SharedDiskAttachment -Path $disk['path']
     if ($attachment) {
-        if ((Get-VM -Name $attachment.VMName).State -ne 'Off') { throw "Desconecta el disco '$Name' de '$($attachment.VMName)' o apágala antes de importar." }
+        if ((Get-VM -Name $attachment.VMName).State -ne 'Off') { throw "Disconnect the disk '$Name' from '$($attachment.VMName)' or turn it off before importing." }
     }
 
     # A Steam library (or Steam's own folder) brings only its games: steamapps goes to SteamLibrary\steamapps.
@@ -29,7 +29,7 @@ function Import-GpuVMSharedDisk {
         $source = Join-Path $source 'steamapps'
         $folder = 'SteamLibrary\steamapps'
     }
-    Write-Step 'Midiendo la carpeta'
+    Write-Step 'Measuring the folder'
     # Links in the source are skipped (robocopy /XJ), so they are not counted either.
     $total = [int64](Get-ChildItem -LiteralPath $source -Recurse -File -Force -Attributes !ReparsePoint -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
 
@@ -44,19 +44,19 @@ function Import-GpuVMSharedDisk {
         $mounted = $true
         $number = (Get-VHD -Path $disk['path']).DiskNumber
         $partition = Get-Partition -DiskNumber $number | Where-Object Type -eq 'Basic' | Sort-Object Size -Descending | Select-Object -First 1
-        if (-not $partition) { throw "El disco '$Name' no tiene una partición de datos." }
+        if (-not $partition) { throw "The disk '$Name' has no data partition." }
         if ($partition.DriveLetter) { Remove-PartitionAccessPath -DiskNumber $number -PartitionNumber $partition.PartitionNumber -AccessPath "$($partition.DriveLetter):\" }
         Add-PartitionAccessPath -DiskNumber $number -PartitionNumber $partition.PartitionNumber -AccessPath "$accessPath\"
         $volume = Get-Volume -Partition $partition
         if ($total + 1GB -gt $volume.SizeRemaining) {
-            throw "No cabe: la carpeta ocupa $([math]::Ceiling($total / 1GB)) GB y el disco tiene $([math]::Floor($volume.SizeRemaining / 1GB)) GB libres."
+            throw "It doesn't fit: the folder takes $([math]::Ceiling($total / 1GB)) GB and the disk has $([math]::Floor($volume.SizeRemaining / 1GB)) GB free."
         }
         $target = Join-Path $accessPath $folder
         # A VM wrote to this disk: a link planted anywhere under the target would send this copy out of the disk.
         Assert-NoReparsePoint -Root $accessPath -Path $target
         if (Test-Path -LiteralPath $target) { Assert-NoReparsePointBelow -Root $accessPath -Path $target }
 
-        Write-Step "Copiando a $folder"
+        Write-Step "Copying to $folder"
         $startFree = $volume.SizeRemaining
         $log = Join-Path ([IO.Path]::GetTempPath()) "gpuvm-import-$([guid]::NewGuid().ToString('n')).log"
         $robocopy = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\robocopy.exe') -PassThru -WindowStyle Hidden -ArgumentList @(
@@ -64,15 +64,15 @@ function Import-GpuVMSharedDisk {
         # Progress from the space the disk has used so far: cheap, and right even with many small files.
         while (-not $robocopy.WaitForExit(2000)) {
             $copied = $startFree - (Get-Volume -Partition $partition).SizeRemaining
-            if ($total -gt 0) { Write-Step "Copiando $([math]::Min(99, [math]::Floor(100 * $copied / $total))) %" }
+            if ($total -gt 0) { Write-Step "Copying $([math]::Min(99, [math]::Floor(100 * $copied / $total))) %" }
         }
         # Robocopy: 0-7 copied (with or without differences); 8 or more, some files failed.
         if ($robocopy.ExitCode -ge 8) {
             $tail = (Get-Content -LiteralPath $log -Tail 5 -ErrorAction SilentlyContinue) -join ' '
-            throw "Algunos archivos no se copiaron (robocopy $($robocopy.ExitCode)). $tail"
+            throw "Some files weren't copied (robocopy $($robocopy.ExitCode)). $tail"
         }
         Remove-Item -LiteralPath $log -Force -ErrorAction SilentlyContinue
-        Write-Step "Copiado: $([math]::Round($total / 1GB, 1)) GB en $folder"
+        Write-Step "Copied: $([math]::Round($total / 1GB, 1)) GB in $folder"
     }
     finally {
         if ($partition) { Remove-PartitionAccessPath -DiskNumber $partition.DiskNumber -PartitionNumber $partition.PartitionNumber -AccessPath "$accessPath\" -ErrorAction SilentlyContinue }

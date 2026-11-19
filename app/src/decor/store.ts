@@ -55,22 +55,22 @@ export interface Decor {
 
 /** The machine colors, as they look in light and in dark (soft in light, a little stronger in dark). */
 export const MACHINE_COLORS: { id: string; name: string; light: string; dark: string }[] = [
-  { id: "blue", get name() { return t("Azul"); }, light: "#2f5bd3", dark: "#7d9cf0" },
-  { id: "violet", get name() { return t("Violeta"); }, light: "#6a4fd2", dark: "#a796f2" },
-  { id: "pink", get name() { return t("Rosa"); }, light: "#b8467a", dark: "#ee8fbd" },
-  { id: "red", get name() { return t("Rojo"); }, light: "#b83a3a", dark: "#f08a84" },
+  { id: "blue", get name() { return t("Blue"); }, light: "#2f5bd3", dark: "#7d9cf0" },
+  { id: "violet", get name() { return t("Violet"); }, light: "#6a4fd2", dark: "#a796f2" },
+  { id: "pink", get name() { return t("Pink"); }, light: "#b8467a", dark: "#ee8fbd" },
+  { id: "red", get name() { return t("Red"); }, light: "#b83a3a", dark: "#f08a84" },
   { id: "coral", get name() { return t("Coral"); }, light: "#c0583a", dark: "#f29b7c" },
-  { id: "amber", get name() { return t("Ámbar"); }, light: "#a8650f", dark: "#e7b45e" },
-  { id: "green", get name() { return t("Verde"); }, light: "#2f8550", dark: "#7dd19c" },
-  { id: "teal", get name() { return t("Turquesa"); }, light: "#1d7f7c", dark: "#6ccfca" },
+  { id: "amber", get name() { return t("Amber"); }, light: "#a8650f", dark: "#e7b45e" },
+  { id: "green", get name() { return t("Green"); }, light: "#2f8550", dark: "#7dd19c" },
+  { id: "teal", get name() { return t("Teal"); }, light: "#1d7f7c", dark: "#6ccfca" },
 ];
 
 export const LED_COLORS: { id: LedColor; name: string; hex: string }[] = [
-  { id: "amber", get name() { return t("Ámbar"); }, hex: "#ffb547" },
-  { id: "red", get name() { return t("Rojo"); }, hex: "#ff5a4e" },
-  { id: "green", get name() { return t("Verde"); }, hex: "#6fe08a" },
-  { id: "white", get name() { return t("Blanco"); }, hex: "#f2efe8" },
-  { id: "machine", get name() { return t("Color de la máquina"); }, hex: "" },
+  { id: "amber", get name() { return t("Amber"); }, hex: "#ffb547" },
+  { id: "red", get name() { return t("Red"); }, hex: "#ff5a4e" },
+  { id: "green", get name() { return t("Green"); }, hex: "#6fe08a" },
+  { id: "white", get name() { return t("White"); }, hex: "#f2efe8" },
+  { id: "machine", get name() { return t("Machine color"); }, hex: "" },
 ];
 
 export const EMPTY: Decor = { color: null, led: null, stickers: [], figures: [] };

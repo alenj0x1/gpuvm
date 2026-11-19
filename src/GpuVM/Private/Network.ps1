@@ -73,7 +73,7 @@ function Update-GpuVMNetworkIsolation {
     $switch = Get-VMSwitch -Name $switchName -ErrorAction SilentlyContinue
     if ($switch -and $switch.SwitchType -ne 'Internal') {
         if ($current) { Remove-GpuVMIsolationAcl -Name $Name -Acl $current }
-        Write-Warning "La VM '$Name' usa el conmutador externo '$switchName': el aislamiento de red solo funciona con el Default Switch o uno interno."
+        Write-Warning "The VM '$Name' uses the external switch '$switchName': network isolation only works with the Default Switch or an internal one."
         return
     }
     # Without the host's address there is nothing to allow: the blocks alone are applied (the VM gets no network

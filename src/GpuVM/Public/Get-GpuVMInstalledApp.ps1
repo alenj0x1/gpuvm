@@ -16,7 +16,7 @@ function Get-GpuVMInstalledApp {
             $installed = @(Get-GuestInstalledApp -Name $Name -Credential $guest)
             Update-InstalledAppState -Name $Name -Installed $installed -Replace
         }
-        catch { Write-Verbose "No se pudo revisar las apps de la VM: $($_.Exception.Message)" }
+        catch { Write-Verbose "Couldn't check the VM's apps: $($_.Exception.Message)" }
     }
     $catalog = Get-AppCatalog
     foreach ($id in $installed) {

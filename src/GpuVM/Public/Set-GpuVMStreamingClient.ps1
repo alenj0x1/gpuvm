@@ -22,7 +22,7 @@
         [ValidateLength(1, 300)][string]$Monitor
     )
     $state = Get-GpuVMState -Name $Name
-    if (-not $state['config']['streaming']) { throw "La VM '$Name' no tiene streaming." }
+    if (-not $state['config']['streaming']) { throw "The VM '$Name' doesn't have streaming." }
     $client = $state['config']['streaming']['client']
     if ($Resolution) { $client['resolution'] = $Resolution }
     if ($PSBoundParameters.ContainsKey('Fps')) { $client['fps'] = $Fps }

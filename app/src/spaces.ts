@@ -22,7 +22,7 @@ const KEY = "gpuvm.spaces";
 const EVENT = "gpuvm-spaces";
 // The first space's name until someone renames it: shown in the language of the app (whichever one it was saved in).
 const DEFAULT_NAMES = ["Mis m\u00e1quinas", "My machines"];
-const defaults = (): Space[] => [{ id: MAIN_SPACE, name: t("Mis máquinas"), ambient: "studio", machines: [] }];
+const defaults = (): Space[] => [{ id: MAIN_SPACE, name: t("My machines"), ambient: "studio", machines: [] }];
 
 let cache: Space[] | null = null;
 let cacheLang = getLang();
@@ -75,7 +75,7 @@ const newId = () => Math.random().toString(36).slice(2, 9);
 /** Creates or changes a space; the machines listed leave whatever space they were in. */
 export function saveSpace(s: Omit<Space, "id"> & { id?: string }): Space {
   const id = s.id ?? newId();
-  const next: Space = { id, name: s.name.trim() || t("Espacio"), ambient: s.ambient, time: s.time, machines: [...new Set(s.machines)] };
+  const next: Space = { id, name: s.name.trim() || t("Space"), ambient: s.ambient, time: s.time, machines: [...new Set(s.machines)] };
   const others = readSpaces().filter((x) => x.id !== id).map((x) => ({ ...x, machines: x.machines.filter((m) => !next.machines.includes(m)) }));
   const old = readSpaces().findIndex((x) => x.id === id);
   const list = [...others];

@@ -21,7 +21,7 @@ function Get-RestorePointDirectory {
 
 function Get-RestorePointPath {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$State, [Parameter(Mandatory)][string]$Id)
-    if ($Id -notmatch '^[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$') { throw "Punto de restauración no válido: $Id" }
+    if ($Id -notmatch '^[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$') { throw "That restore point isn't valid: $Id" }
     Join-Path (Get-RestorePointDirectory -State $State) "$Id.vhdx"
 }
 
@@ -48,8 +48,8 @@ function Stop-GpuVMForDisk {
     param([Parameter(Mandatory)][string]$Name, [switch]$ShutdownIfRunning, [Parameter(Mandatory)][string]$Action)
     $vm = Get-VM -Name $Name -ErrorAction Stop
     if ($vm.State -eq 'Off') { return $false }
-    if ($vm.State -ne 'Running' -or -not $ShutdownIfRunning) { throw "Apaga la máquina '$Name' para $Action." }
-    Write-Step 'Apagando la máquina'
+    if ($vm.State -ne 'Running' -or -not $ShutdownIfRunning) { throw "Shut down the machine '$Name' to $Action." }
+    Write-Step 'Shutting the machine down'
     Stop-VM -Name $Name -Force -ErrorAction Stop
     $true
 }
@@ -75,7 +75,7 @@ function Update-GpuVMDiskAttachment {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$Path)
     $full = [IO.Path]::GetFullPath($Path)
     $drive = Get-VMHardDiskDrive -VMName $Name | Where-Object { $_.Path -and [IO.Path]::GetFullPath($_.Path) -eq $full } | Select-Object -First 1
-    if (-not $drive) { throw "El disco $Path no está conectado a la máquina '$Name'." }
+    if (-not $drive) { throw "The disk $Path isn't connected to the machine '$Name'." }
     Set-VMHardDiskDrive -VMName $Name -ControllerType $drive.ControllerType -ControllerNumber $drive.ControllerNumber `
         -ControllerLocation $drive.ControllerLocation -Path $Path -ErrorAction Stop
 }
@@ -89,7 +89,7 @@ function Assert-GpuVMDiskInPlace {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][System.Collections.IDictionary]$State)
     $attached = @(Get-VMHardDiskDrive -VMName $Name | Where-Object Path | ForEach-Object { [IO.Path]::GetFullPath($_.Path) })
     if ([IO.Path]::GetFullPath($State['vhdPath']) -notin $attached) {
-        throw "El disco de '$Name' no está donde GpuVM lo espera ($($State['vhdPath']))."
+        throw "The disk of '$Name' isn't where GpuVM expects it ($($State['vhdPath']))."
     }
 }
 
@@ -107,20 +107,20 @@ function New-GpuVMRestorePointCore {
     Assert-GpuVMDiskInPlace -Name $Name -State $State
     $points = @(Get-GpuVMRestorePointList -State $State)
     if ($points.Count -ge $script:MaxRestorePoints) {
-        throw "La máquina ya tiene $($points.Count) puntos de restauración, el máximo. Borra uno para crear otro."
+        throw "The machine already has $($points.Count) restore points, the most it can keep. Delete one to create another."
     }
     $freeGB = Get-DriveFreeGB $State['vhdPath']
     $needGB = $script:DiskMarginGB + $script:RestorePointFreeGB
-    if ($freeGB -lt $needGB) { throw "No hay espacio para un punto de restauración: quedan $freeGB GB libres y hacen falta $needGB GB." }
+    if ($freeGB -lt $needGB) { throw "There's no room for a restore point: $freeGB GB free and $needGB GB needed." }
 
     $id = New-RestorePointId
     $current = $State['vhdPath']
     $pointPath = Get-RestorePointPath -State $State -Id $id
     $dir = Split-Path $pointPath -Parent
     if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
-    if ((Get-Item -LiteralPath $dir -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "$dir es un enlace; GpuVM no lo usa." }
+    if ((Get-Item -LiteralPath $dir -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "$dir is a link; GpuVM doesn't use it." }
 
-    Write-Step 'Guardando el punto de restauración'
+    Write-Step 'Saving the restore point'
     $moved = $false
     try {
         # Same folder tree, same volume: a rename, nothing is copied.
@@ -164,15 +164,15 @@ function Restore-GpuVMRestorePointCore {
     )
     Assert-GpuVMDiskInPlace -Name $Name -State $State
     $point = Get-GpuVMRestorePointList -State $State | Where-Object { $_['id'] -eq $Id } | Select-Object -First 1
-    if (-not $point) { throw "No existe el punto de restauración '$Id'." }
+    if (-not $point) { throw "The restore point '$Id' doesn't exist." }
     $pointPath = Get-RestorePointPath -State $State -Id $Id
-    if (-not (Test-Path -LiteralPath $pointPath)) { throw "Falta el disco del punto de restauración ($pointPath)." }
+    if (-not (Test-Path -LiteralPath $pointPath)) { throw "The restore point's disk is missing ($pointPath)." }
     $current = $State['vhdPath']
     $top = Get-VHD -Path $current -ErrorAction Stop
-    if ($top.VhdType -ne 'Differencing' -or -not $top.ParentPath) { throw "El disco de '$Name' no está sobre un punto de restauración." }
+    if ($top.VhdType -ne 'Differencing' -or -not $top.ParentPath) { throw "The disk of '$Name' isn't on a restore point." }
     # The VM's disk is only ever a top disk on a point: never a point or a template (they are other disks).
     $fresh = Join-Path (Split-Path $current -Parent) ".restore-$Id.vhdx"
-    Write-Step 'Volviendo al punto de restauración'
+    Write-Step 'Going back to the restore point'
     New-VHD -Path $fresh -ParentPath $pointPath -Differencing -ErrorAction Stop | Out-Null
     # The current top disk is set aside (not deleted) until the new one is in its place: if anything fails, it goes back
     # and the VM is never left without a disk.
@@ -213,25 +213,25 @@ function Remove-GpuVMRestorePointCore {
     )
     $points = @(Get-GpuVMRestorePointList -State $State)
     $point = $points | Where-Object { $_['id'] -eq $Id } | Select-Object -First 1
-    if (-not $point) { throw "No existe el punto de restauración '$Id'." }
+    if (-not $point) { throw "The restore point '$Id' doesn't exist." }
     $pointPath = Get-RestorePointPath -State $State -Id $Id
     $children = @(if (Test-Path -LiteralPath $pointPath) { Get-RestorePointChild -State $State -Path $pointPath })
-    if ($children.Count -gt 1) { throw 'Otros dos puntos parten de este; borra uno de ellos primero.' }
+    if ($children.Count -gt 1) { throw 'Two other points start from this one; delete one of them first.' }
     $vm = Get-VM -Name $Name -ErrorAction Stop
 
-    if (-not (Test-Path -LiteralPath $pointPath)) { Write-Warning "El disco del punto ya no existía ($pointPath)." }
+    if (-not (Test-Path -LiteralPath $pointPath)) { Write-Warning "The point's disk was already gone ($pointPath)." }
     elseif (-not $children.Count) {
-        Write-Step 'Borrando el punto de restauración'
+        Write-Step 'Deleting the restore point'
         Set-FileReadOnly -Path $pointPath -Value $false
         Remove-Item -LiteralPath $pointPath -Force
     }
     else {
         $child = $children[0]
         $childIsVM = [IO.Path]::GetFullPath($child) -eq [IO.Path]::GetFullPath($State['vhdPath'])
-        if ($childIsVM -and $vm.State -ne 'Off') { throw "Apaga la máquina '$Name' para borrar este punto." }
+        if ($childIsVM -and $vm.State -ne 'Off') { throw "Shut down the machine '$Name' to delete this point." }
         $grandchildren = @(if (-not $childIsVM) { Get-RestorePointChild -State $State -Path $child })
-        if ($grandchildren.Count -and $vm.State -ne 'Off') { throw "Apaga la máquina '$Name' para borrar este punto." }
-        Write-Step "Juntando el punto con lo que vino después ($([math]::Round((Get-Item -LiteralPath $child).Length / 1GB, 1)) GB)"
+        if ($grandchildren.Count -and $vm.State -ne 'Off') { throw "Shut down the machine '$Name' to delete this point." }
+        Write-Step "Merging the point with what came after it ($([math]::Round((Get-Item -LiteralPath $child).Length / 1GB, 1)) GB)"
         Set-FileReadOnly -Path $pointPath -Value $false
         $childReadOnly = (Get-Item -LiteralPath $child).IsReadOnly
         Set-FileReadOnly -Path $child -Value $false

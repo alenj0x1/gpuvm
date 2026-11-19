@@ -16,7 +16,7 @@ function Set-GpuVMCapture {
     )
     Assert-Admin
     $state = Get-GpuVMState -Name $Name
-    if (-not $state['streaming']) { throw "La VM '$Name' se creó sin streaming." }
+    if (-not $state['streaming']) { throw "The VM '$Name' was created without streaming." }
     $state['config']['streaming']['captureMode'] = $Mode
     Save-GpuVMState $state
 

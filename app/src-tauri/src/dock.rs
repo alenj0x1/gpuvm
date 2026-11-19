@@ -157,20 +157,20 @@ pub fn on_viewer(app: &AppHandle, vm: &str, msg: &Value) {
 /// Least time between the dock coming down and an answer (its drop plus the page's own guard, PromptDock.tsx).
 const ARM: std::time::Duration = std::time::Duration::from_millis(700);
 
-/// Permitir / Rechazar in the dock. The page only says which button: the machine and the prompt are the ones this
+/// Allow / Deny in the dock. The page only says which button: the machine and the prompt are the ones this
 /// app put in the dock, so the dock's page can't answer anything else (its capability has no other command).
 #[tauri::command]
 pub async fn dock_answer(app: AppHandle, allow: bool) -> Result<(), String> {
     let (vm, id) = {
         let d = dock();
-        let d = d.as_ref().ok_or("El aviso ya se cerró.")?;
+        let d = d.as_ref().ok_or("The prompt already closed.")?;
         if d.prompt["reading"].as_bool() == Some(true) {
-            return Err("Todavía se está leyendo el aviso.".into());
+            return Err("The prompt is still being read.".into());
         }
         if d.shown.elapsed() < ARM {
-            return Err("El aviso acaba de aparecer.".into());
+            return Err("The prompt just appeared.".into());
         }
-        (d.vm.clone(), d.prompt["id"].as_i64().ok_or("El aviso no es válido.")?)
+        (d.vm.clone(), d.prompt["id"].as_i64().ok_or("The prompt isn't valid.")?)
     };
     let state = app.state::<crate::AppState>();
     let request = json!({ "id": crate::next_id(&state), "cmd": "Resolve-GpuVMAdminPrompt",

@@ -238,7 +238,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
   machine: CubeMachine; name?: string; others?: CubeNeighbor[]; className?: string; perPart?: boolean;
   /** Whose decoration to show (the machine's name; `name` can be a name still being typed). */
   decorOf?: string;
-  /** A decoration to show instead of a machine's own (Home's showcase, a draft in Crear máquina). */
+  /** A decoration to show instead of a machine's own (Home's showcase, a draft in Create machine). */
   decorShown?: Decor;
   /** Each time it changes, the cube turns once quickly while the hologram rebuilds (a new decoration arriving). */
   spin?: number;
@@ -912,7 +912,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       ctx.fillText("S/N " + (shown || "—") + caret, 14, 56, w * 1000 - 28);
       ctx.fillStyle = rgba(col, 0.6 * k);
       ctx.font = "500 11px ui-monospace, monospace";
-      ctx.fillText(t("{cores} HILOS · {ram} GB · GPU {gpu} % · {disk} GB", { cores: m.cores, ram: m.memoryGB, gpu: m.gpuPercent, disk: m.diskGB }), 14, 74);
+      ctx.fillText(t("{cores} THREADS · {ram} GB · GPU {gpu} % · {disk} GB", { cores: m.cores, ram: m.memoryGB, gpu: m.gpuPercent, disk: m.diskGB }), 14, 74);
       // A barcode made from the name, so every machine's is its own.
       const code = [...(shown || "X")].map((c) => c.charCodeAt(0));
       let bx = 14;
@@ -1628,7 +1628,7 @@ export function MachineCube({ machine, name = "", others = [], className, perPar
       const led = D.led;
       if (!led) return;
       let text = led.text.trim() || decorRef.current.owner || "GpuVM";
-      if (led.live) text += on ? `  ·  GPU ${Math.round(m.usage.gpu)} %  ·  CPU ${Math.round(m.usage.cpu)} %` : "  ·  " + t("APAGADA");
+      if (led.live) text += on ? `  ·  GPU ${Math.round(m.usage.gpu)} %  ·  CPU ${Math.round(m.usage.cpu)} %` : "  ·  " + t("OFF");
       text += "      ";
       if (text !== ledText) { ledText = text; ledCols = ledColumns(text); }
       const n = ledCols.length;

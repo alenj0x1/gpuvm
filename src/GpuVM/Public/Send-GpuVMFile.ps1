@@ -20,7 +20,7 @@ function Send-GpuVMFile {
         [ValidatePattern('^[a-f0-9]{8,32}$')][string]$TransferId = ([guid]::NewGuid().ToString('n'))
     )
     Assert-Admin
-    if ($FromVM -and $FromVM -eq $Name) { throw 'Elige otra máquina como destino.' }
+    if ($FromVM -and $FromVM -eq $Name) { throw 'Choose another machine to send to.' }
     $target = Open-TransferSession -Name $Name
     $source = $null
     $marker = Get-TransferMarker -Id $TransferId
@@ -28,11 +28,11 @@ function Send-GpuVMFile {
     try {
         if ($FromVM) {
             $source = Open-TransferSession -Name $FromVM
-            Write-Step "Midiendo en $FromVM"
+            Write-Step "Measuring in $FromVM"
             $list = Get-GuestTransferEntries -Session $source -Path $Path
         }
         else {
-            Write-Step 'Midiendo'
+            Write-Step 'Measuring'
             $list = Get-HostTransferEntries -Path $Path
         }
         $entries = $list.Entries
@@ -42,7 +42,7 @@ function Send-GpuVMFile {
         $receiving = $true
         # Room for the copy and for the VM to keep working.
         if ($total + 512MB -gt $receiver.Free) {
-            throw "No cabe: son $([math]::Ceiling($total / 1MB)) MB y $Name tiene $([math]::Floor($receiver.Free / 1MB)) MB libres."
+            throw "It doesn't fit: it's $([math]::Ceiling($total / 1MB)) MB and $Name has $([math]::Floor($receiver.Free / 1MB)) MB free."
         }
         $pipe = New-TransferPipe -Session $target -Id $TransferId -Total $total -Marker $marker
         $buffer = [byte[]]::new($script:TransferChunk)
@@ -72,7 +72,7 @@ function Send-GpuVMFile {
                     $left -= $n
                 }
                 # The archive says how long the file is: one that shrank while it was read can't be completed.
-                if ($left -ne 0) { throw "$($entry.Rel) cambió mientras se enviaba; vuelve a intentarlo." }
+                if ($left -ne 0) { throw "$($entry.Rel) changed while it was sent; try again." }
             }
             finally { $stream.Dispose() }
             $pad = (512 - ($entry.Size % 512)) % 512
@@ -85,13 +85,13 @@ function Send-GpuVMFile {
         if ($big.Count) { Copy-TransferBigFiles -Name $Name -FromVM $FromVM -Big $big.ToArray() -Staging $receiver.Staging -Pipe $pipe }
         $receiving = $false
         $done = Close-GuestReceiver -Session $target -Id $TransferId
-        if (-not $done.Ok) { throw "La máquina no pudo guardar los archivos. $($done.Error)" }
-        Write-Step "Listo en el escritorio de $Name, carpeta $Folder"
-        if ($list.Skipped) { Write-Warning "Se omitieron $($list.Skipped) enlaces (accesos a otras carpetas)." }
+        if (-not $done.Ok) { throw "The machine couldn't save the files. $($done.Error)" }
+        Write-Step "Ready on $Name's desktop, in $Folder"
+        if ($list.Skipped) { Write-Warning "$($list.Skipped) links (shortcuts to other folders) were skipped." }
         [ordered]@{ name = $Name; from = $FromVM; folder = $Folder; items = @($done.Names); files = $files; bytes = $total }
     }
     catch [OperationCanceledException] {
-        throw 'Envío cancelado.'
+        throw 'Copy cancelled.'
     }
     finally {
         if ($receiving) { try { $null = Close-GuestReceiver -Session $target -Id $TransferId -Cancel } catch { } }

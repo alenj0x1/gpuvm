@@ -178,7 +178,7 @@ fn needs_consent(request: &Value) -> bool {
 fn check_paths_as_client(pipe: HANDLE, request: &Value) -> Result<(), String> {
     for (path, kind) in host_paths(request) {
         if !is_plain_local_path(&path) {
-            return Err(format!("{path} no es una ruta de un disco de este equipo."));
+            return Err(format!("{path} isn't a path on a disk of this PC."));
         }
         if unsafe { ImpersonateNamedPipeClient(pipe) } == 0 {
             return Err(last_error("ImpersonateNamedPipeClient"));
@@ -186,7 +186,7 @@ fn check_paths_as_client(pipe: HANDLE, request: &Value) -> Result<(), String> {
         let result = check_access(&path, kind);
         if unsafe { RevertToSelf() } == 0 {
             // Never keep running as someone else: stop the service rather than continue impersonating.
-            log("RevertToSelf falló; el servicio se detiene");
+            log("RevertToSelf failed; the service stops");
             std::process::exit(1);
         }
         result?;
@@ -231,7 +231,7 @@ fn spawn_bridge(token: &Handle) -> Result<Bridge, String> {
     let code = dir.join("gpuvm");
     let script = code.join("src").join("bridge.ps1");
     if !pwsh.exists() || !script.exists() {
-        return Err("Faltan archivos de GpuVM. Vuelve a instalarlo.".into());
+        return Err("Some GpuVM files are missing. Install it again.".into());
     }
     let _guard = SPAWN.lock().unwrap();
     unsafe {
@@ -314,7 +314,7 @@ fn identify(pipe: HANDLE) -> Result<Client, String> {
     let image = process_image(process.0)?;
     let allowed = install_dir().join("gpuvm.exe");
     if !image.as_os_str().eq_ignore_ascii_case(allowed.as_os_str()) {
-        return Err(format!("programa no permitido: {}", image.display()));
+        return Err(format!("program not allowed: {}", image.display()));
     }
     let token = process_token(process.0)?;
     Ok(Client { pid, sid: token_sid(token.0)?, session: session_of(pid), elevated: token_elevated(token.0)? })
@@ -328,7 +328,7 @@ fn handle(pipe: HANDLE) {
     let client = match identify(pipe) {
         Ok(c) => c,
         Err(reason) => {
-            log(&format!("rechazado: {reason}"));
+            log(&format!("rejected: {reason}"));
             return;
         }
     };
@@ -344,7 +344,7 @@ fn handle(pipe: HANDLE) {
             return;
         }
         let Ok(request) = serde_json::from_str::<Value>(&line) else {
-            send(&mut out, &json!({ "type": "result", "ok": false, "error": "Petición no válida." }));
+            send(&mut out, &json!({ "type": "result", "ok": false, "error": "Invalid request." }));
             continue;
         };
         let id = request["id"].clone();
@@ -353,7 +353,7 @@ fn handle(pipe: HANDLE) {
         // An elevated gpuvm.exe (after the user said yes in UAC) confirms a pending deletion.
         if let Some(nonce) = request["consent"].as_str().filter(|_| request["cmd"].is_null()) {
             let ok = client.elevated && approve_consent(nonce, &client.sid);
-            log(&format!("confirmación {}", if ok { "aceptada" } else { "rechazada" }));
+            log(&format!("confirmation {}", if ok { "accepted" } else { "rejected" }));
             send(&mut out, &json!({ "type": "consent", "ok": ok }));
             continue;
         }
@@ -364,21 +364,21 @@ fn handle(pipe: HANDLE) {
             continue;
         }
         if STOPPING.load(Ordering::SeqCst) {
-            fail(&mut out, "El servicio de GpuVM se está deteniendo.".into());
+            fail(&mut out, "The GpuVM service is stopping.".into());
             return;
         }
         let Some(cmd) = request["cmd"].as_str() else {
-            fail(&mut out, "Petición no válida.".into());
+            fail(&mut out, "Invalid request.".into());
             continue;
         };
         if needs_consent(&request) {
             let confirmed = request["consent"].as_str().is_some_and(|n| take_consent(n, client.pid, &request));
             if !confirmed {
                 let nonce = new_consent(client.pid, &client.sid, &request);
-                send(&mut out, &json!({ "id": id, "type": "result", "ok": false, "error": "Hace falta confirmarlo como administrador.", "consent": nonce }));
+                send(&mut out, &json!({ "id": id, "type": "result", "ok": false, "error": "This needs your confirmation as administrator.", "consent": nonce }));
                 continue;
             }
-            log(&format!("{cmd} confirmado"));
+            log(&format!("{cmd} confirmed"));
         }
         if let Err(e) = check_paths_as_client(pipe, &request) {
             fail(&mut out, e);
@@ -388,7 +388,7 @@ fn handle(pipe: HANDLE) {
             match elevated_user_token(client.session, &client.sid).and_then(|t| spawn_bridge(&t)) {
                 Ok(b) => bridge = Some(b),
                 Err(e) => {
-                    log(&format!("puente: {e}"));
+                    log(&format!("bridge: {e}"));
                     fail(&mut out, e);
                     return;
                 }
@@ -398,18 +398,18 @@ fn handle(pipe: HANDLE) {
         let _busy = Busy::start();
         let forward = json!({ "id": id, "cmd": cmd, "args": request["args"] }).to_string();
         if writeln!(b.stdin, "{forward}").and_then(|_| b.stdin.flush()).is_err() {
-            fail(&mut out, "PowerShell dejó de responder.".into());
+            fail(&mut out, "PowerShell stopped responding.".into());
             return;
         }
         // Relay every event (progress, warnings) until this request's result. If the app goes away meanwhile
-        // (it quit, or "apagar al salir" sent its last request) the request still finishes: never stop halfway.
+        // (it quit, or "shut down on quit" sent its last request) the request still finishes: never stop halfway.
         let mut client_gone = false;
         let mut event = String::new();
         loop {
             event.clear();
             if b.stdout.read_line(&mut event).unwrap_or(0) == 0 {
                 if !client_gone {
-                    fail(&mut out, "PowerShell dejó de responder.".into());
+                    fail(&mut out, "PowerShell stopped responding.".into());
                 }
                 return;
             }
@@ -471,7 +471,7 @@ pub fn serve() {
                 DisconnectNamedPipe(pipe.0);
             }
             if CONNECTIONS.fetch_sub(1, Ordering::SeqCst) == 1 && STOP_WHEN_IDLE.load(Ordering::SeqCst) {
-                log("detenido al salir de GpuVM");
+                log("stopped when GpuVM quit");
                 crate::stop_now();
             }
         });

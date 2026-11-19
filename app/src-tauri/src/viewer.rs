@@ -72,7 +72,7 @@ struct Viewer {
     last_toggle: Mutex<Option<Instant>>,
     /// When the viewer last reported a drag (same limit as the panel).
     last_drag: Mutex<Option<Instant>>,
-    /// The machine opens full screen (its "Pantalla completa" option): it still starts inside the app, hidden, and
+    /// The machine opens full screen (its "Full screen" option): it still starts inside the app, hidden, and
     /// goes full screen when revealed.
     full_screen: bool,
 }
@@ -161,7 +161,7 @@ fn allow_foreground(pid: u32) {
     unsafe { AllowSetForegroundWindow(pid) };
 }
 
-/// Who waits for a viewer's first picture (the "Abrir" job), by machine name.
+/// Who waits for a viewer's first picture (the "Open" job), by machine name.
 static WAITERS: Mutex<Option<HashMap<String, std::sync::mpsc::Sender<Value>>>> = Mutex::new(None);
 
 /// Open viewers by machine name.
@@ -203,7 +203,7 @@ fn random_hex(bytes: usize) -> Result<String, String> {
     // SAFETY: the buffer is valid for its length; the system RNG needs no algorithm handle.
     let status = unsafe { BCryptGenRandom(std::ptr::null_mut(), buffer.as_mut_ptr(), buffer.len() as u32, BCRYPT_USE_SYSTEM_PREFERRED_RNG) };
     if status != 0 {
-        return Err("No se pudo generar una clave para el visor.".into());
+        return Err("Couldn't create a key for the viewer.".into());
     }
     Ok(buffer.iter().map(|b| format!("{b:02x}")).collect())
 }
@@ -214,7 +214,7 @@ fn current_user_sid() -> Result<String, String> {
     unsafe {
         let mut token: HANDLE = std::ptr::null_mut();
         if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
-            return Err("No se pudo leer el usuario actual.".into());
+            return Err("Couldn't read the current user.".into());
         }
         let mut size = 0u32;
         GetTokenInformation(token, TokenUser, std::ptr::null_mut(), 0, &mut size);
@@ -222,12 +222,12 @@ fn current_user_sid() -> Result<String, String> {
         let ok = GetTokenInformation(token, TokenUser, buffer.as_mut_ptr().cast(), size, &mut size);
         CloseHandle(token);
         if ok == 0 {
-            return Err("No se pudo leer el usuario actual.".into());
+            return Err("Couldn't read the current user.".into());
         }
         let user = &*(buffer.as_ptr() as *const TOKEN_USER);
         let mut text: *mut u16 = std::ptr::null_mut();
         if ConvertSidToStringSidW(user.User.Sid, &mut text) == 0 {
-            return Err("No se pudo leer el usuario actual.".into());
+            return Err("Couldn't read the current user.".into());
         }
         let len = (0..).take_while(|&i| *text.add(i) != 0).count();
         let sid = String::from_utf16_lossy(std::slice::from_raw_parts(text, len));
@@ -350,7 +350,7 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
     let mut sd = std::ptr::null_mut();
     // SAFETY: valid NUL-terminated SDDL; the descriptor is freed after the pipe is created.
     if unsafe { ConvertStringSecurityDescriptorToSecurityDescriptorW(wide(&sddl).as_ptr(), SDDL_REVISION_1, &mut sd, std::ptr::null_mut()) } == 0 {
-        return Err("No se pudo preparar la conexión con el visor.".into());
+        return Err("Couldn't prepare the connection with the viewer.".into());
     }
     let sa = SECURITY_ATTRIBUTES { nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32, lpSecurityDescriptor: sd, bInheritHandle: 0 };
     // SAFETY: valid name and attributes; the handle is owned by Pipe from here on.
@@ -361,7 +361,7 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
     // SAFETY: allocated by ConvertStringSecurityDescriptorToSecurityDescriptorW.
     unsafe { LocalFree(sd) };
     if handle == INVALID_HANDLE_VALUE {
-        return Err("No se pudo preparar la conexión con el visor.".into());
+        return Err("Couldn't prepare the connection with the viewer.".into());
     }
     let pipe = Pipe(handle);
 
@@ -378,19 +378,19 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
         Err(message.to_string())
     };
     if !wait_connect(pipe.0, child.handle(), Duration::from_secs(20)) {
-        return refuse("El visor no respondió.");
+        return refuse("The viewer didn't respond.");
     }
     let mut client = 0u32;
     // SAFETY: connected pipe handle.
     if unsafe { GetNamedPipeClientProcessId(pipe.0, &mut client) } == 0 || client != pid {
-        return refuse("Otro programa intentó conectarse en lugar del visor.");
+        return refuse("Another program tried to connect instead of the viewer.");
     }
     let mut pending = Vec::new();
     let hello = read_line(pipe.0, &mut pending, Some(Duration::from_secs(10)))
         .and_then(|l| serde_json::from_slice::<Value>(&l).ok())
         .unwrap_or(Value::Null);
     if hello["type"] != "hello" || !same_token(hello["token"].as_str().unwrap_or(""), &token) {
-        return refuse("El visor no se identificó.");
+        return refuse("The viewer didn't identify itself.");
     }
     drop(token);
 
@@ -504,12 +504,12 @@ pub fn launch_in(data: &Value) -> Option<Value> {
     items.into_iter().rev().find_map(|v| v.get("viewerLaunch").filter(|l| l.is_object()).cloned())
 }
 
-/// The end of "Abrir": opens the viewer with the module's arguments and returns once the first picture is decoded
-/// (the button shows "Conectando la imagen" until then), or with the viewer's error in plain words.
+/// The end of "Open": opens the viewer with the module's arguments and returns once the first picture is decoded
+/// (the button shows "Connecting the picture" until then), or with the viewer's error in plain words.
 pub fn open_and_wait(app: &AppHandle, vm: &str, launch: &Value) -> Result<(), String> {
     let arguments: Vec<String> = launch["arguments"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
     if arguments.first().map(String::as_str) != Some("stream") {
-        return Err("El módulo no devolvió cómo abrir la máquina.".into());
+        return Err("The module didn't say how to open the machine.".into());
     }
     // The module quotes the app's name for a command line ("Desktop"); here each argument goes on its own, so the
     // quotes would become part of the name.
@@ -527,7 +527,7 @@ pub fn open_and_wait(app: &AppHandle, vm: &str, launch: &Value) -> Result<(), St
         send_raw(&existing, &json!({ "type": "focus" }));
         return Ok(());
     }
-    let exe = viewer_path().ok_or("El visor de GpuVM no está instalado.")?;
+    let exe = viewer_path().ok_or("GpuVM's viewer isn't installed.")?;
     let (tx, rx) = std::sync::mpsc::channel();
     {
         // One opening per machine at a time (a double click, or a switch from the panel while it connects): a
@@ -535,7 +535,7 @@ pub fn open_and_wait(app: &AppHandle, vm: &str, launch: &Value) -> Result<(), St
         let mut waiters = WAITERS.lock().unwrap_or_else(|e| e.into_inner());
         let waiters = waiters.get_or_insert_with(HashMap::new);
         if waiters.contains_key(vm) {
-            return Err("Esta máquina ya se está abriendo.".into());
+            return Err("This machine is already opening.".into());
         }
         waiters.insert(vm.to_string(), tx);
     }
@@ -564,11 +564,11 @@ pub fn open_and_wait(app: &AppHandle, vm: &str, launch: &Value) -> Result<(), St
     match msg["type"].as_str().unwrap_or("") {
         "first-frame" => Ok(()),
         // Text from the streaming host (untrusted): kept short.
-        "error" => Err(msg["message"].as_str().unwrap_or("El visor no pudo conectarse.").chars().take(200).collect()),
-        "app-running" => Err("La máquina tiene otra sesión abierta. Ciérrala e inténtalo de nuevo.".into()),
-        "stage-failed" => Err(format!("No se pudo conectar ({}).", msg["stage"].as_str().unwrap_or("?"))),
+        "error" => Err(msg["message"].as_str().unwrap_or("The viewer couldn't connect.").chars().take(200).collect()),
+        "app-running" => Err("The machine has another session open. Close it and try again.".into()),
+        "stage-failed" => Err(format!("Couldn't connect ({}).", msg["stage"].as_str().unwrap_or("?"))),
         // The viewer's last message on every exit ("ended"), or its pipe closing.
-        "closed" | "ended" => Err("El visor se cerró antes de mostrar la imagen.".into()),
+        "closed" | "ended" => Err("The viewer closed before showing the picture.".into()),
         // Still connecting: the viewer stays open and shows the picture when it comes.
         _ => Ok(()),
     }
@@ -591,13 +591,13 @@ pub async fn viewer_send(vm: String, msg: Value) -> Result<(), String> {
 pub fn send_to(vm: &str, msg: &Value) -> Result<(), String> {
     let kind = msg["type"].as_str().unwrap_or("");
     if !TO_VIEWER.contains(&kind) {
-        return Err("Orden no válida para el visor.".into());
+        return Err("Invalid command for the viewer.".into());
     }
-    let viewer = viewers().as_ref().and_then(|v| v.get(vm).cloned()).ok_or("El visor de esta máquina no está abierto.")?;
+    let viewer = viewers().as_ref().and_then(|v| v.get(vm).cloned()).ok_or("This machine's viewer isn't open.")?;
     if kind == "fullscreen" {
         allow_raise(&viewer);
     }
-    if send_raw(&viewer, msg) { Ok(()) } else { Err("El visor no respondió.".into()) }
+    if send_raw(&viewer, msg) { Ok(()) } else { Err("The viewer didn't respond.".into()) }
 }
 
 /// The same message to every open viewer (settings that apply to all of them).
@@ -657,7 +657,7 @@ fn reveal(viewer: &Viewer) {
 /// The app finished zooming into the machine: the picture comes out from behind it.
 #[tauri::command]
 pub async fn viewer_reveal(vm: String) -> Result<(), String> {
-    let viewer = viewers().as_ref().and_then(|v| v.get(&vm).cloned()).ok_or("El visor de esta máquina no está abierto.")?;
+    let viewer = viewers().as_ref().and_then(|v| v.get(&vm).cloned()).ok_or("This machine's viewer isn't open.")?;
     if !viewer.visible.load(Ordering::Relaxed) {
         reveal(&viewer);
     }
@@ -668,17 +668,17 @@ pub async fn viewer_reveal(vm: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn viewer_home(app: AppHandle, vm: String, keep: bool) -> Result<(), String> {
     crate::overlay::close(&app);
-    let viewer = viewers().as_ref().and_then(|v| v.get(&vm).cloned()).ok_or("El visor de esta máquina no está abierto.")?;
+    let viewer = viewers().as_ref().and_then(|v| v.get(&vm).cloned()).ok_or("This machine's viewer isn't open.")?;
     viewer.visible.store(false, Ordering::Relaxed);
     announce_cover();
     let msg = if keep { json!({ "type": "hide" }) } else { json!({ "type": "quit" }) };
-    if send_raw(&viewer, &msg) { Ok(()) } else { Err("El visor no respondió.".into()) }
+    if send_raw(&viewer, &msg) { Ok(()) } else { Err("The viewer didn't respond.".into()) }
 }
 
 /// Back to a machine still connected: its picture shows again over the app (or full screen).
 #[tauri::command]
 pub async fn viewer_show(app: AppHandle, vm: String) -> Result<(), String> {
-    let viewer = viewers().as_ref().and_then(|v| v.get(&vm).cloned()).ok_or("El visor de esta máquina no está abierto.")?;
+    let viewer = viewers().as_ref().and_then(|v| v.get(&vm).cloned()).ok_or("This machine's viewer isn't open.")?;
     if viewer.embed {
         if let Some((_, x, y, w, h)) = content_rect(&app) {
             send_raw(&viewer, &json!({ "type": "place", "x": x, "y": y, "w": w, "h": h }));
@@ -688,7 +688,7 @@ pub async fn viewer_show(app: AppHandle, vm: String) -> Result<(), String> {
     // Coming back to a full-screen picture: its next full-screen report raises it.
     allow_raise(&viewer);
     if !send_raw(&viewer, &json!({ "type": "show" })) {
-        return Err("El visor no respondió.".into());
+        return Err("The viewer didn't respond.".into());
     }
     viewer.visible.store(true, Ordering::Relaxed);
     viewer.revealed.store(true, Ordering::Relaxed);

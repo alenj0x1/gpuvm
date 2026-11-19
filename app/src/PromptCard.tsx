@@ -45,21 +45,21 @@ export function PromptCard() {
     <div className="prompt-card" role="alertdialog" aria-labelledby="prompt-title">
       <div className="prompt-head">
         <span className="prompt-icon"><IconShieldLock size={18} /></span>
-        <strong id="prompt-title">{t("{name} pide permiso de administrador", { name: prompt.name })}</strong>
+        <strong id="prompt-title">{t("{name} asks for administrator permission", { name: prompt.name })}</strong>
       </div>
       <div className="prompt-app">
         {prompt.reading ? <><span className="prompt-name skeleton-line" /><span className="prompt-publisher skeleton-line short" /></> : <>
-          <span className="prompt-name">{prompt.app ? translateModule(prompt.app) : t("Un programa")}</span>
-          <span className={unknown ? "prompt-publisher unknown" : "prompt-publisher"}>{unknown ? t("Editor desconocido") : prompt.publisher}</span>
+          <span className="prompt-name">{prompt.app ? translateModule(prompt.app) : t("A program")}</span>
+          <span className={unknown ? "prompt-publisher unknown" : "prompt-publisher"}>{unknown ? t("Unknown publisher") : prompt.publisher}</span>
         </>}
       </div>
       {error && <span className="error-text">{error}</span>}
       <div className="prompt-actions">
         <button type="button" className="btn ghost" disabled={!!busy || !!prompt.reading} onClick={() => answer("Deny")}>
-          {busy === "Deny" ? <IconLoader2 size={16} className="spin" /> : <IconX size={16} />}{t("Rechazar")}
+          {busy === "Deny" ? <IconLoader2 size={16} className="spin" /> : <IconX size={16} />}{t("Deny")}
         </button>
         <button type="button" className="primary compact" disabled={!!busy || !!prompt.reading} onClick={() => answer("Allow")}>
-          {busy === "Allow" ? <IconLoader2 size={16} className="spin" /> : <IconCheck size={16} />}{t("Permitir")}
+          {busy === "Allow" ? <IconLoader2 size={16} className="spin" /> : <IconCheck size={16} />}{t("Allow")}
         </button>
       </div>
     </div>

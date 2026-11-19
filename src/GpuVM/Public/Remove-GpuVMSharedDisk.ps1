@@ -8,8 +8,8 @@ function Remove-GpuVMSharedDisk {
     Assert-Admin
     $disk = Read-SharedDisk -Name $Name
     $attachment = Get-SharedDiskAttachment -Path $disk['path']
-    if ($attachment) { throw "El disco '$Name' está conectado a '$($attachment.VMName)'; desconéctalo primero." }
-    if (-not $PSCmdlet.ShouldProcess($Name, 'Eliminar disco compartido')) { return }
+    if ($attachment) { throw "The disk '$Name' is connected to '$($attachment.VMName)'; disconnect it first." }
+    if (-not $PSCmdlet.ShouldProcess($Name, 'Delete shared disk')) { return }
     Remove-Item -LiteralPath $disk['path'], ([IO.Path]::ChangeExtension($disk['path'], '.json')) -Force -ErrorAction SilentlyContinue
-    Write-Step "Disco '$Name' eliminado"
+    Write-Step "Disk '$Name' deleted"
 }

@@ -24,7 +24,7 @@ function Mount-WindowsIso {
         Select-Object -First 1
     if (-not $imageFile) {
         if (-not $wasAttached) { Dismount-DiskImage -ImagePath $full | Out-Null }
-        throw "El ISO no contiene sources\install.wim ni install.esd: $full"
+        throw "The ISO doesn't contain sources\install.wim or install.esd: $full"
     }
     [pscustomobject]@{ IsoPath = $full; ImageFile = $imageFile; WasAttached = $wasAttached }
 }
@@ -48,7 +48,7 @@ function Select-WindowsEdition {
         $match = $Editions | Where-Object { $_.Name -match " $([regex]::Escape($Edition))$" } | Select-Object -First 1
     }
     if (-not $match) {
-        throw "No hay edición '$Edition' en la imagen. Disponibles: $(($Editions.Name) -join ', ')"
+        throw "There's no '$Edition' edition in the image. Available: $(($Editions.Name) -join ', ')"
     }
     $match
 }
@@ -78,18 +78,18 @@ function New-WindowsVhdx {
         [string]$Language,
         [scriptblock]$Customize
     )
-    if (Test-Path -LiteralPath $Path) { throw "Ya existe el disco $Path." }
+    if (Test-Path -LiteralPath $Path) { throw "The disk $Path already exists." }
     $base = Get-WindowsBaseDisk -ImageFile $ImageFile -ImageIndex $ImageIndex -Edition $Edition -Language $Language
     if ($Type -eq 'Fixed') {
         # Hyper-V writes the whole fixed disk; it can't be run at low priority.
-        Write-Step "Creando disco fijo de $SizeGB GB (escribe el disco entero; tarda unos minutos)"
+        Write-Step "Creating a fixed $SizeGB GB disk (it writes the whole disk; takes a few minutes)"
         Convert-VHD -Path $base -DestinationPath $Path -VHDType Fixed -ErrorAction Stop
         (Get-Item -LiteralPath $Path).IsReadOnly = $false
     }
     else {
-        Write-Step 'Copiando Windows al disco de la máquina'
+        Write-Step 'Copying Windows to the machine''s disk'
         $copy = Copy-PacedFile -Source $base -Destination $Path
-        Write-Step ('Windows copiado ({0:N0} s, {1:N0} MB/s, {2} pausas para no frenar el equipo)' -f $copy[0], $copy[1], $copy[2])
+        Write-Step ('Windows copied ({0:N0} s, {1:N0} MB/s, {2} pauses to keep your PC responsive)' -f $copy[0], $copy[1], $copy[2])
     }
     Resize-VHD -Path $Path -SizeBytes ([uint64]$SizeGB * 1GB)
     Invoke-WithMountedWindows -Path $Path -ExpandPartition -ScriptBlock {
@@ -107,7 +107,7 @@ function New-WindowsBaseVhdx {
         [Parameter(Mandatory)][string]$ImageFile,
         [Parameter(Mandatory)][int]$ImageIndex
     )
-    Write-Step "Preparando Windows de este ISO (solo la primera vez, 5 a 15 minutos; el equipo sigue libre)"
+    Write-Step "Preparing Windows from this ISO (first time only, 5 to 15 minutes; you can keep using your PC)"
     New-VHD -Path $Path -SizeBytes ([uint64]$script:BaseDiskGB * 1GB) -Dynamic | Out-Null
     Mount-VHD -Path $Path -NoDriveLetter
     $mountRoot = Get-GpuVMMountRoot
@@ -135,10 +135,10 @@ function New-WindowsBaseVhdx {
 
         $dism = Join-Path $env:SystemRoot 'System32\Dism.exe'
         $code = Invoke-LowPriority -FilePath $dism -ArgumentList '/Apply-Image', "/ImageFile:$ImageFile", "/Index:$ImageIndex", "/ApplyDir:$($folders.os)"
-        if ($code -ne 0) { throw "DISM falló al aplicar la imagen (código $code; detalle en $env:SystemRoot\Logs\DISM\dism.log)." }
+        if ($code -ne 0) { throw "DISM failed to apply the image (code $code; details in $env:SystemRoot\Logs\DISM\dism.log)." }
 
         & (Join-Path $env:SystemRoot 'System32\bcdboot.exe') "$($folders.os)\Windows" /s "$($folders.efi)" /f UEFI | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "bcdboot falló (código $LASTEXITCODE)." }
+        if ($LASTEXITCODE -ne 0) { throw "bcdboot failed (code $LASTEXITCODE)." }
     }
     finally {
         foreach ($pair in $mounted) {
@@ -161,7 +161,7 @@ function Get-GpuVMMountRoot {
     $mount = Join-Path $base 'mount'
     if (-not (Test-Path -LiteralPath $mount)) { New-Item -ItemType Directory -Path $mount | Out-Null }
     if ((Get-Item -LiteralPath $mount -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
-        throw "$mount es un enlace a otra carpeta; GpuVM no montará discos ahí."
+        throw "$mount is a link to another folder; GpuVM won't mount disks there."
     }
     $mount
 }
@@ -187,7 +187,7 @@ function Invoke-WithMountedWindows {
             Where-Object GptType -eq $script:GptTypes.Basic |
             Sort-Object Size -Descending |
             Select-Object -First 1
-        if (-not $os) { throw "No se encontró la partición de Windows en $Path." }
+        if (-not $os) { throw "The Windows partition wasn't found in $Path." }
         # A letter left by an earlier mount is removed so the volume is only reachable through the folder.
         if ($os.DriveLetter) {
             Remove-PartitionAccessPath -DiskNumber $diskNumber -PartitionNumber $os.PartitionNumber -AccessPath "$($os.DriveLetter):\"
@@ -198,7 +198,7 @@ function Invoke-WithMountedWindows {
         }
         Add-PartitionAccessPath -DiskNumber $diskNumber -PartitionNumber $os.PartitionNumber -AccessPath "$accessPath\"
         $root = "$accessPath\"
-        if (-not (Test-Path -LiteralPath (Join-Path $root 'Windows\System32'))) { throw "La partición de $Path no contiene Windows." }
+        if (-not (Test-Path -LiteralPath (Join-Path $root 'Windows\System32'))) { throw "The partition in $Path doesn't contain Windows." }
         & $ScriptBlock $root
     }
     finally {

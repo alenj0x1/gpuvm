@@ -4,11 +4,11 @@
 
 $GpuVMOptimizations = [ordered]@{
     'power-plan-high'            = @{
-        Description = 'Plan de energía "Alto rendimiento".'
+        Description = '"High performance" power plan.'
         Apply       = { powercfg.exe /setactive SCHEME_MIN | Out-Null }
     }
     'power-plan-ultimate'        = @{
-        Description = 'Plan "Máximo rendimiento" (Ultimate Performance); si no está disponible, Alto rendimiento.'
+        Description = '"Ultimate Performance" plan; High performance if it isn''t available.'
         Apply       = {
             $ultimate = 'e9a42b02-d5df-448d-aa00-03f14749eb61'
             $output = powercfg.exe /duplicatescheme $ultimate 2>&1 | Out-String
@@ -21,7 +21,7 @@ $GpuVMOptimizations = [ordered]@{
         }
     }
     'disable-sleep'              = @{
-        Description = 'Sin suspensión, hibernación ni apagado de pantalla (cortan el streaming).'
+        Description = 'No sleep, hibernation or display turning off (they cut the stream).'
         Apply       = {
             powercfg.exe /hibernate off | Out-Null
             powercfg.exe /change standby-timeout-ac 0 | Out-Null
@@ -29,7 +29,7 @@ $GpuVMOptimizations = [ordered]@{
         }
     }
     'game-mode'                  = @{
-        Description = 'Modo de juego de Windows activado.'
+        Description = 'Windows Game Mode on.'
         Apply       = {
             $key = 'HKCU:\Software\Microsoft\GameBar'
             if (-not (Test-Path $key)) { New-Item $key -Force | Out-Null }
@@ -38,21 +38,21 @@ $GpuVMOptimizations = [ordered]@{
         }
     }
     'disable-sysmain'            = @{
-        Description = 'Desactiva SysMain (Superfetch); en disco virtual solo agrega E/S.'
+        Description = 'Turns off SysMain (Superfetch); on a virtual disk it only adds I/O.'
         Apply       = {
             Stop-Service SysMain -Force -ErrorAction SilentlyContinue
             Set-Service SysMain -StartupType Disabled
         }
     }
     'disable-search-indexing'    = @{
-        Description = 'Desactiva el indexador de Windows Search.'
+        Description = 'Turns off the Windows Search indexer.'
         Apply       = {
             Stop-Service WSearch -Force -ErrorAction SilentlyContinue
             Set-Service WSearch -StartupType Disabled
         }
     }
     'block-gpu-driver-updates'   = @{
-        Description = 'Windows Update no instala drivers: uno de NVIDIA encima del copiado del host deja la VM sin GPU.'
+        Description = 'Windows Update doesn''t install drivers: an NVIDIA one over the driver copied from the host leaves the VM without a GPU.'
         Apply       = {
             $key = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate'
             if (-not (Test-Path $key)) { New-Item $key -Force | Out-Null }
@@ -61,7 +61,7 @@ $GpuVMOptimizations = [ordered]@{
         }
     }
     'visual-effects-performance' = @{
-        Description = 'Efectos visuales ajustados para rendimiento.'
+        Description = 'Visual effects set for performance.'
         Apply       = {
             $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects'
             if (-not (Test-Path $key)) { New-Item $key -Force | Out-Null }

@@ -138,7 +138,7 @@ unsafe fn viewer_job() -> Option<Handle> {
 /// Its token is this app's with every privilege but change-notify removed and the Administrators group made
 /// deny-only, then labelled Low: even when the app runs as administrator, the viewer has no admin rights.
 pub fn spawn_low(exe: &Path, args: &[String], env: &[(&str, &str)]) -> Result<LowChild, String> {
-    let fail = || "No se pudo abrir el visor con permisos reducidos.".to_string();
+    let fail = || "Couldn't open the viewer with reduced rights.".to_string();
     let temp = viewer_data().ok_or_else(fail)?.join("Temp");
     // SAFETY: standard token, job and process calls; every handle and SID is released below.
     unsafe {
