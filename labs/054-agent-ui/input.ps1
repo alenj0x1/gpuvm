@@ -1,17 +1,41 @@
 # Lab 054 helper: the person's mouse moving over the viewer's picture, without touching the real cursor: two
 # WM_MOUSEMOVE messages posted to the viewer's window (SDL turns them into motion events, as for a real move).
 # Prints the Unix ms of the second one, so take-control.mjs can measure input → agent paused.
-#   pwsh -NoProfile -File input.ps1            (the first GpuVMViewer window found)
+#   pwsh -NoProfile -File input.ps1            (the largest visible GpuVMViewer window, top-level or embedded)
+# The viewer is usually embedded in GpuVM's window (a child window, no MainWindowHandle): the first version only
+# looked at top-level windows and its moves never reached the picture (lab 054, 2026-11-19).
 Add-Type -Namespace Lab054 -Name Win -MemberDefinition @'
+[StructLayout(LayoutKind.Sequential)] public struct R { public int L, T, Rt, B; }
 [DllImport("user32.dll")] public static extern bool PostMessageW(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+[DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out R r);
+[DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+public delegate bool EnumProc(IntPtr h, IntPtr l);
+[DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc f, IntPtr l);
+[DllImport("user32.dll")] public static extern bool EnumChildWindows(IntPtr parent, EnumProc f, IntPtr l);
+public static System.Collections.Generic.List<IntPtr> Of(uint[] pids) {
+    var found = new System.Collections.Generic.List<IntPtr>();
+    EnumProc check = (h, l) => { uint p; GetWindowThreadProcessId(h, out p); if (System.Array.IndexOf(pids, p) >= 0 && IsWindowVisible(h)) found.Add(h); return true; };
+    EnumWindows((top, l) => { check(top, l); EnumChildWindows(top, check, IntPtr.Zero); return true; }, IntPtr.Zero);
+    return found;
+}
 '@
-$p = Get-Process GpuVMViewer -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
-if (-not $p) { 'no-viewer'; exit 1 }
-$h = $p.MainWindowHandle
+$ids = @(Get-Process GpuVMViewer -ErrorAction SilentlyContinue | ForEach-Object { [uint32]$_.Id })
+if (-not $ids.Count) { 'no-viewer'; exit 1 }
+$h = [IntPtr]::Zero; $area = 0
+foreach ($w in [Lab054.Win]::Of([uint32[]]$ids)) {
+    $r = New-Object Lab054.Win+R
+    [Lab054.Win]::GetWindowRect($w, [ref]$r) | Out-Null
+    $a = ($r.Rt - $r.L) * ($r.B - $r.T)
+    if ($a -gt $area) { $area = $a; $h = $w }
+}
+if ($h -eq [IntPtr]::Zero) { 'no-viewer'; exit 1 }
 $WM_MOUSEMOVE = 0x0200
 $pos = { param($x, $y) [IntPtr](($y -shl 16) -bor $x) }
-[Lab054.Win]::PostMessageW($h, $WM_MOUSEMOVE, [IntPtr]::Zero, (& $pos 400 300)) | Out-Null
+# A different spot each call, so SDL always sees relative motion.
+$x = 300 + (Get-Random -Maximum 200); $y = 200 + (Get-Random -Maximum 150)
+[Lab054.Win]::PostMessageW($h, $WM_MOUSEMOVE, [IntPtr]::Zero, (& $pos $x $y)) | Out-Null
 Start-Sleep -Milliseconds 20
 $t = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
-[Lab054.Win]::PostMessageW($h, $WM_MOUSEMOVE, [IntPtr]::Zero, (& $pos 430 320)) | Out-Null
+[Lab054.Win]::PostMessageW($h, $WM_MOUSEMOVE, [IntPtr]::Zero, (& $pos ($x + 30) ($y + 20))) | Out-Null
 $t
