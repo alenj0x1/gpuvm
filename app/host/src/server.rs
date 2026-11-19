@@ -468,7 +468,7 @@ fn handle(pipe: HANDLE) {
                 // An agent session's new disposable copy is its own from now on.
                 if parsed["ok"] == json!(true) {
                     if let Some(g) = gated.take() {
-                        g.succeeded();
+                        g.succeeded(&parsed["data"]);
                     }
                 }
                 break;

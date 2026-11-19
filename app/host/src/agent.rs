@@ -461,6 +461,9 @@ struct Broker {
     claims: Mutex<HashMap<String, String>>,
     /// Disposable copies each agent session made (lowercase name → connection): only it may delete one at once.
     made: Mutex<HashMap<String, String>>,
+    /// The VM id of each machine a session made (by name, lowercase): `claims` and `made` are keyed by VM id, so a
+    /// later machine with the same name is never that session's (review 2, #7).
+    names: Mutex<HashMap<String, String>>,
     listener: Mutex<Value>,
     pre_auth: AtomicUsize,
     serial: AtomicU64,
@@ -476,6 +479,7 @@ fn broker() -> &'static Broker {
         requests: Mutex::new(Vec::new()),
         claims: Mutex::new(HashMap::new()),
         made: Mutex::new(HashMap::new()),
+        names: Mutex::new(HashMap::new()),
         listener: Mutex::new(json!({ "listening": false, "error": "starting" })),
         pre_auth: AtomicUsize::new(0),
         serial: AtomicU64::new(1),
@@ -569,6 +573,7 @@ pub fn sweep_registrations() -> Vec<String> {
         })
         .collect();
     let mut removed = Vec::new();
+    prune_made(&existing);
     for name in orphans(&folders, &existing) {
         match std::fs::remove_dir_all(agents_dir().join(&name)) {
             Ok(()) => {
@@ -1692,10 +1697,14 @@ impl Gated {
         Gated { claim: None, approval: None, forget: None }
     }
 
-    /// The command succeeded.
-    pub fn succeeded(mut self) {
+    /// The command succeeded; `data` is its result (New-GpuVM's says the copy's vmId).
+    pub fn succeeded(mut self, data: &Value) {
         if let Some(c) = self.claim.take() {
-            claim(c);
+            let first = data.as_array().and_then(|a| a.first()).unwrap_or(data);
+            match first["vmId"].as_str().and_then(hv::parse_guid) {
+                Some(id) => claim(c, &hv::fmt_guid(id)),
+                None => log(&format!("agent: New-GpuVM gave no vmId for {}; the copy isn't the session's", c.name)),
+            }
         }
         if let Some(id) = self.approval.take() {
             if let Some(r) = lock(&broker().requests).iter_mut().find(|r| r.id == id) {
@@ -1725,8 +1734,24 @@ impl Drop for Gated {
 /// machine with the same name is never that session's (review 2, #7).
 pub fn forget_name(name: &str) {
     let key = name.to_lowercase();
-    lock(&broker().made).remove(&key);
-    lock(&broker().claims).remove(&key);
+    let mut ids: Vec<String> = lock(&broker().names).remove(&key).into_iter().collect();
+    ids.extend(reg_by_name(name).map(|r| r.vm_id));
+    for id in ids {
+        lock(&broker().made).remove(&id);
+        lock(&broker().claims).remove(&id);
+    }
+}
+
+/// The VM id behind a machine name: its agent's registration, or the copy a session made under that name.
+fn id_of_name(name: &str) -> Option<String> {
+    reg_by_name(name).map(|r| r.vm_id).or_else(|| lock(&broker().names).get(&name.to_lowercase()).cloned())
+}
+
+/// Forgets what sessions made or claimed for VMs Hyper-V no longer has (deleted outside GpuVM).
+fn prune_made(existing: &[String]) {
+    lock(&broker().made).retain(|id, _| existing.contains(id));
+    lock(&broker().claims).retain(|id, _| existing.contains(id));
+    lock(&broker().names).retain(|_, id| existing.contains(id));
 }
 
 /// Counts one step of an agent session through the service, like a guest request: a stopped session or one past its
@@ -1797,7 +1822,7 @@ pub fn gate(request: &mut Value, pid: u32, agent_pipe: bool) -> Result<Gated, Cm
     if cmd == "Remove-GpuVMDisposable" {
         // Deleting one disposable machine at once (no grace, no approval, no UAC): only a copy this very session made
         // (the module also checks it is disposable and off). The general sweep (no Name) stays allowed.
-        if !name.is_empty() && !lock(&broker().made).get(&name.to_lowercase()).is_some_and(|c| mine.contains(c)) {
+        if !name.is_empty() && !id_of_name(name).and_then(|id| lock(&broker().made).get(&id).cloned()).is_some_and(|c| mine.contains(&c)) {
             return err("denied", format!("An agent session can only delete the disposable machines it made, and '{name}' isn't one."));
         }
     } else if !cmd.starts_with("Get-") {
@@ -1875,29 +1900,32 @@ pub struct Claim {
 }
 
 /// Called by the service once New-GpuVM succeeded for an agent session (only then: a failed one leaves nothing).
-pub fn claim(c: Claim) {
+pub fn claim(c: Claim, vm_id: &str) {
     if lock(&broker().clients).contains_key(&c.connection) {
-        lock(&broker().made).insert(c.name.to_lowercase(), c.connection.clone());
-        lock(&broker().claims).insert(c.name.to_lowercase(), c.connection);
+        lock(&broker().names).insert(c.name.to_lowercase(), vm_id.to_string());
+        lock(&broker().made).insert(vm_id.to_string(), c.connection.clone());
+        lock(&broker().claims).insert(vm_id.to_string(), c.connection);
     }
 }
 
 /// Who holds a machine: the session that took it, or the one that created it while its agent isn't registered yet
 /// (the claim becomes the machine's taker as soon as it is).
 fn owner_of_name(name: &str) -> Option<String> {
-    let key = name.to_lowercase();
     match reg_by_name(name) {
         Some(reg) => {
+            // The claim (by this VM's id) and whether its session still exists, before the machines' lock: clients
+            // are always locked first.
+            let claim = lock(&broker().claims).remove(&reg.vm_id).filter(|c| lock(&broker().clients).contains_key(c));
             let mut machines = lock(&broker().machines);
             let m = machines.entry(reg.vm_id.clone()).or_default();
-            if let Some(c) = lock(&broker().claims).remove(&key) {
-                if m.taken_by.is_none() && lock(&broker().clients).contains_key(&c) {
+            if let Some(c) = claim {
+                if m.taken_by.is_none() {
                     m.taken_by = Some(c);
                 }
             }
             m.taken_by.clone()
         }
-        None => lock(&broker().claims).get(&key).cloned(),
+        None => lock(&broker().names).get(&name.to_lowercase()).cloned().and_then(|id| lock(&broker().claims).get(&id).cloned()),
     }
 }
 
@@ -2490,7 +2518,7 @@ pub(crate) mod tests {
         assert!(r["args"].get("Connection").is_none());
         assert_eq!(r["args"]["ForAgent"], true); // the module copies only an agent template, as an agent machine
         assert_eq!(gate_code("Install-GpuVMAgent", json!({ "Name": "Copy1" }), 100), "not_taken"); // New-GpuVM didn't finish yet
-        c.succeeded();
+        c.succeeded(&json!([{ "name": "Copy1", "vmId": "3a4b5c6d-7e8f-4a1b-9c2d-3e4f5a6b7c8d" }]));
         assert_eq!(gate_code("Install-GpuVMAgent", json!({ "Name": "Copy1" }), 100), "ok");
         assert_eq!(gate_code("Install-GpuVMAgent", json!({ "Name": "Copy1" }), 200), "taken");
         assert_eq!(gate_code("Install-GpuVMAgent", json!({ "Name": "Test1" }), 200), "taken");
@@ -2524,7 +2552,7 @@ pub(crate) mod tests {
         let mut r = json!({ "cmd": "Restore-GpuVMRestorePoint", "args": { "Name": "Test1", "Approval": rid } });
         let held = gate(&mut r, 100, false).unwrap();
         assert_eq!(gate_code("Restore-GpuVMRestorePoint", json!({ "Name": "Test1", "Approval": rid }), 100), "needs_approval"); // in use
-        held.succeeded();
+        held.succeeded(&Value::Null);
         assert!(r["args"].get("Approval").is_none()); // the bridge never sees it
         assert_eq!(gate_code("Restore-GpuVMRestorePoint", json!({ "Name": "Test1", "Approval": rid }), 100), "needs_approval"); // used once
         let src = dir.join("to-send");
@@ -2555,7 +2583,7 @@ pub(crate) mod tests {
         command("Resolve-GpuVMAgentRequest", &json!({ "Id": sid, "Allow": true, "ForTask": true }), &mut app).unwrap();
         assert_eq!(gate_code("Send-GpuVMFile", json!({ "Name": "Test1", "Path": [path], "Approval": sid }), 200), "taken");
         let mut r = json!({ "cmd": "Send-GpuVMFile", "args": { "Name": "Test1", "Path": [path.to_uppercase()], "Approval": sid } });
-        gate(&mut r, 100, false).unwrap().succeeded();
+        gate(&mut r, 100, false).unwrap().succeeded(&Value::Null);
         assert_eq!(send(&sid, &path), "needs_approval"); // once, even when asked "for the task"
         let sid = ask(&mut mcp);
         command("Resolve-GpuVMAgentRequest", &json!({ "Id": sid, "Allow": true }), &mut app).unwrap();
@@ -2598,6 +2626,12 @@ pub(crate) mod tests {
         assert_eq!(code(command("Set-GpuVMAgentSettings", &json!({ "MaxSteps": 5 }), &mut was_agent)), "denied");
         assert_eq!(code(command("Resolve-GpuVMAgentRequest", &json!({ "Id": "x", "Allow": true }), &mut was_agent)), "denied");
         // A deleted (or renamed) machine's name is no longer what a session made.
+        // A copy made under another name with no vmId in the result is nobody's.
+        let mut r = json!({ "cmd": "New-GpuVM", "args": { "Name": "Copy2", "Template": "t", "Disposable": true, "Connection": id } });
+        gate(&mut r, 100, false).unwrap().succeeded(&json!([{ "name": "Copy2" }]));
+        assert_eq!(gate_code("Remove-GpuVMDisposable", json!({ "Name": "Copy2" }), 100), "denied");
+        // What a session made is known by the VM's id: once the name is gone, a new machine with it isn't the session's.
+        assert_eq!(gate_code("Remove-GpuVMDisposable", json!({ "Name": "copy1" }), 100), "ok");
         forget_name("Copy1");
         assert_eq!(gate_code("Remove-GpuVMDisposable", json!({ "Name": "Copy1" }), 100), "denied");
         for c in lock(&broker().clients).values_mut() {
