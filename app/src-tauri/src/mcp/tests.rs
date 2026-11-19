@@ -612,3 +612,17 @@ fn ready_when_the_signed_in_event_came_after_a_stale_snapshot() {
     // Nobody signed in (no event): not ready.
     h.fake.with(|s| s.machines.iter_mut().find(|x| x.name == "work-pc").unwrap().stale_snapshot = false);
 }
+
+#[test]
+fn a_copy_with_no_display_fails_at_once_and_is_deleted() {
+    let mut h = H::new(false);
+    h.fake.with(|s| s.next_no_display = true);
+    let started = Instant::now();
+    let e = h.err("create_disposable", json!({ "template": "win11-agent", "name": "nd1" }));
+    assert!(e.contains("nd1 can't be used: The agent is signed in but has seen no display") && e.contains("deleted again"), "{e}");
+    assert!(started.elapsed() < Duration::from_secs(5), "no 600 s wait");
+    assert!(h.fake.with(|s| !s.machines.iter().any(|m| m.name == "nd1")), "the copy was deleted");
+    // take_machine on such a machine: an error, not "not ready yet".
+    h.fake.with(|s| s.machines.iter_mut().find(|x| x.name == "work-pc").unwrap().no_display = true);
+    assert!(h.err("take_machine", json!({ "machine": "work-pc" })).contains("can't be used"));
+}
