@@ -156,3 +156,11 @@ encoders. Template build with the installed broker: clone ready + agent connecte
 | ui.tree Edge | ~300 ms per call (queried twice every time: 0.3.4 queries twice only the first time a window is seen, not yet measured) |
 | UAC prompt from `agent` | desktop `secure` seen 2.5 s after exec; capture/click/type/ui.tree all refused `secure_desktop`; default again 2 ms after consent.exe was killed; capture works after |
 | csrss hard-error box from `agent` | its window comes to the front (title "GpuVM lab 051", owner unreadable) and a click is refused `blocked_elevated`; not visible in the screenshot and not listed in `errorBoxes` (open) |
+
+**csrss error box, analysis (0.3.6):** two causes, both from the lab's setup and one real bug. (1) `errorBoxes` came back
+empty for the `agent` user: the session filter opened each csrss.exe (ProcessIdToSessionId), which a standard user
+can't do (csrss is protected, SYSTEM-only); lab 049's helper was a filtered admin. Now csrss is found by name in a
+process snapshot without opening it. (2) The box wasn't in the screenshot because `exec.run`'s 3 s timeout killed the
+process that raised it: csrss withdraws the box when its raiser dies, leaving an invisible foreground window with the
+title (hence `blocked_elevated` and nothing on screen). measure-broker.ps1 now starts the raiser detached so the box
+persists, like lab 049's box from a process that failed to start. To verify in the next run.

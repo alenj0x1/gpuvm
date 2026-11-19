@@ -47,12 +47,13 @@ fn session_locked() -> bool {
     }
 }
 
-/// csrss.exe of this session (owner of the system hard-error boxes); found once.
+/// Every csrss.exe (owners of the system hard-error boxes), by name from a process snapshot. No session filter:
+/// that needs to open the process, which a standard user can't do for csrss (protected, SYSTEM-only), so the list
+/// came back empty for `agent` (lab 051). The windows enumerated are this session's anyway. Found once (csrss lives
+/// as long as the session).
 fn csrss_pids() -> &'static Vec<u32> {
     static P: OnceLock<Vec<u32>> = OnceLock::new();
     P.get_or_init(|| unsafe {
-        let mut own = 0u32;
-        let _ = windows::Win32::System::RemoteDesktop::ProcessIdToSessionId(std::process::id(), &mut own);
         let mut v = Vec::new();
         if let Ok(snap) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) {
             let snap = Owned(snap);
@@ -60,10 +61,7 @@ fn csrss_pids() -> &'static Vec<u32> {
             let mut ok = Process32FirstW(snap.0, &mut e).is_ok();
             while ok {
                 if wstr(&e.szExeFile).eq_ignore_ascii_case("csrss.exe") {
-                    let mut s = 0u32;
-                    if windows::Win32::System::RemoteDesktop::ProcessIdToSessionId(e.th32ProcessID, &mut s).is_ok() && s == own {
-                        v.push(e.th32ProcessID);
-                    }
+                    v.push(e.th32ProcessID);
                 }
                 ok = Process32NextW(snap.0, &mut e).is_ok();
             }
