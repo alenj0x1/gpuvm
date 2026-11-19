@@ -5,8 +5,6 @@
 $script:AgentPipeName = 'gpuvm-agent'
 $script:AgentPipe = $null
 $script:AgentPipeIO = $null
-# Hyper-V's Guest Service Interface (Copy-VMFile host -> guest).
-$script:GuestServiceInterfaceId = '6C09BB55-D683-4DA0-8931-C9BF705F6480'
 # Mixed into the DPAPI encryption of each VM's secret; the service uses the same (agent.rs SECRET_ENTROPY).
 $script:AgentSecretEntropy = [Text.Encoding]::ASCII.GetBytes('GpuVM agent secret v1')
 # Inside the guest (protocol.md).
@@ -91,41 +89,25 @@ function Write-AgentSecret {
     Move-Item -LiteralPath $temp -Destination (Join-Path $Folder 'secret') -Force
 }
 
-# Where the guest agent's files are: guest\agent\ in GpuVM's folder. dist\ holds what is copied into the guest.
+
+# The guest agent: guest\agent\install.ps1 and gpuvm-agent.exe (dist\ in an installed GpuVM, target\release\ in a
+# developer's copy). The version is what the exe itself says (`gpuvm-agent.exe version`).
 function Get-AgentPackage {
     $root = Get-RepoPath 'guest\agent'
     $install = Join-Path $root 'install.ps1'
-    $dist = Join-Path $root 'dist'
-    if (-not (Test-Path -LiteralPath $install) -or -not (Test-Path -LiteralPath $dist)) {
-        throw "The guest agent isn't in this GpuVM build ($root)."
-    }
-    $files = @(Get-ChildItem -LiteralPath $dist -File -Recurse)
-    if (-not $files.Count) { throw "The guest agent isn't built ($dist is empty)." }
-    $version = $null
-    $versionFile = Join-Path $root 'VERSION'
-    if (Test-Path -LiteralPath $versionFile) { $version = (Get-Content -Raw -LiteralPath $versionFile).Trim() }
-    [pscustomobject]@{ Root = $root; Install = $install; Dist = $dist; Files = $files; Version = $version }
+    $exe = @((Join-Path $root 'dist\gpuvm-agent.exe'), (Join-Path $root 'target\release\gpuvm-agent.exe')) |
+        Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    if (-not (Test-Path -LiteralPath $install) -or -not $exe) { throw "The guest agent isn't in this GpuVM build ($root)." }
+    $version = try { (& $exe version 2>$null | Out-String).Trim() } catch { $null }
+    [pscustomobject]@{ Install = $install; Exe = $exe; Version = $version; Hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash }
 }
 
-function Get-GuestServiceInterface {
-    param([Parameter(Mandatory)][string]$Name)
-    Get-VMIntegrationService -VMName $Name | Where-Object { $_.Id -like "*$script:GuestServiceInterfaceId" } | Select-Object -First 1
-}
-
-# Copy-VMFile right after enabling the Guest Service Interface fails until the guest side answers: retried ~30 s.
-function Copy-AgentFileToGuest {
-    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$Source, [Parameter(Mandatory)][string]$Destination)
-    $deadline = [DateTime]::UtcNow.AddSeconds(30)
-    while ($true) {
-        try {
-            Copy-VMFile -Name $Name -SourcePath $Source -DestinationPath $Destination -FileSource Host -CreateFullPath -Force -ErrorAction Stop
-            return
-        }
-        catch {
-            if ([DateTime]::UtcNow -gt $deadline) { throw "Couldn't copy into '$Name': $($_.Exception.Message)" }
-            Start-Sleep -Milliseconds 500
-        }
-    }
+# Deletes the agent's secret from a mounted guest disk (a template or a copy of one): copies never share a secret.
+function Remove-GuestAgentSecret {
+    param([Parameter(Mandatory)][string]$WindowsRoot)
+    $path = Join-Path $WindowsRoot 'ProgramData\GpuVM\Agent\secret'
+    Assert-NoReparsePoint -Root $WindowsRoot -Path $path
+    if (Test-Path -LiteralPath $path) { [IO.File]::Delete($path) }
 }
 
 # Called when a VM is deleted or renamed: the service finds agents by these registrations.
@@ -146,4 +128,21 @@ function Update-GpuVMAgentRegistration {
     $registration['name'] = $Name
     $registration['folder'] = Split-Path $state['statePath'] -Parent
     Write-JsonFile -Path $file -Data $registration
+}
+
+# Ends a PowerShell Direct session (a function so tests can replace it).
+function Close-AgentSession {
+    param($Session)
+    Remove-PSSession -Session $Session -ErrorAction SilentlyContinue
+}
+
+# PowerShell Direct calls in one session (functions so tests can replace them; a PSSession can't be faked).
+function Invoke-InAgentSession {
+    param($Session, [scriptblock]$ScriptBlock, [object[]]$ArgumentList = @())
+    Invoke-Command -Session $Session -ErrorAction Stop -ScriptBlock $ScriptBlock -ArgumentList $ArgumentList
+}
+
+function Copy-ToAgentSession {
+    param($Session, [string]$Path, [string]$Destination)
+    Copy-Item -LiteralPath $Path -ToSession $Session -Destination $Destination -ErrorAction Stop
 }

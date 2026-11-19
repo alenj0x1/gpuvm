@@ -1,16 +1,18 @@
 function Install-GpuVMAgent {
     <#
     .SYNOPSIS
-    Installs (or reinstalls) GpuVM's agent inside a running VM: a new per-VM secret, the agent's files, and the
-    standard Windows user `agent` it works as. Reinstalling replaces the secret (the old one stops working).
+    Installs (or reinstalls) GpuVM's agent inside a running VM, with a new per-VM secret and a new password for the
+    standard Windows user `agent` it works as. Also the fast path for a copy of a template that already has the agent.
 
     .DESCRIPTION
     The secret K (32 random bytes) is kept on this PC with DPAPI in ProgramData\GpuVM\agents\<vmid>\secret, readable
-    by SYSTEM only (the GpuVM service). It reaches the guest through the Guest Service Interface (Copy-VMFile), which
-    is turned on only for the copy when it was off, into C:\ProgramData\GpuVM\Agent (SYSTEM and Administrators only).
-    Never through KVP: every guest user can read KVP (lab 050). guest\agent\install.ps1 then runs inside the VM over
-    PowerShell Direct with the machine's saved account and returns the `agent` user's password, kept like the
-    machine's own (DPAPI) in gpuvm.json.
+    by SYSTEM only (the GpuVM service). Over PowerShell Direct, with the machine's saved administrator account:
+    gpuvm-agent.exe is copied (Copy-Item -ToSession) into a folder only Administrators and SYSTEM can open, unless the
+    same build is already installed; guest\agent\install.ps1 runs as a script block (guests keep the Restricted
+    execution policy) with that folder and K, writes K with a SYSTEM + Administrators ACL (never KVP: every guest user
+    can read KVP, lab 050), creates or updates `agent`, rotates its password and restarts the agent's service. The
+    password is kept like the machine's own account (DPAPI) in gpuvm.json. When the installer asks for it, Windows
+    restarts from inside the guest (Restart-VM right after it lost the service and sign-in changes).
     #>
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Name)
@@ -25,54 +27,55 @@ function Install-GpuVMAgent {
     $folder = Join-Path (Get-GpuVMAgentRoot) $vmId
     Initialize-AgentFolder -Path (Get-GpuVMAgentRoot)
     Initialize-AgentFolder -Path $folder
+    $timing = [ordered]@{}
+    $sw = [Diagnostics.Stopwatch]::StartNew()
 
     $secret = [byte[]]::new(32)
     [Security.Cryptography.RandomNumberGenerator]::Fill($secret)
-    # The plain copy that Copy-VMFile sends exists only during the copy, in the administrators-only folder.
-    $plain = Join-Path $folder "copy-$([guid]::NewGuid().ToString('n'))"
-    $gsi = Get-GuestServiceInterface -Name $Name
-    $enabledHere = $false
+    $session = New-PSSession -VMName $Name -Credential $credential -ErrorAction Stop
     try {
-        Write-Step 'Preparing the agent''s folder in the machine'
-        Invoke-Command -VMName $Name -Credential $credential -ErrorAction Stop -ArgumentList $script:GuestAgentDir -ScriptBlock {
-            param($dir)
-            New-Item -ItemType Directory -Path $dir -Force | Out-Null
-            # SYSTEM and Administrators only (by SID: names are translated in a localized Windows).
+        $timing['session'] = $sw.ElapsedMilliseconds
+        # A folder only Administrators and SYSTEM can open, for the exe while it is installed.
+        $setup = Invoke-InAgentSession $session -ArgumentList $package.Hash -ScriptBlock {
+            param($hash)
+            $installed = 'C:\Program Files\GpuVM Agent\gpuvm-agent.exe'
+            $same = (Test-Path -LiteralPath $installed) -and (Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash -eq $hash
+            $dir = Join-Path $env:SystemRoot "Temp\GpuVMAgentSetup-$([guid]::NewGuid().ToString('n'))"
+            New-Item -ItemType Directory -Path $dir | Out-Null
             & icacls.exe $dir /setowner '*S-1-5-32-544' /Q | Out-Null
             & icacls.exe $dir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' /Q | Out-Null
             if ($LASTEXITCODE -ne 0) { throw "Couldn't restrict $dir." }
-            $staging = Join-Path $dir 'staging'
-            if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
+            [pscustomobject]@{ Dir = $dir; Same = $same; Installed = $installed }
         }
-        if ($gsi -and -not $gsi.Enabled) {
-            Enable-VMIntegrationService -VMName $Name -Name $gsi.Name
-            $enabledHere = $true
+        try {
+            if ($setup.Same) {
+                # Fast path (a copy of a template with this build): the installed exe goes back in as the source.
+                Invoke-InAgentSession $session -ArgumentList $setup.Installed, $setup.Dir -ScriptBlock {
+                    param($from, $dir) Copy-Item -LiteralPath $from -Destination $dir
+                }
+            }
+            else {
+                Write-Step 'Copying the agent into the machine'
+                Copy-ToAgentSession $session -Path $package.Exe -Destination (Join-Path $setup.Dir 'gpuvm-agent.exe')
+            }
+            $timing['copy'] = $sw.ElapsedMilliseconds
+            Write-Step 'Installing the agent and its user'
+            $code = Get-Content -Raw -LiteralPath $package.Install
+            $output = @(Invoke-InAgentSession $session -ArgumentList $code, $setup.Dir, $secret -ScriptBlock {
+                param($code, $dir, $secret) & ([scriptblock]::Create($code)) -Source $dir -Secret $secret
+            })
+            $timing['install'] = $sw.ElapsedMilliseconds
         }
-        Write-Step 'Copying the agent into the machine'
-        [IO.File]::WriteAllBytes($plain, $secret)
-        Copy-AgentFileToGuest -Name $Name -Source $plain -Destination (Join-Path $script:GuestAgentDir 'secret')
-        Remove-Item -LiteralPath $plain -Force
-        foreach ($file in $package.Files) {
-            $relative = [IO.Path]::GetRelativePath($package.Dist, $file.FullName)
-            Copy-AgentFileToGuest -Name $Name -Source $file.FullName -Destination (Join-Path (Join-Path $script:GuestAgentDir 'staging') $relative)
+        finally {
+            Invoke-InAgentSession $session -ArgumentList $setup.Dir -ScriptBlock { param($dir) Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue }
         }
     }
-    finally {
-        if (Test-Path -LiteralPath $plain) { Remove-Item -LiteralPath $plain -Force }
-        if ($enabledHere) { Disable-VMIntegrationService -VMName $Name -Name $gsi.Name -ErrorAction SilentlyContinue }
-    }
-    # The host side's copy is written only once the guest has it, so a failed install keeps the old one working.
-    Write-AgentSecret -Folder $folder -Secret $secret
-    [Array]::Clear($secret, 0, $secret.Length)
-
-    Write-Step 'Installing the agent and its user'
-    # guest\agent\install.ps1 -Staging <folder> (named arguments: the script's text runs in the guest).
-    $code = Get-Content -Raw -LiteralPath $package.Install
-    $output = @(Invoke-Command -VMName $Name -Credential $credential -ErrorAction Stop -ArgumentList $code, (Join-Path $script:GuestAgentDir 'staging') -ScriptBlock {
-        param($code, $staging) & ([scriptblock]::Create($code)) -Staging $staging
-    })
+    finally { Close-AgentSession $session }
     $result = $output | Where-Object { $_ -and $_.PSObject.Properties['password'] } | Select-Object -Last 1
     if (-not $result -or -not $result.password) { throw 'The agent''s installer in the machine didn''t return the agent user''s password.' }
+    # The host keeps the new secret only once the guest has it, so a failed install keeps the old one working.
+    Write-AgentSecret -Folder $folder -Secret $secret
+    [Array]::Clear($secret, 0, $secret.Length)
     $version = if ($result.PSObject.Properties['version'] -and $result.version) { [string]$result.version } else { $package.Version }
 
     $state['agent'] = [ordered]@{
@@ -90,5 +93,11 @@ function Install-GpuVMAgent {
         version     = $version
         installedAt = $state['agent']['installedAt']
     })
-    [ordered]@{ name = $Name; vmId = $vmId; version = $version }
+    $restart = [bool]($result.PSObject.Properties['rebootNeeded'] -and $result.rebootNeeded)
+    if ($restart) {
+        Write-Step 'Restarting Windows in the machine'
+        Invoke-Command -VMName $Name -Credential $credential -ScriptBlock { Restart-Computer -Force } -ErrorAction SilentlyContinue
+    }
+    $timing['total'] = $sw.ElapsedMilliseconds
+    [ordered]@{ name = $Name; vmId = $vmId; version = $version; fastPath = [bool]$setup.Same; restarted = $restart; ms = $timing }
 }

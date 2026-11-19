@@ -62,6 +62,9 @@ function Reset-ClonedGuestIdentity {
         [IO.File]::WriteAllText($statePath, ($state | ConvertTo-Json -Depth 10))
     }
     foreach ($path in $pems) { if (Test-Path -LiteralPath $path) { [IO.File]::Delete($path) } }
+    # Never the template's agent secret: each copy gets its own from Install-GpuVMAgent (an older template could
+    # still carry one).
+    Remove-GuestAgentSecret -WindowsRoot $WindowsRoot
 }
 
 # Templates and shared disks don't inherit the root's read access for the Virtual Machines group: only
