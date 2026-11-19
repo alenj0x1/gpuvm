@@ -29,21 +29,22 @@ try {
         catch { "ERROR $(Get-Date -Format HH:mm:ss.fff) $($_.Exception.Message)" }
     }
     $lines = [System.Collections.Generic.List[string]]::new()
-    while ($job.State -eq 'Running' -and ((Get-Date) - $t0).TotalSeconds -lt $LimitSec) {
+    while ($job.State -in 'NotStarted', 'Running' -and ((Get-Date) - $t0).TotalSeconds -lt $LimitSec) {
         foreach ($l in @(Receive-Job $job)) { $lines.Add("$l"); Line "$l" }
         Start-Sleep -Seconds 2
     }
     foreach ($l in @(Receive-Job $job)) { $lines.Add("$l"); Line "$l" }
-    $result['finished'] = $job.State -ne 'Running'
+    $result['finished'] = $job.State -notin 'NotStarted', 'Running'
     $result['seconds'] = [math]::Round(((Get-Date) - $t0).TotalSeconds)
     $result['lines'] = @($lines)
-    if ($job.State -eq 'Running') { Stop-Job $job; Line "Connect-GpuVM still running after $LimitSec s: stopped" }
+    if ($job.State -in 'NotStarted', 'Running') { Stop-Job $job; Line "Connect-GpuVM still running after $LimitSec s: stopped" }
     # Where things are when it's done or stuck.
     $m = Get-Module GpuVM
     $state = & $m { param($n) Get-GpuVMState -Name $n } $Name
     $cred = & $m { param($s) Get-GpuVMGuestCredential -State $s } $state
     $result['pendingRename'] = $state['pendingRename']
-    $result['guest'] = Invoke-Command -VMName $Name -Credential $cred {
+    # A guest that is restarting doesn't answer: the rest of the result is saved anyway.
+    $result['guest'] = Invoke-Command -VMName $Name -Credential $cred -ErrorAction Continue {
         [ordered]@{ computer = $env:COMPUTERNAME; console = (Get-CimInstance Win32_ComputerSystem).UserName
             sunshine = "$((Get-Service SunshineService -ErrorAction SilentlyContinue).Status)"
             bootedAt = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToString('o')

@@ -156,6 +156,52 @@ function Copy-ToAgentSession {
     Copy-Item -LiteralPath $Path -ToSession $Session -Destination $Destination -ErrorAction Stop
 }
 
+# Whether an agent machine needs Install-GpuVMAgent: its install is pending, or the agent it has is older than the one
+# this build carries (a copy of a template made with an earlier release, lab 054: 0.3.2 in copies of agent-tpl).
+function Test-GpuVMAgentStale {
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$State, [string]$BundledVersion)
+    if ([string]$State['use'] -ne 'agent') { return $false }
+    $agent = $State['agent']
+    if (-not ($agent -is [System.Collections.IDictionary])) { return $true }
+    if ($agent['pending']) { return $true }
+    if (-not $BundledVersion) { return $false }
+    $have = [string]$agent['version']
+    if (-not $have) { return $true }
+    $parse = { param($v) $m = [regex]::Match($v, '^\d+(\.\d+){1,3}'); if ($m.Success) { [version]$m.Value } }
+    $a = & $parse $have
+    $b = & $parse $BundledVersion
+    if ($a -and $b) { return $a -lt $b }
+    $have -ne $BundledVersion
+}
+
+# Connect-GpuVM on a running agent machine: installs or refreshes the agent when it is pending or older than this
+# build's (~9 s), so templates don't go stale with every release. Never stops the open: a failure is a warning.
+# Returns $true when Windows restarted for it, once the new boot is under way (the caller then waits for Windows,
+# the sign-in and the session again).
+function Update-GpuVMAgentIfStale {
+    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential, [int]$RestartTimeoutSec = 600)
+    $state = Get-GpuVMState -Name $Name
+    if ([string]$state['use'] -ne 'agent') { return $false }
+    $package = try { Get-AgentPackage } catch { $null }
+    if (-not $package) { return $false }
+    if (-not (Test-GpuVMAgentStale -State $state -BundledVersion $package.Version)) { return $false }
+    $user = if ($state['agent'] -is [System.Collections.IDictionary] -and $state['agent']['signInAs']) { [string]$state['agent']['signInAs'] } else { 'agent' }
+    $bootBefore = try { Get-GuestBootTime -Name $Name -Credential $Credential } catch { '' }
+    Write-Step 'Updating GpuVM''s agent in the machine'
+    try { $installed = Install-GpuVMAgent -Name $Name -User $user }
+    catch { Write-Warning "GpuVM's agent couldn't be updated in '$Name': $($_.Exception.Message)"; return $false }
+    if (-not ($installed -and $installed['restarted'])) { return $false }
+    # Install-GpuVMAgent asks Windows to restart and returns at once: wait until the old Windows is gone, so the next
+    # checks don't talk to the one still shutting down.
+    $deadline = (Get-Date).AddSeconds($RestartTimeoutSec)
+    while ((Get-Date) -lt $deadline) {
+        $now = try { Get-GuestBootTime -Name $Name -Credential $Credential } catch { $null }
+        if ($now -and $now -ne $bootBefore) { break }
+        Start-Sleep -Seconds 2
+    }
+    $true
+}
+
 # New-GpuVM / Import-GpuVM -Use agent: remembers who signs in, waits for Windows when the machine runs, then sets the
 # use (which installs the agent). Never fails the creation: a problem leaves the agent pending, with a warning.
 function Initialize-GpuVMAgentUse {

@@ -97,6 +97,13 @@ function Connect-GpuVM {
             $state['updatesPending'] = $false
             Save-GpuVMState $state
         }
+        # An agent machine whose agent is pending or older than this build's gets it now (copies of older templates).
+        if (Update-GpuVMAgentIfStale -Name $Name -Credential $guest) {
+            Wait-GuestReady -Name $Name -Credential $guest -BootMessage 'Waiting for Windows'
+            Open-GuestSession -Name $Name -Credential $guest
+            $null = Wait-GuestSignIn -Name $Name -Credential $guest
+        }
+        $state = Get-GpuVMState -Name $Name
     }
     $audioCheck = $null
     $audioLater = $false

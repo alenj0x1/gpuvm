@@ -1727,3 +1727,54 @@ InModuleScope GpuVM {
         }
     }
 }
+
+InModuleScope GpuVM {
+    Describe 'An agent machine gets this build''s agent when it is opened' {
+        It 'stale means pending, unknown or older than the bundled agent; never for other machines' {
+            Test-GpuVMAgentStale -State @{ use = 'agent'; agent = @{ version = '0.3.2' } } -BundledVersion '0.3.5' | Should Be $true
+            Test-GpuVMAgentStale -State @{ use = 'agent'; agent = @{ version = '0.3.5' } } -BundledVersion '0.3.5' | Should Be $false
+            Test-GpuVMAgentStale -State @{ use = 'agent'; agent = @{ version = '0.4.0' } } -BundledVersion '0.3.5' | Should Be $false
+            Test-GpuVMAgentStale -State @{ use = 'agent'; agent = @{ version = '0.3.10' } } -BundledVersion '0.3.9' | Should Be $false
+            Test-GpuVMAgentStale -State @{ use = 'agent'; agent = @{ pending = $true; signInAs = 'agent' } } -BundledVersion '0.3.5' | Should Be $true
+            Test-GpuVMAgentStale -State @{ use = 'agent'; agent = @{} } -BundledVersion '0.3.5' | Should Be $true
+            Test-GpuVMAgentStale -State @{ use = 'agent' } -BundledVersion '0.3.5' | Should Be $true
+            Test-GpuVMAgentStale -State @{ agent = @{ version = '0.3.2' } } -BundledVersion '0.3.5' | Should Be $false
+            Test-GpuVMAgentStale -State @{ use = 'agent'; agent = @{ version = '0.3.5' } } -BundledVersion $null | Should Be $false
+        }
+        It 'installs only when stale, waits for the restart it asked for, and a failure is a warning' {
+            $cred = [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force))
+            Mock Get-AgentPackage { [pscustomobject]@{ Version = '0.3.5' } }
+            Mock Write-Step { }
+            Mock Start-Sleep { }
+            Mock Get-GpuVMState { @{ use = 'agent'; agent = @{ version = '0.3.5'; signInAs = 'agent' } } }
+            Mock Install-GpuVMAgent { [ordered]@{ restarted = $false } }
+            Update-GpuVMAgentIfStale -Name c -Credential $cred | Should Be $false
+            Assert-MockCalled Install-GpuVMAgent -Times 0 -Exactly -Scope It
+
+            Mock Get-GpuVMState { @{ use = 'agent'; agent = @{ version = '0.3.2'; signInAs = 'own' } } }
+            Mock Get-GuestBootTime { '100' }
+            Update-GpuVMAgentIfStale -Name c -Credential $cred | Should Be $false
+            Assert-MockCalled Install-GpuVMAgent -Times 1 -Exactly -Scope It -ParameterFilter { $Name -eq 'c' -and $User -eq 'own' }
+
+            # Windows restarts: back only once the boot time changed.
+            Mock Install-GpuVMAgent { [ordered]@{ restarted = $true } }
+            $script:boots = [System.Collections.Generic.Queue[object]]::new([object[]]@('100', '100', $null, '200'))
+            Mock Get-GuestBootTime { $b = $script:boots.Dequeue(); if ($null -eq $b) { throw 'not up' }; $b }
+            Update-GpuVMAgentIfStale -Name c -Credential $cred | Should Be $true
+            $script:boots.Count | Should Be 0
+
+            Mock Install-GpuVMAgent { throw 'no session' }
+            Mock Get-GuestBootTime { '100' }
+            $w = Update-GpuVMAgentIfStale -Name c -Credential $cred 3>&1
+            ($w | Where-Object { $_ -is [System.Management.Automation.WarningRecord] }).Message | Should Match 'no session'
+
+            # Not an agent machine, or a build without the agent: nothing.
+            Mock Get-GpuVMState { @{ agent = @{ version = '0.3.2' } } }
+            Update-GpuVMAgentIfStale -Name c -Credential $cred | Should Be $false
+            Mock Get-GpuVMState { @{ use = 'agent'; agent = @{ version = '0.3.2' } } }
+            Mock Get-AgentPackage { throw 'no dist' }
+            Update-GpuVMAgentIfStale -Name c -Credential $cred | Should Be $false
+            Assert-MockCalled Install-GpuVMAgent -Times 3 -Exactly -Scope It -ParameterFilter { $Name -eq 'c' -and $User -eq 'own' }
+        }
+    }
+}
