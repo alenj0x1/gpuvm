@@ -9,13 +9,15 @@ export interface AgentSnapshot {
   broker: { listening: boolean; error?: string | null } | null;
   /** Recordings of agents' work (agent.rs): machine, session, file. */
   recordings: AgentRecording[];
+  /** How long a request waits for an answer, as the service has it (the one source of truth; null while unknown). */
+  approvalTimeoutSec: number | null;
   loaded: boolean; error: string | null;
 }
 
 /** What the broker sends (app/host/src/agent.rs on the agent-broker branch): times in ms, the client is a connection. */
 export interface BrokerState {
   clients: Record<string, unknown>[]; requests: Record<string, unknown>[]; offers: Record<string, unknown>[];
-  settings?: { clients?: Record<string, { clientApprovals?: boolean }> } | null;
+  settings?: { clients?: Record<string, { clientApprovals?: boolean }>; approvalTimeoutSec?: number } | null;
   broker?: { listening: boolean; error?: string | null } | null;
   recordings?: Record<string, unknown>[];
 }
@@ -88,10 +90,11 @@ export function fromBroker(raw: BrokerState): Omit<AgentSnapshot, "loaded" | "er
     machine: String(r.machine ?? ""), client: String(r.client ?? ""), clientName: str(r.clientName) ?? "Agent", path: String(r.path ?? ""),
     name: String(r.name ?? ""), durationMs: num(r.durationMs), bytes: num(r.bytes), at: iso(r.at),
   })).reverse();
-  return { clients, requests, offers, broker: raw.broker ?? null, recordings };
+  const timeout = raw.settings?.approvalTimeoutSec;
+  return { clients, requests, offers, broker: raw.broker ?? null, recordings, approvalTimeoutSec: typeof timeout === "number" && timeout > 0 ? timeout : null };
 }
 
-let snap: AgentSnapshot = { clients: [], requests: [], offers: [], broker: null, recordings: [], loaded: false, error: null };
+let snap: AgentSnapshot = { clients: [], requests: [], offers: [], broker: null, recordings: [], approvalTimeoutSec: null, loaded: false, error: null };
 let json = "";
 const subs = new Set<() => void>();
 let users = 0;

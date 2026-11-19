@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MachineCube, type CubeMachine } from "./MachineCube";
 import { IconAppWindow, IconCamera, IconFolder, IconFolderOpen, IconHistory, IconHistoryOff, IconBrandWindows, IconDeviceDesktop, IconExternalLink, IconPalette, IconServer, IconHandStop, IconLayoutBottombarCollapse, IconMoon, IconPlayerPlay, IconPlayerStop, IconPlugConnected, IconPlugConnectedX, IconPower, IconShieldLock, IconShieldOff, IconSun, IconRobot, IconMouse, IconHandFinger, IconLayoutBottombar, IconLayoutNavbar, IconBoxAlignTopLeft, IconBoxAlignTopRight, IconLayoutSidebarRight } from "@tabler/icons-react";
-import { inTauri, service, type ServiceStatus } from "./api";
+import { agents, inTauri, service, type ServiceStatus } from "./api";
+import { refreshAgents, useAgents } from "./agentStore";
 import { ACCENTS, savePrefs, usePrefs, type ClosePref, type ServicePref, type StatusPlacementPref, type TakeControlPref, type ThemePref, type ViewerHomePref, type VmsOnQuitPref } from "./prefs";
 import { Dropdown, Segmented, Slider, humanError } from "./ui";
 import { t, type LangPref } from "./i18n";
@@ -100,14 +101,32 @@ const ANIM_FPS = [15, 30, 60, 120, 0];
 /** The option a stored limit is shown at: its own, or the nearest one (no limit stays last). */
 const animFpsIndex = (fps: number) => (fps > 0 ? ANIM_FPS.slice(0, -1).reduce((best, f, i) => (Math.abs(f - fps) < Math.abs(ANIM_FPS[best] - fps) ? i : best), 0) : ANIM_FPS.length - 1);
 
-/** How long an agent's request waits for an answer before it is refused by itself, in seconds. */
-const APPROVAL_TIMEOUTS = [30, 60, 120, 300, 600];
+/** How long an agent's request waits for an answer before it is refused by itself, in seconds: 1 to 30 minutes, 10 by
+ *  default (the service's own range and default; a copy from this PC waits 10 minutes at most). */
+const APPROVAL_TIMEOUTS = [60, 120, 300, 600, 900, 1800];
+const APPROVAL_DEFAULT = 600;
+const SEND_MAX = 600;
 const timeoutIndex = (s: number) => APPROVAL_TIMEOUTS.reduce((best, v, i) => (Math.abs(v - s) < Math.abs(APPROVAL_TIMEOUTS[best] - s) ? i : best), 0);
 const timeoutLabel = (s: number) => (s < 60 ? t("{n} s", { n: s }) : t("{n} min", { n: s / 60 }));
 
-/** "Agents": how the person takes control from an agent, and how long its requests wait for an answer. */
+/** "Agents": how the person takes control from an agent, and how long its requests wait for an answer. The time to
+ *  answer is the service's setting (Get-GpuVMAgentSettings): shown as it is there, written only when moved here. */
 function AgentPrefs() {
   const prefs = usePrefs();
+  const snap = useAgents();
+  const [timeout, setTimeoutValue] = useState<number | null>(null);
+  const [timeoutError, setTimeoutError] = useState("");
+  const shown = timeout ?? snap.approvalTimeoutSec ?? APPROVAL_DEFAULT;
+  const writeTimer = useRef(0);
+  const changeTimeout = (seconds: number) => {
+    setTimeoutValue(seconds); setTimeoutError("");
+    // Once the slider rests: one write, not one per step.
+    window.clearTimeout(writeTimer.current);
+    writeTimer.current = window.setTimeout(() => {
+      agents.setApprovalTimeout(seconds).then(() => refreshAgents()).then(() => setTimeoutValue(null))
+        .catch((e) => { setTimeoutError(humanError(e)); setTimeoutValue(null); });
+    }, 400);
+  };
   return (
     <>
       <div className="pref-row">
@@ -125,12 +144,15 @@ function AgentPrefs() {
       <div className="pref-row">
         <div className="pref-text">
           <strong>{t("Time to answer")}</strong>
-          <span>{t("An agent's request with no answer is refused by itself after this time.")}</span>
+          <span>{shown > SEND_MAX
+            ? t("An agent's request with no answer is refused by itself after this time. Copies from this PC wait 10 min at most.")
+            : t("An agent's request with no answer is refused by itself after this time.")}</span>
+          {timeoutError && <span className="error-text">{timeoutError}</span>}
         </div>
         <div className="pref-side pref-slider">
           <Slider label={t("Time to answer")} min={0} max={APPROVAL_TIMEOUTS.length - 1} marks={APPROVAL_TIMEOUTS.map((_, i) => i)}
-            value={timeoutIndex(prefs.approvalTimeout)} format={(i) => timeoutLabel(APPROVAL_TIMEOUTS[i])}
-            onChange={(i) => savePrefs({ approvalTimeout: APPROVAL_TIMEOUTS[i] })} />
+            value={timeoutIndex(shown)} format={(i) => timeoutLabel(APPROVAL_TIMEOUTS[i])}
+            onChange={(i) => changeTimeout(APPROVAL_TIMEOUTS[i])} />
         </div>
       </div>
     </>

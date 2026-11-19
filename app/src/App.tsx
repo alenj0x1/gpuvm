@@ -412,7 +412,15 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
 
   /** screen.refresh on a machine for agents, once per connection (connected and first-frame both ask; 10 s apart). */
   const refreshedAt = useRef<Record<string, number>>({});
+  // Lab 054 measures what the refresh changes: GpuVM started with GPUVM_LAB_NO_SCREEN_REFRESH=1 skips it.
+  const noRefresh = useRef(false);
+  useEffect(() => {
+    if (!inTauri) return;
+    import("@tauri-apps/api/core").then(({ invoke }) => invoke<{ noScreenRefresh?: boolean }>("lab_flags"))
+      .then((f) => { noRefresh.current = f?.noScreenRefresh === true; }).catch(() => {});
+  }, []);
   const refreshAgentScreen = (vm: string) => {
+    if (noRefresh.current) return;
     if (vmsRef.current?.find((v) => v.name === vm)?.use !== "agent") return;
     if (Date.now() - (refreshedAt.current[vm] ?? 0) < 10000) return;
     refreshedAt.current[vm] = Date.now();

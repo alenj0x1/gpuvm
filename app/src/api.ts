@@ -106,6 +106,8 @@ export const agents = {
   stop: (connection: string) => ps("Stop-GpuVMAgentClient", connection === "*" ? { All: true } : { Connection: connection }),
   /** Per client (by its name, so it stays for its next sessions): low-risk approvals from the client itself. */
   setClientApprovals: (clientName: string, on: boolean) => ps("Set-GpuVMAgentClient", { Name: clientName, ClientApprovals: on }),
+  /** Settings › Agents, only when the person moves it: the service keeps it (never written at startup). */
+  setApprovalTimeout: (seconds: number) => ps("Set-GpuVMAgentSettings", { ApprovalTimeoutSec: seconds }),
   /** forTask: allowed again for the rest of this task (never forever). */
   answer: (id: string, allow: boolean, forTask = false) => ps("Resolve-GpuVMAgentRequest", { Id: id, Allow: allow, ...(forTask ? { ForTask: true } : {}) }),
   resolveOffer: (id: string, accept: boolean) => ps("Resolve-GpuVMAgentOffer", { Id: id, Accept: accept }),
