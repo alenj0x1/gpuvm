@@ -35,6 +35,12 @@ function Test-GpuVMDisposableDone {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$State, [string]$VMState)
     if (-not (Test-GpuVMDisposable -State $State)) { return $false }
     if ($VMState -and $VMState -ne 'Off') { return $false }
+    # Turned off only to be turned on again (Restart-GpuVMCold): not done.
+    $cycling = $State['disposable']['cyclingUntil']
+    $until = [datetime]::MinValue
+    if ($cycling -is [datetime]) { $until = $cycling.ToUniversalTime() }
+    elseif ($cycling) { [void][datetime]::TryParse([string]$cycling, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind, [ref]$until); $until = $until.ToUniversalTime() }
+    if ($until -gt (Get-Date).ToUniversalTime()) { return $false }
     if ($State['disposable']['startedAt']) { return $true }
     # ConvertFrom-Json already turns the ISO text into a DateTime; [string] of that follows the system's culture and
     # didn't parse back on en-GB, so a just-created machine read as "used" and was deleted. A date that can't be read

@@ -12,7 +12,8 @@ function Install-GpuVMAgent {
     execution policy) with that folder and K, writes K with a SYSTEM + Administrators ACL (never KVP: every guest user
     can read KVP, lab 050), creates or updates `agent`, rotates its password and restarts the agent's service. The
     password is kept like the machine's own account (DPAPI) in gpuvm.json. When the installer asks for it, Windows
-    restarts from inside the guest (Restart-VM right after it lost the service and sign-in changes).
+    is shut down and the machine started again (Restart-GpuVMCold: a power cycle, never a restart, so the GPU partition's
+    display state is reset; agent-guest lab 051).
     #>
     [CmdletBinding()]
     param(
@@ -122,8 +123,9 @@ function Install-GpuVMAgent {
     })
     $restart = [bool]($result.PSObject.Properties['rebootNeeded'] -and $result.rebootNeeded)
     if ($restart) {
-        Write-Step 'Restarting Windows in the machine'
-        Invoke-Command -VMName $Name -Credential $credential -ScriptBlock { Restart-Computer -Force } -ErrorAction SilentlyContinue
+        # Off and on, not a restart: a restart keeps the GPU partition's state, and on some copies that leaves the
+        # session without any display (agent-guest lab 051).
+        Restart-GpuVMCold -Name $Name
     }
     $timing['total'] = $sw.ElapsedMilliseconds
     [ordered]@{ name = $Name; vmId = $vmId; version = $version; fastPath = [bool]($result.PSObject.Properties['fastPath'] -and $result.fastPath); exeSent = -not $setup.Same; restarted = $restart; ms = $timing }

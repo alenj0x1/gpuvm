@@ -213,6 +213,41 @@ function Update-GpuVMAgentIfStale {
     $true
 }
 
+# Turns a running machine off (Windows shuts down cleanly; turned off after -ShutdownTimeoutSec) and on again. Not a
+# restart: on some copies Windows gives the session no display path at all, a state that lives in the running VM's
+# GPU partition and only a power cycle clears (agent-guest lab 051, 2026-11-19: 12 of 12 copies with a display after
+# it, against 2 of 12 without before). A disposable machine is marked meanwhile so the sweep never deletes it while it
+# is off. Returns when Start-VM did.
+function Restart-GpuVMCold {
+    param([Parameter(Mandatory)][string]$Name, [int]$ShutdownTimeoutSec = 180)
+    $state = Get-GpuVMState -Name $Name
+    $disposable = $state['disposable'] -is [System.Collections.IDictionary]
+    if ($disposable) {
+        $state['disposable']['cyclingUntil'] = (Get-Date).AddMinutes(10).ToUniversalTime().ToString('o')
+        Save-GpuVMState $state
+    }
+    try {
+        Write-Step 'Turning the machine off and on again'
+        $job = Stop-VM -Name $Name -Force -AsJob
+        $deadline = (Get-Date).AddSeconds($ShutdownTimeoutSec)
+        while ((Get-VM -Name $Name).State -ne 'Off' -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }
+        if ((Get-VM -Name $Name).State -ne 'Off') { Stop-VM -Name $Name -TurnOff -Force }
+        $job | Remove-Job -Force -ErrorAction SilentlyContinue
+        # As any start: the isolation follows the host's current address on the switch.
+        Update-GpuVMNetworkIsolation -Name $Name
+        Start-VM -Name $Name
+    }
+    finally {
+        if ($disposable) {
+            $state = Get-GpuVMState -Name $Name
+            if ($state['disposable'] -is [System.Collections.IDictionary] -and $state['disposable'].Contains('cyclingUntil')) {
+                $state['disposable'].Remove('cyclingUntil')
+                Save-GpuVMState $state
+            }
+        }
+    }
+}
+
 # An agent machine keeps the Hyper-V display on: until a viewer connects, the virtual display has no monitor plugged
 # in, and without the Hyper-V one the console session has no display at all (no screenshots, no input; agent-guest
 # 2026-11-19 on copies of a template whose source had it disabled). The agent (0.4.x) turns that display's desktop
