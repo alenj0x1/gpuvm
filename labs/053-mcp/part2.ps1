@@ -11,6 +11,7 @@ param(
     [string]$Exe = 'C:\Program Files\GpuVM\gpuvm.exe',
     [int]$Rounds = 40,
     [int]$Samples = 12,
+    [int]$MemoryGB = 4,
     [switch]$SkipModel
 )
 $ErrorActionPreference = 'Stop'
@@ -31,20 +32,20 @@ try {
     if (-not $svc -or $svc.Status -ne 'Running') { throw 'The GpuVM service is not running.' }
     $freeGB = [math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1MB, 1)
     Log "free memory $freeGB GB"
-    if ($freeGB -lt 5) { throw "Only $freeGB GB of memory free: a disposable machine needs ~4 GB." }
+    if ($freeGB -lt $MemoryGB + 0.8) { throw "Only $freeGB GB of memory free: a disposable machine of $MemoryGB GB needs more." }
     $version = (Get-Item -LiteralPath $Exe).VersionInfo.FileVersion
     Log "gpuvm.exe $version"
 
     $drive = Join-Path $PSScriptRoot 'drive.py'
     Log 'modern era: create, latency, coords, misuse, finale'
-    python $drive --exe $Exe --era modern --template $Template --phases latency,coords,misuse,finale --rounds $Rounds --samples $Samples 2>&1 | Tee-Object -FilePath (Join-Path $outDir "part2-$stamp-modern.txt")
+    python $drive --exe $Exe --era modern --template $Template --memory $MemoryGB --phases latency,coords,misuse,finale --rounds $Rounds --samples $Samples 2>&1 | Tee-Object -FilePath (Join-Path $outDir "part2-$stamp-modern.txt")
     Log 'legacy era: create, latency, finale'
-    python $drive --exe $Exe --era legacy --template $Template --phases latency,finale --rounds ([math]::Max(10, [int]($Rounds / 4))) 2>&1 | Tee-Object -FilePath (Join-Path $outDir "part2-$stamp-legacy.txt")
+    python $drive --exe $Exe --era legacy --template $Template --memory $MemoryGB --phases latency,finale --rounds ([math]::Max(10, [int]($Rounds / 4))) 2>&1 | Tee-Object -FilePath (Join-Path $outDir "part2-$stamp-legacy.txt")
 
     if (-not $SkipModel) {
         $config = Join-Path $outDir "mcp-installed.json"
         @{ mcpServers = @{ gpuvm = @{ type = 'stdio'; command = $Exe; args = @('--mcp') } } } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $config -Encoding utf8
-        $prompt = "Using only the gpuvm MCP tools: create a disposable machine from the $Template template named lab053-cc. " +
+        $prompt = "Using only the gpuvm MCP tools: create a disposable machine from the $Template template named lab053-cc with memoryGB $MemoryGB. " +
             "Open Notepad (press win+r, type notepad, press enter), type 'Hello from Claude Code' into it, and take a screenshot to check the text is there. " +
             "Run the command 'whoami' and tell me the output. Write a short report in C:\Users\agent\Desktop\Outbox\lab053-report.md and offer it to me with a note. " +
             "Finally destroy the machine. Report each step in one line, with what you saw on screen."

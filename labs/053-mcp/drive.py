@@ -202,6 +202,7 @@ def main():
     ap.add_argument("--phases", default="latency,misuse")
     ap.add_argument("--rounds", type=int, default=40)
     ap.add_argument("--samples", type=int, default=12)
+    ap.add_argument("--memory", type=int, default=4, help="GB for a created disposable")
     a = ap.parse_args()
 
     m = Mcp(a.exe, a.fake, a.era)
@@ -210,7 +211,8 @@ def main():
     try:
         t0 = time.perf_counter()
         if a.template:
-            c = m.tool("create_disposable", template=a.template, name=a.machine or None) if a.machine else m.tool("create_disposable", template=a.template)
+            extra = {"name": a.machine} if a.machine else {}
+            c = m.tool("create_disposable", template=a.template, memoryGB=a.memory, task="Lab 053: measuring the MCP server", **extra)
             report["create"] = {"ms": c["ms"], "text": c["text"], "error": c["error"]}
             print("create:", round(c["ms"]), "ms", c["text"][:200])
             machine = c["text"].split("machine ")[1].split(" ")[0] if not c["error"] else None
@@ -224,6 +226,14 @@ def main():
             raise SystemExit("no machine")
         first = m.tool("screenshot", machine=machine)
         report["first_screenshot"] = {"ms": first["ms"], "text": first["text"], "bytes": first["bytes"]}
+        if first["images"]:
+            img = first["images"][0]
+            ext = "png" if img["mimeType"] == "image/png" else "webp"
+            path = os.path.join(HERE, "out", time.strftime("%Y%m%d-%H%M%S") + f"-{a.era}-first.{ext}")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as f:
+                f.write(base64.b64decode(img["data"]))
+            report["first_screenshot"]["file"] = path
         for ph in a.phases.split(","):
             if ph == "latency":
                 r = phase_latency(m, machine, a.rounds)
