@@ -298,13 +298,19 @@ fn guest(m: &mut Machine, method: &str, p: &Value) -> Result<Reply> {
                 return Ok(Reply::of(json!({ "exitCode": 0, "stdout": "x".repeat(1 << 20), "stderr": "", "truncated": true })));
             }
             if file == "sleep" {
-                return Err(err("timeout", "The command didn't finish in time."));
+                return Ok(Reply::of(json!({ "exitCode": null, "stdout": "partial\r\n", "stderr": "", "truncated": false, "timedOut": true })));
+            }
+            if file == "blob" {
+                let mut b = b"out-in-blob".to_vec();
+                b.extend_from_slice(b"err-in-blob");
+                return Ok(Reply { data: json!({ "exitCode": 3, "outputInBlob": true, "stdoutBytes": 11, "stderrBytes": 11, "truncated": false }), blob: Some(b) });
             }
             Ok(Reply::of(json!({ "exitCode": 0, "stdout": format!("{file} {}\r\n", args.join(" ")), "stderr": "", "truncated": false })))
         }
         "files.read" => {
             let path = p["path"].as_str().unwrap_or("");
-            m.files.get(path).map(|b| Reply { data: json!({ "size": b.len() }), blob: Some(b.clone()) })
+            let len = p["length"].as_u64().unwrap_or(u64::MAX) as usize;
+            m.files.get(path).map(|b| Reply { data: json!({ "size": b.len() }), blob: Some(b[..b.len().min(len)].to_vec()) })
                 .ok_or_else(|| err("not_found", "No such file."))
         }
         "files.write" => {

@@ -199,28 +199,28 @@ fn screenshot_and_coordinate_round_trip() {
     let t = H::text(&shot);
     assert!(t.contains("1280x720") && t.contains("desktop 1920x1080"), "{t}");
     h.ok("click", json!({ "machine": m, "x": 640, "y": 360 }));
-    assert_eq!(h.last_action(&m), json!({ "click": { "x": 960, "y": 540, "button": "left", "count": 1 } }));
+    assert_eq!(h.last_action(&m), json!({ "type": "click", "x": 960, "y": 540, "button": "left", "count": 1 }));
     h.ok("click", json!({ "machine": m, "x": 0, "y": 0 }));
-    assert_eq!(h.last_action(&m)["click"]["x"], 0);
+    assert_eq!(h.last_action(&m)["x"], 0);
     h.ok("click", json!({ "machine": m, "x": 1279, "y": 719 }));
-    assert_eq!(h.last_action(&m)["click"], json!({ "x": 1919, "y": 1079, "button": "left", "count": 1 }));
+    assert_eq!(h.last_action(&m), json!({ "type": "click", "x": 1919, "y": 1079, "button": "left", "count": 1 }));
 
     // A smaller picture: its own scale, kept per screenshot.
     let small = h.tool("screenshot", json!({ "machine": m, "maxWidth": 640, "maxHeight": 640 }));
     assert!(H::text(&small).contains("640x360"));
     h.ok("click", json!({ "machine": m, "x": 100, "y": 50 }));
-    assert_eq!(h.last_action(&m)["click"]["x"], 301);
-    assert_eq!(h.last_action(&m)["click"]["y"], 151);
+    assert_eq!(h.last_action(&m)["x"], 301);
+    assert_eq!(h.last_action(&m)["y"], 151);
     // The earlier 1280x720 screenshot (id 2) still maps with its own scale.
     h.ok("click", json!({ "machine": m, "x": 640, "y": 360, "screenshot": 2 }));
-    assert_eq!(h.last_action(&m)["click"]["x"], 960);
+    assert_eq!(h.last_action(&m)["x"], 960);
 
     // Zoom: a part at native resolution; actions keep using the full screenshot.
     let z = h.tool("screenshot", json!({ "machine": m, "zoom": [100, 100, 200, 100] }));
     let zt = H::text(&z);
     assert!(zt.contains("[300, 300, 600, 300]") && zt.contains("600x300"), "{zt}");
     h.ok("click", json!({ "machine": m, "x": 100, "y": 50 }));
-    assert_eq!(h.last_action(&m)["click"]["x"], 301);
+    assert_eq!(h.last_action(&m)["x"], 301);
 
     // Big pictures stay within Anthropic's limits.
     let big = h.tool("screenshot", json!({ "machine": m, "maxWidth": 2576, "maxHeight": 2576 }));
@@ -228,12 +228,12 @@ fn screenshot_and_coordinate_round_trip() {
 
     // Drag, scroll, act and screenshotAfter.
     h.ok("drag", json!({ "machine": m, "x": 10, "y": 10, "toX": 20, "toY": 20, "screenshot": 2 }));
-    assert_eq!(h.last_action(&m), json!({ "drag": { "x": 15, "y": 15, "toX": 30, "toY": 30 } }));
+    assert_eq!(h.last_action(&m), json!({ "type": "drag", "x": 15, "y": 15, "toX": 30, "toY": 30 }));
     let a = h.tool("act", json!({ "machine": m, "screenshot": 2, "screenshotAfter": true, "actions": [
         { "type": "click", "x": 2, "y": 2 }, { "type": "type", "text": "hello" }, { "type": "key", "keys": "Ctrl+S" }, { "type": "wait", "ms": 10 } ] }));
     assert!(H::text(&a).contains("Done 4 of 4"));
     assert_eq!(a["content"][1]["type"], "image");
-    assert_eq!(h.last_action(&m), json!({ "wait": { "ms": 10 } }));
+    assert_eq!(h.last_action(&m), json!({ "type": "wait", "ms": 10 }));
 }
 
 #[test]
@@ -311,7 +311,10 @@ fn commands_files_and_offers() {
     assert!(r.starts_with("Exit code 0") && r.contains("powershell.exe -NoProfile -NonInteractive -Command Get-Date"), "{r}");
     let huge = h.ok("run", json!({ "machine": m, "command": "huge", "shell": "none" }));
     assert!(huge.chars().count() < super::tools::MAX_TEXT + 200 && huge.contains("characters cut") && huge.contains("cut the output at 1 MiB"));
-    assert!(h.err("run", json!({ "machine": m, "command": "sleep", "shell": "none" })).contains("didn't finish in time"));
+    let slow = h.ok("run", json!({ "machine": m, "command": "sleep", "shell": "none", "timeoutSeconds": 5 }));
+    assert!(slow.starts_with("Timed out after 5 s") && slow.contains("partial"), "{slow}");
+    let blob = h.ok("run", json!({ "machine": m, "command": "blob", "shell": "none" }));
+    assert!(blob.starts_with("Exit code 3") && blob.contains("--- stdout ---\nout-in-blob") && blob.contains("--- stderr ---\nerr-in-blob"), "{blob}");
     h.ok("write_file", json!({ "machine": m, "path": "C:/Users/agent/Desktop/Outbox/report.md", "content": "# Report\nok" }));
     assert!(h.ok("read_file", json!({ "machine": m, "path": "C:\\Users\\agent\\Desktop\\Outbox\\report.md" })).ends_with("# Report\nok"));
     h.ok("write_file", json!({ "machine": m, "path": "C:\\Users\\agent\\b.bin", "content": "AAEC/w==", "encoding": "base64" }));

@@ -16,6 +16,8 @@ use std::time::{Duration, Instant};
 pub const MAX_TEXT: usize = 20_000;
 const MAX_TYPE: usize = 5_000;
 const MAX_WRITE: usize = 10 << 20;
+/// Bytes asked for by read_file (text beyond what a model can use is cut anyway).
+const READ_MAX: u64 = 4 << 20;
 const PROFILE: &str = r"C:\Users\agent\";
 const OUTBOX: &str = r"C:\Users\agent\Desktop\Outbox\";
 const APPROVAL_TTL: Duration = Duration::from_secs(600);
@@ -184,6 +186,8 @@ pub fn explain(machine: &str, e: &BrokerError) -> String {
         "not_signed_in" => format!("Nobody is signed in to {m} yet; wait a moment (take_machine waits for it) and try again."),
         "too_large" => "That is too large to send; ask for less (a smaller region, fewer nodes, a shorter output).".into(),
         "timeout" => "It didn't finish in time; try again, or with a longer timeout.".into(),
+        "cancelled" => "The request was cancelled.".into(),
+        "busy" => format!("{m} is busy with other requests; try again in a moment."),
         "not_found" => if e.message.is_empty() { "Not found.".into() } else { e.message.clone() },
         "denied" => format!("Not allowed: {}", if e.message.is_empty() { "the agent can only use its own profile (C:\\Users\\agent)." } else { &e.message }),
         "bad_request" => format!("GpuVM refused the request: {}", e.message),
@@ -792,21 +796,21 @@ impl Tool<'_> {
                 if !["left", "right", "middle"].contains(&button) {
                     return Err("`button` must be left, right or middle.".into());
                 }
-                let mut v = json!({ "click": { "x": x, "y": y, "button": button, "count": opt_int(a, "count", 1, 3)?.unwrap_or(1) } });
+                let mut v = json!({ "type": "click", "x": x, "y": y, "button": button, "count": opt_int(a, "count", 1, 3)?.unwrap_or(1) });
                 if let Some(m) = opt_str(a, "modifiers")? {
-                    v["click"]["mods"] = json!(m);
+                    v["mods"] = json!(m);
                 }
                 v
             }
             "move" => {
                 let (x, y) = Self::point(need()?, a, "x", "y")?;
-                json!({ "move": { "x": x, "y": y } })
+                json!({ "type": "move", "x": x, "y": y })
             }
             "drag" => {
                 let s = need()?;
                 let (x, y) = Self::point(s, a, "x", "y")?;
                 let (tx, ty) = Self::point(s, a, "toX", "toY")?;
-                json!({ "drag": { "x": x, "y": y, "toX": tx, "toY": ty } })
+                json!({ "type": "drag", "x": x, "y": y, "toX": tx, "toY": ty })
             }
             "scroll" => {
                 let (x, y) = Self::point(need()?, a, "x", "y")?;
@@ -815,20 +819,20 @@ impl Tool<'_> {
                 if dx == 0 && dy == 0 {
                     return Err("Give `dx` or `dy` (wheel notches) to scroll.".into());
                 }
-                json!({ "scroll": { "x": x, "y": y, "dx": dx, "dy": dy } })
+                json!({ "type": "scroll", "x": x, "y": y, "dx": dx, "dy": dy })
             }
             "type" => {
                 let t = a["text"].as_str().ok_or("`text` must be a string.")?;
                 if t.chars().count() > MAX_TYPE {
                     return Err(format!("Type at most {MAX_TYPE} characters at a time (use write_file for long text)."));
                 }
-                json!({ "type": { "text": t } })
+                json!({ "type": "type", "text": t })
             }
             "key" => {
                 let k = arg_str(a, "keys")?;
-                json!({ "key": { "keys": k.to_ascii_lowercase(), "repeat": opt_int(a, "repeat", 1, 50)?.unwrap_or(1) } })
+                json!({ "type": "key", "keys": k.to_ascii_lowercase(), "repeat": opt_int(a, "repeat", 1, 50)?.unwrap_or(1) })
             }
-            "wait" => json!({ "wait": { "ms": opt_int(a, "ms", 0, 5000)?.unwrap_or(500) } }),
+            "wait" => json!({ "type": "wait", "ms": opt_int(a, "ms", 0, 5000)?.unwrap_or(500) }),
             other => return Err(format!("Unknown action type {other}.")),
         })
     }
@@ -942,9 +946,12 @@ impl Tool<'_> {
         let reply = self.invoke_with(machine, "exec.run", json!({ "file": file, "args": args, "cwd": opt_str(self.args, "cwd")?,
             "timeoutMs": timeout * 1000, "stdin": opt_str(self.args, "stdin")? }), json!({ "timeoutSec": (timeout + 10).min(600) }))?;
         let d = &reply.data;
-        let out = d["stdout"].as_str().unwrap_or("").replace("\r\n", "\n");
-        let err = d["stderr"].as_str().unwrap_or("").replace("\r\n", "\n");
-        let mut t = format!("Exit code {}", d["exitCode"]);
+        let (out, err) = run_output(d, reply.blob.as_deref());
+        let mut t = if d["timedOut"] == true {
+            format!("Timed out after {timeout} s (the command was stopped); partial output below.")
+        } else {
+            format!("Exit code {}", d["exitCode"])
+        };
         if d["truncated"] == true {
             t += " (the machine cut the output at 1 MiB)";
         }
@@ -969,8 +976,10 @@ impl Tool<'_> {
     fn read_file(&self) -> Out {
         let machine = self.machine()?;
         let path = self.profile_path()?;
-        let reply = self.invoke(machine, "files.read", json!({ "path": path }))?;
+        let reply = self.invoke(machine, "files.read", json!({ "path": path, "offset": 0, "length": READ_MAX }))?;
+        let size = reply.data["size"].as_u64();
         let bytes = reply.blob.unwrap_or_default();
+        let partial = size.is_some_and(|s| s > bytes.len() as u64);
         let lower = path.to_ascii_lowercase();
         let image = [(".png", "image/png"), (".jpg", "image/jpeg"), (".jpeg", "image/jpeg"), (".webp", "image/webp"), (".gif", "image/gif")]
             .iter().find(|(ext, _)| lower.ends_with(ext)).map(|(_, m)| *m);
@@ -988,7 +997,8 @@ impl Tool<'_> {
             std::str::from_utf8(bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes)).ok().map(str::to_string)
         };
         match decoded {
-            Some(t) if !t.contains('\0') => Ok(text(format!("{path} ({} bytes):\n{t}", bytes.len()))),
+            Some(t) if !t.contains('\0') => Ok(text(format!("{path} ({} bytes{}):\n{t}", size.unwrap_or(bytes.len() as u64),
+                if partial { format!(", first {} shown", bytes.len()) } else { String::new() }))),
             _ => Ok(text(format!("{path} is a binary file ({} bytes). Put it in Desktop\\Outbox and use offer_file to get it to this PC.", bytes.len()))),
         }
     }
@@ -1133,6 +1143,18 @@ fn paused_by(m: &Value) -> Option<&str> {
 
 fn taken_by(m: &Value) -> Option<&str> {
     m["takenBy"]["connection"].as_str()
+}
+
+/// exec.run's output: in the JSON, or (when it didn't fit a frame) in the blob, stdout then stderr.
+fn run_output(d: &Value, blob: Option<&[u8]>) -> (String, String) {
+    let fix = |s: &str| s.replace("\r\n", "\n");
+    if d["outputInBlob"] == true {
+        let b = blob.unwrap_or_default();
+        let n = (d["stdoutBytes"].as_u64().unwrap_or(b.len() as u64) as usize).min(b.len());
+        let m = (d["stderrBytes"].as_u64().unwrap_or(0) as usize).min(b.len() - n);
+        return (fix(&String::from_utf8_lossy(&b[..n])), fix(&String::from_utf8_lossy(&b[n..n + m])));
+    }
+    (fix(d["stdout"].as_str().unwrap_or("")), fix(d["stderr"].as_str().unwrap_or("")))
 }
 
 fn offer_text(id: &str, d: &Value) -> String {
