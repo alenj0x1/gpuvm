@@ -106,6 +106,11 @@ function Connect-GpuVM {
             }
         }
         # An agent machine whose agent is pending or older than this build's gets it now (copies of older templates).
+        # An agent machine keeps its Hyper-V display (the console's only one until a viewer connects).
+        if ([string]$state['use'] -eq 'agent') {
+            try { $null = Enable-GuestHyperVVideo -Name $Name -Credential $guest }
+            catch { Write-Warning "Couldn't turn the machine's Hyper-V display on: $($_.Exception.Message)" }
+        }
         if (Update-GpuVMAgentIfStale -Name $Name -Credential $guest) {
             Wait-GuestReady -Name $Name -Credential $guest -BootMessage 'Waiting for Windows'
             Open-GuestSession -Name $Name -Credential $guest
@@ -219,7 +224,7 @@ function Connect-GpuVM {
         $waiting = if ($firstBoot) { 'Waiting for Sunshine (the first start installs Windows and streaming; it can take several minutes)' } else { 'Waiting for Sunshine' }
         Wait-SunshineReady -Address $address -Credential $credential -Message $waiting
         if ($state['config']['streaming']['virtualDisplay']) {
-            Set-SunshineVirtualDisplay -Address $address -Credential $credential -OnlyDisplay:([bool]$state['config']['streaming']['disableHyperVVideo']) -Name $Name -GuestCredential $guest
+            Set-SunshineVirtualDisplay -Address $address -Credential $credential -OnlyDisplay:([bool]$state['config']['streaming']['disableHyperVVideo'] -or [string]$state['use'] -eq 'agent') -Name $Name -GuestCredential $guest
         }
 
         $clientName = if ($Viewer) { Get-GpuVMViewerClientName } else { $env:COMPUTERNAME }
