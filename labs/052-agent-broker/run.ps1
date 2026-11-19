@@ -346,11 +346,11 @@ foreach ($part in $Parts) {
                     $sw = [Diagnostics.Stopwatch]::StartNew()
                     $done = Resolve-GpuVMAgentOffer -Id $o.offerId -Accept $true
                     $ms = $sw.Elapsed.TotalMilliseconds
-                    $made.Add($done.hostPath)
-                    $zone = Get-Content -Raw -LiteralPath $done.hostPath -Stream Zone.Identifier
-                    $rows["$f#$($made.Count)"] = [ordered]@{ sizeShown = $pending.size; state = $done.state; hostPath = $done.hostPath; ms = [math]::Round($ms)
-                        sameBytes = ((Get-FileHash $done.hostPath).Hash -eq $sha[$f.Split('.')[0]]); zone = $zone.Trim()
-                        owner = (Get-Acl $done.hostPath).Owner }
+                    $made.Add($done.savedTo)
+                    $zone = Get-Content -Raw -LiteralPath $done.savedTo -Stream Zone.Identifier
+                    $rows["$f#$($made.Count)"] = [ordered]@{ sizeShown = $pending.sizeBytes; state = $done.state; hostPath = $done.savedTo; ms = [math]::Round($ms)
+                        sameBytes = ((Get-FileHash $done.savedTo).Hash -eq $sha[$f.Split('.')[0]]); zone = $zone.Trim()
+                        owner = (Get-Acl $done.savedTo).Owner }
                 }
                 $declined = New-GpuVMAgentOffer -Name $Name -Path 'Desktop\Outbox\report.txt'
                 $rows['decline'] = (Resolve-GpuVMAgentOffer -Id $declined.offerId -Accept $false).state

@@ -8,7 +8,8 @@
 #      machine's log holding only its own requests.
 # Run elevated. Only the copies this script makes are touched, and they are deleted at the end.
 param([string]$Session = 'agent-broker', [string]$Name = 'agent052a', [string]$Template = 'agent-tpl', [int]$Rounds = 2,
-    [string[]]$Steps = @('swap', 'install', 'parts', 'service', 'two', 'stop', 'mcp'))
+    [string[]]$Steps = @('swap', 'install', 'parts', 'service', 'two', 'stop', 'mcp'),
+    [string]$RunParts = "'latency','parallel','timeout','attacks','offers','restart'")
 $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 $modulePath = Join-Path $env:ProgramFiles 'GpuVM\gpuvm\src\GpuVM\GpuVM.psd1'
@@ -121,7 +122,7 @@ try {
 
     if ('parts' -in $Steps) {
         Wait-Ready $Name 300 | Out-Null
-        $parts = "'latency','parallel','timeout','attacks','offers','restart'"
+        $parts = $RunParts
         pwsh -NoProfile -Command "& '$PSScriptRoot\run.ps1' -Name $Name -Real -ModulePath '$modulePath' -Parts $parts -Rounds $Rounds" 2>&1 |
             Where-Object { $_ -notmatch '^saved' } | ForEach-Object { Line $_ }
     }
@@ -150,7 +151,7 @@ try {
             # New-GpuVM -Use agent on a machine that isn't on yet: the agent stays pending; Set-GpuVMUse installs it.
             $w = [Diagnostics.Stopwatch]::StartNew()
             try { New-SmallCopy $n -AgentUse | Out-Null }
-            catch { Line "$n : $($_.Exception.Message)"; continue }
+            catch { Write-Host (Line "$n : $($_.Exception.Message)"); continue }
             $pending = (& (Get-Module GpuVM) { param($v) (Get-GpuVMState -Name $v)['agent'] } $n)
             $credB = (Get-LatencyVM -Name $n).Guest
             while ($w.Elapsed.TotalMinutes -lt 10) { try { Invoke-Command -VMName $n -Credential $credB { 1 } -ErrorAction Stop | Out-Null; break } catch { Start-Sleep -Milliseconds 500 } }
@@ -159,7 +160,7 @@ try {
             $ms = [math]::Round($w.Elapsed.TotalMilliseconds)
             $ready = Wait-Ready $n 300
             $a = @(Get-GpuVMAgent -Name $n)[0]
-            Line "${n}: pending=$($pending['pending']), PS Direct at $psd ms, agent use set at $ms ms, ready +$ready ms, state $($a.state)"
+            Write-Host (Line "${n}: pending=$($pending['pending']), PS Direct at $psd ms, agent use set at $ms ms, ready +$ready ms, state $($a.state)")
             [ordered]@{ name = $n; pendingBeforeStart = $pending['pending']; psDirectMs = $psd; useSetMs = $ms; readyMs = $ready; use = $use
                 state = $a.state; vmId = $a.vmId; version = $a.version }
         }
