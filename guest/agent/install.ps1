@@ -466,6 +466,15 @@ if (Get-LocalGroupMember -SID $SidAdmins.Value -ErrorAction SilentlyContinue | W
 # 4. its profile, created now so its folders and settings exist before the first sign-in
 $profilePath = Get-AgentProfile $sid
 if (-not $profilePath) {
+    # a leftover C:\Users\agent that belongs to no profile (an earlier agent user, or an install undone by a hard
+    # reset) would make Windows pick C:\Users\agent.000: move it aside so the profile gets the fixed path (lab 051)
+    $profilesDir = [Environment]::ExpandEnvironmentVariables((Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList').ProfilesDirectory)
+    $wanted = Join-Path $profilesDir $UserName
+    if (Test-Path -LiteralPath $wanted) {
+        $aside = "$wanted.orphan-$(Get-Date -Format yyyyMMddHHmmss)"
+        Rename-Item -LiteralPath $wanted -NewName (Split-Path $aside -Leaf)
+        $notes.Add("moved a leftover $wanted aside to $aside")
+    }
     $sb = New-Object Text.StringBuilder 260
     $hr = [GpuVMAgentProfile]::CreateProfile($sid, $UserName, $sb, 260)
     if ($hr -ne 0 -and $hr -ne -2147024713) { throw ('CreateProfile failed: 0x{0:X8}' -f $hr) }   # 0x800700B7 = exists
