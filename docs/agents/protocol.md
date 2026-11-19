@@ -28,7 +28,7 @@ every choice is in labs 047-050. Change this file first (and tell the other piec
 
 ## Handshake (lab 050)
 
-- Each VM has a 32-byte secret `K`, made by the host when the agent is installed. Host side: stored with DPAPI
+- Each VM has a 32-byte secret `K` (the file holds the 32 raw bytes), made by the host when the agent is installed. Host side: stored with DPAPI
   (LocalMachine, SYSTEM-readable only) next to the VM's state. Guest side: copied with `Copy-VMFile` (Guest Service
   Interface) to `C:\ProgramData\GpuVM\Agent\secret` with an ACL of SYSTEM + Administrators only. Never in KVP (any
   guest user can read KVP).
@@ -36,30 +36,42 @@ every choice is in labs 047-050. Change this file first (and tell the other piec
 - `H→G {"t":"challenge","nh":"<32 hex>","mac":HMAC(K,"host|"+vmId+"|"+ng+"|"+nh)}` — the guest checks it (the host
   knows K).
 - `G→H {"t":"proof","mac":HMAC(K,"guest|"+vmId+"|"+nh+"|"+ng)}` — the host checks it with the VmId from `accept()`.
-- Session key `S = HMAC(K,"session|"+ng+"|"+nh)`. Every later JSON frame carries `"seq"` (strictly increasing per
-  direction) and `"m":HMAC(S, seq|payload-without-m)` (hex, first 16 bytes). Wrong `m` or `seq` → close.
+- Session key `S = HMAC(K,"session|"+ng+"|"+nh)`. Every later JSON frame (pings included; not hello/challenge/proof)
+  is authenticated, byte-exactly:
+  1. The sender serializes the object WITH `"seq"` and WITHOUT `"m"` → bytes `P` (ends with `}`). `seq` starts at 1
+     per direction after the handshake and grows by exactly 1.
+  2. `mac` = first 16 bytes of `HMAC-SHA256(S, ascii(seq) + "|" + P)`, lowercase hex (32 chars).
+  3. Wire frame = `P` without its final `}` + `,"m":"<mac>"}`.
+  4. The receiver requires the frame to end with `,"m":"<32 hex>"}` (40 bytes), strips them, appends `}` → `P`,
+     recomputes the mac, then parses `P` and requires `seq == last + 1`. Any mismatch → close.
+- A JSON frame followed by a blob carries `"blob":true,"blobLen":<n>,"blobSha256":"<64 hex>"` inside its MACed
+  bytes; the receiver checks the blob's length and SHA-256 and closes on a mismatch.
 - HMAC-SHA256; vmId as lowercase GUID without braces.
 
 ## Messages
 
 Requests go host → guest: `{"t":"req","id":<n>,"method":"…","params":{…}}`; replies
 `{"t":"res","id":<n>,"ok":true,"result":{…}}` or `{"ok":false,"error":{"code":"…","message":"…"}}`. Events go guest →
-host: `{"t":"evt","event":"…","data":{…}}`. Error codes: `blocked_elevated`, `secure_desktop`, `no_foreground`,
-`not_signed_in`, `too_large`, `timeout`, `not_found`, `denied`, `bad_request`, `internal`.
+host: `{"t":"evt","event":"…","data":{…}}`. The host may cancel a running request with `{"t":"cancel","id":<n>}`;
+the guest stops it and replies `ok:false` with code `cancelled`. Error codes: `blocked_elevated`, `secure_desktop`, `no_foreground`,
+`not_signed_in`, `too_large`, `timeout`, `cancelled`, `not_found`, `denied`, `bad_request`, `internal`.
 
 | Method | Params | Result |
 | --- | --- | --- |
 | `agent.info` | – | `{version, os, user, session, screen:{w,h}, signedIn}` |
 | `screen.capture` | `{maxW?:1280, maxH?:800, format?:"webp"\|"png", region?:[x,y,w,h]}` | `{w,h,scale,format}` + blob (lossless). Coordinates everywhere are the full desktop's pixels; `scale` = sent/full. `region` = zoom at native resolution. Refused with `secure_desktop` when the input desktop isn't `Default`. |
 | `screen.state` | – | `{desktop:"default"\|"secure"\|"locked", foreground:{title, process, integrity, blocked}}` |
-| `input.act` | `{actions:[…], stopOnError?:true}` | `{done:<n>}`. Actions: `click{x,y,button?,count?,mods?}`, `move{x,y}`, `drag{x,y,toX,toY}`, `scroll{x,y,dx,dy}`, `type{text}`, `key{keys:"ctrl+shift+end", repeat?}`, `wait{ms≤5000}`. Checked before each action: foreground elevated → `blocked_elevated`; no foreground > 500 ms → `no_foreground`; secure desktop → `secure_desktop`. Nothing is injected then. |
+| `input.act` | `{actions:[…], stopOnError?:true}` | `{done:<n>}`. Actions are objects with a `type`: `click{x,y,button?,count?,mods?}`, `move{x,y}`, `drag{x,y,toX,toY}`, `scroll{x,y,dx,dy}` (notches, `dy>0` = down), `type{text}`, `key{keys:"ctrl+shift+end", repeat?}`, `wait{ms≤5000}`. Checked before each action: foreground elevated → `blocked_elevated`; no foreground > 500 ms → `no_foreground`; secure desktop → `secure_desktop`. Nothing is injected then. |
 | `ui.tree` | `{scope?:"foreground", maxNodes?:300, visibleOnly?:true, interactiveOnly?:true}` | `{nodes:[{id,role,name,bbox:[x,y,w,h],enabled,patterns:[…]}]}` (UIA control view, CacheRequest; queries Chromium twice) |
 | `ui.invoke` | `{id, action:"invoke"\|"toggle"\|"select"\|"expand"\|"setValue", value?}` | `{}` |
-| `exec.run` | `{file, args?:[…], cwd?, timeoutMs?≤600000, stdin?}` | `{exitCode, stdout, stderr, truncated}` (each capped at 1 MiB). Runs as the signed-in standard user `agent`, never elevated. |
-| `files.list` / `files.read` / `files.write` | `{path}` under `C:\Users\agent` only (no links, no `..`) | list / blob / `{}` |
-| `outbox.offer` | `{path, note}` (path inside `Desktop\Outbox`) | `{offerId}` — the host asks the person; files leave only after approval |
+| `exec.run` | `{file, args?:[…], cwd?, timeoutMs?≤600000, stdin?}` | `{exitCode, stdout, stderr, truncated, timedOut}` (each capped at 1 MiB; a timeout is `ok` with `timedOut:true` and the partial output). When the output doesn't fit a 64 KiB JSON frame it goes in the blob (stdout then stderr) with `outputInBlob:true, stdoutBytes, stderrBytes`. Runs as the signed-in standard user `agent`, never elevated. |
+| `files.list` / `files.read` / `files.write` | `{path}` under `C:\Users\agent` only (no links, no `..`); `files.read` also takes `offset?`, `length?` | list / `{size}` (whole file) + blob of the bytes from `offset` (≤ `length`, ≤ 16 MiB; without them the whole file, ≤ 16 MiB) / `{}` |
 
-Guest events: `secure_desktop{on}`, `signed_in{user}`, `foreground{…}` (rate-limited to 4/s), `error_box{title}`
+Outbox deliveries are resolved by the host (`New-GpuVMAgentOffer`): it lists `Desktop\Outbox` and, once the person
+approves, reads the file with `files.read` in 8 MiB pieces. The guest never pushes files to the host.
+
+Frame `length` counts the payload only. Guest events: `secure_desktop{on}`, `signed_in{user}` (`user:null` when the
+session helper goes away), `foreground{…}` (rate-limited to 4/s), `error_box{title}`
 (a system error dialog blocks input, lab 049).
 
 ## Host side (broker → MCP)
