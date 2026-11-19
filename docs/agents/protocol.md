@@ -63,9 +63,12 @@ the guest stops it and replies `ok:false` with code `cancelled`. Error codes: `b
 | `screen.state` | – | `{desktop:"default"\|"secure"\|"locked", foreground:{title, process, integrity, blocked}}` |
 | `input.act` | `{actions:[…], stopOnError?:true}` | `{done:<n>}`. Actions are objects with a `type`: `click{x,y,button?,count?,mods?}`, `move{x,y}`, `drag{x,y,toX,toY}`, `scroll{x,y,dx,dy}` (notches, `dy>0` = down), `type{text}`, `key{keys:"ctrl+shift+end", repeat?}`, `wait{ms≤5000}`. Checked before each action: foreground elevated → `blocked_elevated`; no foreground > 500 ms → `no_foreground`; secure desktop → `secure_desktop`. Nothing is injected then. |
 | `ui.tree` | `{scope?:"foreground", maxNodes?:300, visibleOnly?:true, interactiveOnly?:true}` | `{nodes:[{id,role,name,bbox:[x,y,w,h],enabled,patterns:[…]}]}` (UIA control view, CacheRequest; queries Chromium twice) |
-| `ui.invoke` | `{id, action:"invoke"\|"toggle"\|"select"\|"expand"\|"setValue", value?}` | `{}` |
+| `ui.invoke` | `{id, action:"invoke"\|"toggle"\|"select"\|"expand"\|"setValue", value?}` | `{}` (ids are valid until the next `ui.tree`; a stale id → `not_found`) |
 | `exec.run` | `{file, args?:[…], cwd?, timeoutMs?≤600000, stdin?}` | `{exitCode, stdout, stderr, truncated, timedOut}` (each capped at 1 MiB; a timeout is `ok` with `timedOut:true` and the partial output). When the output doesn't fit a 64 KiB JSON frame it goes in the blob (stdout then stderr) with `outputInBlob:true, stdoutBytes, stderrBytes`. Runs as the signed-in standard user `agent`, never elevated. |
 | `files.list` / `files.read` / `files.write` | `{path}` under `C:\Users\agent` only (no links, no `..`); `files.read` also takes `offset?`, `length?` | list / `{size}` (whole file) + blob of the bytes from `offset` (≤ `length`, ≤ 16 MiB; without them the whole file, ≤ 16 MiB) / `{}` |
+
+v1: `exec.run` and `files.*` answer `denied` unless the signed-in user is `agent` (a person-mode machine would need
+the agent's password or S4U to run commands as `agent`; left for later).
 
 Outbox deliveries are resolved by the host (`New-GpuVMAgentOffer`): it lists `Desktop\Outbox` and, once the person
 approves, reads the file with `files.read` in 8 MiB pieces. The guest never pushes files to the host.
