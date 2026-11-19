@@ -20,9 +20,14 @@ $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 $out = Join-Path $PSScriptRoot 'out'
 New-Item -ItemType Directory -Force $out | Out-Null
-Import-Module $(if ($ModulePath) { $ModulePath } else { Join-Path $root 'src\GpuVM\GpuVM.psd1' }) -Force
 if ($AgentFrom) { $Real = $true }
+# common.ps1 imports this checkout's module; -ModulePath replaces it afterwards so only one GpuVM module is loaded.
 . (Join-Path $root 'tools\latency\common.ps1')
+if ($ModulePath) {
+    Get-Module GpuVM | Remove-Module -Force
+    Import-Module $ModulePath -Force
+}
+if (@(Get-Module GpuVM).Count -ne 1) { throw 'more than one GpuVM module loaded' }
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $stub = Join-Path $PSScriptRoot 'stub\target\release\stub052.exe'
 $loopDir = 'C:\GpuVM\lab052\loopback'

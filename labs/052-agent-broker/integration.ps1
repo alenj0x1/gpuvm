@@ -22,8 +22,11 @@ function Line($what) { "$(Get-Date -Format HH:mm:ss) $what" }
 if ($LASTEXITCODE) { throw 'no lock' }
 $made = [System.Collections.Generic.List[string]]::new()
 try {
-    Import-Module $modulePath -Force
+    # common.ps1 imports this checkout's module: loaded first, then replaced by the installed one (one GpuVM module).
     . (Join-Path $root 'tools\latency\common.ps1')
+    Get-Module GpuVM | Remove-Module -Force
+    Import-Module $modulePath -Force
+    if (@(Get-Module GpuVM).Count -ne 1) { throw 'more than one GpuVM module loaded' }
     if ((Get-Service GpuVM).Status -ne 'Running') { Start-Service GpuVM }
     $sw = [Diagnostics.Stopwatch]::StartNew()
     while (-not $(try { (Get-GpuVMAgentBroker).listening } catch { $false }) -and $sw.Elapsed.TotalSeconds -lt 15) { Start-Sleep -Milliseconds 100 }
