@@ -86,13 +86,20 @@ pub enum Frame {
 
 /// Reads one frame. Anything unknown or over the limit is an error: the caller closes the connection.
 pub fn read_frame(r: &mut impl Read, max_json: usize) -> Result<Frame, String> {
+    read_frame_of(r, max_json, true)
+}
+
+/// `blobs`: false before the peer is authenticated, so a blob frame is refused from its header, before anything is
+/// allocated for it (review 2, #9).
+fn read_frame_of(r: &mut impl Read, max_json: usize, blobs: bool) -> Result<Frame, String> {
     let mut head = [0u8; 5];
     r.read_exact(&mut head).map_err(|e| format!("read: {e}"))?;
     let len = u32::from_le_bytes(head[..4].try_into().unwrap()) as usize;
     let kind = head[4];
     let limit = match kind {
         KIND_JSON => max_json,
-        KIND_BLOB => MAX_BLOB,
+        KIND_BLOB if blobs => MAX_BLOB,
+        KIND_BLOB => return Err("blob during the handshake".into()),
         _ => return Err(format!("unknown frame kind {kind}")),
     };
     if len > limit {
@@ -125,7 +132,7 @@ fn write_plain(w: &mut impl Write, value: &Value) -> std::io::Result<()> {
 }
 
 fn read_plain(r: &mut impl Read) -> Result<Value, String> {
-    match read_frame(r, MAX_HELLO)? {
+    match read_frame_of(r, MAX_HELLO, false)? {
         Frame::Json(p) => serde_json::from_slice(&p).map_err(|_| "malformed JSON".to_string()),
         Frame::Blob(_) => Err("blob during the handshake".into()),
     }
@@ -313,6 +320,15 @@ pub fn unbase64(text: &str) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn handshake_refuses_blob_frames_before_allocating() {
+        // A header announcing a 16 MiB blob and no body: refused from the header alone.
+        let mut head = (MAX_BLOB as u32).to_le_bytes().to_vec();
+        head.push(KIND_BLOB);
+        let e = read_plain(&mut head.as_slice()).unwrap_err();
+        assert!(e.contains("handshake"), "{e}");
+    }
     use std::net::{TcpListener, TcpStream};
 
     fn pair() -> (TcpStream, TcpStream) {

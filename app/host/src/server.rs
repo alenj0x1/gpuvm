@@ -340,6 +340,9 @@ fn send(out: &mut &File, value: &Value) -> bool {
     writeln!(out, "{value}").and_then(|_| out.flush()).is_ok()
 }
 
+/// The longest request line the pipe accepts (16 MiB of blob is 22.4 MB in base64, plus its JSON).
+const MAX_REQUEST_LINE: u64 = 24 << 20;
+
 fn handle(pipe: HANDLE) {
     let client = match identify(pipe) {
         Ok(c) => c,
@@ -359,7 +362,14 @@ fn handle(pipe: HANDLE) {
     // One request at a time, as the app sends them: the synchronous pipe is never read and written at once.
     loop {
         line.clear();
-        if reader.read_line(&mut line).unwrap_or(0) == 0 {
+        // One request per line, bounded: the largest legitimate one is a 16 MiB blob in base64 (review 2, #9).
+        let n = std::io::Read::take(&mut reader, MAX_REQUEST_LINE).read_line(&mut line).unwrap_or(0);
+        if n == 0 {
+            return;
+        }
+        if !line.ends_with('\n') && n as u64 >= MAX_REQUEST_LINE {
+            log("rejected: a request line over the limit");
+            send(&mut out, &json!({ "type": "result", "ok": false, "error": "The request is too large." }));
             return;
         }
         let Ok(request) = serde_json::from_str::<Value>(&line) else {
