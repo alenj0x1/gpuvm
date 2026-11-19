@@ -28,7 +28,7 @@ every choice is in labs 047-050. Change this file first (and tell the other piec
 
 ## Handshake (lab 050)
 
-- Each VM has a 32-byte secret `K`, made by the host when the agent is installed. Host side: stored with DPAPI
+- Each VM has a 32-byte secret `K` (the file holds the 32 raw bytes), made by the host when the agent is installed. Host side: stored with DPAPI
   (LocalMachine, SYSTEM-readable only) next to the VM's state. Guest side: copied with `Copy-VMFile` (Guest Service
   Interface) to `C:\ProgramData\GpuVM\Agent\secret` with an ACL of SYSTEM + Administrators only. Never in KVP (any
   guest user can read KVP).
@@ -52,8 +52,9 @@ every choice is in labs 047-050. Change this file first (and tell the other piec
 
 Requests go host → guest: `{"t":"req","id":<n>,"method":"…","params":{…}}`; replies
 `{"t":"res","id":<n>,"ok":true,"result":{…}}` or `{"ok":false,"error":{"code":"…","message":"…"}}`. Events go guest →
-host: `{"t":"evt","event":"…","data":{…}}`. Error codes: `blocked_elevated`, `secure_desktop`, `no_foreground`,
-`not_signed_in`, `too_large`, `timeout`, `not_found`, `denied`, `bad_request`, `internal`.
+host: `{"t":"evt","event":"…","data":{…}}`. The host may cancel a running request with `{"t":"cancel","id":<n>}`;
+the guest stops it and replies `ok:false` with code `cancelled`. Error codes: `blocked_elevated`, `secure_desktop`, `no_foreground`,
+`not_signed_in`, `too_large`, `timeout`, `cancelled`, `not_found`, `denied`, `bad_request`, `internal`.
 
 | Method | Params | Result |
 | --- | --- | --- |
