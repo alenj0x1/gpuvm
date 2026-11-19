@@ -3,7 +3,7 @@
 # the agent user and, in interleaved rounds, waits until no frame came for 1.5 s, then does nothing (A) or repaints the
 # desktop exactly like screen.refresh (B), and records whether a presented frame arrives within 1 s. One lab lock;
 # the disposable is deleted at the end. (The full viewer path needs an MCP session: --view only opens a taken machine.)
-param([string]$Template = 'agent-tpl', [string]$Name = 'agent051-dup', [string]$Me = 'agent-guest', [int]$Rounds = 40)
+param([string]$Template = 'agent-tpl', [string]$Name = 'agent051-dup', [string]$Me = 'agent-guest', [int]$Rounds = 60)
 $ErrorActionPreference = 'Stop'
 $repo = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 $outDir = Join-Path $PSScriptRoot ('out\dup-refresh-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
@@ -22,6 +22,15 @@ try {
     do { Start-Sleep -Seconds 1; $r = Invoke-GpuVMAgent -Name $Name -Method agent.info -TimeoutSec 5 } until ((@($r.result.displays).Count -eq 1 -and $r.result.screen.w -ge 1280) -or $sw.Elapsed.TotalSeconds -gt 60)
     Start-Sleep -Seconds 3
     Step "displays: $($r.result.displays.Count), screen $($r.result.screen | ConvertTo-Json -Compress)"
+    if (@($r.result.displays).Count -ne 1) {
+        $gc0 = & (Get-Module GpuVM) { param($n) Get-GpuVMGuestCredential -State (Get-GpuVMState -Name $n) } $Name
+        Invoke-Command -VMName $Name -Credential $gc0 {
+            "qwinsta: $((qwinsta 2>&1 | Out-String).Trim() -replace '\s+', ' ')"
+            "WMI: $((Get-CimInstance Win32_VideoController | ForEach-Object { "$($_.Name)=$($_.CurrentHorizontalResolution)x$($_.CurrentVerticalResolution)/$($_.Status)" }) -join '; ')"
+            Get-Content C:\ProgramData\GpuVM\Agent\logs\agent.log -Encoding UTF8 | Select-Object -Last 15
+        } | ForEach-Object { Step "diag: $_" }
+        throw 'the agent sees no single display'
+    }
     $ref = Invoke-GpuVMAgent -Name $Name -Method screen.refresh -TimeoutSec 10
     Step "screen.refresh through the broker: ok=$($ref.ok) $($ref.result | ConvertTo-Json -Compress) $($ref.error | ConvertTo-Json -Compress)"
     $gc = & (Get-Module GpuVM) { param($n) Get-GpuVMGuestCredential -State (Get-GpuVMState -Name $n) } $Name
@@ -41,8 +50,8 @@ try {
     Remove-PSSession $s
     Set-Content (Join-Path $outDir 'rounds.json') $rows
     $data = $rows | ConvertFrom-Json
-    if ($data.error) { throw "probe: $($data.error)" }
-    foreach ($v in 'none', 'refresh') {
+    if ($data -isnot [array] -and $data.error) { throw "probe: $($data.error)" }
+    foreach ($v in 'none', 'refresh', 'blip') {
         $set = @($data | Where-Object { $_.variant -eq $v -and $_.still })
         $hit = @($set | Where-Object { $null -ne $_.frameMs })
         $ms = @($hit | ForEach-Object { [double]$_.frameMs } | Sort-Object)

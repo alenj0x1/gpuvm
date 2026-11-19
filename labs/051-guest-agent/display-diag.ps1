@@ -12,7 +12,8 @@ try {
     New-GpuVM -Name $Name -Template $Template -Disposable -Use agent -Override @{ vm = @{ memoryGB = 4; cpu = @{ count = 4 } } } -Confirm:$false | Out-Null
     Step 'created'
     $gc = & (Get-Module GpuVM) { param($n) Get-GpuVMGuestCredential -State (Get-GpuVMState -Name $n) } $Name
-    for ($i = 0; $i -lt 24; $i++) {
+    Step "host: video $((Get-VMVideo -VMName $Name -ErrorAction SilentlyContinue | ForEach-Object { "$($_.ResolutionType) $($_.HorizontalResolution)x$($_.VerticalResolution)" }) -join ',') ; template.json streaming.disableHyperVVideo=$((Get-Content 'C:\GpuVM\.templates\agent-tpl\template.json' -Raw | ConvertFrom-Json).config.streaming.disableHyperVVideo)"
+    for ($i = 0; $i -lt 6; $i++) {
         $a = try { Invoke-GpuVMAgent -Name $Name -Method agent.info -TimeoutSec 5 } catch { $null }
         $w = try { Invoke-Command -VMName $Name -Credential $gc -ErrorAction Stop {
                 @(Get-CimInstance Win32_VideoController | ForEach-Object { "$($_.Name)=$($_.CurrentHorizontalResolution)x$($_.CurrentVerticalResolution)/$($_.Status)" }) -join '; ' } } catch { 'psd: ' + $_.Exception.Message.Substring(0, 40) }
@@ -20,6 +21,11 @@ try {
         Step "agent: $d ; screen $($a.result.screen | ConvertTo-Json -Compress) ; WMI: $w"
         Start-Sleep -Seconds 5
     }
+    Invoke-Command -VMName $Name -Credential $gc {
+        "qwinsta: $((qwinsta 2>&1 | Out-String).Trim() -replace '\s+', ' ')"
+        "pnp display/monitor: $((Get-PnpDevice -Class Display, Monitor | ForEach-Object { "$($_.FriendlyName)=$($_.Status)" }) -join '; ')"
+        "console session: $((Get-CimInstance Win32_ComputerSystem).UserName)"
+    } | ForEach-Object { Step $_ }
     Invoke-Command -VMName $Name -Credential $gc { Get-Content C:\ProgramData\GpuVM\Agent\logs\agent.log -Encoding UTF8 | Select-String 'display|helper .* up|started in' | Select-Object -Last 12 | ForEach-Object Line } | ForEach-Object { Step "log: $_" }
 }
 catch { Step "FAILED: $($_.Exception.Message)"; throw }

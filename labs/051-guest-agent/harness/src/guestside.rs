@@ -145,10 +145,14 @@ pub fn dup_refresh(rounds: u32) {
                     }
                 }
                 let still = quiet.elapsed() >= Duration::from_millis(1500);
-                let variant = if r % 2 == 0 { "none" } else { "refresh" };
+                // none = reference; refresh = screen.refresh 0.3.8-0.4.2 (RedrawWindow); blip = a 1x1 nearly transparent
+                // topmost window shown for 50 ms (a real, invisible pixel change: the positive control)
+                let variant = ["none", "refresh", "blip"][r as usize % 3];
                 let t0 = std::time::Instant::now();
                 if variant == "refresh" {
                     let _ = RedrawWindow(None, None, None, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN | RDW_UPDATENOW);
+                } else if variant == "blip" {
+                    blip();
                 }
                 let mut got = None;
                 while t0.elapsed() < Duration::from_millis(1000) {
@@ -164,6 +168,27 @@ pub fn dup_refresh(rounds: u32) {
     })();
     let text = res.unwrap_or_else(|e| format!("{{\"error\":{}}}", serde_json::Value::from(e)));
     let _ = std::fs::write(out, text);
+}
+
+/// A 1x1 layered, topmost, click-through, alpha 1/255 window at the screen's corner, shown 50 ms then destroyed.
+pub fn blip() {
+    unsafe {
+        let class = wide("STATIC");
+        let ex = WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+        let Ok(h) = CreateWindowExW(ex, PCWSTR(class.as_ptr()), PCWSTR::null(), WS_POPUP, 0, 0, 1, 1, None, None, None, None) else { return };
+        let _ = SetLayeredWindowAttributes(h, windows::Win32::Foundation::COLORREF(0), 1, LWA_ALPHA);
+        let _ = ShowWindow(h, SW_SHOWNOACTIVATE);
+        let _ = windows::Win32::Graphics::Gdi::UpdateWindow(h);
+        let mut msg = MSG::default();
+        let t = std::time::Instant::now();
+        while t.elapsed() < Duration::from_millis(50) {
+            while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
+                let _ = DispatchMessageW(&msg);
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let _ = DestroyWindow(h);
+    }
 }
 
 /// `guest-window-rect <class>` (as the agent user): the rect of the first visible top-level window of that class
