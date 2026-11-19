@@ -702,7 +702,18 @@ impl Tool<'_> {
         // Only what the service allows an agent: the template, a name, and processors/memory (no profile, no other override).
         let r = self.broker("machine.create", "", json!({ "template": template, "name": name, "cpu": cpu, "memoryGB": mem, "task": self.task()? }))?;
         let created = r.data["name"].as_str().ok_or("GpuVM didn't say which machine it created.")?.to_string();
-        let ready = self.wait_ready(&created, 600)?;
+        let ready = match self.wait_ready(&created, 600) {
+            Ok(r) => r,
+            // A copy that can't be used is deleted at once (it's this session's own), not left for the person.
+            Err(e) => {
+                let deleted = match self.broker("machine.destroy", &created, json!({})) {
+                    Ok(_) => "It was deleted again; try create_disposable once more.".to_string(),
+                    Err(d) => format!("Deleting it failed too: {d}"),
+                };
+                self.ctx.forget_machine(&created);
+                return Err(format!("{e} {deleted}"));
+            }
+        };
         Ok(text(format!("Created disposable machine {created} from {template}; {ready}")))
     }
 
@@ -742,6 +753,10 @@ impl Tool<'_> {
             last = self.find(machine)?.unwrap_or(Value::Null);
             if last["state"] == "no-agent" {
                 return Err(explain(machine, &BrokerError::new("no_agent", "")));
+            }
+            // Signed in but no display for a while: waiting won't fix it (the host can't either).
+            if last["state"] == "no-display" {
+                return Err(format!("{machine} can't be used: {}", last["lastError"].as_str().unwrap_or("its agent sees no display.")));
             }
             Ok(last["state"] == "ready" && signed_in(&last))
         })?;

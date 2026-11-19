@@ -24,6 +24,7 @@ pub struct Machine {
     /// When the guest last said its screen changed size (broker ms), as Get-GpuVMAgent/Invoke report it.
     pub screen_changed_at: Option<u64>,
     pub stale_snapshot: bool,
+    pub no_display: bool,
     pub elevated_foreground: bool,
     pub secure_desktop: bool,
     pub files: HashMap<String, Vec<u8>>,
@@ -54,6 +55,8 @@ pub struct State {
     pub answer_late: bool,
     /// The sent path changed after the person allowed it (the service re-measures and says needs_approval).
     pub send_changed: bool,
+    /// Copies made while set come up signed in but with no display (state "no-display").
+    pub next_no_display: bool,
     next: u32,
 }
 
@@ -94,6 +97,7 @@ fn machine(name: &str, disposable: bool, template: &str) -> Machine {
         human_request: None,
         screen_changed_at: None,
         stale_snapshot: false,
+        no_display: false,
         elevated_foreground: false,
         secure_desktop: false,
         files: HashMap::new(),
@@ -150,7 +154,8 @@ impl Broker for FakeBroker {
             }
             "machines.list" => {
                 let list: Vec<Value> = st.machines.iter().map(|m| json!({
-                    "name": m.name, "state": if m.off { "off" } else { "ready" }, "disposable": m.disposable, "template": m.template,
+                    "name": m.name, "state": if m.off { "off" } else if m.no_display { "no-display" } else { "ready" }, "disposable": m.disposable, "template": m.template,
+                    "lastError": if m.no_display { json!("The agent is signed in but has seen no display for 21 s: no monitor in the session.") } else { Value::Null },
                     // stale_snapshot: like the real broker in lab 053, the snapshot from connect time says nobody is
                     // signed in and has no screen; a later signed_in event says who signed in.
                     "agent": if m.off { Value::Null } else if m.stale_snapshot { json!({ "version": "fake", "screen": null, "signedIn": false }) }
@@ -174,6 +179,7 @@ impl Broker for FakeBroker {
                 }
                 let mut m = machine(&name, true, template);
                 m.taken_by = Some(conn.clone());
+                m.no_display = st.next_no_display;
                 st.machines.push(m);
                 return Ok(Reply::of(json!({ "name": name })));
             }
