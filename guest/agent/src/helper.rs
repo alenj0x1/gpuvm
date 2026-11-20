@@ -59,7 +59,7 @@ fn info() -> Value {
            "integrity": crate::token::il_name(state::own_integrity()), "agentUser": crate::files::root().is_ok(),
            // the profile folder files.* paths are relative to (normally C:\Users\agent, but Windows may pick another name)
            "home": std::env::var("USERPROFILE").unwrap_or_default(),
-           "displays": capture::displays_json(), "noDisplay": crate::display::no_display(), "diag": crate::display::diag()})
+           "displays": capture::displays_json(), "noDisplay": crate::display::no_display(), "streamMode": crate::display::stream_info(), "diag": crate::display::diag()})
 }
 
 fn dispatch(method: &str, p: &Value, blob: Option<Vec<u8>>, id: u64) -> CallResult {

@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{HANDLE, HWND};
 use windows::Win32::Graphics::Gdi::*;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const MIN_W: u32 = 1280;
 const MIN_H: u32 = 800;
@@ -58,6 +59,69 @@ fn find_mode(dev: &str, w: u32, h: u32) -> Option<DEVMODEW> {
                 continue;
             }
             if best.as_ref().map_or(true, |b| dm.dmDisplayFrequency > b.dmDisplayFrequency) {
+                best = Some(dm);
+            }
+        }
+    }
+    best
+}
+
+/// A display mode: width x height @ refresh.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Mode {
+    pub w: u32,
+    pub h: u32,
+    pub hz: u32,
+}
+
+impl Mode {
+    pub fn text(&self) -> String {
+        format!("{}x{}@{}", self.w, self.h, self.hz)
+    }
+}
+
+/// "1920x1080@60" -> Mode, within sane bounds (the value comes from the registry the install wrote; anything else is
+/// ignored, never guessed).
+pub fn parse_mode(s: &str) -> Option<Mode> {
+    let (size, hz) = s.trim().split_once('@')?;
+    let (w, h) = size.split_once('x')?;
+    let all_digits = |t: &str| !t.is_empty() && t.len() <= 5 && t.bytes().all(|b| b.is_ascii_digit());
+    if !all_digits(w) || !all_digits(h) || !all_digits(hz) {
+        return None;
+    }
+    let m = Mode { w: w.parse().ok()?, h: h.parse().ok()?, hz: hz.parse().ok()? };
+    ((1280..=7680).contains(&m.w) && (720..=4320).contains(&m.h) && (24..=500).contains(&m.hz)).then_some(m)
+}
+
+/// The stream's mode the install recorded (HKLM\SOFTWARE\GpuVM\Agent StreamMode), if any and valid.
+pub fn stream_mode() -> Option<Mode> {
+    crate::util::reg_hklm(r"SOFTWARE\GpuVM\Agent", "StreamMode").and_then(|s| parse_mode(&s))
+}
+
+/// Set at the helper's start: the stream's mode is applied once, by the first ensure() that finds the virtual display.
+pub static STREAM_PENDING: AtomicBool = AtomicBool::new(true);
+
+/// For agent.info: the stream mode wanted and the virtual display's current mode.
+pub fn stream_info() -> Value {
+    let cur = devices().into_iter().find(|d| is_vdd(&d.adapter)).and_then(|d| current(&d.name)).map(|c| format!("{}x{}@{}", c.dmPelsWidth, c.dmPelsHeight, c.dmDisplayFrequency));
+    json!({"wanted": stream_mode().map(|m| m.text()), "current": cur})
+}
+
+/// Exactly w x h at the refresh closest to hz (exact when offered).
+fn find_mode_hz(dev: &str, w: u32, h: u32, hz: u32) -> Option<DEVMODEW> {
+    let wd = wide(dev);
+    let mut best: Option<DEVMODEW> = None;
+    unsafe {
+        for m in 0..4096u32 {
+            let mut dm = DEVMODEW { dmSize: std::mem::size_of::<DEVMODEW>() as u16, ..Default::default() };
+            if !EnumDisplaySettingsW(PCWSTR(wd.as_ptr()), ENUM_DISPLAY_SETTINGS_MODE(m), &mut dm).as_bool() {
+                break;
+            }
+            if dm.dmPelsWidth != w || dm.dmPelsHeight != h {
+                continue;
+            }
+            let d = |x: &DEVMODEW| x.dmDisplayFrequency.abs_diff(hz);
+            if best.as_ref().map_or(true, |b| d(&dm) < d(b)) {
                 best = Some(dm);
             }
         }
@@ -240,11 +304,41 @@ fn ensure_inner() -> Result<Option<Value>, String> {
     let devs = devices();
     let Some(vdd) = devs.iter().find(|d| is_vdd(&d.adapter)) else { return Ok(None) }; // no virtual display: not GpuVM
     let mut did = serde_json::Map::new();
+    // 0. the stream's mode (HKLM StreamMode, written by the install), once per helper start, before the hello: the
+    // viewer then finds the display already at its mode and changes nothing, so Sunshine doesn't restart under the
+    // first session (the black first open). Only while pending: a mode a viewer sets later is never fought.
+    if vdd.attached && STREAM_PENDING.swap(false, Ordering::SeqCst) {
+        if let (Some(sm), Some(cur)) = (stream_mode(), current(&vdd.name)) {
+            let now = Mode { w: cur.dmPelsWidth, h: cur.dmPelsHeight, hz: cur.dmDisplayFrequency };
+            if now != sm {
+                match find_mode_hz(&vdd.name, sm.w, sm.h, sm.hz) {
+                    Some(mut m) => {
+                        m.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFREQUENCY;
+                        // dynamic, like the size below: never saved in the registry
+                        let r = change(Some(&vdd.name), Some(&m), CDS_TYPE(0));
+                        did.insert("streamMode".into(), json!({"from": now.text(), "to": format!("{}x{}@{}", m.dmPelsWidth, m.dmPelsHeight, m.dmDisplayFrequency), "wanted": sm.text(), "code": r}));
+                    }
+                    None => {
+                        did.insert("streamMode".into(), json!({"wanted": sm.text(), "error": "not offered", "offered": offered(&vdd.name)}));
+                    }
+                }
+            }
+        }
+    }
     // 1. size, only when smaller than the agent's minimum (the viewer may set a bigger one later)
     if let Some(cur) = current(&vdd.name) {
         // only when it is below every usable size (it starts at 800x600); 1366x768 or a viewer's size stays: a change
         // every few seconds would make Sunshine re-test its encoders each time (first lab run did exactly that)
         if vdd.attached && (cur.dmPelsWidth < 1280 || cur.dmPelsHeight < 720) {
+            // the stream's mode first, when the install gave one (a display that fell back to 800x600 later)
+            if let Some(sm) = stream_mode() {
+                if let Some(mut m) = find_mode_hz(&vdd.name, sm.w, sm.h, sm.hz) {
+                    m.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFREQUENCY;
+                    let r = change(Some(&vdd.name), Some(&m), CDS_TYPE(0));
+                    did.insert("mode".into(), json!({"from": [cur.dmPelsWidth, cur.dmPelsHeight], "to": [m.dmPelsWidth, m.dmPelsHeight], "hz": m.dmDisplayFrequency, "code": r}));
+                    return finish(&devs, vdd, did);
+                }
+            }
             // the first of these the virtual display offers (it doesn't offer every size, lab 048: no 1280x720)
             let sizes = [(MIN_W, MIN_H), (1366, 768), (1280, 720), (1440, 900), (1600, 900), (1680, 1050), (1920, 1080)];
             match sizes.iter().find_map(|&(w, h)| find_mode(&vdd.name, w, h).map(|m| (w, h, m))) {
@@ -260,7 +354,11 @@ fn ensure_inner() -> Result<Option<Value>, String> {
             }
         }
     }
-    // 2. alone at 0,0
+    finish(&devs, vdd, did)
+}
+
+/// 2. alone at 0,0
+fn finish(devs: &[Dev], vdd: &Dev, mut did: serde_json::Map<String, Value>) -> Result<Option<Value>, String> {
     let others: Vec<&Dev> = devs.iter().filter(|d| d.name != vdd.name && d.attached).collect();
     let at_origin = current(&vdd.name).is_some_and(|c| unsafe { c.Anonymous1.Anonymous2.dmPosition.x == 0 && c.Anonymous1.Anonymous2.dmPosition.y == 0 });
     if vdd.attached && at_origin && others.is_empty() {
@@ -272,4 +370,18 @@ fn ensure_inner() -> Result<Option<Value>, String> {
     let off = only_this_source(&vdd.name)?;
     did.insert("turnedOff".into(), json!(off.iter().map(|d| format!("{d}")).collect::<Vec<_>>()));
     Ok(Some(Value::Object(did)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_mode_accepts_only_sane_modes() {
+        assert_eq!(parse_mode("1920x1080@60"), Some(Mode { w: 1920, h: 1080, hz: 60 }));
+        assert_eq!(parse_mode(" 2560x1440@180 "), Some(Mode { w: 2560, h: 1440, hz: 180 }));
+        for bad in ["", "1920x1080", "1920x1080@", "800x600@60", "1920x1080@1000", "1920x1080@60x", "-1920x1080@60", "1920 x1080@60", "99999999x1080@60", "1920x1080@+60"] {
+            assert_eq!(parse_mode(bad), None, "{bad}");
+        }
+    }
 }
