@@ -76,7 +76,10 @@ function Connect-GpuVM {
         $bootMessage = if ($state.Contains('updatesPending') -and $state['updatesPending']) { 'Finishing updates' } else { 'Waiting for Windows' }
         Wait-GuestReady -Name $Name -Credential $guest -BootMessage $bootMessage
         Open-GuestSession -Name $Name -Credential $guest
-        $null = Wait-GuestSignIn -Name $Name -Credential $guest
+        # A copy of an agent template with its agent still pending has no automatic sign-in until the agent is
+        # installed (below), so the sign-in wait would only run out its 15 minutes first (lab 055, 2026-11-20).
+        $agentPending = [string]$state['use'] -eq 'agent' -and $state['agent'] -is [System.Collections.IDictionary] -and $state['agent']['pending']
+        if (-not $agentPending) { $null = Wait-GuestSignIn -Name $Name -Credential $guest }
         # An imported machine still has the streaming identity it was exported with: it gets its own, inside the VM,
         # before Sunshine is used for anything (Import-GpuVM never mounts the file's disk on this PC).
         if ($state.Contains('pendingIdentityReset') -and $state['pendingIdentityReset']) {
