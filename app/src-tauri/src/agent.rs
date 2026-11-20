@@ -595,6 +595,35 @@ pub fn on_viewer(app: &AppHandle, vm: &str, msg: &Value) {
     }
 }
 
+/* ---------- the guest's repaint (ddx) ---------- */
+
+/// When each machine's last burst was asked for: one at a time (a burst lasts 10 s).
+static BURSTS: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
+
+/// screen.refresh as a burst (every 250 ms for 10 s, agent 0.4.5+) on an agent machine, as its viewer starts or comes
+/// out: with ddx a still desktop sends no frame, and a single repaint got lost while Sunshine restarted capture
+/// (agent-broker, labs/052: picture on opening 9/10, median 0.84 s; asked late, at "connected", it did worse). Any
+/// machine is asked: one without the agent says so and nothing happens. Lab 054's switch
+/// (GPUVM_LAB_NO_SCREEN_REFRESH=1) leaves it out, to measure it.
+pub fn refresh_burst(app: &AppHandle, vm: &str) {
+    if vm.is_empty() || std::env::var("GPUVM_LAB_NO_SCREEN_REFRESH").is_ok_and(|v| v == "1") {
+        return;
+    }
+    {
+        let mut b = lock(&BURSTS);
+        let b = b.get_or_insert_with(HashMap::new);
+        if b.get(vm).is_some_and(|t| t.elapsed() < Duration::from_secs(5)) {
+            return;
+        }
+        b.insert(vm.to_string(), Instant::now());
+    }
+    let app = app.clone();
+    let vm = vm.to_string();
+    tauri::async_runtime::spawn(async move {
+        let _ = call(&app, "Invoke-GpuVMAgent", json!({ "Name": vm, "Method": "screen.refresh", "Params": { "repeatMs": 10000 }, "TimeoutSec": 15 })).await;
+    });
+}
+
 /* ---------- deliveries being copied ---------- */
 
 /// Deliveries followed (offer id -> machine, the state the last poll saw, and when its result went up): Resolve-
@@ -734,7 +763,13 @@ async fn start_recording(app: &AppHandle, vm: &str) {
         // The machine's own opening (Connect-GpuVM, as its Open button), without showing anything.
         let vm2 = vm.to_string();
         let app2 = app.clone();
-        let opened = tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        let opened = tauri::async_runtime::spawn_blocking(move || -> Result<bool, String> {
+            // After any other opening of this machine (the person's Open) has finished: its viewer is then reused.
+            let lock = crate::viewer::opening_lock(&vm2);
+            let _opening = lock.lock().unwrap_or_else(|e| e.into_inner());
+            if crate::viewer::viewer_is_open(vm2.clone()) {
+                return Ok(false);
+            }
             let mut conn = crate::backend::connect()?;
             let request = json!({ "id": format!("agent-rec-{vm2}"), "cmd": "Connect-GpuVM", "args": { "Name": vm2, "Viewer": true } });
             let result = conn.call(&request, |_| {})?;
@@ -742,14 +777,18 @@ async fn start_recording(app: &AppHandle, vm: &str) {
                 return Err(result["error"].as_str().unwrap_or("Couldn't open the machine.").to_string());
             }
             let launch = crate::viewer::launch_in(&result["data"]).ok_or("The machine didn't say how to open it.")?;
-            crate::viewer::open_background(&app2, &vm2, &launch)
+            crate::viewer::open_background(&app2, &vm2, &launch).map(|()| true)
         }).await.map_err(|e| e.to_string()).and_then(|r| r);
-        if let Err(e) = opened {
-            eprintln!("agent recording {vm}: couldn't open the viewer: {e}");
-            lock(&RECS).as_mut().map(|r| r.remove(vm));
-            return;
+        match opened {
+            Err(e) => {
+                eprintln!("agent recording {vm}: couldn't open the viewer: {e}");
+                lock(&RECS).as_mut().map(|r| r.remove(vm));
+                return;
+            }
+            // The person's opening got there first: their viewer records.
+            Ok(false) => {}
+            Ok(true) => ours = true,
         }
-        ours = true;
     }
     let started = crate::viewer::send_to(vm, &json!({ "type": "record", "on": true })).is_ok();
     let mut recs = lock(&RECS);

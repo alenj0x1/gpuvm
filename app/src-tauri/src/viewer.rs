@@ -529,7 +529,20 @@ pub fn launch_in(data: &Value) -> Option<Value> {
 
 /// The end of "Open": opens the viewer with the module's arguments and returns once the first picture is decoded
 /// (the button shows "Connecting the picture" until then), or with the viewer's error in plain words.
+/// One opening of a machine at a time: Connect-GpuVM and its viewer, from the person's Open (job) or from the agent's
+/// recording (agent.rs). Two at once on a new copy left the first viewer connected while the other Connect was still
+/// changing the virtual display's mode and restarting Sunshine: a pure black picture (labs/052 viewer-black-first).
+/// Held from Connect-GpuVM until its viewer answered.
+pub fn opening_lock(vm: &str) -> Arc<Mutex<()>> {
+    static LOCKS: Mutex<Option<HashMap<String, Arc<Mutex<()>>>>> = Mutex::new(None);
+    let mut all = LOCKS.lock().unwrap_or_else(|e| e.into_inner());
+    all.get_or_insert_with(HashMap::new).entry(vm.to_lowercase()).or_insert_with(|| Arc::new(Mutex::new(()))).clone()
+}
+
 pub fn open_and_wait(app: &AppHandle, vm: &str, launch: &Value) -> Result<(), String> {
+    // An agent machine's guest starts repainting now, as its viewer starts (a burst over 10 s, agent.rs): the stream's
+    // first frames then carry a picture instead of a still desktop's nothing.
+    crate::agent::refresh_burst(app, vm);
     let arguments: Vec<String> = launch["arguments"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
     if arguments.first().map(String::as_str) != Some("stream") {
         return Err("The module didn't say how to open the machine.".into());
@@ -679,10 +692,12 @@ fn reveal(viewer: &Viewer) {
 
 /// The app finished zooming into the machine: the picture comes out from behind it.
 #[tauri::command]
-pub async fn viewer_reveal(vm: String) -> Result<(), String> {
+pub async fn viewer_reveal(app: AppHandle, vm: String) -> Result<(), String> {
     let viewer = viewers().as_ref().and_then(|v| v.get(&vm).cloned()).ok_or("This machine's viewer isn't open.")?;
     // The person opened it: a viewer that recorded in the background is theirs now.
     set_background(&vm, false);
+    // A hidden viewer shows black until the next frame: the agent machine's guest repaints as it comes out.
+    crate::agent::refresh_burst(&app, &vm);
     if !viewer.visible.load(Ordering::Relaxed) {
         reveal(&viewer);
     }
@@ -705,6 +720,7 @@ pub async fn viewer_home(app: AppHandle, vm: String, keep: bool) -> Result<(), S
 pub async fn viewer_show(app: AppHandle, vm: String) -> Result<(), String> {
     let viewer = viewers().as_ref().and_then(|v| v.get(&vm).cloned()).ok_or("This machine's viewer isn't open.")?;
     set_background(&vm, false);
+    crate::agent::refresh_burst(&app, &vm);
     if viewer.embed {
         if let Some((_, x, y, w, h)) = content_rect(&app) {
             send_raw(&viewer, &json!({ "type": "place", "x": x, "y": y, "w": w, "h": h }));
