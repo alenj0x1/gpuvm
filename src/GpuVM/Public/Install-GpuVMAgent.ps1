@@ -123,6 +123,10 @@ function Install-GpuVMAgent {
             $hz = [int]($streamMode -replace '^.*@', '')
             if ($hz -ge 30 -and $hz -le 240 -and $hz -notin 30, 60, 90, 120, 144, 165, 244) { $null = Add-GuestRefreshRate -Name $Name -Credential $credential -Hz $hz }
             $null = Sync-GuestAgentDisplayMode -Name $Name -Credential $credential -Mode $streamMode
+            # The virtual display boots in that mode (its preferred one), before Sunshine starts: no mode change later.
+            if ($streamMode -match '^(\d+)x(\d+)@(\d+)$') {
+                $null = Set-GuestVddPreferredMode -Name $Name -Credential $credential -Width $Matches[1] -Height $Matches[2] -Hz $Matches[3]
+            }
             # Sunshine's settings now, so the first open neither changes nor restarts it.
             Initialize-GuestStreamingForAgent -Name $Name -Credential $credential
         }

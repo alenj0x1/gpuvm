@@ -2205,6 +2205,7 @@ InModuleScope GpuVM {
             Mock Get-GpuVMStreamMode { '1920x1080@180' }
             Mock Add-GuestRefreshRate { $script:steps.Add("rate $Hz"); $true }
             Mock Sync-GuestAgentDisplayMode { $script:steps.Add("mode $Mode"); $true }
+            Mock Set-GuestVddPreferredMode { $script:steps.Add("boot ${Width}x${Height}@$Hz"); $true }
             Mock Initialize-GuestStreamingForAgent { $script:steps.Add('sunshine') }
             $state = @{ streaming = @{ x = 1 }; config = @{ streaming = @{ virtualDisplay = $true } } }
             $credential = [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force))
@@ -2214,11 +2215,41 @@ InModuleScope GpuVM {
             $block = [regex]::Match($src, "(?s)    if \(\`$state\['streaming'\].*?\r?\n    \}\r?\n").Value
             $block | Should Not BeNullOrEmpty
             Invoke-Expression $block
-            ($script:steps -join ',') | Should Be 'rate 180,mode 1920x1080@180,sunshine'
+            ($script:steps -join ',') | Should Be 'rate 180,mode 1920x1080@180,boot 1920x1080@180,sunshine'
             Mock Get-GpuVMStreamMode { '1920x1080@60' }
             $script:steps.Clear()
             Invoke-Expression $block
-            ($script:steps -join ',') | Should Be 'mode 1920x1080@60,sunshine'
+            ($script:steps -join ',') | Should Be 'mode 1920x1080@60,boot 1920x1080@60,sunshine'
+        }
+    }
+}
+
+InModuleScope GpuVM {
+    Describe 'The virtual display boots in the viewer''s mode' {
+        It 'puts that mode first in the driver''s list, once, with nothing else lost' {
+            $cred = [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force))
+            $script:vdd = Join-Path $TestDrive 'vdd_settings.xml'
+            Set-Content -LiteralPath $script:vdd -Value ('<vdd_settings><resolutions>' +
+                '<resolution><width>800</width><height>600</height><refresh_rate>30</refresh_rate></resolution>' +
+                '<resolution><width>1920</width><height>1080</height><refresh_rate>30</refresh_rate></resolution>' +
+                '<resolution><width>2560</width><height>1440</height><refresh_rate>30</refresh_rate></resolution>' +
+                '</resolutions><global><g_refresh_rate>60</g_refresh_rate></global></vdd_settings>')
+            # The guest's script, run here against a copy of the driver's settings.
+            Mock Invoke-Guest {
+                $code = $ScriptBlock.ToString().Replace('C:\VirtualDisplayDriver\vdd_settings.xml', $script:vdd)
+                & ([scriptblock]::Create($code)) @ArgumentList
+            }
+            Set-GuestVddPreferredMode -Name a -Credential $cred -Width 1920 -Height 1080 -Hz 180 | Should Be $true
+            [xml]$x = Get-Content -Raw -LiteralPath $script:vdd
+            $list = @($x.vdd_settings.resolutions.resolution)
+            "$($list[0].width)x$($list[0].height)@$($list[0].refresh_rate)" | Should Be '1920x1080@180'
+            $list.Count | Should Be 3
+            @($list | Where-Object { $_.width -eq '1920' }).Count | Should Be 1
+            @($list | Where-Object { $_.width -eq '800' }).Count | Should Be 1
+            $x.vdd_settings.global.g_refresh_rate | Should Be '60'
+            Set-GuestVddPreferredMode -Name a -Credential $cred -Width 1920 -Height 1080 -Hz 180 | Should Be $false
+            Remove-Item -LiteralPath $script:vdd
+            Set-GuestVddPreferredMode -Name a -Credential $cred -Width 1920 -Height 1080 -Hz 180 | Should Be $false
         }
     }
 }

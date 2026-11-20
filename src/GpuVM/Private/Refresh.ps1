@@ -88,3 +88,37 @@ function Add-GuestRefreshRate {
     }
     [bool](@($added)[-1] -eq $true)
 }
+
+# Makes a mode the virtual display's preferred one: the Virtual Display Driver starts in the FIRST <resolution> of its
+# settings (800x600@30 out of the box), so with the viewer's mode there the display boots in it, before Sunshine
+# starts, and nothing changes the mode afterwards (lab 052, 2026-11-20: a mode set later made Sunshine test its
+# encoders again on the first session, which then streamed black). The driver reads it when it starts: no restart
+# here (the caller's power cycle follows). Returns $true when it changed the file.
+function Set-GuestVddPreferredMode {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][pscredential]$Credential,
+        [Parameter(Mandatory)][ValidateRange(640, 7680)][int]$Width,
+        [Parameter(Mandatory)][ValidateRange(480, 4320)][int]$Height,
+        [Parameter(Mandatory)][ValidateRange(24, 500)][int]$Hz
+    )
+    $changed = Invoke-Guest -Name $Name -Credential $Credential -ArgumentList $Width, $Height, $Hz -ScriptBlock {
+        param($w, $h, $hz)
+        $path = 'C:\VirtualDisplayDriver\vdd_settings.xml'
+        if (-not (Test-Path -LiteralPath $path)) { return $false }
+        [xml]$xml = Get-Content -LiteralPath $path -Raw
+        $list = $xml.SelectSingleNode('//resolutions')
+        if (-not $list) { return $false }
+        $first = @($list.SelectNodes('resolution'))[0]
+        if ($first -and [int]$first.width -eq $w -and [int]$first.height -eq $h -and [int]$first.refresh_rate -eq $hz) { return $false }
+        foreach ($r in @($list.SelectNodes('resolution'))) { if ([int]$r.width -eq $w -and [int]$r.height -eq $h) { [void]$list.RemoveChild($r) } }
+        $node = $xml.CreateElement('resolution')
+        foreach ($pair in @(@('width', $w), @('height', $h), @('refresh_rate', $hz))) {
+            $e = $xml.CreateElement($pair[0]); $e.InnerText = "$($pair[1])"; [void]$node.AppendChild($e)
+        }
+        [void]$list.PrependChild($node)
+        $xml.Save($path)
+        $true
+    }
+    [bool](@($changed)[-1] -eq $true)
+}
