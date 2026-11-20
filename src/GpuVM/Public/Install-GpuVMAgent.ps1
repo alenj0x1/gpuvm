@@ -114,6 +114,11 @@ function Install-GpuVMAgent {
     $state['use'] = 'agent'
     Save-GpuVMState $state
     Update-GpuVMNetworkIsolation -Name $Name -State $state
+    # The viewer's mode, for the agent to set from boot (before the power cycle below, so the next boot already has it).
+    if ($state['streaming'] -and $state['config']['streaming']['virtualDisplay']) {
+        try { $null = Sync-GuestAgentDisplayMode -Name $Name -Credential $credential -Mode (Get-GpuVMStreamMode -State $state) }
+        catch { Write-Warning "Couldn't tell the agent the viewer's display mode: $($_.Exception.Message)" }
+    }
     Write-JsonFile -Path (Join-Path $folder 'agent.json') -Data ([ordered]@{
         vmId        = $vmId
         name        = $Name

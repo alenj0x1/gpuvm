@@ -292,6 +292,43 @@ function Enable-GuestHyperVVideo {
     [string](@($r)[-1])
 }
 
+# The display mode the viewer will ask for on this machine, as Connect-GpuVM works it out: the streaming client's
+# resolution and its fps (0 = the chosen monitor's refresh rate). "1920x1080@180".
+function Get-GpuVMStreamMode {
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$State, [string]$Monitor)
+    $client = $State['config']['streaming']['client']
+    $chosen = if ($Monitor) { $Monitor } elseif ($client -and $client.Contains('monitor')) { [string]$client['monitor'] } else { '' }
+    $fps = [int]$client['fps']
+    if ($fps -le 0) {
+        $target = try { Resolve-HostMonitor -Monitor $chosen } catch { $null }
+        $fps = Resolve-GpuVMStreamFps 0 -Hz $(if ($target) { $target['hz'] } else { 0 })
+    }
+    "$($client['resolution'])@$(Resolve-GpuVMStreamFps $fps)"
+}
+
+# Tells the agent which mode its virtual display should have from boot (HKLM\SOFTWARE\GpuVM\Agent, StreamMode =
+# "WxH@Hz", administrators only): already in the viewer's mode before Sunshine starts, no first-open mode change, no
+# Sunshine restart and no encoder re-test that leaves the first stream black (lab 052, 2026-11-20). Written only when
+# it changes; the state remembers the last one.
+function Sync-GuestAgentDisplayMode {
+    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential, [Parameter(Mandatory)][string]$Mode)
+    # The agent's own limits (agent 0.4.6): 1280-7680 x 720-4320, 24-500 Hz.
+    if ($Mode -notmatch '^(\d{4})x(\d{3,4})@(\d{2,3})$' -or [int]$Matches[1] -lt 1280 -or [int]$Matches[1] -gt 7680 -or
+        [int]$Matches[2] -lt 720 -or [int]$Matches[2] -gt 4320 -or [int]$Matches[3] -lt 24 -or [int]$Matches[3] -gt 500) { return $false }
+    $state = Get-GpuVMState -Name $Name
+    if ([string]$state['agentDisplayMode'] -eq $Mode) { return $false }
+    Invoke-Command -VMName $Name -Credential $Credential -ErrorAction Stop -ArgumentList $Mode -ScriptBlock {
+        param($mode)
+        $key = 'HKLM:\SOFTWARE\GpuVM\Agent'
+        if (-not (Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
+        Set-ItemProperty -Path $key -Name StreamMode -Value $mode -Type String
+    }
+    $state = Get-GpuVMState -Name $Name
+    $state['agentDisplayMode'] = $Mode
+    Save-GpuVMState $state
+    $true
+}
+
 # The agent's removal inside a running machine (install.ps1 -Uninstall -RemoveUser): its last result.
 function Invoke-GuestAgentRemoval {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential)

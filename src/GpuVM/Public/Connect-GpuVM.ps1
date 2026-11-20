@@ -157,6 +157,12 @@ function Connect-GpuVM {
         if ($guest -and $state['config']['streaming']['virtualDisplay']) {
             # The monitor's rate (fps 0) is resolved now: opening on another monitor sets the display again.
             $mode = "$($client['resolution'])@$(Resolve-GpuVMStreamFps $client['fps'])"
+            # An agent machine's agent sets this mode from boot; told again when it changes (another monitor, other
+            # settings), so the next boot's first stream needs no mode change either.
+            if ([string]$state['use'] -eq 'agent') {
+                try { $null = Sync-GuestAgentDisplayMode -Name $Name -Credential $guest -Mode $mode }
+                catch { Write-Warning "Couldn't tell the agent the viewer's display mode: $($_.Exception.Message)" }
+            }
             if ($done['display'] -eq $mode) { $prepared['display'] = $mode }
             else {
                 try {
