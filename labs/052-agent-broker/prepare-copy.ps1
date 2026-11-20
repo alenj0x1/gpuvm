@@ -4,7 +4,7 @@
 # cycle, so Sunshine and the display start with all of it.
 # A copy that just started can drop PowerShell Direct ("the Hyper-V socket target process has ended", 2026-11-20,
 # twice): the guest must answer three times in a row first, and each step is retried.
-param([Parameter(Mandatory)][string]$Name, [switch]$SunshineDebug)
+param([Parameter(Mandatory)][string]$Name, [switch]$SunshineDebug, [switch]$StopAgent)
 $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 $m = Import-Module (Join-Path $root 'src\GpuVM\GpuVM.psd1') -Force -PassThru
@@ -38,4 +38,23 @@ $null = $mode -match '^(\d+)x(\d+)@(\d+)$'
 $w = $Matches[1]; $h = $Matches[2]; $hz = $Matches[3]
 $out['vddChanged'] = Retry -What 'the virtual display''s mode' { & $m { param($n, $c, $w, $h, $hz) Set-GuestVddPreferredMode -Name $n -Credential $c -Width $w -Height $h -Hz $hz } $Name $cred $w $h $hz }
 & $m { param($n) Restart-GpuVMCold -Name $n } $Name
+# -StopAgent: the agent's service and its session helper stopped once the copy is back (nothing of the agent touches
+# the display: no 5 s display check, no screen capture), to tell whether they make Sunshine's capture start over.
+if ($StopAgent) {
+    $streak = 0; $deadline = (Get-Date).AddMinutes(6)
+    while ($streak -lt 3 -and (Get-Date) -lt $deadline) {
+        try { $null = Invoke-Command -VMName $Name -Credential $cred -ErrorAction Stop { 1 }; $streak++ } catch { $streak = 0 }
+        Start-Sleep -Seconds 5
+    }
+    Start-Sleep -Seconds 40   # the agent's sign-in and its helper's first display arrangement
+    $out['agentStopped'] = Retry -What 'stopping the agent' {
+        Invoke-Command -VMName $Name -Credential $cred -ErrorAction Stop {
+            Set-Service -Name GpuVMAgent -StartupType Disabled
+            Stop-Service -Name GpuVMAgent -Force
+            Get-Process gpuvm-agent -ErrorAction SilentlyContinue | Stop-Process -Force
+            Start-Sleep -Seconds 2
+            "service $((Get-Service GpuVMAgent).Status), processes $(@(Get-Process gpuvm-agent -ErrorAction SilentlyContinue).Count)"
+        }
+    }
+}
 $out | ConvertTo-Json -Compress

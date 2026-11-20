@@ -142,10 +142,11 @@ if (process.env.LAB052_VARIANT === "vddundo") {
 if (process.env.LAB052_VARIANT === "mttclear") {
   const args = ["-NoProfile", "-File", join(mine, "prepare-copy.ps1"), "-Name", machine];
   if (process.env.LAB052_SUNSHINE_DEBUG === "1") args.push("-SunshineDebug");
+  if (process.env.LAB052_STOP_AGENT === "1") args.push("-StopAgent");
   try { report.mttclear = execFileSync("pwsh", args).toString().trim(); }
   catch (e) { report.mttclear = `failed: ${String(e.stdout ?? "")}${String(e.stderr ?? e)}`.slice(-600); console.log("mttclear:", report.mttclear); await finish(5); }
   console.log("mttclear:", report.mttclear);
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < (process.env.LAB052_STOP_AGENT === "1" ? 0 : 30); i++) {
     await sleep(10000);
     const r = text(await tool("take_machine", { machine, task: "Lab 054: screen.refresh" }));
     if (!/not ready|keep waiting/i.test(r)) break;
@@ -171,7 +172,9 @@ async function connect() {
   let hiddenMs = null;
   for (const t0 = Date.now(); Date.now() - t0 < 180000;) {
     if (viewers() > 0) { hiddenMs = Date.now() - tClosed; break; }
-    await tool("screenshot", { machine, maxWidth: 96, maxHeight: 64 });
+    // LAB052_NO_AGENT_SHOTS=1: no agent screenshot while waiting (each one opens a WGC capture of the display in the
+    // guest, and the helper keeps it open): a call that doesn't touch the guest's screen instead.
+    if (process.env.LAB052_NO_AGENT_SHOTS === "1") await tool("list_machines", {}); else await tool("screenshot", { machine, maxWidth: 96, maxHeight: 64 });
     // Every tool call is a step of the session's budget (500): asked every 5 s, not 1.5 s (the 2026-11-20 final run
     // used it up waiting and measured nothing).
     await sleep(5000);
