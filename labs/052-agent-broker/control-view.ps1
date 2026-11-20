@@ -24,17 +24,18 @@ function Get-AppElements {
     if (-not $p) { return @() }
     @($UIA::FromHandle($p.MainWindowHandle).FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition))
 }
-# The machine's Open button: the first button after the element that names the machine.
+$script:buttonsLogged = $false
+# The machine's Open button: its page from the sidebar (the button named after it), then that page's open button.
+# The page's buttons are logged once (first run: the home card's first button after the name wasn't it).
 function Find-OpenButton {
-    $all = Get-AppElements
-    $at = -1
-    for ($i = 0; $i -lt $all.Count; $i++) { if ($all[$i].Current.Name -eq $Name) { $at = $i; break } }
-    if ($at -lt 0) { return $null }
-    for ($i = $at + 1; $i -lt [math]::Min($all.Count, $at + 40); $i++) {
-        $e = $all[$i]
-        if ($e.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and $e.Current.Name -match '^(Open|Play|Abrir)\b') { return $e }
-    }
-    $null
+    $isButton = { param($e) $e.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button }
+    $side = @(Get-AppElements | Where-Object { (& $isButton $_) -and $_.Current.Name -eq $Name }) | Select-Object -First 1
+    if (-not $side) { return $null }
+    $side.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+    Start-Sleep -Seconds 2
+    $buttons = @(Get-AppElements | Where-Object { & $isButton $_ })
+    if (-not $script:buttonsLogged) { Line "machine page buttons: $(@($buttons | ForEach-Object { "'$($_.Current.Name)'" }) -join ' ')"; $script:buttonsLogged = $true }
+    @($buttons | Where-Object { $_.Current.Name -match '^(Open|Abrir|Connect|Conectar)\b' }) | Select-Object -First 1
 }
 function Read-Luma([string]$Save) {
     $r = if ($Save) { & $lumaShot -Save (Join-Path $out $Save) } else { & $lumaShot }
