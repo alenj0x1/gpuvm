@@ -135,6 +135,21 @@ if (process.env.LAB052_VARIANT === "vddundo") {
     if (!/not ready|keep waiting/i.test(r)) break;
   }
 }
+// LAB052_VARIANT=mttclear: what 4501f1b adds, on this copy (this branch's module, read-only): the stream mode first
+// in vdd_settings.xml and Windows' saved layouts of the virtual display forgotten, then a power cycle.
+if (process.env.LAB052_VARIANT === "mttclear") {
+  const ps = `$m = Import-Module '${join(mine, "..", "..", "src", "GpuVM", "GpuVM.psd1")}' -PassThru; ` +
+    String.raw`& $m { param($n) $s = Get-GpuVMState -Name $n; $c = Get-GpuVMGuestCredential -State $s; $mode = Get-GpuVMStreamMode -State $s; ` +
+    String.raw`$null = $mode -match '^(\d+)x(\d+)@(\d+)$'; $ch = Set-GuestVddPreferredMode -Name $n -Credential $c -Width $Matches[1] -Height $Matches[2] -Hz $Matches[3]; ` +
+    String.raw`Restart-GpuVMCold -Name $n; "mode $mode changed $ch" } ` + `'${machine}'`;
+  report.mttclear = execFileSync("pwsh", ["-NoProfile", "-Command", ps]).toString().trim();
+  console.log("mttclear:", report.mttclear);
+  for (let i = 0; i < 30; i++) {
+    await sleep(10000);
+    const r = text(await tool("take_machine", { machine, task: "Lab 054: screen.refresh" }));
+    if (!/not ready|keep waiting/i.test(r)) break;
+  }
+}
 // LAB052_DEBUG=1: Sunshine logs at debug level on this copy (why it restarts its capture), set the way GpuVM sets
 // Sunshine's config (its API and a restart, Update-SunshineConfig), before any connect. (Editing sunshine.conf
 // directly and restarting the service clashed with GpuVM's own update and left Sunshine refusing connections.)
