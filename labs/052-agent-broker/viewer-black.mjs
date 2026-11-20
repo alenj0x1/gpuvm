@@ -147,7 +147,16 @@ async function connect() {
   while (Date.now() - tOpen < 20000 && pictureMs === null) {
     const l = luma();
     if (l !== "none") {
-      if (windowMs === null) { windowMs = Date.now() - tOpen; first = Number(l); }
+      if (windowMs === null) {
+        windowMs = Date.now() - tOpen; first = Number(l);
+        // LAB052_VARIANT=nudgelate: the 10 s burst starts when the viewer's window shows (what the app does when it
+        // reveals the viewer or it says "connected"), not when the open is asked.
+        if (process.env.LAB052_VARIANT === "nudgelate") {
+          const ps = String.raw`Import-Module 'C:\Program Files\GpuVM\gpuvm\src\GpuVM\GpuVM.psd1'; $t = [Diagnostics.Stopwatch]::StartNew(); ` +
+            String.raw`while ($t.Elapsed.TotalSeconds -lt 10) { try { $null = Invoke-GpuVMAgent -Name '${machine}' -Method screen.refresh -TimeoutSec 3 } catch { }; Start-Sleep -Milliseconds 250 }`;
+          spawn("pwsh", ["-NoProfile", "-Command", ps], { stdio: "ignore", detached: true }).unref();
+        }
+      }
       if (Number(l) > 12) pictureMs = Date.now() - tOpen;
     }
     if (pictureMs === null) await sleep(250);
