@@ -9,7 +9,7 @@ import { Logo } from "./Logo";
 import { TripleSpark } from "./Chart";
 import type { HostInfo, JobEvent, Sample, VmOverview } from "./types";
 import { readPrefs } from "./prefs";
-import { agents, api, inTauri, onJob, relaunchAsAdmin, repairService, service, startJob as runJob } from "./api";
+import { api, inTauri, onJob, relaunchAsAdmin, repairService, service, startJob as runJob } from "./api";
 import { MachineIcon, renamePatternVariant } from "./machineIcon";
 import { renameSceneStyle } from "./Scene";
 import { renameDecor } from "./decor/store";
@@ -332,7 +332,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
           .then(({ invoke }) => invoke<boolean>("viewer_is_open", { vm }))
           .catch(() => false)
           .then((alive) => {
-            if (alive) enterMachine(vm, () => showViewer(vm).then(() => { refreshAgentScreen(vm, true); after?.(); }), reopen);
+            if (alive) enterMachine(vm, () => showViewer(vm).then(() => after?.()), reopen);
             else reopen();
           });
         return;
@@ -340,7 +340,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       setViewing({ vm, phase: "opening" });
       const done = after, fail = failed;
       after = () => {
-        enterMachine(vm, () => import("@tauri-apps/api/core").then(({ invoke }) => invoke("viewer_reveal", { vm })).then(() => refreshAgentScreen(vm, true)),
+        enterMachine(vm, () => import("@tauri-apps/api/core").then(({ invoke }) => invoke("viewer_reveal", { vm })),
           () => push("error", translateModule("The viewer closed before showing the picture.")));
         done?.();
       };
@@ -403,32 +403,13 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       offs.push(listen<{ vm: string; msg: { type: string } }>("viewer", (e) => {
         if (e.payload.msg.type === "closed" && viewingRef.current?.vm === e.payload.vm && viewingRef.current.phase === "live") setViewing(null);
         if (e.payload.msg.type === "home" && viewingRef.current?.vm === e.payload.vm && viewingRef.current.phase === "live") leaveToHome(e.payload.vm);
-        // A machine for agents (ddx): its guest repaints once the stream is up, so a still desktop isn't black.
-        if (["connected", "first-frame"].includes(e.payload.msg.type)) refreshAgentScreen(e.payload.vm);
       }));
     });
     return () => { offs.forEach((o) => o.then((f) => f())); };
   }, [leaveToHome]);
 
-  /** screen.refresh on a machine for agents: when its stream comes up (connected and first-frame both ask; 10 s
-   *  apart) and, always (`now`), when its picture comes out. A viewer GpuVM kept hidden (recording B) decodes frames
-   *  nobody sees; revealed, it showed black until the next one (lab 054: the refresh at connect came ~6 s before the
-   *  person opened the machine, and made no difference). */
-  const refreshedAt = useRef<Record<string, number>>({});
-  // Lab 054 measures what the refresh changes: GpuVM started with GPUVM_LAB_NO_SCREEN_REFRESH=1 skips it.
-  const noRefresh = useRef(false);
-  useEffect(() => {
-    if (!inTauri) return;
-    import("@tauri-apps/api/core").then(({ invoke }) => invoke<{ noScreenRefresh?: boolean }>("lab_flags"))
-      .then((f) => { noRefresh.current = f?.noScreenRefresh === true; }).catch(() => {});
-  }, []);
-  const refreshAgentScreen = (vm: string, now = false) => {
-    if (noRefresh.current) return;
-    if (vmsRef.current?.find((v) => v.name === vm)?.use !== "agent") return;
-    if (!now && Date.now() - (refreshedAt.current[vm] ?? 0) < 10000) return;
-    refreshedAt.current[vm] = Date.now();
-    agents.refreshScreen(vm).catch(() => { /* an agent not ready or older than 0.3.8: nothing to do */ });
-  };
+  // An agent machine's repaint (screen.refresh as a 10 s burst) is asked by the Rust side as its viewer starts and as
+  // it comes out (agent::refresh_burst), not from here after "connected": asked late it did worse (labs/052).
 
   const run = useCallback(async (vm: string, label: string, task: () => Promise<unknown>) => {
     setPending((p) => ({ ...p, [vm]: label }));

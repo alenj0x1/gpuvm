@@ -183,6 +183,14 @@ async fn job(app: AppHandle, job_id: String, cmd: String, args: Option<Value>) -
             event["jobId"] = json!(job_id);
             let _ = app.emit("job", event);
         };
+        // One opening of a machine at a time (viewer::opening_lock): after the agent's recording opened it, its viewer is
+        // there already and only comes out (no second Connect changing the display while it streams).
+        let lock = with_viewer.then(|| viewer::opening_lock(&vm_name));
+        let _opening = lock.as_ref().map(|l| l.lock().unwrap_or_else(|e| e.into_inner()));
+        if with_viewer && request["args"]["Pair"] != true && viewer::viewer_is_open(vm_name.clone()) {
+            emit(json!({ "type": "result", "ok": true, "data": null }));
+            return;
+        }
         let mut outcome = conn.call(&request, |event| emit(event.clone()));
         // A job that destroys data (going back to a restore point, deleting one) waits for a UAC confirmation, as
         // ps does; the same request goes again with the code.
