@@ -116,7 +116,14 @@ function Install-GpuVMAgent {
     Update-GpuVMNetworkIsolation -Name $Name -State $state
     # The viewer's mode, for the agent to set from boot (before the power cycle below, so the next boot already has it).
     if ($state['streaming'] -and $state['config']['streaming']['virtualDisplay']) {
-        try { $null = Sync-GuestAgentDisplayMode -Name $Name -Credential $credential -Mode (Get-GpuVMStreamMode -State $state) }
+        try {
+            $streamMode = Get-GpuVMStreamMode -State $state
+            # A rate the virtual display doesn't list yet (180 Hz) is added now, before the power cycle, so the agent
+            # finds the exact mode at boot instead of the closest one (165 Hz, agent-guest lab 051).
+            $hz = [int]($streamMode -replace '^.*@', '')
+            if ($hz -ge 30 -and $hz -le 240 -and $hz -notin 30, 60, 90, 120, 144, 165, 244) { $null = Add-GuestRefreshRate -Name $Name -Credential $credential -Hz $hz }
+            $null = Sync-GuestAgentDisplayMode -Name $Name -Credential $credential -Mode $streamMode
+        }
         catch { Write-Warning "Couldn't tell the agent the viewer's display mode: $($_.Exception.Message)" }
     }
     Write-JsonFile -Path (Join-Path $folder 'agent.json') -Data ([ordered]@{
