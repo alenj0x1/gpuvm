@@ -140,15 +140,10 @@ if (process.env.LAB052_VARIANT === "vddundo") {
 // LAB052_SUNSHINE_DEBUG=1 (with mttclear): Sunshine's min_log_level = debug written into sunshine.conf before that
 // power cycle, so Sunshine starts with it (why its capture restarts: DuplicateOutput's HRESULT).
 if (process.env.LAB052_VARIANT === "mttclear") {
-  const debugConf = process.env.LAB052_SUNSHINE_DEBUG === "1" ? "$true" : "$false";
-  const ps = `$m = Import-Module '${join(mine, "..", "..", "src", "GpuVM", "GpuVM.psd1")}' -PassThru; ` +
-    String.raw`& $m { param($n, $dbg) $s = Get-GpuVMState -Name $n; $c = Get-GpuVMGuestCredential -State $s; $mode = Get-GpuVMStreamMode -State $s; ` +
-    // A copy that just started can drop PowerShell Direct ("the Hyper-V socket target process has ended", lab 052
-    // 2026-11-20): retried, and the file read back.
-    String.raw`if ($dbg) { $ok = $false; for ($i = 0; $i -lt 6 -and -not $ok; $i++) { try { $ok = Invoke-Command -VMName $n -Credential $c -ErrorAction Stop { $f = 'C:\Program Files\Sunshine\config\sunshine.conf'; $l = @(Get-Content $f | ? { $_ -notmatch '^\s*min_log_level\s*=' }); Set-Content $f (@($l) + 'min_log_level = debug'); [bool](Select-String -Path $f -Pattern '^min_log_level = debug$' -Quiet) } } catch { Start-Sleep 10 } }; "debug conf written: $ok" }; ` +
-    String.raw`$null = $mode -match '^(\d+)x(\d+)@(\d+)$'; $ch = Set-GuestVddPreferredMode -Name $n -Credential $c -Width $Matches[1] -Height $Matches[2] -Hz $Matches[3]; ` +
-    String.raw`Restart-GpuVMCold -Name $n; "mode $mode changed $ch debug $dbg" } ` + `'${machine}' ${debugConf}`;
-  report.mttclear = execFileSync("pwsh", ["-NoProfile", "-Command", ps]).toString().trim();
+  const args = ["-NoProfile", "-File", join(mine, "prepare-copy.ps1"), "-Name", machine];
+  if (process.env.LAB052_SUNSHINE_DEBUG === "1") args.push("-SunshineDebug");
+  try { report.mttclear = execFileSync("pwsh", args).toString().trim(); }
+  catch (e) { report.mttclear = `failed: ${String(e.stdout ?? "")}${String(e.stderr ?? e)}`.slice(-600); console.log("mttclear:", report.mttclear); await finish(5); }
   console.log("mttclear:", report.mttclear);
   for (let i = 0; i < 30; i++) {
     await sleep(10000);
