@@ -67,8 +67,8 @@ function dumpGuest(vm) {
     String.raw`Invoke-Command -VMName '${vm}' -Credential $c { $d = 'C:\Program Files\Sunshine\config'; ` +
     String.raw`'=== conf'; Get-Content (Join-Path $d 'sunshine.conf'); '=== displays'; Get-CimInstance Win32_VideoController | % { "$($_.Name): $($_.CurrentHorizontalResolution)x$($_.CurrentVerticalResolution)" }; ` +
     String.raw`'=== agent logs'; Get-ChildItem 'C:\ProgramData\GpuVM\Agent\logs' -Filter *.log -ErrorAction SilentlyContinue | % { "--- $($_.Name)"; Get-Content $_.FullName -Tail 300 }; ` +
-    String.raw`'=== log'; Get-Content (Join-Path $d 'sunshine.log') -Tail 20000 }`;
-  writeFileSync(join(out, `viewer-black-${stamp}-guest.txt`), execFileSync("pwsh", ["-NoProfile", "-Command", ps], { maxBuffer: 64 << 20 }).toString());
+    String.raw`'=== log'; Get-Content (Join-Path $d 'sunshine.log') -Tail 200000 }`;
+  writeFileSync(join(out, `viewer-black-${stamp}-guest.txt`), execFileSync("pwsh", ["-NoProfile", "-Command", ps], { maxBuffer: 256 << 20 }).toString());
 }
 let machine = null;
 const report = { template, connects, with: [], without: [] };
@@ -137,11 +137,17 @@ if (process.env.LAB052_VARIANT === "vddundo") {
 }
 // LAB052_VARIANT=mttclear: what 4501f1b adds, on this copy (this branch's module, read-only): the stream mode first
 // in vdd_settings.xml and Windows' saved layouts of the virtual display forgotten, then a power cycle.
+// LAB052_SUNSHINE_DEBUG=1 (with mttclear): Sunshine's min_log_level = debug written into sunshine.conf before that
+// power cycle, so Sunshine starts with it (why its capture restarts: DuplicateOutput's HRESULT).
 if (process.env.LAB052_VARIANT === "mttclear") {
+  const debugConf = process.env.LAB052_SUNSHINE_DEBUG === "1" ? "$true" : "$false";
   const ps = `$m = Import-Module '${join(mine, "..", "..", "src", "GpuVM", "GpuVM.psd1")}' -PassThru; ` +
-    String.raw`& $m { param($n) $s = Get-GpuVMState -Name $n; $c = Get-GpuVMGuestCredential -State $s; $mode = Get-GpuVMStreamMode -State $s; ` +
+    String.raw`& $m { param($n, $dbg) $s = Get-GpuVMState -Name $n; $c = Get-GpuVMGuestCredential -State $s; $mode = Get-GpuVMStreamMode -State $s; ` +
+    // A copy that just started can drop PowerShell Direct ("the Hyper-V socket target process has ended", lab 052
+    // 2026-11-20): retried, and the file read back.
+    String.raw`if ($dbg) { $ok = $false; for ($i = 0; $i -lt 6 -and -not $ok; $i++) { try { $ok = Invoke-Command -VMName $n -Credential $c -ErrorAction Stop { $f = 'C:\Program Files\Sunshine\config\sunshine.conf'; $l = @(Get-Content $f | ? { $_ -notmatch '^\s*min_log_level\s*=' }); Set-Content $f (@($l) + 'min_log_level = debug'); [bool](Select-String -Path $f -Pattern '^min_log_level = debug$' -Quiet) } } catch { Start-Sleep 10 } }; "debug conf written: $ok" }; ` +
     String.raw`$null = $mode -match '^(\d+)x(\d+)@(\d+)$'; $ch = Set-GuestVddPreferredMode -Name $n -Credential $c -Width $Matches[1] -Height $Matches[2] -Hz $Matches[3]; ` +
-    String.raw`Restart-GpuVMCold -Name $n; "mode $mode changed $ch" } ` + `'${machine}'`;
+    String.raw`Restart-GpuVMCold -Name $n; "mode $mode changed $ch debug $dbg" } ` + `'${machine}' ${debugConf}`;
   report.mttclear = execFileSync("pwsh", ["-NoProfile", "-Command", ps]).toString().trim();
   console.log("mttclear:", report.mttclear);
   for (let i = 0; i < 30; i++) {
