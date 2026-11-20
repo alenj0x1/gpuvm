@@ -79,6 +79,8 @@ struct Viewer {
     /// The machine opens full screen (its "Full screen" option): it still starts inside the app, hidden, and
     /// goes full screen when revealed.
     full_screen: bool,
+    /// Closed only to be opened again (no picture after connecting, open_and_wait): its end tells nobody.
+    replaced: std::sync::atomic::AtomicBool,
 }
 
 /// Height of the app's title bar in logical pixels (styles.css, --titlebar): the viewer covers what is below it.
@@ -404,7 +406,7 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
     }
     drop(token);
 
-    let viewer = Arc::new(Viewer { pipe, child, raise_until: Mutex::new(None), write: Mutex::new(()), hwnd: AtomicIsize::new(0), embed, visible: std::sync::atomic::AtomicBool::new(!embed), revealed: std::sync::atomic::AtomicBool::new(!embed), first_frame: std::sync::atomic::AtomicBool::new(false), full_now: std::sync::atomic::AtomicBool::new(false), last_toggle: Mutex::new(None), last_drag: Mutex::new(None), full_screen });
+    let viewer = Arc::new(Viewer { pipe, child, raise_until: Mutex::new(None), write: Mutex::new(()), hwnd: AtomicIsize::new(0), embed, visible: std::sync::atomic::AtomicBool::new(!embed), revealed: std::sync::atomic::AtomicBool::new(!embed), first_frame: std::sync::atomic::AtomicBool::new(false), full_now: std::sync::atomic::AtomicBool::new(false), last_toggle: Mutex::new(None), last_drag: Mutex::new(None), full_screen, replaced: std::sync::atomic::AtomicBool::new(false) });
     viewers().get_or_insert_with(HashMap::new).insert(vm.clone(), viewer.clone());
     let _ = app.emit("viewer", json!({ "vm": vm, "msg": { "type": "opened", "pid": pid } }));
     // The capture settings (the last 30 s on or off, the notices' language): kept by the viewer until its stream starts.
@@ -415,6 +417,10 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
             let Ok(mut msg) = serde_json::from_slice::<Value>(&line) else { continue };
             let kind = msg["type"].as_str().unwrap_or("").to_string();
             if !FROM_VIEWER.contains(&kind.as_str()) || kind == "hello" {
+                continue;
+            }
+            // Being replaced by a new viewer: what it still says (ended, window) concerns nobody.
+            if viewer.replaced.load(Ordering::Relaxed) {
                 continue;
             }
             if kind == "window" {
@@ -488,11 +494,25 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
                     }
                 });
             }
-            if matches!(kind.as_str(), "first-frame" | "error" | "app-running" | "stage-failed" | "ended") {
+            // Connected: the opening starts counting the time to the first picture (it stays waiting).
+            if kind == "connected" && !viewer.replaced.load(Ordering::Relaxed) {
+                if let Some(waiter) = WAITERS.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|w| w.get(&vm)) {
+                    let _ = waiter.send(msg.clone());
+                }
+            }
+            if matches!(kind.as_str(), "first-frame" | "error" | "app-running" | "stage-failed" | "ended") && !viewer.replaced.load(Ordering::Relaxed) {
                 if let Some(waiter) = WAITERS.lock().unwrap_or_else(|e| e.into_inner()).as_mut().and_then(|w| w.remove(&vm)) {
                     let _ = waiter.send(msg.clone());
                 }
             }
+        }
+        // Closed only to open again (open_and_wait): the new viewer took its place, nobody hears of this one.
+        if viewer.replaced.load(Ordering::Relaxed) {
+            let mut all = viewers();
+            if all.as_ref().and_then(|v| v.get(&vm)).is_some_and(|v| Arc::ptr_eq(v, &viewer)) {
+                all.as_mut().map(|v| v.remove(&vm));
+            }
+            return;
         }
         set_background(&vm, false);
         let mut all = viewers();
@@ -537,6 +557,16 @@ pub fn opening_lock(vm: &str) -> Arc<Mutex<()>> {
     static LOCKS: Mutex<Option<HashMap<String, Arc<Mutex<()>>>>> = Mutex::new(None);
     let mut all = LOCKS.lock().unwrap_or_else(|e| e.into_inner());
     all.get_or_insert_with(HashMap::new).entry(vm.to_lowercase()).or_insert_with(|| Arc::new(Mutex::new(()))).clone()
+}
+
+/// The arguments with the app window's content area as it is now (it may have moved since the first try).
+fn with_embed(app: &AppHandle, mut arguments: Vec<String>) -> Vec<String> {
+    if let (Some(i), Some((hwnd, x, y, w, h))) = (arguments.iter().position(|a| a == "--gpuvm-embed"), content_rect(app)) {
+        if let Some(value) = arguments.get_mut(i + 1) {
+            *value = format!("{hwnd},{x},{y},{w},{h}");
+        }
+    }
+    arguments
 }
 
 pub fn open_and_wait(app: &AppHandle, vm: &str, launch: &Value) -> Result<(), String> {
@@ -591,12 +621,50 @@ pub fn open_and_wait(app: &AppHandle, vm: &str, launch: &Value) -> Result<(), St
         arguments.push(format!("{hwnd},{x},{y},{w},{h}"));
     }
     let embed = arguments.iter().any(|a| a == "--gpuvm-embed");
-    if let Err(e) = open_blocking(app.clone(), vm.to_string(), exe, arguments, embed, full_screen) {
+    if let Err(e) = open_blocking(app.clone(), vm.to_string(), exe.clone(), arguments.clone(), embed, full_screen) {
         WAITERS.lock().unwrap_or_else(|e| e.into_inner()).as_mut().map(|w| w.remove(vm));
         return Err(e);
     }
     // Cold start: Sunshine tests its encoders on the first session after boot (up to ~20 s, labs 019 and 023).
-    let msg = rx.recv_timeout(Duration::from_secs(90)).unwrap_or_else(|_| json!({ "type": "timeout" }));
+    // A session that connects and then shows nothing: the first one after Sunshine restarted or changed the display's
+    // mode re-tests the encoders and stays pure black, the next one works (agent-broker, Sunshine's log). No picture
+    // FIRST_PICTURE after connecting: the viewer is opened again once, in its place, without telling anyone.
+    const FIRST_PICTURE: Duration = Duration::from_secs(6);
+    let started = Instant::now();
+    let mut connected_at: Option<Instant> = None;
+    let mut retried = false;
+    let msg = loop {
+        let left = Duration::from_secs(90).saturating_sub(started.elapsed());
+        let wait = match connected_at {
+            Some(t) if !retried => FIRST_PICTURE.saturating_sub(t.elapsed()).min(left),
+            _ => left,
+        };
+        match rx.recv_timeout(wait) {
+            Ok(m) if m["type"] == "connected" => {
+                connected_at.get_or_insert_with(Instant::now);
+            }
+            Ok(m) => break m,
+            Err(_) if connected_at.is_some() && !retried && !left.is_zero() => {
+                retried = true;
+                connected_at = None;
+                eprintln!("viewer {vm}: no picture {}s after connecting; opening it once more", FIRST_PICTURE.as_secs());
+                if let Some(old) = viewers().as_ref().and_then(|v| v.get(vm).cloned()) {
+                    old.replaced.store(true, Ordering::Relaxed);
+                    old.child.kill();
+                }
+                viewers().as_mut().map(|v| v.remove(vm));
+                // The recording asks the new viewer again (agent.rs), and the picture's state starts over.
+                crate::capture::on_recording(vm, false);
+                crate::agent::viewer_replaced(vm);
+                let args = with_embed(app, arguments.clone());
+                if let Err(e) = open_blocking(app.clone(), vm.to_string(), exe.clone(), args, embed, full_screen) {
+                    break json!({ "type": "error", "message": e });
+                }
+            }
+            Err(_) => break json!({ "type": "timeout" }),
+        }
+    };
+    WAITERS.lock().unwrap_or_else(|e| e.into_inner()).as_mut().map(|w| w.remove(vm));
     match msg["type"].as_str().unwrap_or("") {
         "first-frame" => Ok(()),
         // Text from the streaming host (untrusted): kept short.

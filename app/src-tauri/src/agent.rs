@@ -801,6 +801,14 @@ async fn start_recording(app: &AppHandle, vm: &str) {
     }
 }
 
+/// The machine's viewer was opened again in its place (no picture after connecting, viewer.rs): the new one is asked
+/// to record, as the first was.
+pub fn viewer_replaced(vm: &str) {
+    if let Some(r) = lock(&RECS).as_mut().and_then(|r| r.get_mut(vm)) {
+        r.confirmed = false;
+    }
+}
+
 fn close_if_ours(vm: &str, ours: bool) {
     // Only a viewer GpuVM opened and the person never brought out.
     if ours && crate::viewer::background(vm) && !crate::viewer::viewer_visible(vm) {
