@@ -119,6 +119,16 @@ try {
     & $m { param($n, $c) Wait-GuestReady -Name $n -Credential $c } $Name $cred
     # No agent: use none (uninstalls it if a copy has one; the template's administrator signs in again), then off/on.
     $result['use'] = Set-GpuVMUse -Name $Name -Use none
+    # An agent template signs nobody in by itself (only `agent`, after its install): the template's administrator signs
+    # in automatically on this throwaway copy, as on a machine of one's own (lab only; the copy is deleted at the end).
+    $plain = $cred.GetNetworkCredential()
+    Invoke-Command -VMName $Name -Credential $cred -ArgumentList $plain.UserName, $plain.Password {
+        param($u, $p)
+        $k = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+        Set-ItemProperty $k AutoAdminLogon '1'; Set-ItemProperty $k DefaultUserName $u; Set-ItemProperty $k DefaultPassword $p
+        Set-ItemProperty $k DefaultDomainName $env:COMPUTERNAME
+    }
+    $plain = $null
     & $m { param($n) Restart-GpuVMCold -Name $n } $Name
     & $m { param($n, $c) Wait-GuestReady -Name $n -Credential $c } $Name $cred
     $result['console'] = Invoke-Command -VMName $Name -Credential $cred { "$((Get-CimInstance Win32_ComputerSystem).UserName) | agent service: $((Get-Service GpuVMAgent -ErrorAction SilentlyContinue).Status)" }
