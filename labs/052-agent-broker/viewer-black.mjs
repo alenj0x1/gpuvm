@@ -50,7 +50,11 @@ const tool = async (name, args) => (await rpc("tools/call", { name, arguments: a
 const text = (r) => (r?.content ?? []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
 const luma = () => { try { return pwsh(`& '${join(here, "luma.ps1")}'`); } catch { return "none"; } };
 /** The same measure, also saving the picture it read (what "black" was on screen). */
-const lumaShot = (file) => { try { return pwsh(`& '${join(mine, "luma-shot.ps1")}' -Save '${join(out, file)}'`); } catch { return "none"; } };
+const lumaShot = (file) => { try { return pwsh(`& '${join(mine, "luma-shot.ps1")}'${file ? ` -Save '${join(out, file)}'` : ""}`); } catch { return "none"; } };
+/** "mean spread" → {mean, spread}; a picture has spread (a flat area is black or GpuVM's empty panel). */
+const parseLuma = (s) => { const [m, sp] = String(s).split(" ").map(Number); return { mean: m, spread: sp ?? 0 }; };
+// 60: a black stream framed by the panel spreads 22 (lab 052 shots), a desktop over 200.
+const PICTURE_SPREAD = 60;
 const viewers = () => Number(pwsh("@(Get-Process GpuVMViewer -ErrorAction SilentlyContinue).Count"));
 
 
@@ -166,13 +170,14 @@ async function connect() {
     spawn("pwsh", ["-NoProfile", "-Command", ps], { stdio: "ignore", detached: true }).unref();
   }
   await tool("open_viewer", { machine });
-  let first = null, windowMs = null, pictureMs = null;
+  let first = null, firstSpread = null, windowMs = null, pictureMs = null;
   const n = ++connectNo;
   while (Date.now() - tOpen < 20000 && pictureMs === null) {
-    const l = windowMs === null ? lumaShot(`viewer-black-${stamp}-c${n}-first.png`) : luma();
+    const raw = windowMs === null ? lumaShot(`viewer-black-${stamp}-c${n}-first.png`) : lumaShot(null);
+    const l = raw === "none" ? "none" : parseLuma(raw);
     if (l !== "none") {
       if (windowMs === null) {
-        windowMs = Date.now() - tOpen; first = Number(l);
+        windowMs = Date.now() - tOpen; first = l.mean; firstSpread = l.spread;
         // LAB052_VARIANT=nudgelate: the 10 s burst starts when the viewer's window shows (what the app does when it
         // reveals the viewer or it says "connected"), not when the open is asked.
         if (process.env.LAB052_VARIANT === "nudgelate") {
@@ -181,12 +186,12 @@ async function connect() {
           spawn("pwsh", ["-NoProfile", "-Command", ps], { stdio: "ignore", detached: true }).unref();
         }
       }
-      if (Number(l) > 12) pictureMs = Date.now() - tOpen;
+      if (l.spread > PICTURE_SPREAD) pictureMs = Date.now() - tOpen;
     }
     if (pictureMs === null) await sleep(250);
   }
-  const lastLuma = Number(lumaShot(`viewer-black-${stamp}-c${n}-end.png`));
-  return { hiddenMs, windowMs, firstLuma: first, pictureMs, lastLuma };
+  const last = parseLuma(lumaShot(`viewer-black-${stamp}-c${n}-end.png`));
+  return { hiddenMs, windowMs, firstLuma: first, firstSpread, pictureMs, lastLuma: last.mean, lastSpread: last.spread };
 }
 let connectNo = 0;
 
@@ -203,7 +208,7 @@ const sum = (list) => {
   const ok = list.filter((r) => r.windowMs !== null && r.windowMs !== undefined);
   const black = ok.filter((r) => r.pictureMs === null).length;
   const times = ok.filter((r) => r.pictureMs !== null).map((r) => r.pictureMs).sort((a, b) => a - b);
-  return { measured: ok.length, blackAfter20s: black, blackAtFirstSample: ok.filter((r) => r.firstLuma <= 12).length, medianMsToPicture: times[Math.floor(times.length / 2)] ?? null };
+  return { measured: ok.length, blackAfter20s: black, blackAtFirstSample: ok.filter((r) => !(r.firstSpread > PICTURE_SPREAD)).length, medianMsToPicture: times[Math.floor(times.length / 2)] ?? null };
 };
 report.summary = { with: sum(report.with) };
 await finish(0);

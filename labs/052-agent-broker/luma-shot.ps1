@@ -38,12 +38,15 @@ if ($w -lt 16 -or $h -lt 16) { 'none'; exit }
 $bmp = New-Object System.Drawing.Bitmap $w, $h
 $g = [System.Drawing.Graphics]::FromImage($bmp)
 $g.CopyFromScreen($r.L, $r.T, 0, 0, $bmp.Size)
-$sum = 0; $n = 0
+$sum = 0; $n = 0; $lo = 255; $hi = 0
 for ($y = 8; $y -lt $h - 8; $y += [math]::Max(1, [int](($h - 16) / 24))) {
     for ($x = 8; $x -lt $w - 8; $x += [math]::Max(1, [int](($w - 16) / 40))) {
-        $c = $bmp.GetPixel($x, $y); $sum += 0.299 * $c.R + 0.587 * $c.G + 0.114 * $c.B; $n++
+        $c = $bmp.GetPixel($x, $y); $v = 0.299 * $c.R + 0.587 * $c.G + 0.114 * $c.B; $sum += $v; $n++
+        if ($v -lt $lo) { $lo = $v }; if ($v -gt $hi) { $hi = $v }
     }
 }
 if ($Save) { $bmp.Save($Save, [System.Drawing.Imaging.ImageFormat]::Png) }
 $g.Dispose(); $bmp.Dispose()
-[math]::Round($sum / [math]::Max(1, $n), 1)
+# "mean spread": a flat area (the stream's black, or GpuVM's own empty panel at 22 when the viewer isn't on top yet)
+# has no spread; a picture has (lab 052, 2026-11-20: the panel's 22 had been counted as a picture).
+"$([math]::Round($sum / [math]::Max(1, $n), 1)) $([math]::Round($hi - $lo, 1))"
