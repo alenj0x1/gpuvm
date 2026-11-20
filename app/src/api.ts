@@ -101,7 +101,10 @@ export const agents = {
   resume: (connection: string, machine: string) => ps("Resume-GpuVMAgent", connection ? { Name: machine, Connection: connection } : { Name: machine }),
   /** The guest repaints its whole desktop (agent 0.3.8, no input, nothing moved): with ddx a still desktop sends no
    *  frame and the picture stayed black after connecting. From the app's pipe, no session. */
-  refreshScreen: (name: string) => ps("Invoke-GpuVMAgent", { Name: name, Method: "screen.refresh", TimeoutSec: 5 }),
+  refreshScreen: (name: string) =>
+    // A burst (every 250 ms for 10 s): a single repaint got lost while Sunshine/ddx restarted capture (agent-broker,
+    // lab: picture on opening 9/10, median 0.84 s).
+    ps("Invoke-GpuVMAgent", { Name: name, Method: "screen.refresh", Params: { repeatMs: 10000 }, TimeoutSec: 15 }),
   /** The kill switch: one session, or every one with "*". */
   stop: (connection: string) => ps("Stop-GpuVMAgentClient", connection === "*" ? { All: true } : { Connection: connection }),
   /** Per client (by its name, so it stays for its next sessions): low-risk approvals from the client itself. */
