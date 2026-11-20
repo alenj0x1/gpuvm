@@ -915,6 +915,29 @@ fn display_verdict(connected: bool, blank: Option<u64>, said: bool, signed_in: b
     }
 }
 
+/// The longest repaint burst (screen.refresh repeatMs), and the one burst per machine at a time.
+const REFRESH_BURST_MAX_MS: u64 = 15_000;
+static BURSTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// screen.refresh every 250 ms for `ms`, in the background; a burst already running for that machine is enough.
+fn refresh_burst(conn: Arc<Conn>, ms: u64, client: Option<String>) {
+    {
+        let mut running = lock(&BURSTS);
+        if running.contains(&conn.vm_id) {
+            return;
+        }
+        running.push(conn.vm_id.clone());
+    }
+    std::thread::spawn(move || {
+        let end = Instant::now() + Duration::from_millis(ms);
+        while Instant::now() < end && !conn.dead.load(Ordering::SeqCst) {
+            let _ = conn.request("screen.refresh", &json!({}), None, Duration::from_secs(3), client.as_deref());
+            std::thread::sleep(Duration::from_millis(250));
+        }
+        lock(&BURSTS).retain(|v| v != &conn.vm_id);
+    });
+}
+
 /// Asks the agent for agent.info again, in the background, one request at a time.
 fn refresh_info(conn: Arc<Conn>) {
     if conn.refreshing.swap(true, Ordering::SeqCst) {
@@ -2412,6 +2435,17 @@ fn invoke(args: &Map<String, Value>, ctx: &Ctx) -> Result<Value, CmdError> {
         None if ctx.is_agent_side() => return err("not_taken", "Connection is required."),
         None => {}
     }
+    // screen.refresh with repeatMs: the desktop repainted every 250 ms for that long, in the background, and the answer
+    // comes at once. With ddx a still desktop sends no frame, and a single repaint is lost while Sunshine restarts its
+    // capture (lab 052: one refresh 2 of 10 opens with a picture, a 10 s burst 9 of 10, median 0.84 s).
+    if method == "screen.refresh" && params.get("repeatMs").is_some() {
+        let ms = params["repeatMs"].as_u64().filter(|m| *m > 0).ok_or_else(|| CmdError { code: "bad_request".into(), message: "repeatMs must be a number of ms.".into() })?
+            .min(REFRESH_BURST_MAX_MS);
+        let conn = conn_of(&reg.vm_id).ok_or_else(|| CmdError { code: "off".into(), message: format!("The agent on '{}' isn't connected.", reg.name) })?;
+        refresh_burst(conn, ms, client.map(str::to_string));
+        vm_log(&reg, json!({ "method": method, "params": { "repeatMs": ms }, "client": client.unwrap_or(ctx.label()), "code": "ok" }));
+        return Ok(json!({ "ok": true, "result": { "repeating": ms } }));
+    }
     let started = Instant::now();
     let reply = match conn_of(&reg.vm_id) {
         Some(c) => c.request(method, &params, blob.as_deref(), Duration::from_secs(timeout), client),
@@ -2680,6 +2714,11 @@ pub(crate) mod tests {
         // screen.refresh (agent 0.3.8) is a guest method: it reaches the machine (here "off": no agent connected).
         assert_eq!(code(command("Invoke-GpuVMAgent", &json!({ "Name": "Test1", "Method": "screen.refresh" }), &mut app)), "off");
         assert_eq!(code(command("Invoke-GpuVMAgent", &json!({ "Name": "Test1", "Method": "screen.repaint" }), &mut app)), "bad_request");
+        // A repaint burst needs a number of ms and a connected agent (here none: "off").
+        let mut burst = |p: Value| code(command("Invoke-GpuVMAgent", &json!({ "Name": "Test1", "Method": "screen.refresh", "Params": p }), &mut app));
+        assert_eq!(burst(json!({ "repeatMs": "lots" })), "bad_request");
+        assert_eq!(burst(json!({ "repeatMs": 0 })), "bad_request");
+        assert_eq!(burst(json!({ "repeatMs": 10_000 })), "off");
         // The MCP side must name its connection and take the machine first.
         assert_eq!(invoke(&mut mcp, None), "not_taken");
         assert_eq!(invoke(&mut mcp, Some(&id)), "not_taken"); // step 1
