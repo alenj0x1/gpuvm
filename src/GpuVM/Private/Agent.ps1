@@ -328,7 +328,7 @@ function Invoke-AgentScreenRefresh {
     param([Parameter(Mandatory)][string]$Name)
     $state = try { Get-GpuVMState -Name $Name } catch { $null }
     if (-not $state -or [string]$state['use'] -ne 'agent') { return $false }
-    try { Invoke-GpuVMAgent -Name $Name -Method screen.refresh -TimeoutSec 5 -ErrorAction Stop | Out-Null; $true }
+    try { Invoke-GpuVMAgent -Name $Name -Method screen.refresh -Params @{ repeatMs = 10000 } -TimeoutSec 5 -ErrorAction Stop | Out-Null; $true }
     catch { $false }
 }
 

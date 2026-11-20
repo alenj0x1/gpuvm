@@ -60,7 +60,8 @@ function dumpGuest(vm) {
     String.raw`$c = & $m { param($n) Get-GpuVMGuestCredential -State (Get-GpuVMState -Name $n) } '${vm}'; ` +
     String.raw`Invoke-Command -VMName '${vm}' -Credential $c { $d = 'C:\Program Files\Sunshine\config'; ` +
     String.raw`'=== conf'; Get-Content (Join-Path $d 'sunshine.conf'); '=== displays'; Get-CimInstance Win32_VideoController | % { "$($_.Name): $($_.CurrentHorizontalResolution)x$($_.CurrentVerticalResolution)" }; ` +
-    String.raw`'=== log'; Get-Content (Join-Path $d 'sunshine.log') -Tail 4000 }`;
+    String.raw`'=== agent logs'; Get-ChildItem 'C:\ProgramData\GpuVM\Agent\logs' -Filter *.log -ErrorAction SilentlyContinue | % { "--- $($_.Name)"; Get-Content $_.FullName -Tail 300 }; ` +
+    String.raw`'=== log'; Get-Content (Join-Path $d 'sunshine.log') -Tail 20000 }`;
   writeFileSync(join(out, `viewer-black-${stamp}-guest.txt`), execFileSync("pwsh", ["-NoProfile", "-Command", ps], { maxBuffer: 64 << 20 }).toString());
 }
 let machine = null;
@@ -96,6 +97,29 @@ for (let i = 0; i < 30; i++) {
   if (!/not ready|keep waiting/i.test(r)) break;
   await sleep(10000);
 }
+// LAB052_VARIANT=novideo: the Hyper-V display turned off once the copy is ready (only the virtual display stays on
+// the desktop: no second display for Windows to reattach and the agent to take off again every 5 s).
+if (process.env.LAB052_VARIANT === "novideo") {
+  const ps = String.raw`$m = Import-Module 'C:\Program Files\GpuVM\gpuvm\src\GpuVM\GpuVM.psd1' -PassThru; ` +
+    String.raw`$c = & $m { param($n) Get-GpuVMGuestCredential -State (Get-GpuVMState -Name $n) } '${machine}'; ` +
+    String.raw`Invoke-Command -VMName '${machine}' -Credential $c { Get-PnpDevice -Class Display | ? FriendlyName -like '*Hyper-V*' | Disable-PnpDevice -Confirm:$false; ` +
+    String.raw`Start-Sleep 5; (Get-CimInstance Win32_VideoController | % { "$($_.Name): $($_.CurrentHorizontalResolution)x$($_.CurrentVerticalResolution)" }) -join '; ' }`;
+  report.novideo = execFileSync("pwsh", ["-NoProfile", "-Command", ps]).toString().trim();
+  await sleep(8000);
+  const shot = await tool("screenshot", { machine, maxWidth: 96, maxHeight: 64 });
+  report.novideoScreenshot = shot?.isError ? text(shot) : "ok";
+  console.log("novideo:", report.novideo, "| agent screenshot:", report.novideoScreenshot);
+}
+// LAB052_DEBUG=1: Sunshine logs at debug level on this copy (why it restarts its capture), set the way GpuVM sets
+// Sunshine's config (its API and a restart, Update-SunshineConfig), before any connect. (Editing sunshine.conf
+// directly and restarting the service clashed with GpuVM's own update and left Sunshine refusing connections.)
+if (process.env.LAB052_DEBUG === "1") {
+  const ps = String.raw`$m = Import-Module 'C:\Program Files\GpuVM\gpuvm\src\GpuVM\GpuVM.psd1' -PassThru; ` +
+    String.raw`& $m { param($n) $s = Get-GpuVMState -Name $n; $a = Get-GpuVMAddress -Name $n -TimeoutSec 60; ` +
+    String.raw`$null = Update-SunshineConfig -Address $a -Credential (Get-SunshineCredential -State $s) -Settings @{ min_log_level = 'debug' } -Name $n -GuestCredential (Get-GpuVMGuestCredential -State $s); 'debug on' } '${machine}'`;
+  console.log(execFileSync("pwsh", ["-NoProfile", "-Command", ps]).toString().trim());
+  await sleep(10000);
+}
 
 /** One connect: the viewer closes, GpuVM opens it hidden again, then the person opens the machine. */
 async function connect() {
@@ -112,6 +136,12 @@ async function connect() {
   if (hiddenMs === null) return { error: "no hidden viewer in 3 min" };
   await sleep(6000); // connected and settled, still desktop
   const tOpen = Date.now();
+  // LAB052_VARIANT=nudge: screen.refresh every ~0.3 s for 10 s from the open (one PowerShell, in the background).
+  if (process.env.LAB052_VARIANT === "nudge") {
+    const ps = String.raw`Import-Module 'C:\Program Files\GpuVM\gpuvm\src\GpuVM\GpuVM.psd1'; $t = [Diagnostics.Stopwatch]::StartNew(); ` +
+      String.raw`while ($t.Elapsed.TotalSeconds -lt 10) { try { $null = Invoke-GpuVMAgent -Name '${machine}' -Method screen.refresh -TimeoutSec 3 } catch { }; Start-Sleep -Milliseconds 250 }`;
+    spawn("pwsh", ["-NoProfile", "-Command", ps], { stdio: "ignore", detached: true }).unref();
+  }
   await tool("open_viewer", { machine });
   let first = null, windowMs = null, pictureMs = null;
   while (Date.now() - tOpen < 20000 && pictureMs === null) {
