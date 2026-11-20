@@ -1459,6 +1459,7 @@ InModuleScope GpuVM {
             Mock Enable-GuestHyperVVideo { $script:calls.Add('video on'); 'ok' }
             Mock Restart-GpuVMCold { $script:calls.Add('restart') }
             Mock Update-GpuVMNetworkIsolation { $script:calls.Add('isolated') }
+            Mock Sync-GuestAgentDisplayMode { $script:calls.Add('mode') }
             Mock Copy-ToAgentSession { $script:calls.Add("copy-to-session $Destination") }
             # Which guest call it is, by its arguments: setup (hash), fast-path copy (2 paths), installer (text, dir,
             # secret), cleanup (dir), restart (none).
@@ -2165,6 +2166,34 @@ InModuleScope GpuVM {
             Mock Start-Sleep { }
             Invoke-GpuPowerTransition -Name a -UntilUp -Do { }
             $script:beats | Should Be 3
+        }
+    }
+}
+
+InModuleScope GpuVM {
+    Describe 'The agent knows the viewer''s display mode from boot' {
+        It 'the mode is the client''s resolution at its fps, or the monitor''s rate' {
+            Get-GpuVMStreamMode -State @{ config = @{ streaming = @{ client = @{ resolution = '1920x1080'; fps = 60 } } } } | Should Be '1920x1080@60'
+            Mock Resolve-HostMonitor { @{ hz = 180 } }
+            Get-GpuVMStreamMode -State @{ config = @{ streaming = @{ client = @{ resolution = '2560x1440'; fps = 0 } } } } | Should Be '2560x1440@180'
+        }
+        It 'writes StreamMode only when it changes, and only a mode the agent accepts' {
+            $cred = [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force))
+            $script:st = @{ }
+            Mock Get-GpuVMState { $script:st }
+            Mock Save-GpuVMState { $script:st = $State }
+            Mock Invoke-Command { $script:written = $ArgumentList[0] }
+            $script:written = $null
+            Sync-GuestAgentDisplayMode -Name a -Credential $cred -Mode '1920x1080@180' | Should Be $true
+            $script:written | Should Be '1920x1080@180'
+            $script:st['agentDisplayMode'] | Should Be '1920x1080@180'
+            $script:written = $null
+            Sync-GuestAgentDisplayMode -Name a -Credential $cred -Mode '1920x1080@180' | Should Be $false
+            $script:written | Should Be $null
+            foreach ($bad in '800x600@60', '1920x1080@600', '1920x1080', 'x; rm', '99999x1080@60') {
+                Sync-GuestAgentDisplayMode -Name a -Credential $cred -Mode $bad | Should Be $false
+            }
+            $script:written | Should Be $null
         }
     }
 }
