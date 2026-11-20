@@ -115,7 +115,8 @@ if (process.env.LAB052_VARIANT === "novideo") {
 // LAB052_VARIANT=vddundo: the virtual display's settings as they were before 4652a80 (800x600@30 first, 1920x1080
 // at 30), then a power cycle, to tell whether that change made the reopens slower.
 if (process.env.LAB052_VARIANT === "vddundo") {
-  const ps = String.raw`$m = Import-Module 'C:\Program Files\GpuVM\gpuvm\src\GpuVM\GpuVM.psd1' -PassThru; ` +
+  // This branch's module (read-only): the installed one's power cycle could end its PowerShell (484930b).
+  const ps = `$m = Import-Module '${join(mine, "..", "..", "src", "GpuVM", "GpuVM.psd1")}' -PassThru; ` +
     String.raw`$c = & $m { param($n) Get-GpuVMGuestCredential -State (Get-GpuVMState -Name $n) } '${machine}'; ` +
     String.raw`$r = Invoke-Command -VMName '${machine}' -Credential $c { $p = 'C:\VirtualDisplayDriver\vdd_settings.xml'; [xml]$x = Get-Content -Raw $p; $l = $x.SelectSingleNode('//resolutions'); ` +
     String.raw`foreach ($e in @($l.SelectNodes('resolution'))) { if ($e.width -in '800', '1920') { [void]$l.RemoveChild($e) } }; ` +

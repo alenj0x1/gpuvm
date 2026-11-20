@@ -11,8 +11,17 @@ function Line($what) { Write-Host "$(Get-Date -Format HH:mm:ss.fff) $what" }
 if ($LASTEXITCODE) { throw 'no lock' }
 $result = [ordered]@{}
 try {
-    Import-Module (Join-Path $env:ProgramFiles 'GpuVM\gpuvm\src\GpuVM\GpuVM.psd1') -Force
+    # This branch's module (read-only): the installed one's power cycle could end this PowerShell (484930b).
+    Import-Module (Join-Path $root 'src\GpuVM\GpuVM.psd1') -Force
     $m = Get-Module GpuVM
+    # The installed agent package and viewer (this branch has no build of them).
+    $installed = Join-Path $env:ProgramFiles 'GpuVM\gpuvm'
+    & $m {
+        param($viewer, $dist)
+        $script:LabViewer = $viewer; $script:LabDist = $dist
+        function script:Get-GpuVMViewerPath { $script:LabViewer }
+        function script:Get-RepoPath { param($Relative) if ($Relative -eq 'guest\agent') { $script:LabDist } else { Join-Path $script:RepoRoot $Relative } }
+    } (Join-Path $installed 'viewer\GpuVMViewer.exe') (Join-Path $installed 'guest\agent')
     if (Get-VM -Name $Name -ErrorAction SilentlyContinue) { Stop-VM -Name $Name -TurnOff -Force -ErrorAction SilentlyContinue; Remove-GpuVM -Name $Name -DeleteDisk -Confirm:$false }
     New-GpuVM -Name $Name -Template $Template | Out-Null
     Set-VMMemory -VMName $Name -DynamicMemoryEnabled $false -StartupBytes 3GB
