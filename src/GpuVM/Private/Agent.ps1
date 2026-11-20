@@ -298,6 +298,61 @@ function Enable-GuestHyperVVideo {
     [string](@($r)[-1])
 }
 
+# GpuVM's Sunshine fork on an agent machine (repo gpuvm-sunshine, shipped in sunshine\): its sunshine.exe over the
+# MSI's (same upstream version) and tools\sunshine_wgc_capture.exe. As the service (SYSTEM) with capture = wgc it
+# starts the helper with the signed-in user's own token and reads its frames from a shared texture: a picture where
+# desktop duplication stays black on the virtual display (lab 055), without `agent` ever owning Sunshine or its keys.
+# Copied only when the hashes differ (the MSI's exe is kept once as sunshine.exe.upstream). Also takes Users' read
+# access off Sunshine's config folder: `agent` could read sunshine.conf and the state file (lab 055).
+# Returns 'installed', 'unchanged' or 'missing' (this build carries no fork).
+function Install-GuestSunshineCapture {
+    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential)
+    $bundle = Get-RepoPath 'sunshine'
+    $files = [ordered]@{
+        'sunshine.exe'                     = Join-Path $bundle 'sunshine.exe'
+        'tools\sunshine_wgc_capture.exe'   = Join-Path $bundle 'tools\sunshine_wgc_capture.exe'
+    }
+    if (@($files.Values | Where-Object { -not (Test-Path -LiteralPath $_) }).Count) {
+        Write-Warning "This build of GpuVM doesn't carry its Sunshine capture helper ($bundle)."
+        return 'missing'
+    }
+    $hashes = [ordered]@{}
+    foreach ($key in $files.Keys) { $hashes[$key] = (Get-FileHash -LiteralPath $files[$key] -Algorithm SHA256).Hash }
+    $session = New-PSSession -VMName $Name -Credential $Credential -ErrorAction Stop
+    try {
+        $differ = @(Invoke-InAgentSession $session -ArgumentList $hashes -ScriptBlock {
+                param($hashes)
+                $dir = 'C:\Program Files\Sunshine'
+                foreach ($key in $hashes.Keys) {
+                    $path = Join-Path $dir $key
+                    if (-not (Test-Path -LiteralPath $path) -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $hashes[$key]) { $key }
+                }
+            })
+        $result = 'unchanged'
+        if ($differ.Count) {
+            Write-Step 'Copying GpuVM''s Sunshine capture helper into the machine'
+            Invoke-InAgentSession $session -ScriptBlock {
+                $dir = 'C:\Program Files\Sunshine'
+                Get-Service | Where-Object { $_.Name -like '*sunshine*' } | Stop-Service -Force -ErrorAction SilentlyContinue
+                Get-Process sunshine, sunshine_wgc_capture -ErrorAction SilentlyContinue | Stop-Process -Force
+                if (-not (Test-Path -LiteralPath "$dir\sunshine.exe.upstream")) { Copy-Item -LiteralPath "$dir\sunshine.exe" "$dir\sunshine.exe.upstream" }
+                New-Item -ItemType Directory -Force "$dir\tools" | Out-Null
+            }
+            foreach ($key in $differ) { Copy-ToAgentSession $session -Path $files[$key] -Destination "C:\Program Files\Sunshine\$key" }
+            $result = 'installed'
+        }
+        Invoke-InAgentSession $session -ScriptBlock {
+            $config = 'C:\Program Files\Sunshine\config'
+            # Keep the inherited entries as explicit ones, then drop BUILTIN\Users everywhere below.
+            & icacls.exe $config /inheritance:d /Q | Out-Null
+            & icacls.exe $config /remove:g '*S-1-5-32-545' /T /Q | Out-Null
+            Get-Service | Where-Object { $_.Name -like '*sunshine*' } | Start-Service -ErrorAction SilentlyContinue
+        }
+        $result
+    }
+    finally { Close-AgentSession $session }
+}
+
 # Sunshine's settings as the first open would leave them (capture, the virtual display pinned by its id, no display
 # changes per session), applied while the agent is installed: the copies of a template whose Sunshine never had them
 # got them on their first open, and that restart made Sunshine test its encoders again when the first viewer came,
@@ -306,6 +361,9 @@ function Initialize-GuestStreamingForAgent {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential)
     $state = Get-GpuVMState -Name $Name
     if (-not $state['streaming'] -or -not $state['config']['streaming']['virtualDisplay']) { return }
+    # GpuVM's Sunshine fork first: the capture mode below needs its helper.
+    try { $null = Install-GuestSunshineCapture -Name $Name -Credential $Credential }
+    catch { Write-Warning "Couldn't install GpuVM's Sunshine capture helper: $($_.Exception.Message)" }
     $address = Get-GpuVMAddress -Name $Name -TimeoutSec 120
     $web = Get-SunshineCredential -State $state
     Wait-SunshineReady -Address $address -Credential $web -TimeoutSec 180 -Message 'Waiting for Sunshine'

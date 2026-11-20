@@ -39,6 +39,7 @@
       "../../streaming/": "gpuvm/streaming/",
       "../../apps/": "gpuvm/apps/",
       "../../viewer/": "gpuvm/viewer/",
+      "../../sunshine/": "gpuvm/sunshine/",
       "../.cache/pwsh/": "pwsh/",
       "../host/target/release/gpuvm-host.exe": "gpuvm-host.exe"
     },

@@ -41,3 +41,7 @@ labs/040-viewer-widgets/report.json
 guest/agent/target/
 guest/agent/dist/
 app/guest-agent-target/
+
+# GpuVM Sunshine build (fork of Sunshine, repo gpuvm-sunshine: gpuvm\publish.ps1); the installer bundles it
+/sunshine/
+labs/055-wgc-stream-user/ddxprobe/target/

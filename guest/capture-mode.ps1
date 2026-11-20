@@ -2,9 +2,13 @@
 #   ddx: desktop duplication, Sunshine as a service (default). Sees Windows' administrator prompts.
 #   wgc: Windows.Graphics.Capture, Sunshine in the signed-in user's session. Sees games in exclusive fullscreen,
 #        which ddx cannot capture on a virtual display, but not the administrator prompts (secure desktop).
+#   wgc-service: Windows.Graphics.Capture with Sunshine still the service (SYSTEM), through GpuVM's Sunshine fork:
+#        its helper (tools\sunshine_wgc_capture.exe) captures as the signed-in user and holds nothing secret. For agent
+#        machines, where DDX gives no picture on the virtual display (lab 055) and `agent` must never own Sunshine.
+#        Without the helper it is ddx (answer prefixed "nofork-").
 # Does nothing if it is already in that mode, so opening the VM doesn't restart Sunshine for no reason.
 # -Restart restarts it anyway: after the display changed, so it tests its encoders now instead of when Moonlight connects.
-param([Parameter(Mandatory)][ValidateSet('ddx', 'wgc')][string]$Mode, [switch]$Restart)
+param([Parameter(Mandatory)][ValidateSet('ddx', 'wgc', 'wgc-service')][string]$Mode, [switch]$Restart)
 
 $exe = 'C:\Program Files\Sunshine\sunshine.exe'
 $conf = 'C:\Program Files\Sunshine\config\sunshine.conf'
@@ -12,10 +16,14 @@ $task = 'GpuVM-Sunshine-User'
 $service = Get-Service | Where-Object { $_.Name -like '*sunshine*' } | Select-Object -First 1
 if (-not $service -or -not (Test-Path $exe)) { return 'nosunshine' }
 
+$nofork = $false
+if ($Mode -eq 'wgc-service' -and -not (Test-Path 'C:\Program Files\Sunshine\tools\sunshine_wgc_capture.exe')) { $Mode = 'ddx'; $nofork = $true }
+# The capture line Sunshine needs: wgc for both WGC modes, none (ddx) otherwise.
+$want = if ($Mode -in 'wgc', 'wgc-service') { 'wgc' } else { '' }
 $lines = @(Get-Content -LiteralPath $conf -ErrorAction SilentlyContinue | Where-Object { $_ -notmatch '^\s*capture\s*=' })
-if ($Mode -eq 'wgc') { $lines += 'capture = wgc' }
+if ($want) { $lines += "capture = $want" }
 $current = (Get-Content -LiteralPath $conf -ErrorAction SilentlyContinue | Where-Object { $_ -match '^\s*capture\s*=' }) -replace '^\s*capture\s*=\s*', ''
-$confChanged = ([string]$current).Trim() -ne $(if ($Mode -eq 'wgc') { 'wgc' } else { '' })
+$confChanged = ([string]$current).Trim() -ne $want
 # The service also starts sunshine.exe in the user's session (as SYSTEM), so the user-mode instance is told apart by its task.
 $userTask = Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue
 
@@ -61,8 +69,9 @@ if ($Mode -eq 'wgc') {
     return 'changed'
 }
 
-# A standard user signed in: the result says so, and the caller treats the machine as ddx.
-$prefix = if ($standard) { 'standard-' } else { '' }
+# ddx and wgc-service: Sunshine is the service. A standard user signed in (wgc asked) or no fork helper (wgc-service
+# asked): the result says so, and the caller treats the machine as ddx.
+$prefix = if ($standard) { 'standard-' } elseif ($nofork) { 'nofork-' } else { '' }
 $ready = -not $confChanged -and $service.Status -eq 'Running' -and -not $userTask
 if ($ready -and -not $Restart) { return "${prefix}unchanged" }
 if ($userTask) {

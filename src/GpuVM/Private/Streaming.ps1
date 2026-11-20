@@ -279,7 +279,10 @@ function Update-SunshineConfig {
     Invoke-SunshineApi -Address $Address -Credential $Credential -Method POST -Path '/api/config' -Body $body | Out-Null
     $wgc = "$($current.PSObject.Properties['capture']?.Value)" -eq 'wgc'
     if ($wgc -and $Name -and $GuestCredential) {
-        $null = Set-GuestCaptureMode -Name $Name -Credential $GuestCredential -Mode wgc -Restart
+        # The machine's own WGC mode: the user's task, or on an agent machine the service with the fork's helper.
+        $mode = Get-GpuVMCaptureMode -State (Get-GpuVMState -Name $Name)
+        if ($mode -eq 'ddx') { $mode = 'wgc' }
+        $null = Set-GuestCaptureMode -Name $Name -Credential $GuestCredential -Mode $mode -Restart
     }
     else {
         if ($wgc) { Write-Warning 'Sunshine is restarting without the VM''s Windows password: if it doesn''t come back, restart the VM.' }

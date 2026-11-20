@@ -4,9 +4,10 @@
 
 function Get-GpuVMCaptureMode {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$State)
-    # An agent machine always uses the service (SYSTEM): WGC runs Sunshine as the signed-in user, which there is the
-    # agent's standard account. It can't run Sunshine (no picture: lab 052) and must never own it.
-    if ([string]$State['use'] -eq 'agent') { return 'ddx' }
+    # An agent machine always uses the service (SYSTEM): `agent` must never own Sunshine. DDX gives no picture on its
+    # virtual display (lab 055), so it captures with WGC through GpuVM's Sunshine fork, whose helper runs as `agent`
+    # and holds nothing secret (Install-GuestSunshineCapture). Without the helper the guest falls back to ddx.
+    if ([string]$State['use'] -eq 'agent') { return 'wgc-service' }
     $streaming = if ($State['config'] -is [System.Collections.IDictionary]) { $State['config']['streaming'] }
     if ($streaming -and $streaming.Contains('captureMode') -and $streaming['captureMode'] -eq 'ddx') { 'ddx' } else { 'wgc' }
 }
@@ -17,10 +18,11 @@ function Set-GuestCaptureMode {
     param(
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][pscredential]$Credential,
-        [Parameter(Mandatory)][ValidateSet('ddx', 'wgc')][string]$Mode,
+        [Parameter(Mandatory)][ValidateSet('ddx', 'wgc', 'wgc-service')][string]$Mode,
         # Restarts Sunshine even if the mode is the same (after a display change; see Connect-GpuVM).
         [switch]$Restart,
-        # Set to the mode the guest really uses: ddx when WGC was asked for but a standard user is signed in.
+        # Set to the mode the guest really uses: ddx when WGC was asked for but a standard user is signed in, or
+        # wgc-service without the fork's helper.
         [ref]$Effective
     )
     $code = Get-Content -Raw -LiteralPath (Get-RepoPath 'guest\capture-mode.ps1')
@@ -36,9 +38,21 @@ function Set-GuestCaptureMode {
         if ($Mode -eq 'wgc') { Write-Step 'Windows'' user isn''t an administrator: Sunshine captures as a service' }
         $answer = $answer.Substring(9)
     }
+    elseif ($answer -like 'nofork-*') {
+        # No helper of GpuVM's Sunshine fork in the guest: desktop duplication, which can stay black (lab 055).
+        if ($Effective) { $Effective.Value = 'ddx' }
+        Write-Warning 'GpuVM''s Sunshine capture helper isn''t in this machine: the picture can stay black until the agent is installed again.'
+        $answer = $answer.Substring(7)
+    }
     switch ($answer) {
         'changed' {
-            if (-not $Restart) { Write-Step $(if ($Mode -eq 'wgc') { 'Sunshine is restarting with exclusive fullscreen capture' } else { 'Sunshine is restarting with standard capture' }) }
+            if (-not $Restart) {
+                Write-Step $(switch ($Mode) {
+                        'wgc' { 'Sunshine is restarting with exclusive fullscreen capture' }
+                        'wgc-service' { 'Sunshine is restarting with its capture helper' }
+                        default { 'Sunshine is restarting with standard capture' }
+                    })
+            }
             $true
         }
         'unchanged' { $false }

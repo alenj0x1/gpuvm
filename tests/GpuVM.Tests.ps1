@@ -1836,11 +1836,24 @@ InModuleScope GpuVM {
 
 InModuleScope GpuVM {
     Describe 'Sunshine on an agent machine runs as the service, never as the agent''s account' {
-        It 'the capture mode is ddx for agent machines, whatever was chosen' {
+        It 'the capture mode is the service with the fork''s WGC helper for agent machines, whatever was chosen' {
             Get-GpuVMCaptureMode -State @{ config = @{ streaming = @{} } } | Should Be 'wgc'
             Get-GpuVMCaptureMode -State @{ config = @{ streaming = @{ captureMode = 'ddx' } } } | Should Be 'ddx'
-            Get-GpuVMCaptureMode -State @{ use = 'agent'; config = @{ streaming = @{} } } | Should Be 'ddx'
-            Get-GpuVMCaptureMode -State @{ use = 'agent'; config = @{ streaming = @{ captureMode = 'wgc' } } } | Should Be 'ddx'
+            Get-GpuVMCaptureMode -State @{ use = 'agent'; config = @{ streaming = @{} } } | Should Be 'wgc-service'
+            Get-GpuVMCaptureMode -State @{ use = 'agent'; config = @{ streaming = @{ captureMode = 'wgc' } } } | Should Be 'wgc-service'
+        }
+        It 'a guest without the fork''s helper keeps desktop duplication: wgc-service comes back as ddx' {
+            $cred = [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force))
+            Mock Write-Step { }
+            Mock Write-Warning { }
+            Mock Invoke-Guest { 'nofork-changed' }
+            $e = 'wgc-service'
+            Set-GuestCaptureMode -Name a -Credential $cred -Mode wgc-service -Effective ([ref]$e) | Should Be $true
+            $e | Should Be 'ddx'
+            Assert-MockCalled Write-Warning -Times 1
+            Mock Invoke-Guest { 'changed' }
+            Set-GuestCaptureMode -Name a -Credential $cred -Mode wgc-service -Effective ([ref]$e) | Should Be $true
+            $e | Should Be 'wgc-service'
         }
         It 'a guest with a standard user signed in keeps the service: WGC comes back as ddx' {
             $cred = [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force))
@@ -1893,7 +1906,7 @@ InModuleScope GpuVM {
             $script:saved['agent']['pending'] | Should Be $true
             $script:saved['agent']['signInAs'] | Should Be 'agent'
             $script:cloneConfig['vm']['network']['isolation'] | Should Be $true
-            Get-GpuVMCaptureMode -State $script:saved | Should Be 'ddx'
+            Get-GpuVMCaptureMode -State $script:saved | Should Be 'wgc-service'
 
             Mock Read-GpuVMTemplate { @{ name = 't'; sizeGB = 64; edition = 'Pro'; streaming = @{}; guest = @{}; vhdPath = 'x'; config = @{ vm = @{} } } }
             New-GpuVM -Name copy1 -Template t -Confirm:$false | Out-Null
@@ -2283,8 +2296,16 @@ InModuleScope GpuVM {
             Mock Wait-SunshineReady { $script:steps.Add('ready') }
             Mock Set-GuestCaptureMode { $script:steps.Add("capture $Mode") }
             Mock Set-SunshineVirtualDisplay { $script:steps.Add("display $([bool]$OnlyDisplay)") }
+            Mock Install-GuestSunshineCapture { $script:steps.Add('fork'); 'installed' }
             Initialize-GuestStreamingForAgent -Name a -Credential $cred
-            ($script:steps -join ',') | Should Be 'ready,capture ddx,ready,display True'
+            ($script:steps -join ',') | Should Be 'fork,ready,capture wgc-service,ready,display True'
+            # A failed copy of the fork warns and goes on (the guest falls back to ddx).
+            Mock Install-GuestSunshineCapture { throw 'no session' }
+            Mock Write-Warning { }
+            $script:steps.Clear()
+            Initialize-GuestStreamingForAgent -Name a -Credential $cred
+            ($script:steps -join ',') | Should Be 'ready,capture wgc-service,ready,display True'
+            Mock Get-GpuVMState { @{ use = 'agent'; streaming = @{ x = 1 }; config = @{ streaming = @{ virtualDisplay = $true } } } }
             Mock Get-GpuVMState { @{ use = 'agent'; config = @{ streaming = @{} } } }
             $script:steps.Clear()
             Initialize-GuestStreamingForAgent -Name a -Credential $cred
