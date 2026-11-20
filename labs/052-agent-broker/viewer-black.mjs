@@ -49,6 +49,8 @@ const rpc = (method, params) => new Promise((ok) => { const id = next++; waiting
 const tool = async (name, args) => (await rpc("tools/call", { name, arguments: args })).result;
 const text = (r) => (r?.content ?? []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
 const luma = () => { try { return pwsh(`& '${join(here, "luma.ps1")}'`); } catch { return "none"; } };
+/** The same measure, also saving the picture it read (what "black" was on screen). */
+const lumaShot = (file) => { try { return pwsh(`& '${join(mine, "luma-shot.ps1")}' -Save '${join(out, file)}'`); } catch { return "none"; } };
 const viewers = () => Number(pwsh("@(Get-Process GpuVMViewer -ErrorAction SilentlyContinue).Count"));
 
 
@@ -110,6 +112,25 @@ if (process.env.LAB052_VARIANT === "novideo") {
   report.novideoScreenshot = shot?.isError ? text(shot) : "ok";
   console.log("novideo:", report.novideo, "| agent screenshot:", report.novideoScreenshot);
 }
+// LAB052_VARIANT=vddundo: the virtual display's settings as they were before 4652a80 (800x600@30 first, 1920x1080
+// at 30), then a power cycle, to tell whether that change made the reopens slower.
+if (process.env.LAB052_VARIANT === "vddundo") {
+  // This branch's module (read-only): the installed one's power cycle could end its PowerShell (484930b).
+  const ps = `$m = Import-Module '${join(mine, "..", "..", "src", "GpuVM", "GpuVM.psd1")}' -PassThru; ` +
+    String.raw`$c = & $m { param($n) Get-GpuVMGuestCredential -State (Get-GpuVMState -Name $n) } '${machine}'; ` +
+    String.raw`$r = Invoke-Command -VMName '${machine}' -Credential $c { $p = 'C:\VirtualDisplayDriver\vdd_settings.xml'; [xml]$x = Get-Content -Raw $p; $l = $x.SelectSingleNode('//resolutions'); ` +
+    String.raw`foreach ($e in @($l.SelectNodes('resolution'))) { if ($e.width -in '800', '1920') { [void]$l.RemoveChild($e) } }; ` +
+    String.raw`foreach ($wh in @(@(1920, 1080), @(800, 600))) { $n = $x.CreateElement('resolution'); foreach ($kv in @(@('width', $wh[0]), @('height', $wh[1]), @('refresh_rate', 30))) { $e = $x.CreateElement($kv[0]); $e.InnerText = "$($kv[1])"; [void]$n.AppendChild($e) }; [void]$l.PrependChild($n) }; ` +
+    String.raw`$x.Save($p); (@($l.SelectNodes('resolution')) | % { "$($_.width)x$($_.height)@$($_.refresh_rate)" }) -join ' ' }; ` +
+    String.raw`& $m { param($n) Restart-GpuVMCold -Name $n } '${machine}'; $r`;
+  report.vddundo = execFileSync("pwsh", ["-NoProfile", "-Command", ps]).toString().trim();
+  console.log("vddundo:", report.vddundo);
+  for (let i = 0; i < 30; i++) {
+    await sleep(10000);
+    const r = text(await tool("take_machine", { machine, task: "Lab 054: screen.refresh" }));
+    if (!/not ready|keep waiting/i.test(r)) break;
+  }
+}
 // LAB052_DEBUG=1: Sunshine logs at debug level on this copy (why it restarts its capture), set the way GpuVM sets
 // Sunshine's config (its API and a restart, Update-SunshineConfig), before any connect. (Editing sunshine.conf
 // directly and restarting the service clashed with GpuVM's own update and left Sunshine refusing connections.)
@@ -146,8 +167,9 @@ async function connect() {
   }
   await tool("open_viewer", { machine });
   let first = null, windowMs = null, pictureMs = null;
+  const n = ++connectNo;
   while (Date.now() - tOpen < 20000 && pictureMs === null) {
-    const l = luma();
+    const l = windowMs === null ? lumaShot(`viewer-black-${stamp}-c${n}-first.png`) : luma();
     if (l !== "none") {
       if (windowMs === null) {
         windowMs = Date.now() - tOpen; first = Number(l);
@@ -163,8 +185,10 @@ async function connect() {
     }
     if (pictureMs === null) await sleep(250);
   }
-  return { hiddenMs, windowMs, firstLuma: first, pictureMs };
+  const lastLuma = Number(lumaShot(`viewer-black-${stamp}-c${n}-end.png`));
+  return { hiddenMs, windowMs, firstLuma: first, pictureMs, lastLuma };
 }
+let connectNo = 0;
 
 for (const [variant, noRefresh] of [["with", false]]) {
   if (noRefresh) report.flagApp = await startApp(true);
