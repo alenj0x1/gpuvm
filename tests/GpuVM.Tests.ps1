@@ -2086,11 +2086,12 @@ InModuleScope GpuVM {
             Mock Update-GpuVMNetworkIsolation { }
             Mock Start-VM { $script:calls.Add('start') }
             Mock Remove-Job { }
+            Mock Wait-Job { }
             $script:calls = [System.Collections.Generic.List[string]]::new()
             $script:saved = [System.Collections.Generic.List[bool]]::new()
         }
         It 'shuts Windows down, waits until off, starts it, and the sweep leaves a disposable copy alone meanwhile' {
-            Mock Stop-VM { $script:calls.Add("stop $([bool]$TurnOff)"); $script:sweepSaw = Test-GpuVMDisposableDone -State $script:st -VMState 'Off'; [pscustomobject]@{} }
+            Mock Stop-VM { $script:calls.Add("stop $([bool]$TurnOff)"); $script:sweepSaw = Test-GpuVMDisposableDone -State $script:st -VMState 'Off'; [pscustomobject]@{ State = 'Completed' } }
             $script:states = [System.Collections.Generic.Queue[string]]::new([string[]]@('Running', 'Off', 'Off'))
             Mock Get-VM { [pscustomobject]@{ State = $script:states.Dequeue() } }
             Restart-GpuVMCold -Name c
@@ -2099,9 +2100,26 @@ InModuleScope GpuVM {
             $script:saved -join ',' | Should Be 'True,False'
             Test-GpuVMDisposableDone -State $script:st -VMState 'Off' | Should Be $true
         }
+        It 'removes a finished stop job, and leaves one Hyper-V hasn''t completed (removing it ends the process)' {
+            $script:removed = [System.Collections.Generic.List[string]]::new()
+            Mock Remove-Job { foreach ($j in @($Job)) { if ($j) { $script:removed.Add("$($j.State)") } } }
+            # Real jobs (Remove-Job only takes those): one already finished, one still going.
+            $done = Start-ThreadJob { 1 }
+            $null = $done | Microsoft.PowerShell.Core\Wait-Job
+            $going = Start-ThreadJob { Start-Sleep -Seconds 30 }
+            foreach ($script:jobNow in $done, $going) {
+                Mock Stop-VM { $script:jobNow }
+                $script:states = [System.Collections.Generic.Queue[string]]::new([string[]]@('Running', 'Off', 'Off'))
+                Mock Get-VM { [pscustomobject]@{ State = $script:states.Dequeue() } }
+                Stop-GpuVMBounded -Name c
+            }
+            $seen = $script:removed -join ','
+            $going | Stop-Job; $done, $going | Microsoft.PowerShell.Core\Remove-Job -Force
+            $seen | Should Be 'Completed'
+        }
         It 'turns it off when Windows doesn''t shut down in time' {
             Mock Write-Warning { }
-            Mock Stop-VM { $script:calls.Add("stop $([bool]$TurnOff)"); if ($TurnOff) { $script:offNow = $true }; [pscustomobject]@{} }
+            Mock Stop-VM { $script:calls.Add("stop $([bool]$TurnOff)"); if ($TurnOff) { $script:offNow = $true }; [pscustomobject]@{ State = 'Completed' } }
             $script:offNow = $false
             Mock Get-VM { [pscustomobject]@{ State = $(if ($script:offNow) { 'Off' } else { 'Running' }); Id = [guid]::Empty } }
             Restart-GpuVMCold -Name c -ShutdownTimeoutSec 0
@@ -2109,7 +2127,7 @@ InModuleScope GpuVM {
         }
         It 'ends its worker process when Hyper-V won''t turn it off, and says so when even that fails' {
             Mock Write-Warning { }
-            Mock Stop-VM { $script:calls.Add("stop $([bool]$TurnOff)"); [pscustomobject]@{} }
+            Mock Stop-VM { $script:calls.Add("stop $([bool]$TurnOff)"); [pscustomobject]@{ State = 'Running' } }
             $script:offNow = $false
             $script:vmId = [guid]'12039a8d-294d-4b80-a677-40d70914339e'
             Mock Get-VM { [pscustomobject]@{ State = $(if ($script:offNow) { 'Off' } else { 'Running' }); Id = $script:vmId } }

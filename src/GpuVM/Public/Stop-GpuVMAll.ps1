@@ -16,6 +16,7 @@ function Stop-GpuVMAll {
     foreach ($vm in $running) { $null = Register-GuestUpdateBeforeShutdown -Name $vm.Name }
     $jobs = foreach ($vm in $running) { Stop-VM -Name $vm.Name -Force -AsJob }
     $null = $jobs | Wait-Job -Timeout $TimeoutSec
-    $jobs | Remove-Job -Force
+    # Only finished jobs: removing one Hyper-V hasn't completed yet ends the PowerShell process (Stop-GpuVMBounded).
+    $jobs | Where-Object { $_.State -in 'Completed', 'Failed', 'Stopped' } | Remove-Job -Force
     foreach ($vm in $running) { [ordered]@{ name = $vm.Name; state = (Get-VM -Name $vm.Name).State.ToString() } }
 }

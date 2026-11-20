@@ -271,7 +271,13 @@ function Stop-GpuVMBounded {
         if (& $off $TurnOffTimeoutSec) { return }
         throw "'$Name' couldn't be turned off (it is $((Get-VM -Name $Name).State))."
     }
-    finally { $jobs | Remove-Job -Force -ErrorAction SilentlyContinue }
+    finally {
+        # Only finished jobs are removed: Hyper-V completes its job on a thread of its own, sometimes after the machine
+        # is already off, and a job disposed before that ends the whole PowerShell process (lab 052, 2026-11-20:
+        # PSObjectDisposedException in VmJob.Complete). One still running is left to finish by itself.
+        $jobs | Wait-Job -Timeout 15 -ErrorAction SilentlyContinue | Out-Null
+        $jobs | Where-Object { $_.State -in 'Completed', 'Failed', 'Stopped' } | Remove-Job -Force -ErrorAction SilentlyContinue
+    }
 }
 
 # An agent machine keeps the Hyper-V display on: until a viewer connects, the virtual display has no monitor plugged
