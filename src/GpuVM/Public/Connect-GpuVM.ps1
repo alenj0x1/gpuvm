@@ -306,12 +306,8 @@ function Connect-GpuVM {
         Write-Step 'Connecting the picture'
         return [pscustomobject]@{
             viewerLaunch = [pscustomobject]@{
-                arguments    = @(Get-MoonlightStreamArguments -Address $address -Client $client)
-                monitor      = $target
-                # The first session after the machine started (nothing prepared yet in this boot) or after Sunshine
-                # restarted here: Sunshine re-tests its encoders in it and sends pure black frames; the next session
-                # has the picture (agent-broker, labs/052). The app's viewer reconnects once on its first frame.
-                freshSession = [bool](-not $done.Count -or $restartSunshine)
+                arguments = @(Get-MoonlightStreamArguments -Address $address -Client $client)
+                monitor   = $target
             }
         }
     }
