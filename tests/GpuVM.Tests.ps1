@@ -2197,3 +2197,27 @@ InModuleScope GpuVM {
         }
     }
 }
+
+InModuleScope GpuVM {
+    Describe 'Install-GpuVMAgent gives the virtual display the viewer''s rate before the agent''s first boot' {
+        It 'adds a rate the display lacks, then writes StreamMode' {
+            $script:steps = [System.Collections.Generic.List[string]]::new()
+            Mock Get-GpuVMStreamMode { '1920x1080@180' }
+            Mock Add-GuestRefreshRate { $script:steps.Add("rate $Hz"); $true }
+            Mock Sync-GuestAgentDisplayMode { $script:steps.Add("mode $Mode"); $true }
+            $state = @{ streaming = @{ x = 1 }; config = @{ streaming = @{ virtualDisplay = $true } } }
+            $credential = [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force))
+            $Name = 'a'
+            # The block Install-GpuVMAgent runs (taken from its source, so the test follows it).
+            $src = Get-Content -Raw (Join-Path (Get-Module GpuVM).ModuleBase 'Public\Install-GpuVMAgent.ps1')
+            $block = [regex]::Match($src, "(?s)    if \(\`$state\['streaming'\].*?\r?\n    \}\r?\n").Value
+            $block | Should Not BeNullOrEmpty
+            Invoke-Expression $block
+            ($script:steps -join ',') | Should Be 'rate 180,mode 1920x1080@180'
+            Mock Get-GpuVMStreamMode { '1920x1080@60' }
+            $script:steps.Clear()
+            Invoke-Expression $block
+            ($script:steps -join ',') | Should Be 'mode 1920x1080@60'
+        }
+    }
+}
