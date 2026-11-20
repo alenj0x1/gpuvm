@@ -53,7 +53,11 @@ param(
     # the full install even when the same version is already installed
     [switch]$Full,
     # SHA-256 (hex) the staged gpuvm-agent.exe must have; checked before it is run
-    [string]$ExpectedSha256
+    [string]$ExpectedSha256,
+    # the mode the stream will use, WIDTHxHEIGHT@HZ (e.g. 1920x1080@60): the agent sets the virtual display to it once
+    # it starts, so the viewer finds it ready and Sunshine doesn't restart under the first session. Empty: keep what is
+    # recorded; '-': remove it.
+    [ValidatePattern('^(|-|[0-9]{4}x[0-9]{3,4}@[0-9]{2,3})\z')][string]$StreamMode = ''
 )
 $ErrorActionPreference = 'Stop'
 
@@ -358,7 +362,17 @@ function Set-AgentMode([string]$Sid, [string]$Mode) {
     if (-not (Test-Path $ModeKey)) { New-Item -Path $ModeKey -Force | Out-Null }
     New-ItemProperty -Path $ModeKey -Name 'AgentSid' -Value $Sid -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $ModeKey -Name 'SignInAs' -Value $Mode -PropertyType String -Force | Out-Null
+    Set-StreamMode
 }
+# Same bounds as the agent's parser (display.rs parse_mode): anything else is refused here, ignored there.
+function Set-StreamMode {
+    if ($StreamMode -eq '-') { Remove-ItemProperty -Path $ModeKey -Name 'StreamMode' -ErrorAction SilentlyContinue; return }
+    if (-not $StreamMode) { return }
+    $w, $h, $hz = [int[]]($StreamMode -split '[x@]')
+    if ($w -lt 1280 -or $w -gt 7680 -or $h -lt 720 -or $h -gt 4320 -or $hz -lt 24 -or $hz -gt 500) { throw "stream mode out of range: $StreamMode" }
+    New-ItemProperty -Path $ModeKey -Name 'StreamMode' -Value $StreamMode -PropertyType String -Force | Out-Null
+}
+function Get-StreamMode { if (Test-Path $ModeKey) { (Get-ItemProperty -Path $ModeKey -Name 'StreamMode' -ErrorAction SilentlyContinue).StreamMode } }
 
 # A folder in the agent's profile that this script (as an administrator) is about to touch: the agent owns the
 # profile and could have put a junction there, which would make an administrator's write or ownership change land
@@ -438,7 +452,7 @@ if ($Uninstall) {
             Remove-LocalUser -Name $UserName
         }
     }
-    if (Test-Path $ModeKey) { Remove-ItemProperty -Path $ModeKey -Name 'AgentSid', 'SignInAs' -ErrorAction SilentlyContinue }
+    if (Test-Path $ModeKey) { Remove-ItemProperty -Path $ModeKey -Name 'AgentSid', 'SignInAs', 'StreamMode' -ErrorAction SilentlyContinue }
     if ((Test-Path $BackupKey) -and -not (Get-Item $BackupKey).Property) { Remove-Item 'HKLM:\SOFTWARE\GpuVM\Agent' -Recurse -Force }
     [pscustomobject]@{ ok = $true; uninstalled = $true; autologonRestored = $restored; rebootNeeded = ($reboot -or $restored); notes = @($notes) }
     return
@@ -467,6 +481,8 @@ if ($PrepareTemplate) {
         foreach ($n in @($b.Property | Where-Object { $_ -like '*Winlogon|*' -or $_ -like 'LSA|*' -or $_ -like 'PLAIN|*' })) { Remove-ItemProperty -Path $BackupKey -Name $n }
     }
     Set-Value $Winlogon 'AutoAdminLogon' '0' 'String'
+    # each copy's install records its own stream mode
+    if (Test-Path $ModeKey) { Remove-ItemProperty -Path $ModeKey -Name 'StreamMode' -ErrorAction SilentlyContinue }
     [pscustomobject]@{ ok = $true; template = $true; secret = 'removed'; passwords = 'removed'
         notes = @('a copy signs in as agent only after its install (new secret + new agent password) and a restart') }
     return
@@ -499,7 +515,7 @@ if (-not $Full -and $svc -and $user -and $SignInAs -eq 'agent' -and $oldVersion 
     [pscustomobject]@{
         ok = $true; version = $newVersion; user = $UserName; password = $password; signInAs = 'agent'
         secret = $(if (Test-Path (Join-Path $DataDir 'secret')) { 'present' } else { 'missing' })
-        rebootNeeded = $restart; fastPath = $true; notes = @()
+        rebootNeeded = $restart; fastPath = $true; streamMode = (Get-StreamMode); notes = @()
     }
     return
 }
@@ -644,6 +660,7 @@ if ($secretState -eq 'missing') { $notes.Add("copy the 32-byte secret to $DataDi
     secret = $secretState
     rebootNeeded = $reboot
     fastPath = $false
+    streamMode = (Get-StreamMode)
     notes = @($notes)
 }
 Remove-Staging

@@ -245,3 +245,15 @@ in the same run 2 of 12 had none before the cycle. The repair belongs to the hos
 shut Windows down instead of restarting it from inside, then start the VM), not to the agent. The agent 0.4.5 says it
 plainly: `agent.info.noDisplay` is a reason when QDC_ALL_PATHS is empty (null otherwise), and the periodic layout
 error is logged once per new error instead of every 5 s.
+
+### StreamMode: the stream's mode before the first viewer (Nov 19)
+
+The black first open: Connect changed the virtual display from the helper's 1366x768 to the viewer's mode, which
+restarted Sunshine under the first session. 0.4.6: the install (agent-broker writes it over PowerShell Direct, or
+install.ps1 -StreamMode) records HKLM\SOFTWARE\GpuVM\Agent StreamMode = WIDTHxHEIGHT@HZ (1280-7680 x 720-4320,
+24-500 Hz); the helper sets it once per start, before its hello, dynamically (never saved), the exact rate or the
+closest one offered at that size; afterwards it only steps in below 1280x720, so a viewer's mode is never fought.
+agent.info.streamMode = {wanted, current}. `stream-test.ps1` (copy of agent-tpl, cold start after the install):
+1920x1080@60 applied from 800x600@30 before hello, agent answered 12 s after Start-VM, unchanged 20 s later.
+1920x1080@180: agent-tpl's virtual display offers no 180 Hz at 1920x1080, the agent took 165 (closest); Connect
+would still change it unless the display offers 180 (or the host asks for an offered rate).
