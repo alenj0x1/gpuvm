@@ -292,6 +292,22 @@ function Enable-GuestHyperVVideo {
     [string](@($r)[-1])
 }
 
+# Sunshine's settings as the first open would leave them (capture, the virtual display pinned by its id, no display
+# changes per session), applied while the agent is installed: the copies of a template whose Sunshine never had them
+# got them on their first open, and that restart made Sunshine test its encoders again when the first viewer came,
+# which saw only black (lab 052, 2026-11-20). Nothing left to change on the first open, nothing restarts then.
+function Initialize-GuestStreamingForAgent {
+    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential)
+    $state = Get-GpuVMState -Name $Name
+    if (-not $state['streaming'] -or -not $state['config']['streaming']['virtualDisplay']) { return }
+    $address = Get-GpuVMAddress -Name $Name -TimeoutSec 120
+    $web = Get-SunshineCredential -State $state
+    Wait-SunshineReady -Address $address -Credential $web -TimeoutSec 180 -Message 'Waiting for Sunshine'
+    $null = Set-GuestCaptureMode -Name $Name -Credential $Credential -Mode (Get-GpuVMCaptureMode -State $state)
+    Wait-SunshineReady -Address $address -Credential $web -TimeoutSec 120 -Message 'Sunshine is restarting with the new settings'
+    Set-SunshineVirtualDisplay -Address $address -Credential $web -OnlyDisplay -Name $Name -GuestCredential $Credential
+}
+
 # The display mode the viewer will ask for on this machine, as Connect-GpuVM works it out: the streaming client's
 # resolution and its fps (0 = the chosen monitor's refresh rate). "1920x1080@180".
 function Get-GpuVMStreamMode {

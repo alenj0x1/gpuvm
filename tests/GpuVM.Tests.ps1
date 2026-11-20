@@ -2205,6 +2205,7 @@ InModuleScope GpuVM {
             Mock Get-GpuVMStreamMode { '1920x1080@180' }
             Mock Add-GuestRefreshRate { $script:steps.Add("rate $Hz"); $true }
             Mock Sync-GuestAgentDisplayMode { $script:steps.Add("mode $Mode"); $true }
+            Mock Initialize-GuestStreamingForAgent { $script:steps.Add('sunshine') }
             $state = @{ streaming = @{ x = 1 }; config = @{ streaming = @{ virtualDisplay = $true } } }
             $credential = [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force))
             $Name = 'a'
@@ -2213,11 +2214,32 @@ InModuleScope GpuVM {
             $block = [regex]::Match($src, "(?s)    if \(\`$state\['streaming'\].*?\r?\n    \}\r?\n").Value
             $block | Should Not BeNullOrEmpty
             Invoke-Expression $block
-            ($script:steps -join ',') | Should Be 'rate 180,mode 1920x1080@180'
+            ($script:steps -join ',') | Should Be 'rate 180,mode 1920x1080@180,sunshine'
             Mock Get-GpuVMStreamMode { '1920x1080@60' }
             $script:steps.Clear()
             Invoke-Expression $block
-            ($script:steps -join ',') | Should Be 'mode 1920x1080@60'
+            ($script:steps -join ',') | Should Be 'mode 1920x1080@60,sunshine'
+        }
+    }
+}
+
+InModuleScope GpuVM {
+    Describe 'Sunshine is set up for an agent machine while its agent is installed' {
+        It 'capture and the virtual display, waiting for Sunshine around each change' {
+            $cred = [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force))
+            $script:steps = [System.Collections.Generic.List[string]]::new()
+            Mock Get-GpuVMState { @{ use = 'agent'; streaming = @{ x = 1 }; config = @{ streaming = @{ virtualDisplay = $true } } } }
+            Mock Get-GpuVMAddress { '172.17.0.2' }
+            Mock Get-SunshineCredential { $cred }
+            Mock Wait-SunshineReady { $script:steps.Add('ready') }
+            Mock Set-GuestCaptureMode { $script:steps.Add("capture $Mode") }
+            Mock Set-SunshineVirtualDisplay { $script:steps.Add("display $([bool]$OnlyDisplay)") }
+            Initialize-GuestStreamingForAgent -Name a -Credential $cred
+            ($script:steps -join ',') | Should Be 'ready,capture ddx,ready,display True'
+            Mock Get-GpuVMState { @{ use = 'agent'; config = @{ streaming = @{} } } }
+            $script:steps.Clear()
+            Initialize-GuestStreamingForAgent -Name a -Credential $cred
+            $script:steps.Count | Should Be 0
         }
     }
 }

@@ -131,7 +131,9 @@ async function connect() {
   for (const t0 = Date.now(); Date.now() - t0 < 180000;) {
     if (viewers() > 0) { hiddenMs = Date.now() - tClosed; break; }
     await tool("screenshot", { machine, maxWidth: 96, maxHeight: 64 });
-    await sleep(1500);
+    // Every tool call is a step of the session's budget (500): asked every 5 s, not 1.5 s (the 2026-11-20 final run
+    // used it up waiting and measured nothing).
+    await sleep(5000);
   }
   if (hiddenMs === null) return { error: "no hidden viewer in 3 min" };
   await sleep(6000); // connected and settled, still desktop
