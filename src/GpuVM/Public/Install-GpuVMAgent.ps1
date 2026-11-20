@@ -123,6 +123,8 @@ function Install-GpuVMAgent {
             $hz = [int]($streamMode -replace '^.*@', '')
             if ($hz -ge 30 -and $hz -le 240 -and $hz -notin 30, 60, 90, 120, 144, 165, 244) { $null = Add-GuestRefreshRate -Name $Name -Credential $credential -Hz $hz }
             $null = Sync-GuestAgentDisplayMode -Name $Name -Credential $credential -Mode $streamMode
+            # Sunshine's settings now, so the first open neither changes nor restarts it.
+            Initialize-GuestStreamingForAgent -Name $Name -Credential $credential
         }
         catch { Write-Warning "Couldn't tell the agent the viewer's display mode: $($_.Exception.Message)" }
     }
