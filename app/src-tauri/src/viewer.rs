@@ -603,7 +603,7 @@ pub fn open_and_wait(app: &AppHandle, vm: &str, launch: &Value) -> Result<(), St
         if waiters.contains_key(vm) {
             return Err("This machine is already opening.".into());
         }
-        waiters.insert(vm.to_string(), tx);
+        waiters.insert(vm.to_string(), tx.clone());
     }
     // The picture always starts inside the app's window, hidden behind it; a machine set to full screen goes full
     // screen when it is revealed, and coming out of full screen brings it back inside the app.
@@ -630,6 +630,10 @@ pub fn open_and_wait(app: &AppHandle, vm: &str, launch: &Value) -> Result<(), St
     // mode re-tests the encoders and stays pure black, the next one works (agent-broker, Sunshine's log). No picture
     // FIRST_PICTURE after connecting: the viewer is opened again once, in its place, without telling anyone.
     const FIRST_PICTURE: Duration = Duration::from_secs(6);
+    // The module says when this is the machine's first session since it started (or since Sunshine restarted): its
+    // frames come pure black (Sunshine re-tests its encoders), so its first frame is not the picture and the viewer
+    // reconnects once at once. No pixel is read for it, here or in the viewer.
+    let fresh = launch["freshSession"].as_bool() == Some(true);
     let started = Instant::now();
     let mut connected_at: Option<Instant> = None;
     let mut retried = false;
@@ -639,15 +643,21 @@ pub fn open_and_wait(app: &AppHandle, vm: &str, launch: &Value) -> Result<(), St
             Some(t) if !retried => FIRST_PICTURE.saturating_sub(t.elapsed()).min(left),
             _ => left,
         };
-        match rx.recv_timeout(wait) {
+        let got = rx.recv_timeout(wait);
+        let black_first = fresh && !retried && matches!(&got, Ok(m) if m["type"] == "first-frame");
+        match got {
             Ok(m) if m["type"] == "connected" => {
                 connected_at.get_or_insert_with(Instant::now);
             }
-            Ok(m) => break m,
-            Err(_) if connected_at.is_some() && !retried && !left.is_zero() => {
+            Ok(m) if !black_first => break m,
+            _ if !retried && !left.is_zero() && (black_first || connected_at.is_some()) => {
                 retried = true;
                 connected_at = None;
-                eprintln!("viewer {vm}: no picture {}s after connecting; opening it once more", FIRST_PICTURE.as_secs());
+                if black_first {
+                    eprintln!("viewer {vm}: first session since the machine started; reconnecting once for the picture");
+                } else {
+                    eprintln!("viewer {vm}: no picture {}s after connecting; opening it once more", FIRST_PICTURE.as_secs());
+                }
                 if let Some(old) = viewers().as_ref().and_then(|v| v.get(vm).cloned()) {
                     old.replaced.store(true, Ordering::Relaxed);
                     old.child.kill();
@@ -656,11 +666,14 @@ pub fn open_and_wait(app: &AppHandle, vm: &str, launch: &Value) -> Result<(), St
                 // The recording asks the new viewer again (agent.rs), and the picture's state starts over.
                 crate::capture::on_recording(vm, false);
                 crate::agent::viewer_replaced(vm);
+                // The first viewer's first frame took the waiter: the new viewer reports here too.
+                WAITERS.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(vm.to_string(), tx.clone());
                 let args = with_embed(app, arguments.clone());
                 if let Err(e) = open_blocking(app.clone(), vm.to_string(), exe.clone(), args, embed, full_screen) {
                     break json!({ "type": "error", "message": e });
                 }
             }
+            Ok(m) => break m,
             Err(_) => break json!({ "type": "timeout" }),
         }
     };
