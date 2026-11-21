@@ -93,6 +93,11 @@ function Install-GpuVMAgent {
         finally {
             Invoke-InAgentSession $session -ArgumentList $setup.Dir -ScriptBlock { param($dir) Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue }
         }
+        # winget for `agent` (lab 060), in the same session: a copy of a current template only reads its stamp. A
+        # failure leaves the agent working (Update-GpuVMTemplate still refuses a layer without it, by its stamp).
+        $winget = try { Install-GuestWinget -Session $session }
+        catch { Write-Warning "winget couldn't be installed in '$Name': $($_.Exception.Message)"; 'failed' }
+        $timing['winget'] = $sw.ElapsedMilliseconds
     }
     finally { Close-AgentSession $session }
     $result = $output | Where-Object { $_ -and $_.PSObject.Properties['password'] } | Select-Object -Last 1
@@ -150,5 +155,5 @@ function Install-GpuVMAgent {
         Restart-GpuVMCold -Name $Name
     }
     $timing['total'] = $sw.ElapsedMilliseconds
-    [ordered]@{ name = $Name; vmId = $vmId; version = $version; fastPath = [bool]($result.PSObject.Properties['fastPath'] -and $result.fastPath); exeSent = -not $setup.Same; restarted = $restart; streaming = $streamingSetup; ms = $timing }
+    [ordered]@{ name = $Name; vmId = $vmId; version = $version; fastPath = [bool]($result.PSObject.Properties['fastPath'] -and $result.fastPath); exeSent = -not $setup.Same; restarted = $restart; streaming = $streamingSetup; winget = $winget; ms = $timing }
 }

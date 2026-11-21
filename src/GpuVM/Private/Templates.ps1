@@ -103,13 +103,18 @@ function New-TemplateCloneConfig {
 
 # ---------------------------------------------------------------- keeping agent templates current (layers)
 
-# What this GpuVM build puts into its machines, by content: GpuVM's Sunshine fork and the agent's exe (only the parts
-# this build carries). Keys are the files' places inside Windows.
+# What this GpuVM build puts into its machines, by content: GpuVM's Sunshine fork, the agent's exe and, with the
+# agent, winget's release (only the parts this build carries). Keys are the files' places inside Windows.
 function Get-BundledComponentStamp {
     $stamp = [ordered]@{}
     $package = try { Get-AgentPackage } catch { $null }
     if ($package) { $stamp['Program Files\GpuVM Agent\gpuvm-agent.exe'] = $package.Hash }
     foreach ($file in @(try { Get-SunshineForkFiles } catch { })) { $stamp["Program Files\Sunshine\$($file.Key)"] = $file.Hash }
+    # With the agent, winget for its user (lab 060): the stamp file Install-GuestWinget writes, by its text's hash.
+    if ($package) {
+        $winget = try { Get-WingetStampHash } catch { $null }
+        if ($winget) { $stamp[$script:WingetStampKey] = $winget }
+    }
     $stamp
 }
 
@@ -131,7 +136,7 @@ function Get-TemplateComponentKeys {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Template, [Parameter(Mandatory)][System.Collections.IDictionary]$Bundled)
     $agent = [string]$Template['use'] -eq 'agent'
     $streams = $Template['streaming'] -is [System.Collections.IDictionary] -and [string]$Template['streaming']['provider'] -eq 'sunshine'
-    @($Bundled.Keys | Where-Object { ($agent -and $_ -like '*\gpuvm-agent.exe') -or ($streams -and $_ -like 'Program Files\Sunshine\*') })
+    @($Bundled.Keys | Where-Object { ($agent -and ($_ -like '*\gpuvm-agent.exe' -or $_ -eq $script:WingetStampKey)) -or ($streams -and $_ -like 'Program Files\Sunshine\*') })
 }
 
 # A template whose Sunshine (or agent, for an agent template) differs from this build's: every copy would install
