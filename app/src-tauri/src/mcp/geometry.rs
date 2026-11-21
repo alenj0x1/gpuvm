@@ -113,6 +113,49 @@ impl Shot {
     }
 }
 
+/// A drag along strokes: at most this many points in all (the guest's request frame is 64 KiB) and strokes.
+pub const MAX_PATH_POINTS: usize = 4000;
+pub const MAX_STROKES: usize = 200;
+/// Longest drag, and the default speed in desktop pixels per second (the same as the guest agent's).
+pub const MAX_DRAG_MS: i64 = 60_000;
+pub const DRAG_SPEED: f64 = 1500.0;
+
+/// How long a drag of `length` desktop pixels takes at the default speed (at least 1 ms a stroke).
+pub fn drag_ms(length: f64, strokes: usize) -> u64 {
+    ((length / DRAG_SPEED * 1000.0).round() as u64).max(strokes as u64).min(MAX_DRAG_MS as u64)
+}
+
+impl Shot {
+    /// A drag's strokes, each a list of [x, y] in this picture's pixels → flat [x0, y0, x1, y1, ...] lists of
+    /// desktop pixels, plus their total length on the desktop.
+    pub fn strokes_to_full(&self, strokes: &[serde_json::Value]) -> Result<(Vec<Vec<i32>>, f64), String> {
+        if strokes.is_empty() || strokes.len() > MAX_STROKES {
+            return Err(format!("Give 1 to {MAX_STROKES} strokes."));
+        }
+        let (mut out, mut length, mut total) = (Vec::with_capacity(strokes.len()), 0.0, 0);
+        for (i, s) in strokes.iter().enumerate() {
+            let at = |m: String| if strokes.len() > 1 { format!("Stroke {}: {m}", i + 1) } else { m };
+            let pts = s.as_array().filter(|p| !p.is_empty()).ok_or_else(|| at("a path is a list of [x, y] points.".into()))?;
+            total += pts.len();
+            if total > MAX_PATH_POINTS {
+                return Err(format!("A drag takes at most {MAX_PATH_POINTS} points (the moves in between are added for you)."));
+            }
+            let mut flat = Vec::with_capacity(pts.len() * 2);
+            for p in pts {
+                let xy = p.as_array().filter(|a| a.len() == 2).and_then(|a| Some((a[0].as_f64()?, a[1].as_f64()?)));
+                let (x, y) = xy.ok_or_else(|| at(format!("each point is [x, y], not {p}.")))?;
+                let (fx, fy) = self.to_full(x, y).map_err(at)?;
+                if let [.., px, py] = flat[..] {
+                    length += ((fx - px) as f64).hypot((fy - py) as f64);
+                }
+                flat.extend([fx, fy]);
+            }
+            out.push(flat);
+        }
+        Ok((out, length))
+    }
+}
+
 fn axis(v: f64, origin: u32, region: u32, sent: u32) -> i32 {
     let (p, r, s) = (v.floor() as u64, region as u64, sent as u64);
     // Centre of the footprint, (p + 0.5) * r / s, kept inside the desktop pixels that p shows: from
@@ -194,6 +237,35 @@ mod tests {
         assert!(s.to_full(1280.0, 0.0).is_err());
         assert!(s.to_full(-1.0, 0.0).is_err());
         assert!(s.to_full(f64::NAN, 0.0).is_err());
+    }
+
+    #[test]
+    fn strokes_map_like_clicks() {
+        use serde_json::json;
+        let s = shot((1920, 1080), (0, 0), (1920, 1080), (1280, 720));
+        let (flat, len) = s.strokes_to_full(&[json!([[0, 0], [640, 360], [1279, 719]]), json!([[100, 50]])]).unwrap();
+        let (dx, dy) = s.to_full(100.0, 50.0).unwrap();
+        assert_eq!(flat, vec![vec![0, 0, 960, 540, 1919, 1079], vec![dx, dy]]);
+        assert!((len - 2.0 * (960f64).hypot(540.0)).abs() < 2.0, "{len}");
+        // a zoomed picture maps through its region
+        let z = shot((1920, 1080), (100, 100), (200, 100), (200, 100));
+        assert_eq!(z.strokes_to_full(&[json!([[0, 0], [199, 99]])]).unwrap().0, vec![vec![100, 100, 299, 199]]);
+        for bad in [json!([]), json!([[1]]), json!([[1, "a"]]), json!([[1280, 0]]), json!([[-1, 0]]), json!(5), json!([[0, 0, 0]])] {
+            assert!(s.strokes_to_full(&[bad.clone()]).is_err(), "{bad}");
+        }
+        let e = s.strokes_to_full(&[json!([[0, 0]]), json!([[2000, 0]])]).unwrap_err();
+        assert!(e.starts_with("Stroke 2:") && e.contains("outside screenshot"), "{e}");
+        assert!(s.strokes_to_full(&[]).is_err());
+        let many: Vec<_> = (0..=MAX_PATH_POINTS).map(|i| json!([i % 1280, 0])).collect();
+        assert!(s.strokes_to_full(&[json!(many)]).unwrap_err().contains("at most"));
+        assert!(s.strokes_to_full(&vec![json!([[1, 1]]); MAX_STROKES + 1]).is_err());
+    }
+
+    #[test]
+    fn drag_time_at_the_default_speed() {
+        assert_eq!(drag_ms(DRAG_SPEED, 1), 1000);
+        assert_eq!(drag_ms(0.0, 3), 3);
+        assert_eq!(drag_ms(1e9, 1), MAX_DRAG_MS as u64);
     }
 
     #[test]

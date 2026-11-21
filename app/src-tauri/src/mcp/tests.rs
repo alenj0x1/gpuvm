@@ -237,6 +237,46 @@ fn screenshot_and_coordinate_round_trip() {
 }
 
 #[test]
+fn drag_along_paths_and_strokes() {
+    let mut h = H::new(true);
+    let m = h.machine(); // 1920x1080 desktop in a 1280x720 screenshot
+    h.ok("drag", json!({ "machine": m, "path": [[0, 0], [640, 360], [1279, 719]], "button": "right" }));
+    let a = h.last_action(&m);
+    assert_eq!(a["strokes"], json!([[0, 0, 960, 540, 1919, 1079]]));
+    assert_eq!(a["button"], "right");
+    // default speed: ~2203 desktop pixels at 1500 px/s
+    assert!((1460..=1480).contains(&a["ms"].as_u64().unwrap()), "{a}");
+    h.ok("drag", json!({ "machine": m, "strokes": [[[10, 10], [20, 10]], [[30, 30]]], "durationMs": 800 }));
+    assert_eq!(h.last_action(&m), json!({ "type": "drag", "strokes": [[15, 15, 30, 15], [45, 45]], "ms": 800 }));
+    // the broker waits for the drawing
+    h.ok("drag", json!({ "machine": m, "path": [[0, 0], [10, 0]], "durationMs": 60000 }));
+    assert!(h.fake.with(|s| s.timeouts.last().copied().flatten()).unwrap() >= 70);
+    // act takes drags along paths too
+    h.ok("act", json!({ "machine": m, "actions": [{ "type": "drag", "path": [[1, 1], [2, 2]] }, { "type": "drag", "x": 1, "y": 1, "toX": 5, "toY": 5, "button": "middle" }] }));
+    assert_eq!(h.last_action(&m)["button"], "middle");
+
+    for (args, says) in [
+        (json!({ "path": [[0, 0]], "strokes": [[[0, 0]]] }), "not both"),
+        (json!({ "path": [[1280, 0]] }), "outside screenshot"),
+        (json!({ "path": [[0, 0]], "button": "back" }), "`button`"),
+        (json!({ "path": [] }), "list of [x, y]"),
+        (json!({ "strokes": [[[0, 0]], [["a", 0]]] }), "Stroke 2"),
+        (json!({ "strokes": 5 }), "list of paths"),
+        (json!({ "path": [[0, 0]], "durationMs": 60001 }), "durationMs"),
+        (json!({ "x": 1, "y": 1 }), "toX"),
+    ] {
+        let mut args = args;
+        args["machine"] = json!(m);
+        let e = h.err("drag", args.clone());
+        assert!(e.contains(says), "{args}: {e}");
+    }
+    // too many points in one call, across act's drags
+    let half: Vec<_> = (0..2001).map(|i| json!([i % 1280, 5])).collect();
+    let e = h.err("act", json!({ "machine": m, "actions": [{ "type": "drag", "path": half }, { "type": "drag", "path": half }] }));
+    assert!(e.contains("At most 4000"), "{e}");
+}
+
+#[test]
 fn ui_tree_uses_screenshot_pixels() {
     let mut h = H::new(false);
     let m = h.machine();
