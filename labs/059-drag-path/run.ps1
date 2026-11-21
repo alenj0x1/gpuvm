@@ -1,12 +1,12 @@
 <#
 .SYNOPSIS
-    Lab 059: drag along paths (input.act `drag` with `strokes`, guest agent 0.4.7). Opens Paint on an agent machine,
+    Lab 059: drag along paths (input.act `drag` with `strokes`, guest agent 0.4.8). Opens Paint on an agent machine,
     draws a circle and a spiral (one call, two strokes), a star of 5 lines + a wave + 3 dots (one call, 9 strokes) and
     a 500-point spiral at three speeds, times each call and saves the picture.
 
 .DESCRIPTION
     Talks to the guest agent directly (Invoke-GpuVMAgent through the GpuVM service; elevated PowerShell), so it needs
-    agent 0.4.7 in the machine but not the new MCP server. Run it in two steps:
+    agent 0.4.8 in the machine but not the new MCP server. Run it in two steps:
       1. .\run.ps1 -Name <machine>                 opens Paint maximized and saves out\before.png (full desktop pixels)
       2. .\run.ps1 -Name <machine> -Canvas x,y,w,h  the white canvas's box read from before.png; draws, saves out\paint.png
     -CancelTest adds a 10 s spiral that Suspend-GpuVMAgent -Reason control stops after 2 s (then Resume-GpuVMAgent).
@@ -35,7 +35,7 @@ function Save-Screen([string]$file) {
 
 if (-not $Canvas) {
     $info = Invoke-Agent agent.info @{}
-    if ([version]($info.result.version -replace '[^\d.].*$') -lt [version]'0.4.7') { throw "The machine runs agent $($info.result.version); this lab needs 0.4.7." }
+    if ([version]($info.result.version -replace '[^\d.].*$') -lt [version]'0.4.8') { throw "The machine runs agent $($info.result.version); this lab needs 0.4.8." }
     $null = Invoke-Agent exec.run @{ file = 'powershell.exe'; args = @('-NoProfile', '-Command', 'Start-Process mspaint -WindowStyle Maximized') }
     Start-Sleep 4
     Save-Screen 'before.png'
