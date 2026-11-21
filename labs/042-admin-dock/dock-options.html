@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dock de avisos</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<style>
+:root{--text-primary:#23252a;--text-secondary:#5a5d64;--bg:#f6f5f2}
+@media (prefers-color-scheme:dark){:root{--text-primary:#ebe8e1;--text-secondary:#a8a59e;--bg:#161616}}
+body{background:var(--bg);color:var(--text-primary);font-family:system-ui,sans-serif;max-width:680px;margin:24px auto;padding:0 16px}
+button#go{height:34px;padding:0 14px;border-radius:8px;border:1px solid #8884;background:transparent;color:inherit;cursor:pointer;font:inherit}
+.fr{position:relative;height:300px;border-radius:12px;overflow:hidden;background:#1d2733;margin-bottom:6px}
+.pic{position:absolute;inset:0;transition:transform .32s cubic-bezier(.2,.8,.2,1)}
+.wall{position:absolute;inset:0;background:#24364a}
+.win{position:absolute;left:12%;top:16%;width:52%;height:58%;background:#ece9e3;border-radius:8px}
+.win b{display:block;height:22px;background:#d9d5ce;border-radius:8px 8px 0 0}
+.win p{margin:12px 14px;height:8px;background:#cfcac2;border-radius:4px}
+.bar{position:absolute;left:0;right:0;bottom:0;height:26px;background:#1a2129}
+.veil{position:absolute;inset:0;background:#0e0e0e;opacity:0;transition:opacity .32s}
+.dk{position:absolute;left:50%;top:0;transform:translate(-50%,-110%);transition:transform .34s cubic-bezier(.2,.8,.2,1);background:#1c1c1c;color:#ebe8e1;display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:0 0 16px 16px;width:430px;box-sizing:border-box;font-size:13px}
+.on .dk{transform:translate(-50%,0)}
+.ic{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;background:#262626;color:#7aa7ff;flex:none;font-size:18px}
+.tx{min-width:0;flex:1;line-height:1.35}
+.tx b{display:block;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tx span{color:#a8a59e;font-size:12px}
+.bt{height:30px;padding:0 12px;border-radius:8px;border:0;font-size:12px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-family:inherit}
+.g{background:transparent;color:#ebe8e1;box-shadow:inset 0 0 0 1px #333}
+.p{background:#ebe8e1;color:#1c1c1c}
+.bt:disabled{opacity:.4;cursor:default}
+.strip{position:absolute;left:0;right:0;top:0;height:56px;background:#1c1c1c;color:#ebe8e1;display:flex;justify-content:center;transform:translateY(-100%);transition:transform .32s cubic-bezier(.2,.8,.2,1)}
+.strip .dk{position:static;transform:none;background:transparent;border-radius:0;padding:12px 0}
+.on .strip{transform:none}
+.cap{display:flex;align-items:baseline;gap:8px;margin:0 0 18px;font-size:13px;color:var(--text-secondary)}
+.cap b{color:var(--text-primary);font-weight:500}
+.spin{animation:sp 1s linear infinite;display:inline-block}@keyframes sp{to{transform:rotate(360deg)}}
+</style></head><body>
+<div style="display:flex;justify-content:flex-end;padding:0 0 12px"><button id="go"><i class="ti ti-player-play" aria-hidden="true"></i> Simular aviso</button></div>
+
+<div class="fr" id="A"><div class="pic"><div class="wall"></div><div class="win"><b></b><p></p><p style="width:60%"></p><p style="width:75%"></p></div><div class="bar"></div></div></div>
+<div class="cap"><b>A · Muesca</b> baja del borde superior al centro, la imagen queda igual</div>
+
+<div class="fr" id="B"><div class="pic"><div class="wall"></div><div class="win"><b></b><p></p><p style="width:60%"></p><p style="width:75%"></p></div><div class="bar"></div></div><div class="veil"></div></div>
+<div class="cap"><b>B · Muesca con velo</b> la imagen se oscurece como el escritorio seguro de Windows (recomendada)</div>
+
+<div class="fr" id="C"><div class="pic"><div class="wall"></div><div class="win"><b></b><p></p><p style="width:60%"></p><p style="width:75%"></p></div><div class="bar"></div></div><div class="strip"></div></div>
+<div class="cap"><b>C · Franja</b> la imagen baja 56 px y el aviso ocupa todo el ancho arriba</div>
+
+<script>
+const dock=()=>`<div class="dk"><span class="ic"><i class="ti ti-shield-lock" aria-hidden="true"></i></span><div class="tx"><b>Símbolo del sistema de Windows</b><span>Microsoft Windows</span></div><button class="bt g" data-a="n"><i class="ti ti-x"></i>Rechazar</button><button class="bt p" data-a="y"><i class="ti ti-check"></i>Permitir</button></div>`;
+const A=document.getElementById('A'),B=document.getElementById('B'),C=document.getElementById('C');
+A.insertAdjacentHTML('beforeend',dock());B.insertAdjacentHTML('beforeend',dock());C.querySelector('.strip').innerHTML=dock();
+function set(on){[A,B,C].forEach(f=>{f.classList.toggle('on',on);f.querySelectorAll('.bt').forEach(b=>{b.disabled=false;b.innerHTML=b.dataset.a=='y'?'<i class="ti ti-check"></i>Permitir':'<i class="ti ti-x"></i>Rechazar'})});B.querySelector('.veil').style.opacity=on?.45:0;C.querySelector('.pic').style.transform=on?'translateY(56px)':'none'}
+document.getElementById('go').onclick=()=>{set(false);setTimeout(()=>set(true),350)};
+document.addEventListener('click',e=>{const b=e.target.closest('.bt');if(!b)return;const f=b.closest('.fr');f.querySelectorAll('.bt').forEach(x=>x.disabled=true);b.innerHTML='<i class="ti ti-loader-2 spin"></i>'+(b.dataset.a=='y'?'Permitiendo':'Rechazando');setTimeout(()=>{f.classList.remove('on');if(f===B)B.querySelector('.veil').style.opacity=0;if(f===C)C.querySelector('.pic').style.transform='none'},900)});
+setTimeout(()=>set(true),500);
+</script>
+</body></html>
