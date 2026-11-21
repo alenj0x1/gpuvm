@@ -24,7 +24,7 @@ them every second; if they change, the helper ends and Sunshine starts a new one
 
 | run (`crash.ps1`: end CaptureService's process, read the guest's logs) | result |
 | --- | --- |
-| baseline, helper 74cd902e | no restart in 40 s; probe logs "no FrameArrived ... cb:done dl:wait"; picture frozen |
+| baseline, helper a8ba3a05 | no restart in 40 s; probe logs "no FrameArrived ... cb:done dl:wait"; picture frozen |
 | fix-1, fix-2, fix-3 | helper restarted after **1.4 / 2.0 / 1.8 s**, capture_fps ~180 again |
 
 Also: the helper's log was one file rotated 5 times, and Sunshine starts the helper ~10 times per viewer open, so the
@@ -58,7 +58,7 @@ out runs where the screen barely moved) and swaps helper builds without dropping
 
 What triggers the flashes is **a video playing in the guest** (the session had a YouTube video in Firefox the whole time):
 
-| load (orig = the helper GpuVM shipped, 74cd902e) | flashes per minute |
+| load (orig = the helper GpuVM shipped, a8ba3a05) | flashes per minute |
 | --- | --- |
 | double-buffered clock, ~32 changes/s | 3-6 |
 | canvas animation in Firefox kiosk, 140 changes/s | 0 |
