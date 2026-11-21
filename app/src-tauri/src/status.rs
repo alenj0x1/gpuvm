@@ -160,6 +160,29 @@ pub fn refresh(app: &AppHandle) {
     place(app, &window, &vm, false);
 }
 
+/// The notch window cut to the notch's own shape (rounded where the CSS rounds it), one pixel in from every edge. On
+/// Windows 10 a transparent WebView2 window showed a 1px grey line around its rectangle and pale corners where it
+/// should be see-through (2026-11-21, around "Recording"); a window region has neither.
+fn shape(hwnd: HWND, w: i32, h: i32, radius: i32, placement: &str) {
+    use windows_sys::Win32::Graphics::Gdi::{CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, SetWindowRgn, RGN_AND};
+    let (d, inner) = (radius * 2, (1, 1, w - 1, h - 1));
+    // SAFETY: GDI regions this function creates; the one given to SetWindowRgn belongs to the window afterwards.
+    unsafe {
+        // A rounded rectangle stretched past the edges whose corners stay square, then clipped to the inner rectangle.
+        let round = match placement {
+            "top" => CreateRoundRectRgn(inner.0, inner.1 - d, inner.2 + 1, inner.3 + 1, d, d),
+            "top-left" | "top-right" => CreateRoundRectRgn(inner.0, inner.1, inner.2 + 1, inner.3 + 1, d, d),
+            _ => CreateRoundRectRgn(inner.0, inner.1, inner.2 + 1, inner.3 + d, d, d),
+        };
+        let clip = CreateRectRgn(inner.0, inner.1, inner.2, inner.3);
+        CombineRgn(round, round, clip, RGN_AND);
+        DeleteObject(clip);
+        if SetWindowRgn(hwnd, round, 1) == 0 {
+            DeleteObject(round);
+        }
+    }
+}
+
 /// Where the notch goes over the picture, for its placement and size; at the top center, under a dock that is down.
 fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str, slide: bool) {
     let Some(viewer) = crate::viewer::viewer_hwnd(vm) else { return };
@@ -195,6 +218,7 @@ fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str, slide: bool) 
     if let Ok(own) = window.hwnd() {
         // SAFETY: the viewer becomes the window's owner, so the notch stays just above the picture and moves with it.
         unsafe { SetWindowLongPtrW(own.0 as HWND, GWLP_HWNDPARENT, viewer) };
+        shape(own.0 as HWND, nw, nh, (14.0 * scale) as i32, &placement);
     }
     if (slide || was_under != under) && window.is_visible().unwrap_or(false) {
         // It slides to its new place (with the dock's own drop), instead of jumping.
