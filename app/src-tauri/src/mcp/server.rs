@@ -221,7 +221,10 @@ impl Server {
             }
             "tools/call" => {
                 let server = Arc::clone(self);
+                // Input calls on one machine keep the order they were read in (each runs on its own thread).
+                let ticket = tools::input_ticket(&self.ctx, &params);
                 let handle = std::thread::spawn(move || {
+                    let _turn = ticket.as_ref().map(|(machine, t)| server.ctx.input.wait_turn(machine, *t));
                     let result = server.call_tool(&client, &id, &params);
                     server.cancelled.lock().unwrap().remove(&id.to_string());
                     server.reply(&client, id, result);

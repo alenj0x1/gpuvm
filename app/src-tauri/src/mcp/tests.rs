@@ -125,11 +125,11 @@ fn legacy_handshake_and_tool_list() {
     let mut h = H::new(false);
     let r = h.rpc("tools/list", json!({}));
     let tools = r["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 28);
+    assert_eq!(tools.len(), 29);
     let mut names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     names.sort();
     names.dedup();
-    assert_eq!(names.len(), 28);
+    assert_eq!(names.len(), 29);
     for t in tools {
         assert_eq!(t["inputSchema"]["type"], "object");
         let a = &t["annotations"];
@@ -234,6 +234,46 @@ fn screenshot_and_coordinate_round_trip() {
     assert!(H::text(&a).contains("Done 4 of 4"));
     assert_eq!(a["content"][1]["type"], "image");
     assert_eq!(h.last_action(&m), json!({ "type": "wait", "ms": 10 }));
+}
+
+#[test]
+fn drag_along_paths_and_strokes() {
+    let mut h = H::new(true);
+    let m = h.machine(); // 1920x1080 desktop in a 1280x720 screenshot
+    h.ok("drag", json!({ "machine": m, "path": [[0, 0], [640, 360], [1279, 719]], "button": "right" }));
+    let a = h.last_action(&m);
+    assert_eq!(a["strokes"], json!([[0, 0, 960, 540, 1919, 1079]]));
+    assert_eq!(a["button"], "right");
+    // default speed: ~2203 desktop pixels at 1500 px/s
+    assert!((1460..=1480).contains(&a["ms"].as_u64().unwrap()), "{a}");
+    h.ok("drag", json!({ "machine": m, "strokes": [[[10, 10], [20, 10]], [[30, 30]]], "durationMs": 800 }));
+    assert_eq!(h.last_action(&m), json!({ "type": "drag", "strokes": [[15, 15, 30, 15], [45, 45]], "ms": 800 }));
+    // the broker waits for the drawing
+    h.ok("drag", json!({ "machine": m, "path": [[0, 0], [10, 0]], "durationMs": 60000 }));
+    assert!(h.fake.with(|s| s.timeouts.last().copied().flatten()).unwrap() >= 70);
+    // act takes drags along paths too
+    h.ok("act", json!({ "machine": m, "actions": [{ "type": "drag", "path": [[1, 1], [2, 2]] }, { "type": "drag", "x": 1, "y": 1, "toX": 5, "toY": 5, "button": "middle" }] }));
+    assert_eq!(h.last_action(&m)["button"], "middle");
+
+    for (args, says) in [
+        (json!({ "path": [[0, 0]], "strokes": [[[0, 0]]] }), "not both"),
+        (json!({ "path": [[1280, 0]] }), "outside screenshot"),
+        (json!({ "path": [[0, 0]], "button": "back" }), "`button`"),
+        (json!({ "path": [] }), "list of [x, y]"),
+        (json!({ "strokes": [[[0, 0]], [["a", 0]]] }), "Stroke 2"),
+        (json!({ "strokes": 5 }), "list of paths"),
+        (json!({ "path": [[0, 0]], "durationMs": 60001 }), "durationMs"),
+        (json!({ "x": 1, "y": 1 }), "toX"),
+    ] {
+        let mut args = args;
+        args["machine"] = json!(m);
+        let e = h.err("drag", args.clone());
+        assert!(e.contains(says), "{args}: {e}");
+    }
+    // too many points in one call, across act's drags
+    let half: Vec<_> = (0..2001).map(|i| json!([i % 1280, 5])).collect();
+    let e = h.err("act", json!({ "machine": m, "actions": [{ "type": "drag", "path": half }, { "type": "drag", "path": half }] }));
+    assert!(e.contains("At most 4000"), "{e}");
 }
 
 #[test]
@@ -644,4 +684,91 @@ fn control_changes_are_said_once_and_wait_for_person_waits() {
     let back = h.ok("screenshot", json!({ "machine": m }));
     assert!(back.contains("handed") && back.contains("fresh screenshot"), "{back}");
     assert!(!h.ok("screenshot", json!({ "machine": m })).contains("handed"));
+}
+
+/// Lab 058: a screenshot or an action sent while a command runs is answered at once, not after the command.
+#[test]
+fn screenshots_and_input_do_not_wait_for_a_running_command() {
+    let mut h = H::new(false);
+    let m = h.machine();
+    // A run that is waited for (another thread of the client sends it): the screenshot next to it doesn't queue.
+    let run = h.send("tools/call", json!({ "name": "run", "arguments": { "machine": m, "command": "wait", "shell": "none", "args": ["3000"] } }));
+    std::thread::sleep(Duration::from_millis(50));
+    h.ok("screenshot", json!({ "machine": m }));
+    h.ok("key", json!({ "machine": m, "keys": "shift" }));
+    assert!(!h.lines().iter().any(|v| v["id"] == run), "the screenshot and the key were answered only after the run");
+    let r = h.wait_for(run);
+    assert!(H::text(&r["result"]).contains("Exit code 0"), "{r}");
+
+    // run background: answers at once; screenshots and input meanwhile; run_result gives the output once.
+    let t = Instant::now();
+    let started = h.ok("run", json!({ "machine": m, "command": "wait", "shell": "none", "args": ["3000"], "background": true }));
+    assert!(t.elapsed() < Duration::from_millis(2000) && started.contains("run-1"), "{started}");
+    for _ in 0..3 {
+        h.ok("screenshot", json!({ "machine": m }));
+        h.ok("click", json!({ "machine": m, "x": 10, "y": 10 }));
+    }
+    // all of that happened while the command still ran
+    assert!(h.ok("run_result", json!({ "machine": m, "runId": "run-1" })).contains("still running"));
+    let out = h.ok("run_result", json!({ "machine": m, "runId": "run-1", "waitSeconds": 10 }));
+    assert!(out.contains("Exit code 0") && out.contains("wait 3000"), "{out}");
+    assert!(h.err("run_result", json!({ "machine": m, "runId": "run-1" })).contains("no background run"));
+    assert!(h.err("run_result", json!({ "machine": "work-pc", "runId": "run-1" })).contains("no background run"));
+}
+
+#[test]
+fn background_runs_are_limited_and_keep_the_pause() {
+    let mut h = H::new(false);
+    let m = h.machine();
+    for i in 1..=4 {
+        assert!(h.ok("run", json!({ "machine": m, "command": "wait", "shell": "none", "args": ["800"], "background": true })).contains(&format!("run-{i}")));
+    }
+    assert!(h.err("run", json!({ "machine": m, "command": "wait", "shell": "none", "args": ["1"], "background": true })).contains("already running"));
+    for i in 1..=4 {
+        assert!(h.ok("run_result", json!({ "machine": m, "runId": format!("run-{i}"), "waitSeconds": 10 })).contains("Exit code 0"));
+    }
+    // The person took control: a background run is refused like any other step, and its result says why.
+    h.fake.with(|s| { let x = s.machines.iter_mut().find(|x| x.name == m).unwrap(); x.paused = true; x.paused_by = "control".into(); });
+    let started = h.ok("run", json!({ "machine": m, "command": "whoami", "background": true }));
+    let id = started.split_whitespace().find(|w| w.starts_with("run-")).unwrap().to_string();
+    assert!(h.err("run_result", json!({ "machine": m, "runId": id, "waitSeconds": 10 })).contains("took control"));
+}
+
+#[test]
+fn delay_ms_waits_before_the_screenshot_and_after_actions() {
+    let mut h = H::new(false);
+    let m = h.machine();
+    let t = Instant::now();
+    h.ok("screenshot", json!({ "machine": m, "delayMs": 300 }));
+    assert!(t.elapsed() >= Duration::from_millis(300), "{:?}", t.elapsed());
+    // After acting, before the after-screenshot: the action itself goes at once.
+    let before = h.fake.with(|s| s.machines.iter().find(|x| x.name == m).unwrap().actions.len());
+    let r = h.send("tools/call", json!({ "name": "key", "arguments": { "machine": m, "keys": "enter", "delayMs": 1500, "screenshotAfter": true } }));
+    let t = Instant::now();
+    while h.fake.with(|s| s.machines.iter().find(|x| x.name == m).unwrap().actions.len()) == before {
+        assert!(t.elapsed() < Duration::from_millis(1000), "the key waited for the delay");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    let r = h.wait_for(r);
+    assert!(t.elapsed() >= Duration::from_millis(1400), "{:?}", t.elapsed());
+    assert!(r["result"]["content"].as_array().unwrap().iter().any(|c| c["type"] == "image"));
+    // Out of range: refused before anything is done.
+    assert!(h.err("screenshot", json!({ "machine": m, "delayMs": 10001 })).contains("0 to 10000"));
+    let n = h.fake.with(|s| s.machines.iter().find(|x| x.name == m).unwrap().actions.len());
+    assert!(h.err("key", json!({ "machine": m, "keys": "a", "delayMs": -1 })).contains("delayMs"));
+    assert_eq!(h.fake.with(|s| s.machines.iter().find(|x| x.name == m).unwrap().actions.len()), n);
+}
+
+#[test]
+fn input_calls_keep_their_order() {
+    let mut h = H::new(false);
+    let m = h.machine();
+    // Sent back to back without waiting: each runs on its own thread, yet they reach the machine in order.
+    let ids: Vec<u64> = (0..30).map(|i| h.send("tools/call", json!({ "name": "type", "arguments": { "machine": m, "text": format!("t{i}") } }))).collect();
+    for id in ids {
+        h.wait_for(id);
+    }
+    let typed: Vec<String> = h.fake.with(|s| s.machines.iter().find(|x| x.name == m).unwrap().actions.iter()
+        .filter_map(|a| a["text"].as_str().map(str::to_string)).collect());
+    assert_eq!(typed, (0..30).map(|i| format!("t{i}")).collect::<Vec<_>>());
 }

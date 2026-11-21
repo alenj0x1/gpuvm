@@ -19,8 +19,54 @@ type Out = Arc<Mutex<File>>;
 
 /// Requests the host cancelled: long work (exec.run, input.act) checks this and stops.
 static CANCELLED: Mutex<Vec<u64>> = Mutex::new(Vec::new());
-/// One input.act at a time (they run off the main thread so a cancel can reach them).
-static INPUT: Mutex<()> = Mutex::new(());
+
+/// Where a request runs. The main thread only reads frames and routes them, so a cancel always gets through and
+/// nothing waits behind a long command (lab 058):
+/// - `Own`: a thread of its own per request (commands and files: long, and independent of each other);
+/// - `Input`: one thread, first in first out (actions keep the order they were sent in);
+/// - `Screen`: one thread for captures and the cheap reads (agent.info, screen.state/refresh), so a screenshot never
+///   waits behind a command, an action or a slow UI Automation call;
+/// - `Ui`: one thread for UI Automation (its element cache lives in that thread).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Lane {
+    Own,
+    Input,
+    Screen,
+    Ui,
+}
+
+pub fn lane(method: &str) -> Lane {
+    match method {
+        "exec.run" | "files.list" | "files.read" | "files.write" => Lane::Own,
+        "input.act" => Lane::Input,
+        "ui.tree" | "ui.invoke" => Lane::Ui,
+        _ => Lane::Screen,
+    }
+}
+
+/// Requests waiting in one lane: more than the service lets in flight (32), so a full lane means something is stuck.
+const LANE_QUEUE: usize = 64;
+
+/// A worker thread that runs the jobs sent to it one at a time, in the order they were sent.
+pub fn spawn_lane<J: Send + 'static>(name: &str, run: impl Fn(J) + Send + 'static) -> std::sync::mpsc::SyncSender<J> {
+    let (tx, rx) = std::sync::mpsc::sync_channel::<J>(LANE_QUEUE);
+    let _ = std::thread::Builder::new().name(format!("lane-{name}")).spawn(move || {
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        }
+        while let Ok(job) = rx.recv() {
+            run(job);
+        }
+    });
+    tx
+}
+
+struct Job {
+    method: String,
+    params: Value,
+    blob: Option<Vec<u8>>,
+    id: u64,
+}
 
 pub fn is_cancelled(id: u64) -> bool {
     CANCELLED.lock().unwrap().contains(&id)
@@ -68,10 +114,8 @@ fn dispatch(method: &str, p: &Value, blob: Option<Vec<u8>>, id: u64) -> CallResu
         "screen.capture" => capture::screen_capture(p),
         "screen.state" => Ok((state::screen_state(), None)),
         "screen.refresh" => Ok((refresh(), None)),
-        "input.act" => {
-            let _one = INPUT.lock().unwrap_or_else(|e| e.into_inner());
-            crate::input::input_act(p, id)
-        }
+        // one at a time and in order: the Input lane runs them
+        "input.act" => crate::input::input_act(p, id),
         "ui.tree" => crate::uia::ui_tree(p),
         "ui.invoke" => crate::uia::ui_invoke(p),
         "exec.run" => crate::exec::exec_run(p, id),
@@ -257,6 +301,14 @@ pub fn run() {
     hlog(&out, &format!("helper {} up: {}", std::process::id(), me));
     let ev = out.clone();
     std::thread::spawn(move || events(ev));
+    let worker = |name: &str| {
+        let o = out.clone();
+        spawn_lane(name, move |j: Job| {
+            let r = guarded(&j.method, &j.params, j.blob, j.id);
+            reply(&o, j.id, r);
+        })
+    };
+    let (input_lane, screen_lane, ui_lane) = (worker("input"), worker("screen"), worker("ui"));
     loop {
         let v = match read_frame(&mut input) {
             Ok(Frame::Json(b)) => match serde_json::from_slice::<Value>(&b) {
@@ -288,16 +340,97 @@ pub fn run() {
         }
         let method = v["method"].as_str().unwrap_or("").to_string();
         let params = v.get("params").cloned().unwrap_or(json!({}));
-        if method == "exec.run" || method == "input.act" || method.starts_with("files.") {
-            // long or disk-bound: off the main thread so screenshots stay responsive and a cancel can reach them
-            let o = out.clone();
-            std::thread::spawn(move || {
-                let r = guarded(&method, &params, blob, id);
-                reply(&o, id, r);
-            });
-        } else {
-            let r = guarded(&method, &params, blob, id);
-            reply(&out, id, r);
+        let tx = match lane(&method) {
+            Lane::Own => {
+                let o = out.clone();
+                std::thread::spawn(move || {
+                    let r = guarded(&method, &params, blob, id);
+                    reply(&o, id, r);
+                });
+                continue;
+            }
+            Lane::Input => &input_lane,
+            Lane::Screen => &screen_lane,
+            Lane::Ui => &ui_lane,
+        };
+        if tx.try_send(Job { method, params, blob, id }).is_err() {
+            reply(&out, id, Err(("internal", "too many requests are waiting in the session helper".into())));
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc::channel;
+
+    #[test]
+    fn requests_go_to_their_lanes() {
+        // a screenshot must never share a thread with a command, an action or UI Automation (lab 058)
+        for m in ["exec.run", "files.read", "files.write", "files.list"] {
+            assert_eq!(lane(m), Lane::Own, "{m}");
+        }
+        assert_eq!(lane("input.act"), Lane::Input);
+        for m in ["screen.capture", "screen.state", "screen.refresh", "agent.info"] {
+            assert_eq!(lane(m), Lane::Screen, "{m}");
+        }
+        assert_eq!(lane("ui.tree"), Lane::Ui);
+        assert_eq!(lane("ui.invoke"), Lane::Ui);
+    }
+
+    #[test]
+    fn a_lane_keeps_the_order_jobs_were_sent_in() {
+        let (done_tx, done_rx) = channel();
+        let lane = spawn_lane("order", move |n: u32| {
+            // later jobs are quicker: only a single FIFO worker keeps them in order
+            std::thread::sleep(Duration::from_millis((20 - n as u64 % 20) / 4));
+            done_tx.send(n).unwrap();
+        });
+        for n in 0..40 {
+            lane.try_send(n).unwrap();
+        }
+        let got: Vec<u32> = (0..40).map(|_| done_rx.recv_timeout(Duration::from_secs(5)).unwrap()).collect();
+        assert_eq!(got, (0..40).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn a_busy_lane_does_not_hold_another() {
+        let (gate_tx, gate_rx) = channel::<()>();
+        let gate_rx = Mutex::new(gate_rx);
+        let (done_tx, done_rx) = channel();
+        let d1 = done_tx.clone();
+        // the "input" lane is stuck in a long job until the gate opens
+        let slow = spawn_lane("slow", move |_: ()| {
+            let _ = gate_rx.lock().unwrap().recv_timeout(Duration::from_secs(10));
+            d1.send("slow").unwrap();
+        });
+        let fast = spawn_lane("fast", move |_: ()| done_tx.send("fast").unwrap());
+        slow.try_send(()).unwrap();
+        let t = Instant::now();
+        fast.try_send(()).unwrap();
+        assert_eq!(done_rx.recv_timeout(Duration::from_secs(2)).unwrap(), "fast");
+        assert!(t.elapsed() < Duration::from_secs(1));
+        gate_tx.send(()).unwrap();
+        assert_eq!(done_rx.recv_timeout(Duration::from_secs(5)).unwrap(), "slow");
+    }
+
+    #[test]
+    fn a_full_lane_refuses_instead_of_blocking_the_reader() {
+        let (gate_tx, gate_rx) = channel::<()>();
+        let gate_rx = Mutex::new(gate_rx);
+        let lane = spawn_lane("full", move |_: ()| {
+            let _ = gate_rx.lock().unwrap().recv_timeout(Duration::from_secs(10));
+        });
+        // one running + LANE_QUEUE waiting; the next one is refused at once
+        let mut accepted = 0;
+        let t = Instant::now();
+        while lane.try_send(()).is_ok() {
+            accepted += 1;
+            assert!(accepted <= LANE_QUEUE + 1, "the lane never filled");
+        }
+        assert!(accepted >= LANE_QUEUE && t.elapsed() < Duration::from_secs(1));
+        for _ in 0..=accepted {
+            let _ = gate_tx.send(());
         }
     }
 }

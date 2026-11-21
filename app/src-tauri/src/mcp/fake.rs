@@ -116,6 +116,12 @@ fn s<'a>(args: &'a Value, key: &str) -> &'a str {
 
 impl Broker for FakeBroker {
     fn call(&self, op: &str, args: Value) -> Result<Reply> {
+        // The program "wait" with args [ms]: a command that takes that long, without holding the fake's state (a real
+        // machine runs it next to screenshots and input).
+        if op == "agent.invoke" && args["method"] == "exec.run" && args["params"]["file"] == "wait" {
+            let ms = args["params"]["args"][0].as_str().and_then(|v| v.parse().ok()).unwrap_or(0);
+            std::thread::sleep(std::time::Duration::from_millis(ms));
+        }
         let mut st = self.state.lock().unwrap();
         st.calls.push(op.to_string());
         if let Some(n) = args["note"].as_str() {

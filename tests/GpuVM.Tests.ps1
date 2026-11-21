@@ -1492,12 +1492,14 @@ InModuleScope GpuVM {
             Mock Save-GpuVMState { $script:saved = $State }
             Mock Write-JsonFile { $script:registration = $Data }
             Mock Write-Step { }
+            Mock Install-GuestWinget { $script:calls.Add('winget'); 'current' }
         }
         It 'sends the exe and a new 32-byte secret, keeps the password encrypted and restarts Windows from inside' {
             $r = Install-GpuVMAgent -Name vm1
             $r.vmId | Should Be '0b5d1f53-1e33-4b7e-9f0a-2c4d6e8f0a1b'
             $r.exeSent | Should Be $true
-            ($script:calls -join ',') | Should Be 'switch checked,video on,setup,copy-to-session C:\Windows\Temp\GpuVMAgentSetup-1\gpuvm-agent.exe,copy-to-session C:\Windows\Temp\GpuVMAgentSetup-1\VERSION,install,cleanup,isolated,restart'
+            ($script:calls -join ',') | Should Be 'switch checked,video on,setup,copy-to-session C:\Windows\Temp\GpuVMAgentSetup-1\gpuvm-agent.exe,copy-to-session C:\Windows\Temp\GpuVMAgentSetup-1\VERSION,install,cleanup,winget,isolated,restart'
+            $r.winget | Should Be 'current'
             $script:sentSecret.GetType().Name | Should Be 'Byte[]'
             $script:sentSecret.Length | Should Be 32
             Assert-MockCalled Write-AgentSecret -Times 1 -Scope It
@@ -1512,7 +1514,13 @@ InModuleScope GpuVM {
             $script:sameBuild = $true
             $r = Install-GpuVMAgent -Name vm1
             $r.exeSent | Should Be $false
-            ($script:calls -join ',') | Should Be 'switch checked,video on,setup,fast-copy,install,cleanup,isolated,restart'
+            ($script:calls -join ',') | Should Be 'switch checked,video on,setup,fast-copy,install,cleanup,winget,isolated,restart'
+        }
+        It 'a failed winget install leaves the agent installed and says so' {
+            Mock Install-GuestWinget { throw 'no room' }
+            $r = Install-GpuVMAgent -Name vm1 3>$null
+            $r.winget | Should Be 'failed'
+            Assert-MockCalled Write-AgentSecret -Times 1 -Scope It
         }
         It 'a failed install keeps the old secret' {
             Mock Copy-ToAgentSession { throw 'copy failed' }
@@ -1629,6 +1637,126 @@ InModuleScope GpuVM {
             Test-Throws { Write-JsonFile -Path $p -Data @{ a = 3 } } | Should Be $true
             (Read-JsonFile $p)['a'] | Should Be 2
             @(Get-ChildItem $TestDrive -Filter 'atomic.json.*.tmp').Count | Should Be 0
+        }
+    }
+
+    Describe 'winget for the agent''s user' {
+        It 'the manifest pins one release of Microsoft''s winget-cli for the bundle, its frameworks and its license' {
+            $m = Get-ComponentManifest
+            $keys = 'winget', 'winget-dependencies', 'winget-license'
+            foreach ($key in $keys) {
+                $m[$key]['repo'] | Should Be 'microsoft/winget-cli'
+                $m[$key]['sha256'] | Should Match '^[0-9a-f]{64}$'
+                $m[$key]['url'] | Should Be "https://github.com/microsoft/winget-cli/releases/download/$($m[$key]['version'])/$($m[$key]['file'])"
+                $m[$key]['file'] | Should Match $m[$key]['assetPattern']
+            }
+            @($keys | ForEach-Object { $m[$_]['version'] } | Select-Object -Unique).Count | Should Be 1
+        }
+        It 'the stamp names every file''s hash and the policies, and its hash is what a template''s disk would read' {
+            $m = @{ winget = @{ sha256 = 'a' }; 'winget-dependencies' = @{ sha256 = 'b' }; 'winget-license' = @{ sha256 = 'c' } }
+            Get-WingetStampText -Manifest $m | Should Be "winget=a;winget-dependencies=b;winget-license=c;policy=$script:WingetPolicyVersion"
+            $file = Join-Path $TestDrive 'winget-stamp'
+            [IO.File]::WriteAllText($file, (Get-WingetStampText -Manifest $m))
+            Get-WingetStampHash -Manifest $m | Should Be (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash
+            $m['winget']['sha256'] = 'z'
+            Get-WingetStampHash -Manifest $m | Should Not Be (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash
+            Get-WingetStampText -Manifest @{ winget = @{ sha256 = 'a' } } | Should BeNullOrEmpty
+        }
+        It 'locks the settings a user could turn on and drops the Store source (its agreement prompt)' {
+            foreach ($name in 'EnableMicrosoftStoreSource', 'EnableHashOverride', 'EnableLocalManifestFiles', 'EnableLocalArchiveMalwareScanOverride', 'EnableBypassCertificatePinningForMicrosoftStore', 'EnableMSAppInstallerProtocol') {
+                $script:WingetPolicies[$name] | Should Be 0
+            }
+        }
+        It 'an agent template must carry winget; a template that only streams doesn''t' {
+            $b = [ordered]@{ 'Program Files\GpuVM Agent\gpuvm-agent.exe' = 'A1'; $script:WingetStampKey = 'W1'; 'Program Files\Sunshine\sunshine.exe' = 'S1' }
+            $s = @{ provider = 'sunshine' }
+            @(Get-TemplateComponentKeys -Template @{ use = 'agent'; streaming = $s } -Bundled $b) -contains $script:WingetStampKey | Should Be $true
+            @(Get-TemplateComponentKeys -Template @{ streaming = $s } -Bundled $b) -contains $script:WingetStampKey | Should Be $false
+            $have = @{ 'Program Files\GpuVM Agent\gpuvm-agent.exe' = 'A1'; 'Program Files\Sunshine\sunshine.exe' = 'S1' }
+            Test-GpuVMTemplateStale -Template @{ use = 'agent'; streaming = $s; gamepad = 'vigembus'; components = $have } -Bundled $b | Should Be $true
+            $have[$script:WingetStampKey] = 'W1'
+            Test-GpuVMTemplateStale -Template @{ use = 'agent'; streaming = $s; gamepad = 'vigembus'; components = $have } -Bundled $b | Should Be $false
+        }
+        It 'this build''s stamp lists winget only when it carries the agent' {
+            Mock Get-SunshineForkFiles { @() }
+            Mock Get-AgentPackage { [pscustomobject]@{ Hash = 'A1' } }
+            (Get-BundledComponentStamp)[$script:WingetStampKey] | Should Be (Get-WingetStampHash)
+            Mock Get-AgentPackage { throw 'no agent in this build' }
+            (Get-BundledComponentStamp).Contains($script:WingetStampKey) | Should Be $false
+        }
+        Context 'Install-GuestWinget' {
+            BeforeEach {
+                $script:calls = [System.Collections.Generic.List[string]]::new()
+                $script:guestStamp = ''
+                Mock Write-Step { }
+                Mock Get-WingetPackage {
+                    $script:calls.Add('package')
+                    [pscustomobject]@{ Stamp = (Get-WingetStampText); Version = 'v1'; Files = @(
+                        [pscustomobject]@{ Path = 'C:\cache\b.msixbundle'; Name = 'b.msixbundle'; Sha256 = 'B'; Role = 'bundle' }
+                        [pscustomobject]@{ Path = 'C:\cache\l.xml'; Name = 'l.xml'; Sha256 = 'L'; Role = 'license' }) }
+                }
+                Mock Copy-ToAgentSession { $script:calls.Add("copy $Destination") }
+                # By arguments: stamp read (its path), folder (none), provisioning (5), cleanup (the folder).
+                Mock Invoke-InAgentSession {
+                    $a = @($ArgumentList)
+                    if ($a.Count -eq 0) { $script:calls.Add('folder'); return 'C:\Windows\Temp\GpuVMWinget-1' }
+                    if ($a.Count -eq 5) { $script:calls.Add('provision'); if ($script:provisionFails) { throw 'Add-AppxProvisionedPackage failed' }; return '1.29.380.0' }
+                    if ($a[0] -like '*\GpuVMWinget-*') { $script:calls.Add('cleanup'); return }
+                    $script:calls.Add('read stamp'); $script:guestStamp
+                }
+                $script:provisionFails = $false
+            }
+            It 'a machine with this release only reads its stamp' {
+                $script:guestStamp = Get-WingetStampText
+                Install-GuestWinget -Session 'fake' | Should Be 'current'
+                ($script:calls -join ',') | Should Be 'read stamp'
+            }
+            It 'otherwise sends the verified files into an administrators-only folder, provisions them and cleans up' {
+                $script:guestStamp = 'winget=old'
+                Install-GuestWinget -Session 'fake' | Should Be 'installed'
+                ($script:calls -join ',') | Should Be 'read stamp,package,folder,copy C:\Windows\Temp\GpuVMWinget-1\b.msixbundle,copy C:\Windows\Temp\GpuVMWinget-1\l.xml,provision,cleanup'
+            }
+            It 'a failed provisioning still removes the files' {
+                $script:provisionFails = $true
+                Test-Throws { Install-GuestWinget -Session 'fake' } | Should Be $true
+                $script:calls[-1] | Should Be 'cleanup'
+            }
+        }
+        Context 'Get-WingetPackage' {
+            BeforeEach {
+                $script:cache = Join-Path $TestDrive 'wg'
+                New-Item -ItemType Directory $script:cache -Force | Out-Null
+                Add-Type -AssemblyName System.IO.Compression.FileSystem
+                $src = Join-Path $TestDrive 'zipsrc'
+                New-Item -ItemType Directory "$src\x64", "$src\arm64" -Force | Out-Null
+                'v' | Set-Content "$src\x64\Microsoft.VCLibs.140.00_14.0_x64.appx"
+                'a' | Set-Content "$src\arm64\Microsoft.VCLibs.140.00_14.0_arm64.appx"
+                $zip = Join-Path $script:cache 'deps.zip'
+                Remove-Item $zip -ErrorAction SilentlyContinue
+                [IO.Compression.ZipFile]::CreateFromDirectory($src, $zip)
+                'b' | Set-Content (Join-Path $script:cache 'b.msixbundle')
+                'l' | Set-Content (Join-Path $script:cache 'l.xml')
+                Mock Save-GpuVMComponent { Join-Path $script:cache @{ winget = 'b.msixbundle'; 'winget-license' = 'l.xml'; 'winget-dependencies' = 'deps.zip' }[$Name] }
+                Mock Test-MicrosoftSignature { $true }
+            }
+            It 'takes only the x64 frameworks out of the zip and hashes every file' {
+                $p = Get-WingetPackage
+                @($p.Files | Where-Object Role -eq 'dependency').Name | Should Be 'Microsoft.VCLibs.140.00_14.0_x64.appx'
+                @($p.Files).Count | Should Be 3
+                ($p.Files | Where-Object Role -eq 'bundle').Sha256 | Should Be (Get-FileHash (Join-Path $script:cache 'b.msixbundle')).Hash
+            }
+            It 'refuses a package without Microsoft''s signature' {
+                Mock Test-MicrosoftSignature { $Path -notlike '*.msixbundle' }
+                Test-Throws { Get-WingetPackage } | Should Be $true
+                Mock Test-MicrosoftSignature { $Path -notlike '*.appx' }
+                Test-Throws { Get-WingetPackage } | Should Be $true
+            }
+            It 'refuses components from different releases' {
+                $script:mixed = Get-ComponentManifest
+                $script:mixed['winget-license']['version'] = 'v0.0.1'
+                Mock Get-ComponentManifest { $script:mixed }
+                Test-Throws { Get-WingetPackage } | Should Be $true
+            }
         }
     }
 }

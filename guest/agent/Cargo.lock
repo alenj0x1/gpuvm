@@ -105,7 +105,7 @@ dependencies = [
 
 [[package]]
 name = "gpuvm-agent"
-version = "0.4.6"
+version = "0.4.8"
 dependencies = [
  "image-webp",
  "png",

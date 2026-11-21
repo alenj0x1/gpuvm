@@ -71,6 +71,82 @@ pub struct Ctx {
     /// Per machine (lowercase): its pause as this connection last saw it (None = not paused), so a tool result can say
     /// "the person took control" or "handed it back" once, when it changes.
     control_seen: Mutex<HashMap<String, Option<String>>>,
+    /// Commands started with `run background: true`, until run_result gives their output.
+    runs: Arc<Runs>,
+    /// Input calls take a ticket per machine as their request is read, and run in that order.
+    pub input: InputQueue,
+}
+
+/// The input tools: one at a time per machine, in the order the client sent them.
+pub const INPUT_TOOLS: &[&str] = &["click", "type", "key", "scroll", "drag", "act"];
+/// The longest `delayMs`.
+const MAX_DELAY_MS: i64 = 10_000;
+/// Background runs one connection may have going at once, and how long an output nobody asked for is kept.
+const MAX_BACKGROUND_RUNS: usize = 4;
+const RUN_KEPT: Duration = Duration::from_secs(30 * 60);
+
+/// Per machine (lowercase name): the next ticket to give and the ticket whose turn it is.
+#[derive(Default)]
+pub struct InputQueue {
+    state: Mutex<HashMap<String, (u64, u64)>>,
+    turn: std::sync::Condvar,
+}
+
+/// An input call's turn on its machine; the next ticket's turn comes when it is dropped (also on a panic).
+pub struct Turn<'a> {
+    queue: &'a InputQueue,
+    machine: String,
+}
+
+impl InputQueue {
+    /// The ticket of an input call, taken when its request is read (before its thread starts, so order is kept).
+    pub fn ticket(&self, machine: &str) -> u64 {
+        let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let e = st.entry(machine.to_ascii_lowercase()).or_insert((0, 0));
+        e.0 += 1;
+        e.0 - 1
+    }
+
+    /// Waits until every input call with an earlier ticket on that machine has finished.
+    pub fn wait_turn(&self, machine: &str, ticket: u64) -> Turn<'_> {
+        let key = machine.to_ascii_lowercase();
+        let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        while st.get(&key).map_or(ticket, |e| e.1) < ticket {
+            st = self.turn.wait(st).unwrap_or_else(|e| e.into_inner());
+        }
+        Turn { queue: self, machine: key }
+    }
+}
+
+impl Drop for Turn<'_> {
+    fn drop(&mut self) {
+        let mut st = self.queue.state.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(e) = st.get_mut(&self.machine) {
+            e.1 += 1;
+        }
+        self.queue.turn.notify_all();
+    }
+}
+
+/// The ticket for a tools/call request, when it is an input call on a machine.
+pub fn input_ticket(ctx: &Ctx, params: &Value) -> Option<(String, u64)> {
+    let name = params["name"].as_str()?;
+    let machine = params["arguments"]["machine"].as_str().filter(|m| !m.is_empty())?;
+    INPUT_TOOLS.contains(&name).then(|| (machine.to_string(), ctx.input.ticket(machine)))
+}
+
+/// One command started in the background: its output once it ends (Ok: the text run returns; Err: why it failed).
+struct BgRun {
+    machine: String,
+    started: Instant,
+    ended: Option<Instant>,
+    result: Option<Result<String, String>>,
+}
+
+#[derive(Default)]
+struct Runs {
+    map: Mutex<HashMap<String, BgRun>>,
+    next: std::sync::atomic::AtomicU32,
 }
 
 impl Ctx {
@@ -91,6 +167,8 @@ impl Ctx {
             shot_epoch: Mutex::new(HashMap::new()),
             poll_ms: std::sync::atomic::AtomicU64::new(1000),
             control_seen: Mutex::new(HashMap::new()),
+            runs: Arc::new(Runs::default()),
+            input: InputQueue::default(),
         }
     }
 
@@ -247,6 +325,19 @@ fn after_prop() -> Value {
     json!({ "type": "boolean", "description": "Return a fresh screenshot after the action (saves a call)." })
 }
 
+fn delay_before() -> Value {
+    json!({ "type": "integer", "minimum": 0, "maximum": MAX_DELAY_MS, "description": "Wait this many ms before capturing (up to 10000), e.g. while a window opens. Use it instead of a `run` of Start-Sleep." })
+}
+
+fn delay_after() -> Value {
+    json!({ "type": "integer", "minimum": 0, "maximum": MAX_DELAY_MS, "description": "Wait this many ms after acting before answering and before screenshotAfter (up to 10000), e.g. while a window opens." })
+}
+
+fn path_prop() -> Value {
+    json!({ "type": "array", "items": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 }, "minItems": 1, "maxItems": geometry::MAX_PATH_POINTS,
+        "description": "Points [[x, y], ...] in screenshot pixels, pressed at the first and released at the last." })
+}
+
 fn ann(title: &str, read_only: bool, destructive: bool, idempotent: bool, open_world: bool) -> Value {
     json!({ "title": title, "readOnlyHint": read_only, "destructiveHint": destructive, "idempotentHint": idempotent, "openWorldHint": open_world })
 }
@@ -258,7 +349,7 @@ fn tool(name: &str, description: &str, input: Value, annotations: Value) -> Valu
 /// The tool list, in a fixed order (clients cache it).
 pub fn definitions() -> Vec<Value> {
     let m = machine_prop;
-    let action_item = json!({ "type": "object", "description": "One action: {type:'click',x,y,button?,count?,modifiers?} | {type:'move',x,y} | {type:'drag',x,y,toX,toY} | {type:'scroll',x,y,dx?,dy?} | {type:'type',text} | {type:'key',keys,repeat?} | {type:'wait',ms}",
+    let action_item = json!({ "type": "object", "description": "One action: {type:'click',x,y,button?,count?,modifiers?} | {type:'move',x,y} | {type:'drag',x,y,toX,toY or path or strokes,button?,durationMs?} | {type:'scroll',x,y,dx?,dy?} | {type:'type',text} | {type:'key',keys,repeat?} | {type:'wait',ms}",
         "properties": { "type": { "type": "string", "enum": ["click", "move", "drag", "scroll", "type", "key", "wait"] } }, "required": ["type"] });
     vec![
         // create
@@ -281,32 +372,35 @@ pub fn definitions() -> Vec<Value> {
             schema(json!({ "machine": m(), "maxWidth": { "type": "integer", "minimum": 64, "maximum": 2576, "description": "Default 1280." },
                 "maxHeight": { "type": "integer", "minimum": 64, "maximum": 2576, "description": "Default 800." },
                 "zoom": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 },
-                "screenshot": shot_prop(), "format": { "type": "string", "enum": ["webp", "png"] } }), &["machine"]),
+                "screenshot": shot_prop(), "format": { "type": "string", "enum": ["webp", "png"] }, "delayMs": delay_before() }), &["machine"]),
             ann("Screenshot", true, false, false, false)),
         // do: input
         tool("click", "Click at (x, y) in screenshot pixels.",
             schema(json!({ "machine": m(), "x": coord("X in screenshot pixels."), "y": coord("Y in screenshot pixels."),
                 "button": { "type": "string", "enum": ["left", "right", "middle"] }, "count": { "type": "integer", "minimum": 1, "maximum": 3 },
-                "modifiers": { "type": "string", "description": "e.g. 'ctrl' or 'shift+alt'." }, "screenshot": shot_prop(), "screenshotAfter": after_prop() }), &["machine", "x", "y"]),
+                "modifiers": { "type": "string", "description": "e.g. 'ctrl' or 'shift+alt'." }, "screenshot": shot_prop(), "screenshotAfter": after_prop(), "delayMs": delay_after() }), &["machine", "x", "y"]),
             ann("Click", false, false, false, false)),
         tool("type", "Type text into the focused window (as keystrokes, any characters).",
-            schema(json!({ "machine": m(), "text": { "type": "string", "maxLength": MAX_TYPE }, "screenshotAfter": after_prop() }), &["machine", "text"]),
+            schema(json!({ "machine": m(), "text": { "type": "string", "maxLength": MAX_TYPE }, "screenshotAfter": after_prop(), "delayMs": delay_after() }), &["machine", "text"]),
             ann("Type text", false, false, false, false)),
         tool("key", "Press a key or combination, e.g. 'enter', 'ctrl+s', 'alt+f4', 'win+r', 'ctrl+shift+end'.",
-            schema(json!({ "machine": m(), "keys": { "type": "string" }, "repeat": { "type": "integer", "minimum": 1, "maximum": 50 }, "screenshotAfter": after_prop() }), &["machine", "keys"]),
+            schema(json!({ "machine": m(), "keys": { "type": "string" }, "repeat": { "type": "integer", "minimum": 1, "maximum": 50 }, "screenshotAfter": after_prop(), "delayMs": delay_after() }), &["machine", "keys"]),
             ann("Press keys", false, false, false, false)),
         tool("scroll", "Scroll at (x, y): dy > 0 scrolls down, dx > 0 right, in wheel notches.",
             schema(json!({ "machine": m(), "x": coord("X in screenshot pixels."), "y": coord("Y in screenshot pixels."),
                 "dx": { "type": "integer", "minimum": -50, "maximum": 50 }, "dy": { "type": "integer", "minimum": -50, "maximum": 50 },
-                "screenshot": shot_prop(), "screenshotAfter": after_prop() }), &["machine", "x", "y"]),
+                "screenshot": shot_prop(), "screenshotAfter": after_prop(), "delayMs": delay_after() }), &["machine", "x", "y"]),
             ann("Scroll", false, false, false, false)),
-        tool("drag", "Drag with the left button from (x, y) to (toX, toY), in screenshot pixels.",
+        tool("drag", "Drag from (x, y) to (toX, toY), or along `path`, or along several `strokes` (each pressed and released on its own: to draw), in screenshot pixels. Moves in between are added so lines come out smooth.",
             schema(json!({ "machine": m(), "x": coord("Start X."), "y": coord("Start Y."), "toX": coord("End X."), "toY": coord("End Y."),
-                "screenshot": shot_prop(), "screenshotAfter": after_prop() }), &["machine", "x", "y", "toX", "toY"]),
+                "path": path_prop(), "strokes": { "type": "array", "items": path_prop(), "maxItems": geometry::MAX_STROKES, "description": "Several paths." },
+                "button": { "type": "string", "enum": ["left", "right", "middle"] },
+                "durationMs": { "type": "integer", "minimum": 0, "maximum": geometry::MAX_DRAG_MS, "description": "Time for the whole path or all strokes (default: 1500 desktop pixels a second)." },
+                "screenshot": shot_prop(), "screenshotAfter": after_prop(), "delayMs": delay_after() }), &["machine"]),
             ann("Drag", false, false, false, false)),
         tool("act", "Run several input actions in order, stopping at the first error (coordinates in screenshot pixels).",
             schema(json!({ "machine": m(), "actions": { "type": "array", "items": action_item, "minItems": 1, "maxItems": 50 },
-                "screenshot": shot_prop(), "screenshotAfter": after_prop() }), &["machine", "actions"]),
+                "screenshot": shot_prop(), "screenshotAfter": after_prop(), "delayMs": delay_after() }), &["machine", "actions"]),
             ann("Act", false, false, false, false)),
         // do: UI Automation
         tool("ui_tree", "List the controls of the window in front (UI Automation): id, role, name, box and centre in the pixels of the latest screenshot. Faster and more exact than reading the picture for standard controls.",
@@ -318,11 +412,16 @@ pub fn definitions() -> Vec<Value> {
                 "value": { "type": "string" } }), &["machine", "id", "action"]),
             ann("UI invoke", false, false, false, false)),
         // do: commands and files
-        tool("run", "Run a command in the machine as the standard user `agent` (never administrator) and return its exit code and output. By default `command` is a PowerShell command line; with shell 'none' it is a program and `args` its arguments.",
+        tool("run", "Run a command in the machine as the standard user `agent` (never administrator) and return its exit code and output. By default `command` is a PowerShell command line; with shell 'none' it is a program and `args` its arguments. With background: true it answers at once with a run id, so you can take screenshots and act while it runs; get its output with run_result.",
             schema(json!({ "machine": m(), "command": { "type": "string" }, "shell": { "type": "string", "enum": ["powershell", "cmd", "none"] },
                 "args": { "type": "array", "items": { "type": "string" } }, "cwd": { "type": "string" },
-                "timeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 580, "description": "Default 60." }, "stdin": { "type": "string" } }), &["machine", "command"]),
+                "timeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 580, "description": "Default 60." }, "stdin": { "type": "string" },
+                "background": { "type": "boolean", "description": "Start it and answer at once with a run id (default false)." } }), &["machine", "command"]),
             ann("Run command", false, true, false, true)),
+        tool("run_result", "The exit code and output of a command started with run background: true. Says it is still running unless it ended; waitSeconds waits for the end.",
+            schema(json!({ "machine": m(), "runId": { "type": "string" },
+                "waitSeconds": { "type": "integer", "minimum": 0, "maximum": 580, "description": "Default 0 (answer at once)." } }), &["machine", "runId"]),
+            ann("Command result", true, false, false, false)),
         tool("read_file", "Read a file in the agent's home folder in the machine (a path relative to it, like Desktop\\Received\\x.txt, or a full one): text comes back as text, images as an image.",
             schema(json!({ "machine": m(), "path": { "type": "string" } }), &["machine", "path"]),
             ann("Read file", true, false, true, false)),
@@ -449,6 +548,7 @@ pub fn call(ctx: &Ctx, name: &str, call: &Call) -> Value {
         "ui_tree" => t.ui_tree(),
         "ui_invoke" => t.ui_invoke(),
         "run" => t.run(),
+        "run_result" => t.run_result(),
         "read_file" => t.read_file(),
         "write_file" => t.write_file(),
         "send_file" => t.send_file(),
@@ -686,6 +786,19 @@ impl Tool<'_> {
         }
     }
 
+    /// `delayMs`: waits that long (in steps, so a cancel or the client leaving ends it at once).
+    fn delay(&self) -> Result<(), String> {
+        let Some(ms) = opt_int(self.args, "delayMs", 0, MAX_DELAY_MS)? else { return Ok(()) };
+        let end = Instant::now() + Duration::from_millis(ms as u64);
+        while Instant::now() < end {
+            if (self.cancelled)() || self.ctx.shutting_down.load(std::sync::atomic::Ordering::Relaxed) {
+                return Err("Cancelled while waiting (delayMs).".into());
+            }
+            std::thread::sleep(end.saturating_duration_since(Instant::now()).min(Duration::from_millis(50)));
+        }
+        Ok(())
+    }
+
     fn machines(&self) -> Result<Vec<Value>, String> {
         let r = self.broker("machines.list", "", json!({}))?;
         Ok(match r.data {
@@ -851,6 +964,7 @@ impl Tool<'_> {
             return Err("`format` must be webp or png.".into());
         }
         let reference = opt_int(self.args, "screenshot", 0, u32::MAX as i64)?.map(|v| v as u32);
+        self.delay()?;
         let (shot, image) = self.capture(machine, max_w, max_h, zoom, reference, format)?;
         let mut content = vec![image];
         content.push(json!({ "type": "text", "text": describe(&shot) }));
@@ -940,9 +1054,33 @@ impl Tool<'_> {
             }
             "drag" => {
                 let s = need()?;
-                let (x, y) = Self::point(s, a, "x", "y")?;
-                let (tx, ty) = Self::point(s, a, "toX", "toY")?;
-                json!({ "type": "drag", "x": x, "y": y, "toX": tx, "toY": ty })
+                let button = opt_str(a, "button")?;
+                if button.is_some_and(|b| !["left", "right", "middle"].contains(&b)) {
+                    return Err("`button` must be left, right or middle.".into());
+                }
+                let strokes = match (a.get("path").filter(|v| !v.is_null()), a.get("strokes").filter(|v| !v.is_null())) {
+                    (Some(_), Some(_)) => return Err("Give `path` or `strokes`, not both.".into()),
+                    (Some(p), None) => Some(vec![p.clone()]),
+                    (None, Some(Value::Array(list))) => Some(list.clone()),
+                    (None, Some(_)) => return Err("`strokes` must be a list of paths.".into()),
+                    (None, None) => None,
+                };
+                let mut v = match strokes {
+                    Some(list) => {
+                        let (flat, length) = s.strokes_to_full(&list)?;
+                        let ms = opt_int(a, "durationMs", 0, geometry::MAX_DRAG_MS)?.map_or_else(|| geometry::drag_ms(length, flat.len()), |v| v as u64);
+                        json!({ "type": "drag", "strokes": flat, "ms": ms })
+                    }
+                    None => {
+                        let (x, y) = Self::point(s, a, "x", "y")?;
+                        let (tx, ty) = Self::point(s, a, "toX", "toY")?;
+                        json!({ "type": "drag", "x": x, "y": y, "toX": tx, "toY": ty })
+                    }
+                };
+                if let Some(b) = button {
+                    v["button"] = json!(b);
+                }
+                v
             }
             "scroll" => {
                 let (x, y) = Self::point(need()?, a, "x", "y")?;
@@ -981,11 +1119,16 @@ impl Tool<'_> {
             a["type"] = json!(name);
             vec![a]
         };
+        opt_int(self.args, "delayMs", 0, MAX_DELAY_MS)?; // checked before acting
         let needs_shot = actions.iter().any(|a| matches!(a["type"].as_str(), Some("click" | "move" | "drag" | "scroll")));
         let shot = if needs_shot { Some(self.reference(machine)?) } else { None };
         let converted = actions.iter().enumerate()
             .map(|(i, a)| self.convert(shot.as_ref(), a, machine).map_err(|e| if name == "act" { format!("Action {}: {e}", i + 1) } else { e }))
             .collect::<Result<Vec<_>, _>>()?;
+        let points: usize = converted.iter().filter_map(|a| a["strokes"].as_array()).flatten().map(|s| s.as_array().map_or(0, |f| f.len() / 2)).sum();
+        if points > geometry::MAX_PATH_POINTS {
+            return Err(format!("At most {} drag points in one call; split the drawing.", geometry::MAX_PATH_POINTS));
+        }
         // The broker's wait covers the actions: their own waits, typing (~1 ms a character) and 1 s each.
         let budget_ms: u64 = converted.iter().map(|a| 1000 + a["ms"].as_u64().unwrap_or(0) + a["text"].as_str().map_or(0, |t| t.chars().count() as u64)).sum();
         let reply = self.invoke_with(machine, "input.act", json!({ "actions": converted, "stopOnError": true }),
@@ -995,6 +1138,7 @@ impl Tool<'_> {
         if let Some(s) = &shot {
             summary += &format!(" (coordinates from screenshot {})", s.id);
         }
+        self.delay()?;
         if opt_bool(self.args, "screenshotAfter")? == Some(true) {
             let last = self.ctx.latest_shot(machine, None);
             let (mw, mh) = last.as_ref().map(|s| (Some(s.sent.0.max(s.sent.1)), Some(s.sent.0.max(s.sent.1)))).unwrap_or((None, None));
@@ -1079,25 +1223,71 @@ impl Tool<'_> {
         }
         // At most 580 s: the broker waits up to 600 s and must see the command end before its own deadline.
         let timeout = opt_int(self.args, "timeoutSeconds", 1, 580)?.unwrap_or(60);
-        let reply = self.invoke_with(machine, "exec.run", json!({ "file": file, "args": args, "cwd": opt_str(self.args, "cwd")?,
-            "timeoutMs": timeout * 1000, "stdin": opt_str(self.args, "stdin")? }), json!({ "timeoutSec": (timeout + 20).min(600) }))?;
-        let d = &reply.data;
-        let (out, err) = run_output(d, reply.blob.as_deref());
-        let mut t = if d["timedOut"] == true {
-            format!("Timed out after {timeout} s (the command was stopped); partial output below.")
-        } else {
-            format!("Exit code {}", d["exitCode"])
+        let params = json!({ "file": file, "args": args, "cwd": opt_str(self.args, "cwd")?,
+            "timeoutMs": timeout * 1000, "stdin": opt_str(self.args, "stdin")? });
+        let extra = json!({ "timeoutSec": (timeout + 20).min(600) });
+        if opt_bool(self.args, "background")? == Some(true) {
+            return self.run_background(machine, params, extra, timeout);
+        }
+        let reply = self.invoke_with(machine, "exec.run", params, extra)?;
+        Ok(text(run_text(timeout, &reply)))
+    }
+
+    /// `run background: true`: the same request on a thread of its own (the broker gives it its own pipe connection,
+    /// and the host and the guest run it next to screenshots and input); its output waits for run_result. The person's
+    /// pause, budgets and timeouts apply to it exactly as to a run that is waited for.
+    fn run_background(&self, machine: &str, params: Value, mut extra: Value, timeout: i64) -> Out {
+        let runs = Arc::clone(&self.ctx.runs);
+        let id = {
+            let mut map = runs.map.lock().unwrap();
+            map.retain(|_, r| r.ended.map_or(true, |e| e.elapsed() < RUN_KEPT));
+            let running = map.values().filter(|r| r.result.is_none()).count();
+            if running >= MAX_BACKGROUND_RUNS {
+                return Err(format!("{running} commands are already running in the background; wait for one with run_result first."));
+            }
+            format!("run-{}", runs.next.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1)
         };
-        if d["truncated"] == true {
-            t += " (the machine cut the output at 1 MiB)";
+        self.step(machine)?;
+        extra["method"] = json!("exec.run");
+        extra["params"] = params;
+        extra["note"] = json!(self.note());
+        extra["connection"] = json!(self.connection);
+        extra["name"] = json!(machine);
+        runs.map.lock().unwrap().insert(id.clone(), BgRun { machine: machine.to_string(), started: Instant::now(), ended: None, result: None });
+        let broker = Arc::clone(&self.ctx.broker);
+        let (key, who) = (id.clone(), machine.to_string());
+        std::thread::spawn(move || {
+            let result = match broker.call("agent.invoke", extra) {
+                Ok(reply) => Ok(run_text(timeout, &reply)),
+                Err(e) => Err(explain(&who, &e)),
+            };
+            if let Some(r) = runs.map.lock().unwrap().get_mut(&key) {
+                r.result = Some(result);
+                r.ended = Some(Instant::now());
+            }
+        });
+        Ok(text(format!("Started {id} in the background on {machine}. Take screenshots or act meanwhile; run_result with runId {id} gives its exit code and output.")))
+    }
+
+    fn run_result(&self) -> Out {
+        let machine = self.machine()?;
+        let id = arg_str(self.args, "runId")?;
+        let wait = opt_int(self.args, "waitSeconds", 0, 580)?.unwrap_or(0) as u64;
+        let gone = || format!("There is no background run {id} on {machine} (each output is given once).");
+        if !self.ctx.runs.map.lock().unwrap().get(id).is_some_and(|r| r.machine.eq_ignore_ascii_case(machine)) {
+            return Err(gone());
         }
-        if !out.is_empty() {
-            t += &format!("\n--- stdout ---\n{}", cap_to(out, MAX_TEXT * 3 / 4));
+        let done = self.wait(wait, || Ok(self.ctx.runs.map.lock().unwrap().get(id).is_some_and(|r| r.result.is_some())))?;
+        let mut map = self.ctx.runs.map.lock().unwrap();
+        if !done {
+            let secs = map.get(id).map_or(0, |r| r.started.elapsed().as_secs());
+            return Ok(text(format!("{id} is still running ({secs} s so far).")));
         }
-        if !err.is_empty() {
-            t += &format!("\n--- stderr ---\n{}", cap_to(err, MAX_TEXT / 4));
+        match map.remove(id).and_then(|r| r.result) {
+            Some(Ok(t)) => Ok(text(t)),
+            Some(Err(e)) => Err(e),
+            None => Err(gone()),
         }
-        Ok(text(t))
     }
 
     /// The agent's home in the machine (`agent.info` home; the default user's profile otherwise), ending in `\`.
@@ -1584,6 +1774,27 @@ fn taken_by(m: &Value) -> Option<&str> {
 }
 
 /// exec.run's output: in the JSON, or (when it didn't fit a frame) in the blob, stdout then stderr.
+/// What run says about a finished exec.run: exit code (or timeout), then its output.
+fn run_text(timeout: i64, reply: &Reply) -> String {
+    let d = &reply.data;
+    let (out, err) = run_output(d, reply.blob.as_deref());
+    let mut t = if d["timedOut"] == true {
+        format!("Timed out after {timeout} s (the command was stopped); partial output below.")
+    } else {
+        format!("Exit code {}", d["exitCode"])
+    };
+    if d["truncated"] == true {
+        t += " (the machine cut the output at 1 MiB)";
+    }
+    if !out.is_empty() {
+        t += &format!("\n--- stdout ---\n{}", cap_to(out, MAX_TEXT * 3 / 4));
+    }
+    if !err.is_empty() {
+        t += &format!("\n--- stderr ---\n{}", cap_to(err, MAX_TEXT / 4));
+    }
+    t
+}
+
 fn run_output(d: &Value, blob: Option<&[u8]>) -> (String, String) {
     let fix = |s: &str| s.replace("\r\n", "\n");
     if d["outputInBlob"] == true {

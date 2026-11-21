@@ -132,6 +132,10 @@ fn method_deadline(method: &str, params: &Value) -> Duration {
         "input.act" => {
             let acts = params["actions"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
             let waits: u64 = acts.iter().filter(|a| a["type"] == "wait").map(|a| a["ms"].as_u64().unwrap_or(0).min(5000)).sum();
+            // a drag along strokes takes its `ms` (default: its length at DRAG_SPEED, capped the same way)
+            let drags: u64 = acts.iter().filter(|a| a["type"] == "drag" && !a["strokes"].is_null())
+                .map(|a| a["ms"].as_u64().unwrap_or(crate::input::MAX_DRAG_MS).min(crate::input::MAX_DRAG_MS)).sum();
+            let waits = waits + drags;
             let own = waits + 500 * acts.len() as u64 + 30_000;
             Duration::from_millis(params["timeoutMs"].as_u64().unwrap_or(0).max(own).min(600_000))
         }
