@@ -809,6 +809,10 @@ pub async fn viewer_reveal(app: AppHandle, vm: String) -> Result<(), String> {
     if !viewer.visible.load(Ordering::Relaxed) {
         reveal(&viewer);
     }
+    // A viewer that recorded in the background had its first picture while hidden: the person sees it from now.
+    if viewer.first_frame.load(Ordering::Relaxed) {
+        publish_state(&vm, "picture");
+    }
     Ok(())
 }
 
@@ -829,6 +833,9 @@ pub async fn viewer_show(app: AppHandle, vm: String) -> Result<(), String> {
     let viewer = viewers().as_ref().and_then(|v| v.get(&vm).cloned()).ok_or("This machine's viewer isn't open.")?;
     set_background(&vm, false);
     crate::agent::refresh_burst(&app, &vm);
+    if viewer.first_frame.load(Ordering::Relaxed) {
+        publish_state(&vm, "picture");
+    }
     if viewer.embed {
         if let Some((_, x, y, w, h)) = content_rect(&app) {
             send_raw(&viewer, &json!({ "type": "place", "x": x, "y": y, "w": w, "h": h }));
