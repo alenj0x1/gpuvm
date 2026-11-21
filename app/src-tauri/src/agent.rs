@@ -754,7 +754,7 @@ fn sync_recordings(app: &AppHandle, clients: &[Value]) {
         if crate::capture::is_recording(vm) {
             rec.confirmed = true;
         } else {
-            let _ = crate::viewer::send_to(vm, &json!({ "type": "record", "on": true }));
+            let _ = crate::viewer::send_to(vm, &record_agent_work());
         }
     }
     for (vm, (client, name)) in taken {
@@ -765,6 +765,13 @@ fn sync_recordings(app: &AppHandle, clients: &[Value]) {
         let app = app.clone();
         tauri::async_runtime::spawn(async move { start_recording(&app, &vm).await });
     }
+}
+
+/// The viewer's command to record an agent's work. Light: the viewer re-encodes it as H.264 at 30 fps and constant
+/// quality instead of keeping the 180 fps stream (~160 MB per minute, ~10 GB per hour): 10-35x smaller, and every
+/// Windows player opens it (lab 061). What the person sees live doesn't change; their own recordings keep the stream.
+fn record_agent_work() -> Value {
+    json!({ "type": "record", "on": true, "light": true })
 }
 
 async fn start_recording(app: &AppHandle, vm: &str) {
@@ -800,7 +807,7 @@ async fn start_recording(app: &AppHandle, vm: &str) {
             Ok(true) => ours = true,
         }
     }
-    let started = crate::viewer::send_to(vm, &json!({ "type": "record", "on": true })).is_ok();
+    let started = crate::viewer::send_to(vm, &record_agent_work()).is_ok();
     let mut recs = lock(&RECS);
     if let Some(r) = recs.as_mut().and_then(|r| r.get_mut(vm)) {
         r.ours = ours;
@@ -1019,6 +1026,15 @@ mod tests {
 
     fn client(machine: &str, state: &str) -> Value {
         json!({ "id": "c1", "name": "lab", "machine": machine, "state": state })
+    }
+
+    #[test]
+    fn agent_work_is_recorded_light() {
+        let m = record_agent_work();
+        assert_eq!(m["type"], "record");
+        assert_eq!(m["on"], true);
+        // The viewer re-encodes it small (lab 061); without the flag it keeps the full stream.
+        assert_eq!(m["light"], true);
     }
 
     #[test]
