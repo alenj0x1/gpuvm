@@ -8,6 +8,9 @@ Changes waiting for the next version sit under **Unreleased** at the top (this s
 
 ## [Unreleased]
 
+### Added
+- **winget in agent machines.** Agents can install apps with `winget` as their own standard user (`--scope user`), without the Microsoft Store. GpuVM brings App Installer from Microsoft's official release, pinned by its SHA-256 and checked for Microsoft's signature on this PC and again inside the machine, and provisions it for every user. Settings that would weaken winget's checks are locked by policy, and the Microsoft Store source is off, so a `winget` command never stops at its agreement prompt. Agent templates get it with their next update; other agent machines the next time their agent is installed.
+
 ### Changed
 - **GpuVM's own Sunshine on every machine.** Machines stream with GpuVM's fork of Sunshine ([gpuvm-sunshine](https://github.com/alenj0x1/gpuvm-sunshine)), always as a Windows service, whatever they are used for. With the default **Fast** capture a small helper captures as the signed-in user and passes the frames to the service, so the picture shows where desktop duplication stayed black on the virtual display, and Sunshine's settings and keys are no longer readable by that user. Machines created before get it the next time they are opened; the old setup that ran Sunshine as the user is removed. Agent machines and the rest now work the same way, and agent machines can choose their capture like any other.
 - **Templates stay up to date.** When GpuVM brings a newer Sunshine or agent, its templates get it once, as a layer on top of them, in the background (the app checks when it starts and every hour). Copies of an agent template are ready in under a minute instead of about five; machines already made from a template keep theirs untouched.

@@ -45,5 +45,32 @@
     "url": "https://github.com/nefarius/ViGEmBus/releases/download/v1.22.0/ViGEmBus_1.22.0_x64_x86_arm64.exe",
     "sha256": "89220a7865076b342892f98865f3499fb7c4cfd673159e89d352c360fd014c6a",
     "hold": "Retired: the repository was archived in Nov 2023 and 1.22.0 is its last release. The hash matches Chocolatey's verification file; GitHub publishes none."
+  },
+  "winget": {
+    "description": "App Installer (winget), signed by Microsoft, provisioned for every user of an agent machine so the agent's standard user can install apps with winget. The three winget entries are one release: update them together.",
+    "repo": "microsoft/winget-cli",
+    "assetPattern": "^Microsoft\\.DesktopAppInstaller_8wekyb3d8bbwe\\.msixbundle$",
+    "version": "v1.29.380",
+    "file": "Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle",
+    "url": "https://github.com/microsoft/winget-cli/releases/download/v1.29.380/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle",
+    "sha256": "65dea9c01ce08ee7b763366b27c0e651f97db857c11ca9b9c301826c10092f2e"
+  },
+  "winget-dependencies": {
+    "description": "The frameworks App Installer needs (VCLibs, VCLibs UWPDesktop, Windows App Runtime), signed by Microsoft; only the x64 packages go into the machine.",
+    "repo": "microsoft/winget-cli",
+    "assetPattern": "^DesktopAppInstaller_Dependencies\\.zip$",
+    "version": "v1.29.380",
+    "file": "DesktopAppInstaller_Dependencies.zip",
+    "url": "https://github.com/microsoft/winget-cli/releases/download/v1.29.380/DesktopAppInstaller_Dependencies.zip",
+    "sha256": "ba875afe9d190f61218985ac0292a99d1db710bf93e13c68944ca9d89f0d82d1"
+  },
+  "winget-license": {
+    "description": "App Installer's license file, which provisioning it for all users without Microsoft Store needs.",
+    "repo": "microsoft/winget-cli",
+    "assetPattern": "^[0-9a-f]{32}_License1\\.xml$",
+    "version": "v1.29.380",
+    "file": "e53e159d00e04f729cc2180cffd1c02e_License1.xml",
+    "url": "https://github.com/microsoft/winget-cli/releases/download/v1.29.380/e53e159d00e04f729cc2180cffd1c02e_License1.xml",
+    "sha256": "bcb15118ec47df24e3e6013a7006147c3a15b3a8104ed660fe87c8b4ed01f485"
   }
 }
