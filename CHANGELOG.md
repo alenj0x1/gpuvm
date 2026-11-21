@@ -26,6 +26,7 @@ Changes waiting for the next version sit under **Unreleased** at the top (this s
 - The picture no longer freezes for good when Windows' capture service crashes inside the machine: it comes back by itself in about 2 seconds, instead of staying on the last frame until the machine is reopened.
 - Far fewer black flashes over the picture (half-drawn frames of the machine's desktop), about half as many as before.
 - Recordings open in Windows' own player on PCs without Microsoft's HEVC extension: with the codec on automatic, those PCs stream in H.264.
+- An agent's screenshot taken right after an action shows that action. Before, a screenshot right after a `drag` (or a click that opens something) often came back without it, and agents took a second screenshot to see it. Screenshots take about 30 ms longer (a `settleMs` the agent can change). Needs agent 0.4.9.
 
 ## [0.9.0] - 2026-11-18
 

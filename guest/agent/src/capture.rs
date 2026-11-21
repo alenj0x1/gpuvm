@@ -125,23 +125,123 @@ pub fn primary_output() -> Option<Output> {
     best.map(|(_, o)| o)
 }
 
+/// How long after its request a screenshot takes the newest frame (`settleMs` changes it, ≤ MAX_SETTLE; lab 062):
+/// an action that just answered "done" reaches the screen a few ms later (a drag's stroke, then the app redrawing the
+/// finished stroke). Frames can't tell a change from a still screen: on GpuVM's display Windows delivers ~180 a
+/// second either way, and dirty regions need Windows 11 24H2.
+pub const SETTLE: Duration = Duration::from_millis(SETTLE_MS);
+pub const SETTLE_MS: u64 = 30;
+pub const MAX_SETTLE_MS: u64 = 1000;
+/// How long a screenshot waits for the first frame of a session (a session opened right after a display change takes
+/// longer for its first frame, lab 051).
+const FIRST_WAIT: Duration = Duration::from_secs(3);
+
+#[derive(Debug, PartialEq)]
+enum Step {
+    Take,
+    /// wait for a newer frame, at most this long, then ask again
+    Wait(Duration),
+    Fail,
+}
+
+/// What a screenshot does with the newest frame it has (`at` = when it arrived), `start` = when it was asked for:
+/// it takes the newest once `settle` passed since the request, never a frame from before that point while newer ones
+/// may come; with no frame at all (a session just opened) it waits up to FIRST_WAIT, then fails.
+fn step(at: Option<Instant>, start: Instant, now: Instant, settle: Duration) -> Step {
+    match at {
+        None if now >= start + FIRST_WAIT => Step::Fail,
+        None => Step::Wait(start + FIRST_WAIT - now),
+        Some(_) if now >= start + settle => Step::Take,
+        Some(_) => Step::Wait(start + settle - now),
+    }
+}
+
+/// The pool's side of a capture, used only by its FrameArrived handler.
+struct Pool {
+    dev: ID3D11Device,
+    ctx: ID3D11DeviceContext,
+    d3d: IDirect3DDevice,
+    size: SizeInt32,
+}
+
+unsafe impl Send for Pool {}
+
+impl Pool {
+    /// Takes every frame waiting in the pool and returns a copy of the newest (`resized` when the display changed
+    /// size). Run on each FrameArrived, so the pool's two buffers never stay full: with both full, Windows drops new
+    /// frames, and a screenshot taken after a drag got the frame from before it (lab 062, 0/10 fresh with 0.4.8).
+    fn drain(&mut self, pool: &Direct3D11CaptureFramePool, resized: &mut bool) -> windows::core::Result<Option<ID3D11Texture2D>> {
+        let mut newest: Option<windows::Graphics::Capture::Direct3D11CaptureFrame> = None;
+        while let Ok(frame) = pool.TryGetNextFrame() {
+            let cs = frame.ContentSize()?;
+            if cs.Width != self.size.Width || cs.Height != self.size.Height {
+                self.size = cs;
+                let _ = frame.Close();
+                pool.Recreate(&self.d3d, DirectXPixelFormat::B8G8R8A8UIntNormalized, 2, cs)?;
+                *resized = true;
+                if let Some(old) = newest.take() {
+                    let _ = old.Close();
+                }
+                continue;
+            }
+            // only the newest is copied
+            if let Some(old) = newest.replace(frame) {
+                let _ = old.Close();
+            }
+        }
+        let Some(frame) = newest else { return Ok(None) };
+        let access: IDirect3DDxgiInterfaceAccess = frame.Surface()?.cast()?;
+        let tex: ID3D11Texture2D = unsafe { access.GetInterface()? };
+        let own = unsafe {
+            let mut desc = D3D11_TEXTURE2D_DESC::default();
+            tex.GetDesc(&mut desc);
+            let od = D3D11_TEXTURE2D_DESC { BindFlags: 0, CPUAccessFlags: 0, MiscFlags: 0, Usage: D3D11_USAGE_DEFAULT, ..desc };
+            let mut own = None;
+            self.dev.CreateTexture2D(&od, None, Some(&mut own))?;
+            let own = own.unwrap();
+            self.ctx.CopyResource(&own, &tex);
+            own
+        };
+        let _ = frame.Close();
+        Ok(Some(own))
+    }
+}
+
+/// What a screenshot reads: the newest frame's copy and when it arrived. Its lock is never held across a call into
+/// Direct3D or the pool: the FrameArrived handler holds the device while it waits for this lock, and a screenshot
+/// that copied the frame under it hung (lab 062).
+#[derive(Default)]
+struct Latest {
+    frame: Option<(ID3D11Texture2D, Instant)>,
+    /// frames delivered since the session opened
+    count: u64,
+    resized: bool,
+    error: Option<String>,
+}
+
+unsafe impl Send for Latest {}
+
+type Shared = std::sync::Arc<(Mutex<Latest>, std::sync::Condvar)>;
+
 pub struct Wgc {
     dev: ID3D11Device,
     ctx: ID3D11DeviceContext,
     pool: Direct3D11CaptureFramePool,
     session: GraphicsCaptureSession,
-    d3d: IDirect3DDevice,
-    size: SizeInt32,
-    latest: Option<ID3D11Texture2D>,
+    latest: Shared,
+    arrived: i64,
     pub output: Output,
     pub last_used: Instant,
     pub opened_ms: f64,
+    /// frames that arrived while the last screenshot waited for the screen to settle
+    pub settle_frames: u64,
 }
 
 unsafe impl Send for Wgc {}
 
 impl Drop for Wgc {
     fn drop(&mut self) {
+        let _ = self.pool.RemoveFrameArrived(self.arrived);
         let _ = self.session.Close();
         let _ = self.pool.Close();
     }
@@ -153,7 +253,13 @@ fn device_for(adapter: &IDXGIAdapter1) -> windows::core::Result<(ID3D11Device, I
     unsafe {
         D3D11CreateDevice(adapter, D3D_DRIVER_TYPE_UNKNOWN, HMODULE::default(), D3D11_CREATE_DEVICE_BGRA_SUPPORT, None, D3D11_SDK_VERSION, Some(&mut dev), None, Some(&mut ctx))?;
     }
-    Ok((dev.unwrap(), ctx.unwrap()))
+    let (dev, ctx) = (dev.unwrap(), ctx.unwrap());
+    // the handler's thread and the screenshot's both use the immediate context
+    let mt: ID3D11Multithread = ctx.cast()?;
+    unsafe {
+        let _ = mt.SetMultithreadProtected(true);
+    }
+    Ok((dev, ctx))
 }
 
 impl Wgc {
@@ -166,63 +272,75 @@ impl Wgc {
         let d3d: IDirect3DDevice = unsafe { CreateDirect3D11DeviceFromDXGIDevice(&dxgi)?.cast()? };
         let size = item.Size()?;
         let pool = Direct3D11CaptureFramePool::CreateFreeThreaded(&d3d, DirectXPixelFormat::B8G8R8A8UIntNormalized, 2, size)?;
+        let latest: Shared = std::sync::Arc::new((Mutex::new(Latest::default()), std::sync::Condvar::new()));
+        let shared = latest.clone();
+        let own = Mutex::new(Pool { dev: dev.clone(), ctx: ctx.clone(), d3d, size });
+        // The handler gets the pool as its sender (holding the pool here would keep it alive through its own handler)
+        // and returns at once when raised again on its own thread while draining (that loop takes the frame).
+        let arrived = pool.FrameArrived(&windows::Foundation::TypedEventHandler::new(move |sender: windows::core::Ref<Direct3D11CaptureFramePool>, _| {
+            thread_local!(static DRAINING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) });
+            if DRAINING.with(|d| d.replace(true)) {
+                return Ok(());
+            }
+            if let Ok(pool) = sender.ok() {
+                let mut resized = false;
+                let got = own.lock().unwrap().drain(pool, &mut resized);
+                let (lock, cv) = &*shared;
+                let mut l = lock.lock().unwrap();
+                l.resized |= resized;
+                if resized {
+                    l.frame = None;
+                }
+                match got {
+                    Ok(Some(tex)) => {
+                        l.frame = Some((tex, Instant::now()));
+                        l.count += 1;
+                    }
+                    Ok(None) => {}
+                    Err(e) => l.error = Some(e.to_string()),
+                }
+                drop(l);
+                cv.notify_all();
+            }
+            DRAINING.with(|d| d.set(false));
+            Ok(())
+        }))?;
         let session = pool.CreateCaptureSession(&item)?;
         let _ = session.SetIsCursorCaptureEnabled(true);
         session.StartCapture()?;
-        Ok(Wgc { dev, ctx, pool, session, d3d, size, latest: None, output: o, last_used: Instant::now(), opened_ms: t.elapsed().as_secs_f64() * 1e3 })
+        Ok(Wgc { dev, ctx, pool, session, latest, arrived, output: o, last_used: Instant::now(), opened_ms: t.elapsed().as_secs_f64() * 1e3, settle_frames: 0 })
     }
 
-    /// Takes the newest frame if one arrived (drains the pool); rebuilds the pool when the display changed size.
-    fn poll(&mut self) -> windows::core::Result<bool> {
-        let mut got = false;
-        while let Ok(frame) = self.pool.TryGetNextFrame() {
-            let cs = frame.ContentSize()?;
-            if cs.Width != self.size.Width || cs.Height != self.size.Height {
-                self.size = cs;
-                self.pool.Recreate(&self.d3d, DirectXPixelFormat::B8G8R8A8UIntNormalized, 2, cs)?;
-                let _ = frame.Close();
-                self.latest = None;
-                // the display mode changed: its rect on the desktop (used to place input) too
-                if let Some(o) = primary_output().filter(|o| o.monitor == self.output.monitor) {
-                    self.output.rect = o.rect;
-                }
-                continue;
-            }
-            let access: IDirect3DDxgiInterfaceAccess = frame.Surface()?.cast()?;
-            let tex: ID3D11Texture2D = unsafe { access.GetInterface()? };
-            unsafe {
-                let mut desc = D3D11_TEXTURE2D_DESC::default();
-                tex.GetDesc(&mut desc);
-                let od = D3D11_TEXTURE2D_DESC { BindFlags: 0, CPUAccessFlags: 0, MiscFlags: 0, Usage: D3D11_USAGE_DEFAULT, ..desc };
-                let mut own = None;
-                self.dev.CreateTexture2D(&od, None, Some(&mut own))?;
-                let own = own.unwrap();
-                self.ctx.CopyResource(&own, &tex);
-                self.latest = Some(own);
-            }
-            let _ = frame.Close();
-            got = true;
-        }
-        Ok(got)
-    }
-
-    /// The newest frame as tightly packed BGRA (waits up to 1 s for the first one).
-    pub fn grab(&mut self) -> Result<(u32, u32, Vec<u8>), String> {
+    /// The screen as tightly packed BGRA, never older than the request when the screen changed: a frame that arrives
+    /// after the request started is taken at once; with none, the newest after FRESH_WAIT (see `step`).
+    pub fn grab(&mut self, settle: Duration) -> Result<(u32, u32, Vec<u8>), String> {
         self.last_used = Instant::now();
-        let t = Instant::now();
+        let start = Instant::now();
+        let (lock, cv) = &*self.latest;
+        let mut l = lock.lock().unwrap();
+        let count = l.count;
         loop {
-            self.poll().map_err(|e| format!("capture failed: {e}"))?;
-            if self.latest.is_some() {
-                break;
+            if let Some(e) = l.error.take() {
+                return Err(format!("capture failed: {e}"));
             }
-            // a session opened right after a display change takes longer for its first frame (lab 051)
-            if t.elapsed() > Duration::from_secs(3) {
-                return Err("no frame from the display in 3 s".into());
+            let now = Instant::now();
+            match step(l.frame.as_ref().map(|f| f.1), start, now, settle) {
+                Step::Take => break,
+                Step::Fail => return Err("no frame from the display in 3 s".into()),
+                Step::Wait(left) => l = cv.wait_timeout(l, left.max(Duration::from_millis(1))).unwrap().0,
             }
-            std::thread::sleep(Duration::from_millis(2));
+        }
+        let tex = l.frame.as_ref().unwrap().0.clone();
+        self.settle_frames = l.count - count;
+        let resized = std::mem::take(&mut l.resized);
+        drop(l);
+        if resized {
+            // the display mode changed: its rect on the desktop (used to place input) too
+            if let Some(o) = primary_output().filter(|o| o.monitor == self.output.monitor) {
+                self.output.rect = o.rect;
+            }
         }
         unsafe {
-            let tex = self.latest.as_ref().unwrap();
             let mut desc = D3D11_TEXTURE2D_DESC::default();
             tex.GetDesc(&mut desc);
             let sd = D3D11_TEXTURE2D_DESC {
@@ -240,7 +358,7 @@ impl Wgc {
             let mut staging = None;
             self.dev.CreateTexture2D(&sd, None, Some(&mut staging)).map_err(|e| e.to_string())?;
             let staging = staging.unwrap();
-            self.ctx.CopyResource(&staging, tex);
+            self.ctx.CopyResource(&staging, &tex);
             let mut m = D3D11_MAPPED_SUBRESOURCE::default();
             self.ctx.Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut m)).map_err(|e| e.to_string())?;
             let (w, h) = (desc.Width as usize, desc.Height as usize);
@@ -280,7 +398,27 @@ pub fn region_inside(v: &[u64], fw: u32, fh: u32) -> Option<(u32, u32, u32, u32)
 
 #[cfg(test)]
 mod tests {
-    use super::region_inside;
+    use super::{region_inside, step, Step, FIRST_WAIT, SETTLE};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn a_screenshot_takes_the_newest_frame_once_the_screen_had_time_to_show_the_last_action() {
+        let start = Instant::now() + Duration::from_secs(10);
+        let ms = |n: u64| start + Duration::from_millis(n);
+        let before = Some(start - Duration::from_millis(5));
+        // a frame from before the request, or one right after it: not yet (the action's frames may be on their way)
+        assert_eq!(step(before, start, start, SETTLE), Step::Wait(SETTLE));
+        assert_eq!(step(Some(ms(3)), start, ms(3), SETTLE), Step::Wait(SETTLE - Duration::from_millis(3)));
+        // the newest, once SETTLE passed
+        assert_eq!(step(before, start, start + SETTLE, SETTLE), Step::Take);
+        assert_eq!(step(Some(ms(29)), start, start + SETTLE, SETTLE), Step::Take);
+        // settleMs 0: whatever is newest, at once
+        assert_eq!(step(before, start, start, Duration::ZERO), Step::Take);
+        // no frame yet (a session just opened): up to FIRST_WAIT, then fail
+        assert_eq!(step(None, start, ms(500), SETTLE), Step::Wait(FIRST_WAIT - Duration::from_millis(500)));
+        assert_eq!(step(None, start, start + FIRST_WAIT, SETTLE), Step::Fail);
+    }
+
     #[test]
     fn regions() {
         assert_eq!(region_inside(&[0, 0, 1366, 768], 1366, 768), Some((0, 0, 1366, 768)));
@@ -384,6 +522,7 @@ pub fn screen_capture(p: &Value) -> CallResult {
     }
     let max_w = p["maxW"].as_u64().unwrap_or(1280).clamp(16, 3840) as u32;
     let max_h = p["maxH"].as_u64().unwrap_or(800).clamp(16, 2160) as u32;
+    let settle = Duration::from_millis(p["settleMs"].as_u64().unwrap_or(SETTLE_MS).min(MAX_SETTLE_MS));
     let format = p["format"].as_str().unwrap_or("webp");
     if format != "webp" && format != "png" {
         return Err(("bad_request", "format is webp or png".into()));
@@ -403,7 +542,7 @@ pub fn screen_capture(p: &Value) -> CallResult {
     }
     let wgc = g.as_mut().unwrap();
     let t = Instant::now();
-    let grabbed = wgc.grab();
+    let grabbed = wgc.grab(settle);
     let (fw, fh, bgra) = match grabbed {
         Ok(x) => x,
         Err(e) => {
@@ -412,6 +551,7 @@ pub fn screen_capture(p: &Value) -> CallResult {
         }
     };
     let grab_ms = t.elapsed().as_secs_f64() * 1e3;
+    let settle_frames = wgc.settle_frames;
     drop(g);
     let (src, sw, sh, region) = match p.get("region").filter(|r| !r.is_null()) {
         Some(r) => {
@@ -434,6 +574,7 @@ pub fn screen_capture(p: &Value) -> CallResult {
         "screen": {"w": fw, "h": fh},
         "ms": {"open": (open_ms * 10.0).round() / 10.0, "grab": (grab_ms * 10.0).round() / 10.0, "scale": (scale_ms * 10.0).round() / 10.0,
                "encode": (encode_ms * 10.0).round() / 10.0, "total": (t0.elapsed().as_secs_f64() * 1e4).round() / 10.0},
+        "settleFrames": settle_frames,
     });
     if let Some(r) = region {
         res["region"] = json!(r);

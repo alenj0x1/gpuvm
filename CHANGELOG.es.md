@@ -26,6 +26,7 @@ Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (es
 - La imagen ya no se queda congelada cuando el servicio de captura de Windows falla dentro de la máquina: vuelve sola en unos 2 segundos, en vez de quedarse en el último cuadro hasta reabrir la máquina.
 - Muchos menos destellos negros sobre la imagen (cuadros a medio dibujar del escritorio de la máquina), cerca de la mitad que antes.
 - Las grabaciones se abren con el reproductor de Windows en PCs sin la extensión HEVC de Microsoft: con el códec en automático, esos PCs transmiten en H.264.
+- La captura que toma un agente justo después de una acción muestra esa acción. Antes, una captura justo después de un `drag` (o de un clic que abre algo) solía volver sin ella, y los agentes tomaban una segunda captura para verla. Las capturas tardan unos 30 ms más (un `settleMs` que el agente puede cambiar). Requiere el agente 0.4.9.
 
 ## [0.9.0] - 2026-11-18
 
