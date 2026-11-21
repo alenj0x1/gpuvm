@@ -12,6 +12,7 @@ cmd += ['-vf', f'scale={W}:{H}:flags=area,format=gray', '-fps_mode', 'passthroug
 raw = subprocess.run(cmd, capture_output=True).stdout
 frames = [raw[i * N:(i + 1) * N] for i in range(len(raw) // N)]
 hits = []
+moving = sum(1 for i in range(1, len(frames)) if sum(abs(x - y) for x, y in zip(frames[i], frames[i - 1])) > N)
 for i in range(1, len(frames) - 1):
     a, b, c = frames[i - 1], frames[i], frames[i + 1]
     k = sum(1 for x, y, z in zip(a, b, c) if y < 6 and x > 30 and z > 30)
@@ -20,5 +21,6 @@ for i in range(1, len(frames) - 1):
 dur = float(subprocess.run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', src], capture_output=True, text=True).stdout.strip() or 0)
 if len(sys.argv) > 2:
     dur = min(dur, float(sys.argv[2]))
-print(f'frames={len(frames)} seconds={dur:.1f} glitches={len(hits)} per_min={len(hits) / dur * 60 if dur else 0:.1f}')
+print(f'moving_fps={moving / dur if dur else 0:.1f} frames={len(frames)} seconds={dur:.1f} glitches={len(hits)} per_min={len(hits) / dur * 60 if dur else 0:.1f}')
 print('first:', ', '.join(f'#{i}({k})' for i, k in hits[:15]))
+print('by_10s:', [sum(1 for i, _ in hits if int(i / (len(frames) / dur) // 10) == b) for b in range(int(dur // 10) + 1)] if dur else [])
