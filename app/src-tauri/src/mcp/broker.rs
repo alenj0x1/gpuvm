@@ -392,6 +392,8 @@ pub fn remove_disposable(run: &Run, name: &str) -> Result<()> {
             super::server::log(&format!("this GpuVM has no Remove-GpuVMDisposable -Name: {name} goes with the next sweep"));
             let _ = run("Remove-GpuVMDisposable", json!({}), true);
             swept = true;
+        } else if e.message.contains("There's no machine called") {
+            // The app's own sweep (it runs when a disposable turns off) got there first: gone is what was asked.
         } else {
             super::server::log(&format!("couldn't delete the disposable {name}: {}", e.message));
             return Err(BrokerError::new(&e.code, format!("{name} couldn't be deleted: {}", e.message)));
@@ -595,6 +597,13 @@ mod tests {
         remove_disposable(&run, "old1").unwrap();
         assert_eq!(names(&calls), ["Invoke-GpuVMPower", "Remove-GpuVMDisposable", "Remove-GpuVMDisposable", "Get-GpuVM"]);
         assert_eq!(calls.lock().unwrap()[2].1, json!({}));
+
+        // The app's sweep deleted it first (lab 053 part 6): done, not an error.
+        let (_, run) = script(|cmd, args| match cmd {
+            "Remove-GpuVMDisposable" if args.get("Name").is_some() => Err(BrokerError::new("failed", "There's no machine called 'gone1'.")),
+            _ => Ok((Reply::default(), vec![])),
+        });
+        remove_disposable(&run, "gone1").unwrap();
     }
 
     #[test]
