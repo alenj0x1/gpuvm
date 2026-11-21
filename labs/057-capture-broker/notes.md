@@ -48,16 +48,55 @@ the WGC frame before Windows had finished drawing into it, and released it right
 | after: wait for the copy on the GPU before releasing the frame | **37.5** |
 | + wait 3 ms before copying (rejected) | capture fell from ~160 to 48 fps |
 
-Kept: the wait for the copy (D3D11 event query, avg 0.5-3.4 ms, max ~15 ms, no timeouts). **Not solved**: half the
-flashes remain, because WGC hands over frames Windows is still drawing (GPU-P virtual display). Next idea, not done:
-deliver frame N-1 when frame N arrives (it is surely finished) and a held frame after ~10 ms of quiet, at the cost of
-one composition frame of latency.
+Kept: the wait for the copy (D3D11 event query, avg 0.5-3.4 ms, max ~15 ms, no timeouts).
+
+### Part 2: measured without anyone at the PC (`flashes.ps1`, `ab.ps1`, `mpo.ps1`)
+
+`flashes.ps1` opens GpuVM's viewer with the labs' own pipe, puts a load on the guest's screen, records 60 s through the
+viewer (`record` over the pipe, as the app does), counts with `glitches.py` (which also reports `moving_fps`, to throw
+out runs where the screen barely moved) and swaps helper builds without dropping the viewer (`swap-helper.ps1`).
+
+What triggers the flashes is **a video playing in the guest** (the session had a YouTube video in Firefox the whole time):
+
+| load (orig = the helper GpuVM shipped, 74cd902e) | flashes per minute |
+| --- | --- |
+| double-buffered clock, ~32 changes/s | 3-6 |
+| canvas animation in Firefox kiosk, 140 changes/s | 0 |
+| WinForms label clock, repainted whole every 16 ms | 5-8 (58 while the session's Firefox video was still open) |
+| the label clock over Firefox playing an H.264 video in a loop | **65-128** |
+
+With the video load the spread from run to run is huge (0 to 167 with the same build and settings), so single runs
+mislead. Copy wait vs orig, interleaved pairs: 38 vs 128, 66 vs 112, 1 vs 7, 37 vs 65, 167 vs 0; with the label load
+2-3 vs 5-8 in 3 of 3 rounds. It helps most of the time; it doesn't fix it.
+
+Rejected:
+- **Hold the newest frame and send the previous one** (sent when the next arrives or after 8 ms): no flashes, but the
+  stream changed only 6-18 times a second instead of ~32: it lost frames.
+- **Wait 3 ms before copying**: capture fell from ~160 to 48 fps.
+- **Multiplane overlays off** (`OverlayTestMode = 5`, the usual fix for black flicker with overlays): one run gave 7
+  vs 38, the repeats 112, 7, 66, 1: no clear effect, so GpuVM doesn't set it.
+
+**Still open.** Next leads: whether Firefox decodes the video on the GPU partition (try with hardware decoding off in
+the guest), and Sunshine's own WGC path in process (no helper) on the same load, to tell the helper from the GPU-P
+display.
 
 ## 3. Recordings he can't play
 
 The viewer records the stream as it comes; with codec on auto, Moonlight chose HEVC, which Windows' players don't open
 without the Store extension. App: with codec on auto and no HEVC decoder in Windows, the viewer is opened with
 `--video-codec H.264`. Sizes: 4.3 GB for 35 min and 6.4 GB for 40 min (180 fps, ~16 Mbps): ~7 GB per hour of agent work.
+Checked after install (lab 058's copy): Sunshine created `h264_nvenc` for the viewer, and the agent recording (lab 061's
+light mode) came out H.264 at ~30 fps, 0.8 MB for 35 s.
+
+## Follow-ups done the same day (parallel sessions, merged into main)
+
+| lab | what | result on the installed build |
+| --- | --- | --- |
+| 058 | screenshots/input don't wait behind `run`; `delayMs`; `run` in the background + `run_result` | screenshot during a 30 s run 61 ms (was 3-9 s); delayMs 2000 → 2065 ms |
+| 059 | `drag` along `path`/`strokes` | circle, spiral, star, wave, dots drawn in Paint; take-over stops an agent's stroke in 0-1 ms (the person's own module calls aren't cancelled, by design) |
+| 060 | winget for `agent` in agent templates | template layer 6 has it; `winget install Microsoft.VisualStudioCode --scope user` as `agent` in 45 s |
+| 061 | light agent recordings (H.264 30 fps, constant quality) | 10-35x smaller (160 → 4.6-16 MB/min) |
+| 062 | a screenshot right after an action shows it (agent 0.4.9) | 10/10 fresh (0.4.8: 0/10); a screenshot alone 25 → 48 ms |
 
 ## 4. How the agent worked (60 min, 7 requests, 250 tool calls)
 
