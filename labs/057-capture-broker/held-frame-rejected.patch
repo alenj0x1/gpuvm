@@ -1,0 +1,114 @@
+diff --git a/tools/sunshine_wgc_capture.cpp b/tools/sunshine_wgc_capture.cpp
+index f64ee870..c47092c3 100644
+--- a/tools/sunshine_wgc_capture.cpp
++++ b/tools/sunshine_wgc_capture.cpp
+@@ -1199,6 +1199,18 @@ private:
+   std::atomic<uint64_t> _gpuvm_copy_wait_us {0};
+   std::atomic<uint64_t> _gpuvm_copy_wait_max_us {0};
+   std::atomic<uint64_t> _gpuvm_copy_wait_timeouts {0};
++  // GpuVM: the newest WGC frame, held until the next one arrives or it is 8 ms old (lab 057), and who sent it on.
++  struct gpuvm_held_frame_t {
++    Direct3D11CaptureFrame frame {nullptr};
++    winrt::Windows::Graphics::DirectX::Direct3D11::IDirect3DSurface surface {nullptr};
++    uint64_t qpc = 0;
++    std::chrono::steady_clock::time_point at;
++  };
++  std::mutex _gpuvm_held_mutex;
++  std::optional<gpuvm_held_frame_t> _gpuvm_held;
++  std::jthread _gpuvm_held_thread;
++  std::atomic<uint64_t> _gpuvm_sent_by_next {0};
++  std::atomic<uint64_t> _gpuvm_sent_by_age {0};
+   std::atomic<uint64_t> _activity_rate_limited_frames {0};
+   uint64_t _last_diagnostics_captured_frames = 0;
+   uint64_t _last_diagnostics_published_frames = 0;
+@@ -1268,6 +1280,20 @@ public:
+     _delivery_thread = std::jthread([this](std::stop_token stop_token) {
+       delivery_thread_proc(stop_token);
+     });
++    // GpuVM: sends on a held frame nobody followed (a still screen) once it is 8 ms old (lab 057).
++    _gpuvm_held_thread = std::jthread([this](std::stop_token stop_token) {
++      while (!stop_token.stop_requested()) {
++        std::this_thread::sleep_for(std::chrono::milliseconds(2));
++        std::lock_guard lock(_gpuvm_held_mutex);
++        if (_gpuvm_held && std::chrono::steady_clock::now() - _gpuvm_held->at >= GPUVM_HOLD_MAX_AGE && !_shutting_down.load(std::memory_order_acquire)) {
++          auto held = std::move(*_gpuvm_held);
++          _gpuvm_held.reset();
++          _gpuvm_sent_by_age.fetch_add(1, std::memory_order_relaxed);
++          send_on_held_frame(std::move(held));
++          g_stage_cb = "cb:done";  // the stall probe reads a finished send as idle, like the callback's
++        }
++      }
++    });
+   }
+ 
+   /**
+@@ -1290,6 +1316,14 @@ public:
+       callback_state->shutting_down = true;
+     }
+     revoke_frame_arrived_handler();
++    if (_gpuvm_held_thread.joinable()) {
++      _gpuvm_held_thread.request_stop();
++      _gpuvm_held_thread.join();
++    }
++    {
++      std::lock_guard lock(_gpuvm_held_mutex);
++      _gpuvm_held.reset();  // gives the frame back to the pool before it closes
++    }
+ 
+     // The handler captures callback_state by shared ownership. A callback that
+     // was dispatched before revocation may still enter after this object is
+@@ -1397,6 +1431,8 @@ public:
+     if (!_deps || !_deps->winrt_device || _capture_format == DXGI_FORMAT_UNKNOWN) {
+       return false;
+     }
++    // GpuVM: one buffer is always held (lab 057); with a single one WGC would have none left to draw the next frame.
++    buffer_size = std::max<uint32_t>(buffer_size, 2);
+ 
+     if (_frame_pool) {
+       // Use the proper Recreate method instead of closing and re-creating
+@@ -1499,7 +1535,15 @@ public:
+         );
+         record_frame_arrival(drained_frames);
+         if (admit_activity_frame(source_time_100ns)) {
+-          queue_frame_for_delivery(std::move(frame), surface, frame_qpc);
++          // GpuVM: this frame is held and the one before it goes on: WGC hands frames over while Windows may still
++          // be drawing them on a GPU-P virtual display, and by the time the next one arrives the previous is done
++          // (lab 057: half-composed desktops, black with block and triangle edges, in the stream).
++          std::lock_guard lock(_gpuvm_held_mutex);
++          auto previous = std::exchange(_gpuvm_held, gpuvm_held_frame_t {std::move(frame), surface, frame_qpc, std::chrono::steady_clock::now()});
++          if (previous) {
++            _gpuvm_sent_by_next.fetch_add(1, std::memory_order_relaxed);
++            send_on_held_frame(std::move(*previous));
++          }
+         }
+       } catch (const winrt::hresult_error &ex) {
+         // Log error
+@@ -1512,6 +1556,17 @@ public:
+   }
+ 
+ private:
++  static constexpr auto GPUVM_HOLD_MAX_AGE = std::chrono::milliseconds(8);
++
++  /// GpuVM: sends a held frame on (called with _gpuvm_held_mutex held, so frames go out in order).
++  void send_on_held_frame(gpuvm_held_frame_t held) {
++    try {
++      queue_frame_for_delivery(std::move(held.frame), held.surface, held.qpc);
++    } catch (const winrt::hresult_error &ex) {
++      BOOST_LOG(error) << "WinRT error sending a held frame: " << ex.code() << " - " << winrt::to_string(ex.message());
++    }
++  }
++
+   bool drain_to_latest() const {
+     return (g_config.flags & platf::dxgi::WGC_IPC_FLAG_DRAIN_TO_LATEST) != 0;
+   }
+@@ -1638,7 +1693,9 @@ private:
+       const auto wait_us = _gpuvm_copy_wait_us.exchange(0, std::memory_order_relaxed);
+       BOOST_LOG(info) << "GpuVM copy wait: copies=" << waits << " avg_us=" << (waits ? wait_us / waits : 0)
+                       << " max_us=" << _gpuvm_copy_wait_max_us.exchange(0, std::memory_order_relaxed)
+-                      << " timeouts=" << _gpuvm_copy_wait_timeouts.exchange(0, std::memory_order_relaxed);
++                      << " timeouts=" << _gpuvm_copy_wait_timeouts.exchange(0, std::memory_order_relaxed)
++                      << " held_sent_by_next=" << _gpuvm_sent_by_next.exchange(0, std::memory_order_relaxed)
++                      << " held_sent_by_age=" << _gpuvm_sent_by_age.exchange(0, std::memory_order_relaxed);
+       return;
+     }
+   }
