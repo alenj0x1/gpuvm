@@ -143,28 +143,53 @@ fn stop_and_wait(svc: &ScHandle) {
     }
     let info = process_info().filter(|i| i.dwProcessId == asked && i.dwCurrentState != SERVICE_STOPPED);
     if let Some(info) = info.filter(|i| i.dwProcessId != 0) {
-        use windows_sys::Win32::System::Threading::{OpenProcess, TerminateProcess, PROCESS_TERMINATE};
-        let process = unsafe { OpenProcess(PROCESS_TERMINATE, 0, info.dwProcessId) };
-        if !process.is_null() {
-            unsafe {
-                TerminateProcess(process, 1);
-                CloseHandle(process);
-            }
-            server::log(&format!("the service didn't stop in 30 s (state {}); its process {} was ended", info.dwCurrentState, info.dwProcessId));
-        }
+        end_process(info.dwProcessId);
+        server::log(&format!("the service didn't stop in 30 s (state {}); its process {} was ended", info.dwCurrentState, info.dwProcessId));
     }
-    // Windows restarts a service whose process ended without stopping (its recovery actions, 2 s later): that new
-    // instance has nothing running, so a normal stop ends it at once and the installer can replace the files.
-    for _ in 0..150 {
+    // Windows restarts a service whose process ended without stopping (its recovery actions, 2 s later). That new
+    // instance is stopped too, and ended if it doesn't stop within 5 s: returning while one runs leaves the installer
+    // unable to replace gpuvm-host.exe, and in silent mode the old service just stays (lab 053 part 7, 2026-11-20).
+    let mut other: Option<(u32, std::time::Instant)> = None;
+    for _ in 0..450 {
         match process_info() {
             Some(i) if i.dwCurrentState == SERVICE_STOPPED => return,
-            Some(i) if i.dwProcessId != asked && i.dwProcessId != 0 && i.dwCurrentState == SERVICE_RUNNING => {
-                unsafe { ControlService(svc.0, SERVICE_CONTROL_STOP, &mut status) };
-            }
             None => return,
+            Some(i) if i.dwProcessId != asked && i.dwProcessId != 0 => {
+                let since = match other {
+                    Some((pid, t)) if pid == i.dwProcessId => t,
+                    _ => {
+                        let t = std::time::Instant::now();
+                        other = Some((i.dwProcessId, t));
+                        t
+                    }
+                };
+                if i.dwCurrentState == SERVICE_RUNNING {
+                    unsafe { ControlService(svc.0, SERVICE_CONTROL_STOP, &mut status) };
+                }
+                if since.elapsed() > Duration::from_secs(5) {
+                    end_process(i.dwProcessId);
+                    server::log(&format!("the restarted service (process {}) didn't stop in 5 s; it was ended", i.dwProcessId));
+                    other = None;
+                }
+            }
             _ => {}
         }
         std::thread::sleep(Duration::from_millis(100));
+    }
+    server::log("the service is still running after 75 s of stopping it; its files may not be replaced");
+}
+
+/// Ends a process and waits (up to 10 s) until it is gone, so its exe can be replaced.
+fn end_process(pid: u32) {
+    use windows_sys::Win32::System::Threading::{OpenProcess, TerminateProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE};
+    let process = unsafe { OpenProcess(PROCESS_TERMINATE | PROCESS_SYNCHRONIZE, 0, pid) };
+    if process.is_null() {
+        return;
+    }
+    unsafe {
+        TerminateProcess(process, 1);
+        WaitForSingleObject(process, 10_000);
+        CloseHandle(process);
     }
 }
 
