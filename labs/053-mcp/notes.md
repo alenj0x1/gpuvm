@@ -218,3 +218,18 @@ Found on the way: (1) right after the install Windows logs its shutdown 3 s in, 
 forced, 5/5); after one more boot it shuts down in seconds. Copies no longer power-cycle, so only the template update
 pays it. (2) `destroy` said "couldn't be deleted" when the app's own sweep had deleted the machine first: now done.
 (3) Hyper-V only opens disks named `*.vhdx` (the first layer attempt used `.vhdx.building`).
+
+## Part 8: GpuVM's Sunshine on every machine, final build (2026-11-21)
+
+Every machine now runs the fork as the service, capture `wgc` through its helper (agent or not); templates of normal
+machines get layers too. After an independent review (7 findings: the update's temporary copy could delete a machine
+with its name, failures retried every hour, half-done setups accepted, non-atomic template.json, orphan layers, weak
+fork install, and the agent's autologon password in the layer, left as a decision), on the installed build:
+
+| check | result |
+| --- | --- |
+| normal machine from the ISO (`fork01`), first open | desktop at 20 s (10.3 s first frame), then 3.2-3.3 s; helper as FORK01\gpuvm, Sunshine SYSTEM, `capture = wgc`, no user task, Users and Store apps can't read the config |
+| template of it (`normal-tpl`, 40 s) + `Update-GpuVMTemplate -Force` | layer 1 in 95 s (690 MB) |
+| copy of `normal-tpl`, opens 2-3 | desktop at 5.0-5.3 s, 0 capture restarts (open 1: no frame within 20 s, Sunshine's first start) |
+| create_disposable from agent-tpl (MCP, modern / legacy) | 57 s / 62 s |
+| tools p50 | screenshot 40 ms, 640 18 ms, click 10 ms, key 3.6 ms, run 31 ms; coordinates 30/30 |

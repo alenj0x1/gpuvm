@@ -35,14 +35,16 @@ Lo que dura dentro de la VM hasta que Windows se reinicia (modo de pantalla, mod
 
 ## Modos de captura
 
-Sunshine puede capturar la pantalla virtual de dos formas, que se eligen por máquina en **Imagen y control → Captura** o con `Set-GpuVMCapture -Name <vm> -Mode wgc|ddx`:
+Todas las máquinas usan el **Sunshine propio de GpuVM** ([gpuvm-sunshine](https://github.com/alenj0x1/gpuvm-sunshine): Sunshine oficial en la versión que fija GpuVM, más un ayudante de Windows.Graphics.Capture adaptado de Vibeshine), siempre como servicio de Windows (SYSTEM), sea cual sea el uso de la máquina. Se instala encima del oficial al crear la máquina, y las máquinas creadas antes lo reciben la próxima vez que se abren. Solo los administradores leen su configuración y sus claves.
 
-| Modo | En la app | Cómo corre Sunshine | Muestra | No muestra |
-|---|---|---|---|---|
-| `wgc` (Windows.Graphics.Capture) | **Rápida** (la predeterminada) | En la sesión del usuario que inició sesión, con una tarea al iniciar sesión (`conhost --headless`, sin ventana de consola); el servicio queda en manual. | La imagen unos 2,6 s después de conectar, y los programas en pantalla completa exclusiva a cualquier resolución. | Los avisos de administrador de Windows (se dibujan en el escritorio seguro); GpuVM [los muestra y responde](#avisos-de-administrador). |
-| `ddx` (desktop duplication) | **Clásica** | Como servicio de Windows (SYSTEM). | Todo, incluidos los avisos de administrador de Windows. | Programas en pantalla completa exclusiva: negro. Al conectar, la imagen puede quedar en negro hasta que algo cambie en pantalla. |
+Puede capturar la pantalla virtual de dos formas, que se eligen por máquina en **Imagen y control → Captura** o con `Set-GpuVMCapture -Name <vm> -Mode wgc|ddx`:
 
-Con `ddx`, desktop duplication se reinicia sin avisar al empezar cada sesión, así que la imagen puede quedar un rato en negro después de que el visor se conecta (su primer cuadro real tarda unos 6 s aunque cambie toda la pantalla), y no recibe cuadros nuevos de la pantalla virtual mientras un programa está en pantalla completa exclusiva. El modo se aplica en el momento si la VM está encendida y se revisa en cada **Encender y abrir**; si ya está así, Sunshine no se reinicia. Aplicarlo necesita la contraseña del invitado. Las VMs que nunca eligieron un modo usan `wgc`.
+| Modo | En la app | Muestra | No muestra |
+|---|---|---|---|
+| `wgc` (Windows.Graphics.Capture) | **Rápida** (la predeterminada) | La imagen unos segundos después de conectar, y los programas en pantalla completa exclusiva a cualquier resolución. Un ayudante pequeño (`tools\sunshine_wgc_capture.exe`) captura en la sesión del usuario con los permisos de ese usuario y le pasa los cuadros al servicio por una textura compartida de la GPU; no guarda nada secreto. | Los avisos de administrador de Windows (se dibujan en el escritorio seguro); GpuVM [los muestra y responde](#avisos-de-administrador). |
+| `ddx` (desktop duplication) | **Clásica** | También los avisos de administrador de Windows. | En la pantalla virtual con partición de GPU, desktop duplication pierde el acceso después de cada cuadro (lab 055): la imagen puede quedar en negro. Programas en pantalla completa exclusiva: negro. |
+
+El modo se aplica en el momento si la VM está encendida y se revisa en cada **Encender y abrir**; si ya está así, Sunshine no se reinicia. Aplicarlo necesita la contraseña del invitado. Las VMs que nunca eligieron un modo usan `wgc`. Las máquinas anteriores al Sunshine de GpuVM lo corrían en la sesión del usuario con una tarea al iniciar sesión; la primera apertura quita esa tarea.
 
 ## Avisos de administrador
 

@@ -6,6 +6,17 @@ All notable changes to GpuVM are documented here. The format follows [Keep a Cha
 
 Changes waiting for the next version sit under **Unreleased** at the top (this section only exists while there are some, and the docs site doesn't show it); `scripts/release.py` turns it into the new version.
 
+## [Unreleased]
+
+### Changed
+- **GpuVM's own Sunshine on every machine.** Machines stream with GpuVM's fork of Sunshine ([gpuvm-sunshine](https://github.com/alenj0x1/gpuvm-sunshine)), always as a Windows service, whatever they are used for. With the default **Fast** capture a small helper captures as the signed-in user and passes the frames to the service, so the picture shows where desktop duplication stayed black on the virtual display, and Sunshine's settings and keys are no longer readable by that user. Machines created before get it the next time they are opened; the old setup that ran Sunshine as the user is removed. Agent machines and the rest now work the same way, and agent machines can choose their capture like any other.
+- **Templates stay up to date.** When GpuVM brings a newer Sunshine or agent, its templates get it once, as a layer on top of them, in the background (the app checks when it starts and every hour). Copies of an agent template are ready in under a minute instead of about five; machines already made from a template keep theirs untouched.
+
+### Fixed
+- Updating GpuVM no longer leaves the old service installed when it was slow to stop.
+- Opening a fresh copy of an agent template by hand no longer waits up to 15 minutes on "Signing in to Windows".
+- An agent's `destroy` no longer reports a failure when GpuVM had already deleted the machine.
+
 ## [0.9.0] - 2026-11-18
 
 ### Added
