@@ -47,8 +47,8 @@ It talks to the agent directly (Invoke-GpuVMAgent), so it works with the old MCP
 - Timings: `agentMs` ≈ the drag time + ~10 ms per stroke (press) + ~20 ms between strokes + one foreground check
   per stroke; e.g. the 500-point spirals ≈ 2.0 s, 0.5 s and 0.1-0.15 s; the circle+spiral call at 1500 px/s ≈ its
   length / 1.5 (about 1.5-2.5 s on a 1920x1080 canvas). ms per point = agentMs / points.
-- `-CancelTest`: the 10 s spiral ends after ~2 s with an error (`paused` / `cancelled`), the button released (the
-  next click in Paint doesn't keep drawing), and the spiral is cut at about a fifth.
+- `-CancelTest` (runs `cancel-mcp.ps1`, see below): the MCP `drag` answers with the take-over error right after the
+  suspend, the left button is down in the machine for ≈ the 2 s, and the spiral is cut at about a fifth of its time.
 
 | Call | Points | ms asked | agentMs | ms / point | Looks right |
 |---|---|---|---|---|---|
@@ -62,3 +62,32 @@ It talks to the agent directly (Invoke-GpuVMAgent), so it works with the old MCP
 **Through the MCP (after installing the new app).** The same with the tool itself, e.g.
 `drag {machine, strokes: [[[300,300],[400,300],[400,400]], [[500,500]]], durationMs: 800}` on Paint's canvas, then a
 screenshot.
+
+## The take-over check (2026-11-21, an agent machine, agent 0.4.8)
+
+**The first run "failed" because of the lab, not the agent.** The coordinator's `-CancelTest` drew the whole 10 s
+spiral and answered ok after 10015 ms although `Suspend-GpuVMAgent -Reason control` ran at 2 s. The drag went through
+`Invoke-GpuVMAgent`, the person's own request (module pipe, no agent session), and taking control cancels only agent
+sessions' requests (`cancel_where(.., |p| p.client.is_some())` in `app/host/src/agent.rs`): the person's own work
+is not stopped by the person taking control. Nothing reached the guest to stop.
+
+**What does stop it.** `cancel-mcp.ps1` does it the way it happens: an MCP session (`gpuvm.exe --mcp`, the installed
+app) takes the machine and draws a 1500-point, 10 s spiral with `drag`; another thread runs the suspend; a pointer
+log runs inside the machine (exec.run, PowerShell reading `Cursor.Position` / `MouseButtons` every ~5-10 ms on its
+own clock).
+
+| Run | Cancel | Answer after the cancel | Left button down in the guest | After |
+|---|---|---|---|---|
+| MCP drag, suspend at 2.3 s | `Suspend-GpuVMAgent -Reason control` | 0 ms ("The person took control of an agent machine…") | - | button `None` |
+| MCP drag, suspend at 4.3 s | same | 1 ms | - | button `None` |
+| MCP drag, suspend at 2.3 s | same | 0 ms | - | pointer still, button `None` |
+| input.act, host timeout at 2 s (same cancel frame) | host `cancel` | 2014 ms call | **1994 ms**; last move 16 ms after, released | still |
+
+So the guest stops within one 40 ms check of the cancel and releases the button where the pointer is. The spiral
+stops at radius ≈ 0.45 of the full one at 20% of the time, as it should: the time is shared by length and a
+spiral's length grows with the square of its radius.
+
+Two things seen on the way, not from this change: the agent's screenshots were stale for a while (a spiral that
+was already drawn showed up only in a later capture; another session is fixing it in capture.rs), and after agent
+0.4.9 was installed `screen.capture` stopped answering (timeouts) while `exec.run` answered in 43 ms, so the last
+run couldn't start (the MCP drag needs a screenshot first).

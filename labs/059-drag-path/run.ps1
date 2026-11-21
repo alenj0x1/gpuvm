@@ -9,7 +9,9 @@
     agent 0.4.8 in the machine but not the new MCP server. Run it in two steps:
       1. .\run.ps1 -Name <machine>                 opens Paint maximized and saves out\before.png (full desktop pixels)
       2. .\run.ps1 -Name <machine> -Canvas x,y,w,h  the white canvas's box read from before.png; draws, saves out\paint.png
-    -CancelTest adds a 10 s spiral that Suspend-GpuVMAgent -Reason control stops after 2 s (then Resume-GpuVMAgent).
+    -CancelTest runs cancel-mcp.ps1: an MCP session (the installed gpuvm.exe --mcp) draws a 10 s spiral and
+    Suspend-GpuVMAgent -Reason control stops it after 2 s (then Resume-GpuVMAgent). The -Center math assumes a
+    1920-wide desktop seen in a 1280-wide screenshot.
     Nothing else of the machine is touched; Paint stays open (close it without saving).
 #>
 param(
@@ -81,14 +83,14 @@ foreach ($ms in 2000, 500, 100) {
     Drag "spiral 500 pts, $ms ms" @(, (Spiral ($x[0] + $cell * (1.2 + 1.1 * $i)) ($cy0 + $ch * 0.16) ($cell * 0.3) 3 500)) $ms
     $i++
 }
-# 4. Optional: the person takes control 2 s into a 10 s spiral; the call must end at ~2 s with the button released.
-if ($CancelTest) {
-    $job = Start-ThreadJob -ArgumentList $Name { param($n) Start-Sleep 2; Import-Module (Join-Path $using:PSScriptRoot '..\..\src\GpuVM') -Force
-        Suspend-GpuVMAgent -Name $n -Reason control -Message 'lab 059 cancel test' }
-    Drag 'spiral 10 s, control taken at 2 s' @(, (Spiral ($x[3]) ($cy0 + $ch * 0.16) ($cell * 0.3) 6 1500)) 10000
-    Receive-Job $job -Wait -AutoRemoveJob | Out-Null
-    Resume-GpuVMAgent -Name $Name | Out-Null
-}
 Save-Screen 'paint.png'
+# 4. Optional: the person takes control 2 s into a 10 s spiral drawn by an MCP session (cancel-mcp.ps1). Not with
+# Invoke-GpuVMAgent: the person's own requests are never cancelled by taking control (only agent sessions' are).
+if ($CancelTest) {
+    $c = & (Join-Path $PSScriptRoot 'cancel-mcp.ps1') -Name $Name -Out $Out `
+        -Center ([int](($cx0 + $cw * 0.5) * 2 / 3)), ([int](($cy0 + $ch * 0.8) * 2 / 3))
+    $results.Add([pscustomobject]@{ label = 'MCP spiral 10 s, control taken at 2 s'; strokes = 1; points = 1500; ms = 10000
+        ok = -not $c.isError; agentMs = $c.guestPressedMs; wallMs = $c.dragMs; msPerPoint = $null; error = $c.text })
+}
 $results | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Out 'results.json') -Encoding utf8
 $results | Format-Table label, strokes, points, ms, ok, agentMs, wallMs, msPerPoint -AutoSize | Out-String | Write-Host
