@@ -174,7 +174,7 @@ function Reset-GuestStreamingIdentity {
         $dir = Join-Path $env:ProgramFiles 'Sunshine'
         $exe = Join-Path $dir 'sunshine.exe'
         if (-not (Test-Path $exe)) { return 'no-sunshine' }
-        Get-Service SunshineService -ErrorAction SilentlyContinue | Stop-Service -Force -ErrorAction SilentlyContinue
+        Get-Service SunshineService -ErrorAction SilentlyContinue | Stop-Service -Force -ErrorAction SilentlyContinue -WarningAction SilentlyContinue
         Get-Process sunshine -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
         $config = Join-Path $dir 'config'
         $statePath = Join-Path $config 'sunshine_state.json'

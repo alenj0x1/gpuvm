@@ -36,5 +36,5 @@ if ($userTask) {
 }
 if ($confChanged) { [IO.File]::WriteAllLines($conf, [string[]]$lines, (New-Object Text.UTF8Encoding $false)) }
 Set-Service $service.Name -StartupType Automatic
-Restart-Service $service.Name -Force
+Restart-Service $service.Name -Force -WarningAction SilentlyContinue
 "${prefix}changed"

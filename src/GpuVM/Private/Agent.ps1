@@ -337,7 +337,7 @@ function Install-GuestSunshineCapture {
                     if (-not $isFork -and $version -and $version -notlike "$pinned*") {
                         throw "The VM has Sunshine $version and GpuVM's is built on $pinned; update the VM's Sunshine first (Update-GpuVMComponent)."
                     }
-                    Get-Service | Where-Object { $_.Name -like '*sunshine*' } | Stop-Service -Force -ErrorAction SilentlyContinue
+                    Get-Service | Where-Object { $_.Name -like '*sunshine*' } | Stop-Service -Force -ErrorAction SilentlyContinue -WarningAction SilentlyContinue
                     Get-Process sunshine, sunshine_wgc_capture -ErrorAction SilentlyContinue | Stop-Process -Force
                     New-Item -ItemType Directory -Force "$dir\tools" | Out-Null
                 }

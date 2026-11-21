@@ -73,7 +73,7 @@ function Install-GpuVMSunshine {
     # signed-in user while Sunshine stays the service). Every machine runs it.
     $fork = Join-Path $Dir 'fork'
     if (-not (Test-Path (Join-Path $fork 'sunshine.exe')) -or -not (Test-Path (Join-Path $fork 'tools\sunshine_wgc_capture.exe'))) { return 'error: GpuVM''s Sunshine is missing' }
-    Get-Service | Where-Object { $_.Name -like 'Sunshine*' -or $_.DisplayName -like '*Sunshine*' } | Stop-Service -Force -ErrorAction SilentlyContinue
+    Get-Service | Where-Object { $_.Name -like 'Sunshine*' -or $_.DisplayName -like '*Sunshine*' } | Stop-Service -Force -ErrorAction SilentlyContinue -WarningAction SilentlyContinue
     Get-Process sunshine -ErrorAction SilentlyContinue | Stop-Process -Force
     New-Item -ItemType Directory -Force (Join-Path $install 'tools') | Out-Null
     Copy-Item -LiteralPath (Join-Path $fork 'sunshine.exe') -Destination $exe -Force
@@ -100,7 +100,7 @@ function Install-GpuVMSunshine {
     }
     Set-SunshineConfig -Path (Join-Path $install 'config\sunshine.conf') -Settings $settings
 
-    Get-Service | Where-Object { $_.Name -like 'Sunshine*' -or $_.DisplayName -like '*Sunshine*' } | Restart-Service -Force -ErrorAction SilentlyContinue
+    Get-Service | Where-Object { $_.Name -like 'Sunshine*' -or $_.DisplayName -like '*Sunshine*' } | Restart-Service -Force -ErrorAction SilentlyContinue -WarningAction SilentlyContinue
     'ok'
 }
 
@@ -114,7 +114,7 @@ function Disable-GpuVMHyperVVideo {
 
 # Restarts Sunshine: always the service (guest\capture-mode.ps1).
 function Restart-GpuVMSunshine {
-    Get-Service | Where-Object { $_.Name -like 'Sunshine*' -or $_.DisplayName -like '*Sunshine*' } | Restart-Service -Force -ErrorAction SilentlyContinue
+    Get-Service | Where-Object { $_.Name -like 'Sunshine*' -or $_.DisplayName -like '*Sunshine*' } | Restart-Service -Force -ErrorAction SilentlyContinue -WarningAction SilentlyContinue
 }
 
 # Audio is GpuVM's own USB speaker (audio\UsbAudioServer.cs, proven in lab 012): a USB/IP server inside the VM that
