@@ -50,7 +50,7 @@ The command must point at the installed `gpuvm.exe`: the GpuVM service only acce
 | do: UI | `ui_tree`, `ui_invoke` | read-only / not destructive |
 | do: commands, files | `run` (PowerShell, cmd or a program, as the standard user `agent`), `read_file`, `write_file` (under `C:\Users\agent`), `send_file` (host → `Desktop\Received`), `offer_file` + `offer_status` (Outbox → the person approves) | `run` and `write_file` destructive; `run` open-world |
 | do: lifetime | `restore_point_create`, `restore_point_revert` (normal machines only; the person allows it in GpuVM; current state kept first), `destroy` (disposables only) | revert and destroy destructive |
-| see / take control | `open_viewer`, `request_human` (human-only steps), `cancel_request` (withdraws the agent's own pending `request_human`, never a pause the person started), `request_approval` (admin, network, other: answered in GpuVM; withdrawn automatically when nobody answers in time) | – |
+| see / take control | `open_viewer` (answers once the person sees the picture, or says why not: the app publishes each viewer's state in the user's LocalAppData `GpuVMiewer-state.json`), `wait_for_person` (waits until the person hands a machine back), `request_human` (human-only steps), `cancel_request` (withdraws the agent's own pending `request_human`, never a pause the person started), `request_approval` (admin, network, other: answered in GpuVM; withdrawn automatically when nobody answers in time) | – |
 
 `create_disposable` and `take_machine` take an optional `task` (shown to the person); every guest request carries a
 note (the tool and its arguments, file contents summarized) for the session's action list in the app.
@@ -102,6 +102,7 @@ Wait until they hand it back ("Return to agent" in GpuVM), then take a fresh scr
   The allowed request goes to `Send-GpuVMFile` as `Approval`: used once, for exactly that path, re-measured (if it
   changed, `needs_approval` and the model is told to ask again). An injected model can't move host files without the
   person seeing what and how much.
+- **The person's moves.** Every result for a machine says once when the person took control of it or handed it back since this connection's previous call, so the model waits with `wait_for_person` instead of asking in the chat or retrying.
 - **Viewer.** `open_viewer` works only on machines this connection took (the viewer can start or resume a machine)
   and starts `gpuvm.exe --view <name>` with a validated machine name only.
 - **What the app shows and logs.** Every step's note has the tool and its arguments, with anything the model wrote

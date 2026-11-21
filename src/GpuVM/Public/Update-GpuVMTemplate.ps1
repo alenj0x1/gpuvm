@@ -140,6 +140,10 @@ function Add-TemplateLayer {
             $null = Set-GuestCaptureMode -Name $copy -Credential $credential -Mode (Get-GpuVMCaptureMode -State (Get-GpuVMState -Name $copy))
             $installed = @{ restarted = $false; ms = @{ total = $sw2.ElapsedMilliseconds } }
         }
+        # The controllers' driver (ViGEmBus) too: every copy's first open installed it and restarted Sunshine for it,
+        # ~30 s of its "Preparing" (2026-11-21: 79 s first open of a copy).
+        $streams = $Template['streaming'] -is [System.Collections.IDictionary] -and [string]$Template['streaming']['provider'] -eq 'sunshine'
+        if ($streams) { $null = Install-GuestGamepad -Name $copy -Credential $credential }
         # Right after the install Windows shuts down but the machine never turns off (lab 053 part 6: the guest logs
         # its shutdown 3 s in, Hyper-V waits 90 s and turns it off). After one more boot it shuts down in seconds, and
         # only a clean shutdown makes a layer worth copying.
@@ -178,6 +182,7 @@ function Add-TemplateLayer {
         $data = Read-JsonFile $metaPath
         $data['layers'] = @($Template['layerPaths'] | ForEach-Object { Split-Path $_ -Leaf }) + $layerName
         $data['components'] = $components
+        if ($streams) { $data['gamepad'] = 'vigembus' }
         $data['updatedAt'] = (Get-Date).ToString('o')
         Write-JsonFile -Path $metaPath -Data $data
         Remove-Item -LiteralPath $failedPath -Force -ErrorAction SilentlyContinue

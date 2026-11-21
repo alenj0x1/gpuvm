@@ -145,6 +145,8 @@ function Test-GpuVMTemplateStale {
     $have = $Template['components']
     if (-not ($have -is [System.Collections.IDictionary])) { return $true }
     foreach ($key in $keys) { if ([string]$have[$key] -ne [string]$Bundled[$key]) { return $true } }
+    # A template that streams also carries the controllers' driver, so its copies don't install it on their first open.
+    if (@($keys | Where-Object { $_ -like 'Program Files\Sunshine\*' }).Count -and -not $Template['gamepad']) { return $true }
     $false
 }
 

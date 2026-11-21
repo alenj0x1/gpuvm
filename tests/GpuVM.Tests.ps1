@@ -1567,10 +1567,12 @@ InModuleScope GpuVM {
             $s = @{ provider = 'sunshine' }
             Test-GpuVMTemplateStale -Template @{ use = 'agent'; streaming = $s } -Bundled $b | Should Be $true
             Test-GpuVMTemplateStale -Template @{ use = 'agent'; streaming = $s; components = @{ 'Program Files\GpuVM Agent\gpuvm-agent.exe' = 'A1'; 'Program Files\Sunshine\sunshine.exe' = 'S0' } } -Bundled $b | Should Be $true
-            Test-GpuVMTemplateStale -Template @{ use = 'agent'; streaming = $s; components = @{ 'Program Files\GpuVM Agent\gpuvm-agent.exe' = 'A1'; 'Program Files\Sunshine\sunshine.exe' = 'S1' } } -Bundled $b | Should Be $false
+            Test-GpuVMTemplateStale -Template @{ use = 'agent'; streaming = $s; gamepad = 'vigembus'; components = @{ 'Program Files\GpuVM Agent\gpuvm-agent.exe' = 'A1'; 'Program Files\Sunshine\sunshine.exe' = 'S1' } } -Bundled $b | Should Be $false
             # A normal machine's template: only Sunshine counts.
             Test-GpuVMTemplateStale -Template @{ streaming = $s; components = @{ 'Program Files\Sunshine\sunshine.exe' = 'S0' } } -Bundled $b | Should Be $true
-            Test-GpuVMTemplateStale -Template @{ streaming = $s; components = @{ 'Program Files\Sunshine\sunshine.exe' = 'S1' } } -Bundled $b | Should Be $false
+            Test-GpuVMTemplateStale -Template @{ streaming = $s; gamepad = 'vigembus'; components = @{ 'Program Files\Sunshine\sunshine.exe' = 'S1' } } -Bundled $b | Should Be $false
+            # ...and the controllers' driver: a template without it is stale (its copies would install it on every first open).
+            Test-GpuVMTemplateStale -Template @{ streaming = $s; components = @{ 'Program Files\Sunshine\sunshine.exe' = 'S1' } } -Bundled $b | Should Be $true
             # No streaming and no agent: nothing of GpuVM's to keep current.
             Test-GpuVMTemplateStale -Template @{ use = $null } -Bundled $b | Should Be $false
         }
@@ -1597,7 +1599,7 @@ InModuleScope GpuVM {
             $k = 'Program Files\Sunshine\sunshine.exe'
             Mock Get-BundledComponentStamp { [ordered]@{ 'Program Files\Sunshine\sunshine.exe' = 'v' } }
             Mock Add-TemplateLayer { @{ name = $Template['name'] } }
-            Write-JsonFile -Path (Join-Path $script:dir 'template.json') -Data @{ streaming = @{ provider = 'sunshine' }; components = @{ $k = 'v' } }
+            Write-JsonFile -Path (Join-Path $script:dir 'template.json') -Data @{ streaming = @{ provider = 'sunshine' }; gamepad = 'vigembus'; components = @{ $k = 'v' } }
             Update-GpuVMTemplate -Stale -Confirm:$false
             Assert-MockCalled Add-TemplateLayer -Times 0 -Scope It
             Write-JsonFile -Path (Join-Path $script:dir 'template.json') -Data @{ streaming = @{ provider = 'sunshine' }; components = @{ $k = 'old' } }

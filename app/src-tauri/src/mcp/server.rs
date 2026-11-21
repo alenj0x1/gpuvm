@@ -32,7 +32,9 @@ screenshot → click/type/key/act → screenshot again to check. Coordinates are
 looked at (each screenshot has an id; actions use the latest one unless you pass `screenshot`). Prefer \
 ui_tree + ui_invoke for standard controls and `run` for commands. UAC prompts, the lock screen, passwords and \
 payments are human-only: use request_human. Files go in with send_file/write_file and leave only through \
-offer_file, which the person approves in GpuVM. If a call says the person took control, stop and wait.";
+offer_file, which the person approves in GpuVM. open_viewer answers once the person sees the picture. If a \
+call says the person took control, call wait_for_person (don't ask in the chat or retry): it answers when they \
+hand the machine back.";
 
 pub fn server_version() -> &'static str {
     env!("CARGO_PKG_VERSION")

@@ -170,6 +170,8 @@ function New-GpuVMFromTemplate {
     $state['streaming'] = $base['streaming']
     $state['guest'] = $base['guest']
     $state['pendingRename'] = $true
+    # The controllers' driver the template already has (Update-GpuVMTemplate): the first open doesn't install it again.
+    if ($base['gamepad']) { $state['gamepad'] = [string]$base['gamepad'] }
     $state['pendingApps'] = @(if ($base.Contains('pendingApps')) { $base['pendingApps'] })
     $state['installedApps'] = @(if ($base.Contains('installedApps')) { $base['installedApps'] })
     if ($Disposable) { $state['disposable'] = [ordered]@{ createdAt = (Get-Date).ToString('o'); startedAt = $null } }

@@ -191,6 +191,9 @@ async fn job(app: AppHandle, job_id: String, cmd: String, args: Option<Value>) -
             emit(json!({ "type": "result", "ok": true, "data": null }));
             return;
         }
+        if with_viewer {
+            viewer::publish_state(&vm_name, "preparing");
+        }
         let mut outcome = conn.call(&request, |event| emit(event.clone()));
         // A job that destroys data (going back to a restore point, deleting one) waits for a UAC confirmation, as
         // ps does; the same request goes again with the code.
@@ -217,8 +220,18 @@ async fn job(app: AppHandle, job_id: String, cmd: String, args: Option<Value>) -
                     Err(error) => emit(json!({ "type": "result", "ok": false, "error": error })),
                 }
             }
-            Ok(result) => emit(result),
-            Err(_) => emit(json!({ "type": "result", "ok": false, "error": "The job ended without an answer." })),
+            Ok(result) => {
+                if with_viewer && result["ok"] != true {
+                    viewer::publish_state(&vm_name, "failed");
+                }
+                emit(result)
+            }
+            Err(_) => {
+                if with_viewer {
+                    viewer::publish_state(&vm_name, "failed");
+                }
+                emit(json!({ "type": "result", "ok": false, "error": "The job ended without an answer." }))
+            }
         }
     });
     Ok(())

@@ -68,6 +68,9 @@ pub struct Ctx {
     shot_epoch: Mutex<HashMap<u32, u64>>,
     /// Poll interval while waiting (machine ready, person, offers); short in tests.
     pub poll_ms: std::sync::atomic::AtomicU64,
+    /// Per machine (lowercase): its pause as this connection last saw it (None = not paused), so a tool result can say
+    /// "the person took control" or "handed it back" once, when it changes.
+    control_seen: Mutex<HashMap<String, Option<String>>>,
 }
 
 impl Ctx {
@@ -87,6 +90,7 @@ impl Ctx {
             screen_changed: Mutex::new(HashMap::new()),
             shot_epoch: Mutex::new(HashMap::new()),
             poll_ms: std::sync::atomic::AtomicU64::new(1000),
+            control_seen: Mutex::new(HashMap::new()),
         }
     }
 
@@ -349,8 +353,12 @@ pub fn definitions() -> Vec<Value> {
             schema(json!({ "machine": m(), "force": { "type": "boolean", "description": "Destroy even if an offered file is still waiting for the person (it is lost)." } }), &["machine"]),
             ann("Destroy disposable machine", false, true, true, false)),
         // see / take control
-        tool("open_viewer", "Open the machine in GpuVM's viewer on this PC so the person can watch and take over.",
-            schema(json!({ "machine": m() }), &["machine"]), ann("Open viewer", false, false, true, false)),
+        tool("open_viewer", "Open the machine in GpuVM's viewer on this PC so the person can watch and take over. Answers once the person sees the picture (or says why not); the first open of a new machine takes longer.",
+            schema(json!({ "machine": m(), "waitSeconds": { "type": "integer", "minimum": 0, "maximum": 300, "description": "How long to wait for the picture. Default 120." } }), &["machine"]),
+            ann("Open viewer", false, false, true, false)),
+        tool("wait_for_person", "Wait until the person hands the machine back after taking control (or after a request_human). Use it instead of asking or retrying when a call says the person has the machine.",
+            schema(json!({ "machine": m(), "waitSeconds": { "type": "integer", "minimum": 1, "maximum": 900, "description": "Default 120." } }), &["machine"]),
+            ann("Wait for the person", true, false, true, false)),
         tool("request_approval", "Ask the person, in GpuVM (not in this chat), to allow something high-risk in a machine you took: administrator rights, network access, or something else. Waits for their answer. Restore point reverts ask on their own.",
             schema(json!({ "machine": m(), "kind": { "type": "string", "enum": ["admin", "network", "other"] },
                 "title": { "type": "string", "description": "Short title, e.g. 'Install GpuVM as administrator'." },
@@ -450,12 +458,29 @@ pub fn call(ctx: &Ctx, name: &str, call: &Call) -> Value {
         "restore_point_revert" => t.restore_revert(),
         "destroy" => t.destroy(),
         "open_viewer" => t.open_viewer(),
+        "wait_for_person" => t.wait_for_person(),
         "request_human" => t.request_human(),
         "request_approval" => t.request_approval(),
         "cancel_request" => t.cancel_request(),
         _ => Err(format!("There is no tool named {name}.")),
     };
-    result.unwrap_or_else(tool_error)
+    let mut out = result.unwrap_or_else(tool_error);
+    // What changed with the person since this connection's last call on the machine (took control / handed it back),
+    // said once in the result, so the model neither asks nor retries blindly.
+    let machine = call.args["machine"].as_str().unwrap_or("");
+    if !machine.is_empty() && !matches!(name, "destroy" | "wait_for_person" | "list_machines") {
+        if let Ok(Some(m)) = t.find(machine) {
+            if let Some(line) = t.note_control(machine, paused_by(&m).map(str::to_string)) {
+                let said = out["content"][0]["text"].as_str().is_some_and(|s| s.contains("took control") || s.contains("handed"));
+                if !said {
+                    if let Some(content) = out["content"].as_array_mut() {
+                        content.push(json!({ "type": "text", "text": line }));
+                    }
+                }
+            }
+        }
+    }
+    out
 }
 
 enum Approval {
@@ -1357,8 +1382,68 @@ impl Tool<'_> {
         let machine = self.machine()?;
         // Only a machine this connection took: the viewer can start or resume a machine (lab 053 security review).
         self.mine(machine)?;
+        // The app publishes what each viewer shows (viewer.rs, viewer-state.json): this answers once the picture is
+        // on the person's screen, or says why not, instead of as soon as it asked (2026-11-21: the agent acted while
+        // the person still saw "Preparing").
+        let key = machine.to_lowercase();
+        let state_of = || -> (String, u64) {
+            let all = crate::viewer::read_viewer_states();
+            (all[&key]["state"].as_str().unwrap_or("").to_string(), all[&key]["at"].as_u64().unwrap_or(0))
+        };
+        let now_ms = || std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+        let before = state_of();
+        let started = now_ms();
         self.broker("viewer.open", machine, json!({}))?;
-        Ok(text(format!("GpuVM's viewer shows {machine} to the person now.")))
+        if before.0 == "picture" {
+            return Ok(text(format!("GpuVM's viewer already shows {machine} to the person.")));
+        }
+        let wait = opt_int(self.args, "waitSeconds", 0, 300)?.unwrap_or(120) as u64;
+        let mut last = String::new();
+        let done = self.wait(wait, || {
+            let (state, at) = state_of();
+            if at >= started.saturating_sub(1000) {
+                last = state.clone();
+            }
+            Ok(at >= started.saturating_sub(1000) && matches!(state.as_str(), "picture" | "failed" | "closed"))
+        })?;
+        Ok(text(match (done, last.as_str()) {
+            (true, "picture") => format!("The person now sees {machine} in GpuVM's viewer."),
+            (true, "failed") => format!("GpuVM couldn't open {machine}'s viewer (the person sees why in GpuVM). Carry on without it, or ask the person."),
+            (true, _) => format!("GpuVM's viewer for {machine} closed before showing the picture."),
+            (false, "preparing") | (false, "opening") => format!("GpuVM is still opening {machine}'s viewer (it takes longer the first time); you can carry on, it will show the picture when ready."),
+            _ => format!("Asked GpuVM to show {machine}; it hasn't reported the picture yet."),
+        }))
+    }
+
+    /// Waits until the person hands the machine back (after taking control, or a request_human), so the model
+    /// doesn't have to ask or keep retrying.
+    fn wait_for_person(&self) -> Out {
+        let machine = self.machine()?;
+        self.mine(machine)?;
+        let wait = opt_int(self.args, "waitSeconds", 1, 900)?.unwrap_or(120) as u64;
+        let paused = |m: &Option<Value>| m.as_ref().and_then(|m| paused_by(m).map(str::to_string));
+        if paused(&self.find(machine)?).is_none() {
+            self.note_control(machine, None);
+            return Ok(text(format!("{machine} isn't paused: you have it.")));
+        }
+        let back = self.wait(wait, || Ok(paused(&self.find(machine)?).is_none()))?;
+        if back {
+            self.note_control(machine, None);
+            Ok(text(format!("The person handed {machine} back. Take a fresh screenshot before acting: the screen may have changed.")))
+        } else {
+            Ok(text(format!("The person still has {machine} after {wait} s. Wait again with wait_for_person, or carry on with another machine.")))
+        }
+    }
+
+    /// Records the machine's pause as this connection last saw it; returns a line for the model when it changed.
+    fn note_control(&self, machine: &str, now: Option<String>) -> Option<String> {
+        let mut seen = self.ctx.control_seen.lock().unwrap();
+        let before = seen.insert(machine.to_lowercase(), now.clone());
+        match (before, now.as_deref()) {
+            (Some(None), Some("control")) => Some(format!("Note: the person took control of {machine}; wait with wait_for_person until they hand it back.")),
+            (Some(Some(_)), None) => Some(format!("Note: the person handed {machine} back; take a fresh screenshot before acting.")),
+            _ => None,
+        }
     }
 
     fn request_human(&self) -> Out {

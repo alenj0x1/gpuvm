@@ -481,6 +481,9 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
             // The first picture: the app zooms into the machine and then reveals the viewer (viewer_reveal). If the
             // page doesn't (hidden, busy), the viewer comes out on its own a moment later.
             // A viewer opened only to record an agent's work (agent.rs) never comes out by itself: it hides, connected.
+            if kind == "first-frame" && !background(&vm) {
+                publish_state(&vm, "picture");
+            }
             if kind == "first-frame" && background(&vm) && !viewer.first_frame.swap(true, Ordering::AcqRel) {
                 viewer.visible.store(false, Ordering::Relaxed);
                 send_raw(&viewer, &json!({ "type": "hide" }));
@@ -499,6 +502,9 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
                 if let Some(waiter) = WAITERS.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|w| w.get(&vm)) {
                     let _ = waiter.send(msg.clone());
                 }
+            }
+            if matches!(kind.as_str(), "error" | "stage-failed") && !viewer.first_frame.load(Ordering::Relaxed) {
+                publish_state(&vm, "failed");
             }
             if matches!(kind.as_str(), "first-frame" | "error" | "app-running" | "stage-failed" | "ended") && !viewer.replaced.load(Ordering::Relaxed) {
                 if let Some(waiter) = WAITERS.lock().unwrap_or_else(|e| e.into_inner()).as_mut().and_then(|w| w.remove(&vm)) {
@@ -527,6 +533,7 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
         }
         announce_cover();
         crate::capture::on_recording(&vm, false);
+        publish_state(&vm, "closed");
         let closed = json!({ "type": "closed" });
         if let Some(waiter) = WAITERS.lock().unwrap_or_else(|e| e.into_inner()).as_mut().and_then(|w| w.remove(&vm)) {
             let _ = waiter.send(closed.clone());
@@ -569,7 +576,40 @@ fn with_embed(app: &AppHandle, mut arguments: Vec<String>) -> Vec<String> {
     arguments
 }
 
+/// What each machine's viewer shows the person, for GpuVM's MCP server (`gpuvm.exe --mcp`, another process of the same
+/// user): its open_viewer answers once the picture is on screen instead of when it asked for it. A small file under
+/// the user's own LocalAppData: `{ "<machine lowercase>": { "state": "opening"|"picture"|"closed", "at": ms } }`.
+pub fn viewer_state_path() -> Option<PathBuf> {
+    std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("GpuVM").join("viewer-state.json"))
+}
+
+pub fn read_viewer_states() -> Value {
+    viewer_state_path().and_then(|p| std::fs::read_to_string(p).ok()).and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_else(|| json!({}))
+}
+
+static STATE_FILE: Mutex<()> = Mutex::new(());
+
+pub(crate) fn publish_state(vm: &str, state: &str) {
+    let Some(path) = viewer_state_path() else { return };
+    let _guard = STATE_FILE.lock().unwrap_or_else(|e| e.into_inner());
+    let mut all = read_viewer_states();
+    if !all.is_object() {
+        all = json!({});
+    }
+    let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+    all[vm.to_lowercase()] = json!({ "state": state, "at": at });
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    // Written beside it and moved in: a reader never sees half a file.
+    let tmp = path.with_extension("json.tmp");
+    if std::fs::write(&tmp, all.to_string()).is_ok() {
+        let _ = std::fs::rename(&tmp, &path);
+    }
+}
+
 pub fn open_and_wait(app: &AppHandle, vm: &str, launch: &Value) -> Result<(), String> {
+    publish_state(vm, "opening");
     // An agent machine's guest starts repainting now, as its viewer starts (a burst over 10 s, agent.rs): the stream's
     // first frames then carry a picture instead of a still desktop's nothing.
     crate::agent::refresh_burst(app, vm);

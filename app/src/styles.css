@@ -1829,7 +1829,10 @@ html.agent-dock-window, html.agent-dock-window body, html.agent-dock-window #roo
 /* The status notch (StatusNotch.tsx, status.rs): one notch for every status notice over the picture. Its window is
    exactly its size; the notch is always drawn dark, like the docks, since it sits on the picture. */
 html.status-notch-window, html.status-notch-window body, html.status-notch-window #root { background: transparent; min-height: 0; height: 100%; overflow: hidden; }
-.sn-stage { position: fixed; left: 0; top: 0; }
+/* max-content: the notch takes the width of its longest row, not the window's (the window follows the notch, so a
+   notch fitted to its window never grew: a new row came out cut, "You took control · cl", without its button). */
+.sn-stage { position: fixed; left: 0; top: 0; width: max-content; }
+.sn-stage .sn { width: max-content; }
 .sn { --dk-bg: #1c1c1c; --dk-fg: #ebe8e1; --dk-line: #2f2f2f; --dk-chip: #262626; display: inline-flex; flex-direction: column; gap: 2px; padding: 6px; background: #1c1c1c; color: #ebe8e1; font-size: 13px; white-space: nowrap;
   transition: transform 320ms cubic-bezier(.2, .8, .2, 1), opacity 200ms ease-out; }
 .sn-bottom .sn { border-radius: 14px 14px 0 0; transform: translateY(110%); }

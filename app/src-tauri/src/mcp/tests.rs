@@ -125,11 +125,11 @@ fn legacy_handshake_and_tool_list() {
     let mut h = H::new(false);
     let r = h.rpc("tools/list", json!({}));
     let tools = r["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 27);
+    assert_eq!(tools.len(), 28);
     let mut names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     names.sort();
     names.dedup();
-    assert_eq!(names.len(), 27);
+    assert_eq!(names.len(), 28);
     for t in tools {
         assert_eq!(t["inputSchema"]["type"], "object");
         let a = &t["annotations"];
@@ -381,7 +381,7 @@ fn commands_files_and_offers() {
     assert!(h.err("offer_file", json!({ "machine": m, "path": "C:\\Users\\agent\\Desktop\\Outbox\\sub\\x.txt", "note": "n" })).contains("directly inside"));
     // Restore points: not on disposable machines (turning them off deletes them), only on taken normal ones.
     assert!(h.err("restore_point_create", json!({ "machine": m })).contains("is disposable"));
-    assert!(h.ok("open_viewer", json!({ "machine": m })).contains("viewer"));
+    assert!(h.ok("open_viewer", json!({ "machine": m, "waitSeconds": 0 })).contains(m.as_str()));
     // Only machines this connection took: the viewer can start or resume one.
     assert!(h.err("open_viewer", json!({ "machine": "work-pc" })).contains("Take work-pc first"));
     // Step notes never carry what the model wrote, only its length.
@@ -625,4 +625,23 @@ fn a_copy_with_no_display_fails_at_once_and_is_deleted() {
     // take_machine on such a machine: an error, not "not ready yet".
     h.fake.with(|s| s.machines.iter_mut().find(|x| x.name == "work-pc").unwrap().no_display = true);
     assert!(h.err("take_machine", json!({ "machine": "work-pc" })).contains("can't be used"));
+}
+
+#[test]
+fn control_changes_are_said_once_and_wait_for_person_waits() {
+    let mut h = H::new(false);
+    let m = h.machine();
+    assert!(h.ok("wait_for_person", json!({ "machine": m })).contains("isn't paused"));
+    h.ok("screenshot", json!({ "machine": m }));
+    // The person takes control: the refused call says so itself (no second note).
+    h.fake.with(|s| { let x = s.machines.iter_mut().find(|x| x.name == m).unwrap(); x.paused = true; x.paused_by = "control".into(); });
+    let refused = h.err("screenshot", json!({ "machine": m }));
+    assert_eq!(refused.matches("took control").count(), 1, "{refused}");
+    // Nobody hands it back within the wait.
+    assert!(h.ok("wait_for_person", json!({ "machine": m, "waitSeconds": 1 })).contains("still has"));
+    // Handed back between two calls: the next result says it once.
+    h.fake.with(|s| s.machines.iter_mut().find(|x| x.name == m).unwrap().paused = false);
+    let back = h.ok("screenshot", json!({ "machine": m }));
+    assert!(back.contains("handed") && back.contains("fresh screenshot"), "{back}");
+    assert!(!h.ok("screenshot", json!({ "machine": m })).contains("handed"));
 }
