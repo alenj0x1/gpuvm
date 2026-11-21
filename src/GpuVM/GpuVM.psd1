@@ -55,6 +55,7 @@
         'New-GpuVMTemplate'
         'Get-GpuVMTemplate'
         'Remove-GpuVMTemplate'
+        'Update-GpuVMTemplate'
         'Get-GpuVMBase'
         'Remove-GpuVMBase'
         'New-GpuVMSharedDisk'

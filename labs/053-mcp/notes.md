@@ -171,3 +171,50 @@ user newer than the connection (agent-broker should refresh the snapshot). (2) W
 appeared on screen while the `send` request waited 25 s (no window, no notification): the person wouldn't know they
 were being asked (agent-ui).
 
+
+## Part 6: again with GpuVM's Sunshine fork (installed build of 2026-11-20 14:43, agent 0.4.6)
+
+`part2.ps1 -Template agent-tpl -SkipModel -Rounds 20 -Samples 6` (raw: `out/part2-20261120-213055-*`,
+`out/20261120-214318-run.json`), plus one `Install-GpuVMAgent` on a fresh copy, timed step by step.
+
+| Tool (modern era) | p50 | p95 |
+| --- | --- | --- |
+| create_disposable | **333 s** (legacy era: 325 s) | – |
+| screenshot 1280 WebP / 640 / PNG | 24 / 15 / 25 ms | 31 / 19 / 29 ms |
+| click / key | 6.6 / 2.7 ms | 10.6 / 9.6 ms |
+| ui_tree / run / write / read | 15 / 32 / 3.8 / 2.2 ms | 140 / 60 / 13 / 9 ms |
+
+Coordinates 30/30 in the same pixel. The tools are as fast as before (faster: the buffered client of part 3).
+Creation went from 31 s to ~330 s. Where it goes (copy of agent-tpl, `Install-GpuVMAgent`):
+
+| step | s |
+| --- | --- |
+| new copy + start + Windows ready | 24 |
+| agent copy + install (template has an older agent: `exeSent`, no fast path, `rebootNeeded`) | 6 |
+| fork copy (69 MB) + three Sunshine restarts (`Initialize-GuestStreamingForAgent`) | 136 |
+| cold cycle: Windows never shuts down in 90 s, turn-off 31 s, start | 133 |
+
+Causes: agent-tpl was made before agent 0.4.6 and before the fork, so every copy redoes the full install; and the
+graceful shutdown of agent copies fails every time (5 of 5 now), adding 2 min to every cold cycle.
+
+## Part 7: templates kept current (Update-GpuVMTemplate, same night)
+
+`Update-GpuVMTemplate -Name agent-tpl`: a temporary copy gets the full install, a power cycle, a clean shutdown,
+and its disk becomes `agent-tpl.1.vhdx` (2.4 GB, read-only, on top of the base). 5.4 min, once per GpuVM release;
+GpuVM's service runs `-Stale` 2 min after it starts and every hour. agent059 (made before) stays on the base.
+
+| create_disposable (MCP, installed module) | time |
+| --- | --- |
+| stale template (part 6) | 325-333 s |
+| current template, fast path | 68-70 s |
+| + Sunshine's start not waited for when nothing changed (`streamingFromTemplate`) | 54-57 s |
+
+Install-GpuVMAgent on a copy of the current template, profiled: Windows ready 8 s, agent install 3 s (fast path,
+no exe sent, no restart), display/VDD settings ~5 s, fork check 2 s, capture mode 5 s; it used to wait 21 s for
+Sunshine's first start (identity regenerated). Viewer on such a copy (lab 055 open.ps1): desktop 3/3, 0 capture
+restarts, first frame 19.6 s on the first open (Sunshine settling, as before) and 5.4 s after.
+
+Found on the way: (1) right after the install Windows logs its shutdown 3 s in, but the VM never turns off (90 s +
+forced, 5/5); after one more boot it shuts down in seconds. Copies no longer power-cycle, so only the template update
+pays it. (2) `destroy` said "couldn't be deleted" when the app's own sweep had deleted the machine first: now done.
+(3) Hyper-V only opens disks named `*.vhdx` (the first layer attempt used `.vhdx.building`).

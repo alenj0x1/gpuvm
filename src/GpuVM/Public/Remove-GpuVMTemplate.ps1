@@ -7,10 +7,11 @@ function Remove-GpuVMTemplate {
     param([Parameter(Mandatory)][ValidatePattern('^[\w-]{1,40}$')][string]$Name)
     Assert-Admin
     $meta = Read-GpuVMTemplate -Name $Name
-    $children = @(Get-TemplateChildVM -VhdPath $meta['vhdPath'])
+    $children = @(Get-TemplateChildVM -VhdPath $meta['layerPaths'])
     if ($children) { throw "The template '$Name' is used by $($children -join ', '); delete those machines first." }
+    if (Test-TemplateUpdating -Template $meta) { throw "The template '$Name' is being updated; try again when it is done." }
     if (-not $PSCmdlet.ShouldProcess($Name, 'Delete template')) { return }
-    (Get-Item -LiteralPath $meta['vhdPath']).IsReadOnly = $false
+    foreach ($path in $meta['layerPaths']) { (Get-Item -LiteralPath $path).IsReadOnly = $false }
     Remove-Item -LiteralPath $meta['dir'] -Recurse -Force
     Write-Step "Template '$Name' deleted"
 }

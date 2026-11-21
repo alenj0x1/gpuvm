@@ -18,9 +18,14 @@ function Get-GpuVMTemplate {
             createdAt = $meta['createdAt']
             edition   = $meta['edition']
             sizeGB    = $meta['sizeGB']
-            fileGB    = [math]::Round((Get-Item -LiteralPath $meta['vhdPath']).Length / 1GB, 1)
+            fileGB    = [math]::Round((($meta['layerPaths'] | ForEach-Object { (Get-Item -LiteralPath $_).Length }) | Measure-Object -Sum).Sum / 1GB, 1)
             cleanup   = if ($guest.Contains('cleanup') -and $guest['cleanup']) { $guest['cleanup'] } else { 'none' }
-            usedBy    = @(Get-TemplateChildVM -VhdPath $meta['vhdPath'])
+            usedBy    = @(Get-TemplateChildVM -VhdPath $meta['layerPaths'])
+            layers    = $meta['layerPaths'].Count
+            updatedAt = $meta['updatedAt']
+            # An agent template older than this GpuVM's agent or Sunshine: the service updates it (Update-GpuVMTemplate).
+            stale     = [bool](Test-GpuVMTemplateStale -Template $meta)
+            updating  = [bool](Test-TemplateUpdating -Template $meta)
         }
     }
 }

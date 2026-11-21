@@ -362,8 +362,18 @@ function Initialize-GuestStreamingForAgent {
     $state = Get-GpuVMState -Name $Name
     if (-not $state['streaming'] -or -not $state['config']['streaming']['virtualDisplay']) { return }
     # GpuVM's Sunshine fork first: the capture mode below needs its helper.
-    try { $null = Install-GuestSunshineCapture -Name $Name -Credential $Credential }
-    catch { Write-Warning "Couldn't install GpuVM's Sunshine capture helper: $($_.Exception.Message)" }
+    $helper = try { Install-GuestSunshineCapture -Name $Name -Credential $Credential }
+    catch { Write-Warning "Couldn't install GpuVM's Sunshine capture helper: $($_.Exception.Message)"; 'failed' }
+    # A copy of a template that is current (Update-GpuVMTemplate ran this very setup on it): when the helper and the
+    # capture mode are already there, Sunshine's display settings are too, so its start (~20 s on a fresh copy) isn't
+    # waited for (lab 053 part 6).
+    if ($state['streamingFromTemplate'] -and $helper -eq 'unchanged') {
+        $changed = Set-GuestCaptureMode -Name $Name -Credential $Credential -Mode (Get-GpuVMCaptureMode -State $state)
+        $state = Get-GpuVMState -Name $Name
+        $state.Remove('streamingFromTemplate')
+        Save-GpuVMState $state
+        if (-not $changed) { return }
+    }
     $address = Get-GpuVMAddress -Name $Name -TimeoutSec 120
     $web = Get-SunshineCredential -State $state
     Wait-SunshineReady -Address $address -Credential $web -TimeoutSec 180 -Message 'Waiting for Sunshine'

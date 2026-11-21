@@ -132,6 +132,9 @@ export interface TemplateInfo {
   fileGB: number;
   cleanup: CleanupLevelId;
   usedBy: string[];
+  /** An agent template older than this GpuVM's agent or Sunshine (Update-GpuVMTemplate brings it up to date). */
+  stale?: boolean;
+  updating?: boolean;
 }
 
 /** A data disk (a game library, for example) attached to one VM at a time. */

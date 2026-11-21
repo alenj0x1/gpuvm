@@ -18,15 +18,23 @@ function Read-GpuVMTemplate {
     $meta = Read-JsonFile $metaPath
     $meta['name'] = $Name
     $meta['dir'] = $dir
-    $meta['vhdPath'] = Join-Path $dir "$Name.vhdx"
-    if (-not (Test-Path -LiteralPath $meta['vhdPath'])) { throw "The template '$Name' is missing its disk." }
+    # A template is its base disk plus the layers Update-GpuVMTemplate added on top (each a read-only differencing
+    # disk of the one before). New copies sit on the last one; older copies keep the layer they were made on.
+    $layers = @(if ($meta['layers']) { $meta['layers'] | ForEach-Object { [string]$_ } } else { "$Name.vhdx" })
+    foreach ($layer in $layers) {
+        if ($layer -notmatch '^[\w.-]{1,80}\.vhdx$' -or $layer -match '\.\.') { throw "The template '$Name' names a disk GpuVM doesn't use ($layer)." }
+    }
+    $meta['layerPaths'] = @($layers | ForEach-Object { Join-Path $dir $_ })
+    $meta['vhdPath'] = $meta['layerPaths'][-1]
+    foreach ($path in $meta['layerPaths']) { if (-not (Test-Path -LiteralPath $path)) { throw "The template '$Name' is missing its disk ($(Split-Path $path -Leaf))." } }
     $meta
 }
 
-# The VMs whose disk sits on top of a template (by the disk's real parent, not by what a state file says).
+# The VMs whose disk sits on top of a template (by the disk's real parent, not by what a state file says). Several
+# paths: the template's layers (a copy made before an update sits on an inner one).
 function Get-TemplateChildVM {
-    param([Parameter(Mandatory)][string]$VhdPath)
-    $full = [IO.Path]::GetFullPath($VhdPath)
+    param([Parameter(Mandatory)][string[]]$VhdPath)
+    $full = @($VhdPath | ForEach-Object { [IO.Path]::GetFullPath($_) })
     # Every disk Hyper-V knows (wherever its VM lives) plus the kept disks in GpuVM's folder, following each
     # disk's chain of parents: a copy of a copy also depends on the template.
     $disks = [ordered]@{}
@@ -39,7 +47,7 @@ function Get-TemplateChildVM {
     $users = foreach ($path in $disks.Keys) {
         $vhd = Get-VHD -Path $path -ErrorAction SilentlyContinue
         for ($i = 0; $vhd -and $vhd.ParentPath -and $i -lt 16; $i++) {
-            if ([IO.Path]::GetFullPath($vhd.ParentPath) -eq $full) { $disks[$path]; break }
+            if ([IO.Path]::GetFullPath($vhd.ParentPath) -in $full) { $disks[$path]; break }
             $vhd = Get-VHD -Path $vhd.ParentPath -ErrorAction SilentlyContinue
         }
     }
@@ -91,4 +99,65 @@ function New-TemplateCloneConfig {
     $Config['vm']['disk']['type'] = 'Differencing'
     if ($Config.Contains('iso')) { $Config.Remove('iso') }
     $Config
+}
+
+# ---------------------------------------------------------------- keeping agent templates current (layers)
+
+# What this GpuVM build puts into an agent machine, by content: the agent's exe and GpuVM's Sunshine fork (only the
+# parts this build carries). Keys are the files' places inside Windows.
+function Get-BundledComponentStamp {
+    $stamp = [ordered]@{}
+    $package = try { Get-AgentPackage } catch { $null }
+    if ($package) { $stamp['Program Files\GpuVM Agent\gpuvm-agent.exe'] = $package.Hash }
+    $bundle = try { Get-RepoPath 'sunshine' } catch { $null }
+    if ($bundle) {
+        foreach ($rel in 'sunshine.exe', 'tools\sunshine_wgc_capture.exe') {
+            $path = Join-Path $bundle $rel
+            if (Test-Path -LiteralPath $path) { $stamp["Program Files\Sunshine\$rel"] = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash }
+        }
+    }
+    $stamp
+}
+
+# The same files' hashes inside a mounted Windows (a template's disk): $null for one that isn't there.
+function Get-GuestComponentStamp {
+    param([Parameter(Mandatory)][string]$WindowsRoot, [Parameter(Mandatory)][string[]]$Keys)
+    $stamp = [ordered]@{}
+    foreach ($key in $Keys) {
+        $path = Join-Path $WindowsRoot $key
+        Assert-NoReparsePoint -Root $WindowsRoot -Path $path
+        $stamp[$key] = if (Test-Path -LiteralPath $path -PathType Leaf) { (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash }
+    }
+    $stamp
+}
+
+# An agent template whose agent or Sunshine differs from this build's: every copy would install them again (a full
+# install and a power cycle, ~5 min instead of ~30 s; lab 053 part 6). A template from before stamps is stale.
+function Test-GpuVMTemplateStale {
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Template, [System.Collections.IDictionary]$Bundled)
+    if ([string]$Template['use'] -ne 'agent') { return $false }
+    if (-not $Bundled) { $Bundled = Get-BundledComponentStamp }
+    $have = $Template['components']
+    if (-not ($have -is [System.Collections.IDictionary])) { return $true }
+    foreach ($key in $Bundled.Keys) { if ([string]$have[$key] -ne [string]$Bundled[$key]) { return $true } }
+    $false
+}
+
+# The update marker: <template>\updating.json with the process and when it started. One older than an hour, or whose
+# process is gone, is left over from a run that died.
+function Get-TemplateUpdateMarker { param([Parameter(Mandatory)][System.Collections.IDictionary]$Template) Join-Path $Template['dir'] 'updating.json' }
+
+function Test-TemplateUpdating {
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Template)
+    $path = Get-TemplateUpdateMarker -Template $Template
+    if (-not (Test-Path -LiteralPath $path)) { return $false }
+    $marker = try { Read-JsonFile $path } catch { $null }
+    if (-not $marker) { return $false }
+    # ConvertFrom-Json already turns the ISO text into a DateTime (a string would be parsed in the PC's culture).
+    $value = $marker['startedAt']
+    $started = if ($value -is [datetime]) { $value.ToUniversalTime() } else {
+        try { [datetime]::Parse([string]$value, [cultureinfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime() } catch { [datetime]::MinValue }
+    }
+    if (((Get-Date).ToUniversalTime() - $started).TotalMinutes -gt 60) { return $false }
+    [bool](Get-Process -Id ([int]$marker['pid']) -ErrorAction SilentlyContinue)
 }

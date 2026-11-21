@@ -52,7 +52,13 @@ function New-GpuVMTemplate {
         Convert-VHD -Path $source -DestinationPath $target -VHDType Dynamic -ErrorAction Stop
         # A template never carries the VM's agent secret (every copy would share it): removed from the copy, before
         # its unused space is given back.
-        Invoke-WithMountedWindows -Path $target -ScriptBlock { param($root) Remove-GuestAgentSecret -WindowsRoot $root }
+        # What agent and Sunshine it carries, so GpuVM can tell when a newer build makes it stale (Update-GpuVMTemplate).
+        $stampKeys = @((Get-BundledComponentStamp).Keys)
+        $components = Invoke-WithMountedWindows -Path $target -ScriptBlock {
+            param($root)
+            Remove-GuestAgentSecret -WindowsRoot $root
+            if ($stampKeys) { Get-GuestComponentStamp -WindowsRoot $root -Keys $stampKeys }
+        }
         # Only what Windows uses now: the space of deleted files is given back (lab 045).
         Compress-GpuVMDiskCopy -Path $target | Out-Null
         (Get-Item -LiteralPath $target).IsReadOnly = $true
@@ -80,6 +86,8 @@ function New-GpuVMTemplate {
                 # installed (with its own secret) the first time each copy is opened or claimed.
                 use           = (Get-TemplateAgentUse -State $state)['use']
                 agentSignInAs = (Get-TemplateAgentUse -State $state)['agentSignInAs']
+                layers        = @("$Name.vhdx")
+                components    = $components
             })
     }
     catch {
