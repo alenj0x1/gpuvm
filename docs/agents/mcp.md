@@ -45,10 +45,10 @@ The command must point at the installed `gpuvm.exe`: the GpuVM service only acce
 | --- | --- | --- |
 | create | `list_templates`, `create_disposable` | read-only / additive |
 | get | `list_machines`, `take_machine`, `release_machine` | read-only / idempotent |
-| do: screen | `screenshot` (`maxWidth`/`maxHeight`, `zoom`, `format`) | read-only |
-| do: input | `click`, `type`, `key`, `scroll`, `drag`, `act` (batch, ≤50) — all take `screenshot` (id) and `screenshotAfter` | not destructive |
+| do: screen | `screenshot` (`maxWidth`/`maxHeight`, `zoom`, `format`, `delayMs`) | read-only |
+| do: input | `click`, `type`, `key`, `scroll`, `drag`, `act` (batch, ≤50) — all take `screenshot` (id), `screenshotAfter` and `delayMs` | not destructive |
 | do: UI | `ui_tree`, `ui_invoke` | read-only / not destructive |
-| do: commands, files | `run` (PowerShell, cmd or a program, as the standard user `agent`), `read_file`, `write_file` (under `C:\Users\agent`), `send_file` (host → `Desktop\Received`), `offer_file` + `offer_status` (Outbox → the person approves) | `run` and `write_file` destructive; `run` open-world |
+| do: commands, files | `run` (PowerShell, cmd or a program, as the standard user `agent`; `background: true` answers at once with a run id), `run_result` (its output; read-only), `read_file`, `write_file` (under `C:\Users\agent`), `send_file` (host → `Desktop\Received`), `offer_file` + `offer_status` (Outbox → the person approves) | `run` and `write_file` destructive; `run` open-world |
 | do: lifetime | `restore_point_create`, `restore_point_revert` (normal machines only; the person allows it in GpuVM; current state kept first), `destroy` (disposables only) | revert and destroy destructive |
 | see / take control | `open_viewer` (answers once the person sees the picture, or says why not: the app publishes each viewer's state in the user's LocalAppData `GpuVM\viewer-state.json`), `wait_for_person` (waits until the person hands a machine back), `request_human` (human-only steps), `cancel_request` (withdraws the agent's own pending `request_human`, never a pause the person started), `request_approval` (admin, network, other: answered in GpuVM; withdrawn automatically when nobody answers in time) | – |
 
@@ -61,6 +61,17 @@ keeps its own mapping; actions use the latest full screenshot of that machine un
 maps to the desktop pixel at the centre of its footprint (exact: every desktop pixel → screenshot → desktop stays in
 the same screenshot pixel, tested on every pixel at 5 desktop sizes × 5 boxes and in zoomed regions). `ui_tree` boxes
 and centres come in the same pixels. A zoom is for looking; it does not become the coordinate space.
+
+Waiting and long commands (lab 058): `delayMs` (0-10000) on `screenshot` waits before capturing, and on the input
+tools waits after acting, before answering and before `screenshotAfter`, so a model doesn't spend a `run` of
+`Start-Sleep` just to wait (28 such calls in lab 057's session). Clients run a call that isn't read-only on its own and
+wait for it, so a model can't look at the screen during a `run` it waits for: `run` with `background: true` answers at
+once (`run-N`), screenshots and actions work meanwhile, and `run_result` (`waitSeconds` 0-580) gives the exit code and
+output once. At most 4 background runs per connection; outputs nobody asked for are dropped after 30 minutes. A
+background run is the same guest request as any other (its own pipe connection, the person's pause and the budgets
+apply). Input calls on a machine run one at a time in the order the server read them, whatever the client's threads
+do; in the guest, input, screen (captures and cheap reads), UI Automation and each command or file transfer run on
+their own threads, so a screenshot never waits behind any of them.
 
 Errors are tool results (`isError`) with one plain sentence the model can act on, e.g. `blocked_elevated` → "An
 administrator window is in front; ask the person with request_human."; `paused` → "The person took control of t1.

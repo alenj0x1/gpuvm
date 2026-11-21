@@ -8,6 +8,10 @@ Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (es
 
 ## [Sin publicar]
 
+### Agregado
+- **Los agentes pueden mirar mientras corre un comando.** `run` acepta `background: true`: responde al instante con un id, el agente sigue tomando capturas y actuando mientras el comando trabaja, y la herramienta nueva `run_result` da el código de salida y la salida. Dentro de la máquina, las capturas, la entrada, UI Automation y cada comando corren en paralelo, así que una captura nunca espera detrás de ninguno, y las acciones de entrada llegan siempre en el orden en que se enviaron.
+- **`delayMs` en capturas y entrada.** `screenshot` espera ese tiempo antes de capturar; `click`, `type`, `key`, `scroll`, `drag` y `act` esperan después de actuar, antes de responder y antes de `screenshotAfter` (hasta 10 segundos). Los agentes ya no necesitan un `run` de `Start-Sleep` solo para esperar una ventana.
+
 ### Cambiado
 - **El Sunshine propio de GpuVM en todas las máquinas.** Las máquinas transmiten con el fork de Sunshine de GpuVM ([gpuvm-sunshine](https://github.com/alenj0x1/gpuvm-sunshine)), siempre como servicio de Windows, sea cual sea su uso. Con la captura **Rápida** (la predeterminada), un ayudante pequeño captura como el usuario que inició sesión y le pasa los cuadros al servicio: hay imagen donde desktop duplication se quedaba en negro en la pantalla virtual, y ese usuario ya no puede leer la configuración ni las claves de Sunshine. Las máquinas creadas antes lo reciben la próxima vez que se abren, y se quita la configuración vieja que corría Sunshine como el usuario. Las máquinas de agentes y las demás funcionan igual, y las de agentes pueden elegir su captura como cualquier otra.
 - **Las plantillas se mantienen al día.** Cuando GpuVM trae un Sunshine o un agente más nuevo, sus plantillas lo reciben una vez, como una capa encima, en segundo plano (la app revisa al abrir y cada hora). Las copias de una plantilla de agentes quedan listas en menos de un minuto en vez de unos cinco; las máquinas ya creadas desde una plantilla conservan la suya sin cambios.
