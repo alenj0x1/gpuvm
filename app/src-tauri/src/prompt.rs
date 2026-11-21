@@ -140,6 +140,7 @@ fn show(app: &AppHandle, prompts: Value) {
         let _ = window.set_position(PhysicalPosition::new(x, y));
     }
     let _ = window.show();
+    crate::overlay::borderless(&window);
     if take_focus {
         if let Some(hwnd) = card_hwnd(&window) {
             bring_to_front(hwnd);

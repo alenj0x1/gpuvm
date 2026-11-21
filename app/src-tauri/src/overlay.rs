@@ -104,8 +104,32 @@ fn mark_full_screen(window: &tauri::WebviewWindow, on: bool) {
     mark_taskbar(window, on);
 }
 
-/// The taskbar's full-screen mark for one of GpuVM's windows over a viewer (the panel, the admin-prompt dock).
+/// A floating window over the picture without any frame. Tauri's undecorated windows keep WS_CAPTION, which Windows 10
+/// draws as a 1px grey rectangle around a transparent window (the "Recording" notch showed it, 2026-11-21): only
+/// WS_POPUP is kept. Applied again on every show, since the window's own style updates can bring the caption back.
+pub(crate) fn borderless(window: &tauri::WebviewWindow) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, SetWindowPos, GWL_STYLE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+        WS_CAPTION, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+    };
+    let Ok(own) = window.hwnd() else { return };
+    let hwnd = own.0 as HWND;
+    // SAFETY: reads and rewrites this app's own window's style, then asks Windows to recompute its frame.
+    unsafe {
+        let style = GetWindowLongPtrW(hwnd, GWL_STYLE) as u32;
+        let frame = WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
+        if style & frame == 0 && style & WS_POPUP != 0 {
+            return;
+        }
+        SetWindowLongPtrW(hwnd, GWL_STYLE, ((style & !frame) | WS_POPUP) as isize);
+        SetWindowPos(hwnd, std::ptr::null_mut(), 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+}
+
+/// The taskbar's full-screen mark for one of GpuVM's windows over a viewer (the panel, the admin-prompt dock). Also
+/// takes the frame off (borderless): every window over the picture comes through here when it shows.
 pub(crate) fn mark_taskbar(window: &tauri::WebviewWindow, on: bool) {
+    borderless(window);
     use windows_sys::core::GUID;
     use windows_sys::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED};
     #[repr(C)]

@@ -44,6 +44,10 @@ static STATUS: Mutex<Option<HashMap<String, (String, String)>>> = Mutex::new(Non
 static WATCHING: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 /// When each machine's agent was last paused from input: one pause per press, not one per mouse move.
 static PAUSED_AT: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
+/// When each machine's picture last came on screen (refresh_burst): input reported in the next VIEWER_SETTLE is the
+/// viewer itself settling, not the person (2026-11-21: every open paused the agent ~4 s in, "You took control").
+static SHOWN_AT: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
+const VIEWER_SETTLE: Duration = Duration::from_secs(4);
 /// What the last poll saw: the clients (machine -> client) and every request waiting.
 static CLIENTS: Mutex<Vec<Value>> = Mutex::new(Vec::new());
 /// Requests a notification was already shown for.
@@ -544,6 +548,9 @@ pub fn on_input(app: &AppHandle, vm: &str) {
     if !TAKE_ON_INPUT.load(Ordering::Relaxed) || !lock(&WATCHING).as_ref().is_some_and(|w| w.contains(vm)) {
         return;
     }
+    if lock(&SHOWN_AT).as_ref().and_then(|s| s.get(vm)).is_some_and(|t| t.elapsed() < VIEWER_SETTLE) {
+        return;
+    }
     {
         let mut at = lock(&PAUSED_AT);
         let at = at.get_or_insert_with(HashMap::new);
@@ -606,6 +613,9 @@ static BURSTS: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
 /// machine is asked: one without the agent says so and nothing happens. Lab 054's switch
 /// (GPUVM_LAB_NO_SCREEN_REFRESH=1) leaves it out, to measure it.
 pub fn refresh_burst(app: &AppHandle, vm: &str) {
+    // The picture is showing now (open, reveal, back to it): its viewer settles first (it takes the mouse and moves the
+    // pointer as its window appears), which isn't the person taking control.
+    lock(&SHOWN_AT).get_or_insert_with(HashMap::new).insert(vm.to_string(), Instant::now());
     if vm.is_empty() || std::env::var("GPUVM_LAB_NO_SCREEN_REFRESH").is_ok_and(|v| v == "1") {
         return;
     }
