@@ -156,12 +156,137 @@ fn step(at: Option<Instant>, start: Instant, now: Instant, settle: Duration) -> 
     }
 }
 
+/// Mip level read back to check a frame: one texel per 32x32 block.
+const CHECK_MIP: u32 = 5;
+/// How long a frame Windows hasn't finished drawing is copied again before it's taken as it is.
+const CHECK_BUDGET: Duration = Duration::from_millis(25);
+
+/// Blocks (one alpha per block) that came out transparent where the reference frame was opaque: places Windows hadn't
+/// drawn yet. Without a reference (a session's first frame) every transparent block counts.
+fn unfinished_blocks(alpha: &[u8], reference: &[u8]) -> usize {
+    let have = reference.len() == alpha.len();
+    alpha.iter().enumerate().filter(|(i, a)| **a < 250 && (!have || reference[*i] >= 250)).count()
+}
+
+/// The check of each frame for parts Windows hadn't finished drawing (lab 063): on a GPU-P display WGC can hand over a
+/// frame whose composition is still running on the GPU, and what changed is still transparent black (a screenshot
+/// with black bands, or a black screen). A finished desktop frame is opaque, so the frame also goes into a texture
+/// with mips and its last mip (~2 KB) is read back.
+struct FrameCheck {
+    tex: ID3D11Texture2D,
+    srv: ID3D11ShaderResourceView,
+    stage: ID3D11Texture2D,
+    size: (u32, u32),
+    alpha: Vec<u8>,
+    reference: Vec<u8>,
+}
+
+impl FrameCheck {
+    fn new(dev: &ID3D11Device, w: u32, h: u32) -> windows::core::Result<FrameCheck> {
+        let d = D3D11_TEXTURE2D_DESC {
+            Width: w,
+            Height: h,
+            MipLevels: CHECK_MIP + 1,
+            ArraySize: 1,
+            Format: DXGI_FORMAT_B8G8R8A8_UNORM,
+            SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+            Usage: D3D11_USAGE_DEFAULT,
+            BindFlags: (D3D11_BIND_SHADER_RESOURCE.0 | D3D11_BIND_RENDER_TARGET.0) as u32,
+            CPUAccessFlags: 0,
+            MiscFlags: D3D11_RESOURCE_MISC_GENERATE_MIPS.0 as u32,
+        };
+        let s = D3D11_TEXTURE2D_DESC {
+            Width: (w >> CHECK_MIP).max(1),
+            Height: (h >> CHECK_MIP).max(1),
+            MipLevels: 1,
+            Usage: D3D11_USAGE_STAGING,
+            BindFlags: 0,
+            CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
+            MiscFlags: 0,
+            ..d
+        };
+        let (mut tex, mut srv, mut stage) = (None, None, None);
+        unsafe {
+            dev.CreateTexture2D(&d, None, Some(&mut tex))?;
+            let tex = tex.as_ref().unwrap();
+            dev.CreateShaderResourceView(tex, None, Some(&mut srv))?;
+            dev.CreateTexture2D(&s, None, Some(&mut stage))?;
+        }
+        Ok(FrameCheck { tex: tex.unwrap(), srv: srv.unwrap(), stage: stage.unwrap(), size: (w, h), alpha: Vec::new(), reference: Vec::new() })
+    }
+
+    /// Copies `src` into `dst` and checks it in the same submission; waits for both (the read-back). Returns the
+    /// blocks still unfinished.
+    fn copy(&mut self, ctx: &ID3D11DeviceContext, dst: &ID3D11Texture2D, src: &ID3D11Texture2D) -> windows::core::Result<usize> {
+        let (mw, mh) = (((self.size.0 >> CHECK_MIP).max(1)) as usize, ((self.size.1 >> CHECK_MIP).max(1)) as usize);
+        unsafe {
+            ctx.CopyResource(dst, src);
+            ctx.CopySubresourceRegion(&self.tex, 0, 0, 0, 0, src, 0, None);
+            ctx.GenerateMips(&self.srv);
+            ctx.CopySubresourceRegion(&self.stage, 0, 0, 0, 0, &self.tex, CHECK_MIP, None);
+            let mut m = D3D11_MAPPED_SUBRESOURCE::default();
+            ctx.Map(&self.stage, 0, D3D11_MAP_READ, 0, Some(&mut m))?;
+            self.alpha.resize(mw * mh, 0);
+            for y in 0..mh {
+                let row = std::slice::from_raw_parts((m.pData as *const u8).add(y * m.RowPitch as usize), mw * 4);
+                for x in 0..mw {
+                    self.alpha[y * mw + x] = row[x * 4 + 3];
+                }
+            }
+            ctx.Unmap(&self.stage, 0);
+        }
+        Ok(unfinished_blocks(&self.alpha, &self.reference))
+    }
+
+    /// The frame just taken becomes the reference.
+    fn accept(&mut self) {
+        std::mem::swap(&mut self.alpha, &mut self.reference);
+    }
+}
+
+/// What the check did since the capture opened (reported with each screenshot).
+#[derive(Default, Clone, Copy)]
+struct CheckStats {
+    /// frames that came unfinished and were finished by copying again
+    finished: u64,
+    /// frames still unfinished after CHECK_BUDGET, taken as they were
+    as_is: u64,
+    /// frames that came unfinished while the check is switched off (kept as they came)
+    seen_off: u64,
+    max_wait_us: u64,
+}
+
+/// Waits (at most 50 ms) for the work queued on `ctx` to finish on the GPU.
+unsafe fn wait_gpu(dev: &ID3D11Device, ctx: &ID3D11DeviceContext) {
+    let mut q = None;
+    if dev.CreateQuery(&D3D11_QUERY_DESC { Query: D3D11_QUERY_EVENT, MiscFlags: 0 }, Some(&mut q)).is_err() {
+        return;
+    }
+    let q = q.unwrap();
+    ctx.End(&q);
+    let start = Instant::now();
+    let mut done: i32 = 0;
+    // S_FALSE (not done yet) is a success code: the query writes TRUE only once the work is done
+    while done == 0 && start.elapsed() < Duration::from_millis(50) {
+        let _ = ctx.GetData(&q, Some(&mut done as *mut i32 as *mut _), 4, 0);
+        std::hint::spin_loop();
+    }
+}
+
+/// `C:\Program Files\GpuVM Agent\frame-check-off.txt` turns the waiting off (the check still counts), for labs.
+fn check_waits() -> bool {
+    !std::path::Path::new(r"C:\Program Files\GpuVM Agent\frame-check-off.txt").exists()
+}
+
 /// The pool's side of a capture, used only by its FrameArrived handler.
 struct Pool {
     dev: ID3D11Device,
     ctx: ID3D11DeviceContext,
     d3d: IDirect3DDevice,
     size: SizeInt32,
+    check: Option<FrameCheck>,
+    waits: bool,
+    stats: CheckStats,
 }
 
 unsafe impl Send for Pool {}
@@ -192,16 +317,50 @@ impl Pool {
         let Some(frame) = newest else { return Ok(None) };
         let access: IDirect3DDxgiInterfaceAccess = frame.Surface()?.cast()?;
         let tex: ID3D11Texture2D = unsafe { access.GetInterface()? };
+        let mut desc = D3D11_TEXTURE2D_DESC::default();
+        unsafe { tex.GetDesc(&mut desc) };
         let own = unsafe {
-            let mut desc = D3D11_TEXTURE2D_DESC::default();
-            tex.GetDesc(&mut desc);
-            let od = D3D11_TEXTURE2D_DESC { BindFlags: 0, CPUAccessFlags: 0, MiscFlags: 0, Usage: D3D11_USAGE_DEFAULT, ..desc };
+            let od = D3D11_TEXTURE2D_DESC { BindFlags: 0, CPUAccessFlags: 0, MiscFlags: 0, Usage: D3D11_USAGE_DEFAULT, MipLevels: 1, ..desc };
             let mut own = None;
             self.dev.CreateTexture2D(&od, None, Some(&mut own))?;
-            let own = own.unwrap();
-            self.ctx.CopyResource(&own, &tex);
-            own
+            own.unwrap()
         };
+        // Only a frame Windows has finished drawing (lab 063); the copy is also waited for, so the frame goes back to
+        // the pool only once it's read (lab 057).
+        if self.check.as_ref().map(|c| c.size) != Some((desc.Width, desc.Height)) {
+            self.check = FrameCheck::new(&self.dev, desc.Width, desc.Height).ok();
+        }
+        match self.check.as_mut() {
+            Some(check) => {
+                let start = Instant::now();
+                let first = check.copy(&self.ctx, &own, &tex)?;
+                let mut left = first;
+                if first > 0 && self.waits {
+                    while left > 0 && start.elapsed() < CHECK_BUDGET {
+                        let t = Instant::now();
+                        while t.elapsed() < Duration::from_micros(500) {
+                            std::thread::yield_now();
+                        }
+                        left = check.copy(&self.ctx, &own, &tex)?;
+                    }
+                    let us = start.elapsed().as_micros() as u64;
+                    self.stats.max_wait_us = self.stats.max_wait_us.max(us);
+                    if left > 0 {
+                        self.stats.as_is += 1;
+                    } else {
+                        self.stats.finished += 1;
+                    }
+                } else if first > 0 {
+                    self.stats.seen_off += 1;
+                }
+                check.accept();
+            }
+            None => unsafe {
+                // no check textures: copy, and wait for it on the GPU before the frame goes back
+                self.ctx.CopyResource(&own, &tex);
+                wait_gpu(&self.dev, &self.ctx);
+            },
+        }
         let _ = frame.Close();
         Ok(Some(own))
     }
@@ -217,6 +376,7 @@ struct Latest {
     count: u64,
     resized: bool,
     error: Option<String>,
+    check: CheckStats,
 }
 
 unsafe impl Send for Latest {}
@@ -235,6 +395,8 @@ pub struct Wgc {
     pub opened_ms: f64,
     /// frames that arrived while the last screenshot waited for the screen to settle
     pub settle_frames: u64,
+    /// what the unfinished-frame check did since the capture opened, as of the last screenshot
+    check_stats: CheckStats,
 }
 
 unsafe impl Send for Wgc {}
@@ -274,7 +436,7 @@ impl Wgc {
         let pool = Direct3D11CaptureFramePool::CreateFreeThreaded(&d3d, DirectXPixelFormat::B8G8R8A8UIntNormalized, 2, size)?;
         let latest: Shared = std::sync::Arc::new((Mutex::new(Latest::default()), std::sync::Condvar::new()));
         let shared = latest.clone();
-        let own = Mutex::new(Pool { dev: dev.clone(), ctx: ctx.clone(), d3d, size });
+        let own = Mutex::new(Pool { dev: dev.clone(), ctx: ctx.clone(), d3d, size, check: None, waits: check_waits(), stats: CheckStats::default() });
         // The handler gets the pool as its sender (holding the pool here would keep it alive through its own handler)
         // and returns at once when raised again on its own thread while draining (that loop takes the frame).
         let arrived = pool.FrameArrived(&windows::Foundation::TypedEventHandler::new(move |sender: windows::core::Ref<Direct3D11CaptureFramePool>, _| {
@@ -284,9 +446,13 @@ impl Wgc {
             }
             if let Ok(pool) = sender.ok() {
                 let mut resized = false;
-                let got = own.lock().unwrap().drain(pool, &mut resized);
+                let (got, stats) = {
+                    let mut p = own.lock().unwrap();
+                    (p.drain(pool, &mut resized), p.stats)
+                };
                 let (lock, cv) = &*shared;
                 let mut l = lock.lock().unwrap();
+                l.check = stats;
                 l.resized |= resized;
                 if resized {
                     l.frame = None;
@@ -308,7 +474,7 @@ impl Wgc {
         let session = pool.CreateCaptureSession(&item)?;
         let _ = session.SetIsCursorCaptureEnabled(true);
         session.StartCapture()?;
-        Ok(Wgc { dev, ctx, pool, session, latest, arrived, output: o, last_used: Instant::now(), opened_ms: t.elapsed().as_secs_f64() * 1e3, settle_frames: 0 })
+        Ok(Wgc { dev, ctx, pool, session, latest, arrived, output: o, last_used: Instant::now(), opened_ms: t.elapsed().as_secs_f64() * 1e3, settle_frames: 0, check_stats: CheckStats::default() })
     }
 
     /// The screen as tightly packed BGRA, never older than the request when the screen changed: a frame that arrives
@@ -332,6 +498,7 @@ impl Wgc {
         }
         let tex = l.frame.as_ref().unwrap().0.clone();
         self.settle_frames = l.count - count;
+        self.check_stats = l.check;
         let resized = std::mem::take(&mut l.resized);
         drop(l);
         if resized {
@@ -398,8 +565,21 @@ pub fn region_inside(v: &[u64], fw: u32, fh: u32) -> Option<(u32, u32, u32, u32)
 
 #[cfg(test)]
 mod tests {
-    use super::{region_inside, step, Step, FIRST_WAIT, SETTLE};
+    use super::{region_inside, step, unfinished_blocks, Step, FIRST_WAIT, SETTLE};
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn a_frame_is_unfinished_where_it_turned_transparent() {
+        // finished desktop frames are opaque
+        assert_eq!(unfinished_blocks(&[255, 255, 255, 255], &[255, 255, 255, 255]), 0);
+        // blocks Windows hadn't drawn yet come out transparent (and partly drawn ones, partly)
+        assert_eq!(unfinished_blocks(&[255, 0, 120, 255], &[255, 255, 255, 255]), 2);
+        // content that really is transparent, already in the reference, doesn't hold every frame up
+        assert_eq!(unfinished_blocks(&[0, 0, 255, 255], &[0, 0, 255, 255]), 0);
+        assert_eq!(unfinished_blocks(&[0, 0, 0, 255], &[0, 0, 255, 255]), 1);
+        // no reference yet (a capture's first frame, or a new size): every transparent block counts
+        assert_eq!(unfinished_blocks(&[0, 255, 249, 250], &[]), 2);
+    }
 
     #[test]
     fn a_screenshot_takes_the_newest_frame_once_the_screen_had_time_to_show_the_last_action() {
@@ -552,6 +732,7 @@ pub fn screen_capture(p: &Value) -> CallResult {
     };
     let grab_ms = t.elapsed().as_secs_f64() * 1e3;
     let settle_frames = wgc.settle_frames;
+    let cs = wgc.check_stats;
     drop(g);
     let (src, sw, sh, region) = match p.get("region").filter(|r| !r.is_null()) {
         Some(r) => {
@@ -575,6 +756,9 @@ pub fn screen_capture(p: &Value) -> CallResult {
         "ms": {"open": (open_ms * 10.0).round() / 10.0, "grab": (grab_ms * 10.0).round() / 10.0, "scale": (scale_ms * 10.0).round() / 10.0,
                "encode": (encode_ms * 10.0).round() / 10.0, "total": (t0.elapsed().as_secs_f64() * 1e4).round() / 10.0},
         "settleFrames": settle_frames,
+        // frames Windows handed over unfinished since the capture opened: finished by copying again, or taken as they
+        // were after 25 ms (lab 063)
+        "unfinishedFrames": {"finished": cs.finished, "asIs": cs.as_is, "seenUnchecked": cs.seen_off, "maxWaitUs": cs.max_wait_us},
     });
     if let Some(r) = region {
         res["region"] = json!(r);

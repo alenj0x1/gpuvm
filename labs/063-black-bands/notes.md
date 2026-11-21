@@ -93,10 +93,35 @@ Games on the PC, a browser with video, or GpuVM's own animations next to the vie
 - `tools/latency/common.ps1`: `Start-LatencyViewer -Quiet` (the viewer's console log drained instead of flooding the
   lab's output).
 
+## 7. The guest agent's screenshots (agent 0.4.10)
+
+The agent's own WGC capture (`guest/agent/src/capture.rs`) copied each frame at arrival and released it without
+waiting, so an AI agent could get a screenshot with the same black bands. Same fix: `FrameCheck` (copy + mip chain
+in one submission, the read-back waits for both; copy again every 0.5 ms while blocks turned transparent, 25 ms at
+most), which also makes every copy finish before the frame goes back (lab 057's race, never fixed here). Each
+`screen.capture` reports `unfinishedFrames` (`finished`, `asIs`, `seenUnchecked`, `maxWaitUs`) since the capture
+opened; `C:\Program Files\GpuVM Agent\frame-check-off.txt` makes it only count (labs). Unit test
+`a_frame_is_unfinished_where_it_turned_transparent`; 18 pass. `gpuvm-agent diag` on the PC first: no hang.
+
+`agent-swap.ps1` (the build in place, restarts the agent), `agent-shots.ps1` (a screenshot every 0.5 s during the
+load, with the probe as a control), `ab-agent.ps1`, and `host-load.ps1` (a WebGL page drawing on the PC: headless, or
+`-Visible` on the second monitor):
+
+| run | screenshots | grab median | agent's counters | probe without fix |
+| --- | --- | --- | --- | --- |
+| on (first run, switch not yet working) | 121 | 39.8 ms | finished 1, as is 1 | 0/min |
+| on, on | 121, 120 | 39.0, 37.5 ms | as is 1 each (Edge's kiosk window opening) | 0-1/min |
+| off, off | 120, 121 | 37.8, 36.0 ms | seen unchecked 1 each | 1-3/min |
+
+Few events in these runs (the PC's state didn't reproduce the 50-120/min of section 5: headless drawing at 36 % and a
+visible window at 39 % on the second monitor barely did), but the check catches them when they come, the switch
+works, and screenshots aren't slower (lab 062: 38 ms). Shipped: installer with agent 0.4.10; opening the machine
+updated its agent in ~10 s (`Update-GpuVMAgentIfStale`), and the app layered it onto `agent-tpl` by itself (~2 min).
+
 ## Open
 
-- The guest agent's own WGC capture (screenshots for AI agents, `guest/agent/src/capture.rs`) copies frames at
-  arrival the same way and can get a half-drawn screen; it isn't checked yet.
+- What exactly about the PC's GPU work makes Windows in the machine hand frames over unfinished (GpuVM's own home page
+  did it at 26 %; synthetic loads at 36-100 % mostly didn't). The fix doesn't depend on it.
 
 ## Lessons
 
