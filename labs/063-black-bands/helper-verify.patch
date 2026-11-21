@@ -1,0 +1,189 @@
+diff --git a/tools/sunshine_wgc_capture.cpp b/tools/sunshine_wgc_capture.cpp
+index 5b843208..3a4b5cba 100644
+--- a/tools/sunshine_wgc_capture.cpp
++++ b/tools/sunshine_wgc_capture.cpp
+@@ -1132,6 +1132,8 @@ struct WgcCaptureDependencies {
+   winrt::com_ptr<ID3D11DeviceContext> d3d_context;  // D3D11 context for copies
+ };
+ 
++std::filesystem::path get_roaming_log_directory();  // GpuVM lab 063: the verification dumps go next to the log
++
+ class WgcCaptureManager {
+ private:
+   struct frame_callback_state_t {
+@@ -1660,6 +1662,9 @@ private:
+                         << " avg_wait_us=" << ((finished + as_is) ? waited / (finished + as_is) : 0)
+                         << " max_wait_us=" << _check_wait_max_us.exchange(0, std::memory_order_relaxed);
+       }
++      if (_lab.on == 1) {
++        BOOST_LOG(info) << "lab063: frames=" << _lab.frames << " glitches=" << _lab.glitches << " src_diff=" << _lab.src_diff << " alpha0=" << _lab.alpha0;
++      }
+       return;
+     }
+   }
+@@ -2072,6 +2077,146 @@ private:
+     return n;
+   }
+ 
++  // GpuVM lab 063 (verification build only, never shipped): checks every frame handed to Sunshine. Reads 54 rows of
++  // the shared texture right after the copy (and of its source, still held), logs the frames black for one frame
++  // only (lab 057's test) and dumps the first ones whole (BGRA) next to the log. On only when
++  // C:\Program Files\Sunshine\tools\gpuvm-lab063.txt exists. Called with the context lock held, after the copy wait.
++  struct lab063_state_t {
++    int on = -1;
++    winrt::com_ptr<ID3D11Texture2D> rows_dst, rows_src, last_full, dump;
++    UINT w = 0, h = 0;
++    std::vector<uint8_t> g0, g1;
++    bool have0 = false, have1 = false;
++    uint64_t frames = 0, glitches = 0, src_diff = 0, dumps = 0, alpha0 = 0;
++  } _lab;
++
++  void lab063_verify(ID3D11Texture2D *shared, ID3D11Texture2D *src) {
++    constexpr int ROWS = 54, GW = 96;
++    if (_lab.on < 0) {
++      _lab.on = std::filesystem::exists(L"C:\\Program Files\\Sunshine\\tools\\gpuvm-lab063.txt") ? 1 : 0;
++      if (_lab.on) {
++        BOOST_LOG(info) << "lab063: verifying every published frame";
++      }
++    }
++    if (_lab.on != 1 || !shared || !src) {
++      return;
++    }
++    auto &ctx = _deps->d3d_context;
++    winrt::com_ptr<ID3D11Device> dev;
++    ctx->GetDevice(dev.put());
++    D3D11_TEXTURE2D_DESC d {};
++    shared->GetDesc(&d);
++    if (d.Width != _lab.w || d.Height != _lab.h) {
++      const auto frames = _lab.frames, glitches = _lab.glitches, src_diff = _lab.src_diff, dumps = _lab.dumps, alpha0 = _lab.alpha0;
++      _lab = {};
++      _lab.on = 1;
++      _lab.alpha0 = alpha0;
++      _lab.frames = frames;
++      _lab.glitches = glitches;
++      _lab.src_diff = src_diff;
++      _lab.dumps = dumps;
++      _lab.w = d.Width;
++      _lab.h = d.Height;
++      D3D11_TEXTURE2D_DESC s {};
++      s.Width = d.Width;
++      s.Height = ROWS;
++      s.MipLevels = 1;
++      s.ArraySize = 1;
++      s.Format = d.Format;
++      s.SampleDesc.Count = 1;
++      s.Usage = D3D11_USAGE_STAGING;
++      s.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
++      dev->CreateTexture2D(&s, nullptr, _lab.rows_dst.put());
++      dev->CreateTexture2D(&s, nullptr, _lab.rows_src.put());
++      D3D11_TEXTURE2D_DESC f = s;
++      f.Height = d.Height;
++      dev->CreateTexture2D(&f, nullptr, _lab.dump.put());
++      f.Usage = D3D11_USAGE_DEFAULT;
++      f.CPUAccessFlags = 0;
++      dev->CreateTexture2D(&f, nullptr, _lab.last_full.put());
++    }
++    if (!_lab.rows_dst || !_lab.rows_src || !_lab.last_full || !_lab.dump) {
++      return;
++    }
++    const UINT w = _lab.w, h = _lab.h;
++    for (int r = 0; r < ROWS; ++r) {
++      const UINT y = r * h / ROWS + h / (2 * ROWS);
++      const D3D11_BOX b {0, y, 0, w, y + 1, 1};
++      ctx->CopySubresourceRegion(_lab.rows_dst.get(), 0, 0, r, 0, shared, 0, &b);
++      ctx->CopySubresourceRegion(_lab.rows_src.get(), 0, 0, r, 0, src, 0, &b);
++    }
++    std::vector<uint8_t> dst_rows(size_t(w) * 4 * ROWS), src_rows(size_t(w) * 4 * ROWS);
++    auto read = [&](ID3D11Texture2D *t, std::vector<uint8_t> &v) {
++      D3D11_MAPPED_SUBRESOURCE m {};
++      if (FAILED(ctx->Map(t, 0, D3D11_MAP_READ, 0, &m))) {
++        return false;
++      }
++      for (int r = 0; r < ROWS; ++r) {
++        memcpy(v.data() + size_t(r) * w * 4, static_cast<uint8_t *>(m.pData) + size_t(r) * m.RowPitch, size_t(w) * 4);
++      }
++      ctx->Unmap(t, 0);
++      return true;
++    };
++    if (!read(_lab.rows_dst.get(), dst_rows) || !read(_lab.rows_src.get(), src_rows)) {
++      return;
++    }
++    ++_lab.frames;
++    if (dst_rows != src_rows) {
++      ++_lab.src_diff;
++    }
++    uint64_t a0 = 0;
++    for (size_t i = 3; i < dst_rows.size(); i += 4) {
++      a0 += dst_rows[i] == 0;
++    }
++    if (a0) {
++      ++_lab.alpha0;
++    }
++    std::vector<uint8_t> g(ROWS * GW);
++    for (int r = 0; r < ROWS; ++r) {
++      for (int c = 0; c < GW; ++c) {
++        const UINT x0 = c * w / GW, x1 = (c + 1) * w / GW;
++        uint32_t s = 0;
++        for (UINT x = x0; x < x1; ++x) {
++          const auto p = &dst_rows[(size_t(r) * w + x) * 4];
++          s += (p[0] + p[1] + p[2]) / 3;
++        }
++        g[r * GW + c] = uint8_t(s / (x1 - x0));
++      }
++    }
++    if (_lab.have0 && _lab.have1) {
++      int k = 0;
++      for (size_t i = 0; i < g.size(); ++i) {
++        if (_lab.g1[i] < 6 && _lab.g0[i] > 30 && g[i] > 30) {
++          ++k;
++        }
++      }
++      if (k >= 20) {
++        ++_lab.glitches;
++        if (_lab.glitches <= 200) {
++          BOOST_LOG(info) << "lab063 glitch: cells=" << k << " frame=" << (_lab.frames - 1);
++        }
++        if (_lab.dumps < 6) {
++          ctx->CopyResource(_lab.dump.get(), _lab.last_full.get());
++          D3D11_MAPPED_SUBRESOURCE m {};
++          if (SUCCEEDED(ctx->Map(_lab.dump.get(), 0, D3D11_MAP_READ, 0, &m))) {
++            auto dir = get_roaming_log_directory() / L"wgc-helper";
++            std::ofstream o(dir / std::format(L"lab063-{}-{}-{}x{}.bgra", GetCurrentProcessId(), _lab.dumps, w, h), std::ios::binary);
++            for (UINT y = 0; y < h; ++y) {
++              o.write(static_cast<const char *>(m.pData) + size_t(y) * m.RowPitch, std::streamsize(w) * 4);
++            }
++            ctx->Unmap(_lab.dump.get(), 0);
++            ++_lab.dumps;
++          }
++        }
++      }
++    }
++    _lab.g0 = std::move(_lab.g1);
++    _lab.have0 = _lab.have1;
++    _lab.g1 = std::move(g);
++    _lab.have1 = true;
++    ctx->CopyResource(_lab.last_full.get(), shared);
++  }
++
+   bool try_publish_directly(const winrt::com_ptr<ID3D11Texture2D> &frame_tex, uint64_t frame_qpc) {
+     g_stage_cb = "cb:pub-delivery-mutex";
+     std::unique_lock delivery_lock(_delivery_mutex);
+@@ -2102,6 +2247,7 @@ private:
+ 
+     g_stage_cb = "cb:pub-copy";
+     copy_complete_frame(_deps->resource_manager.get_shared_texture().get(), frame_tex.get());
++    lab063_verify(_deps->resource_manager.get_shared_texture().get(), frame_tex.get());
+     g_stage_cb = "cb:pub-metadata";
+     _deps->resource_manager.publish_frame_metadata(frame_qpc);
+     g_stage_cb = "cb:pub-release";
+@@ -2323,6 +2469,10 @@ private:
+     const auto copy_start = std::chrono::steady_clock::now();
+     _deps->d3d_context->CopyResource(_deps->resource_manager.get_shared_texture().get(), frame_tex.get());
+     const auto copy_submit = std::chrono::steady_clock::now() - copy_start;
++    if (_lab.on == 1) {
++      wait_for_copy_on_gpu();
++      lab063_verify(_deps->resource_manager.get_shared_texture().get(), frame_tex.get());
++    }
+ 
+     // Publish the metadata while still holding the shared keyed mutex so the
+     // consumer can never lock a newer texture while reading an older frame id.

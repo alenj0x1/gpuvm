@@ -24,7 +24,7 @@ Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (es
 - Abrir a mano una copia nueva de una plantilla de agentes ya no espera hasta 15 minutos en "Iniciando sesión en Windows".
 - El `destroy` de un agente ya no informa un error cuando GpuVM ya había borrado la máquina.
 - La imagen ya no se queda congelada cuando el servicio de captura de Windows falla dentro de la máquina: vuelve sola en unos 2 segundos, en vez de quedarse en el último cuadro hasta reabrir la máquina.
-- Menos destellos negros sobre la imagen (cuadros a medio dibujar del escritorio de la máquina). Todavía aparecen a veces mientras se reproduce un video dentro de la máquina.
+- Ya no aparecen franjas ni destellos negros sobre la imagen de una máquina (con juegos, videos, apps abriéndose, lo que sea). Windows a veces entregaba a la captura de GpuVM un cuadro del escritorio de la máquina que todavía estaba dibujando, y lo que faltaba dibujar salía negro durante un cuadro: una franja, una cuña con bordes escalonados o toda la pantalla. Ahora la captura revisa cada cuadro y, si no está terminado, lo vuelve a tomar cuando Windows lo termina, casi siempre en menos de un milisegundo. Las máquinas lo reciben la próxima vez que se abren.
 - Las grabaciones se abren con el reproductor de Windows en PCs sin la extensión HEVC de Microsoft: con el códec en automático, esos PCs transmiten en H.264.
 - La captura que toma un agente justo después de una acción muestra esa acción. Antes, una captura justo después de un `drag` (o de un clic que abre algo) solía volver sin ella, y los agentes tomaban una segunda captura para verla. Las capturas tardan unos 30 ms más (un `settleMs` que el agente puede cambiar). Requiere el agente 0.4.9.
 

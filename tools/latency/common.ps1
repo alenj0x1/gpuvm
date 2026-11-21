@@ -207,7 +207,8 @@ public class GpuVMLatencyBridge : IDisposable {
 
 # Starts one of the viewers with the stream arguments; returns { Process, Viewer, Bridge }.
 function Start-LatencyViewer {
-    param([Parameter(Mandatory)][ValidateSet('moonlight', 'gpuvm')][string]$Viewer, [Parameter(Mandatory)][string[]]$Arguments)
+    # -Quiet: GpuVM's viewer started from a console logs every decoder line into it; drained to nowhere instead (lab 063).
+    param([Parameter(Mandatory)][ValidateSet('moonlight', 'gpuvm')][string]$Viewer, [Parameter(Mandatory)][string[]]$Arguments, [switch]$Quiet)
     Stop-LatencyViewers
     if ($Viewer -eq 'moonlight') {
         $process = Start-Process (Join-Path $env:ProgramFiles 'Moonlight Game Streaming\Moonlight.exe') -ArgumentList $Arguments -PassThru
@@ -222,7 +223,13 @@ function Start-LatencyViewer {
     foreach ($a in @($Arguments) + @('--gpuvm-pipe', "\\.\pipe\$name", '--gpuvm-token-env', 'GPUVM_VIEWER_TOKEN')) { $psi.ArgumentList.Add($a.Trim('"')) }
     $psi.Environment['GPUVM_VIEWER_TOKEN'] = $token
     $psi.UseShellExecute = $false
+    if ($Quiet) { $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true }
     $process = [Diagnostics.Process]::Start($psi)
+    if ($Quiet) {
+        # Drained by .NET tasks, so a full pipe never blocks the viewer.
+        [void]$process.StandardOutput.BaseStream.CopyToAsync([IO.Stream]::Null)
+        [void]$process.StandardError.BaseStream.CopyToAsync([IO.Stream]::Null)
+    }
     [pscustomobject]@{ Process = $process; Viewer = $Viewer; Bridge = $bridge }
 }
 
