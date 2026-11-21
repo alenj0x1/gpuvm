@@ -8,6 +8,9 @@ Changes waiting for the next version sit under **Unreleased** at the top (this s
 
 ## [Unreleased]
 
+### Added
+- **Agents can draw.** An agent's `drag` also follows a `path` of points, or several `strokes` that are each pressed and released on their own (a circle, a spiral and a star in one call), with the `button` and the time it takes (`durationMs`) of its choice. Moves are added in between so apps like Paint get smooth lines. Agents no longer have to write mouse scripts inside the machine to draw; the person taking control still stops them mid-stroke, with the button released.
+
 ### Changed
 - **GpuVM's own Sunshine on every machine.** Machines stream with GpuVM's fork of Sunshine ([gpuvm-sunshine](https://github.com/alenj0x1/gpuvm-sunshine)), always as a Windows service, whatever they are used for. With the default **Fast** capture a small helper captures as the signed-in user and passes the frames to the service, so the picture shows where desktop duplication stayed black on the virtual display, and Sunshine's settings and keys are no longer readable by that user. Machines created before get it the next time they are opened; the old setup that ran Sunshine as the user is removed. Agent machines and the rest now work the same way, and agent machines can choose their capture like any other.
 - **Templates stay up to date.** When GpuVM brings a newer Sunshine or agent, its templates get it once, as a layer on top of them, in the background (the app checks when it starts and every hour). Copies of an agent template are ready in under a minute instead of about five; machines already made from a template keep theirs untouched.

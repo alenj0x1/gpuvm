@@ -247,6 +247,11 @@ fn after_prop() -> Value {
     json!({ "type": "boolean", "description": "Return a fresh screenshot after the action (saves a call)." })
 }
 
+fn path_prop() -> Value {
+    json!({ "type": "array", "items": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 }, "minItems": 1, "maxItems": geometry::MAX_PATH_POINTS,
+        "description": "Points [[x, y], ...] in screenshot pixels, pressed at the first and released at the last." })
+}
+
 fn ann(title: &str, read_only: bool, destructive: bool, idempotent: bool, open_world: bool) -> Value {
     json!({ "title": title, "readOnlyHint": read_only, "destructiveHint": destructive, "idempotentHint": idempotent, "openWorldHint": open_world })
 }
@@ -258,7 +263,7 @@ fn tool(name: &str, description: &str, input: Value, annotations: Value) -> Valu
 /// The tool list, in a fixed order (clients cache it).
 pub fn definitions() -> Vec<Value> {
     let m = machine_prop;
-    let action_item = json!({ "type": "object", "description": "One action: {type:'click',x,y,button?,count?,modifiers?} | {type:'move',x,y} | {type:'drag',x,y,toX,toY} | {type:'scroll',x,y,dx?,dy?} | {type:'type',text} | {type:'key',keys,repeat?} | {type:'wait',ms}",
+    let action_item = json!({ "type": "object", "description": "One action: {type:'click',x,y,button?,count?,modifiers?} | {type:'move',x,y} | {type:'drag',x,y,toX,toY or path or strokes,button?,durationMs?} | {type:'scroll',x,y,dx?,dy?} | {type:'type',text} | {type:'key',keys,repeat?} | {type:'wait',ms}",
         "properties": { "type": { "type": "string", "enum": ["click", "move", "drag", "scroll", "type", "key", "wait"] } }, "required": ["type"] });
     vec![
         // create
@@ -300,9 +305,12 @@ pub fn definitions() -> Vec<Value> {
                 "dx": { "type": "integer", "minimum": -50, "maximum": 50 }, "dy": { "type": "integer", "minimum": -50, "maximum": 50 },
                 "screenshot": shot_prop(), "screenshotAfter": after_prop() }), &["machine", "x", "y"]),
             ann("Scroll", false, false, false, false)),
-        tool("drag", "Drag with the left button from (x, y) to (toX, toY), in screenshot pixels.",
+        tool("drag", "Drag from (x, y) to (toX, toY), or along `path`, or along several `strokes` (each pressed and released on its own: to draw), in screenshot pixels. Moves in between are added so lines come out smooth.",
             schema(json!({ "machine": m(), "x": coord("Start X."), "y": coord("Start Y."), "toX": coord("End X."), "toY": coord("End Y."),
-                "screenshot": shot_prop(), "screenshotAfter": after_prop() }), &["machine", "x", "y", "toX", "toY"]),
+                "path": path_prop(), "strokes": { "type": "array", "items": path_prop(), "maxItems": geometry::MAX_STROKES, "description": "Several paths." },
+                "button": { "type": "string", "enum": ["left", "right", "middle"] },
+                "durationMs": { "type": "integer", "minimum": 0, "maximum": geometry::MAX_DRAG_MS, "description": "Time for the whole path or all strokes (default: 1500 desktop pixels a second)." },
+                "screenshot": shot_prop(), "screenshotAfter": after_prop() }), &["machine"]),
             ann("Drag", false, false, false, false)),
         tool("act", "Run several input actions in order, stopping at the first error (coordinates in screenshot pixels).",
             schema(json!({ "machine": m(), "actions": { "type": "array", "items": action_item, "minItems": 1, "maxItems": 50 },
@@ -940,9 +948,33 @@ impl Tool<'_> {
             }
             "drag" => {
                 let s = need()?;
-                let (x, y) = Self::point(s, a, "x", "y")?;
-                let (tx, ty) = Self::point(s, a, "toX", "toY")?;
-                json!({ "type": "drag", "x": x, "y": y, "toX": tx, "toY": ty })
+                let button = opt_str(a, "button")?;
+                if button.is_some_and(|b| !["left", "right", "middle"].contains(&b)) {
+                    return Err("`button` must be left, right or middle.".into());
+                }
+                let strokes = match (a.get("path").filter(|v| !v.is_null()), a.get("strokes").filter(|v| !v.is_null())) {
+                    (Some(_), Some(_)) => return Err("Give `path` or `strokes`, not both.".into()),
+                    (Some(p), None) => Some(vec![p.clone()]),
+                    (None, Some(Value::Array(list))) => Some(list.clone()),
+                    (None, Some(_)) => return Err("`strokes` must be a list of paths.".into()),
+                    (None, None) => None,
+                };
+                let mut v = match strokes {
+                    Some(list) => {
+                        let (flat, length) = s.strokes_to_full(&list)?;
+                        let ms = opt_int(a, "durationMs", 0, geometry::MAX_DRAG_MS)?.map_or_else(|| geometry::drag_ms(length, flat.len()), |v| v as u64);
+                        json!({ "type": "drag", "strokes": flat, "ms": ms })
+                    }
+                    None => {
+                        let (x, y) = Self::point(s, a, "x", "y")?;
+                        let (tx, ty) = Self::point(s, a, "toX", "toY")?;
+                        json!({ "type": "drag", "x": x, "y": y, "toX": tx, "toY": ty })
+                    }
+                };
+                if let Some(b) = button {
+                    v["button"] = json!(b);
+                }
+                v
             }
             "scroll" => {
                 let (x, y) = Self::point(need()?, a, "x", "y")?;
@@ -986,6 +1018,10 @@ impl Tool<'_> {
         let converted = actions.iter().enumerate()
             .map(|(i, a)| self.convert(shot.as_ref(), a, machine).map_err(|e| if name == "act" { format!("Action {}: {e}", i + 1) } else { e }))
             .collect::<Result<Vec<_>, _>>()?;
+        let points: usize = converted.iter().filter_map(|a| a["strokes"].as_array()).flatten().map(|s| s.as_array().map_or(0, |f| f.len() / 2)).sum();
+        if points > geometry::MAX_PATH_POINTS {
+            return Err(format!("At most {} drag points in one call; split the drawing.", geometry::MAX_PATH_POINTS));
+        }
         // The broker's wait covers the actions: their own waits, typing (~1 ms a character) and 1 s each.
         let budget_ms: u64 = converted.iter().map(|a| 1000 + a["ms"].as_u64().unwrap_or(0) + a["text"].as_str().map_or(0, |t| t.chars().count() as u64)).sum();
         let reply = self.invoke_with(machine, "input.act", json!({ "actions": converted, "stopOnError": true }),

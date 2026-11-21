@@ -8,6 +8,9 @@ Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (es
 
 ## [Sin publicar]
 
+### Agregado
+- **Los agentes pueden dibujar.** El `drag` de un agente también sigue un `path` de puntos, o varios `strokes` que se presionan y sueltan cada uno por su cuenta (un círculo, una espiral y una estrella en una sola llamada), con el `button` y la duración (`durationMs`) que elija. Se agregan movimientos intermedios para que apps como Paint reciban líneas suaves. Los agentes ya no tienen que escribir scripts de mouse dentro de la máquina para dibujar; si la persona toma el control, igual los detiene a mitad del trazo, con el botón suelto.
+
 ### Cambiado
 - **El Sunshine propio de GpuVM en todas las máquinas.** Las máquinas transmiten con el fork de Sunshine de GpuVM ([gpuvm-sunshine](https://github.com/alenj0x1/gpuvm-sunshine)), siempre como servicio de Windows, sea cual sea su uso. Con la captura **Rápida** (la predeterminada), un ayudante pequeño captura como el usuario que inició sesión y le pasa los cuadros al servicio: hay imagen donde desktop duplication se quedaba en negro en la pantalla virtual, y ese usuario ya no puede leer la configuración ni las claves de Sunshine. Las máquinas creadas antes lo reciben la próxima vez que se abren, y se quita la configuración vieja que corría Sunshine como el usuario. Las máquinas de agentes y las demás funcionan igual, y las de agentes pueden elegir su captura como cualquier otra.
 - **Las plantillas se mantienen al día.** Cuando GpuVM trae un Sunshine o un agente más nuevo, sus plantillas lo reciben una vez, como una capa encima, en segundo plano (la app revisa al abrir y cada hora). Las copias de una plantilla de agentes quedan listas en menos de un minuto en vez de unos cinco; las máquinas ya creadas desde una plantilla conservan la suya sin cambios.
