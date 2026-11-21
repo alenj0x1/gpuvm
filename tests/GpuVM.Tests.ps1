@@ -369,8 +369,16 @@ InModuleScope GpuVM {
 
         It 'prepares files and credentials: plain for the guest, encrypted for the host' {
             Mock Save-GpuVMComponent { "C:\cache\$Name.bin" }
+            Mock Get-SunshineForkFiles {
+                [pscustomobject]@{ Key = 'sunshine.exe'; Path = 'C:\b\sunshine.exe'; Hash = 'H1' }
+                [pscustomobject]@{ Key = 'tools\sunshine_wgc_capture.exe'; Path = 'C:\b\tools\sunshine_wgc_capture.exe'; Hash = 'H2' }
+            }
             $payload = New-StreamingPayload -Config (Resolve-GpuVMProfile -Name 'balanced')
-            @($payload.GuestFiles).Count | Should Be 4
+            # The four components plus GpuVM's Sunshine fork, which goes over the official install.
+            @($payload.GuestFiles).Count | Should Be 6
+            $fork = @($payload.GuestFiles | Where-Object { $_.Source -like 'C:\b\*' })
+            ($fork | Where-Object Sha256 -eq 'H2').Destination | Should Be 'streaming\fork\tools'
+            ($fork | Where-Object Sha256 -eq 'H1').Destination.TrimEnd('\') | Should Be 'streaming\fork'
             $guest = $payload.GuestJson['streaming\streaming-config.json']
             $guest['password'].Length | Should Be 24
             $payload.State['password'] | Should Not Be $guest['password']
@@ -1554,11 +1562,16 @@ InModuleScope GpuVM {
             Write-JsonFile -Path (Join-Path $script:dir 'template.json') -Data @{ layers = @('tpl.vhdx', 'tpl.9.vhdx') }
             Test-Throws { Read-GpuVMTemplate -Name tpl } | Should Be $true
         }
-        It 'an agent template is stale without stamps or when a file differs; other templates never' {
+        It 'a template is stale without stamps or when GpuVM''s Sunshine (or an agent template''s agent) differs' {
             $b = [ordered]@{ 'Program Files\GpuVM Agent\gpuvm-agent.exe' = 'A1'; 'Program Files\Sunshine\sunshine.exe' = 'S1' }
-            Test-GpuVMTemplateStale -Template @{ use = 'agent' } -Bundled $b | Should Be $true
-            Test-GpuVMTemplateStale -Template @{ use = 'agent'; components = @{ 'Program Files\GpuVM Agent\gpuvm-agent.exe' = 'A1'; 'Program Files\Sunshine\sunshine.exe' = 'S0' } } -Bundled $b | Should Be $true
-            Test-GpuVMTemplateStale -Template @{ use = 'agent'; components = @{ 'Program Files\GpuVM Agent\gpuvm-agent.exe' = 'A1'; 'Program Files\Sunshine\sunshine.exe' = 'S1' } } -Bundled $b | Should Be $false
+            $s = @{ provider = 'sunshine' }
+            Test-GpuVMTemplateStale -Template @{ use = 'agent'; streaming = $s } -Bundled $b | Should Be $true
+            Test-GpuVMTemplateStale -Template @{ use = 'agent'; streaming = $s; components = @{ 'Program Files\GpuVM Agent\gpuvm-agent.exe' = 'A1'; 'Program Files\Sunshine\sunshine.exe' = 'S0' } } -Bundled $b | Should Be $true
+            Test-GpuVMTemplateStale -Template @{ use = 'agent'; streaming = $s; components = @{ 'Program Files\GpuVM Agent\gpuvm-agent.exe' = 'A1'; 'Program Files\Sunshine\sunshine.exe' = 'S1' } } -Bundled $b | Should Be $false
+            # A normal machine's template: only Sunshine counts.
+            Test-GpuVMTemplateStale -Template @{ streaming = $s; components = @{ 'Program Files\Sunshine\sunshine.exe' = 'S0' } } -Bundled $b | Should Be $true
+            Test-GpuVMTemplateStale -Template @{ streaming = $s; components = @{ 'Program Files\Sunshine\sunshine.exe' = 'S1' } } -Bundled $b | Should Be $false
+            # No streaming and no agent: nothing of GpuVM's to keep current.
             Test-GpuVMTemplateStale -Template @{ use = $null } -Bundled $b | Should Be $false
         }
         It 'reads the stamp from a mounted Windows and refuses a planted link' {
@@ -1579,18 +1592,41 @@ InModuleScope GpuVM {
             Write-JsonFile -Path (Join-Path $script:dir 'updating.json') -Data @{ pid = $PID; startedAt = (Get-Date).AddHours(-2).ToUniversalTime().ToString('o') }
             Test-TemplateUpdating -Template $t | Should Be $false
         }
-        It 'Update-GpuVMTemplate -Stale leaves current and non-agent templates alone' {
+        It 'Update-GpuVMTemplate -Stale leaves current templates and ones without streaming alone' {
             Mock Assert-Admin { }
-            Mock Get-BundledComponentStamp { [ordered]@{ k = 'v' } }
+            $k = 'Program Files\Sunshine\sunshine.exe'
+            Mock Get-BundledComponentStamp { [ordered]@{ 'Program Files\Sunshine\sunshine.exe' = 'v' } }
             Mock Add-TemplateLayer { @{ name = $Template['name'] } }
-            Write-JsonFile -Path (Join-Path $script:dir 'template.json') -Data @{ use = 'agent'; components = @{ k = 'v' } }
+            Write-JsonFile -Path (Join-Path $script:dir 'template.json') -Data @{ streaming = @{ provider = 'sunshine' }; components = @{ $k = 'v' } }
             Update-GpuVMTemplate -Stale -Confirm:$false
             Assert-MockCalled Add-TemplateLayer -Times 0 -Scope It
-            Write-JsonFile -Path (Join-Path $script:dir 'template.json') -Data @{ use = 'agent'; components = @{ k = 'old' } }
+            Write-JsonFile -Path (Join-Path $script:dir 'template.json') -Data @{ streaming = @{ provider = 'sunshine' }; components = @{ $k = 'old' } }
             (Update-GpuVMTemplate -Stale -Confirm:$false).name | Should Be 'tpl'
             Write-JsonFile -Path (Join-Path $script:dir 'template.json') -Data @{ use = $null }
             Update-GpuVMTemplate -Stale -Confirm:$false
             Assert-MockCalled Add-TemplateLayer -Times 1 -Scope It
+        }
+        It 'a failed update waits a day before -Stale tries it again; naming the template tries at once' {
+            Mock Assert-Admin { }
+            Mock Get-BundledComponentStamp { [ordered]@{ 'Program Files\Sunshine\sunshine.exe' = 'v' } }
+            Mock Add-TemplateLayer { @{ name = $Template['name'] } }
+            Write-JsonFile -Path (Join-Path $script:dir 'template.json') -Data @{ streaming = @{ provider = 'sunshine' } }
+            Write-JsonFile -Path (Join-Path $script:dir 'update-failed.json') -Data @{ at = (Get-Date).ToUniversalTime().AddHours(-2).ToString('o'); message = 'x' }
+            Update-GpuVMTemplate -Stale -Confirm:$false
+            Assert-MockCalled Add-TemplateLayer -Times 0 -Scope It
+            (Update-GpuVMTemplate -Name tpl -Confirm:$false).name | Should Be 'tpl'
+            Write-JsonFile -Path (Join-Path $script:dir 'update-failed.json') -Data @{ at = (Get-Date).ToUniversalTime().AddDays(-2).ToString('o'); message = 'x' }
+            (Update-GpuVMTemplate -Stale -Confirm:$false).name | Should Be 'tpl'
+        }
+        It 'writes JSON whole: a failed write leaves the old file' {
+            $p = Join-Path $TestDrive 'atomic.json'
+            Write-JsonFile -Path $p -Data @{ a = 1 }
+            Write-JsonFile -Path $p -Data @{ a = 2 }
+            (Read-JsonFile $p)['a'] | Should Be 2
+            Mock ConvertTo-Json { throw 'the write failed' }
+            Test-Throws { Write-JsonFile -Path $p -Data @{ a = 3 } } | Should Be $true
+            (Read-JsonFile $p)['a'] | Should Be 2
+            @(Get-ChildItem $TestDrive -Filter 'atomic.json.*.tmp').Count | Should Be 0
         }
     }
 }
@@ -1899,49 +1935,48 @@ InModuleScope GpuVM {
 }
 
 InModuleScope GpuVM {
-    Describe 'Sunshine on an agent machine runs as the service, never as the agent''s account' {
-        It 'the capture mode is the service with the fork''s WGC helper for agent machines, whatever was chosen' {
+    Describe 'Sunshine is the service and GpuVM''s fork on every machine' {
+        It 'the capture mode is the same for every machine: wgc (the fork''s helper) unless ddx was chosen' {
             Get-GpuVMCaptureMode -State @{ config = @{ streaming = @{} } } | Should Be 'wgc'
             Get-GpuVMCaptureMode -State @{ config = @{ streaming = @{ captureMode = 'ddx' } } } | Should Be 'ddx'
-            Get-GpuVMCaptureMode -State @{ use = 'agent'; config = @{ streaming = @{} } } | Should Be 'wgc-service'
-            Get-GpuVMCaptureMode -State @{ use = 'agent'; config = @{ streaming = @{ captureMode = 'wgc' } } } | Should Be 'wgc-service'
+            Get-GpuVMCaptureMode -State @{ use = 'agent'; config = @{ streaming = @{} } } | Should Be 'wgc'
+            Get-GpuVMCaptureMode -State @{ use = 'agent'; config = @{ streaming = @{ captureMode = 'ddx' } } } | Should Be 'ddx'
         }
-        It 'a guest without the fork''s helper keeps desktop duplication: wgc-service comes back as ddx' {
+        It 'a guest without the fork''s helper keeps desktop duplication: wgc comes back as ddx' {
             $cred = [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force))
             Mock Write-Step { }
             Mock Write-Warning { }
             Mock Invoke-Guest { 'nofork-changed' }
-            $e = 'wgc-service'
-            Set-GuestCaptureMode -Name a -Credential $cred -Mode wgc-service -Effective ([ref]$e) | Should Be $true
-            $e | Should Be 'ddx'
-            Assert-MockCalled Write-Warning -Times 1
-            Mock Invoke-Guest { 'changed' }
-            Set-GuestCaptureMode -Name a -Credential $cred -Mode wgc-service -Effective ([ref]$e) | Should Be $true
-            $e | Should Be 'wgc-service'
-        }
-        It 'a guest with a standard user signed in keeps the service: WGC comes back as ddx' {
-            $cred = [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force))
-            Mock Write-Step { }
-            Mock Invoke-Guest { 'standard-changed' }
             $e = 'wgc'
             Set-GuestCaptureMode -Name a -Credential $cred -Mode wgc -Effective ([ref]$e) | Should Be $true
             $e | Should Be 'ddx'
-            Mock Invoke-Guest { 'standard-unchanged' }
-            Set-GuestCaptureMode -Name a -Credential $cred -Mode wgc -Effective ([ref]$e) | Should Be $false
-            Mock Invoke-Guest { 'unchanged' }
-            Set-GuestCaptureMode -Name a -Credential $cred -Mode wgc -Effective ([ref]$e) | Should Be $false
+            Assert-MockCalled Write-Warning -Times 1
+            Mock Invoke-Guest { 'changed' }
+            Set-GuestCaptureMode -Name a -Credential $cred -Mode wgc -Effective ([ref]$e) | Should Be $true
             $e | Should Be 'wgc'
+            Mock Invoke-Guest { 'unchanged' }
             Set-GuestCaptureMode -Name a -Credential $cred -Mode wgc | Should Be $false
         }
-        It 'WGC is refused on an agent machine' {
+        It 'an agent machine can choose its capture like any other' {
             Mock Assert-Admin { }
-            Mock Save-GpuVMState { $script:saved = $true }
+            Mock Save-GpuVMState { $script:saved = $State }
             Mock Get-VM { [pscustomobject]@{ State = 'Off' } }
             Mock Get-GpuVMState { @{ use = 'agent'; streaming = @{ x = 1 }; config = @{ streaming = @{} } } }
-            $script:saved = $false
-            Test-Throws { Set-GpuVMCapture -Name a -Mode wgc } | Should Be $true
-            $script:saved | Should Be $false
             (Set-GpuVMCapture -Name a -Mode ddx).captureMode | Should Be 'ddx'
+            (Set-GpuVMCapture -Name a -Mode wgc).captureMode | Should Be 'wgc'
+            $script:saved['config']['streaming']['captureMode'] | Should Be 'wgc'
+        }
+        It 'opening installs the fork only when the machine''s state doesn''t name this build''s' {
+            $cred = [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force))
+            Mock Get-SunshineForkFiles { [pscustomobject]@{ Key = 'sunshine.exe'; Path = 'x'; Hash = 'H1' } }
+            Mock Install-GuestSunshineCapture { 'installed' }
+            Mock Get-GpuVMState { @{ sunshineFork = 'sunshine.exe=H1;setup=2' } }
+            Sync-GuestSunshineFork -Name a -Credential $cred | Should Be 'current'
+            Mock Get-GpuVMState { @{ sunshineFork = 'sunshine.exe=H0' } }
+            Sync-GuestSunshineFork -Name a -Credential $cred | Should Be 'installed'
+            Mock Get-GpuVMState { @{} }
+            Sync-GuestSunshineFork -Name a -Credential $cred | Should Be 'installed'
+            Assert-MockCalled Install-GuestSunshineCapture -Times 2 -Exactly -Scope It
         }
     }
 }
@@ -1970,7 +2005,7 @@ InModuleScope GpuVM {
             $script:saved['agent']['pending'] | Should Be $true
             $script:saved['agent']['signInAs'] | Should Be 'agent'
             $script:cloneConfig['vm']['network']['isolation'] | Should Be $true
-            Get-GpuVMCaptureMode -State $script:saved | Should Be 'wgc-service'
+            Get-GpuVMCaptureMode -State $script:saved | Should Be 'wgc'
 
             Mock Read-GpuVMTemplate { @{ name = 't'; sizeGB = 64; edition = 'Pro'; streaming = @{}; guest = @{}; vhdPath = 'x'; config = @{ vm = @{} } } }
             New-GpuVM -Name copy1 -Template t -Confirm:$false | Out-Null
@@ -2362,13 +2397,13 @@ InModuleScope GpuVM {
             Mock Set-SunshineVirtualDisplay { $script:steps.Add("display $([bool]$OnlyDisplay)") }
             Mock Install-GuestSunshineCapture { $script:steps.Add('fork'); 'installed' }
             Initialize-GuestStreamingForAgent -Name a -Credential $cred
-            ($script:steps -join ',') | Should Be 'fork,ready,capture wgc-service,ready,display True'
+            ($script:steps -join ',') | Should Be 'fork,ready,capture wgc,ready,display True'
             # A failed copy of the fork warns and goes on (the guest falls back to ddx).
             Mock Install-GuestSunshineCapture { throw 'no session' }
             Mock Write-Warning { }
             $script:steps.Clear()
             Initialize-GuestStreamingForAgent -Name a -Credential $cred
-            ($script:steps -join ',') | Should Be 'ready,capture wgc-service,ready,display True'
+            ($script:steps -join ',') | Should Be 'ready,capture wgc,ready,display True'
             # A copy of a current template: nothing changes, so Sunshine's start isn't waited for; the mark is used once.
             $script:saved = $null
             Mock Get-GpuVMState { @{ use = 'agent'; streamingFromTemplate = $true; streaming = @{ x = 1 }; config = @{ streaming = @{ virtualDisplay = $true } } } }
@@ -2377,13 +2412,13 @@ InModuleScope GpuVM {
             Mock Set-GuestCaptureMode { $script:steps.Add("capture $Mode"); $false }
             $script:steps.Clear()
             Initialize-GuestStreamingForAgent -Name a -Credential $cred
-            ($script:steps -join ',') | Should Be 'fork,capture wgc-service'
+            ($script:steps -join ',') | Should Be 'fork,capture wgc'
             $script:saved.Contains('streamingFromTemplate') | Should Be $false
             # The mode had to change after all: the full setup follows.
             Mock Set-GuestCaptureMode { $script:steps.Add("capture $Mode"); $true }
             $script:steps.Clear()
             Initialize-GuestStreamingForAgent -Name a -Credential $cred
-            ($script:steps -join ',') | Should Be 'fork,capture wgc-service,ready,capture wgc-service,ready,display True'
+            ($script:steps -join ',') | Should Be 'fork,capture wgc,ready,capture wgc,ready,display True'
             Mock Get-GpuVMState { @{ use = 'agent'; streaming = @{ x = 1 }; config = @{ streaming = @{ virtualDisplay = $true } } } }
             Mock Get-GpuVMState { @{ use = 'agent'; config = @{ streaming = @{} } } }
             $script:steps.Clear()

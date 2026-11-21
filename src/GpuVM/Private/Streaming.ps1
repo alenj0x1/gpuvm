@@ -8,6 +8,20 @@ function New-RandomPassword {
     -join ($bytes | ForEach-Object { $alphabet[$_ % $alphabet.Length] })
 }
 
+# GpuVM's Sunshine fork (gpuvm-sunshine, built from upstream Sunshine at the version components.json pins, with the
+# WGC helper): the files that go over C:\Program Files\Sunshine, each with its place there (Key) and SHA-256. Every
+# machine runs it; a build without it can't make or open machines with streaming.
+function Get-SunshineForkFiles {
+    $bundle = Get-RepoPath 'sunshine'
+    foreach ($key in 'sunshine.exe', 'tools\sunshine_wgc_capture.exe') {
+        $path = Join-Path $bundle $key
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "This GpuVM build is missing its Sunshine ($path). A developer's copy publishes it with gpuvm-sunshine\gpuvm\publish.ps1."
+        }
+        [pscustomobject]@{ Key = $key; Path = $path; Hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash }
+    }
+}
+
 # Components the guest needs according to the profile's "streaming" section.
 function Get-StreamingComponentNames {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Streaming)
@@ -33,9 +47,15 @@ function New-StreamingPayload {
     if (-not $streaming -or $streaming['provider'] -eq 'none') { return $null }
 
     $manifest = Get-ComponentManifest
-    $files = foreach ($name in Get-StreamingComponentNames $streaming) {
+    $files = @(foreach ($name in Get-StreamingComponentNames $streaming) {
         # The hash travels with the file so it can be re-verified right before copying it to the VM disk.
         @{ Source = Save-GpuVMComponent -Name $name -Manifest $manifest; Destination = 'streaming'; Sha256 = $manifest[$name]['sha256'] }
+    })
+    # GpuVM's Sunshine fork goes over the official install (guest\streaming.ps1): every machine runs it.
+    if ($streaming['provider'] -eq 'sunshine') {
+        foreach ($file in Get-SunshineForkFiles) {
+            $files += @{ Source = $file.Path; Destination = Join-Path 'streaming\fork' (Split-Path $file.Key -Parent); Sha256 = $file.Hash }
+        }
     }
     $user = 'gpuvm'
     $password = New-RandomPassword
@@ -255,8 +275,8 @@ function Set-SunshineVirtualDisplay {
 
 # Writes keys to sunshine.conf through the API and restarts Sunshine, only if something changes.
 # Returns $true when it changed the configuration.
-# With WGC capture Sunshine runs from the user's logon task, and its own /api/restart leaves it stopped: given the VM's
-# name and guest credential, it is restarted the way GpuVM starts it (Set-GuestCaptureMode -Restart).
+# Given the VM's name and guest credential, Sunshine is restarted the way GpuVM runs it (Set-GuestCaptureMode -Restart);
+# otherwise through its own /api/restart.
 function Update-SunshineConfig {
     param(
         [Parameter(Mandatory)][string]$Address,
@@ -277,15 +297,13 @@ function Update-SunshineConfig {
     }
     foreach ($key in $Settings.Keys) { $body[$key] = $Settings[$key] }
     Invoke-SunshineApi -Address $Address -Credential $Credential -Method POST -Path '/api/config' -Body $body | Out-Null
-    $wgc = "$($current.PSObject.Properties['capture']?.Value)" -eq 'wgc'
-    if ($wgc -and $Name -and $GuestCredential) {
-        # The machine's own WGC mode: the user's task, or on an agent machine the service with the fork's helper.
+    if ($Name -and $GuestCredential) {
+        # Restarted as GpuVM runs it: the service, in the machine's own capture mode (this also moves a machine from
+        # before the fork off its user-mode task).
         $mode = Get-GpuVMCaptureMode -State (Get-GpuVMState -Name $Name)
-        if ($mode -eq 'ddx') { $mode = 'wgc' }
         $null = Set-GuestCaptureMode -Name $Name -Credential $GuestCredential -Mode $mode -Restart
     }
     else {
-        if ($wgc) { Write-Warning 'Sunshine is restarting without the VM''s Windows password: if it doesn''t come back, restart the VM.' }
         # Sunshine drops the connection when restarting; the error from that call is expected.
         try { Invoke-SunshineApi -Address $Address -Credential $Credential -Method POST -Path '/api/restart' -Body @{} | Out-Null } catch { }
     }

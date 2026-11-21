@@ -199,6 +199,12 @@ function Connect-GpuVM {
             }
             catch { Write-Warning "Couldn't set up controller support in the VM: $($_.Exception.Message)" }
         }
+        # GpuVM's Sunshine fork on every machine: one made before it (or before this build's fork) gets it now, once.
+        if ($guest) {
+            try { if ((Sync-GuestSunshineFork -Name $Name -Credential $guest) -eq 'installed') { $done.Remove('capture') } }
+            catch { Write-Warning "Couldn't install GpuVM's Sunshine in the VM: $($_.Exception.Message)" }
+            $state = Get-GpuVMState -Name $Name
+        }
         $captureMode = Get-GpuVMCaptureMode -State $state
         if ($guest -and $done['capture'] -eq $captureMode -and -not $restartSunshine) { $prepared['capture'] = $captureMode }
         elseif ($guest) {

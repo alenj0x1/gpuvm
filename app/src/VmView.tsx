@@ -1200,8 +1200,8 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
             <MonitorPicker monitors={monitors} value={draft.monitor} inherited={prefs.monitor} onChange={(monitor) => setDraft({ ...draft, monitor })} />
           </OptionRow>
         )}
-        {/* Agent machines always capture with Sunshine as a service (ddx): the agent's user can't run it with WGC. */}
-        {vm.streaming && vm.use !== "agent" && !draft.forAgents && (
+        {/* Every machine, agent or not: Sunshine is GpuVM's fork as a service either way (wgc through its helper). */}
+        {vm.streaming && (
           <OptionRow icon={<IconScreenShare size={17} />} title={t("Capture")} desc={draft.captureMode === "wgc"
             ? t("The picture shows up as soon as you connect and exclusive full-screen games are visible. Windows admin prompts are answered from GpuVM.")
             : t("Admin prompts show in the viewer, but the picture can take a while to appear when connecting and exclusive full-screen games show black.")}>

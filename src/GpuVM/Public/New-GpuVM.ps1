@@ -178,8 +178,9 @@ function New-GpuVMFromTemplate {
         # (Connect-GpuVM) or claimed (Install-GpuVMAgent): the template never carries one.
         $state['use'] = 'agent'
         $state['agent'] = [ordered]@{ pending = $true; signInAs = $(if ($base['agentSignInAs'] -eq 'own') { 'own' } else { 'agent' }) }
-        # A template brought up to this build by Update-GpuVMTemplate already carries Sunshine's agent settings.
-        if ($base['components'] -and -not (Test-GpuVMTemplateStale -Template $base)) { $state['streamingFromTemplate'] = $true }
+        # A template brought up to this build by Update-GpuVMTemplate already carries Sunshine's agent settings (it ran
+        # the whole setup and checked it finished); one only saved with New-GpuVMTemplate isn't trusted for that.
+        if ($base['updatedAt'] -and $base['components'] -and -not (Test-GpuVMTemplateStale -Template $base)) { $state['streamingFromTemplate'] = $true }
     }
     Save-GpuVMState $state
 

@@ -103,19 +103,13 @@ function New-TemplateCloneConfig {
 
 # ---------------------------------------------------------------- keeping agent templates current (layers)
 
-# What this GpuVM build puts into an agent machine, by content: the agent's exe and GpuVM's Sunshine fork (only the
-# parts this build carries). Keys are the files' places inside Windows.
+# What this GpuVM build puts into its machines, by content: GpuVM's Sunshine fork and the agent's exe (only the parts
+# this build carries). Keys are the files' places inside Windows.
 function Get-BundledComponentStamp {
     $stamp = [ordered]@{}
     $package = try { Get-AgentPackage } catch { $null }
     if ($package) { $stamp['Program Files\GpuVM Agent\gpuvm-agent.exe'] = $package.Hash }
-    $bundle = try { Get-RepoPath 'sunshine' } catch { $null }
-    if ($bundle) {
-        foreach ($rel in 'sunshine.exe', 'tools\sunshine_wgc_capture.exe') {
-            $path = Join-Path $bundle $rel
-            if (Test-Path -LiteralPath $path) { $stamp["Program Files\Sunshine\$rel"] = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash }
-        }
-    }
+    foreach ($file in @(try { Get-SunshineForkFiles } catch { })) { $stamp["Program Files\Sunshine\$($file.Key)"] = $file.Hash }
     $stamp
 }
 
@@ -131,15 +125,26 @@ function Get-GuestComponentStamp {
     $stamp
 }
 
-# An agent template whose agent or Sunshine differs from this build's: every copy would install them again (a full
-# install and a power cycle, ~5 min instead of ~30 s; lab 053 part 6). A template from before stamps is stale.
+# What a template must carry from this build: GpuVM's Sunshine when its machines stream, and the agent too when it
+# makes agent machines. A subset of the bundled stamp.
+function Get-TemplateComponentKeys {
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Template, [Parameter(Mandatory)][System.Collections.IDictionary]$Bundled)
+    $agent = [string]$Template['use'] -eq 'agent'
+    $streams = $Template['streaming'] -is [System.Collections.IDictionary] -and [string]$Template['streaming']['provider'] -eq 'sunshine'
+    @($Bundled.Keys | Where-Object { ($agent -and $_ -like '*\gpuvm-agent.exe') -or ($streams -and $_ -like 'Program Files\Sunshine\*') })
+}
+
+# A template whose Sunshine (or agent, for an agent template) differs from this build's: every copy would install
+# them again (for an agent copy a full install and a power cycle, ~5 min instead of under one; lab 053 part 6). A
+# template from before stamps is stale.
 function Test-GpuVMTemplateStale {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Template, [System.Collections.IDictionary]$Bundled)
-    if ([string]$Template['use'] -ne 'agent') { return $false }
     if (-not $Bundled) { $Bundled = Get-BundledComponentStamp }
+    $keys = Get-TemplateComponentKeys -Template $Template -Bundled $Bundled
+    if (-not $keys) { return $false }
     $have = $Template['components']
     if (-not ($have -is [System.Collections.IDictionary])) { return $true }
-    foreach ($key in $Bundled.Keys) { if ([string]$have[$key] -ne [string]$Bundled[$key]) { return $true } }
+    foreach ($key in $keys) { if ([string]$have[$key] -ne [string]$Bundled[$key]) { return $true } }
     $false
 }
 

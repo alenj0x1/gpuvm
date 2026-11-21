@@ -147,7 +147,15 @@ function Write-JsonFile {
     )
     $dir = Split-Path $Path -Parent
     if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-    $Data | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $Path -Encoding utf8
+    # Written next to it and swapped in, so a reader never sees half a file and a failure leaves the old one whole
+    # (review 2026-11-21: a cut template.json broke the template). Replace keeps the file's own permissions.
+    $full = [IO.Path]::GetFullPath($Path)
+    $tmp = "$full.$([guid]::NewGuid().ToString('n')).tmp"
+    try {
+        [IO.File]::WriteAllText($tmp, ($Data | ConvertTo-Json -Depth 20) + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
+        if ([IO.File]::Exists($full)) { [IO.File]::Replace($tmp, $full, [NullString]::Value) } else { [IO.File]::Move($tmp, $full) }
+    }
+    finally { if ([IO.File]::Exists($tmp)) { [IO.File]::Delete($tmp) } }
 }
 
 function ConvertTo-Slug {

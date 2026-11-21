@@ -298,26 +298,18 @@ function Enable-GuestHyperVVideo {
     [string](@($r)[-1])
 }
 
-# GpuVM's Sunshine fork on an agent machine (repo gpuvm-sunshine, shipped in sunshine\): its sunshine.exe over the
+# GpuVM's Sunshine fork in a running machine (repo gpuvm-sunshine, shipped in sunshine\): its sunshine.exe over the
 # MSI's (same upstream version) and tools\sunshine_wgc_capture.exe. As the service (SYSTEM) with capture = wgc it
 # starts the helper with the signed-in user's own token and reads its frames from a shared texture: a picture where
-# desktop duplication stays black on the virtual display (lab 055), without `agent` ever owning Sunshine or its keys.
-# Copied only when the hashes differ (the MSI's exe is kept once as sunshine.exe.upstream). Also takes Users' read
-# access off Sunshine's config folder: `agent` could read sunshine.conf and the state file (lab 055).
-# Returns 'installed', 'unchanged' or 'missing' (this build carries no fork).
+# desktop duplication stays black on the virtual display (lab 055), without the signed-in user ever owning Sunshine
+# or its keys. Every machine runs it: new ones get it at install (guest\streaming.ps1), older ones here on open.
+# Copied only when the hashes differ. Also takes Users' read access off Sunshine's config folder (lab 055).
+# Remembers the fork it installed in the machine's state (sunshineFork). Returns 'installed' or 'unchanged'.
 function Install-GuestSunshineCapture {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential)
-    $bundle = Get-RepoPath 'sunshine'
-    $files = [ordered]@{
-        'sunshine.exe'                     = Join-Path $bundle 'sunshine.exe'
-        'tools\sunshine_wgc_capture.exe'   = Join-Path $bundle 'tools\sunshine_wgc_capture.exe'
-    }
-    if (@($files.Values | Where-Object { -not (Test-Path -LiteralPath $_) }).Count) {
-        Write-Warning "This build of GpuVM doesn't carry its Sunshine capture helper ($bundle)."
-        return 'missing'
-    }
+    $files = [ordered]@{}
     $hashes = [ordered]@{}
-    foreach ($key in $files.Keys) { $hashes[$key] = (Get-FileHash -LiteralPath $files[$key] -Algorithm SHA256).Hash }
+    foreach ($file in Get-SunshineForkFiles) { $files[$file.Key] = $file.Path; $hashes[$file.Key] = $file.Hash }
     $session = New-PSSession -VMName $Name -Credential $Credential -ErrorAction Stop
     try {
         $differ = @(Invoke-InAgentSession $session -ArgumentList $hashes -ScriptBlock {
@@ -329,28 +321,64 @@ function Install-GuestSunshineCapture {
                 }
             })
         $result = 'unchanged'
-        if ($differ.Count) {
-            Write-Step 'Copying GpuVM''s Sunshine capture helper into the machine'
-            Invoke-InAgentSession $session -ScriptBlock {
-                $dir = 'C:\Program Files\Sunshine'
-                Get-Service | Where-Object { $_.Name -like '*sunshine*' } | Stop-Service -Force -ErrorAction SilentlyContinue
-                Get-Process sunshine, sunshine_wgc_capture -ErrorAction SilentlyContinue | Stop-Process -Force
-                if (-not (Test-Path -LiteralPath "$dir\sunshine.exe.upstream")) { Copy-Item -LiteralPath "$dir\sunshine.exe" "$dir\sunshine.exe.upstream" }
-                New-Item -ItemType Directory -Force "$dir\tools" | Out-Null
+        try {
+            if ($differ.Count) {
+                Write-Step 'Installing GpuVM''s Sunshine in the machine'
+                # The fork is built from the Sunshine version components.json pins: it only goes over that same version
+                # (or over an earlier fork), never over another, whose files around the exe would differ.
+                $pinned = ([string](Get-ComponentManifest)['sunshine']['version']).TrimStart('v')
+                Invoke-InAgentSession $session -ArgumentList $pinned, ([string]$hashes['sunshine.exe']) -ScriptBlock {
+                    param($pinned, $forkHash)
+                    $dir = 'C:\Program Files\Sunshine'
+                    $exe = "$dir\sunshine.exe"
+                    if (-not (Test-Path -LiteralPath $exe)) { throw 'Sunshine isn''t installed in the VM.' }
+                    $version = [string](Get-Item -LiteralPath $exe).VersionInfo.ProductVersion
+                    $isFork = $version -like '0.0.0-*' -or (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash -eq $forkHash
+                    if (-not $isFork -and $version -and $version -notlike "$pinned*") {
+                        throw "The VM has Sunshine $version and GpuVM's is built on $pinned; update the VM's Sunshine first (Update-GpuVMComponent)."
+                    }
+                    Get-Service | Where-Object { $_.Name -like '*sunshine*' } | Stop-Service -Force -ErrorAction SilentlyContinue
+                    Get-Process sunshine, sunshine_wgc_capture -ErrorAction SilentlyContinue | Stop-Process -Force
+                    New-Item -ItemType Directory -Force "$dir\tools" | Out-Null
+                }
+                foreach ($key in $differ) { Copy-ToAgentSession $session -Path $files[$key] -Destination "C:\Program Files\Sunshine\$key" }
+                $result = 'installed'
             }
-            foreach ($key in $differ) { Copy-ToAgentSession $session -Path $files[$key] -Destination "C:\Program Files\Sunshine\$key" }
-            $result = 'installed'
+            Invoke-InAgentSession $session -ScriptBlock {
+                $config = 'C:\Program Files\Sunshine\config'
+                # Keep the inherited entries as explicit ones, then drop BUILTIN\Users everywhere below (its keys too).
+                & icacls.exe $config /inheritance:d /Q | Out-Null
+                if ($LASTEXITCODE -ne 0) { throw "Couldn't change the permissions of $config." }
+                # Users, and the sandboxed Store apps (ALL APPLICATION PACKAGES and the restricted ones), which also read it.
+                & icacls.exe $config /remove:g '*S-1-5-32-545' '*S-1-15-2-1' '*S-1-15-2-2' /T /Q | Out-Null
+                if ($LASTEXITCODE -ne 0) { throw "Couldn't take Users' access off $config." }
+            }
         }
-        Invoke-InAgentSession $session -ScriptBlock {
-            $config = 'C:\Program Files\Sunshine\config'
-            # Keep the inherited entries as explicit ones, then drop BUILTIN\Users everywhere below.
-            & icacls.exe $config /inheritance:d /Q | Out-Null
-            & icacls.exe $config /remove:g '*S-1-5-32-545' /T /Q | Out-Null
-            Get-Service | Where-Object { $_.Name -like '*sunshine*' } | Start-Service -ErrorAction SilentlyContinue
+        finally {
+            # Sunshine runs again whatever happened above (a failed copy must not leave the machine without it).
+            Invoke-InAgentSession $session -ScriptBlock {
+                Get-Service | Where-Object { $_.Name -like '*sunshine*' } | Start-Service -ErrorAction SilentlyContinue
+            }
         }
+        $state = Get-GpuVMState -Name $Name
+        $state['sunshineFork'] = Get-SunshineForkStamp
+        Save-GpuVMState $state
         $result
     }
     finally { Close-AgentSession $session }
+}
+
+# One value for the fork this build carries (its files' hashes, plus the version of what Install-GuestSunshineCapture
+# does around them: 2 = Store apps lose read access to the config too), to tell a machine that already has it.
+function Get-SunshineForkStamp { (@(Get-SunshineForkFiles | ForEach-Object { "$($_.Key)=$($_.Hash)" }) + 'setup=2') -join ';' }
+
+# Install-GuestSunshineCapture only when the machine's state doesn't say it has this build's fork, so an open doesn't
+# pay the check every time. Returns 'installed', 'unchanged' or 'current'.
+function Sync-GuestSunshineFork {
+    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential)
+    $state = Get-GpuVMState -Name $Name
+    if ([string]$state['sunshineFork'] -eq (Get-SunshineForkStamp)) { return 'current' }
+    Install-GuestSunshineCapture -Name $Name -Credential $Credential
 }
 
 # Sunshine's settings as the first open would leave them (capture, the virtual display pinned by its id, no display

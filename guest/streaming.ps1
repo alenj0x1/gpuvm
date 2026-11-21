@@ -69,10 +69,26 @@ function Install-GpuVMSunshine {
     $install = Join-Path $env:ProgramFiles 'Sunshine'
     $exe = Join-Path $install 'sunshine.exe'
     if (-not (Test-Path $exe)) { return "error: $exe wasn't found" }
+    # GpuVM's Sunshine fork over the official install (same version, plus the WGC helper that captures as the
+    # signed-in user while Sunshine stays the service). Every machine runs it.
+    $fork = Join-Path $Dir 'fork'
+    if (-not (Test-Path (Join-Path $fork 'sunshine.exe')) -or -not (Test-Path (Join-Path $fork 'tools\sunshine_wgc_capture.exe'))) { return 'error: GpuVM''s Sunshine is missing' }
+    Get-Service | Where-Object { $_.Name -like 'Sunshine*' -or $_.DisplayName -like '*Sunshine*' } | Stop-Service -Force -ErrorAction SilentlyContinue
+    Get-Process sunshine -ErrorAction SilentlyContinue | Stop-Process -Force
+    New-Item -ItemType Directory -Force (Join-Path $install 'tools') | Out-Null
+    Copy-Item -LiteralPath (Join-Path $fork 'sunshine.exe') -Destination $exe -Force
+    Copy-Item -LiteralPath (Join-Path $fork 'tools\sunshine_wgc_capture.exe') -Destination (Join-Path $install 'tools\sunshine_wgc_capture.exe') -Force
+    # Only administrators and SYSTEM read Sunshine's settings and keys (the signed-in user doesn't need them).
+    $configDir = Join-Path $install 'config'
+    & icacls.exe $configDir /inheritance:d /Q | Out-Null
+    if ($LASTEXITCODE -ne 0) { return "error: couldn't change the permissions of $configDir" }
+    # Users, and the sandboxed Store apps (ALL APPLICATION PACKAGES and the restricted ones), which also read it.
+    & icacls.exe $configDir /remove:g '*S-1-5-32-545' '*S-1-15-2-1' '*S-1-15-2-2' /T /Q | Out-Null
+    if ($LASTEXITCODE -ne 0) { return "error: couldn't take Users' access off $configDir" }
     Push-Location $install
     try { & $exe --creds $Config.user $Config.password | Out-Null } finally { Pop-Location }
 
-    $settings = [ordered]@{ origin_web_ui_allowed = 'lan' }
+    $settings = [ordered]@{ origin_web_ui_allowed = 'lan'; capture = 'wgc' }
     $gpu = Get-CimInstance Win32_VideoController | Where-Object { $_.Name -like "*$($Config.gpuMatch)*" } | Select-Object -First 1
     if ($gpu) {
         $settings['adapter_name'] = $gpu.Name
@@ -96,15 +112,8 @@ function Disable-GpuVMHyperVVideo {
     'disabled'
 }
 
-# Restarts Sunshine in the capture mode it is in (guest\capture-mode.ps1): the user task for wgc, the service otherwise.
+# Restarts Sunshine: always the service (guest\capture-mode.ps1).
 function Restart-GpuVMSunshine {
-    $userTask = Get-ScheduledTask -TaskName 'GpuVM-Sunshine-User' -ErrorAction SilentlyContinue
-    if ($userTask) {
-        Stop-ScheduledTask -TaskName $userTask.TaskName -ErrorAction SilentlyContinue
-        Get-Process sunshine -ErrorAction SilentlyContinue | Stop-Process -Force
-        Start-ScheduledTask -TaskName $userTask.TaskName
-        return
-    }
     Get-Service | Where-Object { $_.Name -like 'Sunshine*' -or $_.DisplayName -like '*Sunshine*' } | Restart-Service -Force -ErrorAction SilentlyContinue
 }
 

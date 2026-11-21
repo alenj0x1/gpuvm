@@ -115,7 +115,10 @@ function Install-GpuVMAgent {
     Save-GpuVMState $state
     Update-GpuVMNetworkIsolation -Name $Name -State $state
     # The viewer's mode, for the agent to set from boot (before the power cycle below, so the next boot already has it).
+    # 'none' without a virtual display, 'failed' when a step only warned (Update-GpuVMTemplate won't keep that).
+    $streamingSetup = 'none'
     if ($state['streaming'] -and $state['config']['streaming']['virtualDisplay']) {
+        $streamingSetup = 'failed'
         try {
             $streamMode = Get-GpuVMStreamMode -State $state
             # A rate the virtual display doesn't list yet (180 Hz) is added now, before the power cycle, so the agent
@@ -129,6 +132,7 @@ function Install-GpuVMAgent {
             }
             # Sunshine's settings now, so the first open neither changes nor restarts it.
             Initialize-GuestStreamingForAgent -Name $Name -Credential $credential
+            $streamingSetup = 'ready'
         }
         catch { Write-Warning "Couldn't tell the agent the viewer's display mode: $($_.Exception.Message)" }
     }
@@ -146,5 +150,5 @@ function Install-GpuVMAgent {
         Restart-GpuVMCold -Name $Name
     }
     $timing['total'] = $sw.ElapsedMilliseconds
-    [ordered]@{ name = $Name; vmId = $vmId; version = $version; fastPath = [bool]($result.PSObject.Properties['fastPath'] -and $result.fastPath); exeSent = -not $setup.Same; restarted = $restart; ms = $timing }
+    [ordered]@{ name = $Name; vmId = $vmId; version = $version; fastPath = [bool]($result.PSObject.Properties['fastPath'] -and $result.fastPath); exeSent = -not $setup.Same; restarted = $restart; streaming = $streamingSetup; ms = $timing }
 }

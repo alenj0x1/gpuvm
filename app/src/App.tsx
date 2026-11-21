@@ -171,8 +171,8 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     return () => clearInterval(id);
   }, [disposableOn]);
 
-  // Agent templates older than this GpuVM's agent or Sunshine get a new layer in the background (Update-GpuVMTemplate,
-  // ~5 min once per release), so their copies are ready in under a minute instead of ~5 (lab 053 part 7). From the
+  // Templates older than this GpuVM's Sunshine (or agent) get a new layer in the background (Update-GpuVMTemplate,
+  // a few minutes once per release), so their copies don't install them one by one (lab 053 part 7). From the
   // app, not the service: the temporary copy needs the person's saved passwords (DPAPI). At start, then every hour.
   useEffect(() => {
     const check = () => api.templates()
