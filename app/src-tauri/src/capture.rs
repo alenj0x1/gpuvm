@@ -314,7 +314,7 @@ pub fn set_capture_prefs(replay: bool, shots_dir: Option<String>, videos_dir: Op
 
 /// Whether Windows itself has a decoder for a video format (what its own players use; HEVC and AV1 come as Store
 /// extensions).
-fn windows_decodes(fourcc: &[u8; 4]) -> bool {
+pub fn windows_decodes(fourcc: &[u8; 4]) -> bool {
     use windows_sys::core::GUID;
     use windows_sys::Win32::System::Com::CoTaskMemFree;
     #[repr(C)]

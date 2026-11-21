@@ -16,6 +16,9 @@ Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (es
 - Actualizar GpuVM ya no deja instalado el servicio viejo cuando tardaba en detenerse.
 - Abrir a mano una copia nueva de una plantilla de agentes ya no espera hasta 15 minutos en "Iniciando sesión en Windows".
 - El `destroy` de un agente ya no informa un error cuando GpuVM ya había borrado la máquina.
+- La imagen ya no se queda congelada cuando el servicio de captura de Windows falla dentro de la máquina: vuelve sola en unos 2 segundos, en vez de quedarse en el último cuadro hasta reabrir la máquina.
+- Muchos menos destellos negros sobre la imagen (cuadros a medio dibujar del escritorio de la máquina), cerca de la mitad que antes.
+- Las grabaciones se abren con el reproductor de Windows en PCs sin la extensión HEVC de Microsoft: con el códec en automático, esos PCs transmiten en H.264.
 
 ## [0.9.0] - 2026-11-18
 

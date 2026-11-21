@@ -656,6 +656,13 @@ pub fn open_and_wait(app: &AppHandle, vm: &str, launch: &Value) -> Result<(), St
     }
     arguments.push("--display-mode".into());
     arguments.push("windowed".into());
+    // The viewer records the stream as it comes (no re-encoding): a stream in HEVC gave recordings that Windows' own
+    // players can't open on a PC without the Store's HEVC extension (most of them; the person's, 2026-11-21). With the
+    // codec left on auto, such a PC streams in H.264, which every Windows plays.
+    if !arguments.iter().any(|a| a == "--video-codec") && !crate::capture::windows_decodes(b"HEVC") {
+        arguments.push("--video-codec".into());
+        arguments.push("H.264".into());
+    }
     if let Some((hwnd, x, y, w, h)) = content_rect(app) {
         arguments.push("--gpuvm-embed".into());
         arguments.push(format!("{hwnd},{x},{y},{w},{h}"));
