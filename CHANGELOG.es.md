@@ -51,7 +51,7 @@ Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (es
 - Mientras un agente trabaja, y mientras tienes el control, el puntero se mueve libre sobre la imagen, así que **Tomar el control** y **Volver al agente** de la muesca responden al clic sin pulsar antes Ctrl+Alt+Shift+Z. Requiere el visor actualizado.
 - Un solo clic en la imagen toma el control mientras trabaja un agente (hacían falta dos), y el cursor propio de la máquina ya no se ve detrás del cursor del agente.
 - Los avisos emergentes de Windows (un dispositivo que se configura, las ofertas de OneDrive) ya no aparecen en las máquinas de agentes, donde se quedaban con el foco y las teclas del agente iban a ellos (agente 0.4.13).
-- La imagen dentro de la ventana se queda delante de GpuVM cuando GpuVM recibe el foco (podía quedar detrás y dejar la ventana en negro), y la muesca, la solicitud y el cursor del agente quedan sobre la imagen cuando esta pasa al frente.
+- La imagen se queda delante de GpuVM cuando sale de pantalla completa dentro de la ventana (quedaba detrás y dejaba la ventana en negro), y la muesca, la solicitud y el cursor del agente quedan sobre la imagen cuando esta pasa al frente.
 - Los programas que un agente abre con `run` pasan al frente, como cuando los abre una persona, en vez de quedar detrás de la ventana activa (agente 0.4.12).
 - `ui_invoke` funciona con los ids que lista `ui_tree` (salían como «?» y todo invoke fallaba), y `ui_tree` también lista un menú contextual o ventana emergente abierta (agente 0.4.12).
 - «Permitir en esta tarea» deja pasar las siguientes solicitudes del mismo tipo en la misma máquina sin volver a preguntar.

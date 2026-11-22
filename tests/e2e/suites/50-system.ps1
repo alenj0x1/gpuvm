@@ -191,7 +191,7 @@ function Test-Suite($Ctx) {
         if ($hNote) { [E2ESys]::Front($hNote) }
         $title = "E2E notification check $(Get-Random -Maximum 99999)"
         $pattern = [regex]::Escape($title)
-        $pending = Start-Tool $Ctx.Mcp 'request_approval' @{ machine = $vm; kind = 'other'; title = $title; reason = 'Checking the Windows notification.'; waitSeconds = 180 }
+        $pending = Start-Tool $Ctx.Mcp 'request_approval' @{ machine = $vm; kind = 'other'; title = $title; reason = 'Checking the Windows notification.'; waitSeconds = 300 }
         $toast = Wait-For { Find-Toast $pattern } 15
         Check 'a Windows notification shows the request' ([bool]$toast) $(if ($toast) { "$($toast.Owner): $($toast.Text)" } else { 'no notification found' })
         Shot 'system-2-notification'
@@ -205,17 +205,18 @@ function Test-Suite($Ctx) {
         [E2ESys]::Front($hMain)
         $agents = Wait-For { Find-Class $main '\bside-home\b' '^(Agents|Agentes)\b' } 5
         $null = Press $agents
-        $allow = Wait-For {
-            $hit = $null
-            $cond = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Button)
-            foreach ($b in $main.FindAll([Windows.Automation.TreeScope]::Descendants, $cond)) {
-                if ($b.Current.Name -notmatch '^(Allow|Permitir)$') { continue }
-                $p = $b
-                for ($k = 0; $k -lt 6 -and $p; $k++) { $p = [Windows.Automation.TreeWalker]::ControlViewWalker.GetParent($p); if ($p -and (Get-Texts $p) -match $pattern) { $hit = $b; break } }
-                if ($hit) { break }
+        $findAllow = {
+            # The Allow on the same line as the request's title: one read of the page (reading each button's
+            # surroundings took long enough on a page with many recordings to let the request expire).
+            # Right after the window comes forward, WebView2 rebuilds its accessibility tree and a read can time out.
+            $all = try { @($main.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition)) } catch { @() }
+            $title = $all | Where-Object { $_.Current.Name -match $pattern -and $_.Current.ControlType -ne [Windows.Automation.ControlType]::Button } | Select-Object -First 1
+            if ($title) {
+                $ty = $title.Current.BoundingRectangle.Y + $title.Current.BoundingRectangle.Height / 2
+                $all | Where-Object { $_.Current.ControlType -eq [Windows.Automation.ControlType]::Button -and $_.Current.Name -match '^\W*(Allow|Permitir)\W*$' -and [Math]::Abs(($_.Current.BoundingRectangle.Y + $_.Current.BoundingRectangle.Height / 2) - $ty) -lt 40 } | Select-Object -First 1
             }
-            $hit
-        } 10
+        }
+        $allow = Wait-For $findAllow 30
         Check 'the request shows on the Agents page' ([bool]$allow) ''
         # Answer buttons arm after a moment (disabled until then), as on the dock.
         $armed = $false
@@ -224,7 +225,9 @@ function Test-Suite($Ctx) {
             # click on the window in front, once it is armed.
             [E2ESys]::Front($hMain)
             Start-Sleep -Milliseconds 1200
-            $armed = [bool](Wait-For { try { $allow.Current.IsEnabled } catch { $false } } 10)
+            # Arming draws the button again: the one found before is stale, so it is looked for once more.
+            $allow = Wait-For { $b = & $findAllow; if ($b -and (try { $b.Current.IsEnabled } catch { $false })) { $b } } 30
+            $armed = [bool]$allow
             $null = Click-Element $allow
             Start-Sleep -Milliseconds 600; Shot 'system-allow-pressed'
         }

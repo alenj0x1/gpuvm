@@ -110,11 +110,14 @@ if (inTauri) {
   import("@tauri-apps/api/event").then(({ listen }) => listen<BrokerState>("agents-state", (e) => take(e.payload))).catch(() => {});
 }
 
+// A read that never answers must not stop the page from refreshing for good.
+const within = <T,>(p: Promise<T>, ms = 20000) => Promise.race([p, new Promise<never>((_, no) => setTimeout(() => no(new Error("GpuVM took too long to answer.")), ms))]);
+
 async function read() {
   try {
-    const [clients, requests, offers, settings, broker, recordings, machines] = await Promise.all([
+    const [clients, requests, offers, settings, broker, recordings, machines] = await within(Promise.all([
       agents.clients(), agents.requests(), agents.offers(), agents.settings().catch(() => null), agents.broker().catch(() => null), agents.recordings().catch(() => []),
-      agents.machines().catch(() => [])]);
+      agents.machines().catch(() => [])]));
     take({ clients, requests, offers, settings, broker, recordings, machines });
   } catch (e) {
     snap = { ...snap, loaded: true, error: String(e) };

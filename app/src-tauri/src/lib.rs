@@ -537,9 +537,6 @@ pub fn run() {
             if window.label() == "main" && matches!(event, tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_)) {
                 viewer::follow_main(window.app_handle());
             }
-            if window.label() == "main" && matches!(event, tauri::WindowEvent::Focused(true)) {
-                viewer::raise_embedded(window.app_handle());
-            }
 
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {

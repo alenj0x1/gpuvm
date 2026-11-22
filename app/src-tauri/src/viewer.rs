@@ -106,12 +106,13 @@ pub fn raise_embedded(app: &AppHandle) {
         if hwnd == 0 || !window_of(hwnd, viewer.child.pid) || viewer_full_screen(&vm) {
             continue;
         }
-        use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindow, SetWindowPos, GW_HWNDPREV, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE};
-        // SAFETY: a window of the viewer's own process (checked above) moved right above this app's main window.
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindow, SetWindowPos, GW_HWNDPREV, HWND_TOP, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE};
+        // SAFETY: a window of the viewer's own process (checked above) moved right above this app's main window; posted
+        // to the viewer's thread (ASYNCWINDOWPOS), so a busy viewer never holds this one.
         unsafe {
             let above = GetWindow(main.0 as _, GW_HWNDPREV);
             let after = if above.is_null() || above as isize == hwnd { HWND_TOP } else { above };
-            SetWindowPos(hwnd as _, after, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            SetWindowPos(hwnd as _, after, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
         }
         for label in [crate::status::LABEL, "agent-dock", "agent-live", crate::overlay::LABEL] {
             if let Some(w) = app.get_webview_window(label).filter(|w| w.is_visible().unwrap_or(false)) {
@@ -436,6 +437,16 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
                     bring_forward(shown, viewer.child.pid);
                 }
                 keep_below_app(&app, &viewer);
+                // Out of full screen inside the window: at Low integrity it can't go above the app by itself.
+                if !full && viewer.embed && viewer.visible.load(Ordering::Relaxed) {
+                    let app = app.clone();
+                    // On the main thread, which owns GpuVM's windows: moved from another thread, each move waits on it.
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(300));
+                        let a = app.clone();
+                        let _ = app.run_on_main_thread(move || raise_embedded(&a));
+                    });
+                }
                 if let Some(o) = msg.as_object_mut() {
                     o.remove("hwnd");
                 }

@@ -51,7 +51,7 @@ Changes waiting for the next version sit under **Unreleased** at the top (this s
 - While an agent works, and while you have control, the pointer moves freely over the picture, so the notch's **Take control** and **Return to agent** answer a click without Ctrl+Alt+Shift+Z first. Needs the updated viewer.
 - A single click on the picture takes control while an agent works (it took two), and the machine's own cursor no longer shows behind the agent's.
 - Windows' banners (a device being set up, OneDrive's offers) no longer show in agent machines, where they took the focus and the agent's keys went to them (agent 0.4.13).
-- The picture inside the window stays in front of GpuVM when GpuVM gets the focus (it could end up behind it, leaving the window black), and the notch, the request and the agent's cursor stay above the picture when it comes forward.
+- The picture stays in front of GpuVM when it leaves full screen inside the window (it ended up behind it, leaving the window black), and the notch, the request and the agent's cursor stay above the picture when it comes forward.
 - Programs an agent starts with `run` come to the front, as when a person starts them, instead of opening behind the window in front (agent 0.4.12).
 - `ui_invoke` works with the ids `ui_tree` lists (they showed as "?" and every invoke failed), and `ui_tree` also lists an open context menu or popup (agent 0.4.12).
 - "Allow for this task" lets the next requests of the same kind on the same machine through without asking again.

@@ -404,7 +404,11 @@ function Test-PiDrop($Ctx, [string]$Vm, [string]$Tag) {
         $sx = if ($r) { [int]($r.X + [Math]::Min(40, $r.Width / 4)) } else { 0 }; $sy = if ($r) { [int]($r.Y + $r.Height / 2) } else { 0 }
         $to = Get-PiPoint 0.6 0.55
         $ready = $r -and $to -and [E2E]::ProcessNameAt($sx, $sy) -eq 'explorer' -and [E2E]::ProcessNameAt($to.X, $to.Y) -eq 'GpuVMViewer'
-        if (-not $ready) { Shot 'person-input-drop-not-ready' }
+        if (-not $ready) {
+            Shot 'person-input-drop-not-ready'
+            $vw = Get-Process GpuVMViewer -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } | Select-Object -First 1
+            if ($vw) { Write-Host "     viewer window: $([E2E]::Rect($vw.MainWindowHandle) -join ','), visible $([E2EFront]::IsWindowVisible($vw.MainWindowHandle)); windowed: $windowed; in front: $([E2E]::Foreground())" } else { Write-Host '     no viewer window' }
+        }
         Check 'drop: the file and the picture are both visible' ([bool]$ready) $(if ($r -and $to) { "at the file: $([E2E]::ProcessNameAt($sx, $sy)); at the target: $([E2E]::At($to.X, $to.Y))" } else { 'file item or picture not found' })
         if (-not $ready) { return }
 
