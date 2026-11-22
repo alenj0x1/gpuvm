@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { IconAlertTriangle, IconCamera, IconCheck, IconHandFinger, IconHandStop, IconHistoryOff, IconLoader2, IconMovie, IconPlayerPause, IconPlayerPlay, IconRobot, IconVideo, type Icon } from "@tabler/icons-react";
 import { inTauri } from "./api";
-import { cornersFor, usePrefs, type Spot } from "./prefs";
+import { cornersAt, edgesOf, usePrefs } from "./prefs";
 import { humanError } from "./ui";
 import { t, translateModule } from "./i18n";
 
@@ -9,7 +9,7 @@ import { t, translateModule } from "./i18n";
 // saved, you took control, an agent paused). Requests drop from the top as docks; status lives here, at the bottom
 // center unless the person put it elsewhere (Settings › Appearance). Several notices stack in the same notch.
 
-export type StatusPlacement = Spot | "panel";
+export type StatusPlacement = "picture" | "panel";
 /** "copy": a file an agent delivered, being copied to this PC after the person accepted it (agent.rs): `state`
  *  copying, then accepted or failed for a few seconds, with `name` (the file) and `error`. */
 /** "live": what an agent is doing now on the machine (live.rs): the step's `intent` in its own words, or a plain text
@@ -130,10 +130,10 @@ function sample(): StatusState {
     { id: "notice:1", kind: "notice", key: q.get("notice") ?? "shot" },
   ];
   const live = q.get("live");
-  if (live !== null) return { vm: "win-agent", items: [{ id: "live", kind: "live", client: "c1", clientName: "Claude Code", method: live === "run" ? "exec.run" : "input.act", shape: "draw", intent: live === "intent" ? "Dibujando la luna" : null, thinking: live === "thinking" }], placement: "bottom" };
+  if (live !== null) return { vm: "win-agent", items: [{ id: "live", kind: "live", client: "c1", clientName: "Claude Code", method: live === "run" ? "exec.run" : "input.act", shape: "draw", intent: live === "intent" ? "Dibujando la luna" : null, thinking: live === "thinking" }], placement: "picture" };
   const copy = q.get("copy") as StatusItem["state"] | null;
-  if (copy) return { vm: "win-agent", items: [{ id: "copy:o1", kind: "copy", state: copy, name: "installer-test-report.md", error: copy === "failed" ? "There isn't enough room in Downloads." : null }], placement: "bottom" };
-  return { vm: "win-agent", items: items.slice(0, Number(q.get("n") ?? 3)), placement: (q.get("placement") as StatusPlacement) ?? "bottom" };
+  if (copy) return { vm: "win-agent", items: [{ id: "copy:o1", kind: "copy", state: copy, name: "installer-test-report.md", error: copy === "failed" ? "There isn't enough room in Downloads." : null }], placement: "picture" };
+  return { vm: "win-agent", items: items.slice(0, Number(q.get("n") ?? 3)), placement: (q.get("placement") as StatusPlacement) ?? "picture" };
 }
 
 /** The notch's window: exactly the size of what it shows (status.rs sizes and places it). */
@@ -174,16 +174,17 @@ export function StatusNotch() {
 
   if (!state) return null;
   const action = async (id: string) => { if (inTauri) await invoke("status_action", { id }); };
-  const spot: Spot = state.placement === "panel" ? "bottom" : state.placement;
-  // Under a dock it floats (rounded all round); otherwise attached to the edge only when its gap is 0.
-  const gap = under ? 1 : prefs.notchGap;
-  const bottom = spot.startsWith("bottom");
+  // Under a dock it floats (rounded all round); otherwise square on the edges it touches.
+  const pos = under ? { x: 0.5, y: 0.5 } : prefs.notchPos;
+  const edges = edgesOf(pos);
+  const bottom = prefs.notchPos.y > 0.5;
+  const attached = edges.top || edges.bottom;
   // Bottom: the agent's notice nearest the edge, moment notices above it; at the top, the other way around.
   const order = (i: StatusItem) => (i.kind === "control" || i.kind === "paused" ? 0 : i.kind === "recording" ? 1 : 2);
   const items = [...state.items].sort((a, b) => order(a) - order(b));
   return (
-    <div className={`sn-stage sn-${spot} sn-v-${bottom ? "bottom" : "top"}${gap <= 0 ? " attached" : ""}${under ? " under" : ""}`}
-      style={{ ["--sn-radius" as string]: cornersFor(spot, gap, 14) }}>
+    <div className={`sn-stage sn-v-${edges.bottom ? "bottom" : "top"}${attached ? " attached" : ""}${under ? " under" : ""}`}
+      style={{ ["--sn-radius" as string]: cornersAt(pos, 14) }}>
       <div ref={ref} className={`sn${shown ? " on" : ""}`} role="status" aria-live="polite">
         {(bottom ? [...items].reverse() : items).map((i) => <StatusRow key={i.id} item={i} onAction={i.kind === "control" || i.kind === "paused" || i.kind === "live" ? action : undefined} />)}
       </div>

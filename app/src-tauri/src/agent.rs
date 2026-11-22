@@ -232,8 +232,10 @@ fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Ve
         }
     }
 
-    // The status notch: "You took control" or "<client> paused" on the machine's picture.
+    // The status notch: "You took control" or "<client> paused" on the machine's picture, and shown if its picture came
+    // on screen since.
     sync_status(app, &clients);
+    crate::status::ensure(app);
     // Recording while an agent works on a machine.
     sync_recordings(app, &clients);
     // A delivery the person accepted: "Copying…" on the machine's notch, then where it went or why it failed.
@@ -313,10 +315,9 @@ fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str, rect: Rect) -
         Rect::Picture => (x, y, w, h),
         // A strip where the docks drop (Settings › Appearance): the top or bottom edge, at its center or a corner.
         Rect::Top => {
-            let (spot, gap) = crate::status::dock_placement();
-            let (bw, bh) = (((560.0 * scale) as i32).min(w), ((72.0 + gap) * scale) as i32);
-            let bx = if spot.ends_with("left") { x } else if spot.ends_with("right") { x + w - bw } else { x + (w - bw) / 2 };
-            (bx, if spot.starts_with("bottom") { y + h - bh } else { y }, bw, bh)
+            let (fx, fy) = crate::status::dock_placement();
+            let (bw, bh) = (((560.0 * scale) as i32).min(w), (72.0 * scale) as i32);
+            (x + ((w - bw).max(0) as f64 * fx) as i32, y + ((h - bh).max(0) as f64 * fy) as i32, bw, bh)
         }
     };
     let _ = window.set_size(PhysicalSize::new(pw.max(1) as u32, ph.max(1) as u32));

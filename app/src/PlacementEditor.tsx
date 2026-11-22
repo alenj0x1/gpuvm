@@ -1,39 +1,26 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { IconShieldLock } from "@tabler/icons-react";
+import { IconRestore, IconShieldLock } from "@tabler/icons-react";
 import { PixelScene } from "./PixelScene";
-import { cornersFor, savePrefs, SPOTS, usePrefs, type Spot } from "./prefs";
-import { Slider } from "./ui";
+import { cornersAt, DOCK_POS, NOTCH_POS, savePrefs, usePrefs, type Pos } from "./prefs";
 import { t } from "./i18n";
 
 // Settings › Appearance: where requests (the dock) and status notices (the notch) go over a machine's picture
-// (2026-11-21, asked by the person). A preview of a picture with its taskbar: both are dragged to one of six places,
-// which show while dragging and pull the piece to the nearest (it snaps); the corners in the preview are the real ones
-// (square on an edge it is attached to). The distance from the edge is a slider per piece.
+// (2026-11-21, asked by the person: anywhere, not a few fixed places). A preview of a picture with its taskbar where
+// both are dragged freely; near an edge, a corner or the middle they snap to it (a line shows where), and their
+// corners are the real ones as they move: square on every edge they touch, rounded everywhere else.
 
-/** The width of a typical viewer the preview stands for: distances are drawn to that scale. */
-const VIEWER_W = 1600;
 /** The machine's taskbar at the bottom of the picture, as a share of its height. */
 const TASKBAR = 0.06;
+/** How close (preview px) to an edge or the middle a piece snaps to it. */
+const SNAP = 10;
 
 type Piece = "dock" | "notch";
-
-function spotBox(spot: Spot, W: number, H: number, w: number, h: number, gap: number, side: number) {
-  const x = spot.endsWith("left") ? side : spot.endsWith("right") ? W - w - side : (W - w) / 2;
-  const y = spot.startsWith("bottom") ? H - h - gap : gap;
-  return { x, y };
-}
 
 export function PlacementEditor() {
   const prefs = usePrefs();
   const stage = useRef<HTMLDivElement>(null);
-  const [drag, setDrag] = useState<{ piece: Piece; x: number; y: number; near: Spot } | null>(null);
   const [size, setSize] = useState({ w: 520, h: 325 });
-  const notchSpot: Spot = prefs.statusPlacement === "panel" ? "bottom" : prefs.statusPlacement;
-  const scale = size.w / VIEWER_W;
-  const pieces: Record<Piece, { w: number; h: number; spot: Spot; gap: number }> = {
-    dock: { w: Math.min(size.w * 0.62, 300), h: 40, spot: prefs.dockSpot, gap: prefs.dockGap },
-    notch: { w: Math.min(size.w * 0.6, 270), h: 34, spot: notchSpot, gap: prefs.notchGap },
-  };
+  const [drag, setDrag] = useState<{ piece: Piece; pos: Pos; guides: { v?: number; h?: number } } | null>(null);
   // The preview's real size (it follows the Settings card's width).
   useEffect(() => {
     const el = stage.current;
@@ -44,80 +31,77 @@ export function PlacementEditor() {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const nearest = (piece: Piece, cx: number, cy: number): Spot => {
-    const p = pieces[piece];
-    let best: Spot = p.spot, d = Infinity;
-    for (const s of SPOTS) {
-      const b = spotBox(s, size.w, size.h, p.w, p.h, p.gap * scale, p.gap > 0 ? 8 : 0);
-      const dd = Math.hypot(b.x + p.w / 2 - cx, b.y + p.h / 2 - cy);
-      if (dd < d) { d = dd; best = s; }
-    }
-    return best;
+  const dims: Record<Piece, { w: number; h: number }> = {
+    dock: { w: Math.min(size.w * 0.62, 300), h: 40 },
+    notch: { w: Math.min(size.w * 0.6, 270), h: 34 },
   };
+  const posOf = (piece: Piece): Pos => (drag?.piece === piece ? drag.pos : piece === "dock" ? prefs.dockPos : prefs.notchPos);
+  const box = (piece: Piece, p: Pos) => {
+    const d = dims[piece];
+    return { x: (size.w - d.w) * p.x, y: (size.h - d.h) * p.y, w: d.w, h: d.h };
+  };
+
   const start = (piece: Piece) => (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     e.preventDefault();
     const el = e.currentTarget, r = stage.current!.getBoundingClientRect();
+    const d = dims[piece], b0 = box(piece, posOf(piece));
+    // Where in the piece it was grabbed: it moves with the pointer from there, without jumping.
+    const grab = { x: e.clientX - r.left - b0.x, y: e.clientY - r.top - b0.y };
     el.setPointerCapture(e.pointerId);
-    const at = (ev: PointerEvent | ReactPointerEvent) => {
-      const x = Math.max(0, Math.min(size.w, ev.clientX - r.left)), y = Math.max(0, Math.min(size.h, ev.clientY - r.top));
-      setDrag({ piece, x, y, near: nearest(piece, x, y) });
-      return { x, y };
+    const roomX = Math.max(1, size.w - d.w), roomY = Math.max(1, size.h - d.h);
+    const place = (ev: PointerEvent | ReactPointerEvent): Pos => {
+      let x = Math.min(roomX, Math.max(0, ev.clientX - r.left - grab.x));
+      let y = Math.min(roomY, Math.max(0, ev.clientY - r.top - grab.y));
+      const guides: { v?: number; h?: number } = {};
+      // Snaps: the edges (touching them), the middle of the picture (centered on it).
+      if (x < SNAP) { x = 0; guides.v = 0; } else if (roomX - x < SNAP) { x = roomX; guides.v = size.w; }
+      else if (Math.abs(x + d.w / 2 - size.w / 2) < SNAP) { x = roomX / 2; guides.v = size.w / 2; }
+      if (y < SNAP) { y = 0; guides.h = 0; } else if (roomY - y < SNAP) { y = roomY; guides.h = size.h; }
+      else if (Math.abs(y + d.h / 2 - size.h / 2) < SNAP) { y = roomY / 2; guides.h = size.h / 2; }
+      const pos = { x: Math.round((x / roomX) * 1000) / 1000, y: Math.round((y / roomY) * 1000) / 1000 };
+      setDrag({ piece, pos, guides });
+      return pos;
     };
-    at(e);
-    const move = (ev: PointerEvent) => at(ev);
+    const move = (ev: PointerEvent) => place(ev);
     const up = (ev: PointerEvent) => {
-      const { x, y } = at(ev);
-      const spot = nearest(piece, x, y);
-      savePrefs(piece === "dock" ? { dockSpot: spot } : { statusPlacement: spot });
+      const pos = place(ev);
+      savePrefs(piece === "dock" ? { dockPos: pos } : { notchPos: pos });
       setDrag(null);
       el.removeEventListener("pointermove", move); el.removeEventListener("pointerup", up); el.removeEventListener("pointercancel", up);
     };
     el.addEventListener("pointermove", move); el.addEventListener("pointerup", up); el.addEventListener("pointercancel", up);
   };
+
   const render = (piece: Piece) => {
-    const p = pieces[piece];
-    const g = p.gap * scale, side = p.gap > 0 ? 8 : 0;
-    const dragging = drag?.piece === piece;
-    const pos = dragging ? { x: drag.x - p.w / 2, y: drag.y - p.h / 2 } : spotBox(p.spot, size.w, size.h, p.w, p.h, g, side);
-    // Sitting where its gap leaves it, the notch steps out of the dock's way as in the viewer.
-    let y = pos.y;
-    if (!dragging && piece === "notch" && drag?.piece !== "dock") {
-      const d = pieces.dock, db = spotBox(d.spot, size.w, size.h, d.w, d.h, d.gap * scale, d.gap > 0 ? 8 : 0);
-      if (pos.x < db.x + d.w && db.x < pos.x + p.w && y < db.y + d.h && db.y < y + p.h) y = d.spot.startsWith("bottom") ? db.y - p.h - 4 : db.y + d.h + 4;
-    }
-    const radius = dragging ? "12px" : cornersFor(p.spot, p.gap, 12);
+    const p = posOf(piece), b = box(piece, p), dragging = drag?.piece === piece;
     return (
-      <div key={piece} className={`pl-piece pl-${piece}${dragging ? " dragging" : ""}`} style={{ left: pos.x, top: y, width: p.w, height: p.h, borderRadius: radius }}
-        onPointerDown={start(piece)} role="button" aria-label={piece === "dock" ? t("Requests") : t("Status notices")}>
+      <div key={piece} className={`pl-piece pl-${piece}${dragging ? " dragging" : ""}`}
+        style={{ left: b.x, top: b.y, width: b.w, height: b.h, borderRadius: cornersAt(p, 12) }}
+        onPointerDown={start(piece)} onDoubleClick={() => savePrefs(piece === "dock" ? { dockPos: DOCK_POS } : { notchPos: NOTCH_POS })}
+        role="button" aria-label={piece === "dock" ? t("Requests") : t("Status notices")}>
         {piece === "dock"
           ? <><span className="pl-icon"><IconShieldLock size={14} /></span><span className="ellipsis">{t("{name} needs you", { name: "Claude Code" })}</span><span className="pl-btn">{t("Allow")}</span></>
           : <><span className="pl-rec" /><span className="ellipsis">{t("Recording")} 00:46 · Claude Code · {t("Drawing")}</span></>}
       </div>
     );
   };
+  const moved = prefs.dockPos.x !== DOCK_POS.x || prefs.dockPos.y !== DOCK_POS.y || prefs.notchPos.x !== NOTCH_POS.x || prefs.notchPos.y !== NOTCH_POS.y;
   return (
     <div className="pl">
       <div className="pl-stage" ref={stage}>
         <PixelScene scene="forest" />
         <div className="pl-taskbar" style={{ height: `${TASKBAR * 100}%` }} />
-        {drag && SPOTS.map((s) => {
-          const p = pieces[drag.piece], b = spotBox(s, size.w, size.h, p.w, p.h, p.gap * scale, p.gap > 0 ? 8 : 0);
-          return <span key={s} className={`pl-spot${drag.near === s ? " near" : ""}`} style={{ left: b.x, top: b.y, width: p.w, height: p.h, borderRadius: cornersFor(s, p.gap, 12) }} />;
-        })}
+        {drag?.guides.v !== undefined && <span className="pl-guide v" style={{ left: drag.guides.v }} />}
+        {drag?.guides.h !== undefined && <span className="pl-guide h" style={{ top: drag.guides.h }} />}
         {render("dock")}
         {prefs.statusPlacement !== "panel" && render("notch")}
       </div>
-      <div className="pl-controls">
-        <div className="pl-control">
-          <strong>{t("Distance of requests from the edge")}</strong>
-          <Slider label={t("Distance of requests from the edge")} min={0} max={96} step={4} marks={[0, 32, 64, 96]} value={prefs.dockGap} format={(v) => (v === 0 ? t("Attached") : `${v} px`)} onChange={(dockGap) => savePrefs({ dockGap })} />
+      {moved && (
+        <div className="pl-foot">
+          <button type="button" className="btn ghost compact" onClick={() => savePrefs({ dockPos: DOCK_POS, notchPos: NOTCH_POS })}><IconRestore size={15} />{t("Recommended places")}</button>
         </div>
-        <div className="pl-control">
-          <strong>{t("Distance of notices from the edge")}</strong>
-          <Slider label={t("Distance of notices from the edge")} min={0} max={96} step={4} marks={[0, 32, 64, 96]} value={prefs.notchGap} format={(v) => (v === 0 ? t("Attached") : `${v} px`)} onChange={(notchGap) => savePrefs({ notchGap })} />
-        </div>
-      </div>
+      )}
     </div>
   );
 }

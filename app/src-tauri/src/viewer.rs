@@ -806,7 +806,7 @@ fn reveal(viewer: &Viewer) {
 
 /// The app finished zooming into the machine: the picture comes out from behind it.
 #[tauri::command]
-pub async fn viewer_reveal(vm: String) -> Result<(), String> {
+pub async fn viewer_reveal(app: AppHandle, vm: String) -> Result<(), String> {
     let viewer = viewers().as_ref().and_then(|v| v.get(&vm).cloned()).ok_or("This machine's viewer isn't open.")?;
     // The person opened it: a viewer that recorded in the background is theirs now.
     set_background(&vm, false);
@@ -818,6 +818,7 @@ pub async fn viewer_reveal(vm: String) -> Result<(), String> {
     if viewer.first_frame.load(Ordering::Relaxed) {
         publish_state(&vm, "picture");
     }
+    crate::status::refresh(&app);
     Ok(())
 }
 
@@ -855,6 +856,7 @@ pub async fn viewer_show(app: AppHandle, vm: String) -> Result<(), String> {
     viewer.visible.store(true, Ordering::Relaxed);
     viewer.revealed.store(true, Ordering::Relaxed);
     announce_cover();
+    crate::status::refresh(&app);
     Ok(())
 }
 

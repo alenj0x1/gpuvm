@@ -52,33 +52,41 @@ export interface Prefs {
   /** Moving the mouse or pressing a key over an agent's machine pauses the agent ("input"), or only the Take control
    *  button does ("button"). */
   takeControl: TakeControlPref;
-  /** Where status notices over the picture go (recording, saved, you took control): the status notch. */
+  /** Status notices (recording, saved, you took control: the status notch) over the picture, or only in the side panel. */
   statusPlacement: StatusPlacementPref;
-  /** How far the notch sits from the picture's edge (logical px; 0 = attached to it, which squares that side). */
-  notchGap: number;
-  /** Where requests drop over the picture (the docks), and how far from its edge. */
-  dockSpot: Spot;
-  dockGap: number;
+  /** Where the notch and the docks (requests) sit over the picture, anywhere: see Pos. */
+  notchPos: Pos;
+  dockPos: Pos;
 }
 
-/** Six places over a machine's picture: top or bottom, left, center or right. */
-export type Spot = "top-left" | "top" | "top-right" | "bottom-left" | "bottom" | "bottom-right";
-export const SPOTS: Spot[] = ["top-left", "top", "top-right", "bottom-left", "bottom", "bottom-right"];
-/** Where the status notch sits over the picture, or only in the side panel. */
-export type StatusPlacementPref = Spot | "panel";
+/** A place over a machine's picture, anywhere (2026-11-21, chosen by the person): x and y from 0 to 1 of the room the
+ *  piece has (0 = touching the left or top edge, 1 = the right or bottom one), so it means the same at any size. */
+export interface Pos { x: number; y: number }
+export const DOCK_POS: Pos = { x: 0.5, y: 0 };
+/** A little above the machine's taskbar, so it never covers it. */
+export const NOTCH_POS: Pos = { x: 0.5, y: 0.93 };
+export type StatusPlacementPref = "picture" | "panel";
 
-/** The corners of a notice at a spot: square on a side it is attached to (gap 0), rounded everywhere else. As CSS
- *  border-radius (top-left, top-right, bottom-right, bottom-left). */
-export function cornersFor(spot: Spot, gap: number, r: number): string {
-  const top = spot.startsWith("top"), left = spot.endsWith("left"), right = spot.endsWith("right");
-  const flush = gap <= 0;
-  const tl = flush && (top || left) ? 0 : r, tr = flush && (top || right) ? 0 : r;
-  const br = flush && (!top || right) ? 0 : r, bl = flush && (!top || left) ? 0 : r;
+/** Which edges a piece at `p` touches. */
+export function edgesOf(p: Pos) {
+  return { top: p.y <= 0.001, bottom: p.y >= 0.999, left: p.x <= 0.001, right: p.x >= 0.999 };
+}
+
+/** Its corners: square on every edge it touches (in a corner, on both), rounded everywhere else. As CSS border-radius. */
+export function cornersAt(p: Pos, r: number): string {
+  const e = edgesOf(p);
+  const tl = e.top || e.left ? 0 : r, tr = e.top || e.right ? 0 : r, br = e.bottom || e.right ? 0 : r, bl = e.bottom || e.left ? 0 : r;
   return `${tl}px ${tr}px ${br}px ${bl}px`;
 }
 
+const clampPos = (p: unknown, d: Pos): Pos => {
+  const o = p as Partial<Pos> | null;
+  const n = (v: unknown, def: number) => (typeof v === "number" && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : def);
+  return { x: n(o?.x, d.x), y: n(o?.y, d.y) };
+};
+
 const KEY = "gpuvm.prefs";
-const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "stop", noticesAfterQuit: true, service: "app", monitor: "primary", accent: "blue", lang: "system", viewerHome: "keep", animFps: 0, animQuality: 100, replay: false, shotsDir: "", videosDir: "", takeControl: "input", statusPlacement: "bottom", notchGap: 52, dockSpot: "top", dockGap: 0 };
+const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "stop", noticesAfterQuit: true, service: "app", monitor: "primary", accent: "blue", lang: "system", viewerHome: "keep", animFps: 0, animQuality: 100, replay: false, shotsDir: "", videosDir: "", takeControl: "input", statusPlacement: "picture", notchPos: NOTCH_POS, dockPos: DOCK_POS };
 const EVENT = "gpuvm-prefs";
 const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
 
@@ -97,10 +105,16 @@ export function readPrefs(): Prefs {
     delete saved.version;
     // The time to answer lives in the service now (Get-GpuVMAgentSettings): an old stored one is never sent again.
     delete saved.approvalTimeout;
-    // Before the placement editor (2026-11-21) a corner sat 12 px in and the centers were attached to the edge; the
-    // new default for the bottom is a little above the machine's taskbar.
-    if (saved.statusPlacement && saved.notchGap === undefined) saved.notchGap = saved.statusPlacement === "top" ? 0 : saved.statusPlacement === "bottom" ? 52 : 12;
-    return { ...DEFAULTS, ...saved };
+    // Before free placement (2026-11-21) the notch had named places; any of them is "over the picture" now, at the
+    // nearest free position (the bottom one becomes the new default, a little above the taskbar).
+    if (saved.statusPlacement && saved.statusPlacement !== "panel" && saved.statusPlacement !== "picture") {
+      const old = String(saved.statusPlacement);
+      if (!saved.notchPos && old !== "bottom") saved.notchPos = { x: old.endsWith("left") ? 0.01 : old.endsWith("right") ? 0.99 : 0.5, y: old.startsWith("top") ? (old === "top" ? 0 : 0.01) : NOTCH_POS.y };
+      saved.statusPlacement = "picture";
+    }
+    delete saved.notchGap; delete saved.dockSpot; delete saved.dockGap;
+    const merged = { ...DEFAULTS, ...saved };
+    return { ...merged, notchPos: clampPos(merged.notchPos, NOTCH_POS), dockPos: clampPos(merged.dockPos, DOCK_POS) };
   } catch { return DEFAULTS; }
 }
 
@@ -153,11 +167,12 @@ async function applyAgents(prefs: Prefs) {
 /** The docks are drawn inside a window over the whole picture (or a strip of it): their place and corners are CSS,
  *  set here in every window of the app (all read the same stored preferences). */
 function applyDockCss(prefs: Prefs) {
-  const root = document.documentElement;
-  root.dataset.dock = prefs.dockSpot;
-  root.style.setProperty("--dock-gap", `${Math.max(0, prefs.dockGap)}px`);
-  root.style.setProperty("--dock-side", `${prefs.dockGap > 0 ? 16 : 0}px`);
-  root.style.setProperty("--dock-radius", cornersFor(prefs.dockSpot, prefs.dockGap, 16));
+  const root = document.documentElement, p = prefs.dockPos, e = edgesOf(p);
+  root.style.setProperty("--dock-x", String(p.x));
+  root.style.setProperty("--dock-y", String(p.y));
+  root.style.setProperty("--dock-radius", cornersAt(p, 16));
+  // It slides in from an edge it touches (top or bottom), or fades in where it floats.
+  root.dataset.dockFrom = e.top ? "top" : e.bottom ? "bottom" : "none";
 }
 
 /** The status notch's and the docks' places go to the Rust side (status.rs), which places them over every viewer. */
@@ -165,7 +180,7 @@ async function applyStatus(prefs: Prefs) {
   applyDockCss(prefs);
   if (!inTauri) return;
   const { invoke } = await import("@tauri-apps/api/core");
-  await invoke("set_status_prefs", { placement: prefs.statusPlacement, gap: prefs.notchGap, dock: prefs.dockSpot, dockGap: prefs.dockGap }).catch(() => {});
+  await invoke("set_status_prefs", { placement: prefs.statusPlacement, x: prefs.notchPos.x, y: prefs.notchPos.y, dockX: prefs.dockPos.x, dockY: prefs.dockPos.y }).catch(() => {});
 }
 
 async function applyService(mode: ServicePref) {
@@ -194,7 +209,7 @@ export function savePrefs(change: Partial<Prefs>) {
   if (change.lang) applyLang(next.lang);
   if ("replay" in change || "shotsDir" in change || "videosDir" in change || change.lang) applyCapture(next);
   if ("takeControl" in change) applyAgents(next);
-  if ("statusPlacement" in change || "notchGap" in change || "dockSpot" in change || "dockGap" in change) applyStatus(next);
+  if ("statusPlacement" in change || "notchPos" in change || "dockPos" in change) applyStatus(next);
   window.dispatchEvent(new Event(EVENT));
 }
 

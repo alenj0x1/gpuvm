@@ -348,9 +348,9 @@ export function Preferences() {
             </div>
             <div className="pref-row pref-row-block">
               <div className="pref-row-head">
-                <div className="pref-text"><strong>{t("Requests and notices")}</strong><span>{t("Drag them to where they bother you least over the machine's picture. Attached to an edge they lose their corners on that side.")}</span></div>
+                <div className="pref-text"><strong>{t("Requests and notices")}</strong><span>{t("Drag them anywhere over the machine's picture. They snap to the edges, the corners and the middle, and lose their rounded corners on the edges they touch.")}</span></div>
                 <Segmented<"picture" | "panel"> value={prefs.statusPlacement === "panel" ? "panel" : "picture"}
-                  onChange={(v) => savePrefs({ statusPlacement: v === "panel" ? "panel" : "bottom" })} options={[
+                  onChange={(statusPlacement) => savePrefs({ statusPlacement })} options={[
                     { value: "picture", label: <><IconLayoutBottombar size={15} />{t("Notices over the picture")}</> },
                     { value: "panel", label: <><IconLayoutSidebarRight size={15} />{t("Only in the side panel")}</> },
                   ]} />

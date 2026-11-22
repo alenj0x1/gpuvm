@@ -498,16 +498,16 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .dock-stage { position: relative; height: 100%; --dk-bg: #1c1c1c; --dk-fg: #ebe8e1; --dk-muted: #a8a59e; --dk-line: #2f2f2f; --dk-chip: #262626; }
 .dock-veil { position: absolute; inset: 0; background: #161616; opacity: 0; transition: opacity 320ms ease-out; }
 .dock-veil.on { opacity: 0.45; }
-/* Where it drops and its corners follow Settings › Appearance (prefs.ts sets data-dock and these variables): from the
-   top or the bottom, at the center or a corner, attached to the edge (square there) or a little in (rounded all round). */
-.dock { --tx: -50%; --hide: calc(-100% - var(--dock-gap, 0px) - 8px); position: absolute; top: var(--dock-gap, 0px); left: 50%; box-sizing: border-box;
-  width: min(460px, calc(100% - 32px)); display: flex; align-items: center; gap: 12px;
+/* Anywhere over the picture (Settings › Appearance; prefs.ts sets these): --dock-x and --dock-y from 0 to 1 of the
+   room it has, so 0 and 1 touch the edges; square on the edges it touches. It slides in from an edge it touches, or
+   fades in where it floats. */
+.dock { position: absolute; left: calc(var(--dock-x, .5) * 100%); top: calc(var(--dock-y, 0) * 100%); translate: calc(var(--dock-x, .5) * -100%) calc(var(--dock-y, 0) * -100%);
+  box-sizing: border-box; width: min(460px, calc(100% - 32px)); display: flex; align-items: center; gap: 12px;
   padding: 12px 14px; border-radius: var(--dock-radius, 0 0 16px 16px); background: var(--dk-bg); color: var(--dk-fg); font-size: 13px;
-  transform: translate(var(--tx), var(--hide)); transition: transform 320ms cubic-bezier(.2, .8, .2, 1); }
-.dock.on { transform: translate(var(--tx), 0); }
-:root[data-dock$="left"] .dock { left: var(--dock-side, 0px); --tx: 0%; }
-:root[data-dock$="right"] .dock { left: auto; right: var(--dock-side, 0px); --tx: 0%; }
-:root[data-dock^="bottom"] .dock { top: auto; bottom: var(--dock-gap, 0px); --hide: calc(100% + var(--dock-gap, 0px) + 8px); }
+  transform: translateY(-110%); transition: transform 320ms cubic-bezier(.2, .8, .2, 1), opacity 220ms ease-out; }
+:root[data-dock-from="bottom"] .dock { transform: translateY(110%); }
+:root[data-dock-from="none"] .dock { transform: scale(.96); opacity: 0; }
+.dock.on, :root[data-dock-from] .dock.on { transform: none; opacity: 1; }
 .dock-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: var(--dk-chip); color: var(--accent-dark); flex: none; }
 .dock-icon svg { display: block; }
 .dock-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; line-height: 1.35; }
@@ -1935,8 +1935,7 @@ html.agent-live-window, html.agent-live-window body, html.agent-live-window #roo
 .pl-icon svg { display: block; }
 .pl-btn { flex: none; padding: 3px 8px; border-radius: 6px; background: #ebe8e1; color: #1c1c1c; font-weight: 600; font-size: 11px; }
 .pl-rec { width: 7px; height: 7px; border-radius: 50%; background: #ef5a4c; flex: none; }
-.pl-spot { position: absolute; box-sizing: border-box; border: 1.5px dashed rgba(255, 255, 255, .55); background: rgba(255, 255, 255, .06); pointer-events: none; transition: background 120ms ease, border-color 120ms ease; z-index: 1; }
-.pl-spot.near { border-style: solid; border-color: color-mix(in srgb, var(--accent-dark) 80%, #fff); background: color-mix(in srgb, var(--accent-dark) 22%, transparent); }
-.pl-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; }
-.pl-control { display: grid; gap: 6px; } .pl-control strong { font-weight: 500; font-size: 13px; }
-@media (max-width: 720px) { .pl-controls { grid-template-columns: 1fr; } }
+/* While dragging: a line where it snaps (an edge, the middle). */
+.pl-guide { position: absolute; z-index: 1; pointer-events: none; background: color-mix(in srgb, var(--accent-dark) 85%, #fff); }
+.pl-guide.v { top: 0; bottom: 0; width: 1.5px; margin-left: -0.75px; } .pl-guide.h { left: 0; right: 0; height: 1.5px; margin-top: -0.75px; }
+.pl-foot { display: flex; justify-content: flex-end; }

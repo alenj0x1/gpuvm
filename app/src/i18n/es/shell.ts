@@ -258,9 +258,7 @@ export default {
   "Disconnect it": "Desconectarla",
   "Requests and notices": "Solicitudes y avisos",
   "Status notices": "Avisos de estado",
-  "Drag them to where they bother you least over the machine's picture. Attached to an edge they lose their corners on that side.": "Arrástralos a donde menos te estorben sobre la imagen de la máquina. Pegados a un borde, pierden las esquinas de ese lado.",
+  "Drag them anywhere over the machine's picture. They snap to the edges, the corners and the middle, and lose their rounded corners on the edges they touch.": "Arrástralos a cualquier parte de la imagen de la máquina. Se imantan a los bordes, las esquinas y el centro, y pierden las esquinas redondeadas en los bordes que tocan.",
+  "Recommended places": "Lugares recomendados",
   "Notices over the picture": "Avisos sobre la imagen",
-  "Distance of requests from the edge": "Separación de las solicitudes",
-  "Distance of notices from the edge": "Separación de los avisos",
-  "Attached": "Al borde",
 } as Record<string, string>;
