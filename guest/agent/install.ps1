@@ -541,6 +541,8 @@ Invoke-AgentHive $sid $profilePath {
     Set-Value "$root\Control Panel\Desktop" 'CursorBlinkRate' '-1' 'String'   # a steady caret: screenshots don't flicker
     Set-Value "$root\Control Panel\Desktop\WindowMetrics" 'MinAnimate' '0' 'String'
     Set-Value "$root\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" 'VisualFXSetting' 2
+    # Windows' banners (a device being set up, OneDrive's offers) take the focus: the agent's keys would land there.
+    Set-Value "$root\SOFTWARE\Microsoft\Windows\CurrentVersion\PushNotifications" 'ToastEnabled' 0
     $adv = "$root\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
     Set-Value $adv 'TaskbarAnimations' 0
     Set-Value $adv 'ListviewAlphaSelect' 0

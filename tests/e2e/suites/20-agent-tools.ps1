@@ -96,6 +96,8 @@ function Wait-AgentWindow($Session, [string]$Machine, [string]$Pattern, [double]
     do {
         $t = Get-ReplyText (Invoke-AgentCall $Session 'ui_tree' @{ machine = $Machine; interactiveOnly = $false; maxNodes = 5 } 30)
         if ($t -match $Pattern) { return $t }
+        # A Windows banner that took the focus is closed, as an agent would.
+        if ($t -match '(?m)^\S+ window "(Nueva notificaci|New notification)') { $null = Invoke-AgentCall $Session 'key' @{ machine = $Machine; keys = 'escape' } 30 }
         Start-Sleep -Milliseconds 700
     } while ((Get-Date) -lt $deadline)
     $t

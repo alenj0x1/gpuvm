@@ -95,6 +95,32 @@ pub fn follow_main(app: &AppHandle) {
     });
 }
 
+/// An owner set through GWLP_HWNDPARENT doesn't keep the viewer above the app when the app comes forward: a picture in
+/// the window is put back over it, with the pieces it owns over the picture.
+pub fn raise_embedded(app: &AppHandle) {
+    use tauri::Manager;
+    let list: Vec<(String, Arc<Viewer>)> = viewers().as_ref().map(|v| v.iter().map(|(k, x)| (k.clone(), x.clone())).collect()).unwrap_or_default();
+    let Some(main) = app.get_webview_window("main").and_then(|w| w.hwnd().ok()) else { return };
+    for (vm, viewer) in list.into_iter().filter(|(_, v)| v.embed && v.visible.load(Ordering::Relaxed)) {
+        let hwnd = viewer.hwnd.load(Ordering::Relaxed);
+        if hwnd == 0 || !window_of(hwnd, viewer.child.pid) || viewer_full_screen(&vm) {
+            continue;
+        }
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindow, SetWindowPos, GW_HWNDPREV, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE};
+        // SAFETY: a window of the viewer's own process (checked above) moved right above this app's main window.
+        unsafe {
+            let above = GetWindow(main.0 as _, GW_HWNDPREV);
+            let after = if above.is_null() || above as isize == hwnd { HWND_TOP } else { above };
+            SetWindowPos(hwnd as _, after, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        }
+        for label in [crate::status::LABEL, "agent-dock", "agent-live", crate::overlay::LABEL] {
+            if let Some(w) = app.get_webview_window(label).filter(|w| w.is_visible().unwrap_or(false)) {
+                crate::overlay::raise_over(&w, hwnd);
+            }
+        }
+    }
+}
+
 fn window_of(hwnd: isize, pid: u32) -> bool {
     use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowThreadProcessId, IsWindow};
     if hwnd == 0 {

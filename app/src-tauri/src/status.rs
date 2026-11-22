@@ -261,6 +261,12 @@ pub async fn status_action(app: AppHandle, id: String) -> Result<(), String> {
         crate::viewer::allow_viewer_foreground(&vm);
         let _ = crate::viewer::send_to(&vm, &json!({ "type": "focus" }));
         crate::overlay::bring_to_front(viewer);
+        // Coming forward puts the viewer over the windows it owns: they go back above it.
+        for label in [LABEL, "agent-dock", "agent-live"] {
+            if let Some(w) = app.get_webview_window(label).filter(|w| w.is_visible().unwrap_or(false)) {
+                crate::overlay::raise_over(&w, viewer);
+            }
+        }
     }
     result
 }
