@@ -311,9 +311,12 @@ fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str, rect: Rect) -
     let w = w - crate::overlay::open_width(app, vm).unwrap_or(0).min(w / 2);
     let (px, py, pw, ph) = match rect {
         Rect::Picture => (x, y, w, h),
+        // A strip where the docks drop (Settings › Appearance): the top or bottom edge, at its center or a corner.
         Rect::Top => {
-            let bw = ((560.0 * scale) as i32).min(w);
-            (x + (w - bw) / 2, y, bw, (72.0 * scale) as i32)
+            let (spot, gap) = crate::status::dock_placement();
+            let (bw, bh) = (((560.0 * scale) as i32).min(w), ((72.0 + gap) * scale) as i32);
+            let bx = if spot.ends_with("left") { x } else if spot.ends_with("right") { x + w - bw } else { x + (w - bw) / 2 };
+            (bx, if spot.starts_with("bottom") { y + h - bh } else { y }, bw, bh)
         }
     };
     let _ = window.set_size(PhysicalSize::new(pw.max(1) as u32, ph.max(1) as u32));

@@ -498,10 +498,16 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .dock-stage { position: relative; height: 100%; --dk-bg: #1c1c1c; --dk-fg: #ebe8e1; --dk-muted: #a8a59e; --dk-line: #2f2f2f; --dk-chip: #262626; }
 .dock-veil { position: absolute; inset: 0; background: #161616; opacity: 0; transition: opacity 320ms ease-out; }
 .dock-veil.on { opacity: 0.45; }
-.dock { position: absolute; top: 0; left: 50%; box-sizing: border-box; width: min(460px, calc(100% - 32px)); display: flex; align-items: center; gap: 12px;
-  padding: 12px 14px; border-radius: 0 0 16px 16px; background: var(--dk-bg); color: var(--dk-fg); font-size: 13px;
-  transform: translate(-50%, -110%); transition: transform 320ms cubic-bezier(.2, .8, .2, 1); }
-.dock.on { transform: translate(-50%, 0); }
+/* Where it drops and its corners follow Settings › Appearance (prefs.ts sets data-dock and these variables): from the
+   top or the bottom, at the center or a corner, attached to the edge (square there) or a little in (rounded all round). */
+.dock { --tx: -50%; --hide: calc(-100% - var(--dock-gap, 0px) - 8px); position: absolute; top: var(--dock-gap, 0px); left: 50%; box-sizing: border-box;
+  width: min(460px, calc(100% - 32px)); display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px; border-radius: var(--dock-radius, 0 0 16px 16px); background: var(--dk-bg); color: var(--dk-fg); font-size: 13px;
+  transform: translate(var(--tx), var(--hide)); transition: transform 320ms cubic-bezier(.2, .8, .2, 1); }
+.dock.on { transform: translate(var(--tx), 0); }
+:root[data-dock$="left"] .dock { left: var(--dock-side, 0px); --tx: 0%; }
+:root[data-dock$="right"] .dock { left: auto; right: var(--dock-side, 0px); --tx: 0%; }
+:root[data-dock^="bottom"] .dock { top: auto; bottom: var(--dock-gap, 0px); --hide: calc(100% + var(--dock-gap, 0px) + 8px); }
 .dock-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: var(--dk-chip); color: var(--accent-dark); flex: none; }
 .dock-icon svg { display: block; }
 .dock-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; line-height: 1.35; }
@@ -1843,9 +1849,12 @@ html.status-notch-window, html.status-notch-window body, html.status-notch-windo
 .sn-stage .sn { width: max-content; }
 .sn { --dk-bg: #1c1c1c; --dk-fg: #ebe8e1; --dk-line: #2f2f2f; --dk-chip: #262626; display: inline-flex; flex-direction: column; gap: 2px; padding: 6px; background: #1c1c1c; color: #ebe8e1; font-size: 13px; white-space: nowrap;
   transition: transform 320ms cubic-bezier(.2, .8, .2, 1), opacity 200ms ease-out; }
-.sn-bottom .sn { border-radius: 14px 14px 0 0; transform: translateY(110%); }
-.sn-top .sn { border-radius: 0 0 14px 14px; transform: translateY(-110%); }
-.sn-top-left .sn, .sn-top-right .sn { border-radius: 14px; opacity: 0; transform: scale(.96); }
+/* Its corners come from where it is (cornersFor): square on an edge it is attached to. It slides in from that edge,
+   or fades in when it floats. */
+.sn { border-radius: var(--sn-radius, 14px); }
+.sn-stage.attached.sn-v-bottom .sn { transform: translateY(110%); }
+.sn-stage.attached.sn-v-top .sn { transform: translateY(-110%); }
+.sn-stage:not(.attached) .sn { opacity: 0; transform: scale(.96); }
 .sn.on { transform: none; opacity: 1; }
 .sn-row { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 0 6px 0 8px; }
 .sn-row .sn-text { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
@@ -1910,3 +1919,24 @@ html.agent-live-window, html.agent-live-window body, html.agent-live-window #roo
 
 /* The name beside the mark, as the logo writes it: lowercase, tight, the app's font at its heaviest. */
 .wordmark { font-weight: 800; letter-spacing: -0.045em; }
+
+/* Settings › Appearance › Requests and notices (PlacementEditor.tsx): a picture to drag them on. */
+.pref-row.pref-row-block { flex-direction: column; align-items: stretch; gap: 14px; }
+.pref-row-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.pl { display: grid; gap: 14px; }
+.pl-stage { position: relative; aspect-ratio: 16 / 10; width: 100%; border-radius: var(--r); overflow: hidden; background: #2d3b33; user-select: none; touch-action: none; }
+.pl-stage > .pixel-scene { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; }
+.pl-taskbar { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(28, 28, 30, .92); }
+.pl-piece { position: absolute; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 10px; box-sizing: border-box; background: #1c1c1c; color: #ebe8e1;
+  font-size: 11.5px; white-space: nowrap; cursor: grab; transition: left 220ms cubic-bezier(.2, .8, .2, 1), top 220ms cubic-bezier(.2, .8, .2, 1), border-radius 160ms ease; z-index: 2; }
+.pl-piece .ellipsis { flex: 1; min-width: 0; }
+.pl-piece.dragging { cursor: grabbing; transition: none; z-index: 3; opacity: .92; }
+.pl-icon { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: #262626; color: var(--accent-dark); flex: none; }
+.pl-icon svg { display: block; }
+.pl-btn { flex: none; padding: 3px 8px; border-radius: 6px; background: #ebe8e1; color: #1c1c1c; font-weight: 600; font-size: 11px; }
+.pl-rec { width: 7px; height: 7px; border-radius: 50%; background: #ef5a4c; flex: none; }
+.pl-spot { position: absolute; box-sizing: border-box; border: 1.5px dashed rgba(255, 255, 255, .55); background: rgba(255, 255, 255, .06); pointer-events: none; transition: background 120ms ease, border-color 120ms ease; z-index: 1; }
+.pl-spot.near { border-style: solid; border-color: color-mix(in srgb, var(--accent-dark) 80%, #fff); background: color-mix(in srgb, var(--accent-dark) 22%, transparent); }
+.pl-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; }
+.pl-control { display: grid; gap: 6px; } .pl-control strong { font-weight: 500; font-size: 13px; }
+@media (max-width: 720px) { .pl-controls { grid-template-columns: 1fr; } }

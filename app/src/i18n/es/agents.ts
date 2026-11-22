@@ -94,17 +94,7 @@ export default {
   "the channel isn't open": "el canal no está abierto",
 
   // The status notch (over the picture) and where it goes
-  "Status notices": "Avisos de estado",
-  "Recording, saved captures and you took control, over the machine's picture. Requests always drop from the top.": "Grabación, capturas guardadas y tomaste el control, sobre la imagen de la máquina. Las solicitudes siempre bajan desde arriba.",
-  "Bottom center": "Abajo al centro",
-  "From the picture's bottom edge": "Desde el borde inferior de la imagen",
-  "Top center": "Arriba al centro",
-  "Under a request when one is open": "Bajo una solicitud cuando hay una abierta",
-  "Top left corner": "Esquina superior izquierda",
-  "Top right corner": "Esquina superior derecha",
-  "Out of the way of requests": "Lejos de las solicitudes",
   "Only in the side panel": "Solo en el panel lateral",
-  "Nothing over the picture": "Nada sobre la imagen",
   "Screenshot saved": "Captura guardada",
   "Recording saved": "Grabación guardada",
   "Clip saved": "Clip guardado",

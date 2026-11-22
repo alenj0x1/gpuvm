@@ -31,6 +31,10 @@ struct State {
     /// Per machine: its notices, by id ("recording", "control", "paused", "notice:<n>").
     items: HashMap<String, Vec<Value>>,
     placement: String,
+    /// Its distance from the picture's edge, and where the docks drop and theirs (logical px; Settings › Appearance).
+    gap: f64,
+    dock_spot: String,
+    dock_gap: f64,
     /// The notch's size as its page measured it (logical pixels).
     size: (f64, f64),
     /// The machine the window shows now, and whether it sits under a dock.
@@ -45,7 +49,7 @@ static STATE: Mutex<Option<State>> = Mutex::new(None);
 
 fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
     let mut g = STATE.lock().unwrap_or_else(|e| e.into_inner());
-    let s = g.get_or_insert_with(|| State { items: HashMap::new(), placement: "bottom".into(), size: (0.0, 0.0), shown: None, under_dock: false, next: 1, dock: DOCK_DEFAULT });
+    let s = g.get_or_insert_with(|| State { items: HashMap::new(), placement: "bottom".into(), gap: 52.0, dock_spot: "top".into(), dock_gap: 0.0, size: (0.0, 0.0), shown: None, under_dock: false, next: 1, dock: DOCK_DEFAULT });
     f(s)
 }
 
@@ -186,23 +190,25 @@ fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str, slide: bool) 
         return;
     }
     let (nw, nh) = (((lw * scale) as i32).min(w), (lh * scale) as i32);
-    let gap = (CORNER_GAP * scale) as i32;
+    let (gap_l, dock_spot, dock_gap_l) = with(|s| (s.gap, s.dock_spot.clone(), s.dock_gap));
+    let gap = (gap_l * scale) as i32;
+    let side = if gap > 0 { (CORNER_GAP * scale) as i32 } else { 0 };
     let docked = crate::dock::current_vm().as_deref() == Some(vm) || crate::agent::docked_vm().as_deref() == Some(vm);
-    let (px, mut py) = match placement.as_str() {
-        "top" => (x + (w - nw) / 2, y),
-        "top-left" => (x + gap, y + gap),
-        "top-right" => (x + w - nw - gap, y + gap),
-        _ => (x + (w - nw) / 2, y + h - nh),
+    let at = |spot: &str, bw: i32, bh: i32, g: i32, sd: i32| -> (i32, i32) {
+        let px = if spot.ends_with("left") { x + sd } else if spot.ends_with("right") { x + w - bw - sd } else { x + (w - bw) / 2 };
+        let py = if spot.starts_with("bottom") { y + h - bh - g } else { y + g };
+        (px, py)
     };
-    // The dock has priority at the top: a notch that would touch it (top center always, a wide one in a corner)
-    // moves to sit under it; at the top center, attached to it.
+    let (px, mut py) = at(&placement, nw, nh, gap, side);
+    // The dock has priority: a notch that would touch it moves out of its way, just past it (away from that edge).
     let (dw, dh) = with(|s| s.dock);
     let (dw, dh) = (((dw * scale) as i32).min(w), (dh * scale) as i32);
-    let dx = x + (w - dw) / 2;
-    let touches = px < dx + dw && dx < px + nw && py < y + dh;
-    let under = docked && placement != "bottom" && touches;
+    let dgap = (dock_gap_l * scale) as i32;
+    let (dx, dy) = at(&dock_spot, dw, dh, dgap, if dgap > 0 { (16.0 * scale) as i32 } else { 0 });
+    let touches = px < dx + dw && dx < px + nw && py < dy + dh && dy < py + nh;
+    let under = docked && touches;
     if under {
-        py = y + dh + if placement == "top" { 0 } else { gap };
+        py = if dock_spot.starts_with("bottom") { dy - nh - (6.0 * scale) as i32 } else { dy + dh + (6.0 * scale) as i32 };
     }
     let was_under = with(|s| std::mem::replace(&mut s.under_dock, under));
     let _ = window.set_size(PhysicalSize::new(nw.max(1) as u32, nh.max(1) as u32));
@@ -296,10 +302,22 @@ pub async fn status_action(app: AppHandle, id: String) -> Result<(), String> {
     }
 }
 
-/// Settings › Appearance: where status notices go (bottom, top, top-left, top-right, panel).
+const SPOTS: &[&str] = &["top-left", "top", "top-right", "bottom-left", "bottom", "bottom-right"];
+
+/// Where the docks drop (a spot) and how far from the picture's edge (logical px): the strip dock (agent.rs) and the
+/// notch's way around them read it.
+pub fn dock_placement() -> (String, f64) {
+    with(|s| (s.dock_spot.clone(), s.dock_gap))
+}
+
+/// Settings › Appearance: where status notices go (a spot or the panel) and how far from the edge, and where requests
+/// drop and how far from the edge.
 #[tauri::command]
-pub fn set_status_prefs(app: AppHandle, placement: String) {
-    let placement = if ["bottom", "top", "top-left", "top-right", "panel"].contains(&placement.as_str()) { placement } else { "bottom".into() };
+pub fn set_status_prefs(app: AppHandle, placement: String, gap: Option<f64>, dock: Option<String>, dock_gap: Option<f64>) {
+    let placement = if SPOTS.contains(&placement.as_str()) || placement == "panel" { placement } else { "bottom".into() };
+    let dock = dock.filter(|d| SPOTS.contains(&d.as_str())).unwrap_or_else(|| "top".into());
+    let (gap, dock_gap) = (gap.unwrap_or(52.0).clamp(0.0, 160.0), dock_gap.unwrap_or(0.0).clamp(0.0, 160.0));
+    with(|s| { s.gap = gap; s.dock_spot = dock; s.dock_gap = dock_gap; });
     let changed = with(|s| { let c = s.placement != placement; s.placement = placement; c });
     if changed {
         with(|s| s.size = (0.0, 0.0));
@@ -308,5 +326,11 @@ pub fn set_status_prefs(app: AppHandle, placement: String) {
         }
         with(|s| s.shown = None);
         refresh(&app);
+    } else {
+        // Same place, another distance (or the docks moved): placed again where it is.
+        dock_changed(&app);
+        if let (Some(vm), Some(w)) = (with(|s| s.shown.clone()), app.get_webview_window(LABEL)) {
+            place(&app, &w, &vm, true);
+        }
     }
 }

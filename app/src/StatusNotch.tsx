@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { IconAlertTriangle, IconCamera, IconCheck, IconHandFinger, IconHandStop, IconHistoryOff, IconLoader2, IconMovie, IconPlayerPause, IconPlayerPlay, IconRobot, IconVideo, type Icon } from "@tabler/icons-react";
 import { inTauri } from "./api";
+import { cornersFor, usePrefs, type Spot } from "./prefs";
 import { humanError } from "./ui";
 import { t, translateModule } from "./i18n";
 
@@ -8,7 +9,7 @@ import { t, translateModule } from "./i18n";
 // saved, you took control, an agent paused). Requests drop from the top as docks; status lives here, at the bottom
 // center unless the person put it elsewhere (Settings › Appearance). Several notices stack in the same notch.
 
-export type StatusPlacement = "bottom" | "top" | "top-left" | "top-right" | "panel";
+export type StatusPlacement = Spot | "panel";
 /** "copy": a file an agent delivered, being copied to this PC after the person accepted it (agent.rs): `state`
  *  copying, then accepted or failed for a few seconds, with `name` (the file) and `error`. */
 /** "live": what an agent is doing now on the machine (live.rs): the step's `intent` in its own words, or a plain text
@@ -137,6 +138,7 @@ function sample(): StatusState {
 
 /** The notch's window: exactly the size of what it shows (status.rs sizes and places it). */
 export function StatusNotch() {
+  const prefs = usePrefs();
   const [state, setState] = useState<StatusState | null>(null);
   const [shown, setShown] = useState(false);
   const [under, setUnder] = useState(false);
@@ -172,13 +174,18 @@ export function StatusNotch() {
 
   if (!state) return null;
   const action = async (id: string) => { if (inTauri) await invoke("status_action", { id }); };
+  const spot: Spot = state.placement === "panel" ? "bottom" : state.placement;
+  // Under a dock it floats (rounded all round); otherwise attached to the edge only when its gap is 0.
+  const gap = under ? 1 : prefs.notchGap;
+  const bottom = spot.startsWith("bottom");
   // Bottom: the agent's notice nearest the edge, moment notices above it; at the top, the other way around.
   const order = (i: StatusItem) => (i.kind === "control" || i.kind === "paused" ? 0 : i.kind === "recording" ? 1 : 2);
   const items = [...state.items].sort((a, b) => order(a) - order(b));
   return (
-    <div className={`sn-stage sn-${state.placement}${under ? " under" : ""}`}>
+    <div className={`sn-stage sn-${spot} sn-v-${bottom ? "bottom" : "top"}${gap <= 0 ? " attached" : ""}${under ? " under" : ""}`}
+      style={{ ["--sn-radius" as string]: cornersFor(spot, gap, 14) }}>
       <div ref={ref} className={`sn${shown ? " on" : ""}`} role="status" aria-live="polite">
-        {(state.placement === "bottom" ? [...items].reverse() : items).map((i) => <StatusRow key={i.id} item={i} onAction={i.kind === "control" || i.kind === "paused" || i.kind === "live" ? action : undefined} />)}
+        {(bottom ? [...items].reverse() : items).map((i) => <StatusRow key={i.id} item={i} onAction={i.kind === "control" || i.kind === "paused" || i.kind === "live" ? action : undefined} />)}
       </div>
     </div>
   );

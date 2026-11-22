@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { PlacementEditor } from "./PlacementEditor";
 import { MachineCube, type CubeMachine } from "./MachineCube";
-import { IconAppWindow, IconCamera, IconFolder, IconFolderOpen, IconHistory, IconHistoryOff, IconBrandWindows, IconDeviceDesktop, IconExternalLink, IconPalette, IconServer, IconHandStop, IconLayoutBottombarCollapse, IconMoon, IconPlayerPlay, IconPlayerStop, IconPlugConnected, IconPlugConnectedX, IconPower, IconShieldLock, IconShieldOff, IconSun, IconRobot, IconMouse, IconHandFinger, IconLayoutBottombar, IconLayoutNavbar, IconBoxAlignTopLeft, IconBoxAlignTopRight, IconLayoutSidebarRight } from "@tabler/icons-react";
+import { IconAppWindow, IconCamera, IconFolder, IconFolderOpen, IconHistory, IconHistoryOff, IconBrandWindows, IconDeviceDesktop, IconExternalLink, IconPalette, IconServer, IconHandStop, IconLayoutBottombarCollapse, IconMoon, IconPlayerPlay, IconPlayerStop, IconPlugConnected, IconPlugConnectedX, IconPower, IconShieldLock, IconShieldOff, IconSun, IconRobot, IconMouse, IconHandFinger, IconLayoutBottombar, IconLayoutSidebarRight } from "@tabler/icons-react";
 import { agents, inTauri, service, type ServiceStatus } from "./api";
 import { refreshAgents, useAgents } from "./agentStore";
-import { ACCENTS, savePrefs, usePrefs, type ClosePref, type ServicePref, type StatusPlacementPref, type TakeControlPref, type ThemePref, type ViewerHomePref, type VmsOnQuitPref } from "./prefs";
-import { Dropdown, Segmented, Slider, humanError } from "./ui";
+import { ACCENTS, savePrefs, usePrefs, type ClosePref, type ServicePref, type TakeControlPref, type ThemePref, type ViewerHomePref, type VmsOnQuitPref } from "./prefs";
+import { Segmented, Slider, humanError } from "./ui";
 import { t, type LangPref } from "./i18n";
 import { MonitorPicker, useMonitors } from "./pickers";
 
@@ -345,17 +346,16 @@ export function Preferences() {
                 ))}
               </div>
             </div>
-            <div className="pref-row">
-              <div className="pref-text"><strong>{t("Status notices")}</strong><span>{t("Recording, saved captures and you took control, over the machine's picture. Requests always drop from the top.")}</span></div>
-              <div className="pref-side">
-                <Dropdown<StatusPlacementPref> label={t("Status notices")} value={prefs.statusPlacement} onChange={(statusPlacement) => savePrefs({ statusPlacement })} options={[
-                  { value: "bottom", label: t("Bottom center"), detail: t("From the picture's bottom edge"), icon: <IconLayoutBottombar size={16} /> },
-                  { value: "top", label: t("Top center"), detail: t("Under a request when one is open"), icon: <IconLayoutNavbar size={16} /> },
-                  { value: "top-left", label: t("Top left corner"), detail: t("Out of the way of requests"), icon: <IconBoxAlignTopLeft size={16} /> },
-                  { value: "top-right", label: t("Top right corner"), detail: t("Out of the way of requests"), icon: <IconBoxAlignTopRight size={16} /> },
-                  { value: "panel", label: t("Only in the side panel"), detail: t("Nothing over the picture"), icon: <IconLayoutSidebarRight size={16} /> },
-                ]} />
+            <div className="pref-row pref-row-block">
+              <div className="pref-row-head">
+                <div className="pref-text"><strong>{t("Requests and notices")}</strong><span>{t("Drag them to where they bother you least over the machine's picture. Attached to an edge they lose their corners on that side.")}</span></div>
+                <Segmented<"picture" | "panel"> value={prefs.statusPlacement === "panel" ? "panel" : "picture"}
+                  onChange={(v) => savePrefs({ statusPlacement: v === "panel" ? "panel" : "bottom" })} options={[
+                    { value: "picture", label: <><IconLayoutBottombar size={15} />{t("Notices over the picture")}</> },
+                    { value: "panel", label: <><IconLayoutSidebarRight size={15} />{t("Only in the side panel")}</> },
+                  ]} />
               </div>
+              <PlacementEditor />
             </div>
             <div className="pref-row">
               <div className="pref-text"><strong>{t("Animation smoothness")}</strong><span>{t("Frames per second of holograms and scenes. Fewer leave more GPU free for the machines.")}</span></div>

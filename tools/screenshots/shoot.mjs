@@ -43,6 +43,7 @@ const SHOTS = [
   { name: "create", hash: ":inicio", click: "Crear máquina|Create machine" },
   { name: "games", hash: ":inicio", click: "Jugar|Play" },
   { name: "empty", query: "?vms=0", hash: ":inicio" },
+  { name: "agents", query: "?agents=working", hash: ":agentes" },
 ];
 
 // An installed Chrome (CHROME=path) works when Playwright's own browser is not downloaded.

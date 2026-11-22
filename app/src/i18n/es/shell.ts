@@ -256,4 +256,11 @@ export default {
   "A shared disk takes your Steam games from one machine to another without downloading them again.": "Un disco compartido lleva tus juegos de Steam de una máquina a otra sin descargarlos de nuevo.",
   "At 120 FPS or more, the picture answers your keys about 5 ms sooner than at 60 FPS.": "A 120 FPS o más, la imagen responde a tus teclas unos 5 ms antes que a 60 FPS.",
   "Disconnect it": "Desconectarla",
+  "Requests and notices": "Solicitudes y avisos",
+  "Status notices": "Avisos de estado",
+  "Drag them to where they bother you least over the machine's picture. Attached to an edge they lose their corners on that side.": "Arrástralos a donde menos te estorben sobre la imagen de la máquina. Pegados a un borde, pierden las esquinas de ese lado.",
+  "Notices over the picture": "Avisos sobre la imagen",
+  "Distance of requests from the edge": "Separación de las solicitudes",
+  "Distance of notices from the edge": "Separación de los avisos",
+  "Attached": "Al borde",
 } as Record<string, string>;

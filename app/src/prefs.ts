@@ -54,13 +54,31 @@ export interface Prefs {
   takeControl: TakeControlPref;
   /** Where status notices over the picture go (recording, saved, you took control): the status notch. */
   statusPlacement: StatusPlacementPref;
+  /** How far the notch sits from the picture's edge (logical px; 0 = attached to it, which squares that side). */
+  notchGap: number;
+  /** Where requests drop over the picture (the docks), and how far from its edge. */
+  dockSpot: Spot;
+  dockGap: number;
 }
 
+/** Six places over a machine's picture: top or bottom, left, center or right. */
+export type Spot = "top-left" | "top" | "top-right" | "bottom-left" | "bottom" | "bottom-right";
+export const SPOTS: Spot[] = ["top-left", "top", "top-right", "bottom-left", "bottom", "bottom-right"];
 /** Where the status notch sits over the picture, or only in the side panel. */
-export type StatusPlacementPref = "bottom" | "top" | "top-left" | "top-right" | "panel";
+export type StatusPlacementPref = Spot | "panel";
+
+/** The corners of a notice at a spot: square on a side it is attached to (gap 0), rounded everywhere else. As CSS
+ *  border-radius (top-left, top-right, bottom-right, bottom-left). */
+export function cornersFor(spot: Spot, gap: number, r: number): string {
+  const top = spot.startsWith("top"), left = spot.endsWith("left"), right = spot.endsWith("right");
+  const flush = gap <= 0;
+  const tl = flush && (top || left) ? 0 : r, tr = flush && (top || right) ? 0 : r;
+  const br = flush && (!top || right) ? 0 : r, bl = flush && (!top || left) ? 0 : r;
+  return `${tl}px ${tr}px ${br}px ${bl}px`;
+}
 
 const KEY = "gpuvm.prefs";
-const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "stop", noticesAfterQuit: true, service: "app", monitor: "primary", accent: "blue", lang: "system", viewerHome: "keep", animFps: 0, animQuality: 100, replay: false, shotsDir: "", videosDir: "", takeControl: "input", statusPlacement: "bottom" };
+const DEFAULTS: Prefs = { theme: "system", close: "quit", vmsOnQuit: "stop", noticesAfterQuit: true, service: "app", monitor: "primary", accent: "blue", lang: "system", viewerHome: "keep", animFps: 0, animQuality: 100, replay: false, shotsDir: "", videosDir: "", takeControl: "input", statusPlacement: "bottom", notchGap: 52, dockSpot: "top", dockGap: 0 };
 const EVENT = "gpuvm-prefs";
 const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
 
@@ -79,6 +97,9 @@ export function readPrefs(): Prefs {
     delete saved.version;
     // The time to answer lives in the service now (Get-GpuVMAgentSettings): an old stored one is never sent again.
     delete saved.approvalTimeout;
+    // Before the placement editor (2026-11-21) a corner sat 12 px in and the centers were attached to the edge; the
+    // new default for the bottom is a little above the machine's taskbar.
+    if (saved.statusPlacement && saved.notchGap === undefined) saved.notchGap = saved.statusPlacement === "top" ? 0 : saved.statusPlacement === "bottom" ? 52 : 12;
     return { ...DEFAULTS, ...saved };
   } catch { return DEFAULTS; }
 }
@@ -129,11 +150,22 @@ async function applyAgents(prefs: Prefs) {
   await invoke("set_agent_prefs", { takeControl: prefs.takeControl }).catch(() => {});
 }
 
-/** The status notch's place goes to the Rust side (status.rs), which draws it over every viewer. */
-async function applyStatus(placement: StatusPlacementPref) {
+/** The docks are drawn inside a window over the whole picture (or a strip of it): their place and corners are CSS,
+ *  set here in every window of the app (all read the same stored preferences). */
+function applyDockCss(prefs: Prefs) {
+  const root = document.documentElement;
+  root.dataset.dock = prefs.dockSpot;
+  root.style.setProperty("--dock-gap", `${Math.max(0, prefs.dockGap)}px`);
+  root.style.setProperty("--dock-side", `${prefs.dockGap > 0 ? 16 : 0}px`);
+  root.style.setProperty("--dock-radius", cornersFor(prefs.dockSpot, prefs.dockGap, 16));
+}
+
+/** The status notch's and the docks' places go to the Rust side (status.rs), which places them over every viewer. */
+async function applyStatus(prefs: Prefs) {
+  applyDockCss(prefs);
   if (!inTauri) return;
   const { invoke } = await import("@tauri-apps/api/core");
-  await invoke("set_status_prefs", { placement }).catch(() => {});
+  await invoke("set_status_prefs", { placement: prefs.statusPlacement, gap: prefs.notchGap, dock: prefs.dockSpot, dockGap: prefs.dockGap }).catch(() => {});
 }
 
 async function applyService(mode: ServicePref) {
@@ -162,7 +194,7 @@ export function savePrefs(change: Partial<Prefs>) {
   if (change.lang) applyLang(next.lang);
   if ("replay" in change || "shotsDir" in change || "videosDir" in change || change.lang) applyCapture(next);
   if ("takeControl" in change) applyAgents(next);
-  if (change.statusPlacement) applyStatus(next.statusPlacement);
+  if ("statusPlacement" in change || "notchGap" in change || "dockSpot" in change || "dockGap" in change) applyStatus(next);
   window.dispatchEvent(new Event(EVENT));
 }
 
@@ -178,7 +210,7 @@ export function initPrefs() {
   applyLang(prefs.lang);
   applyCapture(prefs);
   applyAgents(prefs);
-  applyStatus(prefs.statusPlacement);
+  applyStatus(prefs);
   systemDark.addEventListener("change", () => {
     if (readPrefs().theme === "system") { applyTheme("system"); window.dispatchEvent(new Event(EVENT)); }
   });
@@ -192,6 +224,7 @@ export function refreshPrefs() {
   const before = `${document.documentElement.dataset.theme}|${document.documentElement.dataset.accent}`;
   applyTheme(prefs.theme);
   applyAccent(prefs.accent);
+  applyDockCss(prefs);
   if (before !== `${document.documentElement.dataset.theme}|${document.documentElement.dataset.accent}`) window.dispatchEvent(new Event(EVENT));
 }
 
