@@ -7,11 +7,9 @@ description: Black screen, a picture that stutters, administrator prompts, gamep
 
 The usual causes, in order:
 
-1. **Sunshine is capturing the Hyper-V display** instead of the virtual one. **Start and open** (or `./gpuvm.ps1 connect`) points Sunshine at the virtual display every time. If it warns that Sunshine doesn't see the virtual display, check `C:\GpuVM\setup.log` inside the VM.
+1. **Sunshine is capturing the Hyper-V display** instead of the virtual one. **Start and open** points Sunshine at the virtual display every time. If it warns that Sunshine doesn't see the virtual display, check `C:\GpuVM\setup.log` inside the VM.
 2. **The VM's driver doesn't match the host's** (after an NVIDIA driver update). Opening from the app syncs it on its own when the VM is off; or run `./gpuvm.ps1 sync-driver -Name <vm>` with the VM off.
 3. **Remote Desktop took the session** away from the GPU display. Close Remote Desktop and use **start and open** again: with the guest password saved, GpuVM moves the session back to the console.
-
-If the picture takes a while to show after connecting, check that **Picture and control → Capture** is on **Fast**: the **Classic** capture can stay black until something on screen changes.
 
 To look at the VM's screen without the GPU, open the Hyper-V console (**View Hyper-V console** in the machine's **⋯** menu, or `vmconnect.exe localhost <vm>`). While the virtual display works, the Hyper-V display is turned off; Remote Desktop still works as a fallback.
 
@@ -26,18 +24,13 @@ GpuVM's own holograms and scenes stop while a machine's picture is shown, and dr
 - Lower **Animation smoothness** and **Animation quality** in **Settings → Appearance** ([Settings](/docs/using-the-app/#settings)).
 - Or set **Settings → Window → Going back to Home from a machine** to **Disconnect it**.
 
-## A fullscreen program shows a black screen
-
-The desktop streams fine, but a game or program in **exclusive fullscreen** shows black (it may appear when it loses focus). That happens with the **Classic** capture, which can't see exclusive fullscreen on a virtual display. In **Picture and control → Capture** choose **Fast** (the default for new machines) and save. See [Capture modes](/docs/streaming/#capture-modes).
-
 ## A program waits for administrator permission
 
-With the **Fast** capture, Windows' administrator prompts aren't drawn in the machine's picture; GpuVM shows them in a card over everything, with **Allow** and **Deny** ([Administrator prompts](/docs/using-the-app/#administrator-prompts)). If no card appears:
+Windows' administrator prompts aren't drawn in the machine's picture; GpuVM shows them itself, dropping from the top of the picture or in a card over everything, with **Allow** and **Deny** ([Administrator prompts](/docs/using-the-app/#administrator-prompts)). If none appears:
 
-- GpuVM must be open (in the window or the tray): the card comes from the app.
+- GpuVM must be running (the window, the tray, or the notices-only mode after quitting): the prompts come from the app.
 - GpuVM needs the VM's Windows password; without it, the VM shows a banner asking for it.
 - The watcher is installed the first time the VM is opened from GpuVM; open it once with **Open**.
-- To see the prompts in the picture instead, switch to **Classic** in **Picture and control → Capture**.
 
 ## Windows open where I can't see them
 
@@ -73,7 +66,7 @@ The VM's sound comes from GpuVM's USB speaker, **Speakers (GpuVM Audio)** ([Stre
 
 ## Pairing fails
 
-Use **Pair Moonlight again** in the **⋯** menu, or `./gpuvm.ps1 connect -Name <vm> -Pair`. From the app, this pairs GpuVM's viewer; if the viewer is missing, the app says so: install GpuVM again. From the CLI, `connect` pairs Moonlight, which has to be installed ([Install](/docs/install/#install-moonlight)).
+Use **Pair the viewer again** in the **⋯** menu. If the viewer is missing, the app says so: install GpuVM again.
 
 ## The VM doesn't start: not enough memory
 
@@ -85,5 +78,5 @@ Hyper-V's fixed memory must be free when the VM starts. Close programs, or lower
 - **Audio:** the VM has no sound card; GpuVM's own USB speaker gives it one, verified on a real VM through Moonlight ([lab 012](/docs/labs/)).
 - **Driver:** the guest has to use the same version as the host (see above).
 - **GPU selection on Windows 10:** you can't choose which GPU the VM gets. If the integrated GPU is also partitionable, the VM may get the wrong one. `check` warns about it; disable the integrated GPU in Device Manager before starting the VM ([lab 001](/docs/labs/)).
-- **No checkpoints or saved state:** the VM shuts down instead.
+- **No checkpoints or saved state:** the VM shuts down instead. GpuVM has its own [restore points](/docs/using-the-app/#restore-points).
 - **Anti-cheat:** some anti-cheat systems block virtual machines.

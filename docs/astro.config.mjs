@@ -8,8 +8,8 @@ export default defineConfig({
   base: '/docs',
   integrations: [
     starlight({
-      title: 'GpuVM',
-      description: 'Windows VMs that use your GPU with Hyper-V GPU partitioning, streamed with Sunshine and Moonlight.',
+      title: 'gpuvm',
+      description: 'Windows VMs that use your GPU with Hyper-V GPU partitioning, streamed to GpuVM's own viewer, and usable by AI agents.',
       logo: { src: './src/assets/logo.svg', alt: 'GpuVM' },
       favicon: '/favicon.svg',
       defaultLocale: 'root',
@@ -62,7 +62,7 @@ export default defineConfig({
         {
           label: 'Guides',
           translations: { es: 'Guías' },
-          items: ['using-the-app', 'streaming', 'profiles'],
+          items: ['using-the-app', 'agents', 'streaming', 'profiles'],
         },
         {
           label: 'Reference',

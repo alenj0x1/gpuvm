@@ -133,10 +133,10 @@ html {
 /* ---------- Header ---------- */
 .site-title {
   color: var(--gv-text);
-  font-size: 1.0625rem;
-  font-weight: 700;
+  font-size: 1.125rem;
+  font-weight: 800;
   gap: 0.625rem;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.045em;
 }
 .site-title img {
   height: 2rem;

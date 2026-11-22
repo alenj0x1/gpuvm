@@ -24,7 +24,7 @@ The app opens on **Home**, which fits the window without scrolling:
 
 - **The stage:** the machine in use (or the last one opened) inside its cube, with the other machines of the [space](#spaces) beside it, on the space's world. Drag to turn it, scroll to zoom.
 - **Beside the stage:** that machine's processor, memory and GPU use, **Free memory for machines** (how much the PC has free and which machines fit), **View machine** and its main action (**Open**, **Start and open**…). A machine that doesn't fit offers to open with the memory that does fit, for example **Open with 6 GB**: it lowers its memory to what fits (saved, like changing it on its page) and opens it.
-- **Below:** every other machine of the space with its action (the row scrolls sideways, also by dragging it), the **Library** at a glance (how many profiles, templates, shared disks and ISOs) with **Create machine**, and what needs attention, only when there is something: a GPU driver out of date, Moonlight not paired, apps waiting to be installed, the Windows password missing or little disk space left, each with the button that fixes it.
+- **Below:** every other machine of the space with its action (the row scrolls sideways, also by dragging it), the **Library** at a glance (how many profiles, templates, shared disks and ISOs) with **Create machine**, and what needs attention, only when there is something: a GPU driver out of date, the viewer not paired, apps waiting to be installed, the Windows password missing or little disk space left, each with the button that fixes it.
 
 Drag the lines between these parts to resize them (double-click one to reset it); the sizes are remembered.
 
@@ -66,7 +66,7 @@ Each game and mode keeps its best score.
 
 1. **Name and space:** letters, numbers, `_` or hyphens, up to 40 characters, no spaces (it suggests `win-gpu`), and the space it goes into. While you type the name, the camera goes to the board's serial plate and engraves it letter by letter.
 
-2. **Starting point:** **Install Windows** or **From template** (when you have [templates](#templates)), and a profile: **Balanced** (`balanced`), **Maximum performance** (`max-performance`, the default) or one of your own. The profile fills in everything below, including its ISO, apps and use; see [Profiles](/docs/profiles/). From a template the machine is ready in seconds and only needs the name; Windows, its apps, cleanup level and password come from the template.
+2. **Starting point:** **Install Windows**, **From template** (when you have [templates](#templates)) or **From a file** (a machine [exported](#export-and-import) as `.gpuvm`), and a profile: **Balanced** (`balanced`), **Maximum performance** (`max-performance`, the default) or one of your own. The profile fills in everything below, including its ISO, apps and use; see [Profiles](/docs/profiles/). From a template the machine is ready in seconds and only needs the name; Windows, its apps, cleanup level and password come from the template.
 
 3. **Resources:** threads, memory, GPU share and disk. The disk stops at what fits on the drive once every machine's disk there is full, keeping 20 GB for Windows.
 
@@ -121,7 +121,7 @@ The main button changes with the machine's state:
 6. Pairs the viewer with Sunshine if this PC isn't paired yet.
 7. Opens the viewer and waits until the picture shows.
 
-Work that lasts until Windows restarts (the display, the capture mode, the sound) is done once per boot, through one connection to the machine. Opening a machine that is already on takes about 7 to 10 seconds until you see the picture; from off, about a minute, most of it Windows and Sunshine starting. If the machine is off, saved or paused while GpuVM waits for its network address, it says so at once instead of waiting.
+Work that lasts until Windows restarts (the display, the capture, the sound) is done once per boot, through one connection to the machine. Opening a machine that is already on takes about 7 to 10 seconds until you see the picture; from off, about a minute, most of it Windows and Sunshine starting. If the machine is off, saved or paused while GpuVM waits for its network address, it says so at once instead of waiting.
 
 Warnings along the way (for example, audio not configured yet) appear as notifications.
 
@@ -143,16 +143,44 @@ From a key, click, mouse move or gamepad button on this PC to the change in the 
 
 ## Administrator prompts
 
-With the **Fast** capture (the default), Windows' administrator prompts (UAC) inside the machine can't be streamed: Windows draws them on a separate, protected desktop. GpuVM shows them instead: while one is open, a small card appears over everything, the machine's picture included, with the machine, the program asking and its publisher (**Unknown publisher** when it isn't signed). **Allow** and **Deny** answer it in the machine.
+Windows draws its administrator prompts (UAC) on a separate, protected desktop that can't be streamed, so GpuVM shows them itself. While the machine's picture is shown, the prompt drops from the top of the picture, which darkens as on Windows' own secure desktop; for a machine whose picture isn't shown, a small card appears over everything. Both show the machine, the program asking and its publisher (**Unknown publisher** when it isn't signed), and **Allow** and **Deny** answer it in the machine.
 
 - Only this PC can answer: a program inside the machine can't approve itself.
-- If a different prompt opened in the meantime, nothing is pressed and the card shows the new one.
+- If a different prompt opened in the meantime, nothing is pressed and the new one shows.
 - It needs the machine's [Windows password](#windows-password).
-- With the **Classic** capture the prompts show in the picture as usual and the card doesn't appear. See [Capture modes](/docs/streaming/#capture-modes).
+- After quitting GpuVM with machines left on, a tiny notices-only mode keeps showing their prompts (**Settings → Window → Administrator prompts after quitting**).
 
 ## Paste in the VM
 
 While the machine is running, the clipboard button next to the **⋯** menu, **Paste in the VM**, copies the text you copied on this PC to the machine's clipboard, ready for Ctrl+V. It only goes from the PC to the machine: the machine never reads this PC's clipboard. It needs the [Windows password](#windows-password).
+
+## Files into a machine
+
+Drop files or folders on the machine's picture to copy them into the **Received** folder on its desktop (1 GB in about 25 seconds). The **Files** widget of the [side panel](/docs/streaming/#side-panel) shows the copies in progress and, with files selected in the machine's File Explorer, **Send what is selected to** another machine.
+
+## Clipboard
+
+The **Clipboard** widget keeps the last 8 things you copied on this PC (text, an image or files), ready to paste into the machine with a click; **On copy** sends each new copy on its own. They live only in memory, while a machine is open, and private copies that password managers mark are skipped. Nothing is read from the machine's clipboard.
+
+## Captures
+
+The **Capture** widget and these shortcuts work on the machine's picture:
+
+| Shortcut | What it does |
+|---|---|
+| **Ctrl+Alt+Shift+P** | Takes a screenshot. |
+| **Ctrl+Alt+Shift+R** | Starts or stops recording. |
+| **Ctrl+Alt+Shift+B** | Saves the last 30 seconds. |
+
+They are saved without re-encoding, in `Pictures\GpuVM\<machine>` and `Videos\GpuVM\<machine>`. **Settings → Captures** changes the folders and turns on **Save the last 30 s** (off by default: the viewer keeps those seconds in memory, about 130 MB at 35 Mb/s).
+
+## Status notch
+
+Recording, saved captures, you took control, an agent paused or working: status notices show in one notch at the bottom center of the picture, stacked. **Settings → Appearance → Status notices** moves it to the top center, a top corner, or only the side panel. Requests that need an answer always drop from the top.
+
+## Agents
+
+AI agents, such as Claude Code, can use machines made for them while you watch and take control. See [Agents](/docs/agents/).
 
 ## Machine
 
@@ -169,6 +197,12 @@ The **Machine** section, for machines created with GpuVM:
 
 Processor, memory, GPU and disk need the machine off: if it's running the button reads **Shut down and apply**, which validates, shuts it down, applies and starts it again. If it can't start again (for example, not enough free memory), the previous settings are restored. **Discard** drops what you changed.
 
+### Restore points
+
+**Restore points** saves Windows as it is now (**Create point**, or **Shut down and create point** if it's running) to go back to that moment if something goes wrong. **Go back** returns Windows to how it was then, with its apps and files, in about a second; a point of how it is now is created first, in case you need it. The machine's settings don't change. Hyper-V can't checkpoint machines with a GPU, so GpuVM uses its own points.
+
+A [disposable machine](#disposable-machines) shows **Disposable machine** here instead, with **Keep** to make it a regular machine.
+
 ## Picture and control
 
 How the viewer shows the machine and how you control it:
@@ -183,6 +217,8 @@ How the viewer shows the machine and how you control it:
   | **Movies and video** | 60 FPS | Whole picture | Even | Free |
   | **Work** | Monitor | Whole picture | Instant | Free |
 
+  **Agent** makes it a machine for AI agents: a 1280x800 picture, recorded while an agent works, on an isolated network, with **Agents' Windows user** under it. See [Agents](/docs/agents/#machines-for-agents).
+
   - **Frames per second:** offered for the monitor the machine opens on: its own rate (**Monitor**, read every time it opens; GpuVM adds that rate to the machine's virtual display when it lacks it), the rates that keep even with it, the ones that may stutter, and a custom value from 10 to 480. At the monitor's own rate V-Sync adds no latency.
   - **Vertical sync:** **Whole picture** shows every frame complete on the monitor; **Faster** shows each frame as soon as it arrives, even if the monitor is halfway through drawing the previous one (tearing).
   - **Frame pacing:** **Even** spreads the frames at a steady rhythm, best at 60 FPS; **Instant** shows each frame as soon as it's ready. Only with the whole picture.
@@ -190,14 +226,11 @@ How the viewer shows the machine and how you control it:
 - **Resolution:** 720p, 1080p, 1440p or 2160p.
 - **Window:** **Full screen**, or **Window** (the picture stays inside GpuVM's window, under the title bar).
 - **Open on** (with more than one monitor): **As in Settings** follows the choice in [Settings](#settings); Windows' main monitor, whichever it is at the time; or a monitor by its name. A chosen monitor that isn't connected falls back to the main one.
-- **Capture:** how Sunshine captures the screen.
-  - **Fast** (the default): the picture shows about 2.6 s after connecting, and games in exclusive full screen show too. Windows' administrator prompts are answered from GpuVM ([Administrator prompts](#administrator-prompts)).
-  - **Classic**: administrator prompts show in the picture, but the picture can stay black for a while after connecting and games in exclusive full screen look black. See [Streaming](/docs/streaming/#capture-modes).
 - **Advanced** (click to show):
   - **Codec:** **Automatic** (the viewer picks the best one this PC can show), H.264, HEVC or AV1. If the picture doesn't show, go back to **Automatic**.
   - **Picture quality:** the bitrate in Mbps, up to 150. Higher uses more network; at the minimum (**Automatic**), the viewer picks it from the resolution and frame rate.
 
-These are saved without stopping the machine: the picture settings apply the next time you open it, the capture right away if the machine is running (it restarts Sunshine), and the network right away.
+These are saved without stopping the machine: the picture settings apply the next time you open it, and the network right away.
 
 ## Windows
 
@@ -258,10 +291,11 @@ The **⋯** menu has:
 - **Start without opening**.
 - **Shut down** (orderly; when Windows has updates waiting it installs them first, which can take a few minutes, and the button says so), **Force shutdown** (click twice to confirm; unsaved work is lost), **Restart**, **Pause** / **Resume**.
 - **View Hyper-V console**. It only shows the basic Hyper-V display, not what the GPU draws.
-- **Pair Moonlight again**.
+- **Pair the viewer again**.
 - **Update GPU driver**, or **Shut down and update driver** if it's running.
 - **Create template**, or **Shut down and create template** if it's running: saves this machine's Windows as a [template](#templates). The machine stays as it is.
-- **Rename** (when it's off): the new name is checked as you type while the cube engraves it on the board's serial plate. The machine is renamed in Hyper-V with its folder and disk; its settings, Moonlight pairing, shared disks and decoration stay with it. If a step fails, what was already renamed is undone.
+- **Export to a file**, or **Shut down and export** if it's running ([Export and import](#export-and-import)).
+- **Rename** (when it's off): the new name is checked as you type while the cube engraves it on the board's serial plate. The machine is renamed in Hyper-V with its folder and disk; its settings, the viewer's pairing, shared disks and decoration stay with it. If a step fails, what was already renamed is undone.
 - **Another icon** (also by clicking the icon next to the name) and **Another banner** (three to switch between).
 - **Delete machine**: removes it from Hyper-V, with **Keep the disk** or **Delete the disk too**, after a UAC confirmation. It can't be undone.
 
@@ -287,7 +321,15 @@ An empty section shows the card to add the first one.
 
 A template is a machine's Windows saved as a read-only base disk, with its apps, cleanup level and password. Create one from a machine's **⋯** menu (**Create template**), or with **New template** in the Library, picking the machine whose Windows it saves and naming it. A machine created **From template** gets a disk on top of it that only stores what changes, so it is ready in seconds and takes a few GB. Each copy gets its own streaming identity (the viewer pairs with it as a new host) and its own computer name. Its disk has the template's size and can't be enlarged.
 
-Each template card shows the machine it came from, its size and the machines built on it, and creates a machine from it. A template can only be deleted when no machine is built on it.
+Each template card shows the machine it came from, its size and the machines built on it, and creates a machine from it. A template can only be deleted when no machine is built on it. Templates are compacted, and when GpuVM brings a newer Sunshine or agent, its templates get it once, in the background; machines already made from a template keep theirs.
+
+### Disposable machines
+
+**Open disposable** on a template card makes a copy that is deleted with its disk when it shuts down, to try something without touching your machines. **Disposable** under **Create machine → From template** does the same. [Agents](/docs/agents/) work on disposable machines too.
+
+## Export and import
+
+**Export to a file** in a machine's **⋯** menu saves it as a single, compacted `.gpuvm` file. On another PC, **Create machine → Starting point → From a file** imports it; the imported machine gets its own streaming identity the first time it opens.
 
 ## Shared disks
 
@@ -312,11 +354,14 @@ The copy only goes from this PC to the disk. Before writing, GpuVM checks that t
   - **Accent color:** blue, violet, teal, green or amber, each shown half light, half dark. It colors buttons, selection, usage bars, the logo and the machines' hologram.
   - **Animation smoothness:** the frames per second of the holograms and scenes: 15, 30, 60, 120 or **Max** (the default: as many as the monitor shows). Fewer leave more of the GPU to the machines.
   - **Animation quality:** the resolution they are drawn at, from 25 to 100 % (the default). Lower looks less sharp and uses less GPU.
+  - **Status notices:** where the [status notch](#status-notch) goes.
 - **Window:**
   - **When closing the window:** **Quit completely** (the default) or **Stay in the tray**: closing the window hides it and GpuVM keeps running next to the clock, so jobs in progress continue. The tray icon's menu has **Open GpuVM** and **Quit**; a left click on it opens the window again.
   - **When quitting GpuVM:** **Leave them on** (the default) or **Shut them down**: quitting shuts down every running GpuVM machine cleanly, like the Start menu inside Windows, and frees its memory. GpuVM closes at once; the shutdown continues in the background.
   - **Going back to Home from a machine:** **Keep it connected** (the default: opening it again goes straight back to its picture, and meanwhile it uses a little of this PC's GPU) or **Disconnect it**.
 - **Machines** (with more than one monitor): **Open machines on** Windows' main monitor (the default) or a monitor by its name. Each machine can have its own in its options. In full screen, the machine's picture goes to that monitor.
+- **Agents:** **Take control**, **Time to answer** and **Session limit**. See [Agents](/docs/agents/).
+- **Captures:** the screenshots and videos folders and **Save the last 30 s** ([Captures](#captures)).
 - **Service**, the Windows service that does the Hyper-V work for the app:
   - **With GpuVM** (the default): it starts when GpuVM opens and stops when it quits, once what it was doing is finished (shutting the machines down, a machine being created).
   - **With Windows**: it starts with Windows.

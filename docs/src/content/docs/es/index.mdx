@@ -27,7 +27,7 @@ Una VM normal de Hyper-V solo tiene un adaptador de pantalla básico, así que l
 
 3. **Encender y abrir.** Un clic enciende la VM, sincroniza el driver de la GPU si el del host cambió, espera a Windows y a Sunshine, corrige la sesión y la pantalla, empareja solo el visor de GpuVM y abre la transmisión dentro de la app, por defecto a la frecuencia de tu monitor. Una VM ya encendida muestra su imagen en unos 7 a 10 segundos.
 
-4. **Usar y medir.** Usas la VM en el visor de GpuVM, dentro de la app o en pantalla completa, con la imagen que dibuja la GPU, tu teclado, mouse y mandos, unos 11 ms detrás de jugar en el equipo a 120 FPS o más. Los avisos de administrador de Windows en la VM se responden desde una tarjeta en el equipo. La app muestra el uso de CPU, memoria y GPU en vivo, y los [laboratorios](/docs/es/labs/) te permiten probar cambios con mediciones reales.
+4. **Usar y medir.** Usas la VM en el visor de GpuVM, dentro de la app o en pantalla completa, con la imagen que dibuja la GPU, tu teclado, mouse y mandos, unos 11 ms detrás de jugar en el equipo a 120 FPS o más. Los avisos de administrador de Windows en la VM se responden desde GpuVM, sobre la imagen. La app muestra el uso de CPU, memoria y GPU en vivo, y los [laboratorios](/docs/es/labs/) te permiten probar cambios con mediciones reales.
 
 </Steps>
 
@@ -44,6 +44,9 @@ Una VM normal de Hyper-V solo tiene un adaptador de pantalla básico, así que l
   </Card>
   <Card title="Streaming" icon="rocket">
     Sunshine dentro de la VM, una pantalla virtual que dibuja la GPU a la frecuencia de tu monitor, el altavoz USB propio de GpuVM para el audio, mandos, y el visor propio de GpuVM en el host, basado en Moonlight.
+  </Card>
+  <Card title="Agentes" icon="puzzle">
+    GpuVM es un servidor MCP: Claude Code o cualquier cliente MCP trabaja en una máquina Windows desechable mientras miras y tomas el control cuando quieras. Consulta [Agentes](/docs/es/agents/).
   </Card>
   <Card title="Perfiles y laboratorios" icon="setting">
     Perfiles JSON con herencia, y laboratorios que comparan una configuración base con una candidata antes de adoptar un cambio.

@@ -1,0 +1,128 @@
+---
+title: Agents
+description: GpuVM as an MCP server, so Claude Code or any MCP client can use a Windows machine while you watch and take control at any time.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+GpuVM is an MCP server (`gpuvm.exe --mcp`). Claude Code, or any MCP client, creates a disposable Windows machine from an agent template or takes one of yours, and works in it with screenshots, clicks, keys, drags, UI Automation, commands and files. You watch it over the machine's picture and can take control at any time. What matters is asked of you in GpuVM, never in the chat.
+
+## Connect Claude Code
+
+**Agents → Connect** adds GpuVM's MCP server to Claude Code for your user and allows its tools, so Claude Code doesn't ask before every step. GpuVM keeps asking for what matters in its own dock ([below](#what-gpuvm-asks-you)).
+
+For other setups, add it by hand:
+
+```powershell
+claude mcp add -s user gpuvm -- "C:\Program Files\GpuVM\gpuvm.exe" --mcp
+```
+
+The command must point at the installed `gpuvm.exe`: the GpuVM service only accepts its own executable. Any MCP client that starts a program over stdio works the same way.
+
+Each connected client shows in **Agents → Connected agents** with its name, the machine it uses, its last steps and **Stop**. **Stop all** stops every one of them.
+
+## Machines for agents
+
+<Steps>
+
+1. **Make an agent machine.** On a machine's page, **Picture and control → Use → Agent** installs the GpuVM agent: a 1280x800 picture, recorded while an agent works, on an isolated network. From a template, **Create machine → From template → For AI agents** does the same.
+
+2. **Save it as a template.** **⋯ → Create template**. A template of an agent machine makes agent machines.
+
+3. **Ask for it in plain words.** For example: *take a disposable GpuVM machine, install the app from my Downloads folder there, try it and give me a report with screenshots.*
+
+</Steps>
+
+An agent creates disposable machines from those templates with `create_disposable`, at most 3 per session. A disposable machine is deleted with its disk when it shuts down. An agent can also take one of your agent machines with `take_machine`; only disposable machines it created can be destroyed.
+
+### The agent's Windows user
+
+Agents work as a standard Windows user of their own, `agent`, never as administrator. Your files and sessions in the machine stay out of their reach. **Picture and control → Agents' Windows user → My user** lets them work as the machine's user instead, with its files, saved passwords and open sessions: use it only on a machine with nothing of yours.
+
+Agents can install apps with `winget` as their own user (`--scope user`), without the Microsoft Store.
+
+## What GpuVM asks you
+
+Requests drop from the top of the machine's picture and also wait in **Agents → Requests**:
+
+- **Administrator rights** to install or run something.
+- **Network** access.
+- **Files entering the machine** from this PC (`send_file`), with what and how much.
+- **Going back to a restore point** (`restore_point_revert`); how the machine is now is kept as a new point first.
+- **Deliveries leaving the machine.** An agent leaves files in the machine's **Outbox** and offers them; they reach this PC (Downloads\GpuVM) only if you accept them, copied with your own permissions and marked as coming from the internet.
+
+A request with no answer is refused by itself after **Settings → Agents → Time to answer** (10 min by default, from 1 to 30 min). **Approve from** on a connected agent lets its client confirm low-risk steps; the rest are always answered in GpuVM.
+
+UAC prompts, the lock screen, passwords and payments are always yours. The agent asks with `request_human` and stays paused until you press **Return to agent**.
+
+## Take control
+
+- **A click, or a key with the picture in front,** pauses the agent until you press **Return to agent**.
+- **Moving the mouse over the picture never does,** so you can cross it to answer something in another window.
+- **While the agent works,** nothing you do over the picture reaches the machine until you take control.
+- **Settings → Agents → Take control → Button only** leaves it to the **Take control** button.
+
+The agent learns that you took control and waits (`wait_for_person`) until you hand the machine back.
+
+## Watch it work
+
+Over the machine's picture:
+
+- the agent's cursor moves with its name;
+- each click leaves a ring, and drags draw their stroke;
+- the keys it presses show for a moment;
+- the [status notch](/docs/using-the-app/#status-notch) says what it is doing in its own words, from the step's `intent` (*Claude Code · Drawing the moon*), or plainly (*Running a command*, *Thinking…*), with **Take control** beside it.
+
+## History and recordings
+
+**Agents → History**, and the **Agent** section of each machine's page, list every session: which agent, on which machines, when, how long, how many actions, commands, approvals and files delivered, whether you took control, and its recording.
+
+Every agent session is recorded: H.264 at 30 frames per second, about 0.3 to 1 GB per hour of agent work. **Watch recording** plays it.
+
+## Session limit
+
+Agent sessions have no limit by default; they show what they did (*212 actions · 14 min*). **Settings → Agents → Session limit** ends a session by itself after **30 min**, **1 h** or **2 h**, or **No limit**. It applies to sessions that start from then on, and **Stop** ends one at any time.
+
+## MCP tools
+
+| Tool | What it does |
+|---|---|
+| `list_templates` | The templates a disposable machine can be created from. |
+| `create_disposable` | Creates a disposable machine from a template, starts it and takes it. |
+| `list_machines` | GpuVM machines, their state and whether an agent can use them. |
+| `take_machine` | Takes a machine for this connection, starting it if needed. |
+| `release_machine` | Releases a machine for the person or another agent. |
+| `screenshot` | The machine's screen as an image, optionally a zoomed part. |
+| `click` | Clicks at a point of the screenshot. |
+| `type` | Types text into the window in front. |
+| `key` | Presses a key or combination. |
+| `scroll` | Scrolls at a point. |
+| `drag` | Drags to a point, along a path, or along several strokes to draw. |
+| `act` | Runs several input actions in order. |
+| `ui_tree` | Lists the controls of the window in front (UI Automation). |
+| `ui_invoke` | Presses, toggles, selects, expands or sets a control from `ui_tree`. |
+| `run` | Runs a command as `agent`; with `background: true` it answers at once. |
+| `run_result` | The exit code and output of a background command. |
+| `read_file` | Reads a file in the agent's home folder. |
+| `write_file` | Writes a file in the agent's home folder. |
+| `send_file` | Copies a file or folder from this PC into **Received**, once you allow it. |
+| `offer_file` | Offers a file from the **Outbox** to you. |
+| `offer_status` | Whether you accepted an offered file. |
+| `restore_point_create` | Saves a restore point of a machine it took. |
+| `restore_point_revert` | Goes back to a restore point, once you allow it. |
+| `destroy` | Deletes a disposable machine it created. |
+| `open_viewer` | Opens the machine in GpuVM so you can watch; answers once you see it. |
+| `wait_for_person` | Waits until you hand the machine back. |
+| `request_approval` | Asks you in GpuVM for administrator rights, network or something else. |
+| `request_human` | Asks you for a step only a person may do, and pauses. |
+| `cancel_request` | Withdraws its own pending `request_human`. |
+
+Input tools and `screenshot` take `delayMs` (up to 10 s) to wait for a window instead of a `run` of `Start-Sleep`, and input tools take an `intent`, the words the status notch shows.
+
+## Security boundary
+
+GpuVM's gate limits only what goes through MCP: the agent's standard user, the requests you answer in GpuVM, files leaving only through the Outbox, and your control over the picture. A client that also has a shell on this PC, like Claude Code with Bash, acts as you on this PC: GpuVM can't limit what it does outside MCP.
+
+<Aside type="caution">
+Screen text and command output from the machine reach the model. Treat what an agent did in a machine like anything that comes from the internet.
+</Aside>

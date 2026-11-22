@@ -34,8 +34,9 @@ English | [Español](README.es.md)
 - **English and Spanish.** The whole app, the tray and what the module reports follow Windows' language or the one you pick in Settings.
 - **Your GPU inside the VM.** Hyper-V GPU partitioning (GPU-P) shares the host GPU with the VM, which runs the same driver as the host. No passthrough, no second GPU.
 - **Open it in one click.** "Start and open" starts the VM, waits for Windows, fixes the session and the display, pairs the viewer and opens the stream, drawn and encoded by the GPU (Sunshine + NVENC), with sound. A VM that is already on shows its picture in about 7–10 s.
+- **AI agents use your machines.** GpuVM is an MCP server: Claude Code, connected in one click, or any MCP client works in a disposable Windows machine as a standard user while you watch its cursor, clicks and keys over the picture. A click takes control; administrator rights, network and files are approved in GpuVM, never in the chat, and every session is recorded.
 - **GpuVM's own viewer.** Built on Moonlight, it shows the machine inside the app or full screen. **Home** (or Ctrl+Alt+Shift+H) keeps the machine connected, so opening it again goes straight back to its picture. The app's animations stop while a picture is shown, leaving the GPU to the machines.
-- **Side panel.** Ctrl+Alt+Shift+G opens a board of widgets beside the picture: machines, actions, the picture's numbers, a clock, the games and the weather, arranged with **Edit**.
+- **Side panel.** Ctrl+Alt+Shift+G opens a board of widgets beside the picture: machines, actions, the picture's numbers, files, clipboard, captures, a clock, the games and the weather, arranged with **Edit**.
 - **Low latency, at your monitor's rate.** From a key, click, mouse move or gamepad button to the change on screen takes about 16.6 ms at 120 FPS or more, about 11 ms more than playing locally. The VM streams at your monitor's refresh rate, where V-Sync adds no latency and stutters halve.
 - **A use for each machine.** Games, Movies and video or Work set the frame rate, V-Sync, frame pacing and mouse; codec, image quality and the rest can be tuned per machine.
 - **Gamepads.** Controllers connected to your PC reach the VM as an Xbox 360 controller (ViGEmBus, installed by GpuVM).
@@ -46,7 +47,9 @@ English | [Español](README.es.md)
 - **Templates and shared disks.** Save a VM as a template and create new ones on top of it in seconds; keep your game library on a shared disk that moves between VMs, imported from your PC's Steam library.
 - **Clean Windows.** Pick a level (privacy, no extra apps, minimal) to cut telemetry, ads, suggestions, Copilot and preinstalled apps, without touching Defender, Windows Update or the firewall.
 - **Apps in one step.** 16 apps (game launchers, browsers, media, Discord, 7-Zip, WinRAR, Proton VPN) with search and categories, installed inside the VM only if signed by their publisher or matching a pinned hash.
-- **Fast capture.** The picture shows about 2.6 s after connecting, games in exclusive fullscreen too; Windows' administrator prompts in the VM appear in a card over everything with Allow and Deny, answerable only from your PC. Paste text from the PC into the VM with one button.
+- **Administrator prompts in GpuVM.** Windows' administrator prompts in the VM drop from the top of its picture with Allow and Deny, answerable only from your PC. The picture shows a few seconds after connecting, games in exclusive fullscreen too.
+- **Files, clipboard and captures.** Drop files on the picture to copy them into the VM, keep your last 8 copies ready to paste, and take screenshots, record or save the last 30 seconds with a shortcut.
+- **Restore points, disposable machines, export.** Go back to a restore point in about a second, open a disposable copy of a template that is deleted when it shuts down, and move a machine to another PC as a single `.gpuvm` file.
 - **Keeps the host apart.** The app runs without administrator rights, and the viewer runs isolated at Low integrity with a restricted token; a Windows service that only GpuVM's own app can use does the Hyper-V work, and deleting asks for a Windows administrator prompt. The clipboard only goes from the PC to the VM, never back.
 - **Labs.** Every performance idea is measured (baseline vs candidate) before it becomes a default.
 
@@ -123,7 +126,7 @@ python scripts/release.py 0.4.1   # release: changelog, versions, commit and tag
 
 Changes go under **Unreleased** in `CHANGELOG.md` and **Sin publicar** in `CHANGELOG.es.md` until they are released.
 
-The CLI covers the same features: `./gpuvm.ps1 check`, `new`, `connect`, `list`, `sync-driver`, `set`, `remove`, `lab-*` (see the docs).
+The CLI covers the same features: `./gpuvm.ps1 check`, `new`, `list`, `sync-driver`, `set`, `remove`, `lab-*` (see the docs).
 
 ## Third-party components
 
@@ -137,7 +140,7 @@ GpuVM downloads and installs these inside the VM, verified by SHA-256:
 - [usbip-win2](https://github.com/vadimgrn/usbip-win2) (BSD-2-Clause) — USB/IP client with Microsoft-signed drivers; it plugs in GpuVM's own USB speaker inside the VM.
 - [ViGEmBus](https://github.com/nefarius/ViGEmBus) (BSD-3-Clause) — virtual gamepad bus driver, for the controllers the viewer forwards.
 
-On the host, GpuVM's viewer is built on [Moonlight](https://github.com/moonlight-stream/moonlight-qt) (moonlight-qt, GPL-3.0). The fork is kept in the separate [gpuvm-viewer](https://github.com/alenj0x1/gpuvm-viewer) repository (branch `gpuvm`), under GPL-3.0, and the installer bundles it. The CLI's `connect` opens [Moonlight](https://moonlight-stream.org) itself, installed with winget.
+On the host, GpuVM's viewer is built on [Moonlight](https://github.com/moonlight-stream/moonlight-qt) (moonlight-qt, GPL-3.0). The fork is kept in the separate [gpuvm-viewer](https://github.com/alenj0x1/gpuvm-viewer) repository (branch `gpuvm`), under GPL-3.0, and the installer bundles it.
 
 The app catalog shows each app's own icon, taken from its official installer or website; the icons and names are trademarks of their owners and only identify their apps.
 

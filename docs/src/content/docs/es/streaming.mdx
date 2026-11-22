@@ -1,6 +1,6 @@
 ---
 title: Streaming
-description: Cómo GpuVM muestra la VM con la GPU — Sunshine, Virtual Display Driver, modos de captura, avisos de administrador, el visor de GpuVM, mandos y audio.
+description: Cómo GpuVM muestra la VM con la GPU — Sunshine, Virtual Display Driver, la captura, avisos de administrador, el visor de GpuVM, mandos y audio.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -17,7 +17,6 @@ La consola de Hyper-V solo muestra la pantalla básica de Hyper-V, no lo que dib
 | [usbip-win2](https://github.com/vadimgrn/usbip-win2) | VM | Conecta el altavoz USB de GpuVM, que captura Sunshine. | `0.9.8.0` |
 | [ViGEmBus](https://github.com/nefarius/ViGEmBus) | VM | Bus de mandos virtuales: Sunshine crea en él los controles que reenvía el visor. | `v1.22.0` |
 | [Visor de GpuVM](#visor-de-gpuvm) | Host | Muestra la VM dentro de la app. Basado en Moonlight. | Incluido con GpuVM |
-| [Moonlight](https://moonlight-stream.org) | Host | Muestra la VM cuando se abre desde la CLI. | Se instala aparte |
 
 Los instaladores se descargan en el **host** al crear la VM, se verifican con el SHA-256 fijado en `streaming/components.json` y se copian al disco de la VM. El invitado no descarga nada. Se guardan en una carpeta `cache` (dentro de `%ProgramData%\GpuVM` con la app instalada).
 
@@ -31,28 +30,25 @@ Cada vez que haces **Encender y abrir**, GpuVM lee la lista de pantallas de Suns
 
 En GPUs NVIDIA, GpuVM además pone `nvenc_twopass` en `disabled`: NVENC codifica cada cuadro en una sola pasada, alrededor de 1 ms menos por cuadro. La latencia media de entrada baja de unos 13,4 a 11,4 ms. Las máquinas creadas antes lo reciben la próxima vez que se abren.
 
-Lo que dura dentro de la VM hasta que Windows se reinicia (modo de pantalla, modo de captura, audio) se hace una vez por arranque y por una sola sesión de PowerShell Direct, y Windows se da por listo según el latido de Hyper-V. Abrir una VM ya encendida tarda unos 7 a 10 s hasta el primer cuadro; apagada, unos 55 s hasta la imagen, casi todo en que arranquen Windows y Sunshine (que prueba sus codificadores antes de que responda su API). En la app, **Abrir** espera la primera imagen del visor. Desde la CLI, `connect` termina solo cuando Moonlight muestra el primer cuadro, y si la VM ya está abierta en Moonlight trae esa ventana al frente en vez de abrir otra.
+Lo que dura dentro de la VM hasta que Windows se reinicia (modo de pantalla, captura, audio) se hace una vez por arranque y por una sola sesión de PowerShell Direct, y Windows se da por listo según el latido de Hyper-V. Abrir una VM ya encendida tarda unos 7 a 10 s hasta el primer cuadro; apagada, unos 55 s hasta la imagen, casi todo en que arranquen Windows y Sunshine (que prueba sus codificadores antes de que responda su API). **Abrir** espera la primera imagen del visor.
 
-## Modos de captura
+## Captura
+
+<span id="modos-de-captura"></span>
 
 Todas las máquinas usan el **Sunshine propio de GpuVM** ([gpuvm-sunshine](https://github.com/alenj0x1/gpuvm-sunshine): Sunshine oficial en la versión que fija GpuVM, más un ayudante de Windows.Graphics.Capture adaptado de Vibeshine), siempre como servicio de Windows (SYSTEM), sea cual sea el uso de la máquina. Se instala encima del oficial al crear la máquina, y las máquinas creadas antes lo reciben la próxima vez que se abren. Solo los administradores leen su configuración y sus claves.
 
-Puede capturar la pantalla virtual de dos formas, que se eligen por máquina en **Imagen y control → Captura** o con `Set-GpuVMCapture -Name <vm> -Mode wgc|ddx`:
+Captura la pantalla virtual con Windows.Graphics.Capture: un ayudante pequeño (`tools\sunshine_wgc_capture.exe`) captura en la sesión del usuario con los permisos de ese usuario y le pasa los cuadros al servicio por una textura compartida de la GPU; no guarda nada secreto. La imagen aparece unos segundos después de conectar, los programas en pantalla completa exclusiva se ven a cualquier resolución, y un cuadro que Windows todavía no terminó de dibujar se vuelve a tomar cuando lo termina, así no llegan franjas negras a la imagen. Los avisos de administrador de Windows se dibujan en el escritorio seguro, que no se puede capturar; GpuVM [los muestra y responde](#avisos-de-administrador).
 
-| Modo | En la app | Muestra | No muestra |
-|---|---|---|---|
-| `wgc` (Windows.Graphics.Capture) | **Rápida** (la predeterminada) | La imagen unos segundos después de conectar, y los programas en pantalla completa exclusiva a cualquier resolución. Un ayudante pequeño (`tools\sunshine_wgc_capture.exe`) captura en la sesión del usuario con los permisos de ese usuario y le pasa los cuadros al servicio por una textura compartida de la GPU; no guarda nada secreto. | Los avisos de administrador de Windows (se dibujan en el escritorio seguro); GpuVM [los muestra y responde](#avisos-de-administrador). |
-| `ddx` (desktop duplication) | **Clásica** | También los avisos de administrador de Windows. | En la pantalla virtual con partición de GPU, desktop duplication pierde el acceso después de cada cuadro (lab 055): la imagen puede quedar en negro. Programas en pantalla completa exclusiva: negro. |
-
-El modo se aplica en el momento si la VM está encendida y se revisa en cada **Encender y abrir**; si ya está así, Sunshine no se reinicia. Aplicarlo necesita la contraseña del invitado. Las VMs que nunca eligieron un modo usan `wgc`. Las máquinas anteriores al Sunshine de GpuVM lo corrían en la sesión del usuario con una tarea al iniciar sesión; la primera apertura quita esa tarea.
+Las máquinas anteriores al Sunshine de GpuVM lo corrían en la sesión del usuario con una tarea al iniciar sesión; la primera apertura quita esa tarea.
 
 ## Avisos de administrador
 
-Con `wgc`, los avisos de administrador de Windows (UAC) no se pueden transmitir, y la consola de Hyper-V tampoco los muestra: no ve la pantalla de la GPU. GpuVM los trae al equipo:
+Los avisos de administrador de Windows (UAC) no se pueden transmitir, y la consola de Hyper-V tampoco los muestra: no ve la pantalla de la GPU. GpuVM los trae al equipo:
 
 1. **Vigilante en la VM.** La primera vez que se abre, GpuVM instala `guest/admin-prompt.ps1` en `C:\Program Files\GpuVM\AdminPrompt` (solo los administradores pueden cambiarlo) como la tarea `GpuVM-AdminPrompt`, que corre como SYSTEM desde el arranque. Cuando se abre un aviso, lee el programa y el editor y los publica por el intercambio de datos de Hyper-V (KVP); cuando se cierra, también lo publica.
-2. **Tarjeta en el equipo.** La app lee esos datos cada 2 s (`Get-GpuVMAdminPrompt`, unos 100 ms, sin PowerShell Direct) y muestra una tarjeta encima de todo con el programa, el editor, **Permitir** y **Rechazar**. Un aviso aparece en el equipo alrededor de un segundo después de abrirse.
-3. **Respuesta.** `Resolve-GpuVMAdminPrompt` entra por PowerShell Direct con la contraseña del invitado; el script inicia un ayudante de un solo uso como SYSTEM en el escritorio seguro de la sesión de consola, que presiona Sí o No con UI Automation, solo si el aviso abierto sigue siendo el que se mostró. Una respuesta tarda unos 5 s.
+2. **En el equipo.** La app lee esos datos cada segundo (`Get-GpuVMAdminPrompt`, unos 100 ms, sin PowerShell Direct). Mientras se ve la imagen de la máquina, el aviso baja desde arriba de la imagen como una ventana de la app, en la que el visor no puede hacer clic ni escribir; si no, lo muestra una tarjeta encima de todo. Ambos tienen el programa, el editor, **Permitir** y **Rechazar**.
+3. **Respuesta.** `Resolve-GpuVMAdminPrompt` entra por PowerShell Direct con la contraseña del invitado; el script inicia un ayudante de un solo uso como SYSTEM en el escritorio seguro de la sesión de consola, que presiona Sí o No con UI Automation, solo si el aviso abierto sigue siendo el que se mostró.
 
 Solo el equipo puede ordenar una respuesta: nada dentro de la VM puede aprobar un aviso por sí mismo, y un aviso que cambió mientras tanto nunca se responde.
 
@@ -71,7 +67,7 @@ No uses Escritorio remoto mientras transmites: se lleva la sesión de la consola
 
 ## Visor de GpuVM
 
-La app muestra cada máquina en el visor propio de GpuVM, basado en [Moonlight](https://github.com/moonlight-stream/moonlight-qt). El fork vive en un repositorio aparte, [`gpuvm-viewer`](https://github.com/alenj0x1/gpuvm-viewer) (rama `gpuvm`), con licencia GPL-3.0, y el instalador lo incluye. Solo transmite: lo que rodea la imagen (la pantalla de espera, el panel lateral, la tarjeta de avisos de administrador) lo dibuja la app.
+La app muestra cada máquina en el visor propio de GpuVM, basado en [Moonlight](https://github.com/moonlight-stream/moonlight-qt). El fork vive en un repositorio aparte, [`gpuvm-viewer`](https://github.com/alenj0x1/gpuvm-viewer) (rama `gpuvm`), con licencia GPL-3.0, y el instalador lo incluye. Solo transmite: lo que rodea la imagen (la pantalla de espera, el panel lateral, los avisos de administrador, la vista en vivo de los agentes) lo dibuja la app.
 
 - **Al abrir.** Mientras la máquina se conecta, su cubo pasa al centro con los pasos. Después la imagen llena la ventana bajo la barra de título.
 - **Pantalla completa.** Una máquina configurada en pantalla completa pasa a pantalla completa cuando su imagen está lista. También se activa y desactiva desde el panel lateral.
@@ -88,26 +84,23 @@ El visor corre aislado, sin permisos de administrador, porque lee lo que envía 
 - las máquinas con sus cubos, para pasar a otra;
 - acciones: **Inicio**, **Pantalla completa**, **Datos sobre la imagen** y **Desconectar**;
 - los números de la imagen con su historial;
+- **Archivos**, **Portapapeles** y **Captura** ([Uso de la app](/docs/es/using-the-app/#archivos-a-una-máquina)), y **Agente** en las máquinas de agente;
 - un reloj, un estante con las figuras de cada máquina, los juegos y el clima.
 
 **Editar** agrega, quita, mueve y cambia de tamaño los widgets; **Listo** termina. La disposición se recuerda, y cada widget muestra más a medida que crece. Arrastra el borde izquierdo del panel para ensancharlo. El clima queda apagado hasta que escribes una ciudad: solo el nombre de la ciudad va a [Open-Meteo](https://open-meteo.com), y después sus coordenadas para el pronóstico. No hace falta cuenta ni clave.
 
 ### Emparejamiento y ajustes de imagen
 
-El emparejamiento es automático: el visor genera el PIN y GpuVM se lo entrega a Sunshine por su API. El visor se empareja con el nombre de este equipo seguido de `GpuVM`, aparte de un Moonlight emparejado desde el mismo equipo.
+El emparejamiento es automático: el visor genera el PIN y GpuVM se lo entrega a Sunshine por su API. El visor se empareja con el nombre de este equipo seguido de `GpuVM`.
 
-- Para volver a emparejar: **Volver a emparejar Moonlight** en el menú **⋯** de la máquina, o `./gpuvm.ps1 connect -Name <vm> -Pair`.
-- La resolución, los FPS, la sincronización vertical, el ritmo de cuadros, el mouse, el códec y la tasa de bits se eligen en la sección **Imagen y control** de la máquina (o con `Set-GpuVMStreamingClient`), o en cada conexión:
-
-```powershell
-./gpuvm.ps1 connect -Name win11 -Resolution 2560x1440 -Fps 120 -BitrateKbps 40000 -Codec HEVC
-```
+- Para volver a emparejar: **Volver a emparejar el visor** en el menú **⋯** de la máquina, o `Connect-GpuVM -Name <vm> -Pair`.
+- La resolución, los FPS, la sincronización vertical, el ritmo de cuadros, el mouse, el códec y la tasa de bits se eligen en la sección **Imagen y control** de la máquina (o con `Set-GpuVMStreamingClient`).
 
 Codecs: `auto`, `H.264`, `HEVC`, `AV1`. Por defecto el visor abre la app `Desktop` de Sunshine.
 
-### Desde la CLI
+### Desde PowerShell
 
-`./gpuvm.ps1 connect` (`Connect-GpuVM`) abre la máquina en Moonlight instalado en el equipo, dentro de Program Files ([Instalación](/docs/es/install/#instalar-moonlight)). `Connect-GpuVM -Viewer` deja la máquina lista y empareja el visor de GpuVM, y devuelve los argumentos del stream (`viewerLaunch`) sin abrir nada: la app lo usa y abre el visor por su cuenta.
+Las máquinas solo se abren en el visor de GpuVM. `Connect-GpuVM` deja la máquina lista y empareja el visor, y devuelve los argumentos del stream (`viewerLaunch`) sin abrir nada: la app lo usa y abre el visor por su cuenta.
 
 ### FPS, sincronización vertical y latencia
 
@@ -145,7 +138,7 @@ La sección `streaming` del [perfil](/docs/es/profiles/) define los valores por 
 
 `fps` va de 10 a 480, o `0` para la frecuencia del monitor del equipo. `vsync` y `framePacing` (true/false) se le pasan al visor; el ritmo de cuadros se apaga siempre que la sincronización vertical está apagada, porque el visor solo reparte cuadros con ella. `mouse` es `capture` (la VM toma el mouse, para juegos) o `absolute` (el puntero se mueve libre, como en escritorio remoto). `client` también acepta `performanceOverlay` (true/false) y `displayMode` (`fullscreen`, `windowed`, `borderless`), que solo se le pasan al visor si el perfil los define. `captureSystemKeys` (`never`, `fullscreen`, `always`; `fullscreen` si no se define) decide cuándo Alt+F4, Alt+Tab y la tecla Windows van a la VM; Ctrl+Alt+Shift+Q siempre sale del stream.
 
-El visor, y Moonlight desde la CLI, corren como el usuario que inició sesión, sin permisos de administrador, aunque el servicio de GpuVM corra elevado: hablan con un servidor que controla la VM.
+El visor corre como el usuario que inició sesión, sin permisos de administrador, aunque el servicio de GpuVM corra elevado: habla con un servidor que controla la VM.
 
 ## Actualizar componentes
 

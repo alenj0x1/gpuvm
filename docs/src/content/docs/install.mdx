@@ -1,6 +1,6 @@
 ---
 title: Install
-description: Install GpuVM from GitHub Releases and prepare Hyper-V, plus Moonlight if you use the CLI's connect.
+description: Install GpuVM from GitHub Releases and prepare Hyper-V.
 ---
 
 import { Aside, Steps } from '@astrojs/starlight/components';
@@ -35,16 +35,6 @@ Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All
 ```
 
 If virtualization is off in the BIOS/UEFI, turn on Intel VT-x or AMD-V there first.
-
-## Install Moonlight
-
-The app doesn't need Moonlight: it shows machines in GpuVM's own viewer, which the installer bundles. Moonlight is only needed for the CLI's `./gpuvm.ps1 connect` without `-Viewer`, which opens Moonlight installed under Program Files. Download it from [moonlight-stream.org](https://moonlight-stream.org), or from the repository run:
-
-```powershell
-./gpuvm.ps1 client-install
-```
-
-It installs Moonlight with winget (`MoonlightGameStreamingProject.Moonlight`). winget may ask you to accept its terms the first time.
 
 ## From the repository
 

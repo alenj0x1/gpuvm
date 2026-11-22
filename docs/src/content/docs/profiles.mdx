@@ -91,7 +91,7 @@ Set-GpuVM -Name win11 -Override @{ vm = @{ cpu = @{ count = 10 }; memoryGB = 11 
 Get-GpuVMProfile -Name max-performance -Override @{ gpu = @{ allocationPercent = 50 } }   # see the resolved result
 ```
 
-Changing profile or settings needs the VM off (`Set-GpuVM`). Without `-Profile` it starts from the VM's current settings and only changes what the override sets; with `-Profile` it switches profile but keeps the disk, the folder and the Moonlight preferences. The options on a machine's page use the same mechanism.
+Changing profile or settings needs the VM off (`Set-GpuVM`). Without `-Profile` it starts from the VM's current settings and only changes what the override sets; with `-Profile` it switches profile but keeps the disk, the folder and the picture preferences. The options on a machine's page use the same mechanism.
 
 ## Creating a profile
 

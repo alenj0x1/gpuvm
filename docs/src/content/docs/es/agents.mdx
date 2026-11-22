@@ -1,0 +1,128 @@
+---
+title: Agentes
+description: GpuVM como servidor MCP, para que Claude Code o cualquier cliente MCP use una máquina Windows mientras miras y tomas el control cuando quieras.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+GpuVM es un servidor MCP (`gpuvm.exe --mcp`). Claude Code, o cualquier cliente MCP, crea una máquina Windows desechable desde una plantilla de agente o toma una de las tuyas, y trabaja en ella con capturas, clics, teclas, arrastres, UI Automation, comandos y archivos. Lo ves sobre la imagen de la máquina y puedes tomar el control cuando quieras. Lo importante se te pregunta en GpuVM, nunca en el chat.
+
+## Conectar Claude Code
+
+**Agentes → Conectar** agrega el servidor MCP de GpuVM a Claude Code para tu usuario y permite sus herramientas, así Claude Code no pide permiso en cada paso. GpuVM sigue preguntando lo importante en su propio dock ([más abajo](#lo-que-gpuvm-te-pregunta)).
+
+En otras configuraciones, agrégalo a mano:
+
+```powershell
+claude mcp add -s user gpuvm -- "C:\Program Files\GpuVM\gpuvm.exe" --mcp
+```
+
+El comando debe apuntar al `gpuvm.exe` instalado: el servicio de GpuVM solo acepta su propio ejecutable. Cualquier cliente MCP que abra un programa por stdio funciona igual.
+
+Cada cliente conectado aparece en **Agentes → Agentes conectados** con su nombre, la máquina que usa, sus últimos pasos y **Detener**. **Detener todos** los detiene a todos.
+
+## Máquinas para agentes
+
+<Steps>
+
+1. **Crea una máquina de agente.** En la página de una máquina, **Imagen y control → Tipo de uso → Agente** instala el agente de GpuVM: imagen de 1280x800, grabada mientras un agente trabaja, en una red aislada. Desde una plantilla, **Crear máquina → Desde plantilla → Para agentes de IA** hace lo mismo.
+
+2. **Guárdala como plantilla.** **⋯ → Crear plantilla**. La plantilla de una máquina de agente crea máquinas de agente.
+
+3. **Pídelo con palabras simples.** Por ejemplo: *toma una máquina desechable de GpuVM, instala ahí la app que está en mi carpeta Descargas, pruébala y dame un informe con capturas.*
+
+</Steps>
+
+Un agente crea máquinas desechables desde esas plantillas con `create_disposable`, hasta 3 por sesión. Una máquina desechable se borra con su disco al apagarse. Un agente también puede tomar una de tus máquinas de agente con `take_machine`; solo puede destruir las máquinas desechables que creó.
+
+### El usuario de Windows del agente
+
+Los agentes trabajan como un usuario estándar de Windows propio, `agent`, nunca como administrador. Tus archivos y sesiones en la máquina quedan fuera de su alcance. **Imagen y control → Usuario de Windows de los agentes → Mi usuario** los deja trabajar como el usuario de la máquina, con sus archivos, contraseñas guardadas y sesiones abiertas: úsalo solo en una máquina sin nada tuyo.
+
+Los agentes pueden instalar apps con `winget` como su propio usuario (`--scope user`), sin Microsoft Store.
+
+## Lo que GpuVM te pregunta
+
+Las solicitudes bajan desde arriba de la imagen de la máquina y también esperan en **Agentes → Solicitudes**:
+
+- **Permisos de administrador** para instalar o ejecutar algo.
+- Acceso a la **red**.
+- **Archivos que entran a la máquina** desde este equipo (`send_file`), con qué y cuánto.
+- **Volver a un punto de restauración** (`restore_point_revert`); primero se guarda cómo está la máquina ahora como un punto nuevo.
+- **Entregas que salen de la máquina.** Un agente deja archivos en la **Bandeja de salida** de la máquina y los ofrece; llegan a este equipo (Descargas\GpuVM) solo si los aceptas, copiados con tus propios permisos y marcados como venidos de internet.
+
+Una solicitud sin respuesta se rechaza sola pasado el **Tiempo para responder** de **Ajustes → Agentes** (10 min por defecto, de 1 a 30 min). **Aprobar desde** en un agente conectado deja que su cliente confirme los pasos de bajo riesgo; los demás siempre se responden en GpuVM.
+
+Los avisos de UAC, la pantalla de bloqueo, las contraseñas y los pagos siempre son tuyos. El agente lo pide con `request_human` y queda en pausa hasta que presionas **Volver al agente**.
+
+## Tomar el control
+
+- **Un clic, o una tecla con la imagen al frente,** pausa al agente hasta que presionas **Volver al agente**.
+- **Mover el mouse sobre la imagen nunca lo hace,** así puedes cruzarla para responder algo en otra ventana.
+- **Mientras el agente trabaja,** nada de lo que hagas sobre la imagen llega a la máquina hasta que tomas el control.
+- **Ajustes → Agentes → Tomar el control → Solo con el botón** lo deja al botón **Tomar el control**.
+
+El agente sabe que tomaste el control y espera (`wait_for_person`) hasta que le devuelves la máquina.
+
+## Verlo trabajar
+
+Sobre la imagen de la máquina:
+
+- el cursor del agente se mueve con su nombre;
+- cada clic deja un anillo y los arrastres dibujan su trazo;
+- las teclas que presiona se ven un momento;
+- la [muesca de estado](/docs/es/using-the-app/#muesca-de-estado) dice qué está haciendo con sus propias palabras, a partir del `intent` del paso (*Claude Code · Dibujando la luna*), o de forma simple (*Ejecutando un comando*, *Pensando…*), con **Tomar el control** al lado.
+
+## Historial y grabaciones
+
+**Agentes → Historial**, y la sección **Agente** de la página de cada máquina, listan cada sesión: qué agente, en qué máquinas, cuándo, cuánto duró, cuántas acciones, comandos, aprobaciones y archivos entregados, si tomaste el control y su grabación.
+
+Cada sesión de un agente se graba: H.264 a 30 cuadros por segundo, unos 0,3 a 1 GB por hora de trabajo del agente. **Ver grabación** la reproduce.
+
+## Límite por sesión
+
+Las sesiones de los agentes no tienen límite por defecto; muestran lo que hicieron (*212 acciones · 14 min*). **Ajustes → Agentes → Límite por sesión** termina una sesión sola pasados **30 min**, **1 h** o **2 h**, o **Sin límite**. Vale para las sesiones que empiecen desde ese momento, y **Detener** termina una cuando quieras.
+
+## Herramientas MCP
+
+| Herramienta | Qué hace |
+|---|---|
+| `list_templates` | Las plantillas desde las que se puede crear una máquina desechable. |
+| `create_disposable` | Crea una máquina desechable desde una plantilla, la enciende y la toma. |
+| `list_machines` | Las máquinas de GpuVM, su estado y si un agente puede usarlas. |
+| `take_machine` | Toma una máquina para esta conexión y la enciende si hace falta. |
+| `release_machine` | Libera una máquina para la persona u otro agente. |
+| `screenshot` | La pantalla de la máquina como imagen, o una parte ampliada. |
+| `click` | Hace clic en un punto de la captura. |
+| `type` | Escribe texto en la ventana del frente. |
+| `key` | Presiona una tecla o combinación. |
+| `scroll` | Desplaza en un punto. |
+| `drag` | Arrastra hasta un punto, por un camino o por varios trazos para dibujar. |
+| `act` | Ejecuta varias acciones de entrada en orden. |
+| `ui_tree` | Lista los controles de la ventana del frente (UI Automation). |
+| `ui_invoke` | Presiona, marca, selecciona, expande o cambia el valor de un control de `ui_tree`. |
+| `run` | Ejecuta un comando como `agent`; con `background: true` responde de inmediato. |
+| `run_result` | El código de salida y la salida de un comando en segundo plano. |
+| `read_file` | Lee un archivo de la carpeta personal del agente. |
+| `write_file` | Escribe un archivo en la carpeta personal del agente. |
+| `send_file` | Copia un archivo o carpeta de este equipo a **Recibidos**, cuando lo permites. |
+| `offer_file` | Te ofrece un archivo de la **Bandeja de salida**. |
+| `offer_status` | Si aceptaste un archivo ofrecido. |
+| `restore_point_create` | Guarda un punto de restauración de una máquina que tomó. |
+| `restore_point_revert` | Vuelve a un punto de restauración, cuando lo permites. |
+| `destroy` | Borra una máquina desechable que creó. |
+| `open_viewer` | Abre la máquina en GpuVM para que la veas; responde cuando la ves. |
+| `wait_for_person` | Espera hasta que le devuelves la máquina. |
+| `request_approval` | Te pide en GpuVM permisos de administrador, red u otra cosa. |
+| `request_human` | Te pide un paso que solo una persona puede hacer, y se pausa. |
+| `cancel_request` | Retira su propio `request_human` pendiente. |
+
+Las herramientas de entrada y `screenshot` aceptan `delayMs` (hasta 10 s) para esperar una ventana en vez de un `run` de `Start-Sleep`, y las de entrada aceptan un `intent`, las palabras que muestra la muesca de estado.
+
+## Límite de seguridad
+
+La protección de GpuVM limita solo lo que pasa por MCP: el usuario estándar del agente, las solicitudes que respondes en GpuVM, los archivos que solo salen por la Bandeja de salida y tu control sobre la imagen. Un cliente que además tiene una terminal en este equipo, como Claude Code con Bash, actúa como tú en este equipo: GpuVM no puede limitar lo que hace fuera de MCP.
+
+<Aside type="caution">
+El texto de la pantalla y la salida de los comandos de la máquina llegan al modelo. Trata lo que hizo un agente en una máquina como cualquier cosa que viene de internet.
+</Aside>

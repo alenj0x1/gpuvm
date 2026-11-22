@@ -24,7 +24,7 @@ La app abre en **Inicio**, que cabe en la ventana sin desplazarse:
 
 - **El escenario:** la máquina en uso (o la última que abriste) dentro de su cubo, con las demás máquinas del [espacio](#espacios) al lado, sobre el mundo del espacio. Arrastra para girarlo y usa la rueda para acercarte.
 - **Junto al escenario:** el uso de procesador, memoria y GPU de esa máquina, **Memoria libre para máquinas** (cuánta tiene libre el equipo y qué máquinas caben), **Ver máquina** y su acción principal (**Abrir**, **Encender y abrir**…). Una máquina que no cabe ofrece abrirla con la memoria que sí cabe, por ejemplo **Abrir con 6 GB**: baja su memoria a lo que cabe (queda guardado, como al cambiarla en su página) y la abre.
-- **Abajo:** las demás máquinas del espacio con su acción (la fila se desplaza de lado, también arrastrándola), la **Biblioteca** de un vistazo (cuántos perfiles, plantillas, discos compartidos e ISOs) con **Crear máquina**, y lo que necesita atención, solo cuando hay algo: un driver de la GPU desactualizado, Moonlight sin emparejar, apps por instalar, la contraseña de Windows sin guardar o poco espacio en el disco, cada cosa con el botón que la arregla.
+- **Abajo:** las demás máquinas del espacio con su acción (la fila se desplaza de lado, también arrastrándola), la **Biblioteca** de un vistazo (cuántos perfiles, plantillas, discos compartidos e ISOs) con **Crear máquina**, y lo que necesita atención, solo cuando hay algo: un driver de la GPU desactualizado, el visor sin emparejar, apps por instalar, la contraseña de Windows sin guardar o poco espacio en el disco, cada cosa con el botón que la arregla.
 
 Arrastra las líneas entre estas partes para cambiar su tamaño (doble clic en una la devuelve a su tamaño); los tamaños se recuerdan.
 
@@ -66,7 +66,7 @@ Cada juego y modo guarda su mejor marca.
 
 1. **Nombre y espacio:** letras, números, `_` o guiones, hasta 40 caracteres, sin espacios (sugiere `win-gpu`), y el espacio donde va a estar. Mientras escribes el nombre, la cámara va a la etiqueta de serie de la placa y lo graba letra por letra.
 
-2. **Punto de partida:** **Instalar Windows** o **Desde plantilla** (si tienes [plantillas](#plantillas)), y un perfil: **Equilibrado** (`balanced`), **Máximo rendimiento** (`max-performance`, el predeterminado) o uno tuyo. El perfil llena todo lo de abajo, incluidos su ISO, sus apps y su tipo de uso; consulta [Perfiles](/docs/es/profiles/). Desde una plantilla la máquina queda lista en segundos y solo necesita el nombre; Windows, sus apps, el nivel de limpieza y la contraseña vienen de la plantilla.
+2. **Punto de partida:** **Instalar Windows**, **Desde plantilla** (si tienes [plantillas](#plantillas)) o **Desde archivo** (una máquina [exportada](#exportar-e-importar) como `.gpuvm`), y un perfil: **Equilibrado** (`balanced`), **Máximo rendimiento** (`max-performance`, el predeterminado) o uno tuyo. El perfil llena todo lo de abajo, incluidos su ISO, sus apps y su tipo de uso; consulta [Perfiles](/docs/es/profiles/). Desde una plantilla la máquina queda lista en segundos y solo necesita el nombre; Windows, sus apps, el nivel de limpieza y la contraseña vienen de la plantilla.
 
 3. **Recursos:** hilos, memoria, parte de la GPU y disco. El disco llega hasta lo que cabe en la unidad con todos los discos de las máquinas llenos, dejando 20 GB para Windows.
 
@@ -121,7 +121,7 @@ El botón principal cambia según el estado de la máquina:
 6. Empareja el visor con Sunshine si este equipo todavía no está emparejado.
 7. Abre el visor y espera a que aparezca la imagen.
 
-Lo que dura hasta que Windows se reinicia (la pantalla, el modo de captura, el sonido) se hace una vez por arranque y por una sola conexión con la máquina. Abrir una máquina ya encendida tarda unos 7 a 10 segundos hasta ver la imagen; apagada, cerca de un minuto, casi todo en que arranquen Windows y Sunshine. Si la máquina está apagada, guardada o en pausa mientras GpuVM espera su dirección de red, lo dice al instante en vez de seguir esperando.
+Lo que dura hasta que Windows se reinicia (la pantalla, la captura, el sonido) se hace una vez por arranque y por una sola conexión con la máquina. Abrir una máquina ya encendida tarda unos 7 a 10 segundos hasta ver la imagen; apagada, cerca de un minuto, casi todo en que arranquen Windows y Sunshine. Si la máquina está apagada, guardada o en pausa mientras GpuVM espera su dirección de red, lo dice al instante en vez de seguir esperando.
 
 Los avisos que surjan en el camino (por ejemplo, que el audio todavía no está configurado) aparecen como notificaciones.
 
@@ -143,16 +143,44 @@ De una tecla, un clic, un movimiento del mouse o un botón del mando en este equ
 
 ## Avisos de administrador
 
-Con la captura **Rápida** (la predeterminada), los avisos de administrador de Windows (UAC) dentro de la máquina no se pueden transmitir: Windows los dibuja en un escritorio aparte y protegido. GpuVM los muestra en su lugar: mientras hay uno abierto, aparece una tarjeta pequeña encima de todo, la imagen de la máquina incluida, con la máquina, el programa que pide permiso y su editor (**Editor desconocido** si no está firmado). **Permitir** y **Rechazar** lo responden en la máquina.
+Windows dibuja sus avisos de administrador (UAC) en un escritorio aparte y protegido que no se puede transmitir, así que GpuVM los muestra por su cuenta. Mientras se ve la imagen de la máquina, el aviso baja desde arriba de la imagen, que se oscurece como el escritorio seguro de Windows; si la imagen de la máquina no se está mostrando, aparece una tarjeta pequeña encima de todo. Ambos muestran la máquina, el programa que pide permiso y su editor (**Editor desconocido** si no está firmado), y **Permitir** y **Rechazar** lo responden en la máquina.
 
 - Solo este equipo puede responder: un programa dentro de la máquina no puede aprobarse a sí mismo.
-- Si mientras tanto se abrió otro aviso, no se presiona nada y la tarjeta muestra el nuevo.
+- Si mientras tanto se abrió otro aviso, no se presiona nada y se muestra el nuevo.
 - Necesita la [contraseña de Windows](#contraseña-de-windows) de la máquina.
-- Con la captura **Clásica** los avisos se ven en la imagen como siempre y la tarjeta no aparece. Consulta [Modos de captura](/docs/es/streaming/#modos-de-captura).
+- Al salir de GpuVM con máquinas encendidas, un modo mínimo solo de avisos sigue mostrando sus avisos (**Ajustes → Ventana → Avisos de administrador después de salir**).
 
 ## Pegar en la VM
 
 Con la máquina encendida, el botón del portapapeles junto al menú **⋯**, **Pegar en la VM**, pasa el texto copiado en este equipo al portapapeles de la máquina, listo para Ctrl+V. Solo va del equipo a la máquina: la máquina nunca lee el portapapeles de este equipo. Necesita la [contraseña de Windows](#contraseña-de-windows).
+
+## Archivos a una máquina
+
+Suelta archivos o carpetas sobre la imagen de la máquina para copiarlos a la carpeta **Recibidos** de su escritorio (1 GB en unos 25 segundos). El widget **Archivos** del [panel lateral](/docs/es/streaming/#panel-lateral) muestra las copias en curso y, con archivos seleccionados en el Explorador de la máquina, **Enviar lo seleccionado a** otra máquina.
+
+## Portapapeles
+
+El widget **Portapapeles** guarda lo último que copiaste en este equipo (hasta 8: texto, una imagen o archivos), listo para pegarlo en la máquina con un clic; **Al copiar** envía solo cada copia nueva. Vive solo en memoria, mientras hay una máquina abierta, y se omiten las copias privadas que marcan los gestores de contraseñas. Nunca se lee el portapapeles de la máquina.
+
+## Capturas
+
+El widget **Captura** y estos atajos funcionan sobre la imagen de la máquina:
+
+| Atajo | Qué hace |
+|---|---|
+| **Ctrl+Alt+Shift+P** | Toma una captura. |
+| **Ctrl+Alt+Shift+R** | Empieza o detiene la grabación. |
+| **Ctrl+Alt+Shift+B** | Guarda los últimos 30 segundos. |
+
+Se guardan sin volver a codificar, en `Pictures\GpuVM\<máquina>` y `Videos\GpuVM\<máquina>` (Imágenes y Videos). **Ajustes → Capturas** cambia las carpetas y activa **Guardar los últimos 30 s** (desactivado por defecto: el visor guarda esos segundos en memoria, unos 130 MB a 35 Mb/s).
+
+## Muesca de estado
+
+Grabando, capturas guardadas, tomaste el control, un agente en pausa o trabajando: los avisos de estado aparecen en una sola muesca abajo al centro de la imagen, apilados. **Ajustes → Apariencia → Avisos de estado** la pasa arriba al centro, a una esquina superior o solo al panel lateral. Las solicitudes que piden respuesta siempre bajan desde arriba.
+
+## Agentes
+
+Los agentes de IA, como Claude Code, pueden usar máquinas hechas para ellos mientras miras y tomas el control. Consulta [Agentes](/docs/es/agents/).
 
 ## Máquina
 
@@ -169,6 +197,12 @@ La sección **Máquina**, para las máquinas creadas con GpuVM:
 
 Procesador, memoria, GPU y disco necesitan la máquina apagada: si está encendida, el botón dice **Apagar y aplicar**, que valida, la apaga, aplica y la vuelve a encender. Si no puede volver a encenderla (por ejemplo, por falta de memoria libre), restaura la configuración anterior. **Descartar** deshace lo que cambiaste.
 
+### Puntos de restauración
+
+**Puntos de restauración** guarda Windows como está ahora (**Crear punto**, o **Apagar y crear punto** si está encendida) para volver a ese momento si algo sale mal. **Volver** deja Windows como estaba entonces, con sus apps y archivos, en cerca de un segundo; antes se crea un punto de cómo está ahora, por si lo necesitas. La configuración de la máquina no cambia. Hyper-V no puede hacer puntos de control de máquinas con GPU, así que GpuVM usa sus propios puntos.
+
+Una [máquina desechable](#máquinas-desechables) muestra aquí **Máquina desechable**, con **Conservar** para volverla una máquina normal.
+
 ## Imagen y control
 
 Cómo muestra el visor la máquina y cómo la controlas:
@@ -183,6 +217,8 @@ Cómo muestra el visor la máquina y cómo la controlas:
   | **Películas y video** | 60 FPS | Imagen entera | Parejo | Libre |
   | **Trabajo** | Monitor | Imagen entera | Al instante | Libre |
 
+  **Agente** la vuelve una máquina para agentes de IA: imagen de 1280x800, grabada mientras un agente trabaja, en una red aislada, con **Usuario de Windows de los agentes** debajo. Consulta [Agentes](/docs/es/agents/#máquinas-para-agentes).
+
   - **Cuadros por segundo:** se ofrecen para el monitor donde se abre la máquina: su propia frecuencia (**Monitor**, que se lee en cada apertura; GpuVM agrega esa frecuencia a la pantalla virtual de la máquina si no la tiene), las que van parejas con ella, las que pueden dar tirones y un valor personalizado de 10 a 480. A la frecuencia del monitor, la sincronización vertical no agrega espera.
   - **Sincronización vertical:** **Imagen entera** muestra cada cuadro completo en el monitor; **Más rápida** muestra cada cuadro apenas llega, aunque el monitor esté a mitad de dibujar el anterior (se puede ver un corte).
   - **Ritmo de cuadros:** **Parejo** reparte los cuadros a ritmo constante, ideal a 60 FPS; **Al instante** muestra cada cuadro apenas está listo. Solo con la imagen entera.
@@ -190,14 +226,11 @@ Cómo muestra el visor la máquina y cómo la controlas:
 - **Resolución:** 720p, 1080p, 1440p o 2160p.
 - **Ventana:** **Pantalla completa**, o **Ventana** (la imagen queda dentro de la ventana de GpuVM, bajo la barra de título).
 - **Abrir en** (con más de un monitor): **Como en Ajustes** sigue lo elegido en [Ajustes](#ajustes); el monitor principal de Windows, el que sea en ese momento; o un monitor por su nombre. Si el monitor elegido no está conectado, se abre en el principal.
-- **Captura:** cómo captura Sunshine la pantalla.
-  - **Rápida** (la predeterminada): la imagen aparece unos 2,6 s después de conectar y también se ven los juegos en pantalla completa exclusiva. Los avisos de administrador de Windows se responden desde GpuVM ([Avisos de administrador](#avisos-de-administrador)).
-  - **Clásica:** los avisos de administrador se ven en la imagen, pero la imagen puede tardar en aparecer al conectar y los juegos en pantalla completa exclusiva se ven en negro. Consulta [Streaming](/docs/es/streaming/#modos-de-captura).
 - **Avanzado** (haz clic para verlo):
   - **Códec:** **Automático** (el visor elige el mejor que tu equipo puede mostrar), H.264, HEVC o AV1. Si la imagen no aparece, vuelve a **Automático**.
   - **Calidad de imagen:** la tasa de bits en Mbps, hasta 150. Más calidad usa más red; al mínimo (**Automática**), el visor la ajusta a la resolución y los FPS.
 
-Estos ajustes se guardan sin apagar la máquina: los de la imagen se aplican la próxima vez que la abras, la captura en el momento si la máquina está encendida (reinicia Sunshine) y la red en el momento.
+Estos ajustes se guardan sin apagar la máquina: los de la imagen se aplican la próxima vez que la abras y la red en el momento.
 
 ## Windows
 
@@ -258,10 +291,11 @@ El menú **⋯** tiene:
 - **Encender sin abrir**.
 - **Apagar** (apagado ordenado; si Windows tiene actualizaciones pendientes, primero las instala, lo que puede tardar unos minutos, y el botón lo dice), **Forzar apagado** (haz clic dos veces para confirmar; se pierde lo no guardado), **Reiniciar**, **Pausar** / **Reanudar**.
 - **Ver consola de Hyper-V**. Solo muestra la pantalla básica de Hyper-V, no lo que dibuja la GPU.
-- **Volver a emparejar Moonlight**.
+- **Volver a emparejar el visor**.
 - **Actualizar driver de la GPU**, o **Apagar y actualizar driver** si está encendida.
 - **Crear plantilla**, o **Apagar y crear plantilla** si está encendida: guarda el Windows de esta máquina como [plantilla](#plantillas). La máquina queda igual.
-- **Cambiar nombre** (con la máquina apagada): el nombre nuevo se revisa mientras escribes y el cubo lo graba en la etiqueta de serie de la placa. La máquina cambia de nombre en Hyper-V junto con su carpeta y su disco; su configuración, el emparejamiento de Moonlight, los discos compartidos y su decoración se quedan con ella. Si un paso falla, se deshace lo que ya había cambiado.
+- **Exportar a un archivo**, o **Apagar y exportar** si está encendida ([Exportar e importar](#exportar-e-importar)).
+- **Cambiar nombre** (con la máquina apagada): el nombre nuevo se revisa mientras escribes y el cubo lo graba en la etiqueta de serie de la placa. La máquina cambia de nombre en Hyper-V junto con su carpeta y su disco; su configuración, el emparejamiento del visor, los discos compartidos y su decoración se quedan con ella. Si un paso falla, se deshace lo que ya había cambiado.
 - **Otro ícono** (también haciendo clic en el ícono junto al nombre) y **Otro banner** (hay tres).
 - **Eliminar máquina**: la quita de Hyper-V, con **Conservar el disco** o **Borrar también el disco**, tras confirmarlo en un aviso de UAC. No se puede deshacer.
 
@@ -287,7 +321,15 @@ Una sección vacía muestra la tarjeta para agregar el primero.
 
 Una plantilla es el Windows de una máquina guardado como disco base de solo lectura, con sus apps, nivel de limpieza y contraseña. Se crea desde el menú **⋯** de una máquina (**Crear plantilla**), o con **Nueva plantilla** en la Biblioteca, eligiendo la máquina cuyo Windows guarda y su nombre. Una máquina creada **Desde plantilla** recibe un disco encima que solo guarda lo que cambia, así queda lista en segundos y ocupa pocos GB. Cada copia tiene su propia identidad de streaming (el visor se empareja con ella como un equipo nuevo) y su propio nombre de equipo. Su disco mide lo mismo que la plantilla y no se puede ampliar.
 
-Cada tarjeta de plantilla muestra la máquina de la que salió, cuánto ocupa y las máquinas creadas sobre ella, y crea una máquina a partir de ella. Una plantilla solo se puede borrar cuando ninguna máquina está creada sobre ella.
+Cada tarjeta de plantilla muestra la máquina de la que salió, cuánto ocupa y las máquinas creadas sobre ella, y crea una máquina a partir de ella. Una plantilla solo se puede borrar cuando ninguna máquina está creada sobre ella. Las plantillas se compactan, y cuando GpuVM trae un Sunshine o un agente más nuevo, sus plantillas lo reciben una vez, en segundo plano; las máquinas ya creadas desde una plantilla conservan el suyo.
+
+### Máquinas desechables
+
+**Abrir desechable** en la tarjeta de una plantilla crea una copia que se borra con su disco al apagarse, para probar algo sin tocar tus máquinas. **Desechable**, en **Crear máquina → Desde plantilla**, hace lo mismo. Los [agentes](/docs/es/agents/) también trabajan en máquinas desechables.
+
+## Exportar e importar
+
+**Exportar a un archivo**, en el menú **⋯** de una máquina, la guarda como un solo archivo `.gpuvm` compactado. En otro equipo, **Crear máquina → Punto de partida → Desde archivo** la importa; la máquina importada recibe su propia identidad de streaming la primera vez que se abre.
 
 ## Discos compartidos
 
@@ -312,11 +354,14 @@ La copia solo va de este equipo al disco. Antes de escribir, GpuVM revisa que el
   - **Color de énfasis:** azul, violeta, turquesa, verde o ámbar, cada uno mostrado mitad claro y mitad oscuro. Colorea los botones, la selección, las barras de uso, el logo y el holograma de las máquinas.
   - **Fluidez de las animaciones:** los cuadros por segundo de los hologramas y escenas: 15, 30, 60, 120 o **Máx** (el predeterminado: tantos como muestre el monitor). Menos dejan más GPU libre para las máquinas.
   - **Calidad de las animaciones:** la resolución con que se dibujan, de 25 a 100 % (el predeterminado). Más baja se ve menos nítida y usa menos GPU.
+  - **Avisos de estado:** dónde va la [muesca de estado](#muesca-de-estado).
 - **Ventana:**
   - **Al cerrar la ventana:** **Salir por completo** (el predeterminado) o **Quedarse en la bandeja**: cerrar la ventana la oculta y GpuVM sigue abierta junto al reloj, así que los trabajos en curso continúan. El menú del ícono de la bandeja tiene **Abrir GpuVM** y **Salir**; un clic izquierdo sobre él vuelve a abrir la ventana.
   - **Al salir de GpuVM:** **Dejarlas encendidas** (el predeterminado) o **Apagarlas**: al salir se apagan de forma ordenada todas las máquinas de GpuVM encendidas, como desde el menú Inicio de Windows, y se libera su memoria. GpuVM se cierra al instante; el apagado sigue en segundo plano.
   - **Al volver a Inicio desde una máquina:** **Mantenerla conectada** (el predeterminado: al abrirla de nuevo vuelves directo a su imagen, y mientras tanto usa un poco de la GPU de este equipo) o **Desconectarla**.
 - **Máquinas** (con más de un monitor): **Abrir las máquinas en** el monitor principal de Windows (el predeterminado) o en un monitor por su nombre. Cada máquina puede tener el suyo en sus opciones. En pantalla completa, la imagen de la máquina va a ese monitor.
+- **Agentes:** **Tomar el control**, **Tiempo para responder** y **Límite por sesión**. Consulta [Agentes](/docs/es/agents/).
+- **Capturas:** las carpetas de capturas y videos, y **Guardar los últimos 30 s** ([Capturas](#capturas)).
 - **Servicio**, el servicio de Windows que hace el trabajo de Hyper-V para la app:
   - **Con GpuVM** (el predeterminado): se enciende al abrir GpuVM y se apaga al salir, cuando termina lo que estaba haciendo (apagar las máquinas, una máquina que se está creando).
   - **Con Windows:** se enciende con Windows.

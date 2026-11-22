@@ -34,8 +34,9 @@
 - **Español e inglés.** Toda la app, la bandeja y lo que informa el módulo siguen el idioma de Windows o el que elijas en Ajustes.
 - **Tu GPU dentro de la VM.** El GPU partitioning de Hyper-V (GPU-P) comparte la GPU del equipo con la VM, que usa el mismo driver que el host. Sin passthrough ni segunda GPU.
 - **Se abre en un clic.** «Encender y abrir» enciende la VM, espera a Windows, corrige la sesión y la pantalla, empareja el visor y abre la imagen dibujada y codificada por la GPU (Sunshine + NVENC), con sonido. Una VM ya encendida muestra su imagen en unos 7-10 s.
+- **Agentes de IA que usan tus máquinas.** GpuVM es un servidor MCP: Claude Code, conectado en un clic, o cualquier cliente MCP trabaja en una máquina Windows desechable como usuario estándar mientras ves su cursor, sus clics y sus teclas sobre la imagen. Un clic te da el control; los permisos de administrador, la red y los archivos se aprueban en GpuVM, nunca en el chat, y cada sesión se graba.
 - **El visor propio de GpuVM.** Basado en Moonlight, muestra la máquina dentro de la app o en pantalla completa. **Inicio** (o Ctrl+Alt+Shift+H) deja la máquina conectada, así al abrirla de nuevo vuelves directo a su imagen. Las animaciones de la app se detienen mientras se muestra una imagen y dejan la GPU a las máquinas.
-- **Panel lateral.** Ctrl+Alt+Shift+G abre un tablero de widgets junto a la imagen: máquinas, acciones, los números de la imagen, un reloj, los juegos y el clima, que se ordena con **Editar**.
+- **Panel lateral.** Ctrl+Alt+Shift+G abre un tablero de widgets junto a la imagen: máquinas, acciones, los números de la imagen, archivos, portapapeles, capturas, un reloj, los juegos y el clima, que se ordena con **Editar**.
 - **Baja latencia, al ritmo de tu monitor.** De una tecla, un clic, un movimiento del mouse o un botón del mando hasta el cambio en pantalla pasan unos 16,6 ms a 120 FPS o más, unos 11 ms más que jugando en el equipo. La VM transmite a la frecuencia de tu monitor, donde la sincronización vertical no agrega latencia y los tirones bajan a la mitad.
 - **Un tipo de uso por máquina.** Juegos, Películas y video o Trabajo ajustan los FPS, la sincronización vertical, el ritmo de cuadros y el mouse; el códec, la calidad de imagen y lo demás se ajustan por máquina.
 - **Mandos.** Los controles conectados a tu equipo llegan a la VM como un control de Xbox 360 (ViGEmBus, que instala GpuVM).
@@ -46,7 +47,9 @@
 - **Plantillas y discos compartidos.** Guarda una VM como plantilla y crea otras encima en segundos; deja tu biblioteca de juegos en un disco compartido que pasa de una VM a otra, importada desde la biblioteca de Steam de tu equipo.
 - **Windows limpio.** Elige un nivel (privacidad, sin apps de más, mínimo) para quitar telemetría, publicidad, sugerencias, Copilot y apps preinstaladas, sin tocar Defender, Windows Update ni el firewall.
 - **Apps en un paso.** 16 apps (tiendas de juegos, navegadores, multimedia, Discord, 7-Zip, WinRAR, Proton VPN) con buscador y categorías, instaladas dentro de la VM solo si las firma su empresa o coinciden con un hash fijado.
-- **Captura rápida.** La imagen aparece unos 2,6 s después de conectar, también la de los juegos en pantalla completa exclusiva; los avisos de administrador de Windows en la VM aparecen en una tarjeta encima de todo con Permitir y Rechazar, y solo se responden desde tu equipo. Pega texto del PC en la VM con un botón.
+- **Avisos de administrador en GpuVM.** Los avisos de administrador de Windows en la VM bajan desde arriba de su imagen con Permitir y Rechazar, y solo se responden desde tu equipo. La imagen aparece unos segundos después de conectar, también la de los juegos en pantalla completa exclusiva.
+- **Archivos, portapapeles y capturas.** Suelta archivos sobre la imagen para copiarlos a la VM, ten tus últimas 8 copias listas para pegar, y toma capturas, graba o guarda los últimos 30 segundos con un atajo.
+- **Puntos de restauración, máquinas desechables, exportar.** Vuelve a un punto de restauración en cerca de un segundo, abre una copia desechable de una plantilla que se borra al apagarse y lleva una máquina a otro equipo como un solo archivo `.gpuvm`.
 - **Mantiene aparte al equipo.** La app corre sin permisos de administrador, y el visor corre aislado, con integridad baja y un token restringido; un servicio de Windows que solo la app de GpuVM puede usar hace el trabajo de Hyper-V, y borrar pide un aviso de administrador de Windows. El portapapeles solo va del PC a la VM, nunca al revés.
 - **Laboratorios.** Cada idea de rendimiento se mide (base contra candidata) antes de volverse un valor por defecto.
 
@@ -123,7 +126,7 @@ python scripts/release.py 0.4.1   # versión nueva: changelog, versiones, commit
 
 Los cambios van en **Unreleased** de `CHANGELOG.md` y **Sin publicar** de `CHANGELOG.es.md` hasta que se publican.
 
-La CLI tiene las mismas funciones: `./gpuvm.ps1 check`, `new`, `connect`, `list`, `sync-driver`, `set`, `remove`, `lab-*` (ver la documentación).
+La CLI tiene las mismas funciones: `./gpuvm.ps1 check`, `new`, `list`, `sync-driver`, `set`, `remove`, `lab-*` (ver la documentación).
 
 ## Componentes de terceros
 
@@ -137,7 +140,7 @@ GpuVM descarga e instala dentro de la VM, verificados por SHA-256:
 - [usbip-win2](https://github.com/vadimgrn/usbip-win2) (BSD-2-Clause): cliente USB/IP con drivers firmados por Microsoft; conecta el altavoz USB propio de GpuVM dentro de la VM.
 - [ViGEmBus](https://github.com/nefarius/ViGEmBus) (BSD-3-Clause): bus de mandos virtuales, para los controles que reenvía el visor.
 
-En el equipo, el visor de GpuVM está basado en [Moonlight](https://github.com/moonlight-stream/moonlight-qt) (moonlight-qt, GPL-3.0). El fork vive en el repositorio aparte [gpuvm-viewer](https://github.com/alenj0x1/gpuvm-viewer) (rama `gpuvm`), con licencia GPL-3.0, y el instalador lo incluye. El `connect` de la CLI abre [Moonlight](https://moonlight-stream.org) en sí, instalado con winget.
+En el equipo, el visor de GpuVM está basado en [Moonlight](https://github.com/moonlight-stream/moonlight-qt) (moonlight-qt, GPL-3.0). El fork vive en el repositorio aparte [gpuvm-viewer](https://github.com/alenj0x1/gpuvm-viewer) (rama `gpuvm`), con licencia GPL-3.0, y el instalador lo incluye.
 
 El catálogo de apps muestra el ícono de cada app, tomado de su instalador o sitio oficial; los íconos y nombres son marcas de sus dueños y solo identifican sus apps.
 

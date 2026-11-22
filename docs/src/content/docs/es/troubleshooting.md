@@ -7,11 +7,9 @@ description: Pantalla negra, imagen que se traba, avisos de administrador, mando
 
 Las causas habituales, en orden:
 
-1. **Sunshine está capturando la pantalla de Hyper-V** en lugar de la virtual. **Encender y abrir** (o `./gpuvm.ps1 connect`) apunta Sunshine a la pantalla virtual cada vez. Si avisa que Sunshine no ve la pantalla virtual, revisa `C:\GpuVM\setup.log` dentro de la VM.
+1. **Sunshine está capturando la pantalla de Hyper-V** en lugar de la virtual. **Encender y abrir** apunta Sunshine a la pantalla virtual cada vez. Si avisa que Sunshine no ve la pantalla virtual, revisa `C:\GpuVM\setup.log` dentro de la VM.
 2. **El driver de la VM no coincide con el del host** (después de actualizar el driver de NVIDIA). Al abrirla desde la app se sincroniza solo si la VM está apagada; o ejecuta `./gpuvm.ps1 sync-driver -Name <vm>` con la VM apagada.
 3. **Escritorio remoto se llevó la sesión** de la pantalla de la GPU. Cierra Escritorio remoto y vuelve a usar **Encender y abrir**: con la contraseña del invitado guardada, GpuVM devuelve la sesión a la consola.
-
-Si la imagen tarda en aparecer al conectar, revisa que **Imagen y control → Captura** esté en **Rápida**: la captura **Clásica** puede quedar en negro hasta que algo cambie en pantalla.
 
 Para ver la pantalla de la VM sin la GPU, abre la consola de Hyper-V (**Ver consola de Hyper-V** en el menú **⋯** de la máquina, o `vmconnect.exe localhost <vm>`). Mientras la pantalla virtual funciona, la de Hyper-V está desactivada; Escritorio remoto sigue disponible como respaldo.
 
@@ -26,18 +24,13 @@ Los hologramas y escenas de GpuVM se detienen mientras se muestra la imagen de u
 - Baja **Fluidez de las animaciones** y **Calidad de las animaciones** en **Ajustes → Apariencia** ([Ajustes](/docs/es/using-the-app/#ajustes)).
 - O pon **Ajustes → Ventana → Al volver a Inicio desde una máquina** en **Desconectarla**.
 
-## Un programa en pantalla completa se ve en negro
-
-El escritorio se ve bien, pero un juego o programa en **pantalla completa exclusiva** se ve en negro (puede aparecer cuando pierde el foco). Pasa con la captura **Clásica**, que no ve la pantalla completa exclusiva en una pantalla virtual. En **Imagen y control → Captura** elige **Rápida** (la predeterminada en las máquinas nuevas) y guarda. Consulta [Modos de captura](/docs/es/streaming/#modos-de-captura).
-
 ## Un programa espera permiso de administrador
 
-Con la captura **Rápida**, los avisos de administrador de Windows no se dibujan en la imagen de la máquina; GpuVM los muestra en una tarjeta encima de todo, con **Permitir** y **Rechazar** ([Avisos de administrador](/docs/es/using-the-app/#avisos-de-administrador)). Si no aparece la tarjeta:
+Los avisos de administrador de Windows no se dibujan en la imagen de la máquina; GpuVM los muestra por su cuenta, bajando desde arriba de la imagen o en una tarjeta encima de todo, con **Permitir** y **Rechazar** ([Avisos de administrador](/docs/es/using-the-app/#avisos-de-administrador)). Si no aparece ninguno:
 
-- GpuVM tiene que estar abierto (en la ventana o en la bandeja): la tarjeta sale de la app.
+- GpuVM tiene que estar abierto (en la ventana, en la bandeja o en el modo solo de avisos después de salir): los avisos salen de la app.
 - GpuVM necesita la contraseña de Windows de la VM; sin ella, la VM muestra un aviso que la pide.
 - El vigilante se instala la primera vez que la VM se abre desde GpuVM; ábrela una vez con **Abrir**.
-- Para ver los avisos en la imagen, cambia a **Clásica** en **Imagen y control → Captura**.
 
 ## Las ventanas se abren donde no las veo
 
@@ -73,7 +66,7 @@ El sonido de la VM sale del altavoz USB de GpuVM, **Altavoces (GpuVM Audio)** ([
 
 ## Falla el emparejamiento
 
-Usa **Volver a emparejar Moonlight** en el menú **⋯**, o `./gpuvm.ps1 connect -Name <vm> -Pair`. Desde la app, esto empareja el visor de GpuVM; si falta el visor, la app lo dice: vuelve a instalar GpuVM. Desde la CLI, `connect` empareja Moonlight, que tiene que estar instalado ([Instalación](/docs/es/install/#instalar-moonlight)).
+Usa **Volver a emparejar el visor** en el menú **⋯**. Si falta el visor, la app lo dice: vuelve a instalar GpuVM.
 
 ## La VM no enciende por falta de memoria
 
@@ -85,5 +78,5 @@ La memoria fija de Hyper-V tiene que estar libre al encender la VM. Cierra progr
 - **Audio:** la VM no tiene tarjeta de sonido; el altavoz USB propio de GpuVM se la da, comprobado en una VM real a través de Moonlight ([laboratorio 012](/docs/es/labs/)).
 - **Driver:** el invitado tiene que usar la misma versión que el host (ver arriba).
 - **Selección de GPU en Windows 10:** no se puede elegir cuál GPU recibe la VM. Si la integrada también es particionable, puede tocarle la equivocada. `check` lo advierte; desactiva la integrada en el Administrador de dispositivos antes de encender la VM ([laboratorio 001](/docs/es/labs/)).
-- **Sin puntos de control ni estado guardado:** la VM se apaga directamente.
+- **Sin puntos de control ni estado guardado:** la VM se apaga directamente. GpuVM tiene sus propios [puntos de restauración](/docs/es/using-the-app/#puntos-de-restauración).
 - **Anti-cheat:** algunos sistemas anti-cheat bloquean las máquinas virtuales.
