@@ -2324,11 +2324,27 @@ fn settings_json() -> Value {
     json!({ "maxSteps": steps, "maxMinutes": minutes, "approvalTimeoutSec": approval, "clients": if clients.is_object() { clients } else { json!({}) } })
 }
 
+/// The name the person sees for an MCP client: products by their name ("claude-code" is Claude Code), anything else
+/// with its dashes as spaces and a capital first letter. Also the key of its per-client settings.
+fn display_name(raw: &str) -> String {
+    match raw.to_ascii_lowercase().as_str() {
+        "claude-code" | "claude code" => "Claude Code".into(),
+        "claude-ai" | "claude" => "Claude".into(),
+        "cursor" | "cursor-vscode" => "Cursor".into(),
+        "vscode" | "visual-studio-code" => "VS Code".into(),
+        _ => {
+            let spaced = raw.replace(['-', '_'], " ");
+            let mut chars = spaced.chars();
+            chars.next().map(|c| c.to_uppercase().collect::<String>() + chars.as_str()).unwrap_or_default()
+        }
+    }
+}
+
 fn connect_client(client: &Value, ctx: &mut Ctx) -> Result<Value, CmdError> {
     if ctx.admin {
         return err("denied", "Agent clients connect through the GpuVM app's pipe.");
     }
-    let name = clean(client["name"].as_str().unwrap_or("unknown"), 64);
+    let name = display_name(&clean(client["name"].as_str().unwrap_or("unknown"), 64));
     let version = clean(client["version"].as_str().unwrap_or(""), 32);
     let (max_steps, max_minutes, approval) = settings();
     // MCP elicitation (approving low-risk steps in the client) only where the person turned it on for that client.

@@ -1793,7 +1793,8 @@ html.viewer-panel-window body::after { display: none; }
   .ag-request-actions { width: 100%; justify-content: flex-end; }
   .ag-head { flex-wrap: wrap; }
 }
-.side-count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; display: inline-grid; place-items: center; font-size: 11px; font-weight: 600; background: var(--warn-bg); color: var(--warn); }
+/* Just the number in the warning tone, no pill behind it (2026-11-21: "se ve mal"). */
+.side-count { min-width: 18px; height: 18px; display: inline-grid; place-items: center; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--warn); }
 .side-working { display: block; background: var(--accent); animation: ag-pulse 1.6s ease-in-out infinite; }
 /* Collapsed sidebar: the names and counts hide, but "an agent needs you" can't (lab 054 on the installed app, with the
    notification banner held by Windows): the count stays as a small badge on the icon's corner, the working dot too. */
@@ -1866,11 +1867,22 @@ html.agent-live-window, html.agent-live-window body, html.agent-live-window #roo
 .lv-strokes path.fading { opacity: 0; }
 @keyframes lv-draw { from { stroke-dashoffset: var(--len); } to { stroke-dashoffset: 0; } }
 .lv-cursor { position: absolute; left: 0; top: 0; transition-property: transform; transition-timing-function: cubic-bezier(.2, .8, .2, 1); will-change: transform; }
-.lv-cursor svg { display: block; margin: -2px 0 0 -3px; }
-.lv-cursor svg path { fill: var(--accent-light); stroke: #fff; stroke-width: 1.6; stroke-linejoin: round; }
-.lv-name { position: absolute; left: 18px; top: 20px; padding: 3px 8px; border-radius: 6px; background: var(--accent-light); color: #fff; font-size: 12px; font-weight: 500; white-space: nowrap; }
-.lv-chip { position: absolute; left: 18px; top: 46px; padding: 3px 8px; border-radius: 6px; background: #1f1f1f; color: #ebe8e1; font: 500 12px ui-monospace, "Cascadia Mono", Consolas, monospace; white-space: nowrap; animation: lv-chip 1.4s ease forwards; }
-@keyframes lv-chip { 0% { opacity: 0; transform: translateY(-3px); } 12%, 75% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+.lv-cursor svg { display: block; margin: -5px 0 0 -5px; overflow: visible; }
+.lv-cursor svg path { fill: var(--accent-light); stroke: #fff; stroke-width: 2; stroke-linejoin: round; }
+/* The agent's name, and beside it in a lighter part of the same pill what it is doing for a moment (keys, typing). */
+.lv-name { position: absolute; left: 22px; top: 24px; display: inline-flex; align-items: center; gap: 0; padding: 4px 4px 4px 11px; border-radius: 999px;
+  background: var(--accent-light); color: #fff; font-family: "Plus Jakarta Sans", system-ui, sans-serif; font-size: 12.5px; font-weight: 600; letter-spacing: -0.005em; white-space: nowrap; }
+.lv-name:not(:has(.lv-act)) { padding-right: 11px; }
+.lv-act { display: inline-block; overflow: hidden; margin-left: 8px; padding: 2px 9px; border-radius: 999px; background: #fff; color: color-mix(in srgb, var(--accent-light) 80%, #000); font-weight: 600;
+  transform-origin: left center; animation: lv-act 1.5s cubic-bezier(.3, 1.5, .5, 1) forwards; }
+/* It unfolds out of the name with a small bounce, holds, then folds back in. */
+@keyframes lv-act {
+  0% { opacity: 0; max-width: 0; padding-inline: 0; margin-left: 0; transform: scale(.6); }
+  16% { opacity: 1; max-width: 160px; padding-inline: 9px; margin-left: 8px; transform: scale(1.08); }
+  24% { transform: scale(1); }
+  80% { opacity: 1; max-width: 160px; padding-inline: 9px; margin-left: 8px; transform: scale(1); }
+  100% { opacity: 0; max-width: 0; padding-inline: 0; margin-left: 0; transform: scale(.8); }
+}
 .lv-mark { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; border: 2px solid var(--accent-light); animation: lv-ring .6s ease-out forwards; }
 .lv-mark.double { animation: lv-ring .6s ease-out 2 forwards; }
 .lv-mark.scroll { border-radius: 8px; height: 26px; margin-top: -13px; animation: lv-ring .7s ease-out forwards; }

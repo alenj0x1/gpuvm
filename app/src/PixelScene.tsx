@@ -2,11 +2,12 @@ import { useEffect, useRef } from "react";
 import { animFps, onAnimBudget, paceFrame } from "./animBudget";
 
 // Pixel-art landscapes for the website's viewer demo, one per sample machine so switching machines in the panel shows
-// another picture: cherry trees by a lake at sunset, a misty forest in the morning and the ocean at midday. Drawn at
+// another picture: cherry trees by a lake at sunset, a misty forest in the morning and snowy mountains at dawn over a still lake
+// (it replaced the ocean, 2026-11-21: the person didn't like it). Drawn at
 // 192 × 108 pixels (ordered dithering for the gradients) and scaled up without smoothing; a few things move (petals,
-// light, waves, birds) at a few frames a second.
+// light, ripples, birds) at a few frames a second.
 
-export type PixelSceneKind = "sakura" | "forest" | "ocean";
+export type PixelSceneKind = "sakura" | "forest" | "alpine";
 
 const W = 192, H = 108;
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => (v + 0.5) / 16);
@@ -232,94 +233,95 @@ const forest: Scene = (() => {
   return { build, frame };
 })();
 
-/* ---------- The ocean at midday ---------- */
+/* ---------- Snowy mountains at dawn, over a still lake ---------- */
 
-const ocean: Scene = (() => {
-  const HORIZON = 56, SUN = { x: 62, y: 16 };
-  const SKY: [number, RGB][] = [[0, hex("#2f6fcf")], [0.55, hex("#5fa6e6")], [1, hex("#bfe6f7")]];
-  const SEA: [number, RGB][] = [[0, hex("#7fc4e4")], [0.15, hex("#2f8fcf")], [0.6, hex("#1b68ad")], [1, hex("#124c88")]];
-  const clouds = [{ x: 30, y: 30, s: 0.9, k: 1 }, { x: 120, y: 20, s: 0.6, k: 1.3 }, { x: 170, y: 38, s: 1.1, k: 0.8 }];
+const alpine: Scene = (() => {
+  const HORIZON = 70, SUN = { x: 64, y: 44, r: 7 };
+  const SKY: [number, RGB][] = [[0, hex("#2b3a67")], [0.35, hex("#5d6aa0")], [0.6, hex("#c99bb5")], [0.82, hex("#f6c3a0")], [1, hex("#ffe1b0")]];
+  const skyAt = (x: number, y: number): RGB => {
+    const c = ramp(SKY, y / HORIZON);
+    const dx = (x - SUN.x) / 1.5, dy = y - SUN.y, glow = Math.max(0, 1 - Math.sqrt(dx * dx + dy * dy) / 40);
+    return mix(c, hex("#fff1cf"), glow * glow * 0.7);
+  };
+  // Three ranges: a far pale one, the big snowy peaks, and dark wooded foothills by the water.
+  const ridge = (x: number, peaks: [number, number, number][]) => peaks.reduce((top, [px, h, w]) => Math.min(top, HORIZON - Math.max(0, h - Math.abs(x - px) * w)), HORIZON);
+  const FAR: [number, number, number][] = [[10, 26, 0.7], [40, 22, 0.55], [92, 30, 0.6], [140, 24, 0.5], [178, 28, 0.65]];
+  const BIG: [number, number, number][] = [[28, 34, 0.95], [70, 22, 0.8], [118, 44, 1.05], [160, 30, 0.85], [196, 36, 1.1]];
+  const far = Array.from({ length: W }, (_, x) => ridge(x, FAR) + Math.sin(x * 0.5) * 0.6);
+  const big = Array.from({ length: W }, (_, x) => ridge(x, BIG) + (hash(x, 3) - 0.5) * 1.2);
+  const hills = Array.from({ length: W }, (_, x) => HORIZON - Math.max(0, 6 + 3 * Math.sin(x * 0.09 + 1.2) + 2 * Math.sin(x * 0.27)));
+  const birds = [{ x: 30, y: 24, s: 5 }, { x: 44, y: 28, s: 4.4 }, { x: 52, y: 22, s: 5.4 }];
+  const stars = Array.from({ length: 22 }, (_, i) => ({ x: Math.floor(hash(i, 9) * W), y: Math.floor(hash(i, 10) * 18), p: hash(i, 11) * 6 }));
 
   function build() {
     const layer = new Uint32Array(W * H);
-    // A rocky islet with a lighthouse on the horizon, inside the middle of the picture (its sides are cut when the
-    // picture is narrower than 16:9).
-    for (let x = 114; x < 150; x++) {
-      const top = HORIZON - Math.max(0, 6 - Math.abs(x - 130) * 0.32) - hash(x, 3) * 1.2;
-      for (let y = Math.floor(top); y < HORIZON + 1; y++) layer[y * W + x] = solid(x < 126 ? "#4f6273" : "#3b4b5a");
-    }
-    for (let y = HORIZON - 17; y < HORIZON - 5; y++) for (let x = 128; x < 132; x++) {
-      layer[y * W + x] = solid(Math.floor((y - (HORIZON - 17)) / 3) % 2 ? "#d9473f" : "#f4f1ea");
-    }
-    for (let x = 127; x < 133; x++) layer[(HORIZON - 18) * W + x] = solid("#2b3540");
-    // The beach up front: sand with a few shells.
+    // Pines on the near shore, left and right, dark against the water.
+    const pine = (cx: number, base: number, h: number) => {
+      for (let y = base - h; y <= base; y++) {
+        const half = Math.max(0, Math.round(((y - (base - h)) / h) * (h * 0.32)) - ((y - base + h) % 3 === 0 ? 1 : 0));
+        for (let x = cx - half; x <= cx + half; x++) if (inside(x, y)) layer[y * W + x] = solid(x > cx ? "#1d2b33" : "#16222a");
+      }
+    };
     for (let x = 0; x < W; x++) {
-      const top = 94 + Math.sin(x * 0.04) * 3;
-      for (let y = Math.floor(top); y < H; y++) layer[y * W + x] = solid(hash(x, y) > 0.85 ? "#e6cf98" : hash(x, y) > 0.2 ? "#f0dca8" : "#dcc28a");
+      const shore = x < 40 ? 92 + x * 0.35 : x > 160 ? 106 - (x - 160) * 0.4 : 999;
+      for (let y = Math.max(0, Math.floor(shore)); y < H; y++) layer[y * W + x] = solid(y - shore < 1.5 ? "#2f3d3c" : hash(x, y) < 0.12 ? "#1e2a2a" : "#18221f");
     }
-    for (let i = 0; i < 9; i++) {
-      const x = Math.floor(hash(i, 70) * W), y = 100 + Math.floor(hash(i, 71) * 7);
-      layer[y * W + x] = solid("#fff4e8");
-    }
+    for (const [x, b, h] of [[6, 100, 22], [16, 98, 16], [26, 103, 26], [36, 104, 14], [166, 104, 18], [176, 101, 24], [187, 99, 20]] as [number, number, number][]) pine(x, b, h);
     return layer;
   }
 
-  function cloud(buf: Uint32Array, cx: number, cy: number, k: number) {
-    const blobs: [number, number, number][] = [[0, 0, 6], [7, -2, 7], [14, 0, 5], [-6, 1, 4], [5, 2, 6]];
-    for (const [dx, dy, r0] of blobs) {
-      const r = r0 * k;
-      for (let y = Math.floor(cy + dy - r); y <= cy + dy + r; y++) for (let x = Math.floor(cx + dx * k - r); x <= cx + dx * k + r; x++) {
-        if (!inside(x, y) || y > cy + 3 * k || Math.hypot(x - cx - dx * k, y - cy - dy) > r) continue;
-        buf[y * W + x] = solid(y > cy + 1.5 * k ? "#cfe3f2" : y < cy + dy - r * 0.4 ? "#ffffff" : "#f1f7fb");
-      }
-    }
-  }
-
   function frame(buf: Uint32Array, layer: Uint32Array, T: number) {
-    for (let y = 0; y < HORIZON; y++) for (let x = 0; x < W; x++) {
-      const glow = Math.max(0, 1 - Math.hypot(x - SUN.x, y - SUN.y) / 34) ** 2;
-      put(buf, x, y, mix(ramp(SKY, y / HORIZON), hex("#fffbe8"), glow * 0.85));
+    for (let y = 0; y < HORIZON; y++) for (let x = 0; x < W; x++) put(buf, x, y, skyAt(x, y));
+    // The last stars of the night, fading in and out near the top.
+    for (const st of stars) if (Math.sin(T * 1.3 + st.p) > 0.2) buf[st.y * W + st.x] = solid("#e9e6ff");
+    for (let y = SUN.y - SUN.r; y <= SUN.y + SUN.r; y++) for (let x = SUN.x - SUN.r; x <= SUN.x + SUN.r; x++) {
+      const d = Math.hypot(x - SUN.x, y - SUN.y);
+      if (d <= SUN.r) buf[y * W + x] = solid(d < SUN.r - 2.5 ? "#fffbe8" : "#ffe6a8");
     }
-    for (let y = SUN.y - 6; y <= SUN.y + 6; y++) for (let x = SUN.x - 6; x <= SUN.x + 6; x++) if (Math.hypot(x - SUN.x, y - SUN.y) <= 6) buf[y * W + x] = solid("#fffdf2");
-    for (const c of clouds) cloud(buf, ((c.x + T * c.s) % (W + 40)) - 20, c.y, c.k);
-    // The sea: deeper toward the front, with wave crests that run sideways and glitter under the sun.
-    for (let y = HORIZON; y < H; y++) {
-      const r = (y - HORIZON) / (H - HORIZON);
-      for (let x = 0; x < W; x++) {
-        let c = ramp(SEA, r);
-        const wave = Math.sin(x * (0.35 - r * 0.22) + y * 1.7 + T * (1.2 + r * 1.5)) + Math.sin(x * 0.11 - T * 0.9 + y);
-        if (wave > 1.55 - r * 0.25) c = mix(c, hex("#d9f2ff"), 0.75);
-        else if (wave < -1.4) c = mix(c, hex("#0d3d70"), 0.4);
-        put(buf, x, y, c, 18);
-        const nearSun = Math.abs(x - SUN.x - (y - HORIZON) * 0.15) < 6 + r * 14;
-        if (nearSun && hash(x, y + Math.floor(T * 6)) > 0.86) buf[y * W + x] = solid("#fffbe0");
+    for (let x = 0; x < W; x++) {
+      for (let y = Math.ceil(far[x]); y < HORIZON; y++) put(buf, x, y, mix(skyAt(x, y), hex("#8e86b4"), 0.55));
+      for (let y = Math.ceil(big[x]); y < HORIZON; y++) {
+        // Snow on the upper part of each peak, lit pink-gold from the sun's side; rock below, bluish in shade.
+        const depth = y - big[x];
+        const left = x < big.length - 1 && big[x + 1] < big[x];
+        const snow = depth < 7 + hash(x, y) * 4;
+        const lit = (x - SUN.x) * 0 + (left ? 1 : 0);
+        put(buf, x, y, snow ? (lit ? hex("#fbe3d6") : hex("#c8c6e6")) : (lit ? hex("#7d6d8c") : hex("#4f4a72")));
       }
+      for (let y = Math.ceil(hills[x]); y < HORIZON; y++) put(buf, x, y, hash(x, y) < 0.2 ? hex("#26363d") : hex("#2d4046"));
     }
-    // A sailboat crossing slowly, rocking on the waves.
-    const bx = ((T * 2.2) % (W + 30)) - 15, by = HORIZON + 6 + Math.round(Math.sin(T * 1.6));
-    for (let y = 0; y < 9; y++) for (let x = 0; x <= y * 0.6; x++) if (inside(Math.round(bx + x), by - 10 + y)) buf[(by - 10 + y) * W + Math.round(bx + x)] = solid("#fbfbf7");
-    for (let x = -3; x < 7; x++) if (inside(Math.round(bx + x), by)) buf[by * W + Math.round(bx + x)] = solid("#8a4b2b");
-    for (let x = -2; x < 6; x++) if (inside(Math.round(bx + x), by + 1)) buf[(by + 1) * W + Math.round(bx + x)] = solid("#6b3820");
-    // Gulls gliding.
-    for (let i = 0; i < 3; i++) {
-      const gx = Math.round(((T * (4 + i) + i * 70) % (W + 20)) - 10), gy = Math.round(26 + i * 7 + Math.sin(T * 2 + i) * 2), up = Math.floor(T * 3 + i) % 2;
-      for (const [dx, dy] of [[-2, up ? -1 : 0], [-1, 0], [0, 1], [1, 0], [2, up ? -1 : 0]]) if (inside(gx + dx, gy + dy)) buf[(gy + dy) * W + gx + dx] = solid("#f7f9fb");
+    // Birds crossing slowly in front of the sun's glow.
+    for (const b of birds) {
+      const bx = Math.round((b.x + T * b.s) % (W + 20)) - 10, by = Math.round(b.y + Math.sin(T * 2 + b.x) * 1.2);
+      const wing = Math.sin(T * 7 + b.x) > 0 ? -1 : 0;
+      for (const [dx, dy] of [[-2, wing], [-1, 0], [0, 1], [1, 0], [2, wing]]) if (inside(bx + dx, by + dy)) buf[(by + dy) * W + bx + dx] = solid("#3a3554");
+    }
+    // The lake: the mountains and sky mirrored, darker and rippling, with the sun's reflection broken into streaks.
+    for (let y = HORIZON; y < H; y++) {
+      const r = y - HORIZON;
+      for (let x = 0; x < W; x++) {
+        const wx = Math.max(0, Math.min(W - 1, Math.round(x + Math.sin(r * 0.8 + T * 1.6) * (0.4 + r * 0.035))));
+        const my = HORIZON - 1 - Math.floor(r * 1.25);
+        let c: RGB = my >= 0 ? skyAt(wx, my) : hex("#2b3a67");
+        if (my >= 0 && my >= hills[wx]) c = hex("#22323a");
+        else if (my >= 0 && my >= big[wx]) c = my - big[wx] < 7 ? hex("#b9b4d6") : hex("#48436a");
+        else if (my >= 0 && my >= far[wx]) c = mix(c, hex("#8e86b4"), 0.5);
+        put(buf, x, y, mix(c, hex("#1d2a45"), 0.3 + r * 0.008));
+      }
+      const half = Math.max(1, (9 - r * 0.18) * (0.55 + 0.45 * Math.sin(r * 1.2 + T * 2.9)));
+      const cx = SUN.x + Math.sin(r * 0.6 + T * 2) * (1 + r * 0.05);
+      if ((r + Math.floor(T * 5)) % 3 === 2 && r > 2) continue;
+      for (let x = Math.round(cx - half); x <= cx + half; x++) {
+        if (x < 0 || x >= W) continue;
+        buf[y * W + x] = solid(Math.abs(x - cx) > half * 0.6 ? "#f4c48e" : r < 8 || hash(x, y + Math.floor(T * 4)) > 0.7 ? "#fff6d2" : "#ffe1a0");
+      }
     }
     for (let i = 0; i < buf.length; i++) if (layer[i]) buf[i] = layer[i];
-    // Foam where the waves reach the sand, coming and going.
-    const reach = 2 + Math.sin(T * 0.9) * 2.5;
-    for (let x = 0; x < W; x++) {
-      const top = Math.floor(94 + Math.sin(x * 0.04) * 3);
-      for (let k = 0; k < reach; k++) {
-        const y = top + Math.floor(k);
-        if (inside(x, y) && hash(x, Math.floor(T * 3) + k) > 0.25) buf[y * W + x] = solid(k > reach - 1.5 ? "#ffffff" : "#bfe8f5");
-      }
-    }
   }
   return { build, frame };
 })();
 
-const SCENES: Record<PixelSceneKind, Scene> = { sakura, forest, ocean };
+const SCENES: Record<PixelSceneKind, Scene> = { sakura, forest, alpine };
 
 export function PixelScene({ scene }: { scene: PixelSceneKind }) {
   const ref = useRef<HTMLCanvasElement>(null);

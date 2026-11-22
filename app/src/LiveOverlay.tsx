@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { inTauri } from "./api";
+import { t } from "./i18n";
 
 // The agent's live overlay (live.rs): a click-through window over a machine's picture that shows where the agent acts
 // — its cursor with its name, a ring on each click, the stroke of a drag, the keys it presses. Only shapes arrive
@@ -31,6 +32,9 @@ function fit(screen: { w: number; h: number }, box: HTMLElement | null) {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** Keys as people write them: "ctrl+shift+s" is "Ctrl + Shift + S". */
+const keyLabel = (keys: string) => keys.split("+").map((k) => k.trim()).filter(Boolean)
+  .map((k) => (k.length === 1 ? k.toUpperCase() : k[0].toUpperCase() + k.slice(1))).join(" + ");
 /** How long the cursor glides to a new place: quick, so it never lags far behind the machine. */
 const GLIDE_MS = 240;
 
@@ -74,8 +78,8 @@ export function LiveOverlay({ script, keep, onStep }: { script?: LiveEvent[]; ke
         if (s.type === "click") { await glide([s.x, s.y]); mark([s.x, s.y], (s.count ?? 1) > 1 ? "double" : "ring"); }
         else if (s.type === "move") await glide([s.x, s.y]);
         else if (s.type === "scroll") { await glide([s.x, s.y]); mark([s.x, s.y], "scroll"); }
-        else if (s.type === "key") say(s.keys);
-        else if (s.type === "type") say("•".repeat(Math.min(12, Math.max(1, s.chars))));
+        else if (s.type === "key") say(keyLabel(s.keys));
+        else if (s.type === "type") say(t("Typing"));
         else if (s.type === "drag") {
           const all = s.strokes.flat();
           const total = s.strokes.reduce((n, st) => n + st.slice(1).reduce((len, p, i) => len + Math.hypot(p[0] - st[i][0], p[1] - st[i][1]), 0), 0);
@@ -170,9 +174,8 @@ export function LiveOverlay({ script, keep, onStep }: { script?: LiveEvent[]; ke
       {marks.map((m) => <span key={m.id} className={`lv-mark ${m.kind}`} style={{ left: m.x, top: m.y }} />)}
       {cursor && (
         <div className="lv-cursor" style={{ transform: `translate(${cursor.p[0]}px, ${cursor.p[1]}px)`, transitionDuration: `${Math.round(cursor.glide)}ms` }}>
-          <svg width="22" height="24" viewBox="0 0 22 24"><path d="M3 2 L3 19 L7.5 15 L10.6 21.6 L13.6 20.2 L10.6 13.8 L16.6 13.8 Z" /></svg>
-          {name && <span className="lv-name">{name}</span>}
-          {chip && <span className="lv-chip" key={chip.id}>{chip.text}</span>}
+          <svg width="30" height="30" viewBox="0 0 30 30"><path d="M8.6 5.9 Q4.4 4.4 5.9 8.6 L12 23.6 Q13.6 27.4 15.2 23.6 L16.6 19.4 Q17.4 17.4 19.4 16.6 L23.6 15.2 Q27.4 13.6 23.6 12 Z" /></svg>
+          {name && <span className="lv-name">{name}{chip && <span className="lv-act" key={chip.id}>{chip.text}</span>}</span>}
         </div>
       )}
     </div>

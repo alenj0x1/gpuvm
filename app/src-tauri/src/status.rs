@@ -160,25 +160,16 @@ pub fn refresh(app: &AppHandle) {
     place(app, &window, &vm, false);
 }
 
-/// The notch window cut to the notch's own shape (rounded where the CSS rounds it), one pixel in from every edge. On
-/// Windows 10 a transparent WebView2 window showed a 1px grey line around its rectangle and pale corners where it
-/// should be see-through (2026-11-21, around "Recording"); a window region has neither.
-fn shape(hwnd: HWND, w: i32, h: i32, radius: i32, placement: &str) {
-    use windows_sys::Win32::Graphics::Gdi::{CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, SetWindowRgn, RGN_AND};
-    let (d, inner) = (radius * 2, (1, 1, w - 1, h - 1));
-    // SAFETY: GDI regions this function creates; the one given to SetWindowRgn belongs to the window afterwards.
+/// The notch window trimmed one pixel in from every edge: on Windows 10 a transparent WebView2 window showed a 1px grey
+/// line around its rectangle (2026-11-21, around "Recording"). The rounded corners are the CSS's own, smooth: a window
+/// region cut them to the pixel, and they looked jagged ("los bordes salen como rotos", 2026-11-21).
+fn shape(hwnd: HWND, w: i32, h: i32, _radius: i32, _placement: &str) {
+    use windows_sys::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, SetWindowRgn};
+    // SAFETY: a GDI region this function creates; once given to SetWindowRgn it belongs to the window.
     unsafe {
-        // A rounded rectangle stretched past the edges whose corners stay square, then clipped to the inner rectangle.
-        let round = match placement {
-            "top" => CreateRoundRectRgn(inner.0, inner.1 - d, inner.2 + 1, inner.3 + 1, d, d),
-            "top-left" | "top-right" => CreateRoundRectRgn(inner.0, inner.1, inner.2 + 1, inner.3 + 1, d, d),
-            _ => CreateRoundRectRgn(inner.0, inner.1, inner.2 + 1, inner.3 + d, d, d),
-        };
-        let clip = CreateRectRgn(inner.0, inner.1, inner.2, inner.3);
-        CombineRgn(round, round, clip, RGN_AND);
-        DeleteObject(clip);
-        if SetWindowRgn(hwnd, round, 1) == 0 {
-            DeleteObject(round);
+        let rect = CreateRectRgn(1, 1, w - 1, h - 1);
+        if SetWindowRgn(hwnd, rect, 1) == 0 {
+            DeleteObject(rect);
         }
     }
 }

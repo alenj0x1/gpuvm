@@ -27,7 +27,7 @@ import {
 } from "@tabler/icons-react";
 import type { HostMonitor, MouseMode, VmOverview } from "./types";
 import appCss from "./styles.css?inline";
-import { PixelScene, type PixelSceneKind } from "./PixelScene";
+import { MachineDesktop } from "./MachineDesktop";
 import { ViewerPanel } from "./ViewerPanel";
 
 type View = "app" | "home" | "cleanup" | "apps" | "shared" | "stream" | "prompt" | "cube" | "machine" | "customize" | "games" | "viewer";
@@ -337,9 +337,9 @@ function GamesDemo() {
 /** GpuVM's viewer with its side panel: the machine's picture and, beside it, the same board of widgets as in the
  *  app (Edit moves, resizes, adds and removes them; switching machines and the games work). */
 // Each sample machine shows its own landscape, so switching machines in the panel changes the picture.
-const VIEWER_SCENES: Record<string, PixelSceneKind> = { win10: "sakura", "win11-pruebas": "forest", estudio: "ocean" };
+const VIEWER_SCENES = new Set(["win10", "win11-pruebas", "estudio"]);
 // In the demo every sample machine is on and streaming, so the panel can switch between them.
-const allOn = (vms: VmOverview[]) => vms.map((v) => (VIEWER_SCENES[v.name] ? { ...v, state: "Running", streaming: true } : v));
+const allOn = (vms: VmOverview[]) => vms.map((v) => (VIEWER_SCENES.has(v.name) ? { ...v, state: "Running", streaming: true } : v));
 
 function ViewerDemo() {
   const [vm, setVm] = useState("win10");
@@ -347,7 +347,7 @@ function ViewerDemo() {
   const [width, setWidth] = useState(340);
   return (
     <div className="site-viewer" style={{ gridTemplateColumns: `minmax(0, 1fr) ${width}px` }}>
-      <div className="site-viewer-picture"><PixelScene scene={VIEWER_SCENES[vm] ?? "sakura"} /></div>
+      <div className="site-viewer-picture"><MachineDesktop vm={vm} /></div>
       <div className="site-viewer-panel"><ViewerPanel machine="win10" onSwitched={setVm} onResize={setWidth} sample={allOn} /></div>
     </div>
   );
