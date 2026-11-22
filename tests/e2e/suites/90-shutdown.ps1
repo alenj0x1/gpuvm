@@ -1,4 +1,6 @@
 function Test-Suite($Ctx) {
+    # The agent deletes the machine the person is looking at: its page says once that it's gone.
+    $script:ExpectedErrors = @('unable to find a virtual machine with name')
     if (-not $Ctx.Machine) { return }
     $vm = Use-Machine $Ctx
     Start-Sleep -Seconds 2

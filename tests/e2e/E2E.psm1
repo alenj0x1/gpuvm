@@ -148,7 +148,8 @@ function Get-AppLogErrors([string]$Path, [long]$From) {
         $null = $fs.Seek($From, [IO.SeekOrigin]::Begin)
         $text = [IO.StreamReader]::new($fs, [Text.Encoding]::UTF8).ReadToEnd()
     } finally { $fs.Dispose() }
-    $text -split "`r?`n" | Where-Object { $_ -match ' ERROR ' }
+    # Case-sensitive: WebView2's own lines ("...Error = 1412") aren't GpuVM's.
+    $text -split "`r?`n" | Where-Object { $_ -cmatch ' ERROR ' }
 }
 
 function Wait-For([scriptblock]$Condition, [double]$Seconds = 15) {
@@ -405,6 +406,11 @@ function Use-Machine($Ctx) {
         if (-not $Ctx.Machine) { throw 'No machine to test on.' }
     }
     $opened = Invoke-Tool $Ctx.Mcp 'open_viewer' @{ machine = $Ctx.Machine; waitSeconds = 180 }
+    # After GpuVM quit and came back, the session may have to take its machine again.
+    if ($opened -match 'first with take_machine') {
+        $null = Invoke-Tool $Ctx.Mcp 'take_machine' @{ machine = $Ctx.Machine; task = 'End-to-end suite' }
+        $opened = Invoke-Tool $Ctx.Mcp 'open_viewer' @{ machine = $Ctx.Machine; waitSeconds = 180 }
+    }
     if ($opened -notmatch 'now sees|already shows') { Check 'agent opens the viewer' $false $opened; throw "The viewer didn't open: $opened" }
     $Ctx.Machine
 }
