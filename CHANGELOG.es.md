@@ -32,6 +32,11 @@ Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (es
 - **Las plantillas se mantienen al día.** Cuando GpuVM trae un Sunshine o un agente más nuevo, sus plantillas lo reciben una vez, como una capa encima, en segundo plano (la app revisa al abrir y cada hora). Las copias de una plantilla de agentes quedan listas en menos de un minuto en vez de unos cinco; las máquinas ya creadas desde una plantilla conservan la suya sin cambios.
 
 ### Corregido
+- Cuando un agente abre la imagen de una máquina, GpuVM y la imagen pasan al frente de tus otras ventanas (sin quitarte el teclado); antes, una imagen a pantalla completa podía abrirse detrás de la terminal mientras al agente se le decía que la veías.
+- Los pedidos de un agente (como usar una de tus máquinas) salen como una notificación de Windows que se queda en pantalla hasta que la abras o la cierres, y se quita sola cuando lo respondes en GpuVM.
+- El pedido del agente y la vista en vivo sobre la imagen ya no destellan en blanco o negro al aparecer.
+- El número de pedidos pendientes junto a **Agentes** usa los dígitos normales de la app.
+- Seguridad: el ayudante de captura de Sunshine solo habla con el ayudante que Sunshine inició; actualizar una plantilla ya no monta en tu PC el disco de la copia temporal (se limpia y se revisa desde dentro de la copia); el visor arranca con las mitigaciones de procesos de Windows (sin DLLs que él pueda escribir ni de red, sin extensiones inyectadas, ASLR forzado, manejadores estrictos).
 - Actualizar GpuVM ya no deja instalado el servicio viejo cuando tardaba en detenerse.
 - Abrir a mano una copia nueva de una plantilla de agentes ya no espera hasta 15 minutos en "Iniciando sesión en Windows".
 - El `destroy` de un agente ya no informa un error cuando GpuVM ya había borrado la máquina.

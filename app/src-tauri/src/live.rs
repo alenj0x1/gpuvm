@@ -71,13 +71,18 @@ pub fn start(app: &AppHandle) {
     // The overlay's page listens now: what came while it loaded is sent (the first step of a session used to be lost).
     let handle = app.clone();
     app.listen_any("agent-live-ready", move |_| {
-        let pending = {
+        let (pending, vm) = {
             let mut over = lock(&OVER);
             let Some(o) = over.as_mut() else { return };
             o.ready = true;
-            std::mem::take(&mut o.pending)
+            (std::mem::take(&mut o.pending), o.vm.clone())
         };
         if let Some(w) = handle.get_webview_window(LABEL) {
+            // Shown once its page is drawn, so it never flashes over the picture while loading.
+            if !w.is_visible().unwrap_or(false) && crate::agent::place_over_picture(&handle, &w, &vm) {
+                let _ = w.show();
+                crate::overlay::mark_taskbar(&w, crate::viewer::viewer_full_screen(&vm));
+            }
             for event in pending {
                 let _ = w.emit("agent-live", event);
             }
@@ -196,7 +201,7 @@ fn overlay_send(app: &AppHandle, vm: &str, event: &Value) {
             if let Some(w) = existing {
                 let _ = w.destroy();
             }
-            let Ok(w) = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into()))
+            let Ok(w) = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into())).additional_browser_args(crate::BROWSER_ARGS)
                 .title("GpuVM").decorations(false).transparent(true).shadow(false).resizable(false)
                 .skip_taskbar(true).focused(false).visible(false).build() else { return };
             // Click-through: every click and the wheel go to the picture underneath.
@@ -208,7 +213,8 @@ fn overlay_send(app: &AppHandle, vm: &str, event: &Value) {
     if !crate::agent::place_over_picture(app, &window, vm) {
         return;
     }
-    if !window.is_visible().unwrap_or(false) {
+    let ready = lock(&OVER).as_ref().is_some_and(|o| o.ready);
+    if ready && !window.is_visible().unwrap_or(false) {
         let _ = window.show();
         crate::overlay::mark_taskbar(&window, crate::viewer::viewer_full_screen(vm));
     }

@@ -59,7 +59,7 @@ fn panel_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
     if let Some(w) = app.get_webview_window(LABEL) {
         return Some(w);
     }
-    WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into()))
+    WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into())).additional_browser_args(crate::BROWSER_ARGS)
         .title("GpuVM")
         .decorations(false)
         .transparent(true)
@@ -86,6 +86,7 @@ fn place(window: &tauri::WebviewWindow, viewer: isize) -> Option<(i32, i32, f64)
     let logical = WIDTH.load(std::sync::atomic::Ordering::Relaxed) as f64;
     let width = ((logical * scale).round() as i32).min(w / 2);
     let _ = window.set_size(PhysicalSize::new(width as u32, h as u32));
+    borderless(window);
     let _ = window.set_position(PhysicalPosition::new(x + w - width, y));
     if let Ok(own) = window.hwnd() {
         // SAFETY: makes the viewer the panel's owner window, so the panel stays just above it.

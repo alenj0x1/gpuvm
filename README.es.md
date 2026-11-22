@@ -122,6 +122,7 @@ npm --prefix app run i18n         # cada texto en español tiene su inglés (app
 node tools/screenshots/shoot.mjs  # capturas para el README, la doc y el sitio (con la interfaz en :1430)
 npm --prefix app run tauri build  # instalador en app/src-tauri/target/release/bundle/nsis/
 Invoke-Pester ./tests             # pruebas del módulo, sin administrador
+pwsh -File tests/e2e/overlays.ps1 # de punta a punta: lo que la persona ve sobre una máquina (build instalada; obligatoria para publicar)
 node scripts/site/changelog.mjs   # sitio web (site/): lo nuevo, desde los changelogs
 npm --prefix app run build:embed  # sitio web: los componentes en vivo de la app (site/assets/embed.js)
 npm --prefix docs run dev         # sitio de documentación

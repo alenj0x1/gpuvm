@@ -313,6 +313,10 @@ fn relaunch_as_admin(app: AppHandle) -> Result<(), String> {
 }
 
 /// Brings the main window back (from the tray, minimized or behind other windows).
+/// Every window's WebView2 options must match the main window's (tauri.conf.json), or WebView2 refuses to create it.
+/// wry's defaults plus no occlusion tracking, which stops drawing small windows over a full-screen picture.
+pub(crate) const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion --autoplay-policy=no-user-gesture-required";
+
 pub(crate) fn show_main(app: &AppHandle) {
     use tauri::Manager;
     notices::leave(app);
@@ -321,6 +325,15 @@ pub(crate) fn show_main(app: &AppHandle) {
         let _ = window.show();
         let _ = window.set_focus();
     }
+}
+
+/// For an agent's open_viewer: Windows won't give a background program the foreground, so the window is raised
+/// without it.
+pub(crate) fn raise_main_quietly(app: &AppHandle) {
+    use tauri::Manager;
+    let Some(window) = app.get_webview_window("main") else { return };
+    let Ok(hwnd) = window.hwnd() else { return };
+    viewer::raise_without_focus(hwnd.0 as isize, !window.is_visible().unwrap_or(true) || window.is_minimized().unwrap_or(false));
 }
 
 /// `--view <name>`: open that machine's picture, as its Open button does. Only a valid machine name passes; the page
@@ -512,8 +525,30 @@ pub fn mcp(fake: bool) -> i32 {
     mcp::run(fake)
 }
 
+/// The installed app has no console: stderr goes to %LOCALAPPDATA%\GpuVM\app.log (started over past 2 MB).
+fn log_to_file() {
+    use std::os::windows::io::IntoRawHandle;
+    let Some(dir) = std::env::var_os("LOCALAPPDATA").map(|d| std::path::PathBuf::from(d).join("GpuVM")) else { return };
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("app.log");
+    let fresh = std::fs::metadata(&path).map(|m| m.len() > 2 * 1024 * 1024).unwrap_or(false);
+    let file = std::fs::OpenOptions::new().create(true).append(!fresh).write(true).truncate(fresh).open(&path);
+    if let Ok(file) = file {
+        // SAFETY: the handle is this process's own, kept open for its whole life as its stderr.
+        unsafe { windows_sys::Win32::System::Console::SetStdHandle(windows_sys::Win32::System::Console::STD_ERROR_HANDLE, file.into_raw_handle() as _) };
+        eprintln!("---- GpuVM {} started (pid {})", env!("CARGO_PKG_VERSION"), std::process::id());
+    }
+}
+
+pub(crate) fn diag(what: &str) {
+    let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+    eprintln!("{ms} {what}");
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(not(debug_assertions))]
+    log_to_file();
     tauri::Builder::default()
         // A second launch (e.g. from the Start menu while GpuVM is in the tray) shows the open window instead.
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {

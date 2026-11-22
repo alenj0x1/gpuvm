@@ -9,6 +9,7 @@ export default defineConfig({
     lib: { entry: "src/embed.tsx", name: "GpuVMEmbed", formats: ["iife"], fileName: () => "embed.js" },
     outDir: "../site/assets",
     emptyOutDir: false,
+    publicDir: false,
     // App icons and fonts inline into the script, so the demo is one file.
     assetsInlineLimit: 200_000,
   },

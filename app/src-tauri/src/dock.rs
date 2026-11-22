@@ -49,6 +49,7 @@ fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str) -> bool {
     let Some((x, y, w, h, _)) = crate::overlay::client_rect(viewer) else { return false };
     let w = w - crate::overlay::open_width(app, vm).unwrap_or(0).min(w / 2);
     let _ = window.set_size(PhysicalSize::new(w.max(1) as u32, h.max(1) as u32));
+    crate::overlay::borderless(window);
     let _ = window.set_position(PhysicalPosition::new(x, y));
     if let Ok(own) = window.hwnd() {
         // SAFETY: makes the viewer the dock's owner window, so the dock stays just above it and moves with it.
@@ -74,7 +75,7 @@ pub fn show(app: &AppHandle, prompt: Value) {
         }
         let _ = window.destroy();
     }
-    let built = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into()))
+    let built = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into())).additional_browser_args(crate::BROWSER_ARGS)
         .title("GpuVM")
         .decorations(false)
         .transparent(true)

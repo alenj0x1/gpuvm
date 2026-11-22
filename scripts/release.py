@@ -17,6 +17,7 @@ It does not push: review, then `git push --follow-tags`.
 """
 
 import argparse
+import json
 import datetime as dt
 import re
 import subprocess
@@ -100,6 +101,7 @@ def main() -> int:
     ap.add_argument("version", nargs="?", help="x.y.z")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--next", action="store_true", help="suggest the next version and exit")
+    ap.add_argument("--skip-e2e", action="store_true", help="release without a passing end-to-end check (not for real releases)")
     a = ap.parse_args()
 
     if a.next:
@@ -111,6 +113,12 @@ def main() -> int:
         sys.exit("There are uncommitted changes: commit them before releasing.")
     if git("tag", "--list", f"v{a.version}"):
         sys.exit(f"Tag v{a.version} already exists.")
+    stamp = ROOT / "tests" / "e2e" / ".last-pass.json"
+    head = git("rev-parse", "HEAD")
+    passed = json.loads(read(stamp)).get("commit") if stamp.exists() else None
+    if passed != head and not a.skip_e2e:
+        sys.exit("No passing end-to-end check for this commit. Build and install it, then run "
+                 "pwsh -File tests/e2e/overlays.ps1 (or --skip-e2e for a test release).")
 
     previous, today = current(), dt.date.today().isoformat()
     updated = [(path, *release_changelog(read(path), title, a.version, previous, today)) for path, title in CHANGELOGS]

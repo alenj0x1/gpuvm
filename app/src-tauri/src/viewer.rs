@@ -149,14 +149,48 @@ fn window_of(hwnd: isize, pid: u32) -> bool {
 
 /// Puts a viewer's window in front and gives it the keyboard (it can't do it itself at Low integrity).
 fn bring_forward(hwnd: isize, pid: u32) {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{SetForegroundWindow, SetWindowPos, HWND_TOP, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW};
+    use windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
     if !window_of(hwnd, pid) {
         return;
     }
+    raise_without_focus(hwnd, false);
     // SAFETY: a window of the viewer's own process, checked just above.
+    unsafe { SetForegroundWindow(hwnd as _) };
+}
+
+/// Above every other window without activating it. HWND_TOP is ignored for a program that isn't in front; the topmost
+/// round trip isn't.
+pub(crate) fn raise_without_focus(hwnd: isize, restore: bool) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{IsIconic, SetWindowPos, ShowWindow, HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_SHOWNA, SW_SHOWNOACTIVATE};
+    // SAFETY: plain Win32 calls on a window handle this app holds.
     unsafe {
-        SetWindowPos(hwnd as _, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
-        SetForegroundWindow(hwnd as _);
+        if restore {
+            ShowWindow(hwnd as _, if IsIconic(hwnd as _) != 0 { SW_SHOWNOACTIVATE } else { SW_SHOWNA });
+        }
+        let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW;
+        SetWindowPos(hwnd as _, HWND_TOPMOST, 0, 0, 0, 0, flags);
+        SetWindowPos(hwnd as _, HWND_NOTOPMOST, 0, 0, 0, 0, flags);
+    }
+}
+
+/// An unrevealed viewer waits just below the app's window. At Low integrity its own request to go there can be
+/// ignored, so the app places it.
+fn keep_below_app(app: &AppHandle, viewer: &Viewer) {
+    use tauri::Manager;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{IsWindowVisible, SetWindowPos, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE};
+    if !viewer.embed || viewer.visible.load(Ordering::Relaxed) {
+        return;
+    }
+    let hwnd = viewer.hwnd.load(Ordering::Relaxed);
+    let Some(main) = app.get_webview_window("main").and_then(|w| w.hwnd().ok()) else { return };
+    if hwnd == 0 || !window_of(hwnd, viewer.child.pid) {
+        return;
+    }
+    // SAFETY: a window of the viewer's own process (checked above) placed after this app's main window.
+    unsafe {
+        if IsWindowVisible(hwnd as _) != 0 {
+            SetWindowPos(hwnd as _, main.0 as _, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+        }
     }
 }
 
@@ -439,6 +473,7 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
                 if full && shown != 0 && viewer.visible.load(Ordering::Relaxed) && take_raise(&viewer) {
                     bring_forward(shown, viewer.child.pid);
                 }
+                keep_below_app(&app, &viewer);
                 // The handle stays here: pages only need to know that it changed.
                 if let Some(o) = msg.as_object_mut() {
                     o.remove("hwnd");
@@ -497,6 +532,21 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
                     std::thread::sleep(Duration::from_millis(2000));
                     if !late.revealed.load(Ordering::Relaxed) {
                         reveal(&late);
+                    }
+                });
+            }
+            if matches!(kind.as_str(), "connected" | "first-frame") {
+                keep_below_app(&app, &viewer);
+            }
+            if kind == "connected" {
+                let (app, viewer) = (app.clone(), viewer.clone());
+                std::thread::spawn(move || {
+                    for _ in 0..60 {
+                        std::thread::sleep(Duration::from_millis(100));
+                        if viewer.visible.load(Ordering::Relaxed) || !viewer.child.running() {
+                            break;
+                        }
+                        keep_below_app(&app, &viewer);
                     }
                 });
             }
@@ -854,6 +904,11 @@ pub async fn viewer_show(app: AppHandle, vm: String) -> Result<(), String> {
     allow_raise(&viewer);
     if !send_raw(&viewer, &json!({ "type": "show" })) {
         return Err("The viewer didn't respond.".into());
+    }
+    // Already full screen: no window report will come to raise it.
+    let hwnd = viewer.hwnd.load(Ordering::Relaxed);
+    if viewer.full_now.load(Ordering::Relaxed) && hwnd != 0 && take_raise(&viewer) {
+        bring_forward(hwnd, viewer.child.pid);
     }
     viewer.visible.store(true, Ordering::Relaxed);
     viewer.revealed.store(true, Ordering::Relaxed);

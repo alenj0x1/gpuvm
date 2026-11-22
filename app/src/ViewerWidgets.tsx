@@ -44,7 +44,7 @@ export const SPEC: Record<WidgetType, Spec> = {
 const ORDER: WidgetType[] = ["machines", "actions", "capture", "agent", "stats", "clock", "files", "clipboard", "shelf", "games", "weather"];
 // The shelf and the games ask for the whole width: two columns in a narrow panel, three in a wide one (no empty
 // column beside them). Placed in this order, the first free cell each.
-const DEFAULT_SIZES: [WidgetType, number, number][] = [["machines", 2, 2], ["stats", 1, 2], ["clock", 1, 2], ["actions", 2, 2], ["capture", 3, 2], ["files", 2, 2], ["clipboard", 2, 3], ["shelf", 3, 2], ["games", 3, 2]];
+const DEFAULT_SIZES: [WidgetType, number, number][] = [["machines", 2, 2], ["stats", 1, 2], ["clock", 1, 2], ["actions", 2, 2], ["capture", 3, 2], ["files", 3, 2], ["clipboard", 3, 3], ["shelf", 3, 2], ["games", 3, 2]];
 
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
 const GAP = 8, ROW = 76;
@@ -167,16 +167,16 @@ export function WidgetBoard({ items, onChange, edit, children }: {
 
   const cols = width >= 416 ? 3 : 2;
   const cellW = (width - GAP * (cols - 1)) / cols;
-  // A layout arranged in a narrow panel (two columns) leaves the third one empty when the panel is widened: the first
-  // time it shows in three, the widgets fill it in their order (once; a layout that already uses the third column
-  // is kept as it is).
+  // A layout arranged in two columns, shown in three for the first time: full-width widgets stay full width and the
+  // rest fill the new column (once; a layout that already uses the third column is kept).
   useEffect(() => {
     if (cols !== 3) return;
     const list = live.current;
     if (!list.length || !list.every((it) => it.x + shownW(it, 2) <= 2)) return;
-    const order = [...list].sort((a, b) => a.y - b.y || a.x - b.x).map(({ x: _x, y: _y, ...rest }) => rest);
+    const order = [...list].sort((a, b) => a.y - b.y || a.x - b.x)
+      .map(({ x: _x, y: _y, ...rest }) => (shownW(rest, 2) === 2 ? { ...rest, w: Math.min(SPEC[rest.type].maxW, 3) } : rest));
     const flowed = settle(order, 3);
-    if (flowed.some((f) => { const o = list.find((x) => x.id === f.id)!; return o.x !== f.x || o.y !== f.y; })) onChange(flowed);
+    if (flowed.some((f) => { const o = list.find((x) => x.id === f.id)!; return o.x !== f.x || o.y !== f.y || o.w !== f.w; })) onChange(flowed);
   }, [cols]);
   const px = (c: Cell) => ({ x: c.x * (cellW + GAP), y: c.y * (ROW + GAP), w: c.w * cellW + (c.w - 1) * GAP, h: c.h * ROW + (c.h - 1) * GAP });
 
@@ -666,23 +666,34 @@ export function GamesWidget({ size, player, fallback, onPlay }: { size: WidgetSi
   );
 }
 
-/* A game's cover: its demo runs a moment, a frame of it stays as a still picture (kept per game and theme) and the
-   demo stops; with the pointer over the card it plays again. So the board never keeps several games running. */
-const covers = new Map<string, string>();
+/* A game's cover: its demo runs a moment, a frame of it stays as a still picture (kept per game and theme, retaken
+   when the card grows past its width) and the demo stops; with the pointer over the card it plays again. So the board
+   never keeps several games running. */
+const covers = new Map<string, { url: string; width: number }>();
 function GameCover({ game, player, fallback }: { game: GameDef; player: string; fallback: Decor }) {
   const theme = usePrefs().theme;
   const key = `${game.id}|${player}|${theme}`;
-  const [still, setStill] = useState(() => covers.get(key) ?? "");
+  const [still, setStill] = useState(() => covers.get(key)?.url ?? "");
   const [live, setLive] = useState(!covers.has(key));
   const box = useRef<HTMLSpanElement>(null);
-  useEffect(() => { const c = covers.get(key); setStill(c ?? ""); if (!c) setLive(true); }, [key]);
+  useEffect(() => { const c = covers.get(key); setStill(c?.url ?? ""); if (!c) setLive(true); }, [key]);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      const c = covers.get(key);
+      if (c && el.clientWidth * window.devicePixelRatio > c.width * 1.1) setLive(true);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [key]);
   // While it plays without the pointer (the first time), a frame is taken after a moment and the demo stops.
   const hover = useRef(false);
   useEffect(() => {
     if (!live) return;
     const timer = window.setTimeout(() => {
       const cv = box.current?.querySelector("canvas");
-      try { if (cv && cv.width) { const url = cv.toDataURL("image/webp", 0.8); covers.set(key, url); setStill(url); } } catch { /* nothing to keep */ }
+      try { if (cv && cv.width) { const url = cv.toDataURL("image/webp", 0.9); covers.set(key, { url, width: cv.width }); setStill(url); } } catch { /* nothing to keep */ }
       if (!hover.current) setLive(false);
     }, 1400);
     return () => clearTimeout(timer);

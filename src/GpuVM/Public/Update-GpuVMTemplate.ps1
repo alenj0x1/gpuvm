@@ -149,6 +149,12 @@ function Add-TemplateLayer {
         # only a clean shutdown makes a layer worth copying.
         if (-not $installed['restarted']) { Restart-GpuVMCold -Name $copy }
         Wait-GuestReady -Name $copy -Credential $credential | Out-Null
+        # Read and cleaned inside the copy: this PC never mounts a disk the copy wrote.
+        $keys = @(Get-TemplateComponentKeys -Template $Template -Bundled $Bundled)
+        $components = Clear-GuestIdentityForLayer -Name $copy -Credential $credential -Keys $keys
+        foreach ($key in $keys) {
+            if ([string]$components[$key] -ne [string]$Bundled[$key]) { throw "The temporary copy doesn't have this GpuVM's $(Split-Path $key -Leaf); the template stays as it was." }
+        }
         Write-Step 'Shutting the temporary copy down'
         if (-not (Stop-GuestCleanly -Name $copy)) {
             throw "Windows in the temporary copy '$copy' didn't shut down cleanly; the template stays as it was."
@@ -166,16 +172,6 @@ function Add-TemplateLayer {
         # The template folder's permissions (Administrators and SYSTEM), not the copy's (it carried the VM's own access).
         & icacls.exe $building /reset /Q | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Couldn't set the permissions of $building." }
-        $keys = @(Get-TemplateComponentKeys -Template $Template -Bundled $Bundled)
-        $components = Invoke-WithMountedWindows -Path $building -ScriptBlock {
-            param($root)
-            # Never the copy's secret or Sunshine identity: every copy of the template gets its own.
-            Reset-ClonedGuestIdentity -WindowsRoot $root
-            Get-GuestComponentStamp -WindowsRoot $root -Keys $keys
-        }
-        foreach ($key in $keys) {
-            if ([string]$components[$key] -ne [string]$Bundled[$key]) { throw "The temporary copy doesn't have this GpuVM's $(Split-Path $key -Leaf); the template stays as it was." }
-        }
         Move-Item -LiteralPath $building -Destination $layer
         (Get-Item -LiteralPath $layer).IsReadOnly = $true
 
@@ -220,6 +216,51 @@ function Add-TemplateLayer {
         }
         Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
     }
+}
+
+# Inside the temporary copy, right before it shuts down: Sunshine and the agent stop (so neither writes again), the
+# copy's Sunshine identity and paired devices, the agent's secret, logs and staging go (each copy of the template
+# makes its own), and the hashes of this build's files are read. Returns {key: SHA-256 or $null}. Links inside the
+# guest only lead to the guest's own files: nothing here touches this PC's.
+function Clear-GuestIdentityForLayer {
+    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential, [string[]]$Keys = @())
+    Write-Step 'Removing the temporary copy''s own identity'
+    $result = Invoke-Command -VMName $Name -Credential $Credential -ErrorAction Stop -ArgumentList (, $Keys) -ScriptBlock {
+        param($keys)
+        $ErrorActionPreference = 'Stop'
+        foreach ($service in 'GpuVMAgent', 'SunshineService') {
+            Get-Service -Name $service -ErrorAction SilentlyContinue | Stop-Service -Force -ErrorAction SilentlyContinue -WarningAction SilentlyContinue
+        }
+        $config = Join-Path $env:ProgramFiles 'Sunshine\config'
+        $statePath = Join-Path $config 'sunshine_state.json'
+        if (Test-Path -LiteralPath $statePath) {
+            $state = Get-Content -Raw -LiteralPath $statePath | ConvertFrom-Json
+            if ($state.PSObject.Properties['root']) { $state.PSObject.Properties.Remove('root') }
+            [IO.File]::WriteAllText($statePath, ($state | ConvertTo-Json -Depth 10))
+        }
+        foreach ($pem in 'cacert.pem', 'cakey.pem') {
+            $path = Join-Path $config "credentials\$pem"
+            if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
+        }
+        $agent = Join-Path $env:ProgramData 'GpuVM\Agent'
+        if (Test-Path -LiteralPath $agent) {
+            Get-ChildItem -LiteralPath $agent -Force | Where-Object { $_.Name -eq 'secret' -or $_.Name -like '*.log' -or $_.Name -eq 'staging' } |
+                Remove-Item -Recurse -Force
+        }
+        $stamp = @{}
+        foreach ($key in $keys) {
+            $path = Join-Path "$env:SystemDrive\" $key
+            $stamp[$key] = if (Test-Path -LiteralPath $path -PathType Leaf) { (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash }
+        }
+        $stamp
+    }
+    # Only the keys asked for, as text: nothing else the guest sends back is kept.
+    $components = [ordered]@{}
+    foreach ($key in $Keys) {
+        $hash = [string]$result[$key]
+        $components[$key] = if ($hash -match '^[0-9A-F]{64}$') { $hash } else { $null }
+    }
+    $components
 }
 
 # Asks Windows to shut down and waits for the machine to be off: $true when it was, $false when it had to be turned

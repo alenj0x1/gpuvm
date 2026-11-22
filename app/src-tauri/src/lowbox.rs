@@ -21,8 +21,10 @@ use windows_sys::Win32::System::JobObjects::{
     JOB_OBJECT_UILIMIT_SYSTEMPARAMETERS, JOB_OBJECT_UILIMIT_WRITECLIPBOARD,
 };
 use windows_sys::Win32::System::Threading::{
-    CreateProcessAsUserW, GetCurrentProcess, OpenProcessToken, ResumeThread, TerminateProcess, WaitForSingleObject,
-    CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, PROCESS_INFORMATION, STARTUPINFOW,
+    CreateProcessAsUserW, DeleteProcThreadAttributeList, GetCurrentProcess, InitializeProcThreadAttributeList,
+    OpenProcessToken, ResumeThread, TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject, CREATE_SUSPENDED,
+    CREATE_UNICODE_ENVIRONMENT, EXTENDED_STARTUPINFO_PRESENT, LPPROC_THREAD_ATTRIBUTE_LIST, PROCESS_INFORMATION,
+    STARTUPINFOEXW, STARTUPINFOW,
 };
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -32,6 +34,50 @@ const ADMINISTRATORS: &str = "S-1-5-32-544";
 const SE_GROUP_INTEGRITY: u32 = 0x20;
 /// Low mandatory level.
 const LOW: &str = "S-1-16-4096";
+
+/// PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY (winbase.h).
+const MITIGATION_POLICY_ATTRIBUTE: usize = 0x0002_0007;
+/// winnt.h PROCESS_CREATION_MITIGATION_POLICY_*. Not dynamic code or Microsoft-only binaries (Qt's QML engine and
+/// the bundled DLLs need them), nor win32k lockdown (it draws a window).
+const VIEWER_MITIGATIONS: u64 = (1 << 8)  // FORCE_RELOCATE_IMAGES_ALWAYS_ON
+    | (1 << 12) // HEAP_TERMINATE_ALWAYS_ON
+    | (1 << 16) // BOTTOM_UP_ASLR_ALWAYS_ON
+    | (1 << 20) // HIGH_ENTROPY_ASLR_ALWAYS_ON
+    | (1 << 24) // STRICT_HANDLE_CHECKS_ALWAYS_ON
+    | (1 << 32) // EXTENSION_POINT_DISABLE_ALWAYS_ON
+    | (1 << 52) // IMAGE_LOAD_NO_REMOTE_ALWAYS_ON
+    | (1 << 56); // IMAGE_LOAD_NO_LOW_LABEL_ALWAYS_ON
+
+struct Attributes {
+    buffer: Vec<u8>,
+    _policy: Box<u64>,
+}
+
+impl Attributes {
+    unsafe fn mitigations() -> Option<Attributes> {
+        let mut size = 0usize;
+        InitializeProcThreadAttributeList(std::ptr::null_mut(), 1, 0, &mut size);
+        let mut buffer = vec![0u8; size];
+        let list = buffer.as_mut_ptr() as LPPROC_THREAD_ATTRIBUTE_LIST;
+        if InitializeProcThreadAttributeList(list, 1, 0, &mut size) == 0 {
+            return None;
+        }
+        let policy = Box::new(VIEWER_MITIGATIONS);
+        let set = UpdateProcThreadAttribute(list, 0, MITIGATION_POLICY_ATTRIBUTE, (&*policy as *const u64).cast(), std::mem::size_of::<u64>(), std::ptr::null_mut(), std::ptr::null());
+        let attributes = Attributes { buffer, _policy: policy };
+        (set != 0).then_some(attributes)
+    }
+    fn list(&mut self) -> LPPROC_THREAD_ATTRIBUTE_LIST {
+        self.buffer.as_mut_ptr() as LPPROC_THREAD_ATTRIBUTE_LIST
+    }
+}
+
+impl Drop for Attributes {
+    fn drop(&mut self) {
+        // SAFETY: initialized in mitigations() (a value is only built after that succeeded).
+        unsafe { DeleteProcThreadAttributeList(self.list()) };
+    }
+}
 
 fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(Some(0)).collect()
@@ -202,15 +248,19 @@ pub fn spawn_low(exe: &Path, args: &[String], env: &[(&str, &str)]) -> Result<Lo
         let line = std::iter::once(quote(&exe_text)).chain(args.iter().map(|a| quote(a))).collect::<Vec<_>>().join(" ");
         let mut line = wide(&line);
         let dir = exe.parent().map(|d| wide(&d.to_string_lossy())).unwrap_or_else(|| wide("."));
-        let mut si: STARTUPINFOW = std::mem::zeroed();
-        si.cb = std::mem::size_of::<STARTUPINFOW>() as u32;
+        let mut attributes = Attributes::mitigations().ok_or_else(fail)?;
+        let mut si: STARTUPINFOEXW = std::mem::zeroed();
+        si.StartupInfo.cb = std::mem::size_of::<STARTUPINFOEXW>() as u32;
+        si.lpAttributeList = attributes.list();
         let job = viewer_job().ok_or_else(fail)?;
         let mut pi: PROCESS_INFORMATION = std::mem::zeroed();
         // Suspended until it is in the job: it never runs a single instruction outside it.
         if CreateProcessAsUserW(low.0, wide(&exe_text).as_ptr(), line.as_mut_ptr(), std::ptr::null(), std::ptr::null(), 0,
-            CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED, block.as_ptr().cast(), dir.as_ptr(), &si, &mut pi) == 0 {
+            CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT, block.as_ptr().cast(), dir.as_ptr(),
+            (&si as *const STARTUPINFOEXW).cast::<STARTUPINFOW>(), &mut pi) == 0 {
             return Err(fail());
         }
+        drop(attributes);
         let thread = Handle(pi.hThread);
         let child = LowChild { pid: pi.dwProcessId, process: Handle(pi.hProcess), _job: job };
         if AssignProcessToJobObject(child._job.0, child.process.0) == 0 || ResumeThread(thread.0) == u32::MAX {
@@ -261,6 +311,21 @@ mod tests {
         }
         assert!(child.running());
         drop(child); // closing the job ends it
+    }
+
+    #[test]
+    fn child_has_the_mitigations() {
+        use windows_sys::Win32::System::Threading::{GetProcessMitigationPolicy, ProcessExtensionPointDisablePolicy, ProcessImageLoadPolicy};
+        let child = super::spawn_low(&system32("waitfor.exe"), &["/t".into(), "5".into(), "GpuVMLowboxMit".into()], &[]).expect("spawn");
+        // SAFETY: queries on the child's handle into 4-byte policy structs (bit fields in one DWORD).
+        unsafe {
+            let mut image = 0u32;
+            assert!(GetProcessMitigationPolicy(child.handle(), ProcessImageLoadPolicy, (&mut image as *mut u32).cast(), 4) != 0);
+            assert!(image & 0b11 == 0b11, "remote and Low-label images not refused: {image:#b}");
+            let mut ext = 0u32;
+            assert!(GetProcessMitigationPolicy(child.handle(), ProcessExtensionPointDisablePolicy, (&mut ext as *mut u32).cast(), 4) != 0);
+            assert!(ext & 1 == 1, "extension points not disabled");
+        }
     }
 
     /// The child runs inside its job, limited to one process, and the job ends it when let go.

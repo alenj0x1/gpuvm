@@ -32,6 +32,11 @@ Changes waiting for the next version sit under **Unreleased** at the top (this s
 - **Templates stay up to date.** When GpuVM brings a newer Sunshine or agent, its templates get it once, as a layer on top of them, in the background (the app checks when it starts and every hour). Copies of an agent template are ready in under a minute instead of about five; machines already made from a template keep theirs untouched.
 
 ### Fixed
+- When an agent opens a machine's picture, GpuVM and the picture come up in front of your other windows (without taking the keyboard); before, a full-screen picture could open behind the terminal while the agent was told you saw it.
+- An agent's requests (such as using one of your machines) show as a Windows notification that stays on screen until you open or close it, and goes away by itself once answered in GpuVM.
+- The agent's request and live view over the picture no longer flash white or black for a moment as they appear.
+- The number of waiting requests beside **Agents** uses the app's normal digits.
+- Security: Sunshine's capture helper only talks to the helper Sunshine started; updating a template never mounts the temporary copy's disk on your PC (it is cleaned and checked from inside the copy); the viewer starts with Windows' process mitigations (no DLLs it could write or from the network, no injected extensions, forced ASLR, strict handles).
 - Updating GpuVM no longer leaves the old service installed when it was slow to stop.
 - Opening a fresh copy of an agent template by hand no longer waits up to 15 minutes on "Signing in to Windows".
 - An agent's `destroy` no longer reports a failure when GpuVM had already deleted the machine.

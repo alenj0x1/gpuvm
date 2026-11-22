@@ -120,7 +120,7 @@ fn show(app: &AppHandle, prompts: Value) {
     let take_focus = crate::viewer::foreground_vm().is_some();
     // SAFETY: reading the foreground window has no preconditions.
     *PREVIOUS.lock().unwrap_or_else(|e| e.into_inner()) = if take_focus { unsafe { GetForegroundWindow() } } else { 0 };
-    let built = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into()))
+    let built = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into())).additional_browser_args(crate::BROWSER_ARGS)
         .title("GpuVM")
         .inner_size(WIDTH, HEIGHT)
         .resizable(false)

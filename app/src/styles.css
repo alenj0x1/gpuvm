@@ -1406,7 +1406,8 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 /* GpuVM viewer's side panel (ViewerPanel.tsx): its own window over the right edge of the viewer. It slides in while
    the viewer moves the picture aside with the same duration and curve (overlay.rs, SLIDE_MS). */
 html.viewer-panel-window, html.viewer-panel-window body { background: transparent; overflow: hidden; }
-html.viewer-panel-window body::after { display: none; }
+html.viewer-panel-window body::after, html.status-notch-window body::after, html.agent-dock-window body::after, html.agent-live-window body::after,
+html.prompt-dock-window body::after, html.prompt-window body::after, html.drop-window body::after { display: none; }
 .viewer-panel { position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--bg); box-shadow: inset 1px 0 0 var(--line);
   transform: translateX(100%); transition: transform 320ms cubic-bezier(.2, .8, .2, 1); }
 .viewer-panel.open { transform: none; }
@@ -1800,7 +1801,7 @@ html.viewer-panel-window body::after { display: none; }
   .ag-head { flex-wrap: wrap; }
 }
 /* Just the number in the warning tone, no pill behind it (2026-11-21: "se ve mal"). */
-.side-count { min-width: 18px; height: 18px; display: inline-grid; place-items: center; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--warn); }
+.side-count { min-width: 18px; height: 18px; display: inline-grid; place-items: center; font-size: 12px; font-weight: 600; font-variant-numeric: proportional-nums; font-family: inherit; color: var(--warn); }
 .side-working { display: block; background: var(--accent); animation: ag-pulse 1.6s ease-in-out infinite; }
 /* Collapsed sidebar: the names and counts hide, but "an agent needs you" can't (lab 054 on the installed app, with the
    notification banner held by Windows): the count stays as a small badge on the icon's corner, the working dot too. */
@@ -1855,7 +1856,8 @@ html.status-notch-window, html.status-notch-window body, html.status-notch-windo
 .sn-stage.attached.sn-v-bottom .sn { transform: translateY(110%); }
 .sn-stage.attached.sn-v-top .sn { transform: translateY(-110%); }
 .sn-stage:not(.attached) .sn { opacity: 0; transform: scale(.96); }
-.sn.on { transform: none; opacity: 1; }
+/* Must outrank every hidden state above. */
+.sn.on, .sn-stage .sn.on, .sn-stage:not(.attached) .sn.on, .sn-stage.attached.sn-v-bottom .sn.on, .sn-stage.attached.sn-v-top .sn.on { transform: none; opacity: 1; }
 .sn-row { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 0 6px 0 8px; }
 .sn-row .sn-text { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .sn-icon { display: block; flex: none; color: #a8a59e; }

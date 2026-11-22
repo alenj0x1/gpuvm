@@ -96,9 +96,8 @@ fn release_view(app: &AppHandle, clients: &[Value]) {
         }
     };
     *lock(&AGENT_VIEW_READY) = Some(name.clone());
+    crate::raise_main_quietly(app);
     if let Some(w) = app.get_webview_window("main") {
-        // No focus taken: the taskbar button flashes, the person looks when they want.
-        let _ = w.request_user_attention(Some(tauri::UserAttentionType::Informational));
         let _ = w.emit("agent-view", name);
     }
 }
@@ -212,6 +211,15 @@ fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Ve
     // actions), with take control on input. Only "working" missed the person's first move after the agent had been
     // idle 15 s (lab 054: round 1 missed in every run).
     let on_input = TAKE_ON_INPUT.load(Ordering::Relaxed);
+    {
+        static LAST: Mutex<String> = Mutex::new(String::new());
+        let now = clients.iter().map(|c| format!("{}:{}:{}", c["name"].as_str().unwrap_or("?"), c["machine"].as_str().unwrap_or("-"), c["state"].as_str().unwrap_or("?"))).collect::<Vec<_>>().join(" ");
+        let mut last = lock(&LAST);
+        if *last != now {
+            crate::diag(&format!("agents: {now}"));
+            *last = now;
+        }
+    }
     let working: HashSet<String> = clients.iter()
         .filter(|c| holds(c))
         .filter_map(|c| c["machine"].as_str().map(str::to_string))
@@ -219,10 +227,22 @@ fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Ve
         .filter(|vm| !person_has(vm) && !lock(&PAUSING).as_ref().is_some_and(|p| p.contains(vm)))
         .collect();
     {
+        static LAST: Mutex<String> = Mutex::new(String::new());
+        let why = clients.iter().filter(|c| holds(c)).filter_map(|c| c["machine"].as_str()).map(|vm| format!("{vm}: input {on_input}, viewer {}, person {}, pausing {}",
+            crate::viewer::viewer_is_open(vm.to_string()), person_has(vm), lock(&PAUSING).as_ref().is_some_and(|p| p.contains(vm)))).collect::<Vec<_>>().join("; ");
+        let mut last = lock(&LAST);
+        if *last != why {
+            crate::diag(&format!("take-control candidates: {why}"));
+            *last = why;
+        }
+    }
+    {
         let mut watching = lock(&WATCHING);
         let watching = watching.get_or_insert_with(HashSet::new);
         for vm in working.difference(watching).cloned().collect::<Vec<_>>() {
-            if crate::viewer::send_to(&vm, &json!({ "type": "agent-watch", "on": true })).is_ok() {
+            let sent = crate::viewer::send_to(&vm, &json!({ "type": "agent-watch", "on": true }));
+            crate::diag(&format!("take-control watch {vm} on: {sent:?}"));
+            if sent.is_ok() {
                 watching.insert(vm);
             }
         }
@@ -268,6 +288,9 @@ fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Ve
             notify(app, r);
         }
         let live: HashSet<String> = waiting.iter().filter_map(|r| r["id"].as_str().map(str::to_string)).collect();
+        for gone in notified.iter().filter(|id| !live.contains(*id)).cloned().collect::<Vec<_>>() {
+            let _ = app.run_on_main_thread(move || toast::remove(&gone));
+        }
         notified.retain(|id| live.contains(id));
         lock(&ANSWERED).retain(|id| live.contains(id));
     }
@@ -308,6 +331,10 @@ fn main_in_front(app: &AppHandle) -> bool {
 /// A window over the viewer's picture: all of it (the dock's veil), or only its top center for what only the person
 /// can do (no veil, the picture stays usable).
 fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str, rect: Rect) -> bool {
+    // Showing a window owned by a viewer that waits below the app brings that viewer above the app.
+    if !crate::viewer::viewer_visible(vm) {
+        return false;
+    }
     let Some(viewer) = crate::viewer::viewer_hwnd(vm) else { return false };
     let Some((x, y, w, h, scale)) = crate::overlay::client_rect(viewer) else { return false };
     let w = w - crate::overlay::open_width(app, vm).unwrap_or(0).min(w / 2);
@@ -321,6 +348,7 @@ fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str, rect: Rect) -
         }
     };
     let _ = window.set_size(PhysicalSize::new(pw.max(1) as u32, ph.max(1) as u32));
+    crate::overlay::borderless(window);
     let _ = window.set_position(PhysicalPosition::new(px, py));
     if let Ok(own) = window.hwnd() {
         // SAFETY: the viewer becomes the window's owner, so it stays just above the picture and moves with it.
@@ -371,7 +399,7 @@ enum Rect {
 }
 
 fn build(app: &AppHandle, label: &str) -> Option<tauri::WebviewWindow> {
-    WebviewWindowBuilder::new(app, label, WebviewUrl::App("index.html".into()))
+    WebviewWindowBuilder::new(app, label, WebviewUrl::App("index.html".into())).additional_browser_args(crate::BROWSER_ARGS)
         .title("GpuVM")
         .decorations(false)
         .transparent(true)
@@ -407,6 +435,26 @@ fn show_dock(app: &AppHandle, request: Value) {
     if !place(app, &window, &vm, if human { Rect::Top } else { Rect::Picture }) {
         let _ = window.destroy();
         *lock(&DOCKED) = None;
+        return;
+    }
+    // Shown once its page has loaded (agent_dock_request), so it never paints the app's background first.
+    DOCK_LOADING.store(true, Ordering::Relaxed);
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(1500));
+        if DOCK_LOADING.swap(false, Ordering::Relaxed) {
+            let app2 = app.clone();
+            let _ = app.run_on_main_thread(move || reveal_dock(&app2));
+        }
+    });
+}
+
+static DOCK_LOADING: AtomicBool = AtomicBool::new(false);
+
+fn reveal_dock(app: &AppHandle) {
+    let Some((vm, human)) = lock(&DOCKED).as_ref().map(|d| (d.vm.clone(), d.request["human"].as_bool() == Some(true))) else { return };
+    let Some(window) = app.get_webview_window(DOCK) else { return };
+    if !place(app, &window, &vm, if human { Rect::Top } else { Rect::Picture }) {
         return;
     }
     let _ = window.show();
@@ -542,8 +590,13 @@ pub async fn agent_dock_resume(app: AppHandle, id: String) -> Result<(), String>
 
 /// The request the dock shows, for its page when it loads.
 #[tauri::command]
-pub fn agent_dock_request() -> Value {
-    lock(&DOCKED).as_ref().map(|d| d.request.clone()).unwrap_or(Value::Null)
+pub fn agent_dock_request(app: AppHandle) -> Value {
+    let request = lock(&DOCKED).as_ref().map(|d| d.request.clone()).unwrap_or(Value::Null);
+    if !request.is_null() && DOCK_LOADING.swap(false, Ordering::Relaxed) {
+        let app2 = app.clone();
+        let _ = app.run_on_main_thread(move || reveal_dock(&app2));
+    }
+    request
 }
 
 /* ---------- take control ---------- */
@@ -596,6 +649,7 @@ fn resume_args(client: &str, vm: &str) -> Value {
 
 /// The viewer saw the person's input over the picture: the agent working there pauses (take control).
 pub fn on_input(app: &AppHandle, vm: &str) {
+    crate::diag(&format!("take-control input {vm}: watching {}, settle {:?}", lock(&WATCHING).as_ref().is_some_and(|w| w.contains(vm)), lock(&SHOWN_AT).as_ref().and_then(|s| s.get(vm)).map(|t| t.elapsed())));
     // The viewer stopped watching when it reported (its next input reaches the machine): forgotten here too, so the
     // next poll turns it back on if the agent isn't paused below (the viewer still settling, a second press).
     if !TAKE_ON_INPUT.load(Ordering::Relaxed) || !lock(&WATCHING).as_mut().is_some_and(|w| w.remove(vm)) {
@@ -960,8 +1014,9 @@ fn notify(app: &AppHandle, request: &Value) {
     // View: what only the person can do is done in the machine (its picture); a request to answer opens GpuVM on
     // Agents, where its card waits with Allow and Refuse (the dock drops there too once its picture is open).
     let target = if human { vm } else { String::new() };
+    let tag = request["id"].as_str().unwrap_or("").to_string();
     let _ = app.run_on_main_thread(move || {
-        if let Err(e) = toast::show(&title, &body, &view, move || open_viewer(&app2, &target)) {
+        if let Err(e) = toast::show(&tag, &title, &body, &view, move || open_viewer(&app2, &target)) {
             eprintln!("agent notification: {e}");
         }
     });
@@ -1018,14 +1073,35 @@ mod toast {
         s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
     }
 
-    pub fn show(title: &str, body: &str, action: &str, on_open: impl Fn() + Send + Sync + 'static) -> windows::core::Result<()> {
+    /// A reminder: it stays on screen until the person acts on it (the agent waits for the answer).
+    const GROUP: &str = "agents";
+
+    /// Windows limits a tag's length: the request's id, hashed.
+    fn tag(id: &str) -> HSTRING {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        id.hash(&mut h);
+        HSTRING::from(format!("{:016x}", h.finish()))
+    }
+
+    pub fn remove(id: &str) {
+        if let Ok(history) = ToastNotificationManager::History() {
+            let _ = history.RemoveGroupedTagWithId(&tag(id), &HSTRING::from(GROUP), &HSTRING::from(AUMID));
+        }
+    }
+
+    pub fn show(id: &str, title: &str, body: &str, action: &str, on_open: impl Fn() + Send + Sync + 'static) -> windows::core::Result<()> {
         let xml = format!(
-            "<toast activationType=\"foreground\" launch=\"agents\"><visual><binding template=\"ToastGeneric\"><text>{}</text><text>{}</text></binding></visual>\
+            "<toast activationType=\"foreground\" launch=\"agents\" scenario=\"reminder\"><visual><binding template=\"ToastGeneric\"><text>{}</text><text>{}</text></binding></visual>\
              <actions><action content=\"{}\" arguments=\"agents\" activationType=\"foreground\"/></actions></toast>",
             escape(title), escape(body), escape(action));
         let doc = XmlDocument::new()?;
         doc.LoadXml(&HSTRING::from(xml))?;
         let toast = ToastNotification::CreateToastNotification(&doc)?;
+        if !id.is_empty() {
+            toast.SetTag(&tag(id))?;
+            toast.SetGroup(&HSTRING::from(GROUP))?;
+        }
         // Clicking the notification or its button: GpuVM opens on Agents (in this running process).
         toast.Activated(&TypedEventHandler::<ToastNotification, windows::core::IInspectable>::new(move |_, _| {
             on_open();

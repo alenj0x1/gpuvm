@@ -122,6 +122,7 @@ npm --prefix app run i18n         # every Spanish text has its English (app/src/
 node tools/screenshots/shoot.mjs  # screenshots for the README, docs and website (needs the dev server on :1430)
 npm --prefix app run tauri build  # installer in app/src-tauri/target/release/bundle/nsis/
 Invoke-Pester ./tests             # module tests, no administrator needed
+pwsh -File tests/e2e/overlays.ps1 # end-to-end: what the person sees over a machine (installed build; required to release)
 npm --prefix docs run dev         # documentation site
 node scripts/site/changelog.mjs   # website (site/): what's new, from the changelogs
 npm --prefix app run build:embed  # website: the app's live components (site/assets/embed.js)

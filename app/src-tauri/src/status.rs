@@ -52,6 +52,7 @@ fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
 
 /// Puts (or replaces) a lasting notice of a machine, or takes it away with None.
 pub fn set(app: &AppHandle, vm: &str, id: &str, item: Option<Value>) {
+    crate::diag(&format!("notch set {vm} {id} {}", if item.is_some() { "on" } else { "off" }));
     with(|s| {
         let list = s.items.entry(vm.to_string()).or_default();
         list.retain(|i| i["id"] != id);
@@ -141,6 +142,12 @@ pub fn refresh(app: &AppHandle) {
     let payload = now.as_ref().map(|(vm, items, placement)| json!({ "vm": vm, "items": items, "placement": placement }));
     let _ = app.emit("status-items", payload.clone().unwrap_or(json!({ "vm": Value::Null, "items": [] })));
     let in_panel = now.as_ref().is_some_and(|(_, _, p)| p == "panel");
+    if now.is_none() {
+        let wants: Vec<String> = with(|s| s.items.iter().filter(|(_, l)| !l.is_empty()).map(|(vm, _)| format!("{vm} (visible {}, window {})", crate::viewer::viewer_visible(vm), crate::viewer::viewer_hwnd(vm).is_some())).collect());
+        if !wants.is_empty() {
+            crate::diag(&format!("notch refresh: nothing to show; notices for {}", wants.join(", ")));
+        }
+    }
     let Some((vm, _, _)) = now.filter(|_| !in_panel) else {
         with(|s| s.shown = None);
         if let Some(w) = app.get_webview_window(LABEL) {
@@ -157,6 +164,7 @@ pub fn refresh(app: &AppHandle) {
         }
         return;
     };
+    crate::diag(&format!("notch refresh: shows {vm}"));
     let switched = with(|s| { let other = s.shown.as_deref() != Some(&vm); s.shown = Some(vm.clone()); other });
     let window = match app.get_webview_window(LABEL) {
         Some(w) if !switched => w,
@@ -164,7 +172,7 @@ pub fn refresh(app: &AppHandle) {
             if let Some(w) = existing {
                 let _ = w.destroy();
             }
-            let Ok(w) = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into()))
+            let Ok(w) = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into())).additional_browser_args(crate::BROWSER_ARGS)
                 .title("GpuVM").decorations(false).transparent(true).shadow(false).resizable(false)
                 .skip_taskbar(true).focused(false).visible(false).build() else { return };
             with(|s| s.size = (0.0, 0.0));
@@ -175,16 +183,24 @@ pub fn refresh(app: &AppHandle) {
     place(app, &window, &vm, false);
 }
 
-/// The notch window trimmed one pixel in from every edge: on Windows 10 a transparent WebView2 window showed a 1px grey
-/// line around its rectangle (2026-11-21, around "Recording"). The rounded corners are the CSS's own, smooth: a window
-/// region cut them to the pixel, and they looked jagged ("los bordes salen como rotos", 2026-11-21).
-fn shape(hwnd: HWND, w: i32, h: i32, _radius: i32, _placement: &str) {
-    use windows_sys::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, SetWindowRgn};
-    // SAFETY: a GDI region this function creates; once given to SetWindowRgn it belongs to the window.
+/// On Windows 10 the see-through part of a transparent WebView2 window shows pale, so the window is cut to the notch's
+/// shape (prefs.ts cornersAt). Needs the frame off: a captioned window with a region gets a classic title bar.
+fn shape(hwnd: HWND, w: i32, h: i32, radius: i32, (fx, fy): (f64, f64)) {
+    use windows_sys::Win32::Graphics::Gdi::{CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, SetWindowRgn, RGN_OR};
+    let (top, bottom, left, right) = (fy <= 0.001, fy >= 0.999, fx <= 0.001, fx >= 0.999);
+    let r = radius.min(w / 2).min(h / 2).max(0);
+    // SAFETY: GDI regions this function creates; the one given to SetWindowRgn belongs to the window afterwards.
     unsafe {
-        let rect = CreateRectRgn(1, 1, w - 1, h - 1);
-        if SetWindowRgn(hwnd, rect, 1) == 0 {
-            DeleteObject(rect);
+        let region = CreateRoundRectRgn(0, 0, w + 1, h + 1, r * 2, r * 2);
+        for (square, (x0, y0)) in [(top || left, (0, 0)), (top || right, (w - r, 0)), (bottom || right, (w - r, h - r)), (bottom || left, (0, h - r))] {
+            if square && r > 0 {
+                let corner = CreateRectRgn(x0, y0, x0 + r, y0 + r);
+                CombineRgn(region, region, corner, RGN_OR);
+                DeleteObject(corner);
+            }
+        }
+        if SetWindowRgn(hwnd, region, 1) == 0 {
+            DeleteObject(region);
         }
     }
 }
@@ -197,7 +213,6 @@ fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str, slide: bool) 
     let (placement, (lw, lh)) = with(|s| (s.placement.clone(), s.size));
     if lw <= 0.0 || lh <= 0.0 {
         // Not measured yet: the page asks to be sized as soon as it has drawn (status_resize).
-        let _ = window.set_size(PhysicalSize::new(1, 1));
         return;
     }
     let (nw, nh) = (((lw * scale) as i32).min(w), (lh * scale) as i32);
@@ -217,10 +232,13 @@ fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str, slide: bool) 
     }
     let was_under = with(|s| std::mem::replace(&mut s.under_dock, under));
     let _ = window.set_size(PhysicalSize::new(nw.max(1) as u32, nh.max(1) as u32));
+    // Resizing can bring the caption back.
+    crate::overlay::borderless(window);
     if let Ok(own) = window.hwnd() {
         // SAFETY: the viewer becomes the window's owner, so the notch stays just above the picture and moves with it.
         unsafe { SetWindowLongPtrW(own.0 as HWND, GWLP_HWNDPARENT, viewer) };
-        shape(own.0 as HWND, nw, nh, (14.0 * scale) as i32, &placement);
+        let corners = if under { (0.5, 0.5) } else { (fx, fy) };
+        shape(own.0 as HWND, nw, nh, (14.0 * scale).round() as i32, corners);
     }
     if (slide || was_under != under) && window.is_visible().unwrap_or(false) {
         // It slides to its new place (with the dock's own drop), instead of jumping.
@@ -242,6 +260,7 @@ fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str, slide: bool) 
     } else {
         let _ = window.set_position(PhysicalPosition::new(px, py));
     }
+    crate::diag(&format!("notch place {vm} at {px},{py} {nw}x{nh} visible {}", window.is_visible().unwrap_or(false)));
     if !window.is_visible().unwrap_or(false) {
         // Shown without taking the keyboard: the person keeps typing into the machine.
         let _ = window.show();
@@ -278,6 +297,7 @@ pub fn dock_changed(app: &AppHandle) {
 /// The notch's page measured what it shows (logical pixels): the window takes exactly that.
 #[tauri::command]
 pub fn status_resize(app: AppHandle, width: f64, height: f64) {
+    crate::diag(&format!("notch page measured {width}x{height}"));
     with(|s| s.size = (width.clamp(1.0, 900.0), height.clamp(1.0, 400.0)));
     let Some(vm) = with(|s| s.shown.clone()) else { return };
     if let Some(w) = app.get_webview_window(LABEL) {
