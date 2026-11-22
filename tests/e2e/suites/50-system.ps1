@@ -185,6 +185,10 @@ function Test-Suite($Ctx) {
         $null = [E2ESys]::ShowWindow($hMain, 6)
         if ($hNote) { [E2ESys]::Front($hNote) }
         Start-Sleep -Seconds 1
+        # A notification left on screen (Windows keeps a reminder until it is clicked) would answer for this one.
+        $screen = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+        for ($i = 0; $i -lt 3 -and (Find-Toast '.'); $i++) { [E2E]::Click($screen.Right - 200, $screen.Bottom - 120); Start-Sleep -Seconds 2 }
+        if ($hNote) { [E2ESys]::Front($hNote) }
         $title = "E2E notification check $(Get-Random -Maximum 99999)"
         $pattern = [regex]::Escape($title)
         $pending = Start-Tool $Ctx.Mcp 'request_approval' @{ machine = $vm; kind = 'other'; title = $title; reason = 'Checking the Windows notification.'; waitSeconds = 180 }

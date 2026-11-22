@@ -135,7 +135,8 @@ function Check-Page([string]$Name, [string]$File) {
 function Open-Page([string]$Name, [string]$File, $Button, [string[]]$Markers) {
     if (-not $Button) { Check "the sidebar has $Name" $false 'button not found'; return $null }
     $b = $Button
-    Check-NoFlash "opening $Name" ({ $null = Invoke-Element $b }.GetNewClosure())
+    # Pages animate (Home's scene, its sprites): only patches against the frames around them count.
+    Check-NoFlash "opening $Name" ({ $null = Invoke-Element $b }.GetNewClosure()) -PictureChanges
     $found = Wait-For { Find-Text (Get-MainElement) $Markers } 5
     Check "$Name opens" ([bool]$found) ("expected: " + ($Markers -join ' / '))
     Check-Page $Name $File
