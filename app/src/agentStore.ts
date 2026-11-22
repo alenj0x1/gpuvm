@@ -11,6 +11,8 @@ export interface AgentSnapshot {
   recordings: AgentRecording[];
   /** How long a request waits for an answer, as the service has it (the one source of truth; null while unknown). */
   approvalTimeoutSec: number | null;
+  /** The person's limit per session in minutes, 0 = none (the default). */
+  maxMinutes: number;
   /** Each machine's agent (Get-GpuVMAgent), by machine name: ready, no-display (signed in but it sees no screen, so no
    *  screenshots or input), starting, off or no-agent, and the service's reason. */
   machineAgents: Record<string, { state: MachineAgentState; error: string | null }>;
@@ -22,7 +24,7 @@ export type MachineAgentState = "ready" | "no-display" | "starting" | "off" | "n
 /** What the broker sends (app/host/src/agent.rs on the agent-broker branch): times in ms, the client is a connection. */
 export interface BrokerState {
   clients: Record<string, unknown>[]; requests: Record<string, unknown>[]; offers: Record<string, unknown>[];
-  settings?: { clients?: Record<string, { clientApprovals?: boolean }>; approvalTimeoutSec?: number } | null;
+  settings?: { clients?: Record<string, { clientApprovals?: boolean }>; approvalTimeoutSec?: number; maxMinutes?: number } | null;
   broker?: { listening: boolean; error?: string | null } | null;
   recordings?: Record<string, unknown>[];
   machines?: Record<string, unknown>[];
@@ -104,10 +106,10 @@ export function fromBroker(raw: BrokerState): Omit<AgentSnapshot, "loaded" | "er
     if (!name) continue;
     machineAgents[name] = { state: STATES_M.includes(m.state as MachineAgentState) ? (m.state as MachineAgentState) : "no-agent", error: str(m.lastError) };
   }
-  return { clients, requests, offers, broker: raw.broker ?? null, recordings, approvalTimeoutSec: typeof timeout === "number" && timeout > 0 ? timeout : null, machineAgents };
+  return { clients, requests, offers, broker: raw.broker ?? null, recordings, approvalTimeoutSec: typeof timeout === "number" && timeout > 0 ? timeout : null, maxMinutes: typeof raw.settings?.maxMinutes === "number" ? raw.settings.maxMinutes : 0, machineAgents };
 }
 
-let snap: AgentSnapshot = { clients: [], requests: [], offers: [], broker: null, recordings: [], approvalTimeoutSec: null, machineAgents: {}, loaded: false, error: null };
+let snap: AgentSnapshot = { clients: [], requests: [], offers: [], broker: null, recordings: [], approvalTimeoutSec: null, maxMinutes: 0, machineAgents: {}, loaded: false, error: null };
 let json = "";
 const subs = new Set<() => void>();
 let users = 0;

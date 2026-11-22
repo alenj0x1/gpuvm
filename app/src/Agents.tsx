@@ -2,14 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   IconCheck, IconCopy, IconDeviceDesktop, IconDeviceDesktopOff, IconFile, IconFileDownload, IconFileText, IconFileUpload, IconFileZip, IconHandFinger, IconHandStop, IconHistory, IconLoader2,
-  IconLock, IconPhoto, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconPlugConnectedX, IconRobot, IconShieldLock, IconTerminal2, IconTrash, IconVideo, IconWorld, IconX, type Icon,
+  IconLock, IconPhoto, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconPlugConnected, IconPlugConnectedX, IconRobot, IconShieldLock, IconTerminal2, IconTrash, IconVideo, IconWorld, IconX, type Icon,
 } from "@tabler/icons-react";
 import { agents, inTauri } from "./api";
 import { actionThumb, bytes, clientOn, middlePath, refreshAgents, useAgents } from "./agentStore";
 import { MachineIcon } from "./machineIcon";
 import { CheckMark, humanError, portalRoot } from "./ui";
 import { locale, t, tn, translateModule } from "./i18n";
-import type { AgentAction, AgentClient, AgentOffer, AgentRecording, AgentRequest, AgentRequestKind, AgentState } from "./types";
+import type { AgentAction, AgentClient, AgentHistoryEntry, AgentOffer, AgentRecording, AgentRequest, AgentRequestKind, AgentState } from "./types";
 
 // Everything the app shows of agents: the Agents page, an agent's live state (machine page and the viewer's widget),
 // its requests and the files it offers from the machine's Outbox. The broker decides; this only shows and answers.
@@ -71,15 +71,21 @@ export function NoDisplayNotice({ machine }: { machine: string | null | undefine
   );
 }
 
-/** Steps and minutes used of the task's budget. */
+/** What the session did so far: actions and minutes, and how far into the person's limit when they set one
+ *  (Settings › Agents; none by default). */
 function Budget({ c }: { c: AgentClient }) {
+  const used = <>{tn(c.steps, "{n} action", "{n} actions")}<span className="ag-sep">·</span>{t("{n} min", { n: c.minutes })}</>;
+  if (!c.maxSteps && !c.maxMinutes) {
+    return <div className="ag-budget"><span className="ag-budget-text">{used}</span></div>;
+  }
   const steps = c.maxSteps ? Math.min(1, c.steps / c.maxSteps) : 0;
   const minutes = c.maxMinutes ? Math.min(1, c.minutes / c.maxMinutes) : 0;
   const near = Math.max(steps, minutes) >= 0.9;
+  const limit = c.maxMinutes ? t("Limit {n} min", { n: c.maxMinutes }) : t("Limit {n} actions", { n: c.maxSteps });
   return (
-    <div className={`ag-budget${near ? " near" : ""}`} title={t("{steps} of {max} steps, {min} of {maxMin} min", { steps: c.steps, max: c.maxSteps, min: c.minutes, maxMin: c.maxMinutes })}>
+    <div className={`ag-budget${near ? " near" : ""}`}>
       <div className="ag-budget-bar"><span style={{ width: `${Math.max(steps, minutes) * 100}%` }} /></div>
-      <span className="ag-budget-text">{t("Step {n} of {max}", { n: c.steps, max: c.maxSteps })}<span className="ag-sep">·</span>{t("{n} of {max} min", { n: c.minutes, max: c.maxMinutes })}</span>
+      <span className="ag-budget-text">{used}<span className="ag-sep">·</span>{limit}</span>
     </div>
   );
 }
@@ -174,7 +180,7 @@ export function AgentLive({ client, size = "full", actions = 3, onTakeControl }:
         <StatePill state={client.state} noDisplay={noDisplay} />
       </div>
       {size === "full" && <NoDisplayNotice machine={client.machine} />}
-      {client.maxSteps > 0 && <Budget c={client} />}
+      <Budget c={client} />
       {actions > 0 && (
         client.actions.length
           ? <ul className="ag-actions">{client.actions.slice(0, actions).map((a) => <ActionRow key={a.id} a={a} now={now} client={client.id} />)}</ul>
@@ -350,6 +356,87 @@ export function RecordingList({ list, showMachine }: { list: AgentRecording[]; s
   );
 }
 
+/* ---------- history ---------- */
+
+const ENDED: Record<AgentHistoryEntry["ended"], () => string> = { done: () => t("Finished"), stopped: () => t("You stopped it"), limit: () => t("Reached the limit") };
+
+/** Finished sessions from the service (Get-GpuVMAgentHistory), refreshed when an agent comes or goes. */
+function useHistory(): AgentHistoryEntry[] | null {
+  const [list, setList] = useState<AgentHistoryEntry[] | null>(null);
+  const snap = useAgents();
+  const ids = snap.clients.map((c) => c.id).join(",");
+  useEffect(() => {
+    let alive = true;
+    agents.history().then((raw) => {
+      if (!alive) return;
+      setList(raw.filter((r) => typeof r.id === "string").map((r) => ({
+        id: String(r.id), client: String(r.client ?? "Agent"), version: String(r.version ?? ""), task: typeof r.task === "string" && r.task ? r.task : null,
+        machines: Array.isArray(r.machines) ? r.machines.map(String) : [], start: Number(r.start) || 0, end: Number(r.end) || 0,
+        steps: Number(r.steps) || 0, runs: Number(r.runs) || 0, approvals: Number(r.approvals) || 0, offers: Number(r.offers) || 0, controls: Number(r.controls) || 0,
+        ended: (["done", "stopped", "limit"].includes(String(r.ended)) ? r.ended : "done") as AgentHistoryEntry["ended"],
+      })));
+    }).catch(() => { if (alive) setList([]); });
+    return () => { alive = false; };
+  }, [ids]);
+  return list;
+}
+
+/** One finished session: what it worked on, where, when and for how long; opened, what it did and its recording. */
+function HistoryRow({ h, recordings, showMachine }: { h: AgentHistoryEntry; recordings: AgentRecording[]; showMachine: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState("");
+  const minutes = Math.max(1, Math.round((h.end - h.start) / 60000));
+  // "3 h ago" within a day, then the date (since() gives a date past a day: "ago" would be wrong).
+  const when = Date.now() - h.end < 86_400_000 ? t("{time} ago", { time: since(new Date(h.end).toISOString()) }) : new Date(h.end).toLocaleDateString(locale(), { day: "numeric", month: "short" });
+  const recording = recordings.find((r) => r.client === h.id);
+  const facts = [
+    h.runs > 0 && { icon: IconTerminal2, text: tn(h.runs, "{n} command run", "{n} commands run") },
+    h.approvals > 0 && { icon: IconShieldLock, text: tn(h.approvals, "{n} approval asked", "{n} approvals asked") },
+    h.offers > 0 && { icon: IconFileDownload, text: tn(h.offers, "{n} file delivered", "{n} files delivered") },
+    h.controls > 0 && { icon: IconHandStop, text: tn(h.controls, "You took control {n} time", "You took control {n} times") },
+  ].filter(Boolean) as { icon: Icon; text: string }[];
+  return (
+    <div className={`ag-history-item${open ? " open" : ""}`}>
+      <button type="button" className="ag-offer ag-history-row" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <ClientIcon client={{ name: h.client }} />
+        <span className="ag-offer-text">
+          <strong className="ellipsis" title={h.task ?? undefined}>{h.task ?? t("No task given")}</strong>
+          <span className="ellipsis">{[h.client, showMachine && h.machines.join(", "), when, t("{n} min", { n: minutes }), tn(h.steps, "{n} action", "{n} actions")].filter(Boolean).join(" · ")}</span>
+        </span>
+        <span className={`ag-ended ${h.ended}`}>{ENDED[h.ended]()}</span>
+      </button>
+      {open && (
+        <div className="ag-history-detail">
+          {facts.length ? facts.map((f) => <span key={f.text}><f.icon size={15} />{f.text}</span>) : <span>{t("Only looked and clicked")}</span>}
+          {recording && (
+            <div className="ag-request-actions">
+              <button type="button" className="btn ghost compact" onClick={() => agents.openRecording(recording.path).catch((e) => setError(humanError(e)))}><IconPlayerPlay size={15} />{t("Watch recording")}</button>
+            </div>
+          )}
+          {error && <span className="error-text">{error}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The sessions that used the person's machines, newest first: on the Agents page all of them, on a machine its own. */
+export function HistoryList({ machine }: { machine?: string }) {
+  const list = useHistory();
+  const snap = useAgents();
+  if (!list) return <div className="ag-history skeleton-lines" aria-busy="true" />;
+  const shown = machine ? list.filter((h) => h.machines.includes(machine)) : list;
+  if (!shown.length) {
+    return (
+      <div className="empty-small">
+        <span className="empty-small-icon"><IconHistory size={18} /></span>
+        <strong>{t("No sessions yet")}</strong>
+      </div>
+    );
+  }
+  return <div className="ag-history">{shown.map((h) => <HistoryRow key={h.id} h={h} recordings={snap.recordings} showMachine={!machine} />)}</div>;
+}
+
 /* ---------- connecting a client ---------- */
 
 /** The command that adds GpuVM to Claude Code, with this PC's own path to gpuvm.exe. */
@@ -372,6 +459,52 @@ function CopyCommand() {
     <div className="ag-command">
       <code className="ellipsis" title={cmd}>{cmd}</code>
       <button type="button" className="btn compact" onClick={copy}>{copied ? <IconCheck size={15} /> : <IconCopy size={15} />}{copied ? t("Copied") : t("Copy")}</button>
+    </div>
+  );
+}
+
+type ClaudeState = { cli: boolean; added: boolean; current: boolean; allowed: boolean };
+
+/** Claude Code in one click: GpuVM added for this user and its tools allowed, so Claude Code stops asking for every
+ *  script (GpuVM keeps asking for what matters, in its own dock). Without Claude Code on this PC, the command for
+ *  another client. */
+function ClaudeConnect() {
+  const [state, setState] = useState<ClaudeState | null>(inTauri ? null : { cli: true, added: false, current: false, allowed: false });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    if (!inTauri) return;
+    import("@tauri-apps/api/core").then(({ invoke }) => invoke<ClaudeState>("claude_code_state")).then(setState).catch(() => setState({ cli: false, added: false, current: false, allowed: false }));
+  }, []);
+  const connect = async () => {
+    setBusy(true); setError("");
+    try {
+      if (inTauri) {
+        const { invoke } = await import("@tauri-apps/api/core");
+        setState(await invoke<ClaudeState>("connect_claude_code"));
+      } else {
+        setState({ cli: true, added: true, current: true, allowed: true });
+      }
+    } catch (e) { setError(humanError(e)); } finally { setBusy(false); }
+  };
+  if (!state) return <div className="ag-connect" aria-busy="true" />;
+  if (!state.cli) return <CopyCommand />;
+  const done = state.added && state.current && state.allowed;
+  return (
+    <div className="ag-connect">
+      <span className="ag-connect-icon">{done ? <IconCheck size={17} /> : <IconPlugConnected size={17} />}</span>
+      <div className="ag-connect-text">
+        <strong>{done ? t("Connected to Claude Code") : state.added ? t("Claude Code asks before each action") : t("Claude Code")}</strong>
+        <span>{done
+          ? t("Agents act without asking in the chat. Administrator rights, network and files are approved here.")
+          : t("Adds GpuVM to Claude Code and lets agents act without asking in the chat. What matters is still approved here.")}</span>
+        {error && <span className="error-text">{error}</span>}
+      </div>
+      {!done && (
+        <button type="button" className="btn compact" disabled={busy} onClick={connect}>
+          {busy ? <IconLoader2 size={15} className="spin" /> : <IconPlugConnected size={15} />}{t("Connect")}
+        </button>
+      )}
     </div>
   );
 }
@@ -461,8 +594,8 @@ export function AgentsView({ onOpenVm, onViewMachine }: { onOpenVm: (name: strin
             <div className="card ag-empty">
               <span className="empty-small-icon"><IconRobot size={18} /></span>
               <strong>{t("No agent connected")}</strong>
-              <span>{t("Add GpuVM to Claude Code once from a terminal. Agents then ask for a machine and work on it while you watch.")}</span>
-              <CopyCommand />
+              <span>{t("Connect Claude Code once. Agents then ask for a machine and work on it while you watch.")}</span>
+              <ClaudeConnect />
             </div>
           )}
       </section>
@@ -470,10 +603,14 @@ export function AgentsView({ onOpenVm, onViewMachine }: { onOpenVm: (name: strin
         {head(<IconFileDownload size={17} />, t("Deliveries"), t("Files agents leave in a machine's Outbox. Nothing reaches your PC until you accept it."))}
         <div className="card"><OutboxList offers={snap.offers} /></div>
       </section>
+      <section className="ag-section">
+        {head(<IconHistory size={17} />, t("History"), t("Which agents used your machines, when and what they did."))}
+        <div className="card"><HistoryList /></div>
+      </section>
       {snap.clients.length > 0 && (
         <section className="ag-section">
-          {head(<IconTerminal2 size={17} />, t("Connect a client"), t("Run it once in a terminal to add GpuVM to Claude Code."))}
-          <div className="card"><CopyCommand /></div>
+          {head(<IconTerminal2 size={17} />, t("Connect a client"), t("Agents reach your machines through GpuVM's MCP server."))}
+          <div className="card ag-connect-card"><ClaudeConnect /></div>
         </section>
       )}
     </div>
@@ -534,6 +671,7 @@ export function MachineAgent({ machine }: { machine: string }) {
       {requests.length > 0 && <div className="card ag-requests">{requests.map((r) => <RequestRow key={r.id} r={r} showMachine={false} />)}</div>}
       <div className="card"><div className="ag-card-title"><IconFileDownload size={16} />{t("Deliveries")}</div><OutboxList offers={offers} showMachine={false} /></div>
       {recordings.length > 0 && <div className="card"><div className="ag-card-title"><IconVideo size={16} />{t("Recordings")}</div><RecordingList list={recordings} /></div>}
+      <div className="card"><div className="ag-card-title"><IconHistory size={16} />{t("History")}</div><HistoryList machine={machine} /></div>
     </>
   );
 }

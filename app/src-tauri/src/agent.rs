@@ -313,6 +313,34 @@ fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str, rect: Rect) -
     true
 }
 
+/// The live overlay (live.rs) over a machine's whole picture.
+pub(crate) fn place_over_picture(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str) -> bool {
+    place(app, window, vm, Rect::Picture)
+}
+
+/// The person has this machine now (took control, or paused its agent): nothing of the agent's is drawn over it.
+pub(crate) fn person_has(vm: &str) -> bool {
+    lock(&STATUS).as_ref().is_some_and(|s| s.contains_key(vm))
+}
+
+/// "Take control" from the live line in the status notch: like a click on the picture, without the click.
+pub async fn take_control(app: &AppHandle, vm: &str) -> Result<(), String> {
+    let client = lock(&CLIENTS).iter().find(|c| c["machine"].as_str() == Some(vm) && holds(c)).cloned().ok_or("No agent is working on this machine.")?;
+    lock(&WATCHING).as_mut().map(|w| w.remove(vm));
+    let _ = crate::viewer::send_to(vm, &json!({ "type": "agent-watch", "on": false }));
+    pause_for_control(app, vm, &client).await
+}
+
+async fn pause_for_control(app: &AppHandle, vm: &str, client: &Value) -> Result<(), String> {
+    let id = client["id"].as_str().unwrap_or("").to_string();
+    call(app, "Suspend-GpuVMAgent", json!({ "Connection": id, "Reason": "control", "Message": "You took control" })).await?;
+    crate::status::set(app, vm, "agent", Some(json!({ "kind": "control", "client": id, "clientName": client["name"] })));
+    lock(&STATUS).get_or_insert_with(HashMap::new).insert(vm.to_string(), ("control".into(), id));
+    crate::live::clear(app, vm);
+    let _ = app.emit("agents-changed", json!({}));
+    Ok(())
+}
+
 #[derive(Clone, Copy)]
 enum Rect {
     Picture,
@@ -545,7 +573,9 @@ fn resume_args(client: &str, vm: &str) -> Value {
 
 /// The viewer saw the person's input over the picture: the agent working there pauses (take control).
 pub fn on_input(app: &AppHandle, vm: &str) {
-    if !TAKE_ON_INPUT.load(Ordering::Relaxed) || !lock(&WATCHING).as_ref().is_some_and(|w| w.contains(vm)) {
+    // The viewer stopped watching when it reported (its next input reaches the machine): forgotten here too, so the
+    // next poll turns it back on if the agent isn't paused below (the viewer still settling, a second press).
+    if !TAKE_ON_INPUT.load(Ordering::Relaxed) || !lock(&WATCHING).as_mut().is_some_and(|w| w.remove(vm)) {
         return;
     }
     if lock(&SHOWN_AT).as_ref().and_then(|s| s.get(vm)).is_some_and(|t| t.elapsed() < VIEWER_SETTLE) {
@@ -560,22 +590,13 @@ pub fn on_input(app: &AppHandle, vm: &str) {
         at.insert(vm.to_string(), Instant::now());
     }
     let Some(client) = lock(&CLIENTS).iter().find(|c| c["machine"].as_str() == Some(vm) && holds(c)).cloned() else { return };
-    // The viewer stops reporting at once (nothing to pause until it is given back).
-    let _ = crate::viewer::send_to(vm, &json!({ "type": "agent-watch", "on": false }));
-    lock(&WATCHING).as_mut().map(|w| w.remove(vm));
     let started = Instant::now();
     let app = app.clone();
     let vm = vm.to_string();
     tauri::async_runtime::spawn(async move {
-        let id = client["id"].as_str().unwrap_or("").to_string();
-        let result = call(&app, "Suspend-GpuVMAgent", json!({ "Connection": id, "Reason": "control", "Message": "You took control" })).await;
-        // Lab 054 reads this line: the time from the viewer's report to the broker's answer.
+        let result = pause_for_control(&app, &vm, &client).await;
+        // The time from the viewer's report to the broker's answer (the app's log).
         eprintln!("agent take-control {vm} paused in {} ms ({})", started.elapsed().as_millis(), if result.is_ok() { "ok" } else { "failed" });
-        if result.is_ok() {
-            crate::status::set(&app, &vm, "agent", Some(json!({ "kind": "control", "client": id, "clientName": client["name"] })));
-            lock(&STATUS).get_or_insert_with(HashMap::new).insert(vm.clone(), ("control".into(), id.clone()));
-            let _ = app.emit("agents-changed", json!({}));
-        }
     });
 }
 

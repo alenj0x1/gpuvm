@@ -19,6 +19,8 @@ mod viewer;
 mod direct;
 mod dock;
 mod agent;
+mod claude;
+mod live;
 mod status;
 mod mcp;
 
@@ -106,7 +108,7 @@ pub(crate) async fn query(state: &AppState, request: Value) -> Result<Value, Str
     }
 }
 
-fn recv_result(conn: &mut backend::Conn, request: &Value) -> Result<Value, String> {
+pub(crate) fn recv_result(conn: &mut backend::Conn, request: &Value) -> Result<Value, String> {
     loop {
         let event = conn.next_event().ok_or("GpuVM stopped responding.")?;
         if event["type"] == "result" && event["id"] == request["id"] {
@@ -329,15 +331,6 @@ fn view_arg(args: &[String]) -> Option<String> {
     (!name.is_empty() && name.len() <= 40 && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')).then(|| name.clone())
 }
 
-
-/// Lab switches read once from GpuVM's environment (a lab starts it with them; nobody else sets them). Only
-/// `noScreenRefresh` (lab 054): agent machines don't get screen.refresh when their stream comes up, to measure what it
-/// changes. Nothing here widens what the app can do.
-#[tauri::command]
-fn lab_flags() -> Value {
-    json!({ "noScreenRefresh": std::env::var("GPUVM_LAB_NO_SCREEN_REFRESH").is_ok_and(|v| v == "1") })
-}
-
 /// The app's language for the few texts drawn by Rust (the tray menu): false Spanish, true English.
 pub(crate) static ENGLISH: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -558,13 +551,16 @@ pub fn run() {
             prompt::start(app.handle().clone());
             agent::start(app.handle().clone());
             status::start(app.handle());
+            // The installed app only: in development each connection starts a bridge of its own.
+            #[cfg(not(debug_assertions))]
+            live::start(app.handle());
             if let Some(name) = view_arg(&std::env::args().collect::<Vec<_>>()) {
                 agent::request_view(app.handle(), &name);
             }
             clipboard::start(app.handle());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![ps, job, prompt::admin_prompts, prompt::card_answer, dock::dock_prompt, dock::dock_answer, agent::agent_dock_request, agent::agent_dock_answer, agent::agent_dock_resume, status::status_resize, status::status_state, status::status_action, status::set_status_prefs, agent::set_agent_prefs, agent::mcp_exe_path, agent::agent_recordings, agent::pending_agent_view, agent::agent_view_taken, lab_flags, viewer::viewer_send, viewer::viewer_is_open, viewer::viewer_home, viewer::viewer_show, viewer::viewer_list, viewer::viewer_gone, viewer::viewer_reveal, viewer::viewer_covered, overlay::viewer_panel_resize, overlay::viewer_panel_close, overlay::viewer_panel_vm, dropzone::transfer_start, dropzone::transfer_cancel, dropzone::transfer_list, dropzone::viewer_drop_hide, dropzone::viewer_drop_state, clipboard::clipboard_items, clipboard::clipboard_send, clipboard::clipboard_auto, clipboard::clipboard_clear, capture::set_capture_prefs, capture::capture_folders, capture::capture_open, capture::capture_reveal, capture::capture_open_folder, capture::capture_state, capture::capture_get_hevc, open_console, repair_service, relaunch_as_admin, service_status, start_service, stop_service, set_service_mode, set_service_startup, set_close_to_tray, set_stop_vms_on_quit, set_language, notices::set_notices_after_quit])
+        .invoke_handler(tauri::generate_handler![ps, job, prompt::admin_prompts, prompt::card_answer, dock::dock_prompt, dock::dock_answer, agent::agent_dock_request, agent::agent_dock_answer, agent::agent_dock_resume, status::status_resize, status::status_state, status::status_action, status::set_status_prefs, agent::set_agent_prefs, agent::mcp_exe_path, agent::agent_recordings, agent::pending_agent_view, agent::agent_view_taken, claude::claude_code_state, claude::connect_claude_code, viewer::viewer_send, viewer::viewer_is_open, viewer::viewer_home, viewer::viewer_show, viewer::viewer_list, viewer::viewer_gone, viewer::viewer_reveal, viewer::viewer_covered, overlay::viewer_panel_resize, overlay::viewer_panel_close, overlay::viewer_panel_vm, dropzone::transfer_start, dropzone::transfer_cancel, dropzone::transfer_list, dropzone::viewer_drop_hide, dropzone::viewer_drop_state, clipboard::clipboard_items, clipboard::clipboard_send, clipboard::clipboard_auto, clipboard::clipboard_clear, capture::set_capture_prefs, capture::capture_folders, capture::capture_open, capture::capture_reveal, capture::capture_open_folder, capture::capture_state, capture::capture_get_hevc, open_console, repair_service, relaunch_as_admin, service_status, start_service, stop_service, set_service_mode, set_service_startup, set_close_to_tray, set_stop_vms_on_quit, set_language, notices::set_notices_after_quit])
         .build(tauri::generate_context!())
         .expect("failed to start GpuVM")
         .run(|app, event| {

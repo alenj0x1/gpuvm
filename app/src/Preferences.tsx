@@ -109,6 +109,11 @@ const SEND_MAX = 600;
 const timeoutIndex = (s: number) => APPROVAL_TIMEOUTS.reduce((best, v, i) => (Math.abs(v - s) < Math.abs(APPROVAL_TIMEOUTS[best] - s) ? i : best), 0);
 const timeoutLabel = (s: number) => (s < 60 ? t("{n} s", { n: s }) : t("{n} min", { n: s / 60 }));
 
+/** The person's limit per agent session, in minutes (0 = none, the default: last, like animations' Max). */
+const SESSION_LIMITS = [30, 60, 120, 0];
+const limitIndex = (m: number) => (m > 0 ? SESSION_LIMITS.slice(0, -1).reduce((best, v, i) => (Math.abs(v - m) < Math.abs(SESSION_LIMITS[best] - m) ? i : best), 0) : SESSION_LIMITS.length - 1);
+const limitLabel = (m: number) => (m === 0 ? t("No limit") : m < 60 ? t("{n} min", { n: m }) : t("{n} h", { n: m / 60 }));
+
 /** "Agents": how the person takes control from an agent, and how long its requests wait for an answer. The time to
  *  answer is the service's setting (Get-GpuVMAgentSettings): shown as it is there, written only when moved here. */
 function AgentPrefs() {
@@ -118,6 +123,18 @@ function AgentPrefs() {
   const [timeoutError, setTimeoutError] = useState("");
   const shown = timeout ?? snap.approvalTimeoutSec ?? APPROVAL_DEFAULT;
   const writeTimer = useRef(0);
+  const [limit, setLimit] = useState<number | null>(null);
+  const [limitError, setLimitError] = useState("");
+  const limitShown = limit ?? snap.maxMinutes;
+  const limitTimer = useRef(0);
+  const changeLimit = (minutes: number) => {
+    setLimit(minutes); setLimitError("");
+    window.clearTimeout(limitTimer.current);
+    limitTimer.current = window.setTimeout(() => {
+      agents.setSessionLimit(minutes).then(() => refreshAgents()).then(() => setLimit(null))
+        .catch((e) => { setLimitError(humanError(e)); setLimit(null); });
+    }, 400);
+  };
   const changeTimeout = (seconds: number) => {
     setTimeoutValue(seconds); setTimeoutError("");
     // Once the slider rests: one write, not one per step.
@@ -133,11 +150,11 @@ function AgentPrefs() {
         <div className="pref-text">
           <strong>{t("Take control")}</strong>
           <span>{prefs.takeControl === "input"
-            ? t("Moving the mouse or pressing a key over the machine's picture pauses the agent until you give it back.")
-            : t("The agent keeps working while you move the mouse. It only pauses with Take control.")}</span>
+            ? t("A click, or a key with the picture in front, pauses the agent until you give it back. Moving the mouse over it never does.")
+            : t("The agent keeps working whatever you do over the picture. It only pauses with Take control.")}</span>
         </div>
         <Segmented<TakeControlPref> value={prefs.takeControl} onChange={(takeControl) => savePrefs({ takeControl })} options={[
-          { value: "input", label: <><IconMouse size={15} />{t("Mouse or keyboard")}</> },
+          { value: "input", label: <><IconMouse size={15} />{t("Click or key")}</> },
           { value: "button", label: <><IconHandFinger size={15} />{t("Button only")}</> },
         ]} />
       </div>
@@ -153,6 +170,20 @@ function AgentPrefs() {
           <Slider label={t("Time to answer")} min={0} max={APPROVAL_TIMEOUTS.length - 1} marks={APPROVAL_TIMEOUTS.map((_, i) => i)}
             value={timeoutIndex(shown)} format={(i) => timeoutLabel(APPROVAL_TIMEOUTS[i])}
             onChange={(i) => changeTimeout(APPROVAL_TIMEOUTS[i])} />
+        </div>
+      </div>
+      <div className="pref-row">
+        <div className="pref-text">
+          <strong>{t("Session limit")}</strong>
+          <span>{limitShown === 0
+            ? t("An agent can work as long as its task takes. You can stop it at any time.")
+            : t("An agent's session ends by itself after this time. Applies to sessions that start from now on.")}</span>
+          {limitError && <span className="error-text">{limitError}</span>}
+        </div>
+        <div className="pref-side pref-slider">
+          <Slider label={t("Session limit")} min={0} max={SESSION_LIMITS.length - 1} marks={SESSION_LIMITS.map((_, i) => i)}
+            value={limitIndex(limitShown)} format={(i) => limitLabel(SESSION_LIMITS[i])}
+            onChange={(i) => changeLimit(SESSION_LIMITS[i])} />
         </div>
       </div>
     </>

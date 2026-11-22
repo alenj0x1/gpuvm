@@ -43,6 +43,7 @@ let requests: AgentRequest[] = [];
 let offers: AgentOffer[] = [];
 /** The service's time to answer (Set-GpuVMAgentSettings keeps it; 10 minutes by default). */
 let approvalTimeoutSec = 600;
+let maxMinutes = 0;
 
 const deliver = (id: string, name: string, sizeBytes: number, note: string | null, secondsAgo: number, state: AgentOffer["state"] = "pending", machine = "win-agent"): AgentOffer =>
   ({ id, machine, client: "c1", clientName: "Claude Code", name, sizeBytes, note, createdAt: ago(secondsAgo), state });
@@ -129,9 +130,10 @@ export function agentCommand(cmd: string, args: Record<string, unknown>): unknow
         : { name, state: "ready", lastError: null });
     case "Set-GpuVMAgentSettings":
       if (typeof args.ApprovalTimeoutSec === "number") approvalTimeoutSec = args.ApprovalTimeoutSec;
+      if (typeof args.MaxMinutes === "number") maxMinutes = args.MaxMinutes;
       return [];
     case "Get-GpuVMAgentSettings":
-      return [{ maxSteps: 200, maxMinutes: 60, approvalTimeoutSec, clients: Object.fromEntries(clients.filter((c) => c.clientApprovals).map((c) => [c.name, { clientApprovals: true }])) }];
+      return [{ maxSteps: 0, maxMinutes, approvalTimeoutSec, clients: Object.fromEntries(clients.filter((c) => c.clientApprovals).map((c) => [c.name, { clientApprovals: true }])) }];
     case "Get-GpuVMAgentBroker":
       return [{ listening: params.get("broker") !== "blocked", error: params.get("broker") === "blocked" ? "Another program holds the agents' channel." : null, connected: clients.length }];
     case "Get-GpuVMAgentRequest":
@@ -171,6 +173,18 @@ export function agentCommand(cmd: string, args: Record<string, unknown>): unknow
 export const agentMachines = scenario === "none" ? [] : scenario === "many" ? ["win-agent", "lab-02", "lab-03", "lab-04", "lab-05"] : ["win-agent"];
 
 /** Recordings of the agents' work in the mock (agent.rs keeps the real ones). */
+/** Finished sessions for the browser preview (none with ?agents=none). */
+export const agentHistory = (): Record<string, unknown>[] => {
+  if (scenario === "none") return [];
+  const h = 3600_000, now = Date.now();
+  return [
+    { id: "h1", client: "Claude Code", version: "2.4.1", task: "Probar el instalador de GpuVM en un Windows limpio", machines: ["agent-7f2"], start: now - 3 * h - 22 * 60_000, end: now - 3 * h, steps: 340, runs: 18, approvals: 2, offers: 2, controls: 1, ended: "done" },
+    { id: "h2", client: "Claude Code", version: "2.4.1", task: "Configurar Blender con el tema oscuro", machines: ["win10"], start: now - 26 * h - 41 * 60_000, end: now - 26 * h, steps: 96, runs: 4, approvals: 0, offers: 0, controls: 0, ended: "stopped" },
+    { id: "h3", client: "Cursor", version: "1.9", task: null, machines: ["agent-01"], start: now - 70 * h - 2 * 60_000, end: now - 70 * h, steps: 4, runs: 0, approvals: 0, offers: 0, controls: 0, ended: "done" },
+    { id: "h4", client: "Claude Code", version: "2.4.0", task: "Noche estrellada en Paint", machines: ["agent-01", "agent-02"], start: now - 100 * h - 60 * 60_000, end: now - 100 * h, steps: 1210, runs: 31, approvals: 1, offers: 3, controls: 4, ended: "limit" },
+  ];
+};
+
 export const agentRecordings = () => scenario === "none" ? [] : [
   { machine: "win-agent", client: "c1", clientName: "Claude Code", path: "C:\\Users\\demo\\Videos\\GpuVM\\win-agent\\win-agent 2026-11-18 21.40.02.mp4", name: "win-agent 2026-11-18 21.40.02.mp4", durationMs: 412000, bytes: 96_000_000, at: Date.now() - 3600e3 },
 ];

@@ -478,6 +478,7 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
             crate::dock::on_viewer(&app, &vm, &msg);
             crate::agent::on_viewer(&app, &vm, &msg);
             crate::status::on_viewer(&app, &vm, &msg);
+            crate::live::on_viewer(&app, &vm, &msg);
             // The first picture: the app zooms into the machine and then reveals the viewer (viewer_reveal). If the
             // page doesn't (hidden, busy), the viewer comes out on its own a moment later.
             // A viewer opened only to record an agent's work (agent.rs) never comes out by itself: it hides, connected.

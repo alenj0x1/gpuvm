@@ -10,6 +10,7 @@
 #![windows_subsystem = "windows"]
 
 mod agent;
+mod agent_log;
 mod agent_pipe;
 mod hv;
 mod offer;

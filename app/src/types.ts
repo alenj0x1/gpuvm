@@ -324,6 +324,11 @@ export interface AgentOffer {
 }
 
 /** A recording of an agent's work on a machine (in Videos\GpuVM\<machine>). */
+/** Get-GpuVMAgentHistory: one finished agent session (newest first). `ended`: done (it disconnected), stopped (by the
+ *  person) or limit (the person's session limit). `id` is the session's connection, as in its recordings. */
+export interface AgentHistoryEntry { id: string; client: string; version: string; task: string | null; machines: string[]; start: number; end: number;
+  steps: number; runs: number; approvals: number; offers: number; controls: number; ended: "done" | "stopped" | "limit" }
+
 export interface AgentRecording { machine: string; client: string; clientName: string; path: string; name: string; durationMs: number; bytes: number; at: string }
 
 /** Get-GpuVMRestorePoint: a machine's restore points, oldest first. */

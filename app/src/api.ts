@@ -113,6 +113,12 @@ export const agents = {
   /** Each machine's agent: name, state (ready | no-display | starting | off | no-agent), lastError. */
   machines: () => ps<Record<string, unknown>>("Get-GpuVMAgent"),
   setApprovalTimeout: (seconds: number) => ps("Set-GpuVMAgentSettings", { ApprovalTimeoutSec: seconds }),
+  /** Finished sessions, newest first (the service keeps the last ~1000). */
+  history: (limit = 200) => (inTauri
+    ? ps<{ sessions?: Record<string, unknown>[] }>("Get-GpuVMAgentHistory", { Limit: limit }).then((r) => r[0]?.sessions ?? [])
+    : Promise.resolve(mock.agentHistory())),
+  /** The limit of new sessions in minutes, 0 = none; the action count is never limited from the app. */
+  setSessionLimit: (minutes: number) => ps("Set-GpuVMAgentSettings", { MaxMinutes: minutes, MaxSteps: 0 }),
   /** forTask: allowed again for the rest of this task (never forever). */
   answer: (id: string, allow: boolean, forTask = false) => ps("Resolve-GpuVMAgentRequest", { Id: id, Allow: allow, ...(forTask ? { ForTask: true } : {}) }),
   resolveOffer: (id: string, accept: boolean) => ps("Resolve-GpuVMAgentOffer", { Id: id, Accept: accept }),

@@ -236,7 +236,7 @@ impl Broker for PipeBroker {
                 // hello), so cancel_request, list_machines or a screenshot never wait behind it on the shared one.
                 let long = args["timeoutSec"].as_u64().is_some_and(|t| t > 20);
                 self.exec("Invoke-GpuVMAgent", json!({ "Name": name, "Method": s(&args, "method"), "Params": s(&args, "params"),
-                    "TimeoutSec": s(&args, "timeoutSec"), "Connection": connection, "Blob": s(&args, "blob"), "Note": s(&args, "note") }), long)
+                    "TimeoutSec": s(&args, "timeoutSec"), "Connection": connection, "Blob": s(&args, "blob"), "Note": s(&args, "note"), "Intent": s(&args, "intent") }), long)
                     .map(|r| r.0)
             }
             "approval.request" => self.cmd("New-GpuVMAgentRequest", json!({ "Name": name, "Connection": connection, "Kind": s(&args, "kind"),

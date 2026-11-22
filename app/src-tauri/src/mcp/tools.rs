@@ -194,8 +194,8 @@ impl Ctx {
         let s = &reply.data["settings"];
         let settings = Settings {
             elicitation: s["elicitation"].as_bool().unwrap_or(false),
-            max_steps: s["maxSteps"].as_u64().unwrap_or(500),
-            max_minutes: s["maxMinutes"].as_u64().unwrap_or(60),
+            max_steps: s["maxSteps"].as_u64().unwrap_or(0),
+            max_minutes: s["maxMinutes"].as_u64().unwrap_or(0),
             approval_timeout: s["approvalTimeoutSec"].as_u64().unwrap_or(300),
         };
         let id = reply.data["connection"].as_str().unwrap_or("").to_string();
@@ -333,6 +333,11 @@ fn delay_after() -> Value {
     json!({ "type": "integer", "minimum": 0, "maximum": MAX_DELAY_MS, "description": "Wait this many ms after acting before answering and before screenshotAfter (up to 10000), e.g. while a window opens." })
 }
 
+/// What the step is for, in the person's words of the task: shown live over the machine's picture while it runs.
+fn intent_prop() -> Value {
+    json!({ "type": "string", "maxLength": 120, "description": "Optional. What this step does for the task, in a few words, e.g. 'Drawing the moon', 'Installing Blender', 'Saving the report'. Shown to the person over the machine while it runs; write it in the language the person writes to you." })
+}
+
 fn path_prop() -> Value {
     json!({ "type": "array", "items": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 }, "minItems": 1, "maxItems": geometry::MAX_PATH_POINTS,
         "description": "Points [[x, y], ...] in screenshot pixels, pressed at the first and released at the last." })
@@ -376,30 +381,30 @@ pub fn definitions() -> Vec<Value> {
             ann("Screenshot", true, false, false, false)),
         // do: input
         tool("click", "Click at (x, y) in screenshot pixels.",
-            schema(json!({ "machine": m(), "x": coord("X in screenshot pixels."), "y": coord("Y in screenshot pixels."),
+            schema(json!({ "machine": m(), "intent": intent_prop(), "x": coord("X in screenshot pixels."), "y": coord("Y in screenshot pixels."),
                 "button": { "type": "string", "enum": ["left", "right", "middle"] }, "count": { "type": "integer", "minimum": 1, "maximum": 3 },
                 "modifiers": { "type": "string", "description": "e.g. 'ctrl' or 'shift+alt'." }, "screenshot": shot_prop(), "screenshotAfter": after_prop(), "delayMs": delay_after() }), &["machine", "x", "y"]),
             ann("Click", false, false, false, false)),
         tool("type", "Type text into the focused window (as keystrokes, any characters).",
-            schema(json!({ "machine": m(), "text": { "type": "string", "maxLength": MAX_TYPE }, "screenshotAfter": after_prop(), "delayMs": delay_after() }), &["machine", "text"]),
+            schema(json!({ "machine": m(), "intent": intent_prop(), "text": { "type": "string", "maxLength": MAX_TYPE }, "screenshotAfter": after_prop(), "delayMs": delay_after() }), &["machine", "text"]),
             ann("Type text", false, false, false, false)),
         tool("key", "Press a key or combination, e.g. 'enter', 'ctrl+s', 'alt+f4', 'win+r', 'ctrl+shift+end'.",
-            schema(json!({ "machine": m(), "keys": { "type": "string" }, "repeat": { "type": "integer", "minimum": 1, "maximum": 50 }, "screenshotAfter": after_prop(), "delayMs": delay_after() }), &["machine", "keys"]),
+            schema(json!({ "machine": m(), "intent": intent_prop(), "keys": { "type": "string" }, "repeat": { "type": "integer", "minimum": 1, "maximum": 50 }, "screenshotAfter": after_prop(), "delayMs": delay_after() }), &["machine", "keys"]),
             ann("Press keys", false, false, false, false)),
         tool("scroll", "Scroll at (x, y): dy > 0 scrolls down, dx > 0 right, in wheel notches.",
-            schema(json!({ "machine": m(), "x": coord("X in screenshot pixels."), "y": coord("Y in screenshot pixels."),
+            schema(json!({ "machine": m(), "intent": intent_prop(), "x": coord("X in screenshot pixels."), "y": coord("Y in screenshot pixels."),
                 "dx": { "type": "integer", "minimum": -50, "maximum": 50 }, "dy": { "type": "integer", "minimum": -50, "maximum": 50 },
                 "screenshot": shot_prop(), "screenshotAfter": after_prop(), "delayMs": delay_after() }), &["machine", "x", "y"]),
             ann("Scroll", false, false, false, false)),
         tool("drag", "Drag from (x, y) to (toX, toY), or along `path`, or along several `strokes` (each pressed and released on its own: to draw), in screenshot pixels. Moves in between are added so lines come out smooth.",
-            schema(json!({ "machine": m(), "x": coord("Start X."), "y": coord("Start Y."), "toX": coord("End X."), "toY": coord("End Y."),
+            schema(json!({ "machine": m(), "intent": intent_prop(), "x": coord("Start X."), "y": coord("Start Y."), "toX": coord("End X."), "toY": coord("End Y."),
                 "path": path_prop(), "strokes": { "type": "array", "items": path_prop(), "maxItems": geometry::MAX_STROKES, "description": "Several paths." },
                 "button": { "type": "string", "enum": ["left", "right", "middle"] },
                 "durationMs": { "type": "integer", "minimum": 0, "maximum": geometry::MAX_DRAG_MS, "description": "Time for the whole path or all strokes (default: 1500 desktop pixels a second)." },
                 "screenshot": shot_prop(), "screenshotAfter": after_prop(), "delayMs": delay_after() }), &["machine"]),
             ann("Drag", false, false, false, false)),
         tool("act", "Run several input actions in order, stopping at the first error (coordinates in screenshot pixels).",
-            schema(json!({ "machine": m(), "actions": { "type": "array", "items": action_item, "minItems": 1, "maxItems": 50 },
+            schema(json!({ "machine": m(), "intent": intent_prop(), "actions": { "type": "array", "items": action_item, "minItems": 1, "maxItems": 50 },
                 "screenshot": shot_prop(), "screenshotAfter": after_prop(), "delayMs": delay_after() }), &["machine", "actions"]),
             ann("Act", false, false, false, false)),
         // do: UI Automation
@@ -408,12 +413,12 @@ pub fn definitions() -> Vec<Value> {
                 "interactiveOnly": { "type": "boolean", "description": "Default true." } }), &["machine"]),
             ann("UI tree", true, false, true, false)),
         tool("ui_invoke", "Act on a control from ui_tree by id: invoke (press), toggle, select, expand, or setValue (with value).",
-            schema(json!({ "machine": m(), "id": { "type": "string" }, "action": { "type": "string", "enum": ["invoke", "toggle", "select", "expand", "setValue"] },
+            schema(json!({ "machine": m(), "intent": intent_prop(), "id": { "type": "string" }, "action": { "type": "string", "enum": ["invoke", "toggle", "select", "expand", "setValue"] },
                 "value": { "type": "string" } }), &["machine", "id", "action"]),
             ann("UI invoke", false, false, false, false)),
         // do: commands and files
         tool("run", "Run a command in the machine as the standard user `agent` (never administrator) and return its exit code and output. By default `command` is a PowerShell command line; with shell 'none' it is a program and `args` its arguments. With background: true it answers at once with a run id, so you can take screenshots and act while it runs; get its output with run_result.",
-            schema(json!({ "machine": m(), "command": { "type": "string" }, "shell": { "type": "string", "enum": ["powershell", "cmd", "none"] },
+            schema(json!({ "machine": m(), "intent": intent_prop(), "command": { "type": "string" }, "shell": { "type": "string", "enum": ["powershell", "cmd", "none"] },
                 "args": { "type": "array", "items": { "type": "string" } }, "cwd": { "type": "string" },
                 "timeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 580, "description": "Default 60." }, "stdin": { "type": "string" },
                 "background": { "type": "boolean", "description": "Start it and answer at once with a run id (default false)." } }), &["machine", "command"]),
@@ -426,7 +431,7 @@ pub fn definitions() -> Vec<Value> {
             schema(json!({ "machine": m(), "path": { "type": "string" } }), &["machine", "path"]),
             ann("Read file", true, false, true, false)),
         tool("write_file", "Write a file in the agent's home folder in the machine (a path relative to it, like Desktop\\Outbox\\report.md, or a full one; replaces it if it exists).",
-            schema(json!({ "machine": m(), "path": { "type": "string" }, "content": { "type": "string" },
+            schema(json!({ "machine": m(), "intent": intent_prop(), "path": { "type": "string" }, "content": { "type": "string" },
                 "encoding": { "type": "string", "enum": ["utf8", "base64"], "description": "Default utf8." } }), &["machine", "path", "content"]),
             ann("Write file", false, true, true, false)),
         tool("send_file", "Copy a file or folder from this PC into the machine's Desktop\\Received folder. The person must allow it in GpuVM first (this waits for their answer).",
@@ -697,10 +702,11 @@ impl Tool<'_> {
         let mut uses = self.ctx.uses.lock().unwrap();
         let u = uses.entry(machine.to_string()).or_default();
         let since = *u.since.get_or_insert_with(Instant::now);
-        if u.steps >= self.settings.max_steps {
+        // 0 = no limit (the default).
+        if self.settings.max_steps > 0 && u.steps >= self.settings.max_steps {
             return Err(explain(machine, &BrokerError::new("budget", "")) + &format!(" ({} steps)", self.settings.max_steps));
         }
-        if since.elapsed() > Duration::from_secs(self.settings.max_minutes * 60) {
+        if self.settings.max_minutes > 0 && since.elapsed() > Duration::from_secs(self.settings.max_minutes * 60) {
             return Err(explain(machine, &BrokerError::new("budget", "")) + &format!(" ({} minutes)", self.settings.max_minutes));
         }
         u.steps += 1;
@@ -717,6 +723,9 @@ impl Tool<'_> {
         extra["method"] = json!(method);
         extra["params"] = params;
         extra["note"] = json!(self.note());
+        if let Some(intent) = self.args.get("intent").and_then(Value::as_str).map(str::trim).filter(|i| !i.is_empty()) {
+            extra["intent"] = json!(cap_to(intent.to_string(), 120));
+        }
         let r = self.broker("agent.invoke", machine, extra)?;
         self.saw_screen_change(machine, r.meta["screenChangedAt"].as_u64());
         Ok(r)
@@ -750,6 +759,7 @@ impl Tool<'_> {
         let mut args = self.args.clone();
         if let Some(map) = args.as_object_mut() {
             map.remove("machine");
+            map.remove("intent");
             redact(map);
             if let Some(Value::Array(actions)) = map.get_mut("actions") {
                 for a in actions.iter_mut() {

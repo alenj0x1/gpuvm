@@ -5,6 +5,7 @@ import { PromptDock } from "./PromptDock";
 import { ViewerPanel } from "./ViewerPanel";
 import { DropZone } from "./DropZone";
 import { AgentDock } from "./AgentDock";
+import { LiveOverlay } from "./LiveOverlay";
 import { StatusNotch } from "./StatusNotch";
 import { initPrefs, usePrefs } from "./prefs";
 import { resolveLang } from "./i18n";
@@ -51,13 +52,14 @@ if (isDropZone) document.documentElement.classList.add("drop-window");
 const label = (name: string) => "__TAURI_INTERNALS__" in window
   ? (window as unknown as { __TAURI_INTERNALS__: { metadata: { currentWindow: { label: string } } } }).__TAURI_INTERNALS__.metadata.currentWindow.label === name
   : new URLSearchParams(location.search).has(name);
-const isAgentDock = label("agent-dock"), isStatusNotch = label("status-notch");
+const isAgentDock = label("agent-dock"), isStatusNotch = label("status-notch"), isLive = label("agent-live");
+if (isLive) document.documentElement.classList.add("agent-live-window");
 if (isAgentDock) document.documentElement.classList.add("agent-dock-window");
 if (isStatusNotch) document.documentElement.classList.add("status-notch-window");
 // A change of language draws the app again (the root re-renders everything under it) without starting it over: a
 // remount reset the panels' sizes and left the scenes and cards gray until their data came back.
 function Root() {
   resolveLang(usePrefs().lang);
-  return isAgentDock ? <AgentDock /> : isStatusNotch ? <StatusNotch /> : isPromptDock ? <PromptDock /> : isPrompt ? <PromptCard /> : isViewerPanel ? <ViewerPanel /> : isDropZone ? <DropZone /> : <App />;
+  return isLive ? <LiveOverlay /> : isAgentDock ? <AgentDock /> : isStatusNotch ? <StatusNotch /> : isPromptDock ? <PromptDock /> : isPrompt ? <PromptCard /> : isViewerPanel ? <ViewerPanel /> : isDropZone ? <DropZone /> : <App />;
 }
 createRoot(document.getElementById("root")!).render(<Root />);

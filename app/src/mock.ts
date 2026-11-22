@@ -1,7 +1,7 @@
 import type { BaseInfo, DiskInfo, SharedDiskInfo, TemplateInfo, DisplayMode, IsoFile, JobEvent, MouseMode, ProfileInfo, ProfileSettings, RestorePointList, VmOverview } from "./types";
 import catalog from "../../apps/catalog.json";
 import { agentCommand, agentMachines } from "./mockAgents";
-export { agentRecordings } from "./mockAgents";
+export { agentHistory, agentRecordings } from "./mockAgents";
 
 // Sample data for designing in the browser (there is no Hyper-V outside the app).
 const params = new URLSearchParams(location.search);

@@ -297,6 +297,7 @@ pub async fn status_action(app: AppHandle, id: String) -> Result<(), String> {
         .ok_or("That notice already went.")?;
     match item["kind"].as_str().unwrap_or("") {
         "control" | "paused" => crate::agent::resume(&app, item["client"].as_str().unwrap_or(""), &vm).await,
+        "live" => crate::agent::take_control(&app, &vm).await,
         _ => Err("This notice has no action.".into()),
     }
 }

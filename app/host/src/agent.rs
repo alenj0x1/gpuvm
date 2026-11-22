@@ -386,6 +386,14 @@ struct Client {
     actions: VecDeque<Value>,
     captures: VecDeque<(u64, String, Vec<u8>)>,
     last_activity: Instant,
+    /// For its line in the history (agent_log.rs): the machines it took, scripts run, approvals asked, files offered,
+    /// times the person took control, and how it ended when not by itself ("stopped", "limit").
+    machines: Vec<String>,
+    runs: u64,
+    approvals: u64,
+    offers: u64,
+    controls: u64,
+    ended: Option<&'static str>,
 }
 
 const MAX_ACTIONS: usize = 30;
@@ -1189,7 +1197,7 @@ const COMMANDS: &[(&str, &[&str])] = &[
     ("Get-GpuVMAgent", &["Name"]),
     ("Get-GpuVMAgentBroker", &[]),
     // One request to a machine's agent.
-    ("Invoke-GpuVMAgent", &["Name", "Method", "Params", "TimeoutSec", "Connection", "Blob", "Note"]),
+    ("Invoke-GpuVMAgent", &["Name", "Method", "Params", "TimeoutSec", "Connection", "Blob", "Note", "Intent"]),
     // Agent sessions (the MCP server registers one per client), what they do, and taking a machine.
     ("Connect-GpuVMAgentClient", &["Client"]),
     // The MCP server's first line on every pipe connection it opens: from then on that connection is an agent's
@@ -1214,6 +1222,9 @@ const COMMANDS: &[(&str, &[&str])] = &[
     ("New-GpuVMAgentOffer", &["Name", "Path", "Note", "Connection"]),
     ("Get-GpuVMAgentOffer", &["Id", "Name"]),
     ("Resolve-GpuVMAgentOffer", &["Id", "Accept"]),
+    // What sessions do, live (the viewer's overlay) and once finished (the Agents page's history): the person's only.
+    ("Wait-GpuVMAgentActivity", &["After", "TimeoutMs"]),
+    ("Get-GpuVMAgentHistory", &["Limit"]),
     // The person's settings.
     ("Get-GpuVMAgentSettings", &[]),
     ("Set-GpuVMAgentSettings", &["MaxSteps", "MaxMinutes", "ApprovalTimeoutSec"]),
@@ -1364,9 +1375,12 @@ pub fn command(cmd: &str, args: &Value, ctx: &mut Ctx) -> Result<Value, CmdError
                         _ => m.taken_by = Some(id.to_string()),
                     }
                     drop(machines);
-                    if let Some(task) = s("Task") {
-                        if let Some(c) = lock(&broker().clients).get_mut(id) {
+                    if let Some(c) = lock(&broker().clients).get_mut(id) {
+                        if let Some(task) = s("Task") {
                             c.task = Some(clean(task, 300));
+                        }
+                        if !c.machines.contains(&reg.name) {
+                            c.machines.push(reg.name.clone());
                         }
                     }
                     vm_log(&reg, json!({ "event": "taken", "connection": id }));
@@ -1416,6 +1430,14 @@ pub fn command(cmd: &str, args: &Value, ctx: &mut Ctx) -> Result<Value, CmdError
                         c.cancel_where("paused", "The person took control of this machine.", |p| p.client.is_some());
                     }
                     vm_log(reg, json!({ "event": "paused", "by": "person", "reason": reason, "via": ctx.label() }));
+                    if reason == "control" {
+                        let holder = lock(&broker().machines).get(&reg.vm_id).and_then(|m| m.taken_by.clone());
+                        if let Some(h) = holder {
+                            if let Some(c) = lock(&broker().clients).get_mut(&h) {
+                                c.controls += 1;
+                            }
+                        }
+                    }
                 } else {
                     let mut machines = lock(&broker().machines);
                     let m = machines.entry(reg.vm_id.clone()).or_default();
@@ -1438,6 +1460,7 @@ pub fn command(cmd: &str, args: &Value, ctx: &mut Ctx) -> Result<Value, CmdError
                 let mut clients = lock(&broker().clients);
                 clients.iter_mut().filter(|(id, _)| all || Some(id.as_str()) == target).map(|(id, c)| {
                     c.killed = true;
+                    c.ended = Some("stopped");
                     id.clone()
                 }).collect()
             };
@@ -1550,6 +1573,17 @@ pub fn command(cmd: &str, args: &Value, ctx: &mut Ctx) -> Result<Value, CmdError
             crate::offer::resolve(id, accept, ctx)
         }
         "Get-GpuVMAgentSettings" => Ok(settings_json()),
+        "Wait-GpuVMAgentActivity" => {
+            person_only(ctx, "follow what agents do")?;
+            let after = args.get("After").and_then(Value::as_u64).unwrap_or(0);
+            let ms = args.get("TimeoutMs").and_then(Value::as_u64).unwrap_or(10_000).min(crate::agent_log::WAIT_MAX_MS);
+            Ok(crate::agent_log::wait(after, Duration::from_millis(ms)))
+        }
+        "Get-GpuVMAgentHistory" => {
+            person_only(ctx, "read the agents' history")?;
+            // A bare list would come back one line per item: one object around it.
+            Ok(json!({ "sessions": crate::agent_log::read(args.get("Limit").and_then(Value::as_u64).unwrap_or(200).clamp(1, 1000) as usize) }))
+        }
         "Set-GpuVMAgentSecret" => {
             if !ctx.admin {
                 return err("denied", "Only the GpuVM module stores agent secrets.");
@@ -1579,9 +1613,10 @@ pub fn command(cmd: &str, args: &Value, ctx: &mut Ctx) -> Result<Value, CmdError
                 data = json!({});
             }
             if cmd == "Set-GpuVMAgentSettings" {
-                for (key, field, max) in [("MaxSteps", "maxSteps", 100_000u64), ("MaxMinutes", "maxMinutes", 24 * 60), ("ApprovalTimeoutSec", "approvalTimeoutSec", 24 * 3600)] {
+                // Steps and minutes: 0 = no limit.
+                for (key, field, min, max) in [("MaxSteps", "maxSteps", 0, 100_000u64), ("MaxMinutes", "maxMinutes", 0, 24 * 60), ("ApprovalTimeoutSec", "approvalTimeoutSec", 10, 24 * 3600)] {
                     if let Some(v) = args.get(key) {
-                        let n = v.as_u64().filter(|n| (1..=max).contains(n)).ok_or_else(|| CmdError { code: "bad_request".into(), message: format!("{key} must be 1 to {max}.") })?;
+                        let n = v.as_u64().filter(|n| (min..=max).contains(n)).ok_or_else(|| CmdError { code: "bad_request".into(), message: format!("{key} must be {min} to {max}.") })?;
                         data[field] = json!(n);
                     }
                 }
@@ -1680,6 +1715,10 @@ fn new_request(args: &Map<String, Value>, ctx: &Ctx) -> Result<Value, CmdError> 
     let out = json!({ "requestId": r.id, "expiresAt": r.expires });
     vm_log(&reg, json!({ "event": "request", "id": r.id, "kind": r.kind, "connection": id }));
     list.push(r);
+    drop(list);
+    if let Some(c) = lock(&broker().clients).get_mut(id) {
+        c.approvals += 1;
+    }
     Ok(out)
 }
 
@@ -1957,8 +1996,9 @@ fn charge(id: &str) -> Result<(), CmdError> {
     if c.killed {
         return err("killed", "The person stopped this agent session.");
     }
-    if c.steps >= c.max_steps || c.started.elapsed() >= Duration::from_secs(c.max_minutes * 60) {
-        return err("budget", format!("This session reached its limit ({} steps or {} minutes).", c.max_steps, c.max_minutes));
+    if let Some(limit) = over_limit(c) {
+        c.ended = Some("limit");
+        return err("budget", limit);
     }
     c.steps += 1;
     c.last_activity = Instant::now();
@@ -2230,10 +2270,22 @@ fn write_settings(data: &Value) -> Result<(), String> {
     std::fs::rename(&tmp, dir.join("settings.json")).map_err(|e| e.to_string())
 }
 
-/// (steps, minutes) per session and how long a request or an offer waits for the person (s).
+/// A session past the limit the person set (0 = none, the default since 2026-11-21: a fixed 500 steps cut long tasks
+/// short and read like progress), and what to tell it.
+fn over_limit(c: &Client) -> Option<String> {
+    let steps = c.max_steps > 0 && c.steps >= c.max_steps;
+    let minutes = c.max_minutes > 0 && c.started.elapsed() >= Duration::from_secs(c.max_minutes * 60);
+    (steps || minutes).then(|| match (c.max_steps, c.max_minutes) {
+        (0, m) => format!("This session reached the person's limit of {m} minutes."),
+        (s, 0) => format!("This session reached the person's limit of {s} steps."),
+        (s, m) => format!("This session reached the person's limit ({s} steps or {m} minutes)."),
+    })
+}
+
+/// (steps, minutes) per session, 0 = no limit, and how long a request or an offer waits for the person (s).
 fn settings() -> (u64, u64, u64) {
     let data = read_settings();
-    (data["maxSteps"].as_u64().unwrap_or(500).clamp(1, 100_000), data["maxMinutes"].as_u64().unwrap_or(60).clamp(1, 24 * 60),
+    (data["maxSteps"].as_u64().unwrap_or(0).min(100_000), data["maxMinutes"].as_u64().unwrap_or(0).min(24 * 60),
         data["approvalTimeoutSec"].as_u64().unwrap_or(600).clamp(10, 24 * 3600))
 }
 
@@ -2256,6 +2308,7 @@ fn connect_client(client: &Value, ctx: &mut Ctx) -> Result<Value, CmdError> {
     lock(&broker().clients).insert(id.clone(), Client {
         name: name.clone(), version, pid: ctx.pid, started: Instant::now(), started_ms: now_ms(), steps: 0, killed: false, max_steps, max_minutes,
         task: None, actions: VecDeque::new(), captures: VecDeque::new(), last_activity: Instant::now(),
+        machines: Vec::new(), runs: 0, approvals: 0, offers: 0, controls: 0, ended: None,
     });
     ctx.owned.push(id.clone());
     log(&format!("agent: client {name} connected (pid {})", ctx.pid));
@@ -2345,6 +2398,12 @@ fn release_and_cancel(id: &str, code: &str, message: &str) {
 fn disconnect_client(id: &str) {
     if let Some(c) = lock(&broker().clients).remove(id) {
         log(&format!("agent: client {} disconnected", c.name));
+        // A session that never took a machine left nothing worth keeping.
+        if !c.machines.is_empty() {
+            crate::agent_log::append(&json!({ "id": id, "client": c.name, "version": c.version, "task": c.task, "machines": c.machines,
+                "start": c.started_ms, "end": now_ms(), "steps": c.steps, "runs": c.runs, "approvals": c.approvals, "offers": c.offers,
+                "controls": c.controls, "ended": c.ended.unwrap_or("done") }));
+        }
     }
     release_and_cancel(id, "cancelled", "The agent session ended.");
 }
@@ -2358,8 +2417,9 @@ fn admit(id: &str, vm_id: &str, name: &str, ctx: &Ctx) -> Result<(), CmdError> {
         if c.killed {
             return err("killed", "The person stopped this agent session.");
         }
-        if c.steps >= c.max_steps || c.started.elapsed() >= Duration::from_secs(c.max_minutes * 60) {
-            return err("budget", format!("This session reached its limit ({} steps or {} minutes).", c.max_steps, c.max_minutes));
+        if let Some(limit) = over_limit(c) {
+            c.ended = Some("limit");
+            return err("budget", limit);
         }
         c.steps += 1;
     }
@@ -2402,6 +2462,9 @@ fn redacted(v: &Value) -> Value {
         other => other.clone(),
     }
 }
+
+/// Ids of steps in the live view (a start and its end share one).
+static NEXT_STEP: AtomicU64 = AtomicU64::new(1);
 
 fn invoke(args: &Map<String, Value>, ctx: &Ctx) -> Result<Value, CmdError> {
     let s = |k: &str| args.get(k).and_then(Value::as_str).filter(|v| !v.is_empty());
@@ -2446,6 +2509,20 @@ fn invoke(args: &Map<String, Value>, ctx: &Ctx) -> Result<Value, CmdError> {
         vm_log(&reg, json!({ "method": method, "params": { "repeatMs": ms }, "client": client.unwrap_or(ctx.label()), "code": "ok" }));
         return Ok(json!({ "ok": true, "result": { "repeating": ms } }));
     }
+    // The live view (agent_log.rs): this step starts, with its shape and the screen it is drawn on.
+    let live = client.map(|id| {
+        let name = lock(&broker().clients).get_mut(id).map(|c| {
+            if method == "exec.run" {
+                c.runs += 1;
+            }
+            c.name.clone()
+        });
+        let screen = conn_of(&reg.vm_id).map(|c| lock(&c.info)["screen"].clone()).unwrap_or(Value::Null);
+        let step = NEXT_STEP.fetch_add(1, Ordering::SeqCst);
+        crate::agent_log::push(json!({ "phase": "start", "step": step, "client": id, "clientName": name, "machine": reg.name, "at": now_ms(),
+            "method": method, "intent": s("Intent").map(|i| clean(i, 120)), "shapes": crate::agent_log::shapes(method, &params), "screen": screen }));
+        step
+    });
     let started = Instant::now();
     let reply = match conn_of(&reg.vm_id) {
         Some(c) => c.request(method, &params, blob.as_deref(), Duration::from_secs(timeout), client),
@@ -2462,6 +2539,10 @@ fn invoke(args: &Map<String, Value>, ctx: &Ctx) -> Result<Value, CmdError> {
             _ => None,
         };
         record_action(id, method, s("Note"), reply.is_ok(), &code, ms, capture);
+    }
+    if let (Some(id), Some(step)) = (client, live) {
+        crate::agent_log::push(json!({ "phase": "end", "step": step, "client": id, "machine": reg.name, "at": now_ms(), "method": method,
+            "ok": reply.is_ok(), "code": code }));
     }
     let mut out = match reply {
         Ok((result, blob)) => {
@@ -2602,6 +2683,11 @@ fn new_offer(name: &str, path: &str, note: &str, client: Option<&str>, ctx: &Ctx
         state: "pending".into(), created: now, expires: now + settings().2 * 1000, host_path: None, error: None,
         client: client.map(str::to_string), client_name });
     drop(offers);
+    if let Some(c) = client {
+        if let Some(c) = lock(&broker().clients).get_mut(c) {
+            c.offers += 1;
+        }
+    }
     vm_log(&reg, json!({ "event": "offer", "id": id, "file": file_name, "size": size, "note": note }));
     Ok(json!({ "offerId": id }))
 }

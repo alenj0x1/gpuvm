@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { IconAlertTriangle, IconCamera, IconCheck, IconHandFinger, IconHistoryOff, IconLoader2, IconMovie, IconPlayerPause, IconPlayerPlay, IconRobot, IconVideo, type Icon } from "@tabler/icons-react";
+import { IconAlertTriangle, IconCamera, IconCheck, IconHandFinger, IconHandStop, IconHistoryOff, IconLoader2, IconMovie, IconPlayerPause, IconPlayerPlay, IconRobot, IconVideo, type Icon } from "@tabler/icons-react";
 import { inTauri } from "./api";
 import { humanError } from "./ui";
 import { t, translateModule } from "./i18n";
@@ -11,8 +11,26 @@ import { t, translateModule } from "./i18n";
 export type StatusPlacement = "bottom" | "top" | "top-left" | "top-right" | "panel";
 /** "copy": a file an agent delivered, being copied to this PC after the person accepted it (agent.rs): `state`
  *  copying, then accepted or failed for a few seconds, with `name` (the file) and `error`. */
-export interface StatusItem { id: string; kind: "recording" | "notice" | "control" | "paused" | "copy"; key?: string; since?: number; client?: string; clientName?: string;
-  name?: string; state?: "copying" | "accepted" | "failed"; error?: string | null }
+/** "live": what an agent is doing now on the machine (live.rs): the step's `intent` in its own words, or a plain text
+ *  from its `method` and first input `shape`; `thinking` between steps. */
+export interface StatusItem { id: string; kind: "recording" | "notice" | "control" | "paused" | "copy" | "live"; key?: string; since?: number; client?: string; clientName?: string;
+  name?: string; state?: "copying" | "accepted" | "failed"; error?: string | null; method?: string | null; intent?: string | null; shape?: string | null; thinking?: boolean }
+
+/** What an agent's step does, in plain words, when it didn't say. */
+export function liveText(item: StatusItem): string {
+  if (item.thinking) return t("Thinking…");
+  if (item.intent) return item.intent;
+  const byShape: Record<string, () => string> = {
+    click: () => t("Clicking"), draw: () => t("Drawing"), drag: () => t("Dragging"), scroll: () => t("Scrolling"),
+    type: () => t("Typing"), key: () => t("Pressing keys"), move: () => t("Moving the pointer"), wait: () => t("Waiting"),
+  };
+  const byMethod: Record<string, () => string> = {
+    "screen.capture": () => t("Looking at the screen"), "ui.tree": () => t("Reading the window"), "ui.invoke": () => t("Using a control"),
+    "exec.run": () => t("Running a command"), "files.write": () => t("Saving a file"), "files.read": () => t("Reading a file"),
+    "files.list": () => t("Looking through files"), "outbox.offer": () => t("Delivering a file"),
+  };
+  return (item.method === "input.act" && item.shape && byShape[item.shape]?.()) || (item.method && byMethod[item.method]?.()) || t("Working|live");
+}
 export interface StatusState { vm: string | null; items: StatusItem[]; placement: StatusPlacement }
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T | null> {
@@ -73,8 +91,22 @@ export function StatusRow({ item, onAction, short }: { item: StatusItem; onActio
     const n = NOTICE[item.key ?? ""] ?? NOTICE.error;
     return <div className={`sn-row${n.warn ? " warn" : ""}`}>{n.warn ? <n.icon size={15} className="sn-icon" /> : <IconCheck size={15} className="sn-icon ok" />}<span className="sn-text">{n.text()}</span></div>;
   }
-  const control = item.kind === "control";
   const name = item.clientName ?? t("The agent");
+  if (item.kind === "live") {
+    const long = item.method === "exec.run" || item.method === "files.write";
+    return (
+      <div className="sn-row">
+        {item.thinking || long ? <IconLoader2 size={15} className="sn-icon spin" /> : <IconRobot size={15} className="sn-icon accent" />}
+        <span className="sn-text" title={liveText(item)}>{short ? liveText(item) : t("{name} · {doing}", { name, doing: liveText(item) })}</span>
+        {onAction && (
+          <button type="button" className="dock-btn sn-btn sn-ghost" disabled={busy} onClick={act}>
+            {busy ? <IconLoader2 size={14} className="spin" /> : <IconHandStop size={14} />}{t("Take control")}
+          </button>
+        )}
+      </div>
+    );
+  }
+  const control = item.kind === "control";
   return (
     <div className="sn-row">
       {control ? <IconHandFinger size={15} className="sn-icon accent" /> : <IconPlayerPause size={15} className="sn-icon" />}
@@ -96,6 +128,8 @@ function sample(): StatusState {
     { id: "recording", kind: "recording", since: Date.now() - 83000 },
     { id: "notice:1", kind: "notice", key: q.get("notice") ?? "shot" },
   ];
+  const live = q.get("live");
+  if (live !== null) return { vm: "win-agent", items: [{ id: "live", kind: "live", client: "c1", clientName: "Claude Code", method: live === "run" ? "exec.run" : "input.act", shape: "draw", intent: live === "intent" ? "Dibujando la luna" : null, thinking: live === "thinking" }], placement: "bottom" };
   const copy = q.get("copy") as StatusItem["state"] | null;
   if (copy) return { vm: "win-agent", items: [{ id: "copy:o1", kind: "copy", state: copy, name: "installer-test-report.md", error: copy === "failed" ? "There isn't enough room in Downloads." : null }], placement: "bottom" };
   return { vm: "win-agent", items: items.slice(0, Number(q.get("n") ?? 3)), placement: (q.get("placement") as StatusPlacement) ?? "bottom" };
@@ -144,7 +178,7 @@ export function StatusNotch() {
   return (
     <div className={`sn-stage sn-${state.placement}${under ? " under" : ""}`}>
       <div ref={ref} className={`sn${shown ? " on" : ""}`} role="status" aria-live="polite">
-        {(state.placement === "bottom" ? [...items].reverse() : items).map((i) => <StatusRow key={i.id} item={i} onAction={i.kind === "control" || i.kind === "paused" ? action : undefined} />)}
+        {(state.placement === "bottom" ? [...items].reverse() : items).map((i) => <StatusRow key={i.id} item={i} onAction={i.kind === "control" || i.kind === "paused" || i.kind === "live" ? action : undefined} />)}
       </div>
     </div>
   );
@@ -169,7 +203,7 @@ export function PanelStatus({ vm }: { vm: string }) {
   if (!state || state.placement !== "panel" || state.vm !== vm || !state.items.length) return null;
   return (
     <div className="vp-status" role="status" aria-live="polite">
-      {state.items.map((i) => <StatusRow key={i.id} item={i} short onAction={i.kind === "control" || i.kind === "paused" ? (id) => invoke("status_action", { id }).then(() => {}) : undefined} />)}
+      {state.items.map((i) => <StatusRow key={i.id} item={i} short onAction={i.kind === "control" || i.kind === "paused" || i.kind === "live" ? (id) => invoke("status_action", { id }).then(() => {}) : undefined} />)}
     </div>
   );
 }

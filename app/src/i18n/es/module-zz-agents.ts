@@ -1,7 +1,11 @@
 // Last of the module files on purpose (patterns are tried in file order and these are broad).
 // Spanish for what the agent broker says in English: request titles and why an agent waits (Get-GpuVMAgent*).
 // The agent's own words (its task, its reasons, its notes) are shown as it wrote them.
-export default {} as Record<string, string>;
+export default {
+  // Connecting Claude Code from the Agents page (claude.rs).
+  "Claude Code isn't installed on this PC.": "Claude Code no está instalado en este PC.",
+  "Claude Code couldn't add GpuVM.": "Claude Code no pudo agregar GpuVM.",
+} as Record<string, string>;
 
 export const patterns: [RegExp, string][] = [
   [/^Connect to (.+)$/, "Conectarse a $1"],
