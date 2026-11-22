@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { IconCheck, IconFileDownload, IconFileUpload, IconHistory, IconLoader2, IconLock, IconRobot, IconShieldLock, IconTrash, IconWorld, IconX, type Icon } from "@tabler/icons-react";
+import { IconCheck, IconDeviceDesktop, IconFileDownload, IconFileUpload, IconHistory, IconLoader2, IconLock, IconRobot, IconShieldLock, IconTrash, IconWorld, IconX, type Icon } from "@tabler/icons-react";
 import { inTauri } from "./api";
 import { bytes, middlePath, sendOf } from "./agentStore";
 import { humanError } from "./ui";
@@ -12,7 +12,7 @@ import type { AgentRequest, AgentRequestKind } from "./types";
 // - the agent dock: what the agent asks, dropped from the top like the administrator dock (dock B), answered only here;
 // The viewer (Low integrity, it draws what the guest sends) can't click either window (UIPI).
 
-const ICON: Record<AgentRequestKind, Icon> = { deliver: IconFileDownload, admin: IconShieldLock, network: IconWorld, revert: IconHistory, delete: IconTrash, send: IconFileUpload, other: IconRobot };
+const ICON: Record<AgentRequestKind, Icon> = { deliver: IconFileDownload, admin: IconShieldLock, network: IconWorld, revert: IconHistory, delete: IconTrash, send: IconFileUpload, take: IconDeviceDesktop, other: IconRobot };
 /** Like the administrator dock: a click meant for the picture never answers it. */
 const ARM_MS = 450;
 

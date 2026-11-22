@@ -2,6 +2,7 @@
 // Spanish for what the agent broker says in English: request titles and why an agent waits (Get-GpuVMAgent*).
 // The agent's own words (its task, its reasons, its notes) are shown as it wrote them.
 export default {
+  "Use one of your machines": "Usar una de tus máquinas",
   // Connecting Claude Code from the Agents page (claude.rs).
   "Claude Code isn't installed on this PC.": "Claude Code no está instalado en este PC.",
   "Claude Code couldn't add GpuVM.": "Claude Code no pudo agregar GpuVM.",

@@ -930,7 +930,19 @@ impl Tool<'_> {
         if m["state"] == "no-agent" {
             return Err(explain(machine, &BrokerError::new("no_agent", "")));
         }
-        self.broker("machine.take", machine, json!({ "task": self.task()? }))?;
+        let task = self.task()?;
+        // One of the person's machines (not a disposable copy this connection made) needs their approval in GpuVM,
+        // once per machine and session.
+        let mut args = json!({ "connection": self.connection, "name": machine, "task": task });
+        if let Err(e) = self.ctx.broker.call("machine.take", args.clone()) {
+            if e.code != "needs_approval" {
+                return Err(self.fail(machine, e));
+            }
+            let reason = task.clone().map(|t| format!("The agent wants to use {machine} for: {t}")).unwrap_or_else(|| format!("The agent wants to use {machine}."));
+            let id = self.approval(machine, "take", &format!("Use {machine}"), &reason, self.settings.approval_timeout)?;
+            args["approval"] = json!(id);
+            self.broker("machine.take", machine, args)?;
+        }
         if m["state"] == "off" {
             self.broker("machine.start", machine, json!({}))?;
         }

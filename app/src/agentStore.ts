@@ -79,7 +79,7 @@ export function fromBroker(raw: BrokerState): Omit<AgentSnapshot, "loaded" | "er
   });
   const requests: AgentRequest[] = (raw.requests ?? []).filter((r) => (r.state ?? "pending") === "pending").map((r) => ({
     id: String(r.id), client: String(r.connection ?? r.client ?? ""), clientName: str(r.clientName) ?? "Agent", machine: String(r.machine ?? ""),
-    kind: (["admin", "network", "revert", "delete", "deliver", "send", "other"].includes(String(r.kind)) ? r.kind : "other") as AgentRequest["kind"],
+    kind: (["admin", "network", "revert", "delete", "deliver", "send", "take", "other"].includes(String(r.kind)) ? r.kind : "other") as AgentRequest["kind"],
     title: String(r.title ?? ""), reason: str(r.reason), createdAt: iso(r.createdAt), expiresAt: iso(r.expiresAt),
     send: r.kind === "send" ? sendOf(r as Record<string, unknown>) : null,
   }));

@@ -228,7 +228,7 @@ impl Broker for PipeBroker {
             "templates.list" => self.templates(),
             "machine.create" => create_disposable(&self.runner(), &args, &std::thread::sleep),
             "machines.list" => self.cmd("Get-GpuVMAgent", json!({})).map(|r| Reply::of(Value::Array(list(r.data)))),
-            "machine.take" => self.cmd("Lock-GpuVMAgent", json!({ "Name": name, "Connection": connection, "Task": s(&args, "task") })),
+            "machine.take" => self.cmd("Lock-GpuVMAgent", json!({ "Name": name, "Connection": connection, "Task": s(&args, "task"), "Approval": s(&args, "approval") })),
             "machine.start" => self.cmd_long("Invoke-GpuVMPower", json!({ "Name": name, "Action": "Start" })),
             "machine.release" =>self.cmd("Unlock-GpuVMAgent", json!({ "Name": name, "Connection": connection })),
             "agent.invoke" => {

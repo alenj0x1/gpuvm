@@ -394,6 +394,8 @@ struct Client {
     offers: u64,
     controls: u64,
     ended: Option<&'static str>,
+    /// The person's machines this session may take (an allowed "take" request, once per machine and session).
+    takes: Vec<String>,
 }
 
 const MAX_ACTIONS: usize = 30;
@@ -1183,7 +1185,7 @@ const COMMANDS: &[(&str, &[&str])] = &[
     ("Disconnect-GpuVMAgentClient", &["Connection"]),
     ("Get-GpuVMAgentClient", &["Connection"]),
     ("Get-GpuVMAgentCapture", &["Connection", "Action"]),
-    ("Lock-GpuVMAgent", &["Name", "Connection", "Task"]),
+    ("Lock-GpuVMAgent", &["Name", "Connection", "Task", "Approval"]),
     ("Unlock-GpuVMAgent", &["Name", "Connection"]),
     // Control: the person pauses, takes control, gives it back, stops a session; the agent asks for the person.
     ("Request-GpuVMHuman", &["Name", "Connection", "Message"]),
@@ -1347,6 +1349,33 @@ pub fn command(cmd: &str, args: &Value, ctx: &mut Ctx) -> Result<Value, CmdError
             let m = machines.entry(reg.vm_id.clone()).or_default();
             match cmd {
                 "Lock-GpuVMAgent" => {
+                    // An agent takes one of the person's machines (not a disposable copy it made) only once the person
+                    // allowed it, once per machine and session (security review 2026-11-21: a model steered by text
+                    // it read must not reach the person's other machines unasked). The module and the app aren't asked.
+                    // (Held by another session: that is the answer, before any approval.)
+                    let elsewhere = machines.get(&reg.vm_id).and_then(|m| m.taken_by.as_deref()).is_some_and(|h| h != id);
+                    if ctx.is_agent_side() && !elsewhere {
+                        // Clients are always locked first: the machines' lock is let go while checking.
+                        drop(machines);
+                        let made_here = lock(&broker().made).get(&reg.vm_id).is_some_and(|c| c == id);
+                        let allowed_before = lock(&broker().clients).get(id).is_some_and(|c| c.takes.contains(&reg.vm_id));
+                        if !made_here && !allowed_before {
+                            let approval = s("Approval").unwrap_or("");
+                            let ok = {
+                                let mut list = lock(&broker().requests);
+                                let r = list.iter_mut().find(|r| r.id == approval && r.connection == id && r.kind == "take" && r.vm_id == reg.vm_id && r.state == "allowed" && !r.used);
+                                r.map(|r| r.used = true).is_some()
+                            };
+                            if !ok {
+                                return err("needs_approval", format!("Taking '{}' needs the person's approval: ask with New-GpuVMAgentRequest -Kind take.", reg.name));
+                            }
+                            if let Some(c) = lock(&broker().clients).get_mut(id) {
+                                c.takes.push(reg.vm_id.clone());
+                            }
+                        }
+                        machines = lock(&broker().machines);
+                    }
+                    let m = machines.entry(reg.vm_id.clone()).or_default();
                     match &m.taken_by {
                         Some(other) if other != id => return err("taken", format!("'{}' is in use by another agent session.", reg.name)),
                         _ => m.taken_by = Some(id.to_string()),
@@ -1642,8 +1671,11 @@ fn new_request(args: &Map<String, Value>, ctx: &Ctx) -> Result<Value, CmdError> 
         }
         c.name.clone()
     };
-    if lock(&broker().machines).get(&reg.vm_id).and_then(|m| m.taken_by.clone()).as_deref() != Some(id) {
-        return err("not_taken", format!("Take '{}' first.", reg.name));
+    let holder = lock(&broker().machines).get(&reg.vm_id).and_then(|m| m.taken_by.clone());
+    // Asking to take one of the person's machines comes before taking it; any other request, on a machine it holds.
+    let free_for_take = kind == "take" && holder.as_deref().is_none_or(|h| h == id);
+    if holder.as_deref() != Some(id) && !free_for_take {
+        return err(if kind == "take" { "taken" } else { "not_taken" }, if kind == "take" { format!("'{}' is in use by another agent session.", reg.name) } else { format!("Take '{}' first.", reg.name) });
     }
     let timeout = args.get("TimeoutSec").and_then(seconds).unwrap_or(settings().2).clamp(10, 24 * 3600);
     let mut list = lock(&broker().requests);
@@ -1681,11 +1713,14 @@ fn new_request(args: &Map<String, Value>, ctx: &Ctx) -> Result<Value, CmdError> 
             "network" => "Change the machine's network",
             "revert" => "Go back to a restore point",
             "delete" => "Delete a machine",
+            "take" => "Use one of your machines",
             _ => "Approve a step",
         }), 120),
     };
     // A send is answered within 10 minutes: what it covers may change, so it never waits longer.
     let timeout = if send.is_some() { timeout.min(600) } else { timeout };
+    // Taking one of the person's machines: the title is GpuVM's own, naming the machine (never the session's words).
+    let title = if kind == "take" { format!("Use the machine '{}'", reg.name) } else { title };
     let r = Request { id: wire::hex(&wire::random::<8>()), connection: id.to_string(), client_name, vm_id: reg.vm_id.clone(), machine: reg.name.clone(),
         kind: kind.to_string(), title, reason: clean(s("Reason").unwrap_or(""), 1000), created: now, expires: now + timeout * 1000,
         state: "pending".into(), for_task: false, used: false, reserved: false, resolved: None, send };
@@ -1706,7 +1741,7 @@ fn seconds(v: &Value) -> Option<u64> {
         .or_else(|| v.as_str().and_then(|t| t.trim().parse().ok()))
 }
 
-const REQUEST_KINDS: &[&str] = &["admin", "network", "revert", "delete", "send", "other"];
+const REQUEST_KINDS: &[&str] = &["admin", "network", "revert", "delete", "send", "take", "other"];
 
 /// The most a "send" request can cover, so the person can still read the title and the service can measure it.
 const SEND_MAX_PATHS: usize = 20;
@@ -2302,7 +2337,7 @@ fn connect_client(client: &Value, ctx: &mut Ctx) -> Result<Value, CmdError> {
     lock(&broker().clients).insert(id.clone(), Client {
         name: name.clone(), version, pid: ctx.pid, started: Instant::now(), started_ms: now_ms(), steps: 0, killed: false, max_steps, max_minutes,
         task: None, actions: VecDeque::new(), captures: VecDeque::new(), last_activity: Instant::now(),
-        machines: Vec::new(), runs: 0, approvals: 0, offers: 0, controls: 0, ended: None,
+        machines: Vec::new(), runs: 0, approvals: 0, offers: 0, controls: 0, ended: None, takes: Vec::new(),
     });
     ctx.owned.push(id.clone());
     log(&format!("agent: client {name} connected (pid {})", ctx.pid));
@@ -2798,7 +2833,16 @@ pub(crate) mod tests {
         assert_eq!(invoke(&mut mcp, Some(&id)), "not_taken"); // step 1
         // A connection id only works from the process that registered it.
         assert_eq!(code(command("Lock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id }), &mut other)), "not_found");
-        assert_eq!(code(command("Lock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id }), &mut mcp)), "ok");
+        // One of the person's machines: taken only once the person allows it, once per machine and session.
+        assert_eq!(code(command("Lock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id }), &mut mcp)), "needs_approval");
+        let take = command("New-GpuVMAgentRequest", &json!({ "Name": "Test1", "Connection": id, "Kind": "take", "Reason": "draw" }), &mut mcp).unwrap()["requestId"].as_str().unwrap().to_string();
+        assert_eq!(code(command("Lock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id, "Approval": take }), &mut mcp)), "needs_approval"); // pending
+        assert_eq!(code(command("Resolve-GpuVMAgentRequest", &json!({ "Id": take, "Allow": true }), &mut mcp)), "denied");
+        command("Resolve-GpuVMAgentRequest", &json!({ "Id": take, "Allow": true }), &mut app).unwrap();
+        assert_eq!(code(command("Lock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id2, "Approval": take }), &mut other)), "needs_approval"); // not its approval
+        assert_eq!(code(command("Lock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id, "Approval": take }), &mut mcp)), "ok");
+        command("Unlock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id }), &mut mcp).unwrap();
+        assert_eq!(code(command("Lock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id }), &mut mcp)), "ok"); // once per session
         assert_eq!(code(command("Lock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id2 }), &mut other)), "taken");
         assert_eq!(invoke(&mut other, Some(&id2)), "taken");
         assert_eq!(invoke(&mut mcp, Some(&id)), "off"); // admitted (step 2), no agent connected

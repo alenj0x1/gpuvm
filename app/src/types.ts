@@ -279,7 +279,7 @@ export interface AgentClient {
 }
 
 /** "send": the agent wants to copy a file or folder from this PC into its machine (one exact path each time). */
-export type AgentRequestKind = "deliver" | "admin" | "network" | "revert" | "delete" | "send" | "other";
+export type AgentRequestKind = "deliver" | "admin" | "network" | "revert" | "delete" | "send" | "take" | "other";
 
 /** Something the agent asked that needs the person's approval (dock + Windows notification). Deliveries don't come
  *  here: they are the pending AgentOffers (the dock shows them as "deliver" requests). */
