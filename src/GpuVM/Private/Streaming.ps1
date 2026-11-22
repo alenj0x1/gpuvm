@@ -657,22 +657,30 @@ function Set-GuestDisplayResolution {
         catch { Write-Warning "Couldn't add $Fps Hz to the VM's display: $($_.Exception.Message)" }
     }
     $code = Get-Content -Raw -LiteralPath (Get-RepoPath 'guest\set-resolution.ps1')
-    $raw = Invoke-Guest -Name $Name -Credential $Credential -ArgumentList $code, $width, $height, $Fps -ScriptBlock {
-        param($code, $width, $height, $fps)
-        $script = 'C:\GpuVM\set-resolution.ps1'
-        $out = 'C:\GpuVM\resolution.json'
-        New-Item -ItemType Directory -Path 'C:\GpuVM' -Force | Out-Null
+    $raw = Invoke-Guest -Name $Name -Credential $Credential -ArgumentList $code, $width, $height, $Fps, $script:GuestFolderCode -ScriptBlock {
+        param($code, $width, $height, $fps, $folderCode)
+        . ([scriptblock]::Create($folderCode))
+        # The script goes in C:\GpuVM, which only administrators can change; the user's task answers through a folder
+        # of this run the user can write and the administrator only reads (security review 2026-11-21, GuestFolders.ps1).
+        $dir = 'C:\GpuVM'
+        Protect-GpuVMGuestRoot -Path $dir
+        $script = Join-Path $dir 'set-resolution.ps1'
+        Remove-GpuVMItem -Path $script
         Set-Content -Path $script -Value $code -Encoding UTF8
-        Remove-Item $out -Force -ErrorAction SilentlyContinue
         $user = (Get-CimInstance Win32_ComputerSystem).UserName
         if (-not $user) { return [pscustomobject]@{ ok = $false; error = 'No one is signed in on the screen.' } }
-        $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$script`" -Width $width -Height $height -Refresh $fps"
-        $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
-        Register-ScheduledTask -TaskName 'GpuVM-Resolution' -Action $action -Principal $principal -Force | Out-Null
-        Start-ScheduledTask -TaskName 'GpuVM-Resolution'
-        for ($i = 0; $i -lt 30 -and -not (Test-Path $out); $i++) { Start-Sleep -Milliseconds 500 }
-        Unregister-ScheduledTask -TaskName 'GpuVM-Resolution' -Confirm:$false
-        if (Test-Path $out) { Get-Content -Raw $out | ConvertFrom-Json } else { [pscustomobject]@{ ok = $false; error = 'The task didn''t answer.' } }
+        $drop = New-GpuVMUserFolder -Root $dir -User $user
+        try {
+            $out = Join-Path $drop 'resolution.json'
+            $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$script`" -Width $width -Height $height -Refresh $fps -Out `"$out`""
+            $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
+            Register-ScheduledTask -TaskName 'GpuVM-Resolution' -Action $action -Principal $principal -Force | Out-Null
+            Start-ScheduledTask -TaskName 'GpuVM-Resolution'
+            for ($i = 0; $i -lt 30 -and -not (Test-Path -LiteralPath $out -PathType Leaf); $i++) { Start-Sleep -Milliseconds 500 }
+            Unregister-ScheduledTask -TaskName 'GpuVM-Resolution' -Confirm:$false
+            if (Test-Path -LiteralPath $out -PathType Leaf) { Get-Content -Raw -LiteralPath $out | ConvertFrom-Json } else { [pscustomobject]@{ ok = $false; error = 'The task didn''t answer.' } }
+        }
+        finally { Remove-GpuVMFolder -Path $drop }
     }
     # The answer is rebuilt from primitives only: it comes from the guest and ends up in messages on the host.
     $raw = @($raw)[0]
