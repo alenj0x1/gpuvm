@@ -626,6 +626,17 @@ pub fn on_input(app: &AppHandle, vm: &str) {
 /// The viewer's window moved or closed: the agent's windows follow it.
 pub fn on_viewer(app: &AppHandle, vm: &str, msg: &Value) {
     match msg["type"].as_str().unwrap_or("") {
+        // Ctrl+Alt+Shift+A in the viewer: the machine goes back to the agent the person took it from, without leaving
+        // the picture. Only this app's own record of a take-control decides which session; nothing else is resumed.
+        "agent-resume" => {
+            let held = lock(&STATUS).as_ref().and_then(|s| s.get(vm).cloned());
+            if let Some((_, client)) = held {
+                let (app, vm) = (app.clone(), vm.to_string());
+                tauri::async_runtime::spawn(async move {
+                    let _ = resume(&app, &client, &vm).await;
+                });
+            }
+        }
         "window" => {
             let docked = lock(&DOCKED).as_ref().filter(|d| d.vm == vm).map(|d| d.request["human"].as_bool() == Some(true));
             if let (Some(human), Some(w)) = (docked, app.get_webview_window(DOCK)) {

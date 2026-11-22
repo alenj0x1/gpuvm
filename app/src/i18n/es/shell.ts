@@ -246,6 +246,7 @@ export default {
   "Keep it connected": "Mantenerla conectada",
   "Inside GpuVM": "Dentro de GpuVM",
   // Tips for the waits (Tips.tsx)
+  "Ctrl+Alt+Shift+A gives the machine back to the agent after you took control.": "Ctrl+Alt+Shift+A le devuelve la máquina al agente después de tomar el control.",
   "Ctrl+Alt+Shift+G opens the panel while you're on a machine.": "Ctrl+Alt+Shift+G abre el panel mientras ves una máquina.",
   "Ctrl+Alt+Shift+H takes you Home and the machine stays connected.": "Ctrl+Alt+Shift+H te lleva a Inicio y la máquina sigue conectada.",
   "Ctrl+Alt+Shift+Z frees the mouse without leaving the machine.": "Ctrl+Alt+Shift+Z suelta el mouse sin salir de la máquina.",

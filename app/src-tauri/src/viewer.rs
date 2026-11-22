@@ -33,6 +33,8 @@ const MAX_LINE: usize = 16 * 1024;
 const PANEL_GAP: Duration = Duration::from_millis(250);
 /// Messages the viewer may send.
 const FROM_VIEWER: &[&str] = &["hello", "stage", "stage-failed", "connected", "error", "app-running", "window", "first-frame", "stats", "panel", "home", "ended", "drag",
+    // Ctrl+Alt+Shift+A: give the machine back to its agent (agent.rs; only a pause the person took).
+    "agent-resume",
     // Screenshots and recordings (capture.rs).
     "capture", "capture-error", "recording",
     // The person moved the mouse or pressed a key over the picture while an agent works (agent.rs): nothing more.

@@ -32,6 +32,7 @@ export default {
   "Limit {n} min": "Límite {n} min",
   "Limit {n} actions": "Límite {n} acciones",
   "Return to agent": "Volver al agente",
+  "Return to agent (Ctrl+Alt+Shift+A)": "Volver al agente (Ctrl+Alt+Shift+A)",
   "Ends its task on this machine": "Termina su tarea en esta máquina",
   "Version {v}": "Versión {v}",
   "No actions yet": "Sin acciones todavía",

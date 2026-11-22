@@ -113,7 +113,7 @@ export function StatusRow({ item, onAction, short }: { item: StatusItem; onActio
       {control ? <IconHandFinger size={15} className="sn-icon accent" /> : <IconPlayerPause size={15} className="sn-icon" />}
       <span className="sn-text">{error || (control ? (short ? t("You have control") : t("You took control · {name} paused", { name })) : t("{name} paused", { name }))}</span>
       {onAction && (
-        <button type="button" className="dock-btn dock-allow sn-btn" disabled={busy} onClick={act}>
+        <button type="button" className="dock-btn dock-allow sn-btn" disabled={busy} onClick={act} title={control ? t("Return to agent (Ctrl+Alt+Shift+A)") : undefined}>
           {busy ? <IconLoader2 size={14} className="spin" /> : control ? <IconRobot size={14} /> : <IconPlayerPlay size={14} />}{control ? t("Return to agent") : t("Resume")}
         </button>
       )}

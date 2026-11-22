@@ -7,6 +7,7 @@ import { t } from "./i18n";
 function tips(): string[] {
   return [
     t("Ctrl+Alt+Shift+G opens the panel while you're on a machine."),
+    t("Ctrl+Alt+Shift+A gives the machine back to the agent after you took control."),
     t("Ctrl+Alt+Shift+H takes you Home and the machine stays connected."),
     t("Ctrl+Alt+Shift+Z frees the mouse without leaving the machine."),
     t("Drag the panel's left edge to make it wider."),
