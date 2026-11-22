@@ -223,12 +223,14 @@ function Test-Suite($Ctx) {
         if ($allow) {
             # Allow arms 0.8 s after the window gets the focus (a click already on its way never approves): a person's
             # click on the window in front, once it is armed.
+            # Where it is, read now: right after the window comes forward WebView2 rebuilds its accessibility tree and
+            # finding it again can fail for a while. A person aims at what they see.
+            $r = $allow.Current.BoundingRectangle
+            $cx = [int]($r.X + $r.Width / 2); $cy = [int]($r.Y + $r.Height / 2)
             [E2ESys]::Front($hMain)
-            Start-Sleep -Milliseconds 1200
-            # Arming draws the button again: the one found before is stale, so it is looked for once more.
-            $allow = Wait-For { $b = & $findAllow; if ($b -and $(try { $b.Current.IsEnabled } catch { $false })) { $b } } 30
-            $armed = [bool]$allow
-            $null = Click-Element $allow
+            Start-Sleep -Milliseconds 1500
+            $armed = [E2E]::ProcessNameAt($cx, $cy) -in 'gpuvm', 'msedgewebview2'
+            if ($armed) { [E2E]::Click($cx, $cy) }
             Start-Sleep -Milliseconds 600; Shot 'system-allow-pressed'
         }
         $answer = Text-Of (Receive-Mcp $Ctx.Mcp $pending)
