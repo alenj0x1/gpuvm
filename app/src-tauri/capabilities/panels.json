@@ -9,6 +9,6 @@
     "allow-viewer-send", "allow-viewer-panel-resize", "allow-viewer-panel-close", "allow-viewer-panel-vm",
     "allow-transfer-start", "allow-transfer-cancel", "allow-transfer-list",
     "allow-clipboard-items", "allow-clipboard-send", "allow-clipboard-auto", "allow-clipboard-clear",
-    "allow-capture-open", "allow-capture-reveal", "allow-capture-open-folder", "allow-capture-state", "allow-status-state", "allow-status-action"
+    "allow-capture-open", "allow-capture-reveal", "allow-capture-open-folder", "allow-capture-state", "allow-status-state", "allow-status-action", "allow-log-ui-error"
   ]
 }

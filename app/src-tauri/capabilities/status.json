@@ -3,5 +3,5 @@
   "identifier": "status",
   "description": "The status notch over a machine's picture: it reads what it shows, says its size and runs its own notices' buttons, nothing else",
   "windows": ["status-notch"],
-  "permissions": ["core:default", "allow-status-state", "allow-status-resize", "allow-status-action"]
+  "permissions": ["core:default", "allow-status-state", "allow-status-resize", "allow-status-action", "allow-log-ui-error"]
 }

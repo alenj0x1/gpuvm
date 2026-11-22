@@ -82,12 +82,15 @@ impl Server {
     }
 
     pub fn serve(self: &Arc<Self>, input: impl BufRead) {
-        for line in input.lines() {
+        // A client that writes another encoding gets its bad bytes replaced, not a server that hangs up.
+        for line in input.split(b'\n') {
             let Ok(line) = line else { break };
+            let line = String::from_utf8_lossy(&line);
+            let line = line.trim_end_matches('\r');
             if line.trim().is_empty() {
                 continue;
             }
-            self.handle_line(&line);
+            self.handle_line(line);
         }
         self.finish();
     }

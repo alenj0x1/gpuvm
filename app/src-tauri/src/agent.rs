@@ -23,7 +23,11 @@ struct Docked {
 static DOCKED: Mutex<Option<Docked>> = Mutex::new(None);
 static STATUS: Mutex<Option<HashMap<String, (String, String)>>> = Mutex::new(None);
 static WATCHING: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+// Machines an agent holds or paused for the person: their viewer leaves the person's cursor free, so GpuVM's buttons over the picture can be clicked.
+static HELD: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 static PAUSED_AT: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
+// The service's list can still say "paused" for a moment after a resume; watching must not be turned off meanwhile.
+static RESUMED_AT: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
 // A poll that started before the pause must not watch these again (it would swallow the person's next click).
 static PAUSING: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 static SETTINGS_STALE: AtomicBool = AtomicBool::new(false);
@@ -112,6 +116,7 @@ fn list(v: Result<Value, String>) -> Option<Vec<Value>> {
 }
 
 pub fn start(app: AppHandle) {
+    let _ = app.run_on_main_thread(toast::clear_all);
     tauri::async_runtime::spawn(async move {
         let (mut round, mut settings, mut broker) = (0u64, Value::Null, Value::Null);
         loop {
@@ -167,8 +172,14 @@ fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Ve
     waiting.sort_by(|a, b| a["createdAt"].as_f64().unwrap_or(0.0).total_cmp(&b["createdAt"].as_f64().unwrap_or(0.0)));
 
     let on_input = TAKE_ON_INPUT.load(Ordering::Relaxed);
+    let resumed: HashSet<String> = {
+        let mut at = lock(&RESUMED_AT);
+        let at = at.get_or_insert_with(HashMap::new);
+        at.retain(|_, t| t.elapsed() < Duration::from_secs(5));
+        at.keys().cloned().collect()
+    };
     let working: HashSet<String> = clients.iter()
-        .filter(|c| holds(c))
+        .filter(|c| holds(c) || c["machine"].as_str().is_some_and(|vm| resumed.contains(vm)))
         .filter_map(|c| c["machine"].as_str().map(str::to_string))
         .filter(|vm| on_input && crate::viewer::viewer_is_open(vm.clone()))
         .filter(|vm| !person_has(vm) && !lock(&PAUSING).as_ref().is_some_and(|p| p.contains(vm)))
@@ -184,6 +195,25 @@ fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Ve
         for vm in watching.difference(&working).cloned().collect::<Vec<_>>() {
             let _ = crate::viewer::send_to(&vm, &json!({ "type": "agent-watch", "on": false }));
             watching.remove(&vm);
+        }
+    }
+    {
+        let now: HashSet<String> = clients.iter()
+            .filter(|c| holds(c) || matches!(c["state"].as_str(), Some("control") | Some("paused") | Some("human")))
+            .filter_map(|c| c["machine"].as_str().map(str::to_string))
+            .filter(|vm| crate::viewer::viewer_is_open(vm.clone()))
+            .collect();
+        let mut held = lock(&HELD);
+        let held = held.get_or_insert_with(HashSet::new);
+        for vm in now.difference(held).cloned().collect::<Vec<_>>() {
+            let r = crate::viewer::send_to(&vm, &json!({ "type": "agent-mouse", "on": true }));
+            if r.is_ok() {
+                held.insert(vm);
+            }
+        }
+        for vm in held.difference(&now).cloned().collect::<Vec<_>>() {
+            let _ = crate::viewer::send_to(&vm, &json!({ "type": "agent-mouse", "on": false }));
+            held.remove(&vm);
         }
     }
 
@@ -254,13 +284,13 @@ fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str, rect: Rect) -
     }
     let Some(viewer) = crate::viewer::viewer_hwnd(vm) else { return false };
     let Some((x, y, w, h, scale)) = crate::overlay::client_rect(viewer) else { return false };
-    let w = w - crate::overlay::open_width(app, vm).unwrap_or(0).min(w / 2);
     let (px, py, pw, ph) = match rect {
-        Rect::Picture => (x, y, w, h),
+        Rect::Picture => (x, y, w - crate::overlay::open_width(app, vm).unwrap_or(0).min(w / 2), h),
         Rect::Top => {
             let (fx, fy) = crate::status::dock_placement();
             let (bw, bh) = (((560.0 * scale) as i32).min(w), (72.0 * scale) as i32);
-            (x + ((w - bw).max(0) as f64 * fx) as i32, y + ((h - bh).max(0) as f64 * fy) as i32, bw, bh)
+            let px = x + ((w - bw).max(0) as f64 * fx) as i32;
+            (crate::overlay::clear_of_panel(app, vm, x, w, px, bw), y + ((h - bh).max(0) as f64 * fy) as i32, bw, bh)
         }
     };
     let _ = window.set_size(PhysicalSize::new(pw.max(1) as u32, ph.max(1) as u32));
@@ -270,6 +300,7 @@ fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str, rect: Rect) -
         // SAFETY: the viewer becomes the window's owner, so it stays just above the picture and moves with it.
         unsafe { SetWindowLongPtrW(own.0 as HWND, GWLP_HWNDPARENT, viewer) };
     }
+    crate::overlay::raise_over(window, viewer as isize);
     true
 }
 
@@ -311,10 +342,10 @@ enum Rect {
 }
 
 fn build(app: &AppHandle, label: &str) -> Option<tauri::WebviewWindow> {
-    WebviewWindowBuilder::new(app, label, WebviewUrl::App("index.html".into())).additional_browser_args(crate::BROWSER_ARGS)
+    WebviewWindowBuilder::new(app, label, WebviewUrl::App("index.html".into())).additional_browser_args(crate::BROWSER_ARGS).general_autofill_enabled(false)
         .title("GpuVM")
         .decorations(false)
-        .transparent(true)
+        .transparent(true).no_redirection_bitmap(true)
         .shadow(false)
         .resizable(false)
         .skip_taskbar(true)
@@ -341,7 +372,7 @@ fn show_dock(app: &AppHandle, request: Value) {
             let _ = window.emit("agent-dock", json!({ "request": request }));
             return;
         }
-        let _ = window.destroy();
+        crate::overlay::destroy_and_wait(app, window);
     }
     let Some(window) = build(app, DOCK) else { return };
     if !place(app, &window, &vm, if human { Rect::Top } else { Rect::Picture }) {
@@ -504,8 +535,10 @@ pub fn agent_dock_request(app: AppHandle) -> Value {
 }
 
 fn sync_status(app: &AppHandle, clients: &[Value]) {
+    let resumed: HashSet<String> = lock(&RESUMED_AT).as_ref().map(|r| r.keys().cloned().collect()).unwrap_or_default();
     let now: HashMap<String, (String, String, Value)> = clients.iter()
         .filter(|c| c["state"] == "control" || c["state"] == "paused")
+        .filter(|c| !c["machine"].as_str().is_some_and(|vm| resumed.contains(vm)))
         .filter_map(|c| Some((c["machine"].as_str()?.to_string(), (c["state"].as_str()?.to_string(), c["id"].as_str().unwrap_or("").to_string(), c["name"].clone()))))
         .collect();
     let mut last = lock(&STATUS);
@@ -533,6 +566,12 @@ pub async fn resume(app: &AppHandle, client: &str, vm: &str) -> Result<(), Strin
     }
     call(app, "Resume-GpuVMAgent", resume_args(client, vm)).await?;
     lock(&STATUS).as_mut().map(|s| s.remove(vm));
+    lock(&RESUMED_AT).get_or_insert_with(HashMap::new).insert(vm.to_string(), Instant::now());
+    // At once, not at the next round: a key pressed meanwhile would reach the machine the agent works in.
+    if TAKE_ON_INPUT.load(Ordering::Relaxed) && crate::viewer::viewer_is_open(vm.to_string())
+        && crate::viewer::send_to(vm, &json!({ "type": "agent-watch", "on": true })).is_ok() {
+        lock(&WATCHING).get_or_insert_with(HashSet::new).insert(vm.to_string());
+    }
     crate::status::set(app, vm, "agent", None);
     let _ = app.emit("agents-changed", json!({}));
     Ok(())
@@ -557,7 +596,17 @@ pub fn on_input(app: &AppHandle, vm: &str) {
         }
         at.insert(vm.to_string(), Instant::now());
     }
-    let Some(client) = lock(&CLIENTS).iter().find(|c| c["machine"].as_str() == Some(vm) && holds(c)).cloned() else { return };
+    let resumed = lock(&RESUMED_AT).as_ref().and_then(|r| r.get(vm)).is_some_and(|t| t.elapsed() < Duration::from_secs(5));
+    let client = lock(&CLIENTS).iter()
+        .find(|c| c["machine"].as_str() == Some(vm) && (holds(c) || (resumed && matches!(c["state"].as_str(), Some("control") | Some("paused")))))
+        .cloned();
+    let Some(client) = client else {
+        // The viewer stopped watching when it reported: without a pause, it watches again.
+        if crate::viewer::send_to(vm, &json!({ "type": "agent-watch", "on": true })).is_ok() {
+            lock(&WATCHING).get_or_insert_with(HashSet::new).insert(vm.to_string());
+        }
+        return;
+    };
     // The viewer stops watching and shows the machine's cursor again.
     let _ = crate::viewer::send_to(vm, &json!({ "type": "agent-watch", "on": false }));
     let started = Instant::now();
@@ -592,6 +641,9 @@ pub fn on_viewer(app: &AppHandle, vm: &str, msg: &Value) {
             if lock(&WATCHING).as_ref().is_some_and(|w| w.contains(vm)) {
                 let _ = crate::viewer::send_to(vm, &json!({ "type": "agent-watch", "on": true }));
             }
+            if lock(&HELD).as_ref().is_some_and(|h| h.contains(vm)) {
+                let _ = crate::viewer::send_to(vm, &json!({ "type": "agent-mouse", "on": true }));
+            }
         }
         "closed" | "ended" => {
             if lock(&DOCKED).as_ref().is_some_and(|d| d.vm == vm) {
@@ -602,6 +654,7 @@ pub fn on_viewer(app: &AppHandle, vm: &str, msg: &Value) {
             }
             lock(&STATUS).as_mut().map(|s| s.remove(vm));
             lock(&WATCHING).as_mut().map(|w| w.remove(vm));
+            lock(&HELD).as_mut().map(|h| h.remove(vm));
         }
         _ => {}
     }
@@ -919,9 +972,26 @@ mod toast {
         HSTRING::from(format!("{:016x}", h.finish()))
     }
 
+    // A reminder stays on screen until it is hidden: taking it out of the history alone leaves it there.
     pub fn remove(id: &str) {
+        let t = tag(id);
+        let kept = KEEP.with(|k| {
+            let mut k = k.borrow_mut();
+            let at = k.iter().position(|n| n.Tag().is_ok_and(|g| g == t));
+            at.map(|i| k.remove(i))
+        });
+        if let (Some(n), Ok(notifier)) = (kept, ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(AUMID))) {
+            let _ = notifier.Hide(&n);
+        }
         if let Ok(history) = ToastNotificationManager::History() {
-            let _ = history.RemoveGroupedTagWithId(&tag(id), &HSTRING::from(GROUP), &HSTRING::from(AUMID));
+            let _ = history.RemoveGroupedTagWithId(&t, &HSTRING::from(GROUP), &HSTRING::from(AUMID));
+        }
+    }
+
+    /// Requests from an earlier run were answered or expired without this app.
+    pub fn clear_all() {
+        if let Ok(history) = ToastNotificationManager::History() {
+            let _ = history.RemoveGroupWithId(&HSTRING::from(GROUP), &HSTRING::from(AUMID));
         }
     }
 

@@ -27,6 +27,7 @@ public static class E2ESys {
 
   public static void Front(IntPtr h) { keybd_event(0x12, 0, 0, IntPtr.Zero); SetForegroundWindow(h); keybd_event(0x12, 0, 2, IntPtr.Zero); }
   public static uint Pid(IntPtr h) { uint p; GetWindowThreadProcessId(h, out p); return p; }
+  public static IntPtr[] VisibleOfClass(string cls) { var list = new List<IntPtr>(); EnumWindows((h, l) => { if (IsWindowVisible(h) && Cls(h) == cls) list.Add(h); return true; }, IntPtr.Zero); return list.ToArray(); }
   static string Cls(IntPtr h) { var c = new StringBuilder(256); GetClassName(h, c, 256); return c.ToString(); }
   public static string[] Classes(uint pid) {
     var list = new List<string>();
@@ -71,7 +72,9 @@ function Find-Class($Root, [string]$Class, [string]$Name = '') {
 function Press($Element) {
     if (-not $Element) { return $false }
     $p = $null
-    if ($Element.TryGetCurrentPattern([Windows.Automation.InvokePattern]::Pattern, [ref]$p)) { $p.Invoke(); return $true }
+    if ($Element.TryGetCurrentPattern([Windows.Automation.InvokePattern]::Pattern, [ref]$p)) {
+        try { $p.Invoke(); return $true } catch { Write-Host "     couldn't invoke '$($Element.Current.Name)': $($_.Exception.GetType().Name)"; return $false }
+    }
     $r = $Element.Current.BoundingRectangle
     if ($r.Width -gt 0) { [E2E]::Click([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2)); return $true }
     Invoke-Element $Element
@@ -83,22 +86,45 @@ function Read-Log([string]$Path) {
     try { $r = [IO.StreamReader]::new($fs); , ($r.ReadToEnd() -split "`r?`n") } finally { $fs.Dispose() }
 }
 
+# A Windows toast (a CoreWindow of the shell) or a notification window of GpuVM's own over the desktop.
 function Find-Toast([string]$Pattern) {
-    $cond = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ClassNameProperty, 'Windows.UI.Core.CoreWindow')
-    foreach ($w in [Windows.Automation.AutomationElement]::RootElement.FindAll([Windows.Automation.TreeScope]::Children, $cond)) {
-        $text = "$($w.Current.Name) | $(Get-Texts $w)"
+    # Its text isn't readable through this UI Automation client, nor is its window listed: the shell's toast is what
+    # sits in the bottom-right corner above the taskbar.
+    $screen = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+    foreach ($dy in 70, 120) {
+        $at = [E2E]::At($screen.Right - 200, $screen.Bottom - $dy)
+        if ($at -eq 'ShellExperienceHost/Windows.UI.Core.CoreWindow') { return [pscustomobject]@{ Text = "toast in the bottom-right corner"; Owner = $at } }
+    }
+    $app = Get-App
+    $own = @(Get-AppWindows | Where-Object { -not $app -or $_.Handle -ne $app.MainWindowHandle } | ForEach-Object { Get-Element $_.Handle } | Where-Object { $_ })
+    foreach ($w in $own) {
+        $text = try { "$($w.Current.Name) | $(Get-Texts $w)" } catch { '' }
         if ($text -notmatch $Pattern) { continue }
+        # The dock over the picture shows the same title with its answers; it is not a notification.
+        if ($text -match '(Refuse|Rechazar)') { continue }
         $owner = try { (Get-Process -Id ([E2ESys]::Pid([IntPtr]$w.Current.NativeWindowHandle))).ProcessName } catch { '?' }
-        return [pscustomobject]@{ Text = $text; Owner = $owner }
+        return [pscustomobject]@{ Text = $text; Owner = "$owner/$($w.Current.ClassName)" }
     }
     $null
 }
 
 function Test-ViewerAtCenter { $s = Screen; [E2E]::ProcessNameAt([int]($s.Width / 2), [int]($s.Height / 2)) -eq 'GpuVMViewer' }
 
+# Home in the title bar is enabled once the picture is live; a picture that fills the monitor covers it, and there the
+# person presses Ctrl+Alt+Shift+H.
 function Go-Home($Main) {
     $back = Find-Class $Main '\btitlebar-back\b'
-    if ($back) { $null = Press $back; return [bool](Wait-For { -not (Test-ViewerAtCenter) } 10) }
+    if ($back) {
+        $live = Wait-For { $b = Find-Class $Main '\btitlebar-back\b'; if ($b -and $b.Current.IsEnabled) { $b } } 30
+        if ($live) { $back = $live } else { Write-Host '     Home in the title bar is still disabled (the picture is not live yet)' }
+        if (-not (Click-Element $back)) {
+            $v = Get-Process GpuVMViewer -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } | Select-Object -First 1
+            for ($i = 0; $v -and $i -lt 3 -and [E2E]::Foreground() -notlike 'GpuVMViewer/*'; $i++) { [E2ESys]::Front($v.MainWindowHandle); Start-Sleep -Milliseconds 400 }
+            Write-Host "     Ctrl+Alt+Shift+H with $([E2E]::Foreground()) in front"
+            [E2E]::Combo([byte][char]'H')
+        }
+        return [bool](Wait-For { -not (Test-ViewerAtCenter) } 10)
+    }
     $side = Find-Class $Main '\bside-home\b' '^(Home|Inicio)$'
     if ($side) { $null = Press $side }
     -not (Test-ViewerAtCenter)
@@ -161,7 +187,7 @@ function Test-Suite($Ctx) {
         Start-Sleep -Seconds 1
         $title = "E2E notification check $(Get-Random -Maximum 99999)"
         $pattern = [regex]::Escape($title)
-        $pending = Start-Tool $Ctx.Mcp 'request_approval' @{ machine = $vm; kind = 'other'; title = $title; reason = 'Checking the Windows notification.'; waitSeconds = 90 }
+        $pending = Start-Tool $Ctx.Mcp 'request_approval' @{ machine = $vm; kind = 'other'; title = $title; reason = 'Checking the Windows notification.'; waitSeconds = 180 }
         $toast = Wait-For { Find-Toast $pattern } 15
         Check 'a Windows notification shows the request' ([bool]$toast) $(if ($toast) { "$($toast.Owner): $($toast.Text)" } else { 'no notification found' })
         Shot 'system-2-notification'
@@ -173,7 +199,7 @@ function Test-Suite($Ctx) {
 
         $null = [E2ESys]::ShowWindow($hMain, 9)
         [E2ESys]::Front($hMain)
-        $agents = Wait-For { Find-Class $main '\bside-home\b' '^(Agents|Agentes)$' } 5
+        $agents = Wait-For { Find-Class $main '\bside-home\b' '^(Agents|Agentes)\b' } 5
         $null = Press $agents
         $allow = Wait-For {
             $hit = $null
@@ -187,9 +213,19 @@ function Test-Suite($Ctx) {
             $hit
         } 10
         Check 'the request shows on the Agents page' ([bool]$allow) ''
-        if ($allow) { $null = Press $allow }
+        # Answer buttons arm after a moment (disabled until then), as on the dock.
+        $armed = $false
+        if ($allow) {
+            # Allow arms 0.8 s after the window gets the focus (a click already on its way never approves): a person's
+            # click on the window in front, once it is armed.
+            [E2ESys]::Front($hMain)
+            Start-Sleep -Milliseconds 1200
+            $armed = [bool](Wait-For { try { $allow.Current.IsEnabled } catch { $false } } 10)
+            $null = Click-Element $allow
+            Start-Sleep -Milliseconds 600; Shot 'system-allow-pressed'
+        }
         $answer = Text-Of (Receive-Mcp $Ctx.Mcp $pending)
-        Check 'Allow answers the agent' ($answer -match 'allowed') $answer
+        Check 'Allow answers the agent' ($answer -match 'allowed') "$answer (button armed: $armed)"
         $gone = Wait-For { -not (Find-Toast $pattern) } 10
         Check 'the notification goes once answered' ([bool]$gone) ''
         Shot 'system-3-answered'
@@ -237,8 +273,11 @@ function Test-Suite($Ctx) {
         $lines = Read-Log $log
         Check 'app.log exists' (Test-Path -LiteralPath $log) $log
         $runStart = (Get-Item -LiteralPath $Ctx.Out).CreationTime
-        $grew = ($lines.Count -gt $logStart) -or ((Test-Path -LiteralPath $log) -and (Get-Item -LiteralPath $log).LastWriteTime -gt $runStart)
-        Check 'app.log gains lines during the run' $grew "$($lines.Count - $logStart) line(s) in this suite, last written $((Get-Item -LiteralPath $log -ErrorAction SilentlyContinue).LastWriteTime)"
+        # The app logs only what goes wrong, so a clean suite may add nothing: the running GpuVM's own start line
+        # shows the log is the live one.
+        $mine = @($lines | Where-Object { $_ -match "^---- GpuVM .* started \(pid $($app.Id)\)" }).Count -gt 0
+        $grew = ($lines.Count -gt $logStart) -or ((Test-Path -LiteralPath $log) -and (Get-Item -LiteralPath $log).LastWriteTime -gt $runStart) -or $mine
+        Check 'app.log is written by the running GpuVM' $grew "$($lines.Count - $logStart) line(s) in this suite, last written $((Get-Item -LiteralPath $log -ErrorAction SilentlyContinue).LastWriteTime), start line of pid $($app.Id): $mine"
         $session = $lines
         $startAt = -1
         for ($i = $lines.Count - 1; $i -ge 0; $i--) { if ($lines[$i] -match '^---- GpuVM .* started') { $startAt = $i; break } }

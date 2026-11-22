@@ -1,4 +1,5 @@
 mod backend;
+mod diag;
 mod notices;
 mod capture;
 mod prompt;
@@ -130,6 +131,15 @@ fn ps_allowed(window: &str, cmd: &str) -> bool {
 
 #[tauri::command]
 async fn ps(webview: tauri::WebviewWindow, state: State<'_, AppState>, cmd: String, args: Option<Value>) -> Result<Value, String> {
+    let result = ps_run(webview, state, &cmd, args).await;
+    // Reads that fail are logged by the page if it shows them: one in flight while a machine is renamed isn't an error.
+    if let (Err(e), false) = (&result, cmd.starts_with("Get-")) {
+        diag::log_error(&cmd, e);
+    }
+    result
+}
+
+async fn ps_run(webview: tauri::WebviewWindow, state: State<'_, AppState>, cmd: &str, args: Option<Value>) -> Result<Value, String> {
     if !ps_allowed(webview.label(), &cmd) {
         return Err("This window can't do that.".into());
     }
@@ -161,6 +171,9 @@ async fn job(app: AppHandle, job_id: String, cmd: String, args: Option<Value>) -
     let mut conn = tauri::async_runtime::spawn_blocking(backend::connect).await.map_err(|e| e.to_string())??;
     std::thread::spawn(move || {
         let emit = |mut event: Value| {
+            if event["type"] == "result" && event["ok"] == false {
+                diag::log_error(request["cmd"].as_str().unwrap_or("job"), event["error"].as_str().unwrap_or("Unknown error"));
+            }
             event["jobId"] = json!(job_id);
             let _ = app.emit("job", event);
         };
@@ -537,6 +550,8 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            crate::overlay::mark_main_thread();
+        crate::viewer::reset_states();
             prompt::start(app.handle().clone());
             agent::start(app.handle().clone());
             status::start(app.handle());
@@ -548,7 +563,7 @@ pub fn run() {
             clipboard::start(app.handle());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![ps, job, prompt::admin_prompts, prompt::card_answer, dock::dock_prompt, dock::dock_answer, agent::agent_dock_request, agent::agent_dock_answer, agent::agent_dock_resume, status::status_resize, status::status_state, status::status_action, status::set_status_prefs, agent::set_agent_prefs, agent::mcp_exe_path, agent::agent_recordings, agent::pending_agent_view, agent::agent_view_taken, claude::claude_code_state, claude::connect_claude_code, agent::agent_settings_changed, viewer::viewer_send, viewer::viewer_is_open, viewer::viewer_home, viewer::viewer_show, viewer::viewer_list, viewer::viewer_gone, viewer::viewer_reveal, viewer::viewer_covered, overlay::viewer_panel_resize, overlay::viewer_panel_close, overlay::viewer_panel_vm, dropzone::transfer_start, dropzone::transfer_cancel, dropzone::transfer_list, dropzone::viewer_drop_hide, dropzone::viewer_drop_state, clipboard::clipboard_items, clipboard::clipboard_send, clipboard::clipboard_auto, clipboard::clipboard_clear, capture::set_capture_prefs, capture::capture_folders, capture::capture_open, capture::capture_reveal, capture::capture_open_folder, capture::capture_state, capture::capture_get_hevc, open_console, repair_service, relaunch_as_admin, service_status, start_service, stop_service, set_service_mode, set_service_startup, set_close_to_tray, set_stop_vms_on_quit, set_language, notices::set_notices_after_quit])
+        .invoke_handler(tauri::generate_handler![ps, job, prompt::admin_prompts, prompt::card_answer, dock::dock_prompt, dock::dock_answer, agent::agent_dock_request, agent::agent_dock_answer, agent::agent_dock_resume, status::status_resize, status::status_state, status::status_action, status::set_status_prefs, agent::set_agent_prefs, agent::mcp_exe_path, agent::agent_recordings, agent::pending_agent_view, agent::agent_view_taken, claude::claude_code_state, claude::connect_claude_code, agent::agent_settings_changed, viewer::viewer_send, viewer::viewer_is_open, viewer::viewer_home, viewer::viewer_show, viewer::viewer_list, viewer::viewer_gone, viewer::viewer_reveal, viewer::viewer_covered, overlay::viewer_panel_resize, overlay::viewer_panel_close, overlay::viewer_panel_vm, dropzone::transfer_start, dropzone::transfer_cancel, dropzone::transfer_list, dropzone::viewer_drop_hide, dropzone::viewer_drop_state, clipboard::clipboard_items, clipboard::clipboard_send, clipboard::clipboard_auto, clipboard::clipboard_clear, capture::set_capture_prefs, capture::capture_folders, capture::capture_open, capture::capture_reveal, capture::capture_open_folder, capture::capture_state, capture::capture_get_hevc, open_console, repair_service, relaunch_as_admin, service_status, start_service, stop_service, set_service_mode, set_service_startup, set_close_to_tray, set_stop_vms_on_quit, set_language, notices::set_notices_after_quit, diag::log_ui_error, diag::save_diagnostics])
         .build(tauri::generate_context!())
         .expect("failed to start GpuVM")
         .run(|app, event| {

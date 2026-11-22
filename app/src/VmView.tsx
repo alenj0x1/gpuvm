@@ -265,11 +265,11 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
 }
 
 let sharedCache: SharedDiskInfo[] = [];
-const sharedReady = api.sharedDisks().then((d) => { sharedCache = d; }).catch(() => {});
+let sharedReady: Promise<void> | null = null;
 
 export function SharedDisks({ vm, busy, startJob }: Pick<Props, "vm" | "busy" | "startJob">) {
   const [disks, setDisks] = useState<SharedDiskInfo[]>(sharedCache);
-  const load = () => sharedReady.then(() => api.sharedDisks()).then((d) => { sharedCache = d; setDisks(d); }).catch(() => {});
+  const load = () => (sharedReady ??= api.sharedDisks().then((d) => { sharedCache = d; }).catch(() => {})).then(() => api.sharedDisks()).then((d) => { sharedCache = d; setDisks(d); }).catch(() => {});
   useEffect(() => { load(); }, [vm.name, vm.state, busy?.cmd]);
   if (!disks.length) return null;
   const working = busy?.cmd === "Connect-GpuVMSharedDisk" || busy?.cmd === "Disconnect-GpuVMSharedDisk";

@@ -256,8 +256,18 @@ export function CheckMark() {
   return <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 5.2 4.2 7.4 8 3" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 
+let lastLogged = "";
+/** Every error shown to the person also goes to app.log (Settings > Service > diagnostics report). */
+export function logError(message: string) {
+  if (!("__TAURI_INTERNALS__" in window) || !message || message === lastLogged) return;
+  lastLogged = message;
+  import("@tauri-apps/api/core").then(({ invoke }) => invoke("log_ui_error", { message })).catch(() => {});
+}
+
 export function humanError(e: unknown) {
-  return translateModule(String(e).replace(/^(Error|Exception|RuntimeException):\s*/i, "").trim());
+  const raw = String(e).replace(/^(Error|Exception|RuntimeException):\s*/i, "").trim();
+  logError(raw);
+  return translateModule(raw);
 }
 
 export function formatUptime(seconds: number) {

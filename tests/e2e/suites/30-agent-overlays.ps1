@@ -41,9 +41,12 @@ function Test-Suite($Ctx) {
     [E2E]::Combo([byte][char]'R')
     Start-Sleep -Seconds 2
 
+    $before = Get-Notch
     [E2E]::Combo([byte][char]'G')
     Start-Sleep -Seconds 2
     Shot 'overlays-5-panel'
+    $after = Get-Notch
+    Check 'opening the side panel leaves the notch where it was' ($before -and $after -and [Math]::Abs($after.X - $before.X) -le 2 -and [Math]::Abs($after.Y - $before.Y) -le 2) "before: $($before.X),$($before.Y); after: $($after.X),$($after.Y)"
     Check-NoFlash 'closing the side panel' { [E2E]::Combo([byte][char]'G') }
 
     [E2E]::Combo([byte][char]'A')
@@ -51,4 +54,40 @@ function Test-Suite($Ctx) {
     Check 'Ctrl+Alt+Shift+A gives the machine back' ([bool]$gone) "notch: $((Get-Notch).Text)"
     $answer = Invoke-Tool $Ctx.Mcp 'wait_for_person' @{ machine = $vm; waitSeconds = 10 }
     Check 'the agent has the machine again' ($answer -match "isn't paused|handed .* back") $answer
+
+    # Recording alone, a while after the notch shrank from several rows: its corners still show the picture.
+    $rec = '(Recording|Grabando) \| \d'
+    $was = (Get-Notch).Text -match $rec
+    if (-not $was) { [E2E]::Combo([byte][char]'R') }
+    $null = Wait-Notch $rec 8
+    Start-Sleep -Seconds 3
+    $n = Get-Notch
+    Check 'the notch shows the recording alone' ($n -and $n.Text -match "^$rec") "text: $($n.Text)"
+    Check-Drawn 'recording-only notch' $n
+    Shot 'overlays-6-recording-only'
+    if (-not $was) { [E2E]::Combo([byte][char]'R'); Start-Sleep -Seconds 3 }
+
+    # After the side panel closes the picture takes the mouse again; the notch's Take control must still be reachable.
+    [E2E]::Combo([byte][char]'G'); Start-Sleep -Seconds 2
+    [E2E]::Combo([byte][char]'G'); Start-Sleep -Seconds 1
+    $pending = Start-Tool $Ctx.Mcp 'run' @{ machine = $vm; command = 'Start-Sleep -Seconds 12'; intent = 'Checking the button' }
+    $null = Wait-Notch 'Checking the button' 7
+    $take = Wait-For {
+        foreach ($w in Get-AppWindows -Small) {
+            $bar = (Get-Element $w.Handle).FindFirst([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::StatusBar))
+            if ($bar -and $bar.Current.ClassName -match '^sn\b') { $b = Find-Named $bar '^\W*(Take control|Tomar el control)\W*$' ([Windows.Automation.ControlType]::Button); if ($b) { return $b } }
+        }
+    } 5
+    $r = if ($take) { $take.Current.BoundingRectangle } else { $null }
+    $clicked = Click-Element $take
+    $pos = [Windows.Forms.Cursor]::Position
+    $onButton = $r -and $pos.X -ge $r.X -and $pos.X -le $r.X + $r.Width -and $pos.Y -ge $r.Y -and $pos.Y -le $r.Y + $r.Height
+    Check 'after the panel closes, the pointer reaches the notch''s Take control' ($clicked -and $onButton) "pointer at $($pos.X),$($pos.Y); button $r"
+    $n = Wait-Notch 'took control|tomaste el control|have control|Tienes el control' 6
+    Check 'the notch''s Take control takes control' ($n -and $n.Text -match 'took control|tomaste el control|have control|Tienes el control') "text: $($n.Text)"
+    $kb = Wait-For { [E2E]::Foreground() -like 'GpuVMViewer/*' } 3
+    Check 'after the notch''s button the keyboard is back on the picture' ([bool]$kb) "in front: $([E2E]::Foreground())"
+    [E2E]::Combo([byte][char]'A')
+    $null = Invoke-Tool $Ctx.Mcp 'wait_for_person' @{ machine = $vm; waitSeconds = 10 }
+    $null = Receive-Mcp $Ctx.Mcp $pending
 }

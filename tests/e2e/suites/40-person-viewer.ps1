@@ -65,7 +65,12 @@ function Check-PvMode([string]$Name, [bool]$Full) {
 function Focus-PvPicture {
     $v = Get-PvViewer
     if (-not $v) { return $false }
-    [E2E]::Click($v.X + [int]($v.W * 0.35), $v.Y + [int]($v.H * 0.4))
+    $x = $v.X + [int]($v.W * 0.35); $y = $v.Y + [int]($v.H * 0.4)
+    [E2E]::Click($x, $y)
+    if (Wait-For { [E2E]::Foreground() -like 'GpuVMViewer/*' } 3) { return $true }
+    # Logged for the report: what took the click instead of the picture.
+    Write-Host "     the click on the picture at $x,$y left $([E2E]::Foreground()) in front (window there: $([E2E]::At($x, $y))); clicking again"
+    [E2E]::Click($x, $y)
     [bool](Wait-For { [E2E]::Foreground() -like 'GpuVMViewer/*' } 3)
 }
 
@@ -93,6 +98,12 @@ function Get-PvWidgets($Panel) {
 function Get-PvWidget($Panel, [string]$Key) { Get-PvWidgets $Panel | Where-Object { $_.Name -match $script:PvWidgets[$Key] } | Select-Object -First 1 }
 
 function Get-PvButton($Root, [string]$Pattern) { Find-Named $Root $Pattern ([Windows.Automation.ControlType]::Button) }
+
+function Get-PvActionsDetail($Panel, $Act) {
+    if (-not $Panel) { return "no side panel; in front: $([E2E]::Foreground())" }
+    if (-not $Act) { return "no Actions widget; widgets: $((Get-PvWidgets $Panel | ForEach-Object Name) -join ', ')" }
+    "buttons: $((@($Act.Element.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Button))) | ForEach-Object { $_.Current.Name }) -join ', ')"
+}
 
 function Open-PvPanel {
     if (-not (Focus-PvPicture)) { return $null }
@@ -340,7 +351,7 @@ function Test-Suite($Ctx) {
         $panel = Open-PvPanel
         $act = Get-PvWidget $panel 'actions'
         $homeBtn = if ($act) { Get-PvButton $act.Element '^(Home|Inicio)$' }
-        Check 'Actions has Home' ([bool]$homeBtn) ''
+        Check 'Actions has Home' ([bool]$homeBtn) (Get-PvActionsDetail $panel $act)
         if ($homeBtn) {
             $null = Invoke-Element $homeBtn
             $left = Wait-For { -not (Test-PvPicture) -and (Test-PvAppShown) } 8
@@ -364,7 +375,7 @@ function Test-Suite($Ctx) {
         $panel = Open-PvPanel
         $act = Get-PvWidget $panel 'actions'
         $quit = if ($act) { Get-PvButton $act.Element '^(Disconnect|Desconectar)$' }
-        Check 'Actions has Disconnect' ([bool]$quit) ''
+        Check 'Actions has Disconnect' ([bool]$quit) (Get-PvActionsDetail $panel $act)
         if ($quit) {
             Check-NoFlash 'closing the viewer' { $null = Invoke-Element $quit } 4000
             $closed = Wait-For { -not (Get-Process GpuVMViewer -ErrorAction SilentlyContinue) } 15

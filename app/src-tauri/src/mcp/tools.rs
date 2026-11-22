@@ -372,7 +372,7 @@ pub fn definitions() -> Vec<Value> {
                 "interactiveOnly": { "type": "boolean", "description": "Default true." } }), &["machine"]),
             ann("UI tree", true, false, true, false)),
         tool("ui_invoke", "Act on a control from ui_tree by id: invoke (press), toggle, select, expand, or setValue (with value).",
-            schema(json!({ "machine": m(), "intent": intent_prop(), "id": { "type": "string" }, "action": { "type": "string", "enum": ["invoke", "toggle", "select", "expand", "setValue"] },
+            schema(json!({ "machine": m(), "intent": intent_prop(), "id": { "type": ["integer", "string"], "description": "The number ui_tree shows first on the control's line." }, "action": { "type": "string", "enum": ["invoke", "toggle", "select", "expand", "setValue"] },
                 "value": { "type": "string" } }), &["machine", "id", "action"]),
             ann("UI invoke", false, false, false, false)),
         tool("run", "Run a command in the machine as the standard user `agent` (never administrator) and return its exit code and output. By default `command` is a PowerShell command line; with shell 'none' it is a program and `args` its arguments. With background: true it answers at once with a run id, so you can take screenshots and act while it runs; get its output with run_result.",
@@ -1118,7 +1118,7 @@ impl Tool<'_> {
             } else { String::new() };
             let patterns: Vec<&str> = n["patterns"].as_array().map(|p| p.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
             lines.push(format!("{} {} \"{}\"{place}{}{}",
-                n["id"].as_str().unwrap_or("?"), n["role"].as_str().unwrap_or("?"), n["name"].as_str().unwrap_or("").replace('"', "'"),
+                match &n["id"] { Value::Number(v) => v.to_string(), Value::String(v) => v.clone(), _ => "?".into() }, n["role"].as_str().unwrap_or("?"), n["name"].as_str().unwrap_or("").replace('"', "'"),
                 if n["enabled"] == false { " disabled" } else { "" },
                 if patterns.is_empty() { String::new() } else { format!(" ({})", patterns.join(", ")) }));
         }
@@ -1127,7 +1127,11 @@ impl Tool<'_> {
 
     fn ui_invoke(&self) -> Out {
         let machine = self.machine()?;
-        let id = arg_str(self.args, "id")?;
+        let id = match &self.args["id"] {
+            Value::Number(v) => v.as_u64(),
+            Value::String(v) => v.trim().parse::<u64>().ok(),
+            _ => None,
+        }.ok_or("`id` must be a control id from ui_tree.")?;
         let action = arg_str(self.args, "action")?;
         if !["invoke", "toggle", "select", "expand", "setValue"].contains(&action) {
             return Err("`action` must be invoke, toggle, select, expand or setValue.".into());

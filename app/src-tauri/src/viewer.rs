@@ -21,7 +21,7 @@ const FROM_VIEWER: &[&str] = &["hello", "stage", "stage-failed", "connected", "e
     "capture", "capture-error", "recording",
     "input",
     "notice"];
-const TO_VIEWER: &[&str] = &["inset", "capture", "fullscreen", "stats", "quit", "focus", "screenshot", "record", "replay-save", "agent-watch"];
+const TO_VIEWER: &[&str] = &["inset", "capture", "fullscreen", "stats", "quit", "focus", "screenshot", "record", "replay-save", "agent-watch", "agent-mouse"];
 
 struct Pipe(HANDLE);
 // SAFETY: a pipe handle can be used from any thread; reads and writes are overlapped, each with its own event.
@@ -574,6 +574,23 @@ pub(crate) fn publish_state(vm: &str, state: &str) {
     }
 }
 
+// At start no viewer is open: a state left by a previous run would tell an agent the person sees a machine.
+pub(crate) fn reset_states() {
+    let Some(path) = viewer_state_path() else { return };
+    let _guard = STATE_FILE.lock().unwrap_or_else(|e| e.into_inner());
+    let Value::Object(all) = read_viewer_states() else { return };
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+    let day = 24 * 3600 * 1000;
+    let kept: serde_json::Map<String, Value> = all.into_iter()
+        .filter(|(_, v)| v["at"].as_u64().is_some_and(|at| now.saturating_sub(at) < day))
+        .map(|(k, v)| (k, if v["state"] == "closed" { v } else { json!({ "state": "closed", "at": now }) }))
+        .collect();
+    let tmp = path.with_extension("json.tmp");
+    if std::fs::write(&tmp, Value::Object(kept).to_string()).is_ok() {
+        let _ = std::fs::rename(&tmp, &path);
+    }
+}
+
 pub fn open_and_wait(app: &AppHandle, vm: &str, launch: &Value) -> Result<(), String> {
     publish_state(vm, "opening");
     crate::agent::picture_shown(vm);
@@ -766,6 +783,8 @@ pub async fn viewer_home(app: AppHandle, vm: String, keep: bool) -> Result<(), S
     crate::overlay::hide_all(&app, &vm);
     let viewer = viewers().as_ref().and_then(|v| v.get(&vm).cloned()).ok_or("This machine's viewer isn't open.")?;
     viewer.visible.store(false, Ordering::Relaxed);
+    // Connected behind Home is not the person seeing it: an agent's open_viewer has to bring it back.
+    publish_state(&vm, "hidden");
     crate::status::refresh(&app);
     announce_cover();
     let msg = if keep { json!({ "type": "hide" }) } else { json!({ "type": "quit" }) };

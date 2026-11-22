@@ -264,11 +264,12 @@ fn ui_tree_uses_screenshot_pixels() {
     let mut h = H::new(false);
     let m = h.machine();
     let t = h.ok("ui_tree", json!({ "machine": m }));
-    assert!(t.contains("n3 button \"Close\" [960, 100, 40, 27] centre (980, 113) (invoke)"), "{t}");
-    assert!(t.contains("n4 button \"Off screen\" (not visible)"), "{t}");
-    h.ok("ui_invoke", json!({ "machine": m, "id": "n3", "action": "invoke" }));
-    assert!(h.err("ui_invoke", json!({ "machine": m, "id": "zz", "action": "invoke" })).contains("No such element"));
-    assert!(h.err("ui_invoke", json!({ "machine": m, "id": "n2", "action": "setValue" })).contains("needs `value`"));
+    assert!(t.contains("3 button \"Close\" [960, 100, 40, 27] centre (980, 113) (invoke)"), "{t}");
+    assert!(t.contains("4 button \"Off screen\" (not visible)"), "{t}");
+    h.ok("ui_invoke", json!({ "machine": m, "id": 3, "action": "invoke" }));
+    h.ok("ui_invoke", json!({ "machine": m, "id": "2", "action": "setValue", "value": "hi" }));
+    assert!(h.err("ui_invoke", json!({ "machine": m, "id": 99, "action": "invoke" })).contains("No such element"));
+    assert!(h.err("ui_invoke", json!({ "machine": m, "id": 2, "action": "setValue" })).contains("needs `value`"));
 }
 
 #[test]
@@ -700,4 +701,14 @@ fn input_calls_keep_their_order() {
     let typed: Vec<String> = h.fake.with(|s| s.machines.iter().find(|x| x.name == m).unwrap().actions.iter()
         .filter_map(|a| a["text"].as_str().map(str::to_string)).collect());
     assert_eq!(typed, (0..30).map(|i| format!("t{i}")).collect::<Vec<_>>());
+}
+
+#[test]
+fn bytes_that_are_not_utf8_do_not_end_the_session() {
+    let h = H::new(false);
+    let mut input = b"{\"jsonrpc\":\"2.0\",\"id\":91,\"method\":\"tools/list\",\"params\":{\"x\":\"a\xf1b\"}}\r\n".to_vec();
+    input.extend_from_slice(b"{\"jsonrpc\":\"2.0\",\"id\":92,\"method\":\"ping\"}\n");
+    h.server.serve(std::io::Cursor::new(input));
+    assert!(h.wait_for(91).get("result").is_some());
+    assert!(h.wait_for(92).get("result").is_some());
 }

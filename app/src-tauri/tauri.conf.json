@@ -20,7 +20,8 @@
         "backgroundColor": "#f6f5f2",
         "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion --autoplay-policy=no-user-gesture-required",
         "decorations": false,
-        "shadow": false
+        "shadow": false,
+        "generalAutofillEnabled": false
       }
     ],
     "security": {

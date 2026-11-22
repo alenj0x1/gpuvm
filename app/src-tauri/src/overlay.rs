@@ -49,10 +49,10 @@ fn panel_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
     if let Some(w) = app.get_webview_window(LABEL) {
         return Some(w);
     }
-    WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into())).additional_browser_args(crate::BROWSER_ARGS)
+    WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into())).additional_browser_args(crate::BROWSER_ARGS).general_autofill_enabled(false)
         .title("GpuVM")
         .decorations(false)
-        .transparent(true)
+        .transparent(true).no_redirection_bitmap(true)
         .shadow(false)
         .resizable(false)
         .skip_taskbar(true)
@@ -125,25 +125,89 @@ fn move_raw(window: &tauri::WebviewWindow, x: i32, y: i32) {
     }
 }
 
-pub(crate) fn show_quiet(window: &tauri::WebviewWindow) {
-    let at = window.outer_position().ok();
-    move_raw(window, AWAY, AWAY);
-    let _ = window.show();
-    borderless(window);
-    if let Some(at) = at {
-        move_raw(window, at.x, at.y);
+/// Runs on the main thread, where tao acts at once: called elsewhere, its show/hide would land after our moves.
+fn on_main(window: &tauri::WebviewWindow, f: impl FnOnce(&tauri::WebviewWindow) + Send + 'static) {
+    if MAIN.get().is_some_and(|id| *id == std::thread::current().id()) {
+        return f(window);
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    let w = window.clone();
+    if window.run_on_main_thread(move || { f(&w); let _ = tx.send(()); }).is_ok() {
+        let _ = rx.recv_timeout(std::time::Duration::from_millis(800));
     }
 }
 
-pub(crate) fn hide_quiet(window: &tauri::WebviewWindow) {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
-    let Ok(own) = window.hwnd() else { return };
-    move_raw(window, AWAY, AWAY);
-    // SAFETY: this app's own window loses its owner (one that closes would redraw it with its frame) and hides.
-    unsafe {
-        SetWindowLongPtrW(own.0 as HWND, GWLP_HWNDPARENT, 0);
-        ShowWindow(own.0 as HWND, SW_HIDE);
+static MAIN: std::sync::OnceLock<std::thread::ThreadId> = std::sync::OnceLock::new();
+
+pub fn mark_main_thread() {
+    let _ = MAIN.set(std::thread::current().id());
+}
+
+/// Called off the main thread, destroy() only queues: a window built under the same label before it lands fails.
+pub(crate) fn destroy_and_wait(app: &AppHandle, window: tauri::WebviewWindow) {
+    let label = window.label().to_string();
+    let _ = window.destroy();
+    for _ in 0..50 {
+        if app.get_webview_window(&label).is_none() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
     }
+}
+
+// tao re-applies its frame each time it shows a window, so it shows each one once; after that it still takes the
+// window for shown, and hiding and showing again go through Win32 alone.
+static SHOWN: Mutex<Vec<isize>> = Mutex::new(Vec::new());
+
+pub(crate) fn show_quiet(window: &tauri::WebviewWindow) {
+    on_main(window, |window| {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{IsWindow, ShowWindow, SW_SHOWNOACTIVATE};
+        let Ok(own) = window.hwnd() else { return };
+        let h = own.0 as isize;
+        let at = window.outer_position().ok();
+        move_raw(window, AWAY, AWAY);
+        let first = {
+            let mut shown = SHOWN.lock().unwrap_or_else(|e| e.into_inner());
+            // SAFETY: only checks whether each remembered handle is still a window.
+            shown.retain(|w| unsafe { IsWindow(*w as HWND) } != 0);
+            let first = !shown.contains(&h);
+            if first {
+                shown.push(h);
+            }
+            first
+        };
+        if first {
+            use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, SetForegroundWindow};
+            // SAFETY: reads the foreground window and gives it back if this app's overlay took it.
+            let before = unsafe { GetForegroundWindow() };
+            let _ = window.show();
+            unsafe {
+                if !before.is_null() && before as isize != h && GetForegroundWindow() as isize == h {
+                    SetForegroundWindow(before);
+                }
+            }
+        } else {
+            // SAFETY: shows this app's own window without activating it.
+            unsafe { ShowWindow(h as HWND, SW_SHOWNOACTIVATE) };
+        }
+        borderless(window);
+        if let Some(at) = at {
+            move_raw(window, at.x, at.y);
+        }
+    });
+}
+
+pub(crate) fn hide_quiet(window: &tauri::WebviewWindow) {
+    on_main(window, |window| {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
+        let Ok(own) = window.hwnd() else { return };
+        move_raw(window, AWAY, AWAY);
+        // SAFETY: this app's own window loses its owner (one that closes would redraw it with its frame) and hides.
+        unsafe {
+            SetWindowLongPtrW(own.0 as HWND, GWLP_HWNDPARENT, 0);
+            ShowWindow(own.0 as HWND, SW_HIDE);
+        }
+    });
 }
 
 /// Everything over a machine's picture goes at once (its viewer is about to close or hide).
@@ -318,6 +382,31 @@ pub fn open_width(app: &AppHandle, vm: &str) -> Option<i32> {
     drop(p);
     let size = app.get_webview_window(LABEL)?.outer_size().ok()?;
     Some(size.width as i32)
+}
+
+/// Right above its viewer, never above other apps: an owner set through GWLP_HWNDPARENT doesn't always bring the
+/// window up with it when the viewer comes forward.
+pub(crate) fn raise_over(window: &tauri::WebviewWindow, viewer: isize) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindow, SetWindowPos, GW_HWNDPREV, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE};
+    let Ok(own) = window.hwnd() else { return };
+    let own = own.0 as HWND;
+    // SAFETY: reads the window just above the viewer and moves this app's own window into that place.
+    unsafe {
+        let above = GetWindow(viewer as HWND, GW_HWNDPREV);
+        if above == own {
+            return;
+        }
+        let after = if above.is_null() { HWND_TOP } else { above };
+        SetWindowPos(own, after, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    }
+}
+
+/// Pieces placed over the picture keep their place when the side panel opens; only one it would cover moves left.
+pub fn clear_of_panel(app: &AppHandle, vm: &str, x: i32, w: i32, px: i32, bw: i32) -> i32 {
+    match open_width(app, vm) {
+        Some(pw) => px.min(x + w - pw.min(w / 2) - bw).max(x),
+        None => px,
+    }
 }
 
 #[tauri::command]

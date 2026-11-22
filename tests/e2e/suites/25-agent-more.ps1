@@ -49,6 +49,35 @@ function Get-AgentShot($Session, [string]$Machine, [hashtable]$Extra = @{}) {
     [pscustomobject]@{ Reply = $r; Text = $t; Image = (Get-ReplyImage $r); W = $(if ($m.Success) { [int]$m.Groups[1].Value } else { 0 }); H = $(if ($m.Success) { [int]$m.Groups[2].Value } else { 0 }) }
 }
 
+# Share of a grid of points in a box (fractions of the screenshots) whose color changed between two PNG screenshots.
+function Get-ChangedShare($ImageA, $ImageB, [double]$X, [double]$Y, [double]$W, [double]$H) {
+    if (-not $ImageA -or -not $ImageB) { return -1 }
+    $load = { param($i) $ms = [IO.MemoryStream]::new([Convert]::FromBase64String($i.data)); [Drawing.Bitmap]::new($ms) }
+    $a = & $load $ImageA; $b = & $load $ImageB
+    $n = 0; $changed = 0
+    for ($i = 0; $i -lt 30; $i++) { for ($j = 0; $j -lt 30; $j++) {
+        $px = [int](($X + $W * $i / 30) * $a.Width); $py = [int](($Y + $H * $j / 30) * $a.Height)
+        if ($px -ge $b.Width -or $py -ge $b.Height) { continue }
+        $p = $a.GetPixel($px, $py); $q = $b.GetPixel($px, $py); $n++
+        if ([Math]::Abs($p.R - $q.R) + [Math]::Abs($p.G - $q.G) + [Math]::Abs($p.B - $q.B) -gt 20) { $changed++ }
+    } }
+    $a.Dispose(); $b.Dispose()
+    if ($n) { $changed / $n } else { -1 }
+}
+
+# Share of non-white pixels (text in any gray) in a box given as fractions of a PNG screenshot: the screenshot is
+# scaled down, so thin dark glyphs arrive as light grays that a darkness threshold misses.
+function Get-InkShare($Image, [double]$X, [double]$Y, [double]$W, [double]$H) {
+    if (-not $Image -or $Image.mimeType -ne 'image/png') { return -1 }
+    $ms = [IO.MemoryStream]::new([Convert]::FromBase64String($Image.data))
+    $bmp = [Drawing.Bitmap]::new($ms)
+    $rect = [Drawing.Rectangle]::new([int]($bmp.Width * $X), [int]($bmp.Height * $Y), [int]($bmp.Width * $W), [int]($bmp.Height * $H))
+    $crop = $bmp.Clone($rect, [Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $ink = 1 - [E2E]::Tones((Bytes $crop))[1]
+    $crop.Dispose(); $bmp.Dispose(); $ms.Dispose()
+    $ink
+}
+
 function Get-DarkShare($Image, [double]$X, [double]$Y, [double]$W, [double]$H) {
     if (-not $Image -or $Image.mimeType -ne 'image/png') { return -1 }
     $ms = [IO.MemoryStream]::new([Convert]::FromBase64String($Image.data))
@@ -267,13 +296,17 @@ function Test-Suite($Ctx) {
         }
 
         Step-Agent 'click right and ui_invoke' {
-            $null = Invoke-AgentCall $S 'run' @{ machine = $vm; command = 'notepad.exe'; shell = 'none'; background = $true } 30
+            $null = Invoke-AgentCall $S 'run' @{ machine = $vm; command = 'Start-Process notepad' } 30
             $null = Wait-AgentWindow $S $vm $notepad
             $null = Invoke-AgentCall $S 'key' @{ machine = $vm; keys = 'win+up'; delayMs = 1000 } 30
             $a = Get-AgentShot $S $vm
             $t = Get-ReplyText (Invoke-AgentCall $S 'click' @{ machine = $vm; x = [int]($a.W / 2); y = [int]($a.H / 2); button = 'right'; delayMs = 800 } 60)
+            $b = Get-AgentShot $S $vm
+            # The menu opens below and right of the click: its gray box covers that part of the blank page.
+            $changed = Get-ChangedShare $a.Image $b.Image 0.51 0.51 0.12 0.2
+            Check 'click button right opens a context menu' ($t -match '^Done' -and $changed -ge 0.3) ("{0}; {1:P0} of the box below the click changed" -f $t, $changed)
             $tree = Get-ReplyText (Invoke-AgentCall $S 'ui_tree' @{ machine = $vm; interactiveOnly = $false; maxNodes = 120 } 30)
-            Check 'click button right opens a context menu' ($t -match '^Done' -and $tree -match '(?m)^\S+ (menu|menuitem) "(Undo|Deshacer|Cut|Cortar|Select All|Seleccionar todo|Paste|Pegar)') (($tree -split "`n" | Select-Object -First 6) -join ' / ')
+            Check 'ui_tree lists the open context menu' ($tree -match '(?m)^\S+ (menu|menuitem) "(Undo|Deshacer|Cut|Cortar|Select All|Seleccionar todo|Paste|Pegar)') (($tree -split "`n" | Select-Object -First 6) -join ' / ')
             $null = Invoke-AgentCall $S 'key' @{ machine = $vm; keys = 'escape'; delayMs = 500 } 30
             $tree = Get-ReplyText (Invoke-AgentCall $S 'ui_tree' @{ machine = $vm; maxNodes = 150 } 30)
             $help = Get-TreeId $tree '(Help|Ayuda)'
@@ -291,11 +324,11 @@ function Test-Suite($Ctx) {
 
         Step-Agent 'key repeat' {
             $null = Invoke-AgentCall $S 'write_file' @{ machine = $vm; path = "Desktop\$tag-rep.txt"; content = 'abcdef' } 60
-            $null = Invoke-AgentCall $S 'run' @{ machine = $vm; command = 'notepad.exe'; shell = 'none'; args = @("$($st.Home)\Desktop\$tag-rep.txt"); background = $true } 30
+            $null = Invoke-AgentCall $S 'run' @{ machine = $vm; command = "Start-Process notepad -ArgumentList '$($st.Home)\Desktop\$tag-rep.txt'" } 30
             $null = Wait-AgentWindow $S $vm "$tag-rep"
             $null = Invoke-AgentCall $S 'key' @{ machine = $vm; keys = 'ctrl+end' } 30
             $t = Get-ReplyText (Invoke-AgentCall $S 'key' @{ machine = $vm; keys = 'backspace'; repeat = 3; delayMs = 300 } 30)
-            $null = Invoke-AgentCall $S 'key' @{ machine = $vm; keys = 'ctrl+s'; delayMs = 1200 } 30
+            $null = Invoke-AgentCall $S 'key' @{ machine = $vm; keys = (Get-SaveKey $S $vm); delayMs = 1200 } 30
             $r = Get-ReplyText (Invoke-AgentCall $S 'read_file' @{ machine = $vm; path = "Desktop\$tag-rep.txt" } 60)
             Check 'key with repeat 3 presses it three times' ($t -match '^Done' -and $r -match '\nabc\s*$') $r
             & $closeApps
@@ -304,16 +337,16 @@ function Test-Suite($Ctx) {
         Step-Agent 'act click and scroll' {
             $lines = @(1..60 | ForEach-Object { '@' * 70 }) + @(1..300 | ForEach-Object { '' })
             $null = Invoke-AgentCall $S 'write_file' @{ machine = $vm; path = "Desktop\$tag-long.txt"; content = ($lines -join "`r`n") } 60
-            $null = Invoke-AgentCall $S 'run' @{ machine = $vm; command = 'notepad.exe'; shell = 'none'; args = @("$($st.Home)\Desktop\$tag-long.txt"); background = $true } 30
+            $null = Invoke-AgentCall $S 'run' @{ machine = $vm; command = "Start-Process notepad -ArgumentList '$($st.Home)\Desktop\$tag-long.txt'" } 30
             $null = Wait-AgentWindow $S $vm "$tag-long"
             $null = Invoke-AgentCall $S 'key' @{ machine = $vm; keys = 'win+up'; delayMs = 1000 } 30
             $a = Get-AgentShot $S $vm
             $x = [int]($a.W / 2); $y = [int]($a.H / 2)
             $t = Get-ReplyText (Invoke-AgentCall $S 'act' @{ machine = $vm; delayMs = 800; actions = @(@{ type = 'click'; x = $x; y = $y }, @{ type = 'scroll'; x = $x; y = $y; dy = 30 }) } 60)
             $b = Get-AgentShot $S $vm
-            $before = Get-DarkShare $a.Image 0.1 0.25 0.4 0.35
-            $after = Get-DarkShare $b.Image 0.1 0.25 0.4 0.35
-            Check 'act with click and scroll scrolls the text away' ($t -match 'Done 2 of 2' -and $before -gt 0.02 -and $after -lt $before / 2) ("{0}; dark before {1:P1}, after {2:P1}" -f $t, $before, $after)
+            $before = Get-InkShare $a.Image 0.1 0.25 0.4 0.35
+            $after = Get-InkShare $b.Image 0.1 0.25 0.4 0.35
+            Check 'act with click and scroll scrolls the text away' ($t -match 'Done 2 of 2' -and $before -gt 0.02 -and $after -lt $before / 2) ("{0}; text before {1:P1}, after {2:P1}" -f $t, $before, $after)
             & $closeApps
         }
 
@@ -332,7 +365,7 @@ function Test-Suite($Ctx) {
         }
 
         Step-Agent 'drag in Paint' {
-            $null = Invoke-AgentCall $S 'run' @{ machine = $vm; command = 'mspaint.exe'; shell = 'none'; background = $true } 30
+            $null = Invoke-AgentCall $S 'run' @{ machine = $vm; command = 'Start-Process mspaint' } 30
             $null = Wait-AgentWindow $S $vm 'Paint'
             $null = Invoke-AgentCall $S 'key' @{ machine = $vm; keys = 'win+up'; delayMs = 1000 } 30
             $a = Get-AgentShot $S $vm
@@ -370,12 +403,12 @@ function Test-Suite($Ctx) {
         }
 
         Step-Agent 'screenshot parameters' {
-            $s = Get-AgentShot $S $vm @{ maxWidth = 640 }
-            Check 'screenshot maxWidth 640 is 640 wide' ($s.W -eq 640) $s.Text
+            $shot = Get-AgentShot $S $vm @{ maxWidth = 640 }
+            Check 'screenshot maxWidth 640 is 640 wide' ($shot.W -eq 640) $shot.Text
             $sw = [Diagnostics.Stopwatch]::StartNew()
-            $s = Get-AgentShot $S $vm @{ delayMs = 2000 }
+            $shot = Get-AgentShot $S $vm @{ delayMs = 2000 }
             $sw.Stop()
-            Check 'screenshot delayMs 2000 waits about 2 s' ([bool]$s.Image -and $sw.ElapsedMilliseconds -ge 1900) "$($sw.ElapsedMilliseconds) ms"
+            Check 'screenshot delayMs 2000 waits about 2 s' ([bool]$shot.Image -and $sw.ElapsedMilliseconds -ge 1900) "$($sw.ElapsedMilliseconds) ms"
             $null = Get-AgentShot $S $vm
         }
 
@@ -383,13 +416,19 @@ function Test-Suite($Ctx) {
             $videos = Join-Path ([Environment]::GetFolderPath('MyVideos')) "GpuVM\$vm"
             $saved = @(Get-ChildItem -LiteralPath $videos -File -Filter *.mp4 -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -ge $suiteStart })
             $viewer = Join-Path $env:USERPROFILE 'AppData\LocalLow\GpuVM\Viewer'
-            $live = { @(foreach ($d in 'Captures', 'Temp') { Get-ChildItem -LiteralPath (Join-Path $viewer $d) -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -ge $suiteStart } }) }
-            $first = & $live
-            Start-Sleep -Seconds 3
-            $second = & $live
-            $growing = @($second | Where-Object { $n = $_; $o = $first | Where-Object FullName -eq $n.FullName; -not $o -or $n.Length -gt $o.Length })
-            $detail = if ($saved.Count) { "saved: $($saved[0].FullName)" } elseif ($growing.Count) { "being written: $($growing[0].FullName) ($($growing[0].Length) bytes)" } else { "nothing in $videos nor in the viewer's Captures since $($suiteStart.ToString('HH:mm:ss'))" }
-            Check 'a recording of the agent''s work appeared for the machine since the suite started' ($saved.Count -gt 0 -or $growing.Count -gt 0) $detail
+            # The recording may have started in an earlier suite on the same machine. The viewer holds the file it records
+            # into (a .part in its Captures) locked, so NTFS shows neither its size nor its time changing: a locked .part
+            # created since this viewer started is the recording in progress.
+            $since = (Get-Process GpuVMViewer -ErrorAction SilentlyContinue | Sort-Object StartTime | Select-Object -First 1).StartTime
+            $writing = @(foreach ($d in 'Captures', 'Temp') {
+                Get-ChildItem -LiteralPath (Join-Path $viewer $d) -File -Filter *.part -ErrorAction SilentlyContinue | Where-Object {
+                    $f = $_; $held = $false
+                    try { [IO.File]::Open($f.FullName, 'Open', 'Read', 'ReadWrite, Delete').Dispose() } catch { $held = $true }
+                    $held -and $since -and $f.CreationTime -ge $since.AddSeconds(-5)
+                }
+            })
+            $detail = if ($saved.Count) { "saved: $($saved[0].FullName)" } elseif ($writing.Count) { "being written: $($writing[0].FullName) (since $($writing[0].CreationTime.ToString('HH:mm:ss')))" } else { "nothing in $videos since $($suiteStart.ToString('HH:mm:ss')) and no capture held open by the viewer" }
+            Check 'a recording of the agent''s work is saved or being written for the machine' ($saved.Count -gt 0 -or $writing.Count -gt 0) $detail
         }
     }
     finally {

@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.Drawing, System.Windows.Forms, UIAutomationClient, UIAutomationTypes
+Add-Type -AssemblyName System.Drawing, System.Windows.Forms, UIAutomationClient, UIAutomationTypes, WindowsBase
 
 Add-Type @'
 using System; using System.Runtime.InteropServices; using System.Text; using System.Collections.Generic;
@@ -42,7 +42,7 @@ public static class E2E {
   public static int Captioned(uint pid) { int n = 0; foreach (var h in WindowsOf(pid)) { var r = Rect(h); long style = (long)GetWindowLongPtr(h, -16); if (r[2] < 900 && r[2] > 20 && (style & 0xC00000) == 0xC00000) n++; } return n; }
   public static int[] Pixel(int x, int y) { IntPtr dc = GetDC(IntPtr.Zero); uint p = GetPixel(dc, x, y); ReleaseDC(IntPtr.Zero, dc); return new[] { (int)(p & 0xFF), (int)((p >> 8) & 0xFF), (int)((p >> 16) & 0xFF) }; }
   // What Windows 10 shows where a transparent window should be see-through.
-  public static bool Pale(int x, int y) { var c = Pixel(x, y); int mx = Math.Max(c[0], Math.Max(c[1], c[2])), mn = Math.Min(c[0], Math.Min(c[1], c[2])); return c[0] + c[1] + c[2] > 560 && mx - mn < 18; }
+  public static bool Pale(int x, int y) { var c = Pixel(x, y); int mx = Math.Max(c[0], Math.Max(c[1], c[2])), mn = Math.Min(c[0], Math.Min(c[1], c[2])); return c[0] + c[1] + c[2] > 540 && mx - mn < 45; }
   // BGRA bytes: share of dark and of light pixels.
   public static double[] Tones(byte[] p) { int dark = 0, light = 0, n = 0; for (int i = 0; i + 3 < p.Length; i += 8) { int s = p[i] + p[i+1] + p[i+2]; if (s < 200) dark++; if (s > 600) light++; n++; } return new[] { (double)dark / n, (double)light / n }; }
   // Short-lived patches: 4x4 blocks (of a BGRA frame `stride` bytes wide) where nearly every pixel is pale (or black)
@@ -63,6 +63,38 @@ public static class E2E {
     return count;
   }
   static bool K(byte[] p, int i) { return p[i] + p[i+1] + p[i+2] < 45; }
+  // Pale, including a half-transparent light bar over a blue picture (192, 206, 220).
+  static bool P(byte[] p, int i) { int b = p[i], g = p[i+1], r = p[i+2]; int mx = Math.Max(r, Math.Max(g, b)), mn = Math.Min(r, Math.Min(g, b)); return r + g + b > 540 && mx - mn < 45; }
+  // Blocks with any pale pixel, grown by one block: what was already light at the start or the end, give or take the
+  // pixel or two the picture is still moving by as an animation settles.
+  public static bool[] PaleMask(byte[] f, int stride) {
+    int w = stride / 4, h = f.Length / stride, bw = w / 4, bh = h / 4;
+    var m = new bool[bw * bh];
+    for (int by = 0; by < bh; by++) for (int bx = 0; bx < bw; bx++) {
+      bool any = false;
+      for (int y = by * 4; y < by * 4 + 4 && !any; y++) for (int x = bx * 4; x < bx * 4 + 4; x++) if (P(f, y * stride + x * 4)) { any = true; break; }
+      if (!any) continue;
+      for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) { int nx = bx + dx, ny = by + dy; if (nx >= 0 && ny >= 0 && nx < bw && ny < bh) m[ny * bw + nx] = true; }
+    }
+    return m;
+  }
+  // Patches that stay put for three frames (a bar left on screen) where neither the first nor the last frame was light;
+  // what moves (the picture scaling as the side panel opens or closes) doesn't count.
+  public static int Lasting(bool[] first, byte[] a, byte[] b, byte[] c, bool[] last, int stride) {
+    int w = stride / 4, h = a.Length / stride, bw = w / 4, count = 0;
+    for (int by = 0; by + 4 <= h; by += 4) for (int bx = 0; bx + 4 <= w; bx += 4) {
+      int k = (by / 4) * bw + bx / 4;
+      if (first[k] || last[k]) continue;
+      int hit = 0;
+      for (int y = by; y < by + 4; y++) for (int x = bx; x < bx + 4; x++) {
+        int i = y * stride + x * 4;
+        bool still = Math.Abs(a[i] - c[i]) + Math.Abs(a[i+1] - c[i+1]) + Math.Abs(a[i+2] - c[i+2]) < 18;
+        if (P(a, i) && P(b, i) && P(c, i) && still) hit++;
+      }
+      if (hit >= 14) count++;
+    }
+    return count;
+  }
   // White, or the pale grey of a semi-transparent white over the picture (low chroma, bright).
   static bool W(byte[] p, int i) { int b = p[i], g = p[i+1], r = p[i+2]; int mx = Math.Max(r, Math.Max(g, b)), mn = Math.Min(r, Math.Min(g, b)); return r + g + b > 600 && mx - mn < 24; }
   // Near-black pixels in a box: Windows' arrow cursor has a black edge; the agent's cursor (green, white edge) and the
@@ -105,6 +137,18 @@ function Screen { [Windows.Forms.Screen]::PrimaryScreen.Bounds }
 function Shot([string]$Name) {
     $s = Screen
     $bmp = Grab $s.X $s.Y $s.Width $s.Height; $bmp.Save((Join-Path $script:Out "$Name.png")); $bmp.Dispose()
+}
+
+# ERROR lines app.log got after byte $From (the app writes there what it showed or got back as an error).
+function Get-AppLogErrors([string]$Path, [long]$From) {
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    $fs = [IO.FileStream]::new($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+    try {
+        if ($fs.Length -lt $From) { $From = 0 }
+        $null = $fs.Seek($From, [IO.SeekOrigin]::Begin)
+        $text = [IO.StreamReader]::new($fs, [Text.Encoding]::UTF8).ReadToEnd()
+    } finally { $fs.Dispose() }
+    $text -split "`r?`n" | Where-Object { $_ -match ' ERROR ' }
 }
 
 function Wait-For([scriptblock]$Condition, [double]$Seconds = 15) {
@@ -162,7 +206,18 @@ function Click-Element($Element, [string]$Process = 'gpuvm') {
     if ($r.Width -le 0 -or $r.Height -le 0) { return $false }
     $x = [int]($r.X + $r.Width / 2); $y = [int]($r.Y + $r.Height / 2)
     $at = [E2E]::ProcessNameAt($x, $y)
-    if ($at -ne $Process) { Write-Host "     click refused: $at is over '$($Element.Current.Name)'"; return $false }
+    if ($at -ne $Process -and -not ($Process -eq 'gpuvm' -and $at -eq 'msedgewebview2')) { Write-Host "     click refused: $at is over '$($Element.Current.Name)'"; return $false }
+    # WebView2's own popups (menus, autofill suggestions) are msedgewebview2 windows: the point must be the element.
+    if ($at -eq 'msedgewebview2' -and $Process -eq 'gpuvm') {
+        $hit = try { [Windows.Automation.AutomationElement]::FromPoint([Windows.Point]::new($x, $y)) } catch { $null }
+        $top = if ($hit) { "$($hit.Current.ControlType.ProgrammaticName -replace 'ControlType\.', '') '$($hit.Current.Name)' [$($hit.Current.ClassName)]" } else { 'nothing' }
+        $mine = $false
+        for ($i = 0; $hit -and $i -lt 12 -and -not $mine; $i++) {
+            if ([Windows.Automation.Automation]::Compare($hit, $Element)) { $mine = $true }
+            else { $hit = [Windows.Automation.TreeWalker]::RawViewWalker.GetParent($hit) }
+        }
+        if (-not $mine) { Write-Host "     click refused: $top is at the center of '$($Element.Current.Name)'"; return $false }
+    }
     [E2E]::Click($x, $y)
     $true
 }
@@ -199,7 +254,8 @@ function Check-Drawn([string]$Name, $Notch) {
 }
 
 # Films the screen at half size while $Action runs; fails on a short-lived white patch or a captioned GpuVM window.
-function Check-NoFlash([string]$Name, [scriptblock]$Action, [int]$Milliseconds = 2500) {
+# -PictureChanges: the machine's own picture changes meanwhile, so only patches against the frames around them count.
+function Check-NoFlash([string]$Name, [scriptblock]$Action, [int]$Milliseconds = 2500, [switch]$PictureChanges) {
     $s = Screen
     $half = { $f = Grab $s.X $s.Y $s.Width $s.Height; $x = [Drawing.Bitmap]::new($f, [int]($s.Width / 2), [int]($s.Height / 2)); $f.Dispose(); $x }
     $frames = [System.Collections.Generic.List[System.Drawing.Bitmap]]::new()
@@ -210,9 +266,12 @@ function Check-NoFlash([string]$Name, [scriptblock]$Action, [int]$Milliseconds =
     while ($sw.ElapsedMilliseconds -lt $Milliseconds) { $frames.Add((& $half)); if ($app) { $captions = [Math]::Max($captions, [E2E]::Captioned([uint32]$app.Id)) } }
     $raw = @($frames | ForEach-Object { , (Bytes $_) })
     $stride = [int]($s.Width / 2) * 4
+    $firstMask = [E2E]::PaleMask($raw[0], $stride); $lastMask = [E2E]::PaleMask($raw[$raw.Count - 1], $stride)
     $worst = 0; $at = -1; $dark = 0; $darkAt = -1
     for ($i = 1; $i -lt $frames.Count - 2; $i++) {
+        # Against the frames around it, and against the start and the end: a patch that lasts several frames is still a flash.
         $f = [E2E]::Flash($raw[$i - 1], $raw[$i], $raw[$i + 2], $stride)
+        if (-not $PictureChanges) { $f = [Math]::Max($f, [E2E]::Lasting($firstMask, $raw[$i], $raw[$i + 1], $raw[$i + 2], $lastMask, $stride)) }
         if ($f -gt $worst) { $worst = $f; $at = $i }
         $k = [E2E]::FlashBlack($raw[$i - 1], $raw[$i], $raw[$i + 2], $stride)
         if ($k -gt $dark) { $dark = $k; $darkAt = $i }
@@ -230,9 +289,15 @@ function Check-NoFlash([string]$Name, [scriptblock]$Action, [int]$Milliseconds =
 function Start-Mcp([string]$Exe = 'C:\Program Files\GpuVM\gpuvm.exe', [string]$Name = 'E2e') {
     $psi = [Diagnostics.ProcessStartInfo]::new($Exe, '--mcp')
     $psi.RedirectStandardInput = $true; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true; $psi.UseShellExecute = $false
-    $psi.StandardOutputEncoding = [Text.UTF8Encoding]::new($false)
-    $p = [Diagnostics.Process]::Start($psi)
-    $s = [pscustomobject]@{ Process = $p; Id = 0 }
+    $psi.StandardOutputEncoding = [Text.UTF8Encoding]::new($false); $psi.StandardInputEncoding = [Text.UTF8Encoding]::new($false)
+    $p = [Diagnostics.Process]::new(); $p.StartInfo = $psi
+    $log = if ($script:Out) { Join-Path $script:Out "mcp-$Name.log" } else { Join-Path ([IO.Path]::GetTempPath()) "gpuvm-e2e-mcp-$Name.log" }
+    # Shared: a suite that restarts the service opens a second session onto the same log.
+    $writer = [IO.StreamWriter]::new([IO.FileStream]::new($log, [IO.FileMode]::Append, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite)); $writer.AutoFlush = $true
+    $null = Register-ObjectEvent -InputObject $p -EventName ErrorDataReceived -MessageData $writer -Action { if ($null -ne $EventArgs.Data) { $Event.MessageData.WriteLine($EventArgs.Data) } }
+    $null = $p.Start()
+    $p.BeginErrorReadLine()
+    $s = [pscustomobject]@{ Process = $p; Id = 0; Log = $log; Pending = $null }
     Send-Mcp $s 'initialize' @{ protocolVersion = '2025-06-18'; capabilities = @{}; clientInfo = @{ name = $Name; version = '1' } } | Out-Null
     Send-Mcp $s 'notifications/initialized' $null -Notify
     $s
@@ -248,12 +313,50 @@ function Send-Mcp($Session, [string]$Method, $Params, [switch]$Notify, [switch]$
     Receive-Mcp $Session $Session.Id
 }
 
-function Receive-Mcp($Session, [int]$Id) {
+# One reader for the session (suites read with timeouts through the same pending task, never two reads at once).
+# Answers to other calls still in flight are kept for their own Receive-Mcp.
+function Receive-Mcp($Session, [int]$Id, [double]$Seconds = 600) {
+    if ($Session.PSObject.Properties.Name -notcontains 'Stash') { $Session | Add-Member -NotePropertyName Stash -NotePropertyValue @{} }
+    if ($Session.Stash.ContainsKey($Id)) { $r = $Session.Stash[$Id]; $Session.Stash.Remove($Id); return $r }
+    $deadline = (Get-Date).AddSeconds($Seconds)
     while ($true) {
-        $line = $Session.Process.StandardOutput.ReadLine()
+        if (-not $Session.Pending) { $Session.Pending = $Session.Process.StandardOutput.ReadLineAsync() }
+        $left = [int][Math]::Max(0, ($deadline - (Get-Date)).TotalMilliseconds)
+        if (-not $Session.Pending.Wait($left)) { throw "No answer from the MCP server in $Seconds s." }
+        $line = $Session.Pending.Result; $Session.Pending = $null
         if ($null -eq $line) { throw 'The MCP server closed.' }
         $r = $line | ConvertFrom-Json
         if ($r.id -eq $Id) { return $r }
+        if ($null -ne $r.id) { $Session.Stash[[int]$r.id] = $r }
+    }
+}
+
+# Notepad's Save follows the machine's display language (Spanish "Guardar" is Ctrl+G; Ctrl+S does nothing there).
+$script:SaveKeys = @{}
+function Get-SaveKey($Session, [string]$Machine) {
+    if (-not $script:SaveKeys[$Machine]) {
+        $t = Invoke-Tool $Session 'run' @{ machine = $Machine; command = '(Get-UICulture).TwoLetterISOLanguageName' }
+        $script:SaveKeys[$Machine] = if ($t -match '(?m)^es\s*$') { 'ctrl+g' } else { 'ctrl+s' }
+    }
+    $script:SaveKeys[$Machine]
+}
+
+# Select all follows it too: Spanish Notepad opens a file with Ctrl+A ("Abrir") and selects all with Ctrl+E.
+function Get-SelectAllKey($Session, [string]$Machine) { if ((Get-SaveKey $Session $Machine) -eq 'ctrl+g') { 'ctrl+e' } else { 'ctrl+a' } }
+
+# The Save dialog's path autocomplete can take an Enter, as it does for a person. A dialog that opened slowly may have
+# missed the typed path: then its File name box is filled and Save pressed through UI Automation, as an agent would.
+function Complete-SaveDialog($Session, [string]$Machine, [string]$Path) {
+    for ($i = 0; $i -lt 3; $i++) {
+        $front = Invoke-Tool $Session 'ui_tree' @{ machine = $Machine; interactiveOnly = $false; maxNodes = 120 }
+        if ($front -notmatch '(?m)^\S+ window "(Guardar como|Save As)"') { return }
+        $name = [regex]::Match($front, '(?m)^(\S+) (edit|combobox) "(Nombre|File name)[^"]*"[^\n]*setValue')
+        if ($Path -and $name.Success) {
+            $null = Invoke-Tool $Session 'ui_invoke' @{ machine = $Machine; id = $name.Groups[1].Value; action = 'setValue'; value = $Path }
+            $save = [regex]::Match($front, '(?m)^(\S+) button "(Guardar|Save)"')
+            if ($save.Success) { $null = Invoke-Tool $Session 'ui_invoke' @{ machine = $Machine; id = $save.Groups[1].Value; action = 'invoke' }; Start-Sleep -Milliseconds 1500; continue }
+        }
+        $null = Invoke-Tool $Session 'key' @{ machine = $Machine; keys = 'enter'; delayMs = 1500 }
     }
 }
 
@@ -265,9 +368,11 @@ function Start-Tool($Session, [string]$Name, [hashtable]$Arguments = @{}) { Send
 
 # The shared disposable machine, created by the agent session and open in the viewer for the person.
 function Use-Machine($Ctx) {
+    # A disposable machine that was turned off is gone: the next suite makes a new one.
+    if ($Ctx.Machine -and -not (Get-VM -Name $Ctx.Machine -ErrorAction SilentlyContinue)) { $Ctx.Machine = $null }
     if (-not $Ctx.Machine) {
         $created = Invoke-Tool $Ctx.Mcp 'create_disposable' @{ template = $Ctx.Template; task = 'End-to-end suite' }
-        $Ctx.Machine = [regex]::Match($created, "$($Ctx.Template)-[0-9a-f]{6}").Value
+        $Ctx.Machine = if ($created -match '^Created disposable machine') { [regex]::Match($created, "$($Ctx.Template)-[0-9a-f]{6}").Value } else { $null }
         Check 'agent creates a disposable machine' ([bool]$Ctx.Machine) $created
         if (-not $Ctx.Machine) { throw 'No machine to test on.' }
     }
@@ -277,5 +382,37 @@ function Use-Machine($Ctx) {
 }
 
 function Stop-Mcp($Session) { try { $Session.Process.StandardInput.Close(); $null = $Session.Process.WaitForExit(5000) } catch { } }
+
+if (-not ('E2EFront' -as [type])) {
+    Add-Type @'
+using System; using System.Runtime.InteropServices;
+public static class E2EFront {
+  [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint f, IntPtr e);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  public static void To(IntPtr h) { keybd_event(0x12, 0, 0, IntPtr.Zero); SetForegroundWindow(h); keybd_event(0x12, 0, 2, IntPtr.Zero); }
+}
+'@
+}
+
+# Between suites: the agent gets the machine back and GpuVM goes Home, as a person would leave it.
+function Reset-E2EApp($Ctx) {
+    $viewer = Get-Process GpuVMViewer -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } | Select-Object -First 1
+    if (-not $viewer) { return }
+    $front = {
+        for ($i = 0; $i -lt 3 -and [E2E]::Foreground() -notlike 'GpuVMViewer/*'; $i++) { [E2EFront]::To($viewer.MainWindowHandle); Start-Sleep -Milliseconds 400 }
+        [E2E]::Foreground() -like 'GpuVMViewer/*'
+    }
+    if ($Ctx.Machine -and $Ctx.Mcp -and (Invoke-Tool $Ctx.Mcp 'list_machines') -match "$([regex]::Escape($Ctx.Machine))[^\n]*paused") {
+        if (& $front) { [E2E]::Combo([byte][char]'A') }
+        $null = Invoke-Tool $Ctx.Mcp 'wait_for_person' @{ machine = $Ctx.Machine; waitSeconds = 10 }
+    }
+    $s = Screen
+    $r = [E2E]::Rect($viewer.MainWindowHandle)
+    if ([E2EFront]::IsWindowVisible($viewer.MainWindowHandle) -and $r[2] -ge $s.Width -and $r[3] -ge $s.Height -and (& $front)) {
+        [E2E]::Combo([byte][char]'H')
+        $null = Wait-For { -not [E2EFront]::IsWindowVisible($viewer.MainWindowHandle) } 8
+    }
+}
 
 Export-ModuleMember -Function * -Variable Results

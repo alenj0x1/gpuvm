@@ -168,10 +168,12 @@ pub fn exec_run(p: &Value, id: u64) -> CallResult {
     }
     let proc_ = Owned(pi.hProcess);
     let thread = Owned(pi.hThread);
+    let before = top_windows();
     unsafe {
         let _ = AssignProcessToJobObject(job.0, proc_.0);
         ResumeThread(thread.0);
     }
+    front_new_window(job.0, before);
     drop((in_r, out_w, err_w));
     // stdin from its own thread: a child that doesn't read must not block us
     let in_w_raw = in_w.0 .0 as isize;
@@ -276,4 +278,65 @@ mod tests {
         assert_eq!(quote(r#"say "hi""#), r#""say \"hi\"""#);
         assert_eq!(quote(r"C:\dir with space\"), r#""C:\dir with space\\""#);
     }
+}
+
+fn top_windows() -> Vec<isize> {
+    use windows::Win32::UI::WindowsAndMessaging::*;
+    unsafe extern "system" fn each(h: HWND, l: LPARAM) -> windows::core::BOOL {
+        let out = &mut *(l.0 as *mut Vec<isize>);
+        if IsWindowVisible(h).as_bool() && GetWindow(h, GW_OWNER).is_err() && GetWindowTextLengthW(h) > 0 {
+            out.push(h.0 as isize);
+        }
+        TRUE
+    }
+    let mut out = Vec::new();
+    unsafe {
+        let _ = EnumWindows(Some(each), LPARAM(&mut out as *mut Vec<isize> as isize));
+    }
+    out
+}
+
+/// A program started from here can't take the foreground by itself (Windows' focus rules): its first window is
+/// brought forward for it, as when a person starts it.
+fn front_new_window(job: HANDLE, before: Vec<isize>) {
+    let mut dup = HANDLE::default();
+    let ok = unsafe {
+        let me = GetCurrentProcess();
+        windows::Win32::Foundation::DuplicateHandle(me, job, me, &mut dup, 0, false, DUPLICATE_SAME_ACCESS)
+    };
+    if ok.is_err() {
+        return;
+    }
+    let job = dup.0 as isize;
+    std::thread::spawn(move || {
+        use windows::Win32::UI::Input::KeyboardAndMouse::*;
+        use windows::Win32::UI::WindowsAndMessaging::*;
+        let job = Owned(HANDLE(job as _));
+        let t0 = Instant::now();
+        while t0.elapsed() < Duration::from_secs(8) {
+            std::thread::sleep(Duration::from_millis(120));
+            let found = top_windows().into_iter().filter(|h| !before.contains(h)).find(|h| unsafe {
+                let mut pid = 0u32;
+                GetWindowThreadProcessId(HWND(*h as _), Some(&mut pid));
+                let Ok(p) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else { return false };
+                let p = Owned(p);
+                let mut inside = FALSE;
+                IsProcessInJob(p.0, Some(job.0), &mut inside).is_ok() && inside.as_bool()
+            });
+            if let Some(h) = found {
+                let h = HWND(h as _);
+                unsafe {
+                    // An input event of our own (a move by zero) gives this process the right to set the foreground.
+                    let nudge = INPUT { r#type: INPUT_MOUSE, Anonymous: INPUT_0 { mi: MOUSEINPUT { dwFlags: MOUSEEVENTF_MOVE, ..Default::default() } } };
+                    SendInput(&[nudge], std::mem::size_of::<INPUT>() as i32);
+                    if IsIconic(h).as_bool() {
+                        let _ = ShowWindow(h, SW_RESTORE);
+                    }
+                    let _ = SetForegroundWindow(h);
+                    let _ = BringWindowToTop(h);
+                }
+                return;
+            }
+        }
+    });
 }

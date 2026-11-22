@@ -169,10 +169,10 @@ fn overlay_send(app: &AppHandle, vm: &str, event: &Value) {
         Some(w) if current.as_deref() == Some(vm) => w,
         existing => {
             if let Some(w) = existing {
-                let _ = w.destroy();
+                crate::overlay::destroy_and_wait(app, w);
             }
-            let Ok(w) = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into())).additional_browser_args(crate::BROWSER_ARGS)
-                .title("GpuVM").decorations(false).transparent(true).shadow(false).resizable(false)
+            let Ok(w) = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into())).additional_browser_args(crate::BROWSER_ARGS).general_autofill_enabled(false)
+                .title("GpuVM").decorations(false).transparent(true).no_redirection_bitmap(true).shadow(false).resizable(false)
                 .skip_taskbar(true).focused(false).visible(false).build() else { return };
             let _ = w.set_ignore_cursor_events(true);
             *lock(&OVER) = Some(Over { vm: vm.to_string(), ready: false, pending: Vec::new() });

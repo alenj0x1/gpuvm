@@ -62,7 +62,10 @@ function Find-PiAppButton([string]$Pattern) {
         if ($w.Handle -eq $app.MainWindowHandle) { continue }
         try {
             $b = Find-Named (Get-Element $w.Handle) $Pattern ([Windows.Automation.ControlType]::Button)
-            if ($b -and $b.Current.IsEnabled -and $b.Current.BoundingRectangle.Width -gt 0) { return $b }
+            if (-not ($b -and $b.Current.IsEnabled -and $b.Current.BoundingRectangle.Width -gt 0)) { continue }
+            # A full-screen picture covers the app's own window: only a button a person can reach counts.
+            $r = $b.Current.BoundingRectangle
+            if ([E2E]::ProcessNameAt([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2)) -in 'gpuvm', 'msedgewebview2') { return $b }
         } catch { }
     }
     $null
@@ -161,6 +164,15 @@ function Get-PiSide([string]$Pattern) {
 
 # Settings > Agents > Take control: the two options of its switch.
 function Get-PiTakeControl {
+    if (-not (Get-PiSide '^(Settings|Ajustes)$')) {
+        # The picture is showing (the sidebar is gone): back Home, with Ctrl+Alt+Shift+H where the picture covers the title bar.
+        $back = Find-Named (Get-MainElement) '^(Home|Inicio)$' ([Windows.Automation.ControlType]::Button)
+        if (-not ($back -and (Click-Element $back))) {
+            if ([E2E]::Foreground() -notlike 'GpuVMViewer/*') { $null = Click-PiPicture 0.35 0.5; Start-Sleep -Milliseconds 400 }
+            [E2E]::Combo([byte][char]'H')
+        }
+        $null = Wait-For { Get-PiSide '^(Settings|Ajustes)$' } 8
+    }
     $null = Invoke-Element (Get-PiSide '^(Settings|Ajustes)$')
     $nav = Wait-For { Find-Named (Get-MainElement) '^(Settings sections|Secciones de Ajustes)$' } 6
     if (-not $nav) { return $null }
@@ -252,11 +264,15 @@ function Test-PiTyping($Ctx, [string]$Vm, [string]$Tag) {
 
     $file = "$home_\Desktop\e2e-human-$Tag.txt"
     $null = Invoke-Tool $Ctx.Mcp 'act' @{ machine = $Vm; intent = 'Saving the note'; actions = @(
-            @{ type = 'key'; keys = 'ctrl+s' }, @{ type = 'wait'; ms = 2000 }, @{ type = 'type'; text = $file }, @{ type = 'key'; keys = 'enter' }, @{ type = 'wait'; ms = 1500 }) }
-    $saved = Wait-For { $r = Invoke-Tool $Ctx.Mcp 'read_file' @{ machine = $Vm; path = "Desktop\e2e-human-$Tag.txt" }; if ($r -match "e2e.human.$Tag") { $r } } 10
+            @{ type = 'key'; keys = (Get-SaveKey $Ctx.Mcp $Vm) }, @{ type = 'wait'; ms = 2000 }, @{ type = 'type'; text = $file }, @{ type = 'key'; keys = 'enter' }, @{ type = 'wait'; ms = 1500 }) }
+    Complete-SaveDialog $Ctx.Mcp $Vm $file
+    # read_file answers "<path> (N bytes):" and then the content; the path itself holds the tag, so only the content counts.
+    $content = { param($r) if ($r -match '(?s)^[^\n]*\(\d+ bytes\):\r?\n(.*)$') { $Matches[1] } else { '' } }
+    $saved = Wait-For { $r = Invoke-Tool $Ctx.Mcp 'read_file' @{ machine = $Vm; path = "Desktop\e2e-human-$Tag.txt" }; if ((& $content $r) -match "e2e.human.$Tag") { $r } } 10
     if (-not $saved) { $saved = Invoke-Tool $Ctx.Mcp 'read_file' @{ machine = $Vm; path = "Desktop\e2e-human-$Tag.txt" } }
-    Check 'typing: after the click, the person''s typing reached Notepad' ($saved -match "e2e.human.$Tag") $saved
-    Check 'typing: the key pressed while the agent worked didn''t reach the machine' ($saved -match "e2e.human.$Tag" -and $saved -notmatch 'q') $saved
+    $text = & $content $saved
+    Check 'typing: after the click, the person''s typing reached Notepad' ($text -match "e2e.human.$Tag") $saved
+    Check 'typing: the key pressed while the agent worked didn''t reach the machine' ($text -match "e2e.human.$Tag" -and $text -notmatch 'q') $saved
     $null = Invoke-Tool $Ctx.Mcp 'run' @{ machine = $Vm; command = 'Stop-Process -Name notepad -Force -ErrorAction SilentlyContinue' }
 }
 
@@ -336,7 +352,7 @@ function Find-PiAdminDock {
 function Test-PiAdminPrompt($Ctx, [string]$Vm) {
     $null = Use-Machine $Ctx
     $st = @{ Run = '' }
-    Check-NoFlash 'admin dock appearing' { $st.Run = Invoke-Tool $Ctx.Mcp 'run' @{ machine = $Vm; command = 'Start-Process cmd -Verb RunAs'; background = $true; intent = 'Asking for administrator rights' } } 7000
+    Check-NoFlash 'admin dock appearing' { $st.Run = Invoke-Tool $Ctx.Mcp 'run' @{ machine = $Vm; command = 'Start-Process cmd -Verb RunAs'; background = $true; intent = 'Asking for administrator rights' } } 7000 -PictureChanges
     $dock = Wait-For { Find-PiAdminDock } 30
     if (-not $dock) {
         Shot 'person-input-no-admin-dock'
@@ -364,8 +380,18 @@ function Test-PiDrop($Ctx, [string]$Vm, [string]$Tag) {
     $before = @(Get-PiExplorers | ForEach-Object Handle)
     $win = $null
     $down = $false
+    $windowed = $false
     try {
         $null = Use-Machine $Ctx
+        # A person drags from Explorer to a picture in a window; a full-screen one leaves no room for Explorer.
+        $s = Screen
+        $v = Get-PiViewer
+        $vp = Get-Process GpuVMViewer -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } | Select-Object -First 1
+        for ($i = 0; $vp -and $i -lt 3 -and [E2E]::Foreground() -notlike 'GpuVMViewer/*'; $i++) { [E2EFront]::To($vp.MainWindowHandle); Start-Sleep -Milliseconds 400 }
+        if ($v -and $v.W -ge $s.Width -and $v.H -ge $s.Height -and [E2E]::Foreground() -like 'GpuVMViewer/*') {
+            [E2E]::Combo([byte][char]'X')
+            $windowed = [bool](Wait-For { $x = Get-PiViewer; $x -and $x.W -lt $s.Width } 6)
+        }
         Start-Process explorer.exe "/select,`"$path`""
         $win = Wait-PiNewExplorer $before
         Check 'drop: Explorer opens on the file' ([bool]$win) ''
@@ -378,7 +404,8 @@ function Test-PiDrop($Ctx, [string]$Vm, [string]$Tag) {
         $sx = if ($r) { [int]($r.X + [Math]::Min(40, $r.Width / 4)) } else { 0 }; $sy = if ($r) { [int]($r.Y + $r.Height / 2) } else { 0 }
         $to = Get-PiPoint 0.6 0.55
         $ready = $r -and $to -and [E2E]::ProcessNameAt($sx, $sy) -eq 'explorer' -and [E2E]::ProcessNameAt($to.X, $to.Y) -eq 'GpuVMViewer'
-        Check 'drop: the file and the picture are both visible' ([bool]$ready) $(if ($r -and $to) { "at the file: $([E2E]::ProcessNameAt($sx, $sy)); at the target: $([E2E]::ProcessNameAt($to.X, $to.Y))" } else { 'file item or picture not found' })
+        if (-not $ready) { Shot 'person-input-drop-not-ready' }
+        Check 'drop: the file and the picture are both visible' ([bool]$ready) $(if ($r -and $to) { "at the file: $([E2E]::ProcessNameAt($sx, $sy)); at the target: $([E2E]::At($to.X, $to.Y))" } else { 'file item or picture not found' })
         if (-not $ready) { return }
 
         [PI35]::To($sx, $sy); Start-Sleep -Milliseconds 150
@@ -402,6 +429,11 @@ function Test-PiDrop($Ctx, [string]$Vm, [string]$Tag) {
         if ($down) { [PI35]::Up() }
         Close-PiExplorer $win
         Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+        if ($windowed) {
+            if ([E2E]::Foreground() -notlike 'GpuVMViewer/*') { $null = Click-PiPicture 0.5 0.05; Start-Sleep -Milliseconds 400 }
+            [E2E]::Combo([byte][char]'X')
+            $null = Wait-For { $x = Get-PiViewer; $x -and $x.W -ge (Screen).Width } 6
+        }
     }
 }
 
@@ -429,7 +461,7 @@ function Test-PiWidgets($Ctx, [string]$Vm, [string]$Tag) {
             foreach ($b in $listed.FindAll([Windows.Automation.TreeScope]::Descendants, $buttons)) {
                 if ($b.Current.Name -notmatch '^(Paste in|Pegar en) ') { continue }
                 $row = $walker.GetParent($b)
-                if ($row -and (Get-Texts $row) -match [regex]::Escape($clip)) { $paste = $b; break }
+                if ($row -and ("$($row.Current.Name) $(Get-Texts $row)") -match [regex]::Escape($clip)) { $paste = $b; break }
             }
         }
         if ($paste) { Show-PiElement $paste }
@@ -440,10 +472,13 @@ function Test-PiWidgets($Ctx, [string]$Vm, [string]$Tag) {
         $cap = Get-PiWidget (Get-PiPanel) '^(Capture|Captura)$'
         if ($cap) { Show-PiElement $cap }
         $before = Get-PiVideos $Vm
-        $rec = if ($cap) { Find-Named $cap '^(Record|Grabar)$' ([Windows.Automation.ControlType]::Button) }
+        # The agent's own recording of its work shows as Stop: the person stops it first.
+        $running = if ($cap) { Find-Named $cap '^(Stop|Detener)\b' ([Windows.Automation.ControlType]::Button) }
+        if ($running -and (Click-Element $running)) { $null = Wait-Notch 'Recording saved|Grabaci.n guardada' 20; $before = Get-PiVideos $Vm }
+        $rec = Wait-For { $w = Get-PiWidget (Get-PiPanel) '^(Capture|Captura)$'; if ($w) { Find-Named $w '^(Record|Grabar)$' ([Windows.Automation.ControlType]::Button) } } 6
         $pressed = Click-Element $rec
-        $n = Wait-Notch 'Recording|Grabando' 10
-        Check 'Capture widget: Record shows Recording in the notch' ($pressed -and $n -and $n.Text -match 'Recording|Grabando') "text: $($n.Text)"
+        $n = Wait-Notch 'Recording(?! saved)|Grabando' 10
+        Check 'Capture widget: Record shows Recording in the notch' ($pressed -and $n -and $n.Text -match 'Recording(?! saved)|Grabando') "text: $($n.Text)"
         Start-Sleep -Seconds 3
         $stop = Wait-For { $w = Get-PiWidget (Get-PiPanel) '^(Capture|Captura)$'; if ($w) { Find-Named $w '^(Stop|Detener)\b' ([Windows.Automation.ControlType]::Button) } } 4
         $pressed = Click-Element $stop
@@ -494,7 +529,9 @@ function Test-Suite($Ctx) {
         'widgets' = { Test-PiWidgets $Ctx $vm $tag }
     }
     try {
-        foreach ($name in $steps.Keys) {
+        # E2E_STEPS="admin prompt,drop" runs only those steps (to look into one quickly).
+        $only = if ($env:E2E_STEPS) { $env:E2E_STEPS -split ',' | ForEach-Object { $_.Trim() } } else { @($steps.Keys) }
+        foreach ($name in @($steps.Keys | Where-Object { $only -contains $_ })) {
             try { & $steps[$name] } catch { Check "person input: $name ran to the end" $false $_.Exception.Message }
             try { $null = Use-Machine $Ctx; $null = Return-PiAgent $Ctx $vm } catch { }
             Start-Sleep -Seconds 2

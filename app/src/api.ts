@@ -143,6 +143,14 @@ export async function repairService() {
 
 export interface ServiceStatus { state: "running" | "starting" | "stopping" | "stopped" | "missing"; withWindows: boolean }
 
+export const diagnostics = {
+  save: async (): Promise<string> => {
+    if (!inTauri) return "C:\\Users\\you\\Downloads\\GpuVM-report.txt";
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke<string>("save_diagnostics");
+  },
+};
+
 export const service = {
   status: async (): Promise<ServiceStatus> => {
     if (!inTauri) return { state: "running", withWindows: false };

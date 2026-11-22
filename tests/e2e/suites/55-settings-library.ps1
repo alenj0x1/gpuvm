@@ -50,8 +50,16 @@ function Get-SlType([string]$Name) { [Windows.Automation.ControlType]::$Name }
 
 function Find-SlAll($Root, [string]$Type = '', [string]$Pattern = '', [string]$Class = '') {
     if (-not $Root) { return @() }
+    $card = $Root.PSObject.Properties.Name -contains 'Card'
+    $from = if ($card) { $Root.Root } else { $Root }
     $cond = if ($Type) { [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, (Get-SlType $Type)) } else { [Windows.Automation.Condition]::TrueCondition }
-    try { @($Root.FindAll([Windows.Automation.TreeScope]::Descendants, $cond) | Where-Object { $c = $_.Current; $c.Name -match $Pattern -and (-not $Class -or $c.ClassName -match $Class) }) } catch { @() }
+    try {
+        @($from.FindAll([Windows.Automation.TreeScope]::Descendants, $cond) | Where-Object {
+            $c = $_.Current; $r = $c.BoundingRectangle
+            $c.Name -match $Pattern -and (-not $Class -or $c.ClassName -match $Class) -and
+                (-not $card -or ($r.Width -gt 0 -and $r.X + $r.Width / 2 -ge $Root.X -and $r.X + $r.Width / 2 -le $Root.X + $Root.W -and $r.Y + $r.Height / 2 -ge $Root.Y -and $r.Y + $r.Height / 2 -le $Root.Y + $Root.H))
+        })
+    } catch { @() }
 }
 
 function Find-SlOne($Root, [string]$Type = '', [string]$Pattern = '', [string]$Class = '') { Find-SlAll $Root $Type $Pattern $Class | Select-Object -First 1 }
@@ -174,28 +182,47 @@ function Set-SlSliderIndex($El, [int]$Index) {
     try { $El.SetFocus() } catch { }
     $null = Show-SlMain
     try { $El.SetFocus() } catch { }
-    [E2ESL]::Key(0x24)
-    for ($i = 0; $i -lt $Index; $i++) { [E2ESL]::Key(0x27) }
-    Start-Sleep -Milliseconds 900
-    (Get-SlValue $El) -eq $Index
+    for ($try = 0; $try -lt 2; $try++) {
+        # Second try: a viewer or dock may have kept the keyboard; a click on the slider gives it the focus.
+        if ($try) { $null = Show-SlMain; $null = Click-Element $El; Start-Sleep -Milliseconds 300 }
+        [E2ESL]::Key(0x24)
+        for ($i = 0; $i -lt $Index; $i++) { [E2ESL]::Key(0x27) }
+        Start-Sleep -Milliseconds 900
+        if ((Get-SlValue $El) -eq $Index) { return $true }
+    }
+    $false
 }
 
-function Get-SlCard([string]$Name) {
-    $t = Find-SlAll (Get-MainElement) '' "^$([regex]::Escape($Name))$" | Select-Object -First 1
-    $p = $t
-    for ($i = 0; $i -lt 8 -and $p; $i++) {
-        $p = [Windows.Automation.TreeWalker]::RawViewWalker.GetParent($p)
-        if ($p -and $p.Current.ClassName -match '\bprofile-card\b') { return $p }
-    }
-    $null
+# A Library card's box isn't in UI Automation (a plain div): the card is the area from its name down to its buttons.
+# Profiles and shared disks get the same e2e name: the card is looked for between its section's heading and the next.
+$script:SlSections = @{
+    Profiles = @('^(Profiles|Perfiles)$', '^(Templates|Plantillas)$')
+    Disks    = @('^(Shared disks|Discos compartidos)$', '^(Machine disks|Discos de m.quinas)$')
 }
+
+function Get-SlCard([string]$Name, [string]$Section = 'Profiles') {
+    $main = Get-MainElement
+    # Section headings are taller than the same words in the drive usage legend above them.
+    $from = Find-SlAll $main 'Text' $script:SlSections[$Section][0] | Where-Object { $_.Current.BoundingRectangle.Height -ge 18 } | Select-Object -First 1
+    $top = if ($from) { $from.Current.BoundingRectangle.Y } else { [double]::MinValue }
+    $to = Find-SlAll $main 'Text' $script:SlSections[$Section][1] | Where-Object { $_.Current.BoundingRectangle.Height -ge 18 -and $_.Current.BoundingRectangle.Y -gt $top } | Select-Object -First 1
+    $bottom = if ($to) { $to.Current.BoundingRectangle.Y } else { [double]::MaxValue }
+    $left = if ($from) { $from.Current.BoundingRectangle.X - 60 } else { [double]::MinValue }
+    # A space of the same name shows in the sidebar, left of the section.
+    $t = Find-SlAll $main 'Text' "^$([regex]::Escape($Name))$" | Where-Object { $r = $_.Current.BoundingRectangle; $r.Y -gt $top -and $r.Y -lt $bottom -and $r.X -ge $left } | Select-Object -First 1
+    if (-not $t) { return $null }
+    $r = $t.Current.BoundingRectangle
+    [pscustomobject]@{ Card = $Name; Root = (Get-MainElement); X = $r.X - 16; Y = $r.Y - 10; W = 316; H = 230 }
+}
+
+function Get-SlCardTexts($Card) { (Find-SlAll $Card | ForEach-Object { $_.Current.Name } | Where-Object { $_ }) -join ' | ' }
 
 function Get-SlViewer {
     Get-Process GpuVMViewer -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } |
         Sort-Object { $r = [E2E]::Rect($_.MainWindowHandle); - [long]$r[2] * $r[3] } | Select-Object -First 1
 }
 
-function Focus-SlViewer { $v = Get-SlViewer; if ($v) { $null = [E2ESL]::Front($v.MainWindowHandle); Start-Sleep -Milliseconds 300 }; $v }
+function Focus-SlViewer { $v = Wait-For { Get-SlViewer } 10; if ($v) { $null = [E2ESL]::Front($v.MainWindowHandle); Start-Sleep -Milliseconds 300 }; $v }
 
 function Wait-SlReply($Session, [int]$Id, [double]$Seconds) {
     if ($Session.PSObject.Properties.Name -notcontains 'Pending') { $Session | Add-Member -NotePropertyName Pending -NotePropertyValue $null }
@@ -301,7 +328,8 @@ function Test-SlAccent {
 }
 
 function Get-SlPiece { Find-SlOne (Get-MainElement) '' '^(Status notices|Avisos de estado)$' '\bpl-piece\b' }
-function Get-SlStage { Find-SlOne (Get-MainElement) '' '' '\bpl-stage\b' }
+# The stage is a nameless group outside UI Automation's control view: it is reached as the piece's parent.
+function Get-SlStage { $p = Get-SlPiece; if ($p) { $s = [Windows.Automation.TreeWalker]::RawViewWalker.GetParent($p); if ($s -and $s.Current.ClassName -match '\bpl-stage\b') { $s } } }
 
 # Drags the notch piece by $Dy pixels; returns its offset from the preview's top afterwards.
 function Move-SlPiece([int]$Dy) {
@@ -395,13 +423,23 @@ function Test-SlDisconnect($Ctx) {
         $null = Use-Machine $Ctx
         $v = Focus-SlViewer
         if (-not $v) { Check '"Disconnect it": the viewer is open before Ctrl+Alt+Shift+H' $false ''; return }
+        $front = [E2E]::Foreground()
         [E2E]::Combo([byte][char]'H')
         $gone = Wait-For { -not (Get-Process -Id $v.Id -ErrorAction SilentlyContinue) } 15
-        Check '"Disconnect it": Ctrl+Alt+Shift+H ends the viewer within 15 s' ([bool]$gone) "viewer $($v.Id)"
+        $s = Screen
+        Check '"Disconnect it": Ctrl+Alt+Shift+H ends the viewer within 15 s' ([bool]$gone) "viewer $($v.Id); in front when pressed: $front; at the center now: $([E2E]::ProcessNameAt($s.X + [int]($s.Width / 2), $s.Y + [int]($s.Height / 2)))"
     }
     finally {
-        $null = Open-SlSettings $window
-        Check "going back to Home is restored to $(Get-SlLabel $orig)" (Select-SlRadio $orig) ''
+        $opened = Open-SlSettings $window
+        $back = $opened -and (Select-SlRadio $orig)
+        $how = ''
+        if (-not $back) {
+            # The picture may still be coming up in front: once more from Home.
+            Start-Sleep -Seconds 3
+            $back = (Open-SlSettings $window) -and (Select-SlRadio $orig)
+            $how = "second try (first: Settings > Window opened $opened)"
+        }
+        Check "going back to Home is restored to $(Get-SlLabel $orig)" $back $how
         try { $null = Use-Machine $Ctx } catch { }
         Check 'the machine opens in the viewer again' ([bool](Get-SlViewer)) ''
         Exit-SlViewer
@@ -416,6 +454,11 @@ function Test-SlTimeToAnswer($Ctx, [string]$Tag) {
     $orig = Get-SlValue (& $getSlider)
     Check 'the time to answer is readable' ($orig -ge 0) "index $orig"
     if ($orig -lt 0) { return }
+    $origSec = $null
+    try {
+        Import-Module (Join-Path $PSScriptRoot '..\..\..\src\GpuVM\GpuVM.psd1') -ErrorAction Stop
+        $origSec = [int](Get-GpuVMAgentSettings).approvalTimeoutSec
+    } catch { Write-Host "     the time to answer in seconds isn't readable: $($_.Exception.Message)" }
     $vm = $Ctx.Machine
     $s2 = $null; $released = $false
     try {
@@ -423,7 +466,8 @@ function Test-SlTimeToAnswer($Ctx, [string]$Tag) {
         $min = Wait-For { (Get-SlValue (& $getSlider)) -eq 0 } 3
         Check 'Time to answer goes to its minimum' ([bool]$min) "index $(Get-SlValue (& $getSlider))"
         Start-Sleep -Seconds 1
-        if (-not $vm) { $vm = Use-Machine $Ctx }
+        # Requests show as a dock over the picture only while the picture is on screen.
+        $vm = Use-Machine $Ctx
 
         $t = Invoke-SlCall $Ctx.Mcp 'release_machine' @{ machine = $vm } 30
         $released = $t -match 'Released'
@@ -432,7 +476,7 @@ function Test-SlTimeToAnswer($Ctx, [string]$Tag) {
         $s2 = Start-Mcp $Ctx.Exe 'E2eTimeout'
         $sw = [Diagnostics.Stopwatch]::StartNew()
         $id = Start-Tool $s2 'take_machine' @{ machine = $vm; waitSeconds = 120; task = "Time to answer $Tag" }
-        $dock = Wait-For { Find-SlDock "Use $([regex]::Escape($vm))|Usar $([regex]::Escape($vm))" } 10
+        $dock = Wait-For { Find-SlDock "Use (the machine )?'?$([regex]::Escape($vm))|Usar (la m.quina )?'?$([regex]::Escape($vm))" } 10
         $reply = Get-SlText (Wait-SlReply $s2 $id 150)
         if ($reply -match 'You have') {
             $title = "e2e-$Tag unanswered"
@@ -445,10 +489,10 @@ function Test-SlTimeToAnswer($Ctx, [string]$Tag) {
         }
         else {
             Check 'the second agent''s request to use the machine shows a dock' ([bool]$dock) ''
-            $pattern = "Use $([regex]::Escape($vm))|Usar $([regex]::Escape($vm))"
+            $pattern = "Use (the machine )?'?$([regex]::Escape($vm))|Usar (la m.quina )?'?$([regex]::Escape($vm))"
         }
         $secs = [int]$sw.Elapsed.TotalSeconds
-        Check 'Time to answer at its minimum: the unanswered request ends as not answered and withdrawn' ($reply -match "didn't answer" -and $reply -match 'withdrawn' -and $secs -lt 120) "after $secs s: $reply"
+        Check 'Time to answer at its minimum: the unanswered request ends as not answered and withdrawn' ((($reply -match "didn't answer" -and $reply -match 'withdrawn') -or $reply -match 'expired without an answer') -and $secs -lt 120) "after $secs s: $reply"
         Check 'the withdrawn request''s dock goes' ([bool](Wait-For { -not (Find-SlDock $pattern) } 10)) ''
     }
     finally {
@@ -458,7 +502,7 @@ function Test-SlTimeToAnswer($Ctx, [string]$Tag) {
             $reply = $null
             $deadline = (Get-Date).AddSeconds(150)
             while (-not $reply -and (Get-Date) -lt $deadline) {
-                $d = Find-SlDock "Use $([regex]::Escape($vm))|Usar $([regex]::Escape($vm))"
+                $d = Find-SlDock "Use (the machine )?'?$([regex]::Escape($vm))|Usar (la m.quina )?'?$([regex]::Escape($vm))"
                 if ($d) { $b = Find-Named $d.Root '^\W*(Allow|Permitir)\W*$' ([Windows.Automation.ControlType]::Button); if ($b) { $null = Click-Element $b } }
                 $reply = Wait-SlReply $Ctx.Mcp $id 2
             }
@@ -466,7 +510,11 @@ function Test-SlTimeToAnswer($Ctx, [string]$Tag) {
             Check 'the suite''s agent takes the machine back' ($t -match 'You have') $t
         }
         $null = Open-SlSettings $agentsTab
-        Check 'the time to answer goes back to what it was' (Set-SlSliderIndex (& $getSlider) $orig) "index $(Get-SlValue (& $getSlider)), was $orig"
+        $restored = Set-SlSliderIndex (& $getSlider) $orig
+        Check 'the time to answer goes back to what it was' $restored "index $(Get-SlValue (& $getSlider)), was $orig"
+        if (-not $restored -and $origSec) {
+            try { Set-GpuVMAgentSettings -ApprovalTimeoutSec $origSec | Out-Null; Write-Host "     time to answer put back to $origSec s through Set-GpuVMAgentSettings" } catch { Write-Host "     couldn't put the time to answer back: $($_.Exception.Message)" }
+        }
     }
 }
 
@@ -551,16 +599,18 @@ function Test-SlTitleBar {
 
 function Get-SlSpaceTab([string]$Name) { Find-SlOne (Get-MainElement) 'RadioButton' "^\s*$([regex]::Escape($Name))\s*$" }
 
-function Remove-SlSpace([string]$Name) {
+# -Invoke is for cleanup after a failed check: it leaves no space behind even when a real click can't reach a button.
+function Remove-SlSpace([string]$Name, [switch]$Invoke) {
     $esc = [regex]::Escape($Name)
-    $null = Press-SlReal (Get-SlSpaceTab $Name)
+    $press = if ($Invoke) { { param($e) Invoke-Element $e } } else { { param($e) Press-SlReal $e } }
+    $null = & $press (Get-SlSpaceTab $Name)
     $edit = Wait-For { Find-SlOne (Get-MainElement) 'Button' "^(Edit|Editar) $esc$" } 3
-    $null = Press-SlReal $edit
+    $null = & $press $edit
     $dlg = Wait-For { Get-SlDialog "^(Edit|Editar) $esc$" } 4
     if (-not $dlg) { return $false }
-    $null = Press-SlReal (Find-SlOne $dlg 'Button' '^(Delete space|Eliminar espacio)$')
+    $null = & $press (Find-SlOne $dlg 'Button' '^(Delete space|Eliminar espacio)$')
     $confirm = Wait-For { Find-SlOne (Get-SlDialog "^(Edit|Editar) $esc$") 'Button' '^(Delete|Eliminar)$' } 3
-    $null = Press-SlReal $confirm
+    $null = & $press $confirm
     [bool](Wait-For { -not (Get-SlSpaceTab $Name) } 4)
 }
 
@@ -602,7 +652,7 @@ function Test-SlSpaces([string]$Tag) {
     }
     finally {
         Close-SlDialogs
-        if ($created) { $null = Remove-SlSpace $name }
+        if ($created) { Close-SlDialogs; $null = Remove-SlSpace $name -Invoke }
     }
 }
 
@@ -654,9 +704,10 @@ function Test-SlProfiles([string]$Tag) {
             $box = Find-SlOne $dlg 'Edit' '^(Description|Descripción)'
             if (-not $box) { $box = @(Find-SlAll $dlg 'Edit')[1] }
             $typed = Set-SlText $box $desc
+            Shot 'library-profile-edit'
             $null = Press-SlReal (Find-SlOne $dlg 'Button' '^(Save profile|Guardar perfil)$')
-            $shown = Wait-For { $c = Get-SlCard $name; $c -and (Get-Texts $c) -match [regex]::Escape($desc) } 20
-            Check "the edited description shows on $name's card" ($typed -and [bool]$shown) ''
+            $shown = Wait-For { $c = Get-SlCard $name; $c -and (Get-SlCardTexts $c) -match [regex]::Escape($desc) } 20
+            Check "the edited description shows on $name's card" ($typed -and [bool]$shown) "typed: $typed; box: $(if ($box) { $box.Current.Name } else { 'none' }); card: $(if ($c = Get-SlCard $name) { Get-SlCardTexts $c } else { 'not found' })"
         }
 
         $gone = Remove-SlProfile $name
@@ -688,7 +739,7 @@ function Test-SlSharedDisk([string]$Tag) {
     $null = Press-SlReal (Find-SlOne $dlg 'Button' '^(Create disk|Crear disco)$')
     $toast = Wait-For { (Get-Texts (Get-MainElement)) -match "(Disk|Disco) $esc (created|creado)" } 90
     Check "Create disk: a toast says $name was created" ($typed -and [bool]$toast) "smallest size the dialog allows: $gb GB"
-    $card = Wait-For { Get-SlCard $name } 15
+    $card = Wait-For { Get-SlCard $name 'Disks' } 15
     Check "the shared disk $name is listed" ([bool]$card) ''
     if ($card) {
         Shot 'library-shared-disk'
@@ -696,8 +747,15 @@ function Test-SlSharedDisk([string]$Tag) {
     }
 }
 
+# The score's span has no box in UI Automation: its text sits just before the lives (which have a label).
 function Get-SlScore {
-    $el = Find-SlOne (Get-MainElement) '' '' '\bgame-(score|final)\b'
+    $root = Get-MainElement
+    $el = Find-SlOne $root '' '' '\bgame-(score|final)\b'
+    if (-not $el) {
+        $lives = Find-SlOne $root '' '' '\bgame-lives\b'
+        if ($lives) { $el = [Windows.Automation.TreeWalker]::RawViewWalker.GetPreviousSibling($lives) }
+        if ($el -and $el.Current.Name -notmatch '\d') { $el = $null }
+    }
     if (-not $el) { return $null }
     $t = if ($el.Current.Name) { $el.Current.Name } else { Get-Texts $el }
     ($t -replace '[^\d]', '')
@@ -739,6 +797,28 @@ function Test-SlGame {
     }
 }
 
+# Settings > Service > Save report: a text file in Downloads with the app's and the service's logs, shown in Explorer.
+function Test-SlDiagnostics {
+    if (-not (Open-SlSettings '^(Service|Servicio)$')) { Check 'Settings > Service opens' $false ''; return }
+    $downloads = (New-Object -ComObject Shell.Application).Namespace('shell:Downloads').Self.Path
+    $before = @(Get-ChildItem -LiteralPath $downloads -Filter 'GpuVM-report-*.txt' -ErrorAction SilentlyContinue | ForEach-Object FullName)
+    $explorers = @(Get-Process explorer -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
+    $b = Wait-For { Find-SlOne (Get-MainElement) 'Button' '^\W*(Save report|Guardar informe)\W*$' } 5
+    Check 'Settings > Service shows Save report' ([bool]$b) ''
+    if (-not $b) { return }
+    $null = Press-SlReal $b
+    $new = Wait-For { Get-ChildItem -LiteralPath $downloads -Filter 'GpuVM-report-*.txt' -ErrorAction SilentlyContinue | Where-Object { $before -notcontains $_.FullName } | Select-Object -First 1 } 15
+    $text = if ($new) { Get-Content -Raw -LiteralPath $new.FullName } else { '' }
+    Check 'Save report writes the report to Downloads with the app''s and the service''s logs' ($text -match 'diagnostics report' -and $text -match 'app\.log' -and $text -match 'host\.log') $(if ($new) { $new.Name } else { 'no new GpuVM-report file' })
+    $said = Wait-For { Find-SlOne (Get-MainElement) '' '(Saved in Downloads|Guardado en Descargas)' } 5
+    Check 'the row says where it was saved' ([bool]$said) ''
+    $shown = Wait-For { Get-Process explorer -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -match 'Downloads|Descargas' } | Select-Object -First 1 } 8
+    Check 'Explorer opens on Downloads' ([bool]$shown) ''
+    if ($shown -and $explorers -notcontains $shown.Id) { Stop-Process -Id $shown.Id -ErrorAction SilentlyContinue }
+    elseif ($shown) { $null = $shown.CloseMainWindow() }
+    if ($new) { Remove-Item -LiteralPath $new.FullName -ErrorAction SilentlyContinue }
+}
+
 function Test-Suite($Ctx) {
     if (-not (Get-App)) { throw 'GpuVM is not running.' }
     $tag = "$(Get-Random -Minimum 100000 -Maximum 999999)"
@@ -753,6 +833,7 @@ function Test-Suite($Ctx) {
     Step-Sl 'going back to Home' { Test-SlDisconnect $Ctx }
     Step-Sl 'last 30 s' { Test-SlReplay $Ctx }
     Step-Sl 'time to answer' { Test-SlTimeToAnswer $Ctx $tag }
+    Step-Sl 'diagnostics report' { Test-SlDiagnostics }
     Exit-SlViewer
     $app = Get-App
     Check 'the app still responds after the settings checks' ($app -and $app.Responding) ''

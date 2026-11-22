@@ -45,10 +45,10 @@ fn drop_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
     if let Some(w) = app.get_webview_window(LABEL) {
         return Some(w);
     }
-    let w = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into())).additional_browser_args(crate::BROWSER_ARGS)
+    let w = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into())).additional_browser_args(crate::BROWSER_ARGS).general_autofill_enabled(false)
         .title("GpuVM")
         .decorations(false)
-        .transparent(true)
+        .transparent(true).no_redirection_bitmap(true)
         .shadow(false)
         .resizable(false)
         .skip_taskbar(true)

@@ -373,13 +373,13 @@ fn guest(m: &mut Machine, method: &str, p: &Value) -> Result<Reply> {
             Ok(Reply::of(json!({ "done": actions.len() })))
         }
         "ui.tree" => Ok(Reply::of(json!({ "nodes": [
-            { "id": "n1", "role": "window", "name": "Untitled - Notepad", "bbox": [300, 150, 1200, 700], "enabled": true, "patterns": [] },
-            { "id": "n2", "role": "edit", "name": "Text editor", "bbox": [310, 230, 1180, 600], "enabled": true, "patterns": ["value"] },
-            { "id": "n3", "role": "button", "name": "Close", "bbox": [1440, 150, 60, 40], "enabled": true, "patterns": ["invoke"] },
-            { "id": "n4", "role": "button", "name": "Off screen", "bbox": [5000, 5000, 10, 10], "enabled": true, "patterns": ["invoke"] }
+            { "id": 1, "role": "window", "name": "Untitled - Notepad", "bbox": [300, 150, 1200, 700], "enabled": true, "patterns": [] },
+            { "id": 2, "role": "edit", "name": "Text editor", "bbox": [310, 230, 1180, 600], "enabled": true, "patterns": ["value"] },
+            { "id": 3, "role": "button", "name": "Close", "bbox": [1440, 150, 60, 40], "enabled": true, "patterns": ["invoke"] },
+            { "id": 4, "role": "button", "name": "Off screen", "bbox": [5000, 5000, 10, 10], "enabled": true, "patterns": ["invoke"] }
         ] }))),
-        "ui.invoke" => match p["id"].as_str() {
-            Some("n1" | "n2" | "n3") => Ok(Reply::of(json!({}))),
+        "ui.invoke" => match p["id"].as_u64() {
+            Some(1..=3) => Ok(Reply::of(json!({}))),
             _ => Err(err("not_found", "No such element.")),
         },
         "exec.run" => {

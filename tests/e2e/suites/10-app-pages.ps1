@@ -261,21 +261,24 @@ function Test-ThemeChange {
     $toDark = $t0[1] -ge $t0[0]
     $target = if ($toDark) { $dark } else { $light }
     $targetName = $target.Current.Name
-    Check-NoFlash "switching the theme to $targetName" ({ $null = Invoke-Element $target }.GetNewClosure())
-    $picked = Test-Selected $target
-    if (-not $picked) { $picked = Select-Option $target }
-    Start-Sleep -Milliseconds 800
-    $null = Show-Main
-    $t1 = Get-WindowTones
-    $delta = if ($toDark) { $t1[0] - $t0[0] } else { $t1[1] - $t0[1] }
-    Check "theme $targetName changes the app's colors on screen" ($picked -and $delta -ge 0.15) ("dark {0:P0} -> {1:P0}, light {2:P0} -> {3:P0}" -f $t0[0], $t1[0], $t0[1], $t1[1])
-    Shot "pages-settings-theme-$($targetName -replace '\W', '-')"
-
-    $back = Select-Option $orig
-    Start-Sleep -Milliseconds 800
-    $null = Show-Main
-    $t2 = Get-WindowTones
-    Check "the theme goes back to $($orig.Current.Name)" ($back -and [Math]::Abs($t2[1] - $t0[1]) -lt 0.12 -and [Math]::Abs($t2[0] - $t0[0]) -lt 0.12) ("light {0:P0} at first, {1:P0} now" -f $t0[1], $t2[1])
+    try {
+        Check-NoFlash "switching the theme to $targetName" ({ $null = Invoke-Element $target }.GetNewClosure()) -PictureChanges
+        $picked = Test-Selected $target
+        if (-not $picked) { $picked = Select-Option $target }
+        Start-Sleep -Milliseconds 800
+        $null = Show-Main
+        $t1 = Get-WindowTones
+        $delta = if ($toDark) { $t1[0] - $t0[0] } else { $t1[1] - $t0[1] }
+        Check "theme $targetName changes the app's colors on screen" ($picked -and $delta -ge 0.15) ("dark {0:P0} -> {1:P0}, light {2:P0} -> {3:P0}" -f $t0[0], $t1[0], $t0[1], $t1[1])
+        Shot "pages-settings-theme-$($targetName -replace '\W', '-')"
+    }
+    finally {
+        $back = Select-Option $orig
+        Start-Sleep -Milliseconds 800
+        $null = Show-Main
+        $t2 = Get-WindowTones
+        Check "the theme goes back to $($orig.Current.Name)" ($back -and [Math]::Abs($t2[1] - $t0[1]) -lt 0.12 -and [Math]::Abs($t2[0] - $t0[0]) -lt 0.12) ("light {0:P0} at first, {1:P0} now" -f $t0[1], $t2[1])
+    }
 }
 
 function Test-PlacementEditor {
@@ -371,7 +374,7 @@ function Test-MachinePage([string]$Name) {
         $null = Invoke-Element $tab
         Start-Sleep -Milliseconds 900
         $mark = switch -Regex ($tn) {
-            '^(Machine|Máquina)$' { @('Restore points', 'Puntos de restauración') }
+            '^(Machine|Máquina)$' { @('GPU for the VM', 'GPU para la VM') }
             '^(Agent|Agente)$' { @('History', 'Historial') }
             default { $null }
         }

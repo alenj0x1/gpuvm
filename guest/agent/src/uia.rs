@@ -115,6 +115,35 @@ unsafe fn walk(e: &IUIAutomationElement, depth: usize, w: &mut Walk) {
     }
 }
 
+/// Open menus and popups live in their own top-level windows, outside the window in front.
+fn popups(fg: windows::Win32::Foundation::HWND) -> Vec<windows::Win32::Foundation::HWND> {
+    use windows::Win32::Foundation::*;
+    use windows::Win32::UI::WindowsAndMessaging::*;
+    struct Ctx { fg: HWND, pid: u32, out: Vec<HWND> }
+    unsafe extern "system" fn each(h: HWND, l: LPARAM) -> windows::core::BOOL {
+        let c = &mut *(l.0 as *mut Ctx);
+        if h == c.fg || !IsWindowVisible(h).as_bool() || c.out.len() >= 8 {
+            return TRUE;
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(h, Some(&mut pid));
+        let style = GetWindowLongW(h, GWL_STYLE) as u32;
+        let owned = GetWindow(h, GW_OWNER).map_or(false, |o| o == c.fg);
+        let menu = window_class(h) == "#32768";
+        let popup = pid == c.pid && style & WS_POPUP.0 != 0;
+        if (menu || owned || popup) && window_block(h).0.is_none() {
+            c.out.push(h);
+        }
+        TRUE
+    }
+    let mut c = Ctx { fg, pid: 0, out: vec![] };
+    unsafe {
+        GetWindowThreadProcessId(fg, Some(&mut c.pid));
+        let _ = EnumWindows(Some(each), LPARAM(&mut c as *mut Ctx as isize));
+    }
+    c.out
+}
+
 pub fn ui_tree(p: &Value) -> CallResult {
     let scope = p["scope"].as_str().unwrap_or("foreground");
     if scope != "foreground" {
@@ -191,6 +220,12 @@ pub fn ui_tree(p: &Value) -> CallResult {
         }
         let _ = first_total;
         walk(root.as_ref().unwrap(), 0, &mut w);
+        for h in popups(f.hwnd) {
+            if let Ok(r) = auto.ElementFromHandleBuildCache(h, &cr) {
+                queries += 1;
+                walk(&r, 0, &mut w);
+            }
+        }
     }
     let ms = t0.elapsed().as_secs_f64() * 1e3;
     LAST.with(|l| *l.borrow_mut() = w.elems);

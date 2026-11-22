@@ -1,6 +1,6 @@
 // Everything from a guest is hostile: frames are bounded, signed and numbered; nothing a guest sends makes the host act.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -1920,12 +1920,13 @@ pub fn gate(request: &mut Value, pid: u32, agent_pipe: bool) -> Result<Gated, Cm
     if let Some(kind) = kind {
         let kind = *kind;
         let id = approval.as_ref().and_then(Value::as_str).unwrap_or("");
+        // Clients before requests, never both: the order everywhere else is clients first.
+        let live: HashSet<String> = lock(&broker().clients).iter().filter(|(_, c)| c.pid == pid && !c.killed).map(|(id, _)| id.clone()).collect();
         let mut list = lock(&broker().requests);
         expire(&mut list);
         let now = now_ms();
-        let clients = lock(&broker().clients);
         let r = list.iter_mut().find(|r| r.id == id && r.state == "allowed" && r.kind == kind && r.machine.eq_ignore_ascii_case(name)
-            && clients.get(&r.connection).is_some_and(|c| c.pid == pid && !c.killed)
+            && live.contains(&r.connection)
             && (r.for_task || (!r.used && !r.reserved && r.resolved.is_some_and(|t| now < t + 600_000))));
         let Some(r) = r else {
             return err("needs_approval", format!("{cmd} needs the person's approval: ask with New-GpuVMAgentRequest -Kind {kind}."));
@@ -2157,15 +2158,19 @@ fn connect_client(client: &Value, ctx: &mut Ctx) -> Result<Value, CmdError> {
 
 fn get_clients(only: Option<&str>) -> Value {
     let regs = registrations();
-    let machines = lock(&broker().machines);
-    let requests = lock(&broker().requests);
-    let clients = lock(&broker().clients);
     let now = now_ms();
+    // One lock at a time: holding machines while waiting for clients deadlocked against list_machines (clients first).
+    let taken: Vec<(String, String, Option<Value>, Option<u64>)> = lock(&broker().machines).iter()
+        .filter_map(|(vm, m)| m.taken_by.clone().map(|by| (vm.clone(), by, m.paused.clone(), m.resumed_at)))
+        .collect();
+    let waiting_for: HashSet<String> = lock(&broker().requests).iter()
+        .filter(|r| r.state == "pending" && r.expires > now).map(|r| r.connection.clone()).collect();
+    let clients = lock(&broker().clients);
     let list = clients.iter().filter(|(id, _)| only.is_none_or(|o| o == id.as_str())).map(|(id, c)| {
-        let taken = machines.iter().find(|(_, m)| m.taken_by.as_deref() == Some(id.as_str()));
-        let machine = taken.and_then(|(vm, _)| regs.iter().find(|r| &r.vm_id == vm)).map(|r| r.name.clone());
-        let paused = taken.and_then(|(_, m)| m.paused.clone());
-        let waiting = requests.iter().any(|r| &r.connection == id && r.state == "pending" && r.expires > now);
+        let taken = taken.iter().find(|(_, by, _, _)| by == id);
+        let machine = taken.and_then(|(vm, _, _, _)| regs.iter().find(|r| &r.vm_id == vm)).map(|r| r.name.clone());
+        let paused = taken.and_then(|(_, _, p, _)| p.clone());
+        let waiting = waiting_for.contains(id);
         let (state, reason) = if c.killed {
             ("stopped", Value::Null)
         } else if let Some(p) = &paused {
@@ -2181,7 +2186,7 @@ fn get_clients(only: Option<&str>) -> Value {
             "id": id, "name": c.name, "version": c.version, "connectedAt": c.started_ms, "machine": machine, "task": c.task,
             "state": state, "reason": reason, "steps": c.steps, "maxSteps": c.max_steps,
             "minutes": c.started.elapsed().as_secs() / 60, "maxMinutes": c.max_minutes,
-            "resumedAt": taken.and_then(|(_, m)| m.resumed_at),
+            "resumedAt": taken.and_then(|(_, _, _, at)| *at),
             "actions": c.actions.iter().rev().cloned().collect::<Vec<_>>(),
         })
     }).collect();

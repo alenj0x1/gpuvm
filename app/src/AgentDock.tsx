@@ -81,6 +81,11 @@ export function AgentDock() {
       await invoke("agent_dock_answer", { id: request.id, allow: kind !== "deny", forTask: kind === "task" });
     } catch (e) { setError(humanError(e)); setBusy(null); }
   };
+  // The press answers: a click could lose its release to the window taking the focus and the menu closing.
+  const pick = (kind: "allow" | "deny" | "task") => ({
+    onPointerDown: (e: React.PointerEvent) => { e.stopPropagation(); if (e.button === 0) { e.preventDefault(); answer(kind); } },
+    onClick: (e: React.MouseEvent) => { if (e.detail === 0) answer(kind); },
+  });
   const send = request.kind === "send" ? (request.send ?? sendOf(request as unknown as Record<string, unknown>)) : null;
   const title = request.kind === "send" ? t("{name} wants to copy to {machine}", { name: request.clientName, machine: request.machine }) : translateModule(request.title);
   const detail = send
@@ -140,10 +145,10 @@ export function AgentDock() {
       {menu && createPortal(
         <div className="menu floating ag-dock-menu" style={{ left: Math.min(menu.x, window.innerWidth - 208), top: menu.y }} role="menu"
           onPointerDown={(e) => e.stopPropagation()}>
-          {canAllow && <button type="button" role="menuitem" onClick={() => answer("allow")}><IconCheck size={15} />{request.kind === "deliver" ? t("Accept") : t("Allow")}</button>}
+          {canAllow && <button type="button" role="menuitem" {...pick("allow")}><IconCheck size={15} />{request.kind === "deliver" ? t("Accept") : t("Allow")}</button>}
           {/* A copy from the PC names one exact path: never allowed ahead for the rest of the task. */}
-          {request.kind !== "send" && <button type="button" role="menuitem" onClick={() => answer("task")}><IconHistory size={15} />{t("Allow for this task")}</button>}
-          <button type="button" role="menuitem" onClick={() => answer("deny")}><IconX size={15} />{t("Refuse")}</button>
+          {request.kind !== "send" && <button type="button" role="menuitem" {...pick("task")}><IconHistory size={15} />{t("Allow for this task")}</button>}
+          <button type="button" role="menuitem" {...pick("deny")}><IconX size={15} />{t("Refuse")}</button>
         </div>, document.body)}
       {menu && <div className="ag-dock-menu-catch" onPointerDown={() => setMenu(null)} />}
     </div>

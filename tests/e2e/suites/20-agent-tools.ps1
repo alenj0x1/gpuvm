@@ -37,6 +37,19 @@ function Get-AgentShot($Session, [string]$Machine, [hashtable]$Extra = @{}) {
     [pscustomobject]@{ Reply = $r; Text = $t; Image = (Get-ReplyImage $r); W = $(if ($m.Success) { [int]$m.Groups[1].Value } else { 0 }); H = $(if ($m.Success) { [int]$m.Groups[2].Value } else { 0 }) }
 }
 
+# Share of non-white pixels (text in any gray) in a box given as fractions of a PNG screenshot: the screenshot is
+# scaled down, so thin dark glyphs arrive as light grays that a darkness threshold misses.
+function Get-InkShare($Image, [double]$X, [double]$Y, [double]$W, [double]$H) {
+    if (-not $Image -or $Image.mimeType -ne 'image/png') { return -1 }
+    $ms = [IO.MemoryStream]::new([Convert]::FromBase64String($Image.data))
+    $bmp = [Drawing.Bitmap]::new($ms)
+    $rect = [Drawing.Rectangle]::new([int]($bmp.Width * $X), [int]($bmp.Height * $Y), [int]($bmp.Width * $W), [int]($bmp.Height * $H))
+    $crop = $bmp.Clone($rect, [Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $ink = 1 - [E2E]::Tones((Bytes $crop))[1]
+    $crop.Dispose(); $bmp.Dispose(); $ms.Dispose()
+    $ink
+}
+
 # Share of dark pixels in a box given as fractions of a PNG screenshot.
 function Get-DarkShare($Image, [double]$X, [double]$Y, [double]$W, [double]$H) {
     if (-not $Image -or $Image.mimeType -ne 'image/png') { return -1 }
@@ -149,7 +162,7 @@ function Test-Suite($Ctx) {
         }
 
         Step-Agent 'notepad' {
-            $null = Invoke-AgentCall $S 'run' @{ machine = $vm; command = 'notepad.exe'; shell = 'none'; background = $true; intent = 'Opening Notepad' } 30
+            $null = Invoke-AgentCall $S 'run' @{ machine = $vm; command = 'Start-Process notepad'; intent = 'Opening Notepad' } 30
             $t = Wait-AgentWindow $S $vm 'Notepad|Bloc de notas'
             if ($t -notmatch 'Notepad|Bloc de notas') {
                 $null = Invoke-AgentCall $S 'run' @{ machine = $vm; command = "`$w = New-Object -ComObject WScript.Shell; foreach (`$n in 'Bloc de notas', 'Notepad') { if (`$w.AppActivate(`$n)) { break } }" } 30
@@ -161,18 +174,19 @@ function Test-Suite($Ctx) {
             }
             Check 'Notepad started with run is in front' ($t -match 'Notepad|Bloc de notas') $t
             $null = Invoke-AgentCall $S 'type' @{ machine = $vm; text = "$tag-one"; intent = 'Typing' } 60
-            $t = Get-ReplyText (Invoke-AgentCall $S 'key' @{ machine = $vm; keys = 'ctrl+a'; delayMs = 300 } 60)
+            $t = Get-ReplyText (Invoke-AgentCall $S 'key' @{ machine = $vm; keys = (Get-SelectAllKey $S $vm); delayMs = 300 } 60)
             Check 'key answers' ($t -match '^Done') $t
             $t = Get-ReplyText (Invoke-AgentCall $S 'type' @{ machine = $vm; text = "$tag-typed"; delayMs = 300 } 60)
             Check 'type answers' ($t -match '^Done') $t
             $file = "$($st.Home)\Desktop\$tag-notepad.txt"
             $t = Get-ReplyText (Invoke-AgentCall $S 'act' @{ machine = $vm; intent = 'Saving'; actions = @(
-                @{ type = 'key'; keys = 'ctrl+s' }, @{ type = 'wait'; ms = 2000 }, @{ type = 'type'; text = $file },
+                @{ type = 'key'; keys = (Get-SaveKey $S $vm) }, @{ type = 'wait'; ms = 2000 }, @{ type = 'type'; text = $file },
                 @{ type = 'key'; keys = 'enter' }, @{ type = 'wait'; ms = 1500 }) } 90)
             Check 'act runs several actions in one call' ($t -match 'Done 5 of 5 actions') $t
+            Complete-SaveDialog $S $vm $file
             $t = Get-ReplyText (Invoke-AgentCall $S 'read_file' @{ machine = $vm; path = "Desktop\$tag-notepad.txt" } 60)
             Check 'the typed text reached Notepad (saved through act)' ($t -match "$tag-typed") $t
-            Check 'key ctrl+a selected the earlier text (typing replaced it)' ($t -match "$tag-typed" -and $t -notmatch "$tag-one") $t
+            Check 'key select-all selected the earlier text (typing replaced it)' ($t -match "$tag-typed" -and $t -notmatch "$tag-one") $t
             $tree = Get-ReplyText (Invoke-AgentCall $S 'ui_tree' @{ machine = $vm; interactiveOnly = $false; maxNodes = 80 } 30)
             Check 'ui_tree finds Notepad and its document' ($tree -match 'Notepad|Bloc de notas' -and $tree -match "$tag-notepad") (($tree -split "`n" | Select-Object -First 4) -join ' / ')
             $edit = [regex]::Match($tree, '(?m)^(\S+) (edit|document) "[^"\n]*"[^\n]*setValue')
@@ -180,7 +194,7 @@ function Test-Suite($Ctx) {
             if ($edit.Success) {
                 $t = Get-ReplyText (Invoke-AgentCall $S 'ui_invoke' @{ machine = $vm; id = $edit.Groups[1].Value; action = 'setValue'; value = "$tag-set"; intent = 'Setting the text' } 60)
                 Check 'ui_invoke answers' ($t -match '^Done') $t
-                $null = Invoke-AgentCall $S 'act' @{ machine = $vm; actions = @(@{ type = 'key'; keys = 'ctrl+end' }, @{ type = 'type'; text = '!' }, @{ type = 'key'; keys = 'ctrl+s' }, @{ type = 'wait'; ms = 1500 }) } 60
+                $null = Invoke-AgentCall $S 'act' @{ machine = $vm; actions = @(@{ type = 'key'; keys = 'ctrl+end' }, @{ type = 'type'; text = '!' }, @{ type = 'key'; keys = (Get-SaveKey $S $vm) }, @{ type = 'wait'; ms = 1500 }) } 60
                 $t = Get-ReplyText (Invoke-AgentCall $S 'read_file' @{ machine = $vm; path = "Desktop\$tag-notepad.txt" } 60)
                 Check 'ui_invoke setValue changed Notepad''s text' ($t -match "$tag-set") $t
             }
@@ -190,20 +204,20 @@ function Test-Suite($Ctx) {
         Step-Agent 'scroll' {
             $lines = @(1..60 | ForEach-Object { '@' * 70 }) + @(1..300 | ForEach-Object { '' })
             $null = Invoke-AgentCall $S 'write_file' @{ machine = $vm; path = "Desktop\$tag-long.txt"; content = ($lines -join "`r`n") } 60
-            $null = Invoke-AgentCall $S 'run' @{ machine = $vm; command = 'notepad.exe'; shell = 'none'; args = @("$($st.Home)\Desktop\$tag-long.txt"); background = $true } 30
+            $null = Invoke-AgentCall $S 'run' @{ machine = $vm; command = "Start-Process notepad -ArgumentList '$($st.Home)\Desktop\$tag-long.txt'" } 30
             $null = Wait-AgentWindow $S $vm "$tag-long"
             $null = Invoke-AgentCall $S 'key' @{ machine = $vm; keys = 'win+up'; delayMs = 1000 } 30
             $a = Get-AgentShot $S $vm
             $t = Get-ReplyText (Invoke-AgentCall $S 'scroll' @{ machine = $vm; x = [int]($a.W / 2); y = [int]($a.H / 2); dy = 30; delayMs = 800; intent = 'Scrolling' } 60)
             $b = Get-AgentShot $S $vm
-            $before = Get-DarkShare $a.Image 0.1 0.25 0.4 0.35
-            $after = Get-DarkShare $b.Image 0.1 0.25 0.4 0.35
-            Check 'scroll moved the text out of sight' ($t -match '^Done' -and $before -gt 0.02 -and $after -lt $before / 2) ("{0}; dark before {1:P1}, after {2:P1}" -f $t, $before, $after)
+            $before = Get-InkShare $a.Image 0.1 0.25 0.4 0.35
+            $after = Get-InkShare $b.Image 0.1 0.25 0.4 0.35
+            Check 'scroll moved the text out of sight' ($t -match '^Done' -and $before -gt 0.02 -and $after -lt $before / 2) ("{0}; text before {1:P1}, after {2:P1}" -f $t, $before, $after)
             $null = Invoke-AgentCall $S 'run' @{ machine = $vm; command = 'Stop-Process -Name notepad -Force -ErrorAction SilentlyContinue' } 60
         }
 
         Step-Agent 'paint' {
-            $null = Invoke-AgentCall $S 'run' @{ machine = $vm; command = 'mspaint.exe'; shell = 'none'; background = $true; intent = 'Opening Paint' } 30
+            $null = Invoke-AgentCall $S 'run' @{ machine = $vm; command = 'Start-Process mspaint'; intent = 'Opening Paint' } 30
             $t = Wait-AgentWindow $S $vm 'Paint'
             Check 'Paint started with run is in front' ($t -match 'Paint') $t
             $null = Invoke-AgentCall $S 'key' @{ machine = $vm; keys = 'win+up'; delayMs = 1000 } 30

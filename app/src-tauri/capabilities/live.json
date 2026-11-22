@@ -3,5 +3,5 @@
   "identifier": "live",
   "description": "The agent's live overlay over a machine's picture: it only listens to what the app sends it (click-through, no commands)",
   "windows": ["agent-live"],
-  "permissions": ["core:event:default"]
+  "permissions": ["core:event:default", "allow-log-ui-error"]
 }

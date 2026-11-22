@@ -65,7 +65,7 @@ fn wide(s: &std::ffi::OsStr) -> Vec<u16> {
     s.encode_wide().chain(Some(0)).collect()
 }
 
-fn known_folder(id: &windows_sys::core::GUID) -> Option<PathBuf> {
+pub(crate) fn known_folder(id: &windows_sys::core::GUID) -> Option<PathBuf> {
     use windows_sys::Win32::System::Com::CoTaskMemFree;
     use windows_sys::Win32::UI::Shell::SHGetKnownFolderPath;
     let mut raw: windows_sys::core::PWSTR = std::ptr::null_mut();
@@ -359,9 +359,12 @@ pub fn capture_open(path: String) -> Result<(), String> {
 pub fn capture_reveal(path: String) -> Result<(), String> {
     let p = recent(&path)?;
     let explorer = std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("C:\\Windows")).join("explorer.exe");
-    let mut arg = std::ffi::OsString::from("/select,");
+    use std::os::windows::process::CommandExt;
+    // Explorer reads `/select,"path"`; the usual quoting of the whole argument opens Documents instead.
+    let mut arg = std::ffi::OsString::from("/select,\"");
     arg.push(p.as_os_str());
-    std::process::Command::new(explorer).arg(arg).spawn().map(|_| ()).map_err(|_| "Couldn't open File Explorer.".into())
+    arg.push("\"");
+    std::process::Command::new(explorer).raw_arg(arg).spawn().map(|_| ()).map_err(|_| "Couldn't open File Explorer.".into())
 }
 
 #[tauri::command]

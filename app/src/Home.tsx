@@ -1,5 +1,6 @@
 import { HomeLoading } from "./HomeLoading";
 import { memo, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   IconApps, IconArrowRight, IconBolt, IconCpu, IconDatabase, IconDeviceGamepad2, IconDisc, IconDownload, IconExternalLink, IconKey,
   IconLayoutGrid, IconLink, IconLoader2, IconPencil, IconPlayerPlay, IconPlus, IconStack2, IconTemplate, IconTopologyStar3, IconArrowsExchange,
@@ -13,7 +14,7 @@ import { randomDecor, randomMachine } from "./decor/random";
 import { EMPTY as EMPTY_DECOR } from "./decor/store";
 import { SpaceWithGames } from "./GameStage";
 import { SCENE_STYLES, Scene, sceneStyle } from "./Scene";
-import { Segmented, formatUptime, stateText, useFlip, useScrollFade } from "./ui";
+import { Segmented, formatUptime, portalRoot, stateText, useFlip, useScrollFade } from "./ui";
 import { machinesIn, moveToSpace, showSpace, spaceOf, useShownSpace, useSpaces, type Space } from "./spaces";
 import { ambientInfo } from "./ambient";
 import { SpaceDialog } from "./SpaceDialog";
@@ -330,7 +331,7 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
           </div>
         )}
       </div>
-      {editing && <SpaceDialog space={editing === "new" ? undefined : editing} vms={vms} onClose={() => setEditing(null)} onSaved={(x) => showSpace(x.id)} />}
+      {editing && createPortal(<SpaceDialog space={editing === "new" ? undefined : editing} vms={vms} onClose={() => setEditing(null)} onSaved={(x) => showSpace(x.id)} />, portalRoot())}
     </div>
   );
 }

@@ -139,8 +139,8 @@ pub fn refresh(app: &AppHandle) {
             w
         }
         None => {
-            let Ok(w) = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into())).additional_browser_args(crate::BROWSER_ARGS)
-                .title("GpuVM").decorations(false).transparent(true).shadow(false).resizable(false)
+            let Ok(w) = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into())).additional_browser_args(crate::BROWSER_ARGS).general_autofill_enabled(false)
+                .title("GpuVM").decorations(false).transparent(true).no_redirection_bitmap(true).shadow(false).resizable(false)
                 .skip_taskbar(true).focused(false).visible(false).build() else { return };
             with(|s| s.size = (0.0, 0.0));
             w
@@ -153,7 +153,6 @@ pub fn refresh(app: &AppHandle) {
 fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str, slide: bool) {
     let Some(viewer) = crate::viewer::viewer_hwnd(vm) else { return };
     let Some((x, y, w, h, scale)) = crate::overlay::client_rect(viewer) else { return };
-    let w = w - crate::overlay::open_width(app, vm).unwrap_or(0).min(w / 2);
     let (placement, (lw, lh)) = with(|s| (s.placement.clone(), s.size));
     if lw <= 0.0 || lh <= 0.0 {
         return;
@@ -163,9 +162,11 @@ fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str, slide: bool) 
     let docked = crate::dock::current_vm().as_deref() == Some(vm) || crate::agent::docked_vm().as_deref() == Some(vm);
     let at = |fx: f64, fy: f64, bw: i32, bh: i32| -> (i32, i32) { (x + ((w - bw).max(0) as f64 * fx).round() as i32, y + ((h - bh).max(0) as f64 * fy).round() as i32) };
     let (px, mut py) = at(fx, fy, nw, nh);
+    let px = crate::overlay::clear_of_panel(app, vm, x, w, px, nw);
     let (dw, dh) = with(|s| s.dock);
     let (dw, dh) = (((dw * scale) as i32).min(w), (dh * scale) as i32);
     let (dx, dy) = at(dfx, dfy, dw, dh);
+    let dx = crate::overlay::clear_of_panel(app, vm, x, w, dx, dw);
     let touches = px < dx + dw && dx < px + nw && py < dy + dh && dy < py + nh;
     let under = docked && touches;
     if under {
@@ -179,6 +180,7 @@ fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str, slide: bool) 
         // SAFETY: the viewer becomes the window's owner, so the notch stays just above the picture and moves with it.
         unsafe { SetWindowLongPtrW(own.0 as HWND, GWLP_HWNDPARENT, viewer) };
     }
+    crate::overlay::raise_over(window, viewer as isize);
     if (slide || was_under != under) && window.is_visible().unwrap_or(false) {
         let from = window.outer_position().map(|p| (p.x, p.y)).unwrap_or((px, py));
         let w2 = window.clone();
@@ -249,11 +251,18 @@ pub async fn status_action(app: AppHandle, id: String) -> Result<(), String> {
         let find = |vm: &String| s.items.get(vm).and_then(|l| l.iter().find(|i| i["id"] == id.as_str())).map(|i| (vm.clone(), i.clone()));
         s.shown.as_ref().and_then(find).or_else(|| s.items.keys().find_map(find))
     }).ok_or("That notice already went.")?;
-    match item["kind"].as_str().unwrap_or("") {
+    let result = match item["kind"].as_str().unwrap_or("") {
         "control" | "paused" => crate::agent::resume(&app, item["client"].as_str().unwrap_or(""), &vm).await,
         "live" => crate::agent::take_control(&app, &vm).await,
         _ => Err("This notice has no action.".into()),
+    };
+    // The click activated the notch: the keyboard goes back to the picture.
+    if let Some(viewer) = crate::viewer::viewer_hwnd(&vm) {
+        crate::viewer::allow_viewer_foreground(&vm);
+        let _ = crate::viewer::send_to(&vm, &json!({ "type": "focus" }));
+        crate::overlay::bring_to_front(viewer);
     }
+    result
 }
 
 pub fn dock_placement() -> (f64, f64) {

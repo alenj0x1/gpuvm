@@ -64,6 +64,14 @@ function Find-MuTyped($Root, $Type, [string]$Pattern = '.') {
 function Show-MuElement($Element) {
     $p = $null
     try { if ($Element.TryGetCurrentPattern([Windows.Automation.ScrollItemPattern]::Pattern, [ref]$p)) { $p.ScrollIntoView(); Start-Sleep -Milliseconds 350 } } catch { }
+    # Pages scroll smoothly (a tab scrolls to its section too): wait until the element stops moving.
+    $last = $null; $same = 0
+    for ($i = 0; $i -lt 20 -and $same -lt 3; $i++) {
+        Start-Sleep -Milliseconds 250
+        try { $now = "$($Element.Current.BoundingRectangle)" } catch { return }
+        if ($now -eq $last) { $same++ } else { $same = 0 }
+        $last = $now
+    }
 }
 
 function Press($Element, [string]$Process = 'gpuvm') {
@@ -96,10 +104,10 @@ function Find-MuHeading([string]$Text) {
 function Find-MuNear([string]$Pattern, [string]$Text) {
     $root = Get-MainElement
     if (-not $root) { return $null }
-    $walker = [Windows.Automation.TreeWalker]::ControlViewWalker
+    $walker = [Windows.Automation.TreeWalker]::RawViewWalker
     foreach ($b in Find-MuTyped $root ([Windows.Automation.ControlType]::Button) $Pattern) {
         $up = $b
-        for ($i = 0; $i -lt 7; $i++) {
+        for ($i = 0; $i -lt 10; $i++) {
             $up = $walker.GetParent($up)
             if (-not $up) { break }
             if ((Get-Texts $up) -match [regex]::Escape($Text)) {
@@ -108,7 +116,18 @@ function Find-MuNear([string]$Pattern, [string]$Text) {
             }
         }
     }
-    $null
+    # Cards whose box UI Automation doesn't expose (Library templates): the button below and right of the name.
+    $buttons = @(Find-MuTyped $root ([Windows.Automation.ControlType]::Button) $Pattern)
+    $best = $null; $dist = [double]::MaxValue
+    foreach ($t in (Find-MuTyped $root ([Windows.Automation.ControlType]::Text) "^$([regex]::Escape($Text))$")) {
+        $tr = $t.Current.BoundingRectangle
+        foreach ($b in $buttons) {
+            $br = $b.Current.BoundingRectangle
+            $dx = $br.X - $tr.X; $dy = $br.Y - $tr.Y
+            if ($dx -ge -10 -and $dx -lt 300 -and $dy -gt 0 -and $dy -lt 250 -and $dx + $dy -lt $dist) { $best = $b; $dist = $dx + $dy }
+        }
+    }
+    $best
 }
 
 function Find-MuDialog([string]$Pattern) {
@@ -117,7 +136,22 @@ function Find-MuDialog([string]$Pattern) {
     try { @($root.FindAll($script:MuDesc, [Windows.Automation.Condition]::TrueCondition) | Where-Object { $_.Current.ClassName -match '(^|\s)dialog(\s|$)' -and $_.Current.Name -match $Pattern }) | Select-Object -First 1 } catch { $null }
 }
 
-function Get-MuPill { $p = Find-MuClass (Get-MainElement) 'state-pill'; if ($p) { $n = $p.Current.Name; if (-not $n) { $n = Get-Texts $p }; $n.Trim() } else { '' } }
+# The state-pill span has no box in UI Automation: its text is the plain text under the name, left of the header's
+# More options button and outside the spec chips.
+function Get-MuPill {
+    $root = Get-MainElement
+    $p = Find-MuClass $root 'state-pill'
+    if ($p) { $n = $p.Current.Name; if (-not $n) { $n = Get-Texts $p }; return $n.Trim() }
+    $more = Find-MuTyped $root ([Windows.Automation.ControlType]::Button) '^(More options|Más opciones)$' | Select-Object -First 1
+    if (-not $more) { return '' }
+    $m = $more.Current.BoundingRectangle
+    $walker = [Windows.Automation.TreeWalker]::RawViewWalker
+    $t = Find-MuTyped $root ([Windows.Automation.ControlType]::Text) | Where-Object {
+        $r = $_.Current.BoundingRectangle; $cy = $r.Y + $r.Height / 2
+        $r.Height -le 20 -and $r.X -lt $m.X -and $cy -ge $m.Y -and $cy -le $m.Y + $m.Height + 15 -and $walker.GetParent($_).Current.ClassName -notmatch 'spec-chip'
+    } | Sort-Object { $_.Current.BoundingRectangle.X } | Select-Object -First 1
+    if ($t) { $t.Current.Name.Trim() } else { '' }
+}
 
 function Wait-MuPill([string]$Pattern, [double]$Seconds) {
     $r = Wait-For { $t = Get-MuPill; if ($t -match $Pattern -and -not (Get-MuBusy)) { $t } } $Seconds
@@ -147,6 +181,13 @@ function Invoke-MuMenu([string]$Pattern) {
 
 function Open-MuPage([string]$Vm) {
     $null = Show-MuMain
+    $back = Find-MuClass (Get-MainElement) 'titlebar-back'
+    if ($back) {
+        $back = Wait-For { $e = Find-MuClass (Get-MainElement) 'titlebar-back'; if ($e -and $e.Current.IsEnabled) { $e } } 10
+        if (-not (Click-Element $back)) { $null = Invoke-Element $back }
+        $null = Wait-For { -not (Find-MuClass (Get-MainElement) 'titlebar-back') } 8
+        $null = Show-MuMain
+    }
     $row = Wait-For { Get-MuRow $Vm } 10
     if (-not (Press $row)) { $null = Invoke-Element $row }
     [bool](Wait-For { $r = Get-MuRow $Vm; $r -and $r.Current.ClassName -match '\bactive\b' -and (Find-MuHeading $Vm) -and (Find-Named (Get-MainElement) '^(Uptime|Tiempo encendida)$') } 8)
@@ -179,16 +220,23 @@ function Get-MuArea($Element) {
     $b = Bytes $bmp; $bmp.Dispose(); , $b
 }
 
-# Back to the app from the picture with the title bar's Home.
+# Back to the app from the picture with the title bar's Home; a picture that fills the monitor covers the title bar,
+# and there the person's way is Ctrl+Alt+Shift+H.
 function Exit-MuPicture([string]$Name) {
     $back = Wait-For { $e = Find-MuClass (Get-MainElement) 'titlebar-back'; if ($e -and $e.Current.IsEnabled) { $e } } 10
-    $clicked = Click-Element $back
-    if (-not $clicked) {
-        $v = Get-MuViewer
-        if ($v) { [E2E]::Click($v.X + [int]($v.W * 0.35), $v.Y + [int]($v.H * 0.4)); Start-Sleep -Milliseconds 300; [E2E]::Combo([byte][char]'H') }
+    $v = Get-MuViewer; $s = Screen
+    $full = $v -and $v.X -le $s.X -and $v.Y -le $s.Y -and $v.X + $v.W -ge $s.X + $s.Width -and $v.Y + $v.H -ge $s.Y + $s.Height
+    $how = 'title bar Home'
+    if ($back -and $full) {
+        $how = 'Ctrl+Alt+Shift+H (the picture fills the monitor)'
+        $null = [MU15]::Front((Get-Process GpuVMViewer | Select-Object -First 1).MainWindowHandle)
+        Start-Sleep -Milliseconds 300
+        [E2E]::Combo([byte][char]'H')
+        $done = $true
     }
+    else { $done = Click-Element $back }
     $left = Wait-For { -not (Test-MuPicture) -and -not (Find-MuClass (Get-MainElement) 'titlebar-back') } 8
-    Check "${Name}: Home in the title bar hides the picture and shows the app" ($clicked -and $left) $(if (-not $clicked) { 'title bar Home not clickable (used Ctrl+Alt+Shift+H)' } else { '' })
+    Check "${Name}: going Home hides the picture and shows the app" ([bool]$back -and $done -and $left) $(if (-not $back) { 'no enabled Home in the title bar' } elseif (-not $done) { "$how not clickable" } else { $how })
     Start-Sleep -Milliseconds 600
 }
 
@@ -346,9 +394,9 @@ function Test-PowerMenu([string]$Vm) {
     Start-Sleep -Seconds 2
     $pill = Get-MuPill
     Check 'Force shutdown: the first click does not shut it down' ($pill -match $script:MuOn) "state: $pill"
-    $null = Press $warn
-    $gone = Wait-For { -not (Get-MuRow $Vm) } 90
-    Check 'Force shutdown confirmed: it shuts down and the disposable''s row disappears within 90 s' ([bool]$gone) ''
+    $pressed = Press $warn
+    $gone = $pressed -and (Wait-For { (Get-MuSide '^(Home|Inicio)$') -and -not (Get-MuRow $Vm) } 90)
+    Check 'Force shutdown confirmed: it shuts down and the disposable''s row disappears within 90 s' ([bool]$gone) $(if (-not $pressed) { 'the warning item was not clicked' } else { '' })
 }
 
 function Test-KeptMachine($Ctx, $St) {
@@ -418,7 +466,7 @@ function Test-KeptMachine($Ctx, $St) {
     if ($renamed) {
         $St.Name = $other
         $back = Rename-MuMachine $other $vm
-        if ($back) { $St.Name = $vm }
+        if ($back) { $St.Name = $vm } else { Shot 'machine-ui-rename-back-failed' }
         Check "Rename back: $vm shows again in the sidebar and the header" $back ''
     }
 

@@ -297,6 +297,17 @@ function Rename-HyperVGpuPVM {
             foreach ($drive in @(Get-VMHardDiskDrive -VMName $NewName)) {
                 $target = Get-RenamedVMPath -Path $drive.Path @paths
                 if (-not $target) { continue }
+                # Its restore points first: Hyper-V looks for a parent next to the moved disk (by its relative path).
+                $parent = (Get-VHD -Path $drive.Path -ErrorAction SilentlyContinue).ParentPath
+                while ($parent -and $parent.StartsWith("$oldDir\", [StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath $parent)) {
+                    $next = (Get-VHD -Path $parent -ErrorAction SilentlyContinue).ParentPath
+                    $to = Get-RenamedVMPath -Path $parent @paths
+                    if ($to -and -not (Test-Path -LiteralPath $to)) {
+                        Move-GpuVMItem -Path $parent -Destination $to
+                        $done.Add(@{ step = 'item'; from = $parent; to = $to })
+                    }
+                    $parent = $next
+                }
                 Move-GpuVMItem -Path $drive.Path -Destination $target
                 $done.Add(@{ step = 'item'; from = $drive.Path; to = $target })
                 Set-VMHardDiskDrive -VMName $NewName -ControllerType $drive.ControllerType -ControllerNumber $drive.ControllerNumber `

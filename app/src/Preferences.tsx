@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { PlacementEditor } from "./PlacementEditor";
 import { MachineCube, type CubeMachine } from "./MachineCube";
-import { IconAppWindow, IconCamera, IconFolder, IconFolderOpen, IconHistory, IconHistoryOff, IconBrandWindows, IconDeviceDesktop, IconExternalLink, IconPalette, IconServer, IconHandStop, IconLayoutBottombarCollapse, IconMoon, IconPlayerPlay, IconPlayerStop, IconPlugConnected, IconPlugConnectedX, IconPower, IconShieldLock, IconShieldOff, IconSun, IconRobot, IconMouse, IconHandFinger, IconLayoutBottombar, IconLayoutSidebarRight } from "@tabler/icons-react";
-import { agents, inTauri, service, type ServiceStatus } from "./api";
+import { IconAppWindow, IconCamera, IconFolder, IconFolderOpen, IconHistory, IconHistoryOff, IconBrandWindows, IconDeviceDesktop, IconExternalLink, IconPalette, IconServer, IconHandStop, IconLayoutBottombarCollapse, IconMoon, IconPlayerPlay, IconPlayerStop, IconPlugConnected, IconPlugConnectedX, IconPower, IconShieldLock, IconShieldOff, IconSun, IconRobot, IconMouse, IconHandFinger, IconLayoutBottombar, IconLayoutSidebarRight, IconFileText } from "@tabler/icons-react";
+import { agents, diagnostics, inTauri, service, type ServiceStatus } from "./api";
 import { refreshAgents, useAgents } from "./agentStore";
 import { ACCENTS, savePrefs, usePrefs, type ClosePref, type ServicePref, type TakeControlPref, type ThemePref, type ViewerHomePref, type VmsOnQuitPref } from "./prefs";
 import { Segmented, Slider, humanError } from "./ui";
@@ -66,6 +66,12 @@ function ServicePrefs() {
   };
 
   const running = status?.state === "running";
+  const [report, setReport] = useState<{ busy: boolean; saved?: string; error?: string }>({ busy: false });
+  const saveReport = async () => {
+    setReport({ busy: true });
+    try { setReport({ busy: false, saved: await diagnostics.save() }); }
+    catch (e) { setReport({ busy: false, error: humanError(e) }); }
+  };
   return (
     <>
       <div className="pref-row">
@@ -89,6 +95,14 @@ function ServicePrefs() {
             </button>
           )}
         </div>
+      </div>
+      <div className="pref-row">
+        <div className="pref-text">
+          <strong>{t("Diagnostics report")}</strong>
+          {report.error ? <span className="error-text">{report.error}</span>
+            : <span>{report.saved ? t("Saved in Downloads: {name}", { name: report.saved.split("\\").pop() ?? "" }) : t("The app's and the service's logs in a text file, to attach when you report a problem.")}</span>}
+        </div>
+        <button className="btn" onClick={saveReport} disabled={report.busy}><IconFileText size={16} />{t("Save report")}</button>
       </div>
     </>
   );

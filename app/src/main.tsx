@@ -8,6 +8,7 @@ import { AgentDock } from "./AgentDock";
 import { LiveOverlay } from "./LiveOverlay";
 import { StatusNotch } from "./StatusNotch";
 import { initPrefs, usePrefs } from "./prefs";
+import { logError } from "./ui";
 import { resolveLang } from "./i18n";
 // Fonts load with the app, not from styles.css, so the website demos can reuse the stylesheet without them.
 import "@fontsource/plus-jakarta-sans/400.css";
@@ -51,4 +52,6 @@ function Root() {
   resolveLang(usePrefs().lang);
   return isLive ? <LiveOverlay /> : isAgentDock ? <AgentDock /> : isStatusNotch ? <StatusNotch /> : isPromptDock ? <PromptDock /> : isPrompt ? <PromptCard /> : isViewerPanel ? <ViewerPanel /> : isDropZone ? <DropZone /> : <App />;
 }
+window.addEventListener("error", (e) => logError(`${e.message} (${e.filename}:${e.lineno})`));
+window.addEventListener("unhandledrejection", (e) => logError(`Unhandled: ${String(e.reason)}`));
 createRoot(document.getElementById("root")!).render(<Root />);

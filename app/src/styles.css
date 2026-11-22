@@ -263,6 +263,8 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
 .empty p { margin: 0; color: var(--muted); line-height: 1.5; }
 
 .toasts { position: fixed; right: 20px; bottom: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 50; max-width: 420px; }
+/* An open dialog keeps its buttons: a toast left from before waits behind its scrim. */
+body:has(.overlay .dialog) .toasts { z-index: 39; }
 .toast { background: var(--surface); border-radius: var(--r-lg); padding: 12px 14px; display: flex; gap: 10px; align-items: flex-start; box-shadow: 0 0 0 1px var(--line), 0 12px 32px rgba(0, 0, 0, 0.12); }
 .toast.error svg { color: var(--danger); }
 .toast.warning svg { color: var(--warn); }
@@ -1655,7 +1657,7 @@ html.prompt-dock-window body::after, html.prompt-window body::after, html.drop-w
 .dock-text span.ag-dock-path { font-family: "DM Mono", ui-monospace, monospace; font-size: 11.5px; color: #ebe8e1;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dock.ag-dock-human { width: min(520px, calc(100% - 16px)); }
-.ag-dock-menu { z-index: 60; background: #1c1c1c; color: #ebe8e1; box-shadow: inset 0 0 0 1px #2f2f2f; }
+.menu.floating.ag-dock-menu { z-index: 60; background: #1c1c1c; color: #ebe8e1; box-shadow: inset 0 0 0 1px #2f2f2f; }
 .ag-dock-menu button:hover { background: #262626; }
 .ag-dock-menu-catch { position: fixed; inset: 0; z-index: 55; }
 

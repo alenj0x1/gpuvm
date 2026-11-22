@@ -59,10 +59,10 @@ pub fn show(app: &AppHandle, prompt: Value) {
         }
         let _ = window.destroy();
     }
-    let built = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into())).additional_browser_args(crate::BROWSER_ARGS)
+    let built = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into())).additional_browser_args(crate::BROWSER_ARGS).general_autofill_enabled(false)
         .title("GpuVM")
         .decorations(false)
-        .transparent(true)
+        .transparent(true).no_redirection_bitmap(true)
         .shadow(false)
         .resizable(false)
         .skip_taskbar(true)

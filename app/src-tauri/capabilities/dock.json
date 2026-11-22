@@ -3,5 +3,5 @@
   "identifier": "dock",
   "description": "The admin-prompt dock over a machine's picture: it reads its prompt and answers it, nothing else",
   "windows": ["prompt-dock"],
-  "permissions": ["core:default", "allow-dock-prompt", "allow-dock-answer"]
+  "permissions": ["core:default", "allow-dock-prompt", "allow-dock-answer", "allow-log-ui-error"]
 }
