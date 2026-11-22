@@ -535,7 +535,8 @@ const noop = () => {};
  *  selected with a click and folders open with a double click; the taskbar brings windows back. `locked`: the windows
  *  stay where they are (under an agent's overlay, whose strokes are drawn where the window is). `stage`: a script
  *  plays the desktop (see Stage), which then stays as the script has it. */
-export function MachineDesktop({ vm, children, locked, stage }: { vm: string; children?: ReactNode; locked?: boolean; stage?: Stage }) {
+/** `bare`: only the wallpaper, icons and taskbar, no window open (the app's placement preview). */
+export function MachineDesktop({ vm, children, locked, stage, bare }: { vm: string; children?: ReactNode; locked?: boolean; stage?: Stage; bare?: boolean }) {
   const d = DESKS[vm] ?? DESKS.win10;
   const lang = getLang();
   const tx = TEXT[lang];
@@ -562,7 +563,7 @@ export function MachineDesktop({ vm, children, locked, stage }: { vm: string; ch
   };
   // A new machine starts with its own window where it belongs.
   useLayoutEffect(() => {
-    setWins(d.window ? [{ kind: d.window, box: place(d.window), min: false, max: false }] : []);
+    setWins(d.window && !bare ? [{ kind: d.window, box: place(d.window), min: false, max: false }] : []);
     setOrder(d.window ? [d.window] : []);
     setSelected(null);
   }, [vm]); // eslint-disable-line react-hooks/exhaustive-deps

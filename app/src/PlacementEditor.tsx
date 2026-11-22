@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { IconRestore, IconShieldLock } from "@tabler/icons-react";
-import { PixelScene } from "./PixelScene";
+import { MachineDesktop } from "./MachineDesktop";
 import { cornersAt, DOCK_POS, NOTCH_POS, savePrefs, usePrefs, type Pos } from "./prefs";
 import { t } from "./i18n";
 
@@ -9,8 +9,6 @@ import { t } from "./i18n";
 // both are dragged freely; near an edge, a corner or the middle they snap to it (a line shows where), and their
 // corners are the real ones as they move: square on every edge they touch, rounded everywhere else.
 
-/** The machine's taskbar at the bottom of the picture, as a share of its height. */
-const TASKBAR = 0.06;
 /** How close (preview px) to an edge or the middle a piece snaps to it. */
 const SNAP = 10;
 
@@ -90,8 +88,7 @@ export function PlacementEditor() {
   return (
     <div className="pl">
       <div className="pl-stage" ref={stage}>
-        <PixelScene scene="forest" />
-        <div className="pl-taskbar" style={{ height: `${TASKBAR * 100}%` }} />
+        <div className="pl-desk"><MachineDesktop vm="estudio" locked bare /></div>
         {drag?.guides.v !== undefined && <span className="pl-guide v" style={{ left: drag.guides.v }} />}
         {drag?.guides.h !== undefined && <span className="pl-guide h" style={{ top: drag.guides.h }} />}
         {render("dock")}

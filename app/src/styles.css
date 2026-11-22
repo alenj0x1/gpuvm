@@ -1926,7 +1926,8 @@ html.agent-live-window, html.agent-live-window body, html.agent-live-window #roo
 .pl { display: grid; gap: 14px; }
 .pl-stage { position: relative; aspect-ratio: 16 / 10; width: 100%; border-radius: var(--r); overflow: hidden; background: #2d3b33; user-select: none; touch-action: none; }
 .pl-stage > .pixel-scene { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; }
-.pl-taskbar { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(28, 28, 30, .92); }
+/* A real Windows desktop under the pieces (MachineDesktop): its icons and taskbar, not to be clicked here. */
+.pl-desk { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
 .pl-piece { position: absolute; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 10px; box-sizing: border-box; background: #1c1c1c; color: #ebe8e1;
   font-size: 11.5px; white-space: nowrap; cursor: grab; transition: left 220ms cubic-bezier(.2, .8, .2, 1), top 220ms cubic-bezier(.2, .8, .2, 1), border-radius 160ms ease; z-index: 2; }
 .pl-piece .ellipsis { flex: 1; min-width: 0; }
