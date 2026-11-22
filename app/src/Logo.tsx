@@ -1,15 +1,12 @@
-/** The GpuVM logo drawn inline, so the chip's colored part follows the accent color the person chose.
- *  Same drawing as assets/logo.svg (which stays as the source for the app and installer icons). */
+/** The gpuvm mark drawn inline, so its small square follows the accent color the person chose: a machine inside
+ *  another (2026-11-21, chosen by the person over the old chip with pins). Same drawing as assets/logo.svg (the source
+ *  for the app and installer icons). The name beside it is written in lowercase, "gpuvm" (`.wordmark`). */
 export function Logo({ size, className }: { size: number; className?: string }) {
   return (
     <svg className={className} width={size} height={size} viewBox="0 0 64 64" aria-hidden="true">
-      <rect x="2" y="2" width="60" height="60" rx="15" fill="#2a2c31" />
-      <g stroke="#ebe8e1" strokeWidth="3" strokeLinecap="round">
-        <path d="M22 12v4M22 48v4M12 22h4M48 22h4M32 12v4M32 48v4M12 32h4M48 32h4M42 12v4M42 48v4M12 42h4M48 42h4" />
-      </g>
-      <rect x="17" y="17" width="30" height="30" rx="6" fill="none" stroke="#ebe8e1" strokeWidth="3" />
-      <path d="M32 20v24M20 32h24" stroke="#ebe8e1" strokeWidth="2" strokeOpacity=".45" />
-      <rect x="34" y="34" width="10" height="10" rx="2.5" fill="var(--logo-part, var(--accent))" />
+      <rect x="4" y="4" width="56" height="56" rx="16" fill="#2a2c31" />
+      <rect x="18" y="18" width="28" height="28" rx="8" fill="none" stroke="#ebe8e1" strokeWidth="4" />
+      <rect x="33" y="33" width="13" height="13" rx="4" fill="var(--logo-part, var(--accent))" />
     </svg>
   );
 }

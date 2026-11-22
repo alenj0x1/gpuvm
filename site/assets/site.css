@@ -102,7 +102,7 @@ i[data-ic] svg { display: block; width: 100%; height: 100%; }
 /* Scrolled, the bar takes the page's background, without a line under it. */
 .nav.scrolled { background: var(--bg); }
 .nav-inner { width: min(var(--wrap), 100% - 32px); margin: 0 auto; height: 64px; display: flex; align-items: center; gap: 28px; }
-.brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 800; font-size: 17px; letter-spacing: -0.02em; }
+.brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 800; font-size: 18px; letter-spacing: -0.045em; }
 .nav-links { display: flex; gap: 24px; font-size: 15px; font-weight: 500; color: var(--muted); }
 .nav-links a:hover { color: var(--text); }
 .nav-tools { margin-left: auto; display: flex; align-items: center; gap: 6px; }

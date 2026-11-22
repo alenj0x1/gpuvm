@@ -16,15 +16,15 @@ type Shape =
   | { type: "key"; keys: string }
   | { type: "wait"; ms: number }
   | { type: "invoke"; action?: string };
-interface LiveEvent { phase: "start" | "end"; step: number; clientName?: string | null; method?: string; shapes?: Shape[] | null; screen?: { w: number; h: number } | null }
+export interface LiveEvent { phase: "start" | "end"; step: number; clientName?: string | null; method?: string; intent?: string | null; shapes?: Shape[] | null; screen?: { w: number; h: number } | null }
 
 interface Mark { id: number; x: number; y: number; kind: "ring" | "double" | "scroll" }
 interface Stroke { id: number; d: string; length: number; ms: number; fading: boolean }
 interface Chip { id: number; text: string }
 
-/** Desktop pixels → this window's pixels: the picture is fitted whole (letterboxed) in the viewer. */
-function fit(screen: { w: number; h: number }) {
-  const W = window.innerWidth, H = window.innerHeight;
+/** Desktop pixels → the overlay's pixels: the picture is fitted whole (letterboxed) in the viewer. */
+function fit(screen: { w: number; h: number }, box: HTMLElement | null) {
+  const W = box?.clientWidth || window.innerWidth, H = box?.clientHeight || window.innerHeight;
   const s = Math.min(W / screen.w, H / screen.h);
   const ox = (W - screen.w * s) / 2, oy = (H - screen.h * s) / 2;
   return (p: Point): Point => [ox + p[0] * s, oy + p[1] * s];
@@ -34,7 +34,10 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** How long the cursor glides to a new place: quick, so it never lags far behind the machine. */
 const GLIDE_MS = 240;
 
-export function LiveOverlay() {
+/** `script`: events to play in a loop instead of the app's (the website's demo), with `keep` strokes staying drawn until
+ *  the loop starts over and `onStep` told each step as it plays (for its notch line). */
+export function LiveOverlay({ script, keep, onStep }: { script?: LiveEvent[]; keep?: boolean; onStep?: (ev: LiveEvent | null) => void } = {}) {
+  const box = useRef<HTMLDivElement>(null);
   const [name, setName] = useState("");
   const [cursor, setCursor] = useState<{ p: Point; glide: number } | null>(null);
   const [marks, setMarks] = useState<Mark[]>([]);
@@ -52,7 +55,8 @@ export function LiveOverlay() {
       if (ev.clientName) setName(ev.clientName);
       if (ev.screen?.w && ev.screen?.h) screen.current = ev.screen;
       if (ev.phase !== "start" || !ev.shapes?.length) return;
-      const map = fit(screen.current);
+      onStep?.(ev);
+      const map = fit(screen.current, box.current);
       const hurry = waiting.current > 2;
       const glide = async (p: Point, ms = hurry ? 0 : GLIDE_MS) => { at.current = p; setCursor({ p: map(p), glide: ms }); await sleep(ms); };
       const mark = (p: Point, kind: Mark["kind"]) => {
@@ -95,8 +99,10 @@ export function LiveOverlay() {
               setCursor({ p: map(p), glide: stMs / hops });
               await sleep(stMs / hops);
             }
-            setTimeout(() => setStrokes((list) => list.map((k) => (k.id === id ? { ...k, fading: true } : k))), 1200);
-            setTimeout(() => setStrokes((list) => list.filter((k) => k.id !== id)), 2200);
+            if (!keep) {
+              setTimeout(() => setStrokes((list) => list.map((k) => (k.id === id ? { ...k, fading: true } : k))), 1200);
+              setTimeout(() => setStrokes((list) => list.filter((k) => k.id !== id)), 2200);
+            }
           }
         }
       }
@@ -106,18 +112,29 @@ export function LiveOverlay() {
       queue.current = queue.current.then(() => { waiting.current--; return play(ev); }).catch(() => {});
     };
 
-    if (!inTauri) {
-      // Browser preview (?agent-live): a short loop of what an agent does.
-      const demo: LiveEvent[] = [
+    if (script || !inTauri) {
+      // The website's demo, or the browser preview (?agent-live): a loop of what an agent does.
+      const demo: LiveEvent[] = script ?? [
         { phase: "start", step: 1, clientName: "Claude Code", screen: { w: 1280, h: 800 }, shapes: [{ type: "click", x: 300, y: 240 }] },
         { phase: "start", step: 2, shapes: [{ type: "drag", strokes: [Array.from({ length: 40 }, (_, i): Point => [640 + 120 * Math.cos(i / 6), 380 + 120 * Math.sin(i / 6)])] }] },
         { phase: "start", step: 3, shapes: [{ type: "key", keys: "ctrl+s" }] },
         { phase: "start", step: 4, shapes: [{ type: "click", x: 980, y: 620, count: 2 }, { type: "type", chars: 9 }] },
         { phase: "start", step: 5, shapes: [{ type: "scroll", x: 700, y: 500, dy: 3 }] },
       ];
-      let i = 0;
-      const id = window.setInterval(() => take(demo[i++ % demo.length]), 1300);
-      return () => window.clearInterval(id);
+      let alive = true;
+      (async () => {
+        while (alive) {
+          for (const ev of demo) {
+            if (!alive) return;
+            take(ev);
+            await queue.current;
+            await sleep(script ? 900 : 1300);
+          }
+          await sleep(1800);
+          if (keep) setStrokes([]);
+        }
+      })();
+      return () => { alive = false; };
     }
     let off: (() => void) | undefined;
     let gone = false;
@@ -135,13 +152,15 @@ export function LiveOverlay() {
 
   // A resize of the viewer moves the picture: the cursor goes back to where it was on the machine.
   useEffect(() => {
-    const onResize = () => setCursor((c) => (c ? { p: fit(screen.current)(at.current), glide: 0 } : c));
+    const onResize = () => setCursor((c) => (c ? { p: fit(screen.current, box.current)(at.current), glide: 0 } : c));
     window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    const ro = box.current ? new ResizeObserver(onResize) : null;
+    if (box.current) ro!.observe(box.current);
+    return () => { window.removeEventListener("resize", onResize); ro?.disconnect(); };
   }, []);
 
   return (
-    <div className="lv-root" aria-hidden="true">
+    <div className="lv-root" aria-hidden="true" ref={box}>
       <svg className="lv-strokes">
         {strokes.map((s) => (
           <path key={s.id} d={s.d} className={s.fading ? "fading" : ""}

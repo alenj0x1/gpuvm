@@ -1895,3 +1895,6 @@ html.agent-live-window, html.agent-live-window body, html.agent-live-window #roo
 .ag-ended.done { background: color-mix(in srgb, var(--ok) 14%, var(--surface)); color: color-mix(in srgb, var(--ok) 80%, var(--text)); }
 .ag-ended.limit { background: var(--warn-bg); color: var(--warn); }
 .ag-history.skeleton-lines { min-height: 120px; }
+
+/* The name beside the mark, as the logo writes it: lowercase, tight, the app's font at its heaviest. */
+.wordmark { font-weight: 800; letter-spacing: -0.045em; }

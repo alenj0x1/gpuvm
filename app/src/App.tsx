@@ -505,7 +505,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       <aside className="side">
         <div className="side-head">
           <span className="side-logo"><Logo size={28} /></span>
-          <strong>GpuVM</strong>
+          <strong className="wordmark">gpuvm</strong>
         </div>
         {/* The whole list takes a dragged machine or space, gaps between groups included (or the cursor flickers to
             "not allowed" as it crosses them); the drop keeps the order shown. */}
