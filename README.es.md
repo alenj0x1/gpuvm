@@ -54,6 +54,10 @@
 - **Laboratorios.** Cada idea de rendimiento se mide (base contra candidata) antes de volverse un valor por defecto.
 
 <p align="center">
+  <img src=".github/assets/agents-es-dark.webp" alt="Agentes: el agente trabajando, sus controles, los archivos que entrega y el historial de sesiones">
+</p>
+
+<p align="center">
   <img src=".github/assets/personalize-es-dark.webp" width="49%" alt="Personalizar una máquina: color, letrero LED, stickers y figuras">
   <img src=".github/assets/options-es-dark.webp" width="49%" alt="Imagen y control: tipo de uso, FPS y lo demás">
 </p>

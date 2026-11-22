@@ -54,6 +54,10 @@ English | [Español](README.es.md)
 - **Labs.** Every performance idea is measured (baseline vs candidate) before it becomes a default.
 
 <p align="center">
+  <img src=".github/assets/agents-en-dark.webp" alt="Agents: the agent working, its budget and controls, the files it delivers and the history of sessions">
+</p>
+
+<p align="center">
   <img src=".github/assets/personalize-en-dark.webp" width="49%" alt="Customize a machine: color, LED sign, stickers and figures">
   <img src=".github/assets/options-en-dark.webp" width="49%" alt="Picture and control: use type, frame rate and the rest">
 </p>
