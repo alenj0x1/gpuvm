@@ -62,7 +62,7 @@ public static class E2ESys {
 
 function Find-Class($Root, [string]$Class, [string]$Name = '') {
     if (-not $Root) { return $null }
-    foreach ($e in $Root.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition)) {
+    foreach ($e in (Get-AllUnder $Root)) {
         $c = $e.Current
         if ($c.ClassName -match $Class -and (-not $Name -or $c.Name -match $Name)) { return $e }
     }
@@ -226,7 +226,7 @@ function Test-Suite($Ctx) {
             [E2ESys]::Front($hMain)
             Start-Sleep -Milliseconds 1200
             # Arming draws the button again: the one found before is stale, so it is looked for once more.
-            $allow = Wait-For { $b = & $findAllow; if ($b -and (try { $b.Current.IsEnabled } catch { $false })) { $b } } 30
+            $allow = Wait-For { $b = & $findAllow; if ($b -and $(try { $b.Current.IsEnabled } catch { $false })) { $b } } 30
             $armed = [bool]$allow
             $null = Click-Element $allow
             Start-Sleep -Milliseconds 600; Shot 'system-allow-pressed'

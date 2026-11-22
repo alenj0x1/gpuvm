@@ -387,9 +387,10 @@ function Test-PiDrop($Ctx, [string]$Vm, [string]$Tag) {
         $s = Screen
         $v = Get-PiViewer
         $vp = Get-Process GpuVMViewer -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } | Select-Object -First 1
-        for ($i = 0; $vp -and $i -lt 3 -and [E2E]::Foreground() -notlike 'GpuVMViewer/*'; $i++) { [E2EFront]::To($vp.MainWindowHandle); Start-Sleep -Milliseconds 400 }
-        if ($v -and $v.W -ge $s.Width -and $v.H -ge $s.Height -and [E2E]::Foreground() -like 'GpuVMViewer/*') {
-            [E2E]::Combo([byte][char]'X')
+        # The shortcut only counts with the picture in front: up to three tries, bringing it forward each time.
+        for ($try = 0; $vp -and $v -and $v.W -ge $s.Width -and $v.H -ge $s.Height -and -not $windowed -and $try -lt 3; $try++) {
+            for ($i = 0; $i -lt 3 -and [E2E]::Foreground() -notlike 'GpuVMViewer/*'; $i++) { [E2EFront]::To($vp.MainWindowHandle); Start-Sleep -Milliseconds 400 }
+            if ([E2E]::Foreground() -like 'GpuVMViewer/*') { [E2E]::Combo([byte][char]'X') }
             $windowed = [bool](Wait-For { $x = Get-PiViewer; $x -and $x.W -lt $s.Width } 6)
         }
         Start-Process explorer.exe "/select,`"$path`""

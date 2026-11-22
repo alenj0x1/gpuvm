@@ -54,7 +54,7 @@ try {
             if (-not (Test-E2EPageReadable)) {
                 Write-Host '     the page is no longer readable through UI Automation: starting GpuVM again'
                 $restarted.Add($f.BaseName)
-                & (Join-Path $PSScriptRoot '..\..\labs\039-viewer-bridge\run-build.ps1') -Installed | Out-Null
+                Restart-E2EApp $Exe
                 $null = Wait-For { Test-E2EPageReadable } 40
             }
             $from = (Get-E2EResults).Count

@@ -150,7 +150,12 @@ pub fn refresh(app: &AppHandle) {
     place(app, &window, &vm, false);
 }
 
+// One at a time: called from the agents' loop and from the page's resize, a place with an older size applied after a
+// newer one left the window a row short.
+static PLACING: Mutex<()> = Mutex::new(());
+
 fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str, slide: bool) {
+    let _one = PLACING.lock().unwrap_or_else(|e| e.into_inner());
     let Some(viewer) = crate::viewer::viewer_hwnd(vm) else { return };
     let Some((x, y, w, h, scale)) = crate::overlay::client_rect(viewer) else { return };
     let (placement, (lw, lh)) = with(|s| (s.placement.clone(), s.size));

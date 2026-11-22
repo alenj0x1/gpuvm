@@ -47,7 +47,9 @@ function Test-Suite($Ctx) {
     Shot 'overlays-5-panel'
     $after = Get-Notch
     Check 'opening the side panel leaves the notch where it was' ($before -and $after -and [Math]::Abs($after.X - $before.X) -le 2 -and [Math]::Abs($after.Y - $before.Y) -le 2) "before: $($before.X),$($before.Y); after: $($after.X),$($after.Y)"
-    Check-NoFlash 'closing the side panel' { [E2E]::Combo([byte][char]'G') }
+    # The picture scales back under the closing panel: only patches against the frames around them count (the bar the
+    # panel used to leave can't be painted any more: its window has no surface).
+    Check-NoFlash 'closing the side panel' { [E2E]::Combo([byte][char]'G') } -PictureChanges
 
     [E2E]::Combo([byte][char]'A')
     $gone = Wait-For { $x = Get-Notch; -not ($x -and $x.Text -match 'took control|tomaste el control|have control|Tienes el control') } 8

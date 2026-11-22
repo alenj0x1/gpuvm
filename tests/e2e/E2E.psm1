@@ -174,9 +174,14 @@ function Get-AppWindows([switch]$Small) {
 
 function Get-Element([IntPtr]$Handle) { try { [Windows.Automation.AutomationElement]::FromHandle($Handle) } catch { $null } }
 
+# A read that times out (WebView2 rebuilding its tree right after the window comes forward) finds nothing this time.
+function Get-AllUnder($Root) {
+    try { @($Root.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition)) } catch { @() }
+}
+
 function Find-Named($Root, [string]$Pattern, $Type = $null) {
     if (-not $Root) { return $null }
-    foreach ($e in $Root.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition)) {
+    foreach ($e in (Get-AllUnder $Root)) {
         $c = $e.Current
         if ($c.Name -match $Pattern -and (-not $Type -or $c.ControlType -eq $Type)) { return $e }
     }
@@ -185,7 +190,7 @@ function Find-Named($Root, [string]$Pattern, $Type = $null) {
 
 function Get-Texts($Root) {
     if (-not $Root) { return '' }
-    ($Root.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition) | ForEach-Object { $_.Current.Name } | Where-Object { $_ }) -join ' | '
+    ((Get-AllUnder $Root) | ForEach-Object { try { $_.Current.Name } catch { } } | Where-Object { $_ }) -join ' | '
 }
 
 function Invoke-Element($Element) {
@@ -223,6 +228,22 @@ function Click-Element($Element, [string]$Process = 'gpuvm') {
 }
 
 function Get-MainElement { $app = Get-App; if ($app) { Get-Element $app.MainWindowHandle } }
+
+# GpuVM's window process only (not the suite's MCP server, also gpuvm.exe), started again the way a person would:
+# by the Task Scheduler, outside this elevated shell. The machines keep running.
+function Restart-E2EApp([string]$Exe = 'C:\Program Files\GpuVM\gpuvm.exe') {
+    $app = Get-Process gpuvm -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero -or $_.MainWindowTitle }
+    $mcp = @(Get-CimInstance Win32_Process -Filter "Name = 'gpuvm.exe'" | Where-Object { $_.CommandLine -match '--mcp' } | ForEach-Object { $_.ProcessId })
+    foreach ($p in @(Get-Process gpuvm -ErrorAction SilentlyContinue)) { if ($mcp -notcontains $p.Id) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue } }
+    Get-Process GpuVMViewer -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 800
+    $name = 'GpuVM-e2e-run-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
+    Register-ScheduledTask -TaskName $name -Action (New-ScheduledTaskAction -Execute $Exe) -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries) | Out-Null
+    Start-ScheduledTask -TaskName $name
+    Start-Sleep -Seconds 2
+    Unregister-ScheduledTask -TaskName $name -Confirm:$false
+    $null = Wait-For { Get-App } 30
+}
 
 # The page itself shows in UI Automation (not only the window's frame and its "Chrome Legacy Window").
 function Test-E2EPageReadable {
