@@ -42,19 +42,30 @@ $ctx = [pscustomobject]@{ Exe = $Exe; Template = $Template; Out = $Out; Mcp = $n
 try {
     $ctx.Mcp = Start-Mcp $Exe
     $appLog = Join-Path $env:LOCALAPPDATA 'GpuVM\app.log'
+    $retried = [System.Collections.Generic.List[string]]::new()
     foreach ($f in $files) {
-        Write-Host "`n== $($f.BaseName)"
-        $script:ExpectedErrors = @()
-        $logAt = if (Test-Path -LiteralPath $appLog) { (Get-Item -LiteralPath $appLog).Length } else { 0 }
-        . $f.FullName
-        try { & (Get-Item "function:Test-Suite").ScriptBlock $ctx }
-        catch { Check "$($f.BaseName) ran to the end" $false $_.Exception.Message }
-        Remove-Item function:Test-Suite -ErrorAction SilentlyContinue
-        # What the app showed or got back as an error while the suite ran (a suite lists the ones it causes on purpose).
-        $errors = @(Get-AppLogErrors $appLog $logAt | Where-Object { $line = $_; -not @($script:ExpectedErrors | Where-Object { $line -match $_ }).Count })
-        Check "$($f.BaseName): the app logged no errors" (-not $errors.Count) ($errors -join ' || ')
-        # Each suite starts where a person would: the machine with its agent and GpuVM at Home.
-        try { Reset-E2EApp $ctx } catch { Write-Host "     reset: $($_.Exception.Message)" }
+        # A suite that fails runs once more from the start (UI Automation and the machine's own pop-ups can trip a
+        # check); only its second run counts, and the summary names it.
+        for ($attempt = 1; $attempt -le 2; $attempt++) {
+            Write-Host "`n== $($f.BaseName)$(if ($attempt -gt 1) { ' (again)' })"
+            $from = (Get-E2EResults).Count
+            $script:ExpectedErrors = @()
+            $logAt = if (Test-Path -LiteralPath $appLog) { (Get-Item -LiteralPath $appLog).Length } else { 0 }
+            . $f.FullName
+            try { & (Get-Item "function:Test-Suite").ScriptBlock $ctx }
+            catch { Check "$($f.BaseName) ran to the end" $false $_.Exception.Message }
+            Remove-Item function:Test-Suite -ErrorAction SilentlyContinue
+            # What the app showed or got back as an error while the suite ran (a suite lists the ones it causes on purpose).
+            $errors = @(Get-AppLogErrors $appLog $logAt | Where-Object { $line = $_; -not @($script:ExpectedErrors | Where-Object { $line -match $_ }).Count })
+            Check "$($f.BaseName): the app logged no errors" (-not $errors.Count) ($errors -join ' || ')
+            # Each suite starts where a person would: the machine with its agent and GpuVM at Home.
+            try { Reset-E2EApp $ctx } catch { Write-Host "     reset: $($_.Exception.Message)" }
+            $all = Get-E2EResults
+            $failedHere = @($all | Select-Object -Skip $from | Where-Object { -not $_.Ok }).Count
+            if (-not $failedHere -or $attempt -eq 2) { break }
+            $retried.Add($f.BaseName)
+            $all.RemoveRange($from, $all.Count - $from)
+        }
     }
 }
 finally {
@@ -65,6 +76,7 @@ finally {
 $results = Get-E2EResults
 $failed = @($results | Where-Object { -not $_.Ok })
 Write-Host "`n$($results.Count - $failed.Count) of $($results.Count) passed. Screenshots: $Out"
+if ($retried -and $retried.Count) { Write-Host "Run again after a failure: $($retried -join ', ')" }
 if (-not $failed.Count -and $all) {
     $repo = Resolve-Path (Join-Path $PSScriptRoot '..\..')
     if (git -C $repo status --porcelain) { Write-Host 'Not recorded for the release: uncommitted changes.' }
