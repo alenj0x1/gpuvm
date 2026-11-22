@@ -43,11 +43,20 @@ try {
     $ctx.Mcp = Start-Mcp $Exe
     $appLog = Join-Path $env:LOCALAPPDATA 'GpuVM\app.log'
     $retried = [System.Collections.Generic.List[string]]::new()
+    $restarted = [System.Collections.Generic.List[string]]::new()
     foreach ($f in $files) {
         # A suite that fails runs once more from the start (UI Automation and the machine's own pop-ups can trip a
         # check); only its second run counts, and the summary names it.
         for ($attempt = 1; $attempt -le 2; $attempt++) {
             Write-Host "`n== $($f.BaseName)$(if ($attempt -gt 1) { ' (again)' })"
+            # WebView2 sometimes stops exposing the page to UI Automation after a long run (only the window frame is
+            # left); GpuVM is started again so the suite can read it. The machines keep running.
+            if (-not (Test-E2EPageReadable)) {
+                Write-Host '     the page is no longer readable through UI Automation: starting GpuVM again'
+                $restarted.Add($f.BaseName)
+                & (Join-Path $PSScriptRoot '..\..\labs\039-viewer-bridge\run-build.ps1') -Installed | Out-Null
+                $null = Wait-For { Test-E2EPageReadable } 40
+            }
             $from = (Get-E2EResults).Count
             $script:ExpectedErrors = @()
             $logAt = if (Test-Path -LiteralPath $appLog) { (Get-Item -LiteralPath $appLog).Length } else { 0 }
@@ -77,6 +86,7 @@ $results = Get-E2EResults
 $failed = @($results | Where-Object { -not $_.Ok })
 Write-Host "`n$($results.Count - $failed.Count) of $($results.Count) passed. Screenshots: $Out"
 if ($retried -and $retried.Count) { Write-Host "Run again after a failure: $($retried -join ', ')" }
+if ($restarted -and $restarted.Count) { Write-Host "GpuVM started again (page unreadable) before: $($restarted -join ', ')" }
 if (-not $failed.Count -and $all) {
     $repo = Resolve-Path (Join-Path $PSScriptRoot '..\..')
     if (git -C $repo status --porcelain) { Write-Host 'Not recorded for the release: uncommitted changes.' }

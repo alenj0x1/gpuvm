@@ -224,6 +224,13 @@ function Click-Element($Element, [string]$Process = 'gpuvm') {
 
 function Get-MainElement { $app = Get-App; if ($app) { Get-Element $app.MainWindowHandle } }
 
+# The page itself shows in UI Automation (not only the window's frame and its "Chrome Legacy Window").
+function Test-E2EPageReadable {
+    $m = Get-MainElement
+    if (-not $m) { return $false }
+    try { [bool]($m.FindFirst([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Document))) } catch { $false }
+}
+
 function Get-Notch {
     foreach ($w in Get-AppWindows -Small) {
         $root = Get-Element $w.Handle
