@@ -13,7 +13,7 @@ function Get-GpuVMAdminPrompt {
     $watched = 0
     $prompts = foreach ($vm in @(Get-VM | Where-Object State -eq 'Running')) {
         $state = try { Get-GpuVMState -Name $vm.Name } catch { $null }
-        if (-not $state -or -not $state['streaming'] -or (Get-GpuVMCaptureMode -State $state) -ne 'wgc') { continue }
+        if (-not $state -or -not $state['streaming']) { continue }
         $watched++
         $prompt = try { Get-GuestAdminPrompt -Name $vm.Name } catch { $null }
         if ($prompt) { [ordered]@{ name = $vm.Name; id = $prompt.id; app = $prompt.app; publisher = $prompt.publisher; reading = $prompt.reading } }

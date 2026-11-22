@@ -23,13 +23,19 @@ fn home() -> Option<PathBuf> {
     std::env::var_os("USERPROFILE").map(PathBuf::from)
 }
 
-/// claude.exe (or the npm shim) on PATH, or where its installer puts it.
+/// claude.exe where its installer puts it, or the npm shim in the user's own npm folder; only then PATH, and only its
+/// absolute folders (a relative or empty entry would resolve against whatever folder GpuVM runs in).
 fn cli() -> Option<PathBuf> {
-    let mut dirs: Vec<PathBuf> = std::env::var_os("PATH").map(|p| std::env::split_paths(&p).collect()).unwrap_or_default();
+    let mut candidates: Vec<PathBuf> = Vec::new();
     if let Some(h) = home() {
-        dirs.push(h.join(".local").join("bin"));
+        candidates.push(h.join(".local").join("bin").join("claude.exe"));
     }
-    dirs.iter().flat_map(|d| ["claude.exe", "claude.cmd"].map(|n| d.join(n))).find(|p| p.is_file())
+    if let Some(appdata) = std::env::var_os("APPDATA") {
+        candidates.push(PathBuf::from(appdata).join("npm").join("claude.cmd"));
+    }
+    let path: Vec<PathBuf> = std::env::var_os("PATH").map(|p| std::env::split_paths(&p).filter(|d| d.is_absolute()).collect()).unwrap_or_default();
+    candidates.extend(path.iter().flat_map(|d| ["claude.exe", "claude.cmd"].map(|n| d.join(n))));
+    candidates.into_iter().find(|p| p.is_file())
 }
 
 fn read_json(path: &PathBuf) -> Result<Option<Value>, String> {
@@ -65,7 +71,19 @@ pub fn claude_code_state() -> Value {
     json!({ "cli": cli().is_some(), "added": server.is_some(), "current": current, "allowed": allowed })
 }
 
-/// Adds RULE to permissions.allow, keeping the file as it was otherwise.
+/// Where `key` (a JSON key, quoted) first appears in `text` after `from`, and the index just past the `open` character
+/// that follows it.
+fn after_key(text: &str, from: usize, key: &str, open: char) -> Option<usize> {
+    let k = text[from..].find(&format!("\"{key}\""))? + from;
+    let rest = &text[k + key.len() + 2..];
+    let colon = rest.find(':')?;
+    let value = rest[colon + 1..].trim_start();
+    value.starts_with(open).then(|| text.len() - value.len() + 1)
+}
+
+/// Adds RULE to permissions.allow by inserting it as text, so the rest of the file stays exactly as the person wrote
+/// it (order, spacing, comments in strings). The edit is kept only if the file then parses to exactly what was meant;
+/// otherwise the file is left untouched and the person is told.
 fn allow_tools() -> Result<(), String> {
     let path = settings_path().ok_or("No user profile.")?;
     let text = match std::fs::read_to_string(&path) {
@@ -73,41 +91,42 @@ fn allow_tools() -> Result<(), String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(e) => return Err(e.to_string()),
     };
+    let bom = text.starts_with('\u{feff}');
     let body = text.trim_start_matches('\u{feff}');
-    let before: Value = if body.trim().is_empty() { json!({}) } else { serde_json::from_str(body).map_err(|_| format!("{} isn't valid JSON: it was left as it is.", path.display()))? };
-    if allowed(&before) {
-        return Ok(());
-    }
-    // In place: right after `"allow": [`, when the list exists.
-    let mut after = None;
-    if before["permissions"]["allow"].is_array() {
-        if let Some(at) = body.find("\"allow\"").and_then(|i| body[i..].find('[').map(|j| i + j + 1)) {
-            let empty = body[at..].trim_start().starts_with(']');
-            let edited = format!("{}\"{RULE}\"{}{}", &body[..at], if empty { "" } else { ", " }, &body[at..]);
-            let mut expected = before.clone();
+    let after = if body.trim().is_empty() {
+        serde_json::to_string_pretty(&json!({ "permissions": { "allow": [RULE] } })).map_err(|e| e.to_string())? + "\n"
+    } else {
+        let before: Value = serde_json::from_str(body).map_err(|_| format!("{} isn't valid JSON: it was left as it is.", path.display()))?;
+        if !before.is_object() {
+            return Err(format!("{} isn't a JSON object: it was left as it is.", path.display()));
+        }
+        if allowed(&before) {
+            return Ok(());
+        }
+        let mut expected = before.clone();
+        let edited = if before["permissions"]["allow"].is_array() {
             expected["permissions"]["allow"].as_array_mut().map(|a| a.insert(0, json!(RULE)));
-            if serde_json::from_str::<Value>(&edited).ok().as_ref() == Some(&expected) {
-                after = Some(edited);
-            }
+            let p = body.find("\"permissions\"").ok_or("permissions")?;
+            let at = after_key(body, p, "allow", '[').ok_or("allow")?;
+            let empty = body[at..].trim_start().starts_with(']');
+            format!("{}\"{RULE}\"{}{}", &body[..at], if empty { "" } else { ", " }, &body[at..])
+        } else if before["permissions"].is_object() {
+            expected["permissions"]["allow"] = json!([RULE]);
+            let at = after_key(body, 0, "permissions", '{').ok_or("permissions")?;
+            let empty = body[at..].trim_start().starts_with('}');
+            format!("{}\"allow\": [\"{RULE}\"]{}{}", &body[..at], if empty { "" } else { ", " }, &body[at..])
+        } else if before.get("permissions").is_none() {
+            expected["permissions"] = json!({ "allow": [RULE] });
+            let at = body.find('{').ok_or("{")? + 1;
+            let empty = body[at..].trim_start().starts_with('}');
+            format!("{}\n  \"permissions\": {{ \"allow\": [\"{RULE}\"] }}{}{}", &body[..at], if empty { "\n" } else { "," }, &body[at..])
+        } else {
+            return Err(format!("{}: \"permissions\" isn't an object, it was left as it is.", path.display()));
+        };
+        if serde_json::from_str::<Value>(&edited).ok().as_ref() != Some(&expected) {
+            return Err(format!("Couldn't add GpuVM's permission to {} without changing anything else: it was left as it is.", path.display()));
         }
-    }
-    // Otherwise the whole file, rewritten from its parsed form.
-    let after = match after {
-        Some(a) => a,
-        None => {
-            let mut v = before;
-            if !v.is_object() {
-                return Err(format!("{} isn't a JSON object: it was left as it is.", path.display()));
-            }
-            if !v["permissions"].is_object() {
-                v["permissions"] = json!({});
-            }
-            if !v["permissions"]["allow"].is_array() {
-                v["permissions"]["allow"] = json!([]);
-            }
-            v["permissions"]["allow"].as_array_mut().map(|a| a.push(json!(RULE)));
-            serde_json::to_string_pretty(&v).map_err(|e| e.to_string())? + "\n"
-        }
+        if bom { format!("\u{feff}{edited}") } else { edited }
     };
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
@@ -125,10 +144,20 @@ pub async fn connect_claude_code() -> Result<Value, String> {
         let exe = std::env::current_exe().map_err(|e| e.to_string())?;
         let run = |args: &[&std::ffi::OsStr]| Command::new(&claude).args(args).creation_flags(CREATE_NO_WINDOW).output().map_err(|e| e.to_string());
         if !claude_code_state()["current"].as_bool().unwrap_or(false) {
-            // An older entry (another path, a moved install) is replaced; none at all is fine.
-            let _ = run(&["mcp".as_ref(), "remove".as_ref(), "gpuvm".as_ref(), "-s".as_ref(), "user".as_ref()]);
+            // An older entry (another path, a moved install) is replaced; if adding the new one fails, the old one is
+            // put back as it was.
+            let old = added();
+            if old.is_some() {
+                let _ = run(&["mcp".as_ref(), "remove".as_ref(), "gpuvm".as_ref(), "-s".as_ref(), "user".as_ref()]);
+            }
             let out = run(&["mcp".as_ref(), "add".as_ref(), "-s".as_ref(), "user".as_ref(), "gpuvm".as_ref(), "--".as_ref(), exe.as_os_str(), "--mcp".as_ref()])?;
             if !out.status.success() {
+                if let Some(cmd) = old.as_ref().and_then(|o| o["command"].as_str()) {
+                    let args: Vec<String> = old.as_ref().and_then(|o| o["args"].as_array()).map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default();
+                    let mut back: Vec<&std::ffi::OsStr> = vec!["mcp".as_ref(), "add".as_ref(), "-s".as_ref(), "user".as_ref(), "gpuvm".as_ref(), "--".as_ref(), cmd.as_ref()];
+                    back.extend(args.iter().map(|a| std::ffi::OsStr::new(a.as_str())));
+                    let _ = run(&back);
+                }
                 let msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
                 return Err(if msg.is_empty() { "Claude Code couldn't add GpuVM.".into() } else { msg });
             }
@@ -136,4 +165,17 @@ pub async fn connect_claude_code() -> Result<Value, String> {
         allow_tools()?;
         Ok(claude_code_state())
     }).await.map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn finds_allow_inside_permissions_only() {
+        let text = r#"{ "note": { "allow": ["x"] }, "permissions": { "deny": [], "allow": [ "a" ] } }"#;
+        let p = text.find("\"permissions\"").unwrap();
+        let at = after_key(text, p, "allow", '[').unwrap();
+        assert_eq!(&text[at..at + 5], " \"a\" ");
+    }
 }

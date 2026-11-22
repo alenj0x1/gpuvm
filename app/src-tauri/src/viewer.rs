@@ -611,9 +611,7 @@ pub(crate) fn publish_state(vm: &str, state: &str) {
 
 pub fn open_and_wait(app: &AppHandle, vm: &str, launch: &Value) -> Result<(), String> {
     publish_state(vm, "opening");
-    // An agent machine's guest starts repainting now, as its viewer starts (a burst over 10 s, agent.rs): the stream's
-    // first frames then carry a picture instead of a still desktop's nothing.
-    crate::agent::refresh_burst(app, vm);
+    crate::agent::picture_shown(vm);
     let arguments: Vec<String> = launch["arguments"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
     if arguments.first().map(String::as_str) != Some("stream") {
         return Err("The module didn't say how to open the machine.".into());
@@ -808,12 +806,11 @@ fn reveal(viewer: &Viewer) {
 
 /// The app finished zooming into the machine: the picture comes out from behind it.
 #[tauri::command]
-pub async fn viewer_reveal(app: AppHandle, vm: String) -> Result<(), String> {
+pub async fn viewer_reveal(vm: String) -> Result<(), String> {
     let viewer = viewers().as_ref().and_then(|v| v.get(&vm).cloned()).ok_or("This machine's viewer isn't open.")?;
     // The person opened it: a viewer that recorded in the background is theirs now.
     set_background(&vm, false);
-    // A hidden viewer shows black until the next frame: the agent machine's guest repaints as it comes out.
-    crate::agent::refresh_burst(&app, &vm);
+    crate::agent::picture_shown(&vm);
     if !viewer.visible.load(Ordering::Relaxed) {
         reveal(&viewer);
     }
@@ -840,7 +837,7 @@ pub async fn viewer_home(app: AppHandle, vm: String, keep: bool) -> Result<(), S
 pub async fn viewer_show(app: AppHandle, vm: String) -> Result<(), String> {
     let viewer = viewers().as_ref().and_then(|v| v.get(&vm).cloned()).ok_or("This machine's viewer isn't open.")?;
     set_background(&vm, false);
-    crate::agent::refresh_burst(&app, &vm);
+    crate::agent::picture_shown(&vm);
     if viewer.first_frame.load(Ordering::Relaxed) {
         publish_state(&vm, "picture");
     }

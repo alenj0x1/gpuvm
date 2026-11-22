@@ -923,29 +923,6 @@ fn display_verdict(connected: bool, blank: Option<u64>, said: bool, signed_in: b
     }
 }
 
-/// The longest repaint burst (screen.refresh repeatMs), and the one burst per machine at a time.
-const REFRESH_BURST_MAX_MS: u64 = 15_000;
-static BURSTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
-
-/// screen.refresh every 250 ms for `ms`, in the background; a burst already running for that machine is enough.
-fn refresh_burst(conn: Arc<Conn>, ms: u64, client: Option<String>) {
-    {
-        let mut running = lock(&BURSTS);
-        if running.contains(&conn.vm_id) {
-            return;
-        }
-        running.push(conn.vm_id.clone());
-    }
-    std::thread::spawn(move || {
-        let end = Instant::now() + Duration::from_millis(ms);
-        while Instant::now() < end && !conn.dead.load(Ordering::SeqCst) {
-            let _ = conn.request("screen.refresh", &json!({}), None, Duration::from_secs(3), client.as_deref());
-            std::thread::sleep(Duration::from_millis(250));
-        }
-        lock(&BURSTS).retain(|v| v != &conn.vm_id);
-    });
-}
-
 /// Asks the agent for agent.info again, in the background, one request at a time.
 fn refresh_info(conn: Arc<Conn>) {
     if conn.refreshing.swap(true, Ordering::SeqCst) {
@@ -2050,6 +2027,11 @@ pub fn gate(request: &mut Value, pid: u32, agent_pipe: bool) -> Result<Gated, Cm
         if name.is_empty() {
             return err("bad_request", "Name is required.");
         }
+        // A few at once: a looping session can't fill the disk or the memory with copies (security review 2026-11-21).
+        let made = lock(&broker().made).values().filter(|c| **c == id).count();
+        if made >= MAX_DISPOSABLES {
+            return err("limit", format!("This session already has {made} disposable machines: destroy one before creating another."));
+        }
         charge(&id)?;
         gated.claim = Some(Claim { name: name.to_string(), connection: id });
         return Ok(gated);
@@ -2153,12 +2135,24 @@ fn owner_of_name(name: &str) -> Option<String> {
             let claim = lock(&broker().claims).remove(&reg.vm_id).filter(|c| lock(&broker().clients).contains_key(c));
             let mut machines = lock(&broker().machines);
             let m = machines.entry(reg.vm_id.clone()).or_default();
+            let mut claimed = None;
             if let Some(c) = claim {
                 if m.taken_by.is_none() {
-                    m.taken_by = Some(c);
+                    m.taken_by = Some(c.clone());
+                    claimed = Some(c);
                 }
             }
-            m.taken_by.clone()
+            let owner = m.taken_by.clone();
+            drop(machines);
+            // A disposable copy the session made is one of its machines too (its history line).
+            if let Some(c) = claimed {
+                if let Some(client) = lock(&broker().clients).get_mut(&c) {
+                    if !client.machines.contains(&reg.name) {
+                        client.machines.push(reg.name.clone());
+                    }
+                }
+            }
+            owner
         }
         None => id_of_name(name).and_then(|id| lock(&broker().claims).get(&id).cloned()),
     }
@@ -2463,6 +2457,9 @@ fn redacted(v: &Value) -> Value {
     }
 }
 
+/// Disposable machines one agent session may have at once.
+const MAX_DISPOSABLES: usize = 3;
+
 /// Ids of steps in the live view (a start and its end share one).
 static NEXT_STEP: AtomicU64 = AtomicU64::new(1);
 
@@ -2497,17 +2494,6 @@ fn invoke(args: &Map<String, Value>, ctx: &Ctx) -> Result<Value, CmdError> {
         // The MCP server always names its connection: unnamed requests are the person's (the app) or the module's.
         None if ctx.is_agent_side() => return err("not_taken", "Connection is required."),
         None => {}
-    }
-    // screen.refresh with repeatMs: the desktop repainted every 250 ms for that long, in the background, and the answer
-    // comes at once. With ddx a still desktop sends no frame, and a single repaint is lost while Sunshine restarts its
-    // capture (lab 052: one refresh 2 of 10 opens with a picture, a 10 s burst 9 of 10, median 0.84 s).
-    if method == "screen.refresh" && params.get("repeatMs").is_some() {
-        let ms = params["repeatMs"].as_u64().filter(|m| *m > 0).ok_or_else(|| CmdError { code: "bad_request".into(), message: "repeatMs must be a number of ms.".into() })?
-            .min(REFRESH_BURST_MAX_MS);
-        let conn = conn_of(&reg.vm_id).ok_or_else(|| CmdError { code: "off".into(), message: format!("The agent on '{}' isn't connected.", reg.name) })?;
-        refresh_burst(conn, ms, client.map(str::to_string));
-        vm_log(&reg, json!({ "method": method, "params": { "repeatMs": ms }, "client": client.unwrap_or(ctx.label()), "code": "ok" }));
-        return Ok(json!({ "ok": true, "result": { "repeating": ms } }));
     }
     // The live view (agent_log.rs): this step starts, with its shape and the screen it is drawn on.
     let live = client.map(|id| {
@@ -2584,8 +2570,15 @@ fn save_blob(data: &[u8], format: &str) -> Result<String, String> {
             }
         }
     }
-    let ext: String = format.chars().filter(|c| c.is_ascii_alphanumeric()).take(8).collect();
-    let path = dir.join(format!("{}.{}", wire::hex(&wire::random::<12>()), if ext.is_empty() { "bin".into() } else { ext }));
+    // The guest names the format: only image extensions it may choose, anything else is .bin (a guest-chosen .exe or
+    // .hta here would be one double-click away from running as an administrator; security review 2026-11-21).
+    let ext = match format.to_ascii_lowercase().as_str() {
+        "png" => "png",
+        "webp" => "webp",
+        "jpg" | "jpeg" => "jpg",
+        _ => "bin",
+    };
+    let path = dir.join(format!("{}.{}", wire::hex(&wire::random::<12>()), ext));
     std::fs::write(&path, data).map_err(|e| e.to_string())?;
     Ok(path.display().to_string())
 }
@@ -2800,11 +2793,6 @@ pub(crate) mod tests {
         // screen.refresh (agent 0.3.8) is a guest method: it reaches the machine (here "off": no agent connected).
         assert_eq!(code(command("Invoke-GpuVMAgent", &json!({ "Name": "Test1", "Method": "screen.refresh" }), &mut app)), "off");
         assert_eq!(code(command("Invoke-GpuVMAgent", &json!({ "Name": "Test1", "Method": "screen.repaint" }), &mut app)), "bad_request");
-        // A repaint burst needs a number of ms and a connected agent (here none: "off").
-        let mut burst = |p: Value| code(command("Invoke-GpuVMAgent", &json!({ "Name": "Test1", "Method": "screen.refresh", "Params": p }), &mut app));
-        assert_eq!(burst(json!({ "repeatMs": "lots" })), "bad_request");
-        assert_eq!(burst(json!({ "repeatMs": 0 })), "bad_request");
-        assert_eq!(burst(json!({ "repeatMs": 10_000 })), "off");
         // The MCP side must name its connection and take the machine first.
         assert_eq!(invoke(&mut mcp, None), "not_taken");
         assert_eq!(invoke(&mut mcp, Some(&id)), "not_taken"); // step 1

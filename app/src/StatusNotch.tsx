@@ -97,7 +97,7 @@ export function StatusRow({ item, onAction, short }: { item: StatusItem; onActio
     return (
       <div className="sn-row">
         {item.thinking || long ? <IconLoader2 size={15} className="sn-icon spin" /> : <IconRobot size={15} className="sn-icon accent" />}
-        <span className="sn-text" title={liveText(item)}>{short ? liveText(item) : t("{name} · {doing}", { name, doing: liveText(item) })}</span>
+        <span className="sn-text" title={liveText(item)}>{t("{name} · {doing}", { name, doing: liveText(item) })}</span>
         {onAction && (
           <button type="button" className="dock-btn sn-btn sn-ghost" disabled={busy} onClick={act}>
             {busy ? <IconLoader2 size={14} className="spin" /> : <IconHandStop size={14} />}{t("Take control")}

@@ -293,8 +293,11 @@ pub fn status_state() -> Value {
 #[tauri::command]
 pub async fn status_action(app: AppHandle, id: String) -> Result<(), String> {
     // The machine is the one the notice is on: only that machine goes back to its agent.
-    let (vm, item) = with(|s| s.items.iter().find_map(|(vm, list)| list.iter().find(|i| i["id"] == id.as_str()).map(|i| (vm.clone(), i.clone()))))
-        .ok_or("That notice already went.")?;
+    // Ids repeat across machines ("live", "control"): the machine the notch is showing comes first.
+    let (vm, item) = with(|s| {
+        let find = |vm: &String| s.items.get(vm).and_then(|l| l.iter().find(|i| i["id"] == id.as_str())).map(|i| (vm.clone(), i.clone()));
+        s.shown.as_ref().and_then(find).or_else(|| s.items.keys().find_map(find))
+    }).ok_or("That notice already went.")?;
     match item["kind"].as_str().unwrap_or("") {
         "control" | "paused" => crate::agent::resume(&app, item["client"].as_str().unwrap_or(""), &vm).await,
         "live" => crate::agent::take_control(&app, &vm).await,

@@ -93,7 +93,6 @@ export default {
   "Installing updates": "Instalando actualizaciones",
 
   // Opening a machine (connect)
-  "Moonlight isn't installed on this PC. Install it with: ./gpuvm.ps1 client-install": "Moonlight no está instalado en este equipo. Instálalo con: ./gpuvm.ps1 client-install",
   "Updating the GPU driver": "Actualizando el driver de la GPU",
   "It's already open": "Ya está abierta",
   "Waiting for Windows": "Esperando a Windows",
@@ -145,9 +144,9 @@ export default {
   "Connecting the picture": "Conectando la imagen",
   "There are several pairing requests from this PC; try again.": "Hay varias solicitudes de emparejamiento desde este equipo; vuelve a intentarlo.",
   "Sunshine rejected the pairing PIN.": "Sunshine rechazó el PIN de emparejamiento.",
-  "Moonlight didn't ask to pair in time.": "Moonlight no pidió emparejarse a tiempo.",
-  "Moonlight didn't finish pairing.": "Moonlight no terminó el emparejamiento.",
-  "Sunshine didn't record Moonlight's pairing.": "Sunshine no registró el emparejamiento de Moonlight.",
+  "The viewer didn't ask to pair in time.": "El visor no pidió emparejarse a tiempo.",
+  "The viewer didn't finish pairing.": "El visor no terminó el emparejamiento.",
+  "Sunshine didn't record the viewer's pairing.": "Sunshine no registró el emparejamiento del visor.",
   "The chosen monitor isn't connected: opening on the main one": "El monitor elegido no está conectado: se abre en el principal",
   "No one is signed in on the VM's screen.": "No hay una sesión iniciada en la pantalla de la VM.",
   "No one is signed in on the screen.": "No hay una sesión iniciada en la pantalla.",
@@ -195,7 +194,7 @@ export default {
 
   // Home notices
   "Its Windows password is missing, so things inside it can't be fixed": "Falta su contraseña de Windows para arreglar cosas dentro de ella",
-  "Moonlight isn't paired with it yet": "Moonlight todavía no está emparejado con ella",
+  "The viewer isn't paired with it yet": "El visor todavía no está emparejado con ella",
   "Save password": "Guardar contraseña",
   "Update driver": "Actualizar driver",
   "Pair": "Emparejar",
@@ -204,7 +203,6 @@ export default {
   "See disks": "Ver discos",
 
   // Client
-  "winget wasn't found. Download Moonlight from https://moonlight-stream.org": "No se encontró winget. Descarga Moonlight desde https://moonlight-stream.org",
   "Remember to carry the candidate settings over to the matching profile in profiles/.": "Recuerda llevar la configuración candidata al perfil correspondiente en profiles/.",
 
   // Restore points, disposable machines, export and import
@@ -430,12 +428,11 @@ export const patterns: [RegExp, string][] = [
   [/^Couldn't set up the VM's administrator prompts: (.+)$/, "No se pudo preparar los avisos de administrador de la VM: $1"],
   [/^Couldn't set up the audio inside the VM: (.+)$/, "No se pudo preparar el audio dentro de la VM: $1"],
   [/^Opening at (.+?) and (.+?) FPS$/, "Abriendo a $1 y $2 FPS"],
-  [/^Couldn't move Moonlight to (.+?): (.+)$/, "No se pudo mover Moonlight a $1: $2"],
   [/^Pairing Moonlight with Sunshine at (.+)$/, "Emparejando Moonlight con Sunshine en $1"],
   [/^Pairing with Sunshine at (.+)$/, "Emparejando con Sunshine en $1"],
   [/^Couldn't connect \((.+)\)\.$/, "No se pudo conectar ($1)."],
   [/^Couldn't open the viewer: (.+)$/, "No se pudo abrir el visor: $1"],
-  [/^Moonlight ended pairing with code (.+?)\.$/, "Moonlight terminó el emparejamiento con código $1."],
+  [/^The viewer ended pairing with code (.+?)\.$/, "El visor terminó el emparejamiento con código $1."],
   [/^Invalid Moonlight app name: (.+)$/, "Nombre de app de Moonlight no válido: $1"],
   [/^Invalid value for sunshine\.conf: (.+)$/, "Valor no válido para sunshine.conf: $1"],
   [/^The VM's audio isn't ready: the usbip-win2 installer is missing$/, "El audio de la VM no quedó listo: error: falta el instalador de usbip-win2"],
@@ -521,9 +518,7 @@ export const patterns: [RegExp, string][] = [
   [/^(.+?) GB left on the machines' disk$/, "Quedan $1 GB libres en el disco de las máquinas"],
 
   // Client
-  [/^Moonlight is already installed: (.+)$/, "Moonlight ya está instalado: $1"],
   [/^winget ended with code (.+?)\.$/, "winget terminó con código $1."],
-  [/^Moonlight installed: (.+)$/, "Moonlight instalado: $1"],
 
   // Labs (CLI)
   [/^The lab '(.+?)' doesn't exist\.$/, "No existe el laboratorio '$1'."],

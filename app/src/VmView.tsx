@@ -1021,7 +1021,6 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
     mouse: (vm.client?.mouse ?? "capture") as MouseMode,
     codec: vm.client?.codec ?? "auto",
     bitrateKbps: vm.client?.bitrateKbps ?? 0,
-    captureMode: vm.options!.captureMode ?? "wgc",
     networkIsolation: vm.options!.networkIsolation ?? true,
     // "default": the monitor chosen in Preferences.
     monitor: vm.client?.monitor ?? "default",
@@ -1054,7 +1053,6 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
   const [customUse, setCustomUse] = useState(false);
   const shownUse = customUse ? null : use;
   const [advanced, setAdvanced] = useState(false);
-  const captureDirty = draft.captureMode !== initial.captureMode;
   const networkDirty = draft.networkIsolation !== initial.networkIsolation;
   const monitorDirty = draft.monitor !== initial.monitor;
   const agentDirty = draft.forAgents !== initial.forAgents || draft.agentUser !== initial.agentUser;
@@ -1064,7 +1062,6 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
 
   const save = async () => {
     if (clientDirty && !(await run(vm.name, t("Saving"), () => api.setClient(vm.name, draft.resolution, draft.fps, draft.displayMode !== initial.displayMode ? draft.displayMode : undefined, streamChanges)))) return;
-    if (captureDirty && !(await run(vm.name, t("Changing capture"), () => api.setCapture(vm.name, draft.captureMode)))) return;
     if (networkDirty && !(await run(vm.name, t("Changing network"), () => api.setNetworkIsolation(vm.name, draft.networkIsolation)))) return;
     if (monitorDirty && !(await run(vm.name, t("Saving"), () => api.setMonitor(vm.name, draft.monitor)))) return;
     // The use and the agents' user install or remove the guest agent (Set-GpuVMUse, Set-GpuVMAgentUser): jobs, with
@@ -1200,17 +1197,6 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
             <MonitorPicker monitors={monitors} value={draft.monitor} inherited={prefs.monitor} onChange={(monitor) => setDraft({ ...draft, monitor })} />
           </OptionRow>
         )}
-        {/* Every machine, agent or not: Sunshine is GpuVM's fork as a service either way (wgc through its helper). */}
-        {vm.streaming && (
-          <OptionRow icon={<IconScreenShare size={17} />} title={t("Capture")} desc={draft.captureMode === "wgc"
-            ? t("The picture shows up as soon as you connect and exclusive full-screen games are visible. Windows admin prompts are answered from GpuVM.")
-            : t("Admin prompts show in the viewer, but the picture can take a while to appear when connecting and exclusive full-screen games show black.")}>
-            <Segmented value={draft.captureMode} onChange={(captureMode) => setDraft({ ...draft, captureMode })} options={[
-              { value: "wgc", label: <><IconBolt size={15} />{t("Fast")}</> },
-              { value: "ddx", label: <><IconScreenShare size={15} />{t("Classic")}</> },
-            ]} />
-          </OptionRow>
-        )}
         {vm.streaming && (
           <button type="button" className="disclosure opt-disclosure" aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}>
             <IconChevronRight size={15} />{t("Advanced")}
@@ -1232,9 +1218,9 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
           </>
         )}
       </div>
-      {(vmDirty || clientDirty || captureDirty || networkDirty || monitorDirty || agentDirty || saved) && (
+      {(vmDirty || clientDirty || networkDirty || monitorDirty || agentDirty || saved) && (
         <div className="options-foot">
-          {saved && !vmDirty && !clientDirty && !captureDirty && !networkDirty && !monitorDirty && !agentDirty ? (
+          {saved && !vmDirty && !clientDirty && !networkDirty && !monitorDirty && !agentDirty ? (
             <span className="saved"><IconCheck size={16} />{t("Saved|settings")}</span>
           ) : (
             <>

@@ -44,7 +44,18 @@ static STATUS: Mutex<Option<HashMap<String, (String, String)>>> = Mutex::new(Non
 static WATCHING: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 /// When each machine's agent was last paused from input: one pause per press, not one per mouse move.
 static PAUSED_AT: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
-/// When each machine's picture last came on screen (refresh_burst): input reported in the next VIEWER_SETTLE is the
+/// Machines being paused for the person right now: a poll that started before the pause must not watch them again
+/// (it would swallow the person's next click).
+static PAUSING: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+/// Set after the person changed a setting: the next poll reads the settings again instead of waiting ten rounds.
+static SETTINGS_STALE: AtomicBool = AtomicBool::new(false);
+
+/// Settings › Agents changed something in the service: the next poll reads it at once.
+#[tauri::command]
+pub fn agent_settings_changed() {
+    SETTINGS_STALE.store(true, Ordering::Relaxed);
+}
+/// When each machine's picture last came on screen (picture_shown): input reported in the next VIEWER_SETTLE is the
 /// viewer itself settling, not the person (2026-11-21: every open paused the agent ~4 s in, "You took control").
 static SHOWN_AT: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
 const VIEWER_SETTLE: Duration = Duration::from_secs(4);
@@ -150,7 +161,7 @@ pub fn start(app: AppHandle) {
             let machines: Vec<Value> = list(call(&app, "Get-GpuVMAgent", json!({})).await).unwrap_or_default().iter()
                 .map(|m| json!({ "name": m["name"], "state": m["state"], "lastError": m["lastError"] })).collect();
             // The settings (per-client approvals) and the channel's state change rarely: every tenth round.
-            if round % 10 == 0 {
+            if round % 10 == 0 || SETTINGS_STALE.swap(false, Ordering::Relaxed) {
                 settings = call(&app, "Get-GpuVMAgentSettings", json!({})).await.ok().and_then(|v| v.get(0).cloned()).unwrap_or(Value::Null);
                 broker = call(&app, "Get-GpuVMAgentBroker", json!({})).await.ok().and_then(|v| v.get(0).cloned()).unwrap_or(Value::Null);
             }
@@ -205,6 +216,7 @@ fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Ve
         .filter(|c| holds(c))
         .filter_map(|c| c["machine"].as_str().map(str::to_string))
         .filter(|vm| on_input && crate::viewer::viewer_is_open(vm.clone()))
+        .filter(|vm| !person_has(vm) && !lock(&PAUSING).as_ref().is_some_and(|p| p.contains(vm)))
         .collect();
     {
         let mut watching = lock(&WATCHING);
@@ -333,9 +345,16 @@ pub async fn take_control(app: &AppHandle, vm: &str) -> Result<(), String> {
 
 async fn pause_for_control(app: &AppHandle, vm: &str, client: &Value) -> Result<(), String> {
     let id = client["id"].as_str().unwrap_or("").to_string();
-    call(app, "Suspend-GpuVMAgent", json!({ "Connection": id, "Reason": "control", "Message": "You took control" })).await?;
+    lock(&PAUSING).get_or_insert_with(HashSet::new).insert(vm.to_string());
+    // Only this machine: a session holding several keeps working on the others.
+    let result = call(app, "Suspend-GpuVMAgent", json!({ "Name": vm, "Connection": id, "Reason": "control", "Message": "You took control" })).await;
+    if result.is_err() {
+        lock(&PAUSING).as_mut().map(|p| p.remove(vm));
+    }
+    result?;
     crate::status::set(app, vm, "agent", Some(json!({ "kind": "control", "client": id, "clientName": client["name"] })));
     lock(&STATUS).get_or_insert_with(HashMap::new).insert(vm.to_string(), ("control".into(), id));
+    lock(&PAUSING).as_mut().map(|p| p.remove(vm));
     crate::live::clear(app, vm);
     let _ = app.emit("agents-changed", json!({}));
     Ok(())
@@ -625,34 +644,10 @@ pub fn on_viewer(app: &AppHandle, vm: &str, msg: &Value) {
 
 /* ---------- the guest's repaint (ddx) ---------- */
 
-/// When each machine's last burst was asked for: one at a time (a burst lasts 10 s).
-static BURSTS: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
-
-/// screen.refresh as a burst (every 250 ms for 10 s, agent 0.4.5+) on an agent machine, as its viewer starts or comes
-/// out: with ddx a still desktop sends no frame, and a single repaint got lost while Sunshine restarted capture
-/// (agent-broker, labs/052: picture on opening 9/10, median 0.84 s; asked late, at "connected", it did worse). Any
-/// machine is asked: one without the agent says so and nothing happens. Lab 054's switch
-/// (GPUVM_LAB_NO_SCREEN_REFRESH=1) leaves it out, to measure it.
-pub fn refresh_burst(app: &AppHandle, vm: &str) {
-    // The picture is showing now (open, reveal, back to it): its viewer settles first (it takes the mouse and moves the
-    // pointer as its window appears), which isn't the person taking control.
+/// A machine's picture came on screen (opened, revealed, back to it): its viewer settles first (it takes the mouse and
+/// moves the pointer as its window appears), which isn't the person taking control.
+pub fn picture_shown(vm: &str) {
     lock(&SHOWN_AT).get_or_insert_with(HashMap::new).insert(vm.to_string(), Instant::now());
-    if vm.is_empty() || std::env::var("GPUVM_LAB_NO_SCREEN_REFRESH").is_ok_and(|v| v == "1") {
-        return;
-    }
-    {
-        let mut b = lock(&BURSTS);
-        let b = b.get_or_insert_with(HashMap::new);
-        if b.get(vm).is_some_and(|t| t.elapsed() < Duration::from_secs(5)) {
-            return;
-        }
-        b.insert(vm.to_string(), Instant::now());
-    }
-    let app = app.clone();
-    let vm = vm.to_string();
-    tauri::async_runtime::spawn(async move {
-        let _ = call(&app, "Invoke-GpuVMAgent", json!({ "Name": vm, "Method": "screen.refresh", "Params": { "repeatMs": 10000 }, "TimeoutSec": 15 })).await;
-    });
 }
 
 /* ---------- deliveries being copied ---------- */

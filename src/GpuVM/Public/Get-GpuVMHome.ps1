@@ -49,7 +49,7 @@ function Get-GpuVMHome {
         # viewer, quietly), so "not paired" before that was a false alarm on copies that then streamed (lab 054).
         elseif ($state['streaming'] -and -not $state['streaming']['pairedClient'] -and
             -not ($state.Contains('use') -and $state['use'] -eq 'agent') -and -not (Test-GpuVMDisposable -State $state)) {
-            & $issue 'pairing' 'Moonlight isn''t paired with it yet' 'Pair' 'Connect-GpuVM' @{ Name = $vm.Name; Pair = $true }
+            & $issue 'pairing' 'The viewer isn''t paired with it yet' 'Pair' 'Connect-GpuVM' @{ Name = $vm.Name; Pair = $true }
         }
         $pending = @(if ($state.Contains('pendingApps')) { $state['pendingApps'] | Where-Object { $_ } })
         if ($pending.Count) {

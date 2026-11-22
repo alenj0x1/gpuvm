@@ -44,6 +44,8 @@ export function LiveOverlay() {
   const queue = useRef<Promise<void>>(Promise.resolve());
   const next = useRef(1);
   const at = useRef<Point>([0, 0]);
+  /** Events waiting behind the one playing: past two, they play at once (never far behind the machine). */
+  const waiting = useRef(0);
 
   useEffect(() => {
     const play = async (ev: LiveEvent) => {
@@ -51,7 +53,8 @@ export function LiveOverlay() {
       if (ev.screen?.w && ev.screen?.h) screen.current = ev.screen;
       if (ev.phase !== "start" || !ev.shapes?.length) return;
       const map = fit(screen.current);
-      const glide = async (p: Point, ms = GLIDE_MS) => { at.current = p; setCursor({ p: map(p), glide: ms }); await sleep(ms); };
+      const hurry = waiting.current > 2;
+      const glide = async (p: Point, ms = hurry ? 0 : GLIDE_MS) => { at.current = p; setCursor({ p: map(p), glide: ms }); await sleep(ms); };
       const mark = (p: Point, kind: Mark["kind"]) => {
         const id = next.current++;
         const [x, y] = map(p);
@@ -73,7 +76,7 @@ export function LiveOverlay() {
           const all = s.strokes.flat();
           const total = s.strokes.reduce((n, st) => n + st.slice(1).reduce((len, p, i) => len + Math.hypot(p[0] - st[i][0], p[1] - st[i][1]), 0), 0);
           // The machine draws at ~1500 desktop px/s (or in `ms`); the overlay follows at that pace, 3 s at most.
-          const ms = Math.min(3000, Math.max(250, s.ms ?? (total / 1500) * 1000));
+          const ms = hurry ? 0 : Math.min(3000, Math.max(250, s.ms ?? (total / 1500) * 1000));
           if (!all.length) continue;
           await glide(all[0]);
           for (const st of s.strokes) {
@@ -98,7 +101,10 @@ export function LiveOverlay() {
         }
       }
     };
-    const take = (ev: LiveEvent) => { queue.current = queue.current.then(() => play(ev)).catch(() => {}); };
+    const take = (ev: LiveEvent) => {
+      waiting.current++;
+      queue.current = queue.current.then(() => { waiting.current--; return play(ev); }).catch(() => {});
+    };
 
     if (!inTauri) {
       // Browser preview (?agent-live): a short loop of what an agent does.
@@ -117,8 +123,12 @@ export function LiveOverlay() {
     let gone = false;
     (async () => {
       const { getCurrentWebviewWindow } = await import("@tauri-apps/api/webviewWindow");
-      const u = await getCurrentWebviewWindow().listen<LiveEvent>("agent-live", (e) => take(e.payload));
-      if (gone) u(); else off = u;
+      const w = getCurrentWebviewWindow();
+      const u = await w.listen<LiveEvent>("agent-live", (e) => take(e.payload));
+      if (gone) { u(); return; }
+      off = u;
+      // Listening now: the app sends what came while this page loaded (live.rs).
+      await w.emit("agent-live-ready", {});
     })();
     return () => { gone = true; off?.(); };
   }, []);

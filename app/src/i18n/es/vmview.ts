@@ -162,7 +162,6 @@ export default {
   "Free on {drive} with everything full, {free}": "Libre en {drive} con todo lleno, {free}",
 
   // Options
-  "Changing capture": "Cambiando la captura",
   "Changing network": "Cambiando la red",
   "Applying": "Aplicando",
   "{n} threads left for your PC": "Quedan {n} hilos para tu PC",
@@ -210,10 +209,6 @@ export default {
   "Open on": "Abrir en",
   "Monitor the machine opens on": "Monitor donde se abre la máquina",
   "Capture": "Captura",
-  "The picture shows up as soon as you connect and exclusive full-screen games are visible. Windows admin prompts are answered from GpuVM.": "La imagen aparece apenas te conectas y se ven los juegos en pantalla completa exclusiva. Los avisos de administrador de Windows se responden desde GpuVM.",
-  "Admin prompts show in the viewer, but the picture can take a while to appear when connecting and exclusive full-screen games show black.": "Los avisos de administrador se ven en el visor, pero la imagen puede tardar en aparecer al conectar y los juegos en pantalla completa exclusiva se ven en negro.",
-  "Fast": "Rápida",
-  "Classic": "Clásica",
   "Advanced": "Avanzado",
   "Codec": "Códec",
   "The viewer picks the best one your PC can show.": "El visor elige el mejor que tu equipo puede mostrar.",

@@ -81,7 +81,7 @@ export interface VmOverview {
   use?: string | null;
   agentUser?: "agent" | "own" | null;
   client: ClientSettings | null;
-  options: { cpu: number; memoryGB: number; gpuPercent: number; diskGB: number; diskType: string; diskFreeGB: number; captureMode: "ddx" | "wgc"; networkIsolation: boolean; cleanup: CleanupLevelId; diskBudget?: DiskBudget | null } | null;
+  options: { cpu: number; memoryGB: number; gpuPercent: number; diskGB: number; diskType: string; diskFreeGB: number; networkIsolation: boolean; cleanup: CleanupLevelId; diskBudget?: DiskBudget | null } | null;
 }
 
 export type DisplayMode = "fullscreen" | "windowed" | "borderless";

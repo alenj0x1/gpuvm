@@ -223,6 +223,11 @@ fn take(vm: &str, name: &str) -> Result<(PathBuf, &'static str), String> {
         let _ = std::fs::remove_file(&target);
         return Err("copy".into());
     }
+    // Made of what the machine sent (the viewer writes it; a recording's video comes from the guest as it is): marked
+    // as from the internet, like a delivery, so Windows treats it with the same care (security review 2026-11-21).
+    let mut zone = target.clone().into_os_string();
+    zone.push(":Zone.Identifier");
+    let _ = std::fs::write(&zone, "[ZoneTransfer]\r\nZoneId=3\r\n");
     // The viewer's copy is deleted through the handle that was read (the same file, whatever its name says now).
     let mut disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
     // SAFETY: valid handle opened with DELETE access; the struct outlives the call.

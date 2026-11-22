@@ -1,8 +1,9 @@
 function Connect-GpuVM {
     <#
     .SYNOPSIS
-    Opens the VM in Moonlight with the image rendered by the GPU. Gets everything ready on its own: updates the driver
-    if it changed, powers on, waits for Windows and Sunshine, fixes the session and display, pairs and opens.
+    Gets a VM ready to be seen in GpuVM's viewer, with the image rendered by the GPU: updates the driver if it changed,
+    powers on, waits for Windows and Sunshine, fixes the session and display, pairs the viewer, and returns the stream
+    arguments ({ viewerLaunch }) for the app to open the viewer itself. Machines open only in GpuVM's viewer.
     .EXAMPLE
     Connect-GpuVM -Name win11
     Connect-GpuVM -Name win11 -Resolution 2560x1440 -Fps 120 -BitrateKbps 40000
@@ -20,21 +21,14 @@ function Connect-GpuVM {
         [ValidateLength(0, 300)][string]$Monitor,
         # Opens with this much memory when it doesn't fit as configured (saved, like changing it in Options).
         [ValidateRange(4, 256)][int]$MemoryGB,
-        # GpuVM's viewer: gets the machine ready and returns the stream arguments ({ viewerLaunch }) for the app to
-        # open the viewer itself, instead of opening Moonlight.
+        # Accepted for the app's calls; the viewer is the only way a machine opens (external Moonlight was removed).
         [switch]$Viewer
     )
     Assert-Admin
     $state = Get-GpuVMState -Name $Name
     if (-not $state['streaming']) { throw "The VM '$Name' was created without streaming." }
-    if ($Viewer) {
-        $moonlight = Get-GpuVMViewerPath
-        if (-not $moonlight) { throw 'GpuVM''s viewer isn''t installed. Install GpuVM again.' }
-    }
-    else {
-        $moonlight = Get-MoonlightPath
-        if (-not $moonlight) { throw 'Moonlight isn''t installed on this PC. Install it with: ./gpuvm.ps1 client-install' }
-    }
+    $viewerPath = Get-GpuVMViewerPath
+    if (-not $viewerPath) { throw 'GpuVM''s viewer isn''t installed. Install GpuVM again.' }
     Initialize-GpuVMRoot -Path $state['config']['vm']['root']
 
     $vm = Get-VM -Name $Name
@@ -59,15 +53,6 @@ function Connect-GpuVM {
         # Started from somewhere else (Hyper-V Manager) or before this version: it gets isolated now too.
         Update-GpuVMNetworkIsolation -Name $Name -State $state
         if ($vm.State -eq 'Paused') { Resume-VM -Name $Name }
-        # Already open in Moonlight (a second click, or opened by hand): brought to the front instead of opening another.
-        if (-not $Pair) {
-            $open = try { Find-MoonlightStream -Address (Get-GpuVMEndpoint -Name $Name).Address } catch { $null }
-            if ($open) {
-                Write-Step 'It''s already open'
-                Show-ProcessWindow -Id $open
-                return
-            }
-        }
     }
 
     $guest = Get-GpuVMGuestCredential -State $state
@@ -205,21 +190,18 @@ function Connect-GpuVM {
             catch { Write-Warning "Couldn't install GpuVM's Sunshine in the VM: $($_.Exception.Message)" }
             $state = Get-GpuVMState -Name $Name
         }
-        $captureMode = Get-GpuVMCaptureMode -State $state
-        if ($guest -and $done['capture'] -eq $captureMode -and -not $restartSunshine) { $prepared['capture'] = $captureMode }
+        if ($guest -and $done['capture'] -eq 'wgc' -and -not $restartSunshine) { $prepared['capture'] = 'wgc' }
         elseif ($guest) {
             try {
                 if ($restartSunshine) { Write-Step 'Sunshine is restarting to pick up the changes' }
-                # The mode the guest really uses: with a standard user signed in, WGC stays ddx (the service).
-                $effective = $captureMode
-                $null = Set-GuestCaptureMode -Name $Name -Credential $guest -Mode $captureMode -Restart:$restartSunshine -Effective ([ref]$effective)
-                $captureMode = $effective
-                $prepared['capture'] = $captureMode
+                $null = Set-GuestCaptureMode -Name $Name -Credential $guest -Restart:$restartSunshine
+                $prepared['capture'] = 'wgc'
             }
             catch { Write-Warning "Couldn't set Sunshine's capture: $($_.Exception.Message)" }
         }
-        # With WGC, administrator prompts are shown and answered from the app: the guest watcher, once per boot.
-        if ($guest -and $captureMode -eq 'wgc') {
+        # Administrator prompts (which the capture can't stream) are shown and answered from the app: the guest
+        # watcher, once per boot.
+        if ($guest) {
             if ($done['adminPrompt']) { $prepared['adminPrompt'] = $true }
             else {
                 try {
@@ -247,9 +229,9 @@ function Connect-GpuVM {
             Set-SunshineVirtualDisplay -Address $address -Credential $credential -OnlyDisplay:([bool]$state['config']['streaming']['disableHyperVVideo'] -or [string]$state['use'] -eq 'agent') -Name $Name -GuestCredential $guest
         }
 
-        $clientName = if ($Viewer) { Get-GpuVMViewerClientName } else { $env:COMPUTERNAME }
+        $clientName = Get-GpuVMViewerClientName
         if ($Pair -or -not (Test-SunshineClientPaired -Address $address -Credential $credential -ClientName $clientName)) {
-            Register-MoonlightPairing -Address $address -Credential $credential -MoonlightPath $moonlight -ClientName $clientName -HostAddress $endpoint.HostAddress -Quiet:$Viewer
+            Register-MoonlightPairing -Address $address -Credential $credential -MoonlightPath $viewerPath -ClientName $clientName -HostAddress $endpoint.HostAddress -Quiet
             $state = Get-GpuVMState -Name $Name
             $state['streaming']['pairedClient'] = $clientName
             $state['streaming']['pairedAt'] = (Get-Date).ToString('o')
@@ -265,7 +247,7 @@ function Connect-GpuVM {
         }
 
         # The speaker comes back ~60 s after Windows starts (usbip-win2 reattaches it), well after Sunshine answers
-        # (lab 019). If it is still on its way, Moonlight opens now and the speaker is checked once the picture is up.
+        # (lab 019). If it is still on its way, the viewer opens now and the audio is ready the next time.
         $audioLater = [bool]($audioCheck -and $audioCheck.Job.State -eq 'Running')
         if ((Test-GpuVMAudio $state['config']['streaming']) -and -not $audioLater) {
             if ($guest) {
@@ -304,53 +286,18 @@ function Connect-GpuVM {
     }
 
     Write-Step "Opening at $($client['resolution']) and $(Resolve-GpuVMStreamFps $client['fps']) FPS"
-    if ($Viewer) {
-        $state = Get-GpuVMState -Name $Name
-        $state['lastOpenedAt'] = (Get-Date).ToString('o')
-        if ($boot) { $state['guestPrepared'] = $prepared }
-        Save-GpuVMState $state
-        if (-not $audioLater) { Stop-GuestAudioCheck $audioCheck -TimeoutSec 0 }
-        else { Write-Warning 'The VM''s audio will be ready in a few seconds or the next time you open it.'; Stop-GuestAudioCheck $audioCheck -TimeoutSec 0 }
-        # The app waits for the viewer's first picture before the button goes back to "Abrir".
-        Write-Step 'Connecting the picture'
-        return [pscustomobject]@{
-            viewerLaunch = [pscustomobject]@{
-                arguments = @(Get-MoonlightStreamArguments -Address $address -Client $client)
-                monitor   = $target
-            }
-        }
-    }
-    $launched = Get-Date
-    # Moonlight runs as the signed-in user, not as administrator: it talks to a server the guest controls.
-    Start-UnelevatedProcess -FilePath $moonlight -ArgumentList (Get-MoonlightStreamArguments -Address $address -Client $client) | Out-Null
-    if ($target) {
-        try { Move-MoonlightToMonitor -Since $launched -Monitor $target }
-        catch { Write-Warning "Couldn't move Moonlight to $($target['name']): $($_.Exception.Message)" }
-    }
-    # For the home screen's "continue where you left off", and what is already done in this boot.
     $state = Get-GpuVMState -Name $Name
     $state['lastOpenedAt'] = (Get-Date).ToString('o')
     if ($boot) { $state['guestPrepared'] = $prepared }
     Save-GpuVMState $state
-    try {
-        Wait-MoonlightStream -Since $launched
-        $null = Invoke-AgentScreenRefresh -Name $Name
-        if ($audioLater) {
-            Write-Step 'Setting up the audio'
-            Stop-GuestAudioCheck $audioCheck
-            $audioCheck = $null
-            try {
-                $null = Install-GuestAudio -Name $Name -Credential $guest
-                # Changing Sunshine's sink now would restart it and cut the picture: it is only checked, and fixed on the
-                # next open (audioSink stays unmarked for this boot).
-                $sink = Get-GuestAudioSink -Name $Name -Credential $guest
-                $config = Invoke-SunshineApi -Address $address -Credential $credential -Path '/api/config'
-                if (-not $sink -or "$($config.PSObject.Properties['virtual_sink']?.Value)" -ne $sink) {
-                    Write-Warning 'The VM''s audio will be ready the next time you open it.'
-                }
-            }
-            catch { Write-Warning "Couldn't set up the audio inside the VM: $($_.Exception.Message)" }
+    if (-not $audioLater) { Stop-GuestAudioCheck $audioCheck -TimeoutSec 0 }
+    else { Write-Warning 'The VM''s audio will be ready in a few seconds or the next time you open it.'; Stop-GuestAudioCheck $audioCheck -TimeoutSec 0 }
+    # The app waits for the viewer's first picture before the button goes back to "Abrir".
+    Write-Step 'Connecting the picture'
+    return [pscustomobject]@{
+        viewerLaunch = [pscustomobject]@{
+            arguments = @(Get-MoonlightStreamArguments -Address $address -Client $client)
+            monitor   = $target
         }
     }
-    finally { Stop-GuestAudioCheck $audioCheck -TimeoutSec 0 }
 }

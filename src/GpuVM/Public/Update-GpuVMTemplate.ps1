@@ -137,7 +137,7 @@ function Add-TemplateLayer {
             $sw2 = [Diagnostics.Stopwatch]::StartNew()
             Wait-GuestReady -Name $copy -Credential $credential | Out-Null
             $null = Install-GuestSunshineCapture -Name $copy -Credential $credential
-            $null = Set-GuestCaptureMode -Name $copy -Credential $credential -Mode (Get-GpuVMCaptureMode -State (Get-GpuVMState -Name $copy))
+            $null = Set-GuestCaptureMode -Name $copy -Credential $credential
             $installed = @{ restarted = $false; ms = @{ total = $sw2.ElapsedMilliseconds } }
         }
         # The controllers' driver (ViGEmBus) too: every copy's first open installed it and restarted Sunshine for it,

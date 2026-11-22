@@ -1092,7 +1092,6 @@ InModuleScope GpuVM {
         It 'counts the watched machines for notices-only mode' {
             Mock Get-VM { @([pscustomobject]@{ Name = 'a'; State = 'Running' }, [pscustomobject]@{ Name = 'b'; State = 'Running' }) }
             Mock Get-GpuVMState { @{ streaming = @{ x = 1 } } }
-            Mock Get-GpuVMCaptureMode { 'wgc' }
             Mock Get-GuestAdminPrompt { if ($Name -eq 'b') { [pscustomobject]@{ id = 5; app = 'cmd'; publisher = 'p'; reading = $false } } }
             $r = Get-GpuVMAdminPrompt -WithWatched
             $r['watched'] | Should Be 2
@@ -2066,35 +2065,22 @@ InModuleScope GpuVM {
 
 InModuleScope GpuVM {
     Describe 'Sunshine is the service and GpuVM''s fork on every machine' {
-        It 'the capture mode is the same for every machine: wgc (the fork''s helper) unless ddx was chosen' {
-            Get-GpuVMCaptureMode -State @{ config = @{ streaming = @{} } } | Should Be 'wgc'
-            Get-GpuVMCaptureMode -State @{ config = @{ streaming = @{ captureMode = 'ddx' } } } | Should Be 'ddx'
-            Get-GpuVMCaptureMode -State @{ use = 'agent'; config = @{ streaming = @{} } } | Should Be 'wgc'
-            Get-GpuVMCaptureMode -State @{ use = 'agent'; config = @{ streaming = @{ captureMode = 'ddx' } } } | Should Be 'ddx'
-        }
-        It 'a guest without the fork''s helper keeps desktop duplication: wgc comes back as ddx' {
+        It 'a guest without the fork''s helper says so; the capture is set only when it changed' {
             $cred = [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force))
             Mock Write-Step { }
             Mock Write-Warning { }
             Mock Invoke-Guest { 'nofork-changed' }
-            $e = 'wgc'
-            Set-GuestCaptureMode -Name a -Credential $cred -Mode wgc -Effective ([ref]$e) | Should Be $true
-            $e | Should Be 'ddx'
+            Set-GuestCaptureMode -Name a -Credential $cred | Should Be $true
             Assert-MockCalled Write-Warning -Times 1
             Mock Invoke-Guest { 'changed' }
-            Set-GuestCaptureMode -Name a -Credential $cred -Mode wgc -Effective ([ref]$e) | Should Be $true
-            $e | Should Be 'wgc'
+            Set-GuestCaptureMode -Name a -Credential $cred | Should Be $true
             Mock Invoke-Guest { 'unchanged' }
-            Set-GuestCaptureMode -Name a -Credential $cred -Mode wgc | Should Be $false
+            Set-GuestCaptureMode -Name a -Credential $cred | Should Be $false
         }
-        It 'an agent machine can choose its capture like any other' {
-            Mock Assert-Admin { }
-            Mock Save-GpuVMState { $script:saved = $State }
-            Mock Get-VM { [pscustomobject]@{ State = 'Off' } }
-            Mock Get-GpuVMState { @{ use = 'agent'; streaming = @{ x = 1 }; config = @{ streaming = @{} } } }
-            (Set-GpuVMCapture -Name a -Mode ddx).captureMode | Should Be 'ddx'
-            (Set-GpuVMCapture -Name a -Mode wgc).captureMode | Should Be 'wgc'
-            $script:saved['config']['streaming']['captureMode'] | Should Be 'wgc'
+        It 'the guest script captures one way: no mode to choose any more' {
+            $code = Get-Content -Raw -LiteralPath (Get-RepoPath 'guest\capture-mode.ps1')
+            $code | Should Not Match "ValidateSet\('ddx'"
+            $code.Contains('capture = $want') | Should Be $true
         }
         It 'opening installs the fork only when the machine''s state doesn''t name this build''s' {
             $cred = [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force))
@@ -2135,7 +2121,6 @@ InModuleScope GpuVM {
             $script:saved['agent']['pending'] | Should Be $true
             $script:saved['agent']['signInAs'] | Should Be 'agent'
             $script:cloneConfig['vm']['network']['isolation'] | Should Be $true
-            Get-GpuVMCaptureMode -State $script:saved | Should Be 'wgc'
 
             Mock Read-GpuVMTemplate { @{ name = 't'; sizeGB = 64; edition = 'Pro'; streaming = @{}; guest = @{}; vhdPath = 'x'; config = @{ vm = @{} } } }
             New-GpuVM -Name copy1 -Template t -Confirm:$false | Out-Null
@@ -2168,25 +2153,6 @@ InModuleScope GpuVM {
             Test-Path $dir | Should Be $false
             ($w | Where-Object { $_ -is [System.Management.Automation.WarningRecord] }).Message | Should Match 'within the hour'
             Assert-MockCalled Remove-GpuVMAgentRegistration -Times 1 -Exactly -Scope It
-        }
-    }
-}
-
-InModuleScope GpuVM {
-    Describe 'A stream on an agent machine starts with a fresh frame' {
-        It 'asks the agent to repaint only on agent machines, and never fails the open' {
-            Mock Invoke-GpuVMAgent { $script:asked = "$Method $($Params.repeatMs)" }
-            Mock Get-GpuVMState { @{ use = 'agent' } }
-            $script:asked = $null
-            Invoke-AgentScreenRefresh -Name a | Should Be $true
-            $script:asked | Should Be 'screen.refresh 10000'
-            Mock Invoke-GpuVMAgent { throw 'Unknown method screen.refresh' }
-            Invoke-AgentScreenRefresh -Name a | Should Be $false
-            Mock Get-GpuVMState { @{ } }
-            Mock Invoke-GpuVMAgent { throw 'must not be called' }
-            Invoke-AgentScreenRefresh -Name a | Should Be $false
-            Mock Get-GpuVMState { throw 'no state' }
-            Invoke-AgentScreenRefresh -Name a | Should Be $false
         }
     }
 }
@@ -2523,7 +2489,7 @@ InModuleScope GpuVM {
             Mock Get-GpuVMAddress { '172.17.0.2' }
             Mock Get-SunshineCredential { $cred }
             Mock Wait-SunshineReady { $script:steps.Add('ready') }
-            Mock Set-GuestCaptureMode { $script:steps.Add("capture $Mode") }
+            Mock Set-GuestCaptureMode { $script:steps.Add("capture wgc") }
             Mock Set-SunshineVirtualDisplay { $script:steps.Add("display $([bool]$OnlyDisplay)") }
             Mock Install-GuestSunshineCapture { $script:steps.Add('fork'); 'installed' }
             Initialize-GuestStreamingForAgent -Name a -Credential $cred
@@ -2539,13 +2505,13 @@ InModuleScope GpuVM {
             Mock Get-GpuVMState { @{ use = 'agent'; streamingFromTemplate = $true; streaming = @{ x = 1 }; config = @{ streaming = @{ virtualDisplay = $true } } } }
             Mock Save-GpuVMState { $script:saved = $State }
             Mock Install-GuestSunshineCapture { $script:steps.Add('fork'); 'unchanged' }
-            Mock Set-GuestCaptureMode { $script:steps.Add("capture $Mode"); $false }
+            Mock Set-GuestCaptureMode { $script:steps.Add("capture wgc"); $false }
             $script:steps.Clear()
             Initialize-GuestStreamingForAgent -Name a -Credential $cred
             ($script:steps -join ',') | Should Be 'fork,capture wgc'
             $script:saved.Contains('streamingFromTemplate') | Should Be $false
             # The mode had to change after all: the full setup follows.
-            Mock Set-GuestCaptureMode { $script:steps.Add("capture $Mode"); $true }
+            Mock Set-GuestCaptureMode { $script:steps.Add("capture wgc"); $true }
             $script:steps.Clear()
             Initialize-GuestStreamingForAgent -Name a -Credential $cred
             ($script:steps -join ',') | Should Be 'fork,capture wgc,ready,capture wgc,ready,display True'

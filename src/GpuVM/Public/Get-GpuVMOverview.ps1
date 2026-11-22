@@ -66,7 +66,7 @@ function Get-GpuVMOverview {
             restorePoints  = if ($state -and $state.Contains('restorePoints')) { @($state['restorePoints']).Count } else { 0 }
             address        = $address
             # A Windows administrator prompt open in the VM (WGC can't stream it; the app offers Allow / Deny).
-            adminPrompt    = if ($state -and $state['streaming'] -and $vm.State -eq 'Running' -and (Get-GpuVMCaptureMode -State $state) -eq 'wgc') {
+            adminPrompt    = if ($state -and $state['streaming'] -and $vm.State -eq 'Running') {
                 try { Get-GuestAdminPrompt -Name $vm.Name } catch { $null }
             } else { $null }
             client         = if ($state -and $state['config']['streaming']) { $state['config']['streaming']['client'] } else { $null }
@@ -80,7 +80,6 @@ function Get-GpuVMOverview {
                     diskFreeGB = Get-DriveFreeGB $state['config']['vm']['root']
                     # The real room for this VM's disk: free space minus what the other VMs' disks can still grow.
                     diskBudget = $(try { Get-GpuVMDiskBudget -Root $state['config']['vm']['root'] -VMName $vm.Name } catch { $null })
-                    captureMode = Get-GpuVMCaptureMode -State $state
                     networkIsolation = Get-GpuVMNetworkIsolation -State $state
                     cleanup    = if ($state['config']['guest'].Contains('cleanup') -and $state['config']['guest']['cleanup']) { $state['config']['guest']['cleanup'] } else { 'none' }
                 }

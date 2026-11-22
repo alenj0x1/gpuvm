@@ -396,7 +396,7 @@ function Initialize-GuestStreamingForAgent {
     # capture mode are already there, Sunshine's display settings are too, so its start (~20 s on a fresh copy) isn't
     # waited for (lab 053 part 6).
     if ($state['streamingFromTemplate'] -and $helper -eq 'unchanged') {
-        $changed = Set-GuestCaptureMode -Name $Name -Credential $Credential -Mode (Get-GpuVMCaptureMode -State $state)
+        $changed = Set-GuestCaptureMode -Name $Name -Credential $Credential
         $state = Get-GpuVMState -Name $Name
         $state.Remove('streamingFromTemplate')
         Save-GpuVMState $state
@@ -405,7 +405,7 @@ function Initialize-GuestStreamingForAgent {
     $address = Get-GpuVMAddress -Name $Name -TimeoutSec 120
     $web = Get-SunshineCredential -State $state
     Wait-SunshineReady -Address $address -Credential $web -TimeoutSec 180 -Message 'Waiting for Sunshine'
-    $null = Set-GuestCaptureMode -Name $Name -Credential $Credential -Mode (Get-GpuVMCaptureMode -State $state)
+    $null = Set-GuestCaptureMode -Name $Name -Credential $Credential
     Wait-SunshineReady -Address $address -Credential $web -TimeoutSec 120 -Message 'Sunshine is restarting with the new settings'
     Set-SunshineVirtualDisplay -Address $address -Credential $web -OnlyDisplay -Name $Name -GuestCredential $Credential
 }
@@ -474,17 +474,6 @@ function Complete-GuestAgentRemoval {
     $r = try { Invoke-GuestAgentRemoval -Name $Name -Credential $Credential } catch { Write-Warning "Couldn't finish removing the agent inside '$Name': $($_.Exception.Message)"; return $false }
     # Still signed in as `agent` (the person's sign-in didn't take): left for the next open.
     -not ($r -and $r.PSObject.Properties['rebootNeeded'] -and $r.rebootNeeded -and @($r.notes) -match 'signed in')
-}
-
-# Once a stream is up on an agent machine: the agent repaints the whole desktop (screen.refresh, agent 0.3.8), so
-# Sunshine's ddx capture gets a fresh frame of a still desktop instead of staying black (1 connect in 3, lab 054).
-# Best effort and quiet: an older agent (bad_request), no agent connected or nobody signed in changes nothing.
-function Invoke-AgentScreenRefresh {
-    param([Parameter(Mandatory)][string]$Name)
-    $state = try { Get-GpuVMState -Name $Name } catch { $null }
-    if (-not $state -or [string]$state['use'] -ne 'agent') { return $false }
-    try { Invoke-GpuVMAgent -Name $Name -Method screen.refresh -Params @{ repeatMs = 10000 } -TimeoutSec 5 -ErrorAction Stop | Out-Null; $true }
-    catch { $false }
 }
 
 # New-GpuVM / Import-GpuVM -Use agent: remembers who signs in, waits for Windows when the machine runs, then sets the

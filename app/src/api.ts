@@ -45,7 +45,6 @@ export const api = {
   installedApps: (name: string) => ps<InstalledApp>("Get-GpuVMInstalledApp", { Name: name }),
   cleanupLevels: () => ps<CleanupLevel>("Get-GpuVMCleanup"),
   pasteToVm: (name: string) => ps("Send-GpuVMClipboard", { Name: name }),
-  setCapture: (name: string, mode: "ddx" | "wgc") => ps("Set-GpuVMCapture", { Name: name, Mode: mode }),
   setNetworkIsolation: (name: string, enabled: boolean) => ps("Set-GpuVMNetworkIsolation", { Name: name, Enabled: enabled }),
   saveProfile: (name: string, description: string, extendsName: string, settings: Partial<ProfileSettings>, previous?: string) =>
     ps<ProfileInfo>("Save-GpuVMProfile", { Name: name, Description: description, Extends: extendsName, Settings: settings, ...(previous ? { Previous: previous } : {}) }),
@@ -73,6 +72,13 @@ export const api = {
  *  broker decides everything; the app only shows it and passes on the person's answers. */
 // The broker's own shapes (times in ms, the client is a "connection"); agentStore.ts turns them into the app's types.
 type Raw = Record<string, unknown>;
+/** After Settings › Agents wrote to the service: the app's poll reads the settings again at once (its cached copy
+ *  would put the old value back on the sliders). Passes the result through. */
+async function settingsChanged<T>(result: T): Promise<T> {
+  if (inTauri) await import("@tauri-apps/api/core").then(({ invoke }) => invoke("agent_settings_changed")).catch(() => {});
+  return result;
+}
+
 export const agents = {
   /** The agent sessions: who, on which machine, doing what, how far into the budget, its last steps. */
   clients: () => ps<Raw>("Get-GpuVMAgentClient"),
@@ -99,12 +105,6 @@ export const agents = {
     ps("Suspend-GpuVMAgent", { Connection: connection, Reason: reason, Message: reason === "control" ? "You took control" : "Paused by you" }),
   /** Only that machine goes back to the session (one it holds besides may still be the person's). */
   resume: (connection: string, machine: string) => ps("Resume-GpuVMAgent", connection ? { Name: machine, Connection: connection } : { Name: machine }),
-  /** The guest repaints its whole desktop (agent 0.3.8, no input, nothing moved): with ddx a still desktop sends no
-   *  frame and the picture stayed black after connecting. From the app's pipe, no session. */
-  refreshScreen: (name: string) =>
-    // A burst (every 250 ms for 10 s): a single repaint got lost while Sunshine/ddx restarted capture (agent-broker,
-    // lab: picture on opening 9/10, median 0.84 s).
-    ps("Invoke-GpuVMAgent", { Name: name, Method: "screen.refresh", Params: { repeatMs: 10000 }, TimeoutSec: 15 }),
   /** The kill switch: one session, or every one with "*". */
   stop: (connection: string) => ps("Stop-GpuVMAgentClient", connection === "*" ? { All: true } : { Connection: connection }),
   /** Per client (by its name, so it stays for its next sessions): low-risk approvals from the client itself. */
@@ -112,13 +112,13 @@ export const agents = {
   /** Settings › Agents, only when the person moves it: the service keeps it (never written at startup). */
   /** Each machine's agent: name, state (ready | no-display | starting | off | no-agent), lastError. */
   machines: () => ps<Record<string, unknown>>("Get-GpuVMAgent"),
-  setApprovalTimeout: (seconds: number) => ps("Set-GpuVMAgentSettings", { ApprovalTimeoutSec: seconds }),
+  setApprovalTimeout: (seconds: number) => ps("Set-GpuVMAgentSettings", { ApprovalTimeoutSec: seconds }).then(settingsChanged),
   /** Finished sessions, newest first (the service keeps the last ~1000). */
   history: (limit = 200) => (inTauri
     ? ps<{ sessions?: Record<string, unknown>[] }>("Get-GpuVMAgentHistory", { Limit: limit }).then((r) => r[0]?.sessions ?? [])
     : Promise.resolve(mock.agentHistory())),
   /** The limit of new sessions in minutes, 0 = none; the action count is never limited from the app. */
-  setSessionLimit: (minutes: number) => ps("Set-GpuVMAgentSettings", { MaxMinutes: minutes, MaxSteps: 0 }),
+  setSessionLimit: (minutes: number) => ps("Set-GpuVMAgentSettings", { MaxMinutes: minutes, MaxSteps: 0 }).then(settingsChanged),
   /** forTask: allowed again for the rest of this task (never forever). */
   answer: (id: string, allow: boolean, forTask = false) => ps("Resolve-GpuVMAgentRequest", { Id: id, Allow: allow, ...(forTask ? { ForTask: true } : {}) }),
   resolveOffer: (id: string, accept: boolean) => ps("Resolve-GpuVMAgentOffer", { Id: id, Accept: accept }),

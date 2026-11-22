@@ -41,7 +41,6 @@ function Resolve-GpuVMSettings {
         $config['vm']['root'] = $State['config']['vm']['root']
         if ($State['config']['streaming'] -and $config['streaming']) {
             $config['streaming']['client'] = $State['config']['streaming']['client']
-            if ($State['config']['streaming'].Contains('captureMode')) { $config['streaming']['captureMode'] = $State['config']['streaming']['captureMode'] }
         }
     }
     else {

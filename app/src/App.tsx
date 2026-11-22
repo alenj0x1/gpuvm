@@ -420,9 +420,6 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     return () => { offs.forEach((o) => o.then((f) => f())); };
   }, [leaveToHome]);
 
-  // An agent machine's repaint (screen.refresh as a 10 s burst) is asked by the Rust side as its viewer starts and as
-  // it comes out (agent::refresh_burst), not from here after "connected": asked late it did worse (labs/052).
-
   const run = useCallback(async (vm: string, label: string, task: () => Promise<unknown>) => {
     setPending((p) => ({ ...p, [vm]: label }));
     try { await task(); await refresh(); return true; }

@@ -15,7 +15,7 @@ const vms: VmOverview[] = [
     memoryAssignedGB: 8, memoryDemandGB: 5.1, uptimeSeconds: 4320, hasGpu: true, gpuName: "NVIDIA GeForce RTX 4060",
     gpuPercent: 61, driverInSync: true, fits: true, fitGB: 6, missingGB: 0, streaming: true, paired: true, guestCredential: true, address: "172.29.111.201",
     client: { app: "Desktop", resolution: "1920x1080", fps: 0, bitrateKbps: 0, codec: "auto", vsync: true, framePacing: false, mouse: "capture" },
-    options: { cpu: 8, memoryGB: 8, gpuPercent: 100, diskGB: 200, diskType: "Fixed", diskFreeGB: 232, captureMode: "wgc", networkIsolation: true, cleanup: "none", diskBudget: { drive: "C:", freeGB: 232, promisedGB: 86, marginGB: 20, availableGB: 126, sizeGB: 200, usedGB: 61, maxGB: 326, others: [{ vm: "estudio", promisedGB: 86 }] } },
+    options: { cpu: 8, memoryGB: 8, gpuPercent: 100, diskGB: 200, diskType: "Fixed", diskFreeGB: 232, networkIsolation: true, cleanup: "none", diskBudget: { drive: "C:", freeGB: 232, promisedGB: 86, marginGB: 20, availableGB: 126, sizeGB: 200, usedGB: 61, maxGB: 326, others: [{ vm: "estudio", promisedGB: 86 }] } },
   },
   {
     id: "a1b2c3d4", name: "win11-pruebas", state: "Off", managed: true, profile: "balanced",
@@ -23,7 +23,7 @@ const vms: VmOverview[] = [
     memoryAssignedGB: 0, memoryDemandGB: 0, uptimeSeconds: 0, hasGpu: true, gpuName: "NVIDIA GeForce RTX 4060",
     gpuPercent: 0, driverInSync: false, fits: false, fitGB: 6, missingGB: 1.9, streaming: true, paired: false, guestCredential: true, restorePoints: 2, address: null,
     client: { app: "Desktop", resolution: "2560x1440", fps: 120, bitrateKbps: 40000, codec: "HEVC" },
-    options: { cpu: 8, memoryGB: 8, gpuPercent: 100, diskGB: 200, diskType: "Fixed", diskFreeGB: 232, captureMode: "wgc", networkIsolation: true, cleanup: "none", diskBudget: { drive: "C:", freeGB: 232, promisedGB: 86, marginGB: 20, availableGB: 126, sizeGB: 200, usedGB: 61, maxGB: 326, others: [{ vm: "estudio", promisedGB: 86 }] } },
+    options: { cpu: 8, memoryGB: 8, gpuPercent: 100, diskGB: 200, diskType: "Fixed", diskFreeGB: 232, networkIsolation: true, cleanup: "none", diskBudget: { drive: "C:", freeGB: 232, promisedGB: 86, marginGB: 20, availableGB: 126, sizeGB: 200, usedGB: 61, maxGB: 326, others: [{ vm: "estudio", promisedGB: 86 }] } },
   },
   {
     // GpuVM's demo machines are all Windows: it only creates Windows 10 and 11 VMs.
@@ -31,14 +31,14 @@ const vms: VmOverview[] = [
     processorCount: 6, cpuPercent: 0, memoryStartupGB: 6, memoryAssignedGB: 0, memoryDemandGB: 0, uptimeSeconds: 0,
     hasGpu: true, gpuName: "NVIDIA GeForce RTX 4060", gpuPercent: 0, driverInSync: true, fits: true, fitGB: 6, missingGB: 0, streaming: true, paired: true,
     guestCredential: true, address: null, client: { app: "Desktop", resolution: "1920x1080", fps: 60, bitrateKbps: 0, codec: "auto" },
-    options: { cpu: 6, memoryGB: 6, gpuPercent: 60, diskGB: 128, diskType: "Dynamic", diskFreeGB: 232, captureMode: "wgc", networkIsolation: true, cleanup: "privacy", diskBudget: { drive: "C:", freeGB: 232, promisedGB: 0, marginGB: 20, availableGB: 126, sizeGB: 128, usedGB: 42, maxGB: 254, others: [] } },
+    options: { cpu: 6, memoryGB: 6, gpuPercent: 60, diskGB: 128, diskType: "Dynamic", diskFreeGB: 232, networkIsolation: true, cleanup: "privacy", diskBudget: { drive: "C:", freeGB: 232, promisedGB: 0, marginGB: 20, availableGB: 126, sizeGB: 128, usedGB: 42, maxGB: 254, others: [] } },
   },
   {
     id: "d15b0sa1", name: "juegos-desechable", state: "Running", managed: true, profile: "balanced", edition: "Windows 10 Pro", generation: 2,
     processorCount: 8, cpuPercent: 12, memoryStartupGB: 6, memoryAssignedGB: 6, memoryDemandGB: 3.2, uptimeSeconds: 640,
     hasGpu: true, gpuName: "NVIDIA GeForce RTX 4060", gpuPercent: 18, driverInSync: true, fits: true, fitGB: 6, missingGB: 0, streaming: true, paired: true,
     guestCredential: true, disposable: true, address: "172.29.111.214", client: { app: "Desktop", resolution: "1920x1080", fps: 60, bitrateKbps: 0, codec: "auto" },
-    options: { cpu: 8, memoryGB: 6, gpuPercent: 100, diskGB: 128, diskType: "Differencing", diskFreeGB: 232, captureMode: "wgc", networkIsolation: true, cleanup: "none", diskBudget: null },
+    options: { cpu: 8, memoryGB: 6, gpuPercent: 100, diskGB: 128, diskType: "Differencing", diskFreeGB: 232, networkIsolation: true, cleanup: "none", diskBudget: null },
   },
 ];
 
@@ -222,8 +222,6 @@ export async function ps(cmd: string, args: Record<string, unknown>): Promise<un
     case "Set-GpuVMNetworkIsolation":
       vms.find((v) => v.name === args.Name)!.options!.networkIsolation = args.Enabled as boolean;
       return [];
-    case "Set-GpuVMCapture":
-      vms.find((v) => v.name === args.Name)!.options!.captureMode = args.Mode as "ddx" | "wgc";
       return [];
     case "Send-GpuVMClipboard":
       await wait(600);

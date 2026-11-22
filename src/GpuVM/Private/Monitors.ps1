@@ -1,6 +1,4 @@
-﻿# The host's monitors, and placing Moonlight on the one chosen to open a VM on. Moonlight has no option for this: it
-# streams on the monitor its own window is on, and Windows places that window anywhere. So GpuVM moves Moonlight's
-# window to the chosen monitor as soon as it appears, before the stream window is created.
+﻿# The host's monitors, to choose the one a VM opens on (GpuVM's viewer opens there; the app places it).
 # A monitor is saved by its device path, which stays the same across restarts and when other monitors change;
 # "primary" (or nothing) follows whatever monitor Windows has as the primary one.
 
@@ -96,46 +94,6 @@ public static class GpuVMMonitors {
         list.Sort((a, b) => a.X != b.X ? a.X.CompareTo(b.X) : a.Y.CompareTo(b.Y));
         return list;
     }
-
-    // The visible top-level windows of a process, as "handle|class" (Moonlight: its Qt window, then SDL's stream window).
-    public static List<string> Windows(int pid) {
-        var found = new List<string>();
-        EnumWindows((h, l) => {
-            uint owner;
-            GetWindowThreadProcessId(h, out owner);
-            if (owner == (uint)pid && IsWindowVisible(h)) {
-                var name = new System.Text.StringBuilder(128);
-                GetClassName(h, name, name.Capacity);
-                found.Add(h.ToInt64() + "|" + name);
-            }
-            return true;
-        }, IntPtr.Zero);
-        return found;
-    }
-
-    // Moves a window onto the monitor whose top-left corner is (x, y) and size w x h, centered and keeping its size
-    // (shrunk to fit). A maximized window is restored first so it can move, then maximized there again.
-    // Returns true when the window ends up with its center inside that monitor.
-    public static bool MoveTo(IntPtr hWnd, int x, int y, int w, int h) {
-        IntPtr previous = SetThreadDpiAwarenessContext(PerMonitorV2);
-        try {
-            if (hWnd == IntPtr.Zero || !IsWindowVisible(hWnd)) return false;
-            RECT rect;
-            if (!GetWindowRect(hWnd, out rect)) return false;
-            int cx = (rect.Left + rect.Right) / 2, cy = (rect.Top + rect.Bottom) / 2;
-            if (cx >= x && cx < x + w && cy >= y && cy < y + h) return true;
-            bool maximized = IsZoomed(hWnd);
-            if (maximized) { ShowWindow(hWnd, 9); GetWindowRect(hWnd, out rect); }
-            int width = Math.Min(rect.Right - rect.Left, w), height = Math.Min(rect.Bottom - rect.Top, h);
-            // SWP_NOZORDER | SWP_NOACTIVATE
-            SetWindowPos(hWnd, IntPtr.Zero, x + (w - width) / 2, y + (h - height) / 2, width, height, 0x0004 | 0x0010);
-            if (maximized) ShowWindow(hWnd, 3);
-            if (!GetWindowRect(hWnd, out rect)) return false;
-            cx = (rect.Left + rect.Right) / 2; cy = (rect.Top + rect.Bottom) / 2;
-            return cx >= x && cx < x + w && cy >= y && cy < y + h;
-        }
-        finally { if (previous != IntPtr.Zero) SetThreadDpiAwarenessContext(previous); }
-    }
 }
 '@
 }
@@ -171,35 +129,3 @@ function Resolve-HostMonitor {
     if ($primary) { $primary } else { $all[0] }
 }
 
-# Keeps Moonlight's windows (started since $Since) on the monitor until its stream window is there. The stream
-# window is created on the monitor the main window is on, so the main one is moved as soon as it appears; Moonlight
-# can still put it back while it starts, so it is checked again, and a stream window that opened elsewhere is moved
-# too (it stays there, fullscreen included).
-function Move-MoonlightToMonitor {
-    param(
-        [Parameter(Mandatory)][datetime]$Since,
-        [Parameter(Mandatory)][System.Collections.IDictionary]$Monitor,
-        [int]$TimeoutSec = 30
-    )
-    $deadline = (Get-Date).AddSeconds($TimeoutSec)
-    $seen = $false
-    # The stream window goes fullscreen a moment after it appears: it has to stay on the monitor for a second.
-    $streamSince = $null
-    while ((Get-Date) -lt $deadline) {
-        $processes = @(Get-Process Moonlight -ErrorAction SilentlyContinue | Where-Object { $_.StartTime -ge $Since.AddSeconds(-2) })
-        if ($seen -and -not $processes) { return }
-        foreach ($process in $processes) {
-            $seen = $true
-            foreach ($window in [GpuVMMonitors]::Windows($process.Id)) {
-                $handle, $class = $window.Split('|', 2)
-                $placed = [GpuVMMonitors]::MoveTo([IntPtr][long]$handle, $Monitor['x'], $Monitor['y'], $Monitor['width'], $Monitor['height'])
-                if ($class -like 'SDL*') {
-                    if (-not $placed) { $streamSince = $null }
-                    elseif (-not $streamSince) { $streamSince = Get-Date }
-                    elseif (((Get-Date) - $streamSince).TotalSeconds -ge 1) { return }
-                }
-            }
-        }
-        Start-Sleep -Milliseconds 50
-    }
-}

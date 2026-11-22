@@ -298,10 +298,9 @@ function Update-SunshineConfig {
     foreach ($key in $Settings.Keys) { $body[$key] = $Settings[$key] }
     Invoke-SunshineApi -Address $Address -Credential $Credential -Method POST -Path '/api/config' -Body $body | Out-Null
     if ($Name -and $GuestCredential) {
-        # Restarted as GpuVM runs it: the service, in the machine's own capture mode (this also moves a machine from
+        # Restarted as GpuVM runs it: the service, capturing through the fork's helper (this also moves a machine from
         # before the fork off its user-mode task).
-        $mode = Get-GpuVMCaptureMode -State (Get-GpuVMState -Name $Name)
-        $null = Set-GuestCaptureMode -Name $Name -Credential $GuestCredential -Mode $mode -Restart
+        $null = Set-GuestCaptureMode -Name $Name -Credential $GuestCredential -Restart
     }
     else {
         # Sunshine drops the connection when restarting; the error from that call is expected.
@@ -721,15 +720,6 @@ function Test-SunshineClientPaired {
     ($clients | ConvertTo-Json -Depth 6) -match [regex]::Escape("`"$ClientName`"")
 }
 
-# Only Moonlight installed under Program Files is accepted: the app runs as administrator and decides which
-# program to launch, so a Moonlight.exe from folders any user program can write to is never chosen.
-function Get-MoonlightPath {
-    @(
-        (Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Moonlight Game Streaming\Moonlight.exe')
-        (Join-Path ${env:ProgramFiles(x86)} 'Moonlight Game Streaming\Moonlight.exe')
-    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
-}
-
 # GpuVM's own viewer (fork of Moonlight, repo gpuvm-viewer), installed next to the module. The app launches it
 # itself (unelevated, with a private pipe); the module only pairs it and returns the stream arguments.
 function Get-GpuVMViewerPath {
@@ -795,54 +785,6 @@ function Remove-UnelevatedTask {
     Unregister-ScheduledTask -TaskName $TaskName -TaskPath '\GpuVM\' -Confirm:$false -ErrorAction SilentlyContinue
 }
 
-# Id of a Moonlight already streaming this address (opened by GpuVM or by hand), so a second click doesn't open another.
-function Find-MoonlightStream {
-    param([Parameter(Mandatory)][string]$Address)
-    $pattern = "\bstream\s+`"?$([regex]::Escape($Address))`"?(\s|$)"
-    Get-CimInstance Win32_Process -Filter "Name='Moonlight.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -match $pattern } | Select-Object -First 1 -ExpandProperty ProcessId
-}
-
-# Brings a window to the front. Windows only lets the foreground app do that, so an Alt press (which changes
-# nothing by itself) lets this process take the foreground first.
-function Show-ProcessWindow {
-    param([Parameter(Mandatory)][int]$Id)
-    if (-not ('GpuVM.Foreground' -as [type])) {
-        Add-Type -Namespace GpuVM -Name Foreground -MemberDefinition @'
-[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
-[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-[DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
-[DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
-'@
-    }
-    $handle = (Get-Process -Id $Id -ErrorAction SilentlyContinue).MainWindowHandle
-    if (-not $handle -or $handle -eq [IntPtr]::Zero) { return }
-    if ([GpuVM.Foreground]::IsIconic($handle)) { [GpuVM.Foreground]::ShowWindow($handle, 9) | Out-Null }
-    [GpuVM.Foreground]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero)
-    [GpuVM.Foreground]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero)
-    [GpuVM.Foreground]::SetForegroundWindow($handle) | Out-Null
-}
-
-# Moonlight's window shows up at once but stays black until the first frame: 3 s with the VM already on, 17 s right
-# after it booted (lab 019). Waiting for it keeps the job, and the button, busy until the picture is there.
-# Ends early if Moonlight closes (it shows its own error) or writes no log here (it runs under another account).
-function Wait-MoonlightStream {
-    param([Parameter(Mandatory)][datetime]$Since, [int]$TimeoutSec = 60)
-    Write-Step 'Connecting the picture'
-    $deadline = (Get-Date).AddSeconds($TimeoutSec)
-    $firstSeen = $null
-    while ((Get-Date) -lt $deadline) {
-        $running = @(Get-Process Moonlight -ErrorAction SilentlyContinue | Where-Object { $_.StartTime -ge $Since.AddSeconds(-2) })
-        if ($running) { if (-not $firstSeen) { $firstSeen = Get-Date } }
-        elseif ($firstSeen) { return }
-        $log = Get-ChildItem $env:TEMP -Filter 'Moonlight*.log' -ErrorAction SilentlyContinue |
-            Where-Object LastWriteTime -ge $Since | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-        if ($log -and (Select-String -LiteralPath $log.FullName -Pattern 'Video stream is' -Quiet)) { return }
-        if (-not $log -and $firstSeen -and ((Get-Date) - $firstSeen).TotalSeconds -gt 10) { return }
-        Start-Sleep -Milliseconds 500
-    }
-}
-
 # Picks the pairing request that Moonlight on this host started. Another device on the guest's network
 # could ask to pair at the same time; its request must not get the PIN. Sunshine reports where the request
 # came from (address), which must be the host's IP on the VM's network; without an address, the name must match.
@@ -893,17 +835,17 @@ function Register-MoonlightPairing {
             }
             else { Start-Sleep -Seconds 1 }
         }
-        if (-not $submitted) { throw 'Moonlight didn''t ask to pair in time.' }
+        if (-not $submitted) { throw 'The viewer didn''t ask to pair in time.' }
 
         # Moonlight is not a child of this process: its exit code is the task's last result.
         $deadline = (Get-Date).AddSeconds($TimeoutSec)
         while (-not ($state = Get-UnelevatedTaskState -TaskName $task).Finished) {
-            if ((Get-Date) -gt $deadline) { throw 'Moonlight didn''t finish pairing.' }
+            if ((Get-Date) -gt $deadline) { throw 'The viewer didn''t finish pairing.' }
             Start-Sleep -Seconds 1
         }
-        if ($state.ExitCode -ne 0) { throw "Moonlight ended pairing with code $($state.ExitCode)." }
+        if ($state.ExitCode -ne 0) { throw "The viewer ended pairing with code $($state.ExitCode)." }
         if (-not (Test-SunshineClientPaired -Address $Address -Credential $Credential -ClientName $ClientName)) {
-            throw 'Sunshine didn''t record Moonlight''s pairing.'
+            throw 'Sunshine didn''t record the viewer''s pairing.'
         }
     }
     finally {

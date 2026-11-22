@@ -64,8 +64,8 @@ function Test-GpuVMHost {
     }
 
     if ($config['streaming'] -and $config['streaming']['provider'] -ne 'none') {
-        $moonlight = Get-MoonlightPath
-        $checks.Add((New-CheckResult 'Moonlight' ($moonlight ? 'Ok' : 'Warn') ($moonlight ? $moonlight : 'Not installed; it''s needed to see the VM. Install it with: ./gpuvm.ps1 client-install')))
+        $viewer = Get-GpuVMViewerPath
+        $checks.Add((New-CheckResult 'Viewer' ($viewer ? 'Ok' : 'Warn') ($viewer ? $viewer : 'GpuVM''s viewer is missing; it''s needed to see the VM. Install GpuVM again.')))
         $manifest = Get-ComponentManifest
         $components = (Get-StreamingComponentNames $config['streaming'] | ForEach-Object { "$_ $($manifest[$_]['version'])" }) -join ', '
         $checks.Add((New-CheckResult 'Streaming' Ok "$components (downloaded and verified when the VM is created)"))
