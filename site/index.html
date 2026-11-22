@@ -18,6 +18,10 @@
   (function () {
     var d = document.documentElement, s = {};
     try { s = JSON.parse(localStorage.getItem("gpuvm-site") || "{}") || {}; } catch (e) {}
+    // ?theme= and ?lang= (the page shown inside the demos' browser window) win for this load only, never stored.
+    var q = new URLSearchParams(location.search);
+    if (q.get("theme") === "light" || q.get("theme") === "dark") s.mode = q.get("theme");
+    if (q.get("lang") === "es" || q.get("lang") === "en") s.lang = q.get("lang");
     var mode = s.mode === "light" || s.mode === "dark" ? s.mode : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
     var lang = s.lang === "es" || s.lang === "en" ? s.lang : "es";
     var accents = ["blue", "violet", "teal", "green", "amber"];

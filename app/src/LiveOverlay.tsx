@@ -12,7 +12,7 @@ type Shape =
   | { type: "click"; x: number; y: number; button?: string; count?: number }
   | { type: "move"; x: number; y: number }
   | { type: "scroll"; x: number; y: number; dy?: number; dx?: number }
-  | { type: "drag"; strokes: Point[][]; ms?: number | null }
+  | { type: "drag"; strokes: Point[][]; ms?: number | null; color?: string; width?: number }
   | { type: "type"; chars: number }
   | { type: "key"; keys: string }
   | { type: "wait"; ms: number }
@@ -20,7 +20,7 @@ type Shape =
 export interface LiveEvent { phase: "start" | "end"; step: number; clientName?: string | null; method?: string; intent?: string | null; shapes?: Shape[] | null; screen?: { w: number; h: number } | null }
 
 interface Mark { id: number; x: number; y: number; kind: "ring" | "double" | "scroll" }
-interface Stroke { id: number; d: string; length: number; ms: number; fading: boolean }
+interface Stroke { id: number; d: string; length: number; ms: number; fading: boolean; color?: string; width?: number }
 interface Chip { id: number; text: string }
 
 /** Desktop pixels → the overlay's pixels: the picture is fitted whole (letterboxed) in the viewer. */
@@ -39,8 +39,10 @@ const keyLabel = (keys: string) => keys.split("+").map((k) => k.trim()).filter(B
 const GLIDE_MS = 240;
 
 /** `script`: events to play in a loop instead of the app's (the website's demo), with `keep` strokes staying drawn until
- *  the loop starts over and `onStep` told each step as it plays (for its notch line). */
-export function LiveOverlay({ script, keep, onStep }: { script?: LiveEvent[]; keep?: boolean; onStep?: (ev: LiveEvent | null) => void } = {}) {
+ *  the loop starts over and `onStep` told each step as it plays (for its notch line). With `onEnd` the script plays
+ *  once and `onEnd` is called after its last pause (the website alternates scenes); `pause` is the wait between its
+ *  steps. In a script, a drag can carry its own `color` and `width` (a drawing) and `wait` holds the step. */
+export function LiveOverlay({ script, keep, onStep, onEnd, pause }: { script?: LiveEvent[]; keep?: boolean; onStep?: (ev: LiveEvent | null) => void; onEnd?: () => void; pause?: number } = {}) {
   const box = useRef<HTMLDivElement>(null);
   const [name, setName] = useState("");
   const [cursor, setCursor] = useState<{ p: Point; glide: number } | null>(null);
@@ -80,6 +82,7 @@ export function LiveOverlay({ script, keep, onStep }: { script?: LiveEvent[]; ke
         else if (s.type === "scroll") { await glide([s.x, s.y]); mark([s.x, s.y], "scroll"); }
         else if (s.type === "key") say(keyLabel(s.keys));
         else if (s.type === "type") say(t("Typing"));
+        else if (s.type === "wait" && script) await sleep(s.ms);
         else if (s.type === "drag") {
           const all = s.strokes.flat();
           const total = s.strokes.reduce((n, st) => n + st.slice(1).reduce((len, p, i) => len + Math.hypot(p[0] - st[i][0], p[1] - st[i][1]), 0), 0);
@@ -94,7 +97,7 @@ export function LiveOverlay({ script, keep, onStep }: { script?: LiveEvent[]; ke
             const stLen = st.slice(1).reduce((len, p, i) => len + Math.hypot(p[0] - st[i][0], p[1] - st[i][1]), 0);
             const stMs = total > 0 ? (ms * stLen) / total : ms / s.strokes.length;
             const id = next.current++;
-            setStrokes((list) => [...list.slice(-30), { id, d: "M" + pts.map((p) => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" L"), length, ms: stMs, fading: false }]);
+            setStrokes((list) => [...list.slice(keep ? -600 : -30), { id, d: "M" + pts.map((p) => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" L"), length, ms: stMs, fading: false, color: s.color, width: s.width }]);
             // The cursor rides the stroke: a few hops along it.
             const hops = Math.max(2, Math.min(24, Math.round(stMs / 40)));
             for (let h = 1; h <= hops; h++) {
@@ -132,9 +135,10 @@ export function LiveOverlay({ script, keep, onStep }: { script?: LiveEvent[]; ke
             if (!alive) return;
             take(ev);
             await queue.current;
-            await sleep(script ? 900 : 1300);
+            await sleep(script ? pause ?? 900 : 1300);
           }
           await sleep(1800);
+          if (onEnd) { onEnd(); return; }
           if (keep) setStrokes([]);
         }
       })();
@@ -168,7 +172,8 @@ export function LiveOverlay({ script, keep, onStep }: { script?: LiveEvent[]; ke
       <svg className="lv-strokes">
         {strokes.map((s) => (
           <path key={s.id} d={s.d} className={s.fading ? "fading" : ""}
-            style={{ strokeDasharray: s.length, strokeDashoffset: 0, animation: `lv-draw ${Math.round(s.ms)}ms linear`, ["--len" as string]: s.length }} />
+            style={{ strokeDasharray: s.length, strokeDashoffset: 0, animation: `lv-draw ${Math.round(s.ms)}ms linear`, ["--len" as string]: s.length,
+              ...(s.color ? { stroke: s.color, opacity: 1 } : {}), ...(s.width ? { strokeWidth: s.width } : {}) }} />
         ))}
       </svg>
       {marks.map((m) => <span key={m.id} className={`lv-mark ${m.kind}`} style={{ left: m.x, top: m.y }} />)}

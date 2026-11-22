@@ -4,7 +4,7 @@
 // styles, so neither the site's CSS nor the app's leak into each other. They all follow the page's language, light or
 // dark mode, accent and world (configure()), and the app's own Settings change the page back ("gpuvm-embed-prefs").
 // Built by vite.embed.config.ts into site/assets/embed.js.
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { api, onJob, startJob as runJob } from "./api";
 import { App } from "./App";
@@ -27,7 +27,8 @@ import {
 } from "@tabler/icons-react";
 import type { HostMonitor, MouseMode, VmOverview } from "./types";
 import appCss from "./styles.css?inline";
-import { MachineDesktop } from "./MachineDesktop";
+import { BAR, GLYPHS, MachineDesktop, PAINT_COLORS, SITE, browserLayout, paintLayout, stageBox, termBar,
+  type BrowserStage, type Frac, type Kind, type PaintStage, type PaintTool, type Stage, type StageWindow, type TermStage } from "./MachineDesktop";
 import { LiveOverlay, type LiveEvent } from "./LiveOverlay";
 import { StatusRow, type StatusItem } from "./StatusNotch";
 import { ViewerPanel } from "./ViewerPanel";
@@ -355,55 +356,238 @@ function ViewerDemo() {
   );
 }
 
-/** The agents chapter: an agent drawing in Paint on its machine, with the app's own overlay (cursor, rings, strokes,
- *  keys) and its line in the status notch, in a loop. The script is laid out in fractions of the desktop and turned
- *  into its pixels once measured, so the strokes land on the Paint canvas at any size. */
+/* ---------- The agents chapter ---------- */
+
+// An agent working on its machine with the app's own overlay (cursor, rings, strokes, keys) and its line in the status
+// notch, in three scenes that take turns: a drawing in Paint, an app installed with winget, a video found and played in
+// the browser. Each scene is a script of steps laid out with MachineDesktop's own layout helpers, so the cursor lands
+// where the windows are; each step also tells the desktop what changes and when (a window opens, a letter is typed,
+// the bucket fills), so the windows do what the agent does.
+
+type Shape = NonNullable<LiveEvent["shapes"]>[number];
+type Fn = (s: Stage) => Stage;
+type Pt = [number, number];
+interface Beat extends LiveEvent { then?: [number, Fn][] }
+interface Act { s: Shape; then?: Fn; during?: [number, Fn][] }
+interface SceneCtx { W: number; H: number; es: boolean; pin(id: string): Pt }
+interface Plan { beats: Beat[]; key?: string }
+/** The overlay's glide to each click (LiveOverlay's GLIDE_MS), to time what the desktop does after it. */
+const GLIDE = 240;
+const EMPTY: Stage = { windows: [] };
+/** A window's place, made shorter when needed so the status notch floating over the taskbar never covers it. */
+const clear = (at: Frac, H: number): Frac => [at[0], at[1], at[2], Math.min(at[3], (H - 62) / H - at[1])];
+
+function beat(step: number, intent: string, screen: { w: number; h: number }, acts: Act[], method = "input.act"): Beat {
+  let at = 0;
+  const then: [number, Fn][] = [];
+  for (const a of acts) {
+    const s = a.s, from = at;
+    if (s.type === "click" || s.type === "move" || s.type === "scroll") at += GLIDE;
+    else if (s.type === "drag") at += GLIDE + Math.min(3000, Math.max(250, s.ms ?? 1000));
+    else if (s.type === "wait") at += s.ms;
+    a.during?.forEach(([dt, f]) => then.push([from + dt, f]));
+    if (a.then) then.push([at, a.then]);
+  }
+  return { phase: "start", step, clientName: "Claude Code", screen, intent, method, shapes: acts.map((a) => a.s), then };
+}
+const click = (p: Pt, then?: Fn): Act => ({ s: { type: "click", x: Math.round(p[0]), y: Math.round(p[1]) }, then });
+const move = (p: Pt): Act => ({ s: { type: "move", x: Math.round(p[0]), y: Math.round(p[1]) } });
+const wait = (ms: number, during?: [number, Fn][], then?: Fn): Act => ({ s: { type: "wait", ms }, during, then });
+const key = (keys: string, then?: Fn): Act => ({ s: { type: "key", keys }, then });
+const typing = (chars: number): Act => ({ s: { type: "type", chars } });
+const withWin = (kind: Kind, f: (w: StageWindow) => StageWindow): Fn => (s) => ({ ...s, windows: s.windows.map((w) => (w.kind === kind ? f(w) : w)) });
+const openWin = (w: StageWindow): Fn => (s) => ({ ...s, windows: [...s.windows.filter((x) => x.kind !== w.kind), w] });
+/** One letter at a time, `ms` apart: what `text(i)` shows after the i-th letter. */
+const letters = (n: number, ms: number, f: (i: number) => Fn): [number, Fn][] => Array.from({ length: n }, (_, i) => [(i + 1) * ms, f(i + 1)] as [number, Fn]);
+
+/** a) A night landscape in Paint: the sky filled, a crescent moon, stars, two mountain ridges with snow, the lake and a
+ *  house with its window lit, each outlined with the pencil and filled with the bucket, as one paints in Paint. */
+function paintScene({ W, H, es, pin }: SceneCtx): Plan {
+  const screen = { w: W, h: H };
+  const at = clear([0.07, 0.03, 0.86, 0.77], H);
+  const L = paintLayout(stageBox(at, W, H)), cv = L.canvas, A = cv.w / cv.h;
+  /** Canvas fractions → desktop pixels. Round shapes are measured in canvas heights (`ring`) so they stay round. */
+  const C = (p: Pt): Pt => [cv.x + p[0] * cv.w, cv.y + p[1] * cv.h];
+  const ring = (cx: number, cy: number, r: number, a: number): Pt => [cx + (r * Math.cos(a)) / A, cy + r * Math.sin(a)];
+  const pen = Math.max(1.6, cv.h / 100);
+  const paint = (p: Partial<PaintStage>) => withWin("paint", (w) => ({ ...w, paint: { ...w.paint, ...p } }));
+  const fill = (pts: Pt[], color: number) => withWin("paint", (w) => ({ ...w, paint: { ...w.paint, fills: [...(w.paint?.fills ?? []), { pts, color: PAINT_COLORS[color] }] } }));
+  const tool = (t: PaintTool) => click(L.tool(t), paint({ tool: t }));
+  const color = (i: number) => click(L.swatch(i), paint({ color: i }));
+  const draw = (strokes: Pt[][], ms: number, c: number, width = pen): Act => ({ s: { type: "drag", strokes: strokes.map((st) => st.map(C)), ms, color: PAINT_COLORS[c], width } });
+  const bucket = (p: Pt, pts: Pt[], c: number) => click(C(p), fill(pts, c));
+
+  // The moon: a circle with another, slightly smaller and shifted to the upper right, taken out of it.
+  const mo = { x: 0.15, y: 0.27, r: 0.15 }, d = 0.42, r2 = 0.92, tilt = -0.6;
+  const x0 = (d * d + 1 - r2 * r2) / (2 * d), y0 = Math.sqrt(1 - x0 * x0);
+  const th = Math.atan2(y0, x0), be = Math.atan2(y0, x0 - d);
+  const turn = (p: Pt): Pt => { const c = Math.cos(tilt), s = Math.sin(tilt); return [mo.x + ((p[0] * c - p[1] * s) * mo.r) / A, mo.y + (p[0] * s + p[1] * c) * mo.r]; };
+  const moon = [
+    ...Array.from({ length: 25 }, (_, i): Pt => { const a = th + (i / 24) * (2 * Math.PI - 2 * th); return [Math.cos(a), Math.sin(a)]; }),
+    ...Array.from({ length: 20 }, (_, i): Pt => { const a = 2 * Math.PI - be - (i / 19) * (2 * Math.PI - 2 * be); return [d + r2 * Math.cos(a), r2 * Math.sin(a)]; }),
+  ].map(turn);
+  const moonIn = turn([-(1 + r2 - d) / 2, 0]);
+  // Five-point stars and a few small ones.
+  const star = (cx: number, cy: number, r: number): Pt[] => Array.from({ length: 11 }, (_, i) => ring(cx, cy, i % 2 ? r * 0.42 : r, -Math.PI / 2 + (i * Math.PI) / 5));
+  const STARS: [number, number, number][] = [[0.34, 0.14, 0.05], [0.47, 0.3, 0.034], [0.58, 0.1, 0.043], [0.72, 0.24, 0.054], [0.86, 0.11, 0.04], [0.95, 0.31, 0.032]];
+  const DOTS: Pt[] = [[0.05, 0.08], [0.27, 0.06], [0.41, 0.05], [0.53, 0.21], [0.8, 0.05], [0.91, 0.21], [0.39, 0.34], [0.64, 0.3]];
+  // The ridges, the lake and the house.
+  const LAKE = 0.8;
+  const BACK: Pt[] = [[0.003, 0.56], [0.07, 0.49], [0.15, 0.55], [0.27, 0.4], [0.36, 0.5], [0.45, 0.44], [0.55, 0.57], [0.66, 0.37], [0.76, 0.5], [0.86, 0.42], [0.94, 0.51], [0.997, 0.47]];
+  const FRONT: Pt[] = [[0.003, 0.66], [0.1, 0.6], [0.2, 0.68], [0.31, 0.62], [0.42, 0.72], [0.53, 0.65], [0.62, 0.71], [0.69, 0.69], [0.83, 0.69], [0.9, 0.62], [0.997, 0.7]];
+  const down = (r: Pt[]): Pt[] => [[0, r[0][1]], ...r, [1, r[r.length - 1][1]], [1, LAKE], [0, LAKE]];
+  const cap = (r: Pt[], i: number, drop: number): Pt[] => {
+    const P = r[i], v = P[1] + drop;
+    const cross = (a: Pt, b: Pt) => a[0] + ((b[0] - a[0]) * (v - a[1])) / (b[1] - a[1]);
+    const lu = cross(r[i - 1], P), ru = cross(P, r[i + 1]), m = (f: number) => lu + (ru - lu) * f;
+    return [[lu, v], P, [ru, v], [m(0.8), v + drop * 0.35], [m(0.6), v - drop * 0.05], [m(0.4), v + drop * 0.38], [m(0.2), v + drop * 0.05], [lu, v]];
+  };
+  const caps = [cap(BACK, 3, 0.065), cap(BACK, 7, 0.07), cap(BACK, 9, 0.045)];
+  const hw = 0.21 / A, hx = 0.72, base = 0.69, wallH = 0.12, roofH = 0.1, eave = 0.035 / A;
+  const walls: Pt[] = [[hx, base], [hx, base - wallH], [hx + hw, base - wallH], [hx + hw, base], [hx, base]];
+  const roof: Pt[] = [[hx - eave, base - wallH], [hx + hw / 2, base - wallH - roofH], [hx + hw + eave, base - wallH], [hx - eave, base - wallH]];
+  const wx = hx + hw * 0.3, wy = base - wallH * 0.55, side = wallH * 0.4, door = hx + hw * 0.72;
+  const lake: Pt[] = [[0, LAKE], [1, LAKE], [1, 1], [0, 1]];
+  const dash = (u: number, v: number, half: number): Pt[] => [[u - half, v], [u + half, v]];
+
+  const b = (n: number, intent: [string, string], acts: Act[]) => beat(n, es ? intent[0] : intent[1], screen, acts);
+  return { beats: [
+    b(1, ["Abriendo Paint", "Opening Paint"], [click(pin(GLYPHS.paint), openWin({ kind: "paint", at, paint: { tool: "pencil", color: 0 } }))]),
+    b(2, ["Pintando el cielo de noche", "Painting the night sky"], [tool("bucket"), color(2), click(C([0.5, 0.4]), paint({ background: PAINT_COLORS[2] }))]),
+    b(3, ["Dibujando la luna", "Drawing the moon"], [tool("pencil"), color(6), draw([moon], 1100, 6), tool("bucket"), bucket(moonIn, moon, 6)]),
+    b(4, ["Dibujando las estrellas", "Drawing the stars"], [tool("pencil"), color(7),
+      draw([...STARS.map(([x, y, r]) => star(x, y, r)), ...DOTS.map(([x, y]): Pt[] => [[x, y], [x + 0.0005, y]])], 2200, 7),
+      tool("bucket"), ...STARS.map(([x, y, r]) => bucket([x, y], star(x, y, r), 7))]),
+    b(5, ["Dibujando las montañas", "Drawing the mountains"], [tool("pencil"), color(3), draw([BACK], 1000, 3), tool("bucket"), bucket([0.66, 0.62], down(BACK), 3)]),
+    b(6, ["Poniendo nieve en las cumbres", "Adding snow to the peaks"], [tool("pencil"), color(1), draw(caps, 700, 1), tool("bucket"),
+      ...caps.map((c) => bucket([c[1][0], c[1][1] + 0.035], c, 1))]),
+    b(7, ["Dibujando las colinas", "Drawing the hills"], [tool("pencil"), color(4), draw([FRONT], 1000, 4), tool("bucket"), bucket([0.5, 0.75], down(FRONT), 4)]),
+    b(8, ["Pintando el lago", "Painting the lake"], [color(11), bucket([0.5, 0.9], lake, 11), tool("pencil"), color(5),
+      draw([[[0.003, LAKE], [0.997, LAKE]], dash(0.36, 0.875, 0.03), dash(0.57, 0.93, 0.025), dash(0.9, 0.9, 0.02), dash(0.47, 0.845, 0.015)], 900, 5)]),
+    b(9, ["Dibujando la casa", "Drawing the house"], [color(9), draw([walls], 600, 9), tool("bucket"), bucket([hx + hw * 0.7, base - wallH * 0.3], walls, 9),
+      tool("pencil"), color(8), draw([roof], 500, 8), tool("bucket"), bucket([hx + hw / 2, base - wallH - roofH * 0.35], roof, 8)]),
+    b(10, ["Encendiendo la ventana", "Lighting the window"], [tool("brush"), color(10),
+      draw([[[wx - (side * 0.18) / A, wy], [wx + (side * 0.18) / A, wy]]], 300, 10, side * cv.h * 0.72),
+      draw([dash(wx, 0.85, 0.008), dash(wx, 0.885, 0.005)], 300, 10, pen * 1.3),
+      color(0), draw([[[door, base - pen / cv.h], [door, base - wallH * 0.45]]], 300, 0, side * cv.h * 0.55),
+      color(6), draw([dash(mo.x, 0.85, 0.035), dash(mo.x, 0.885, 0.026), dash(mo.x, 0.92, 0.018), dash(mo.x, 0.955, 0.01)], 600, 6, pen * 1.3)]),
+    b(11, ["Guardando el dibujo", "Saving the drawing"], [key("ctrl+s", paint({ title: es ? "noche-en-el-lago.png: Paint" : "night-at-the-lake.png: Paint" })), wait(2200)]),
+  ] };
+}
+
+/** b) An app installed with winget in PowerShell: the command typed, the download filling its bar, VLC on the desktop. */
+function installScene({ W, H, es, pin }: SceneCtx): Plan {
+  const screen = { w: W, h: H };
+  const at = clear([0.1, 0.04, 0.8, 0.74], H);
+  const box = stageBox(at, W, H);
+  const prompt = "PS C:\\Users\\agent> ";
+  const cmd = "winget install --id VideoLAN.VLC";
+  const term = (f: (t: TermStage) => TermStage): Fn => withWin("terminal", (w) => ({ ...w, term: f(w.term ?? { lines: [], input: prompt }) }));
+  const add = (...lines: string[]) => term((t) => ({ ...t, lines: [...t.lines, ...lines] }));
+  const cells = box.w < 420 ? 12 : 24, total = 43.6;
+  const bar = (p: number) => termBar(Math.round(p * cells) / cells, cells, `${(total * p).toFixed(1)} MB / ${total} MB`);
+  const setBar = (p: number) => term((t) => ({ ...t, lines: [...t.lines.slice(0, -1), bar(p)] }));
+  const steps = 24, perStep = 115;
+  const tx = es
+    ? { found: "Encontrado VLC media player [VideoLAN.VLC] Versión 3.0.21", lic: "El propietario le concede la licencia de esta aplicación.", ms: "Microsoft no es responsable ni concede licencias a paquetes de terceros.",
+      dl: "Descargando", hash: "Se verificó correctamente el hash del instalador", start: "Iniciando instalación de paquete...", ok: "Instalado correctamente" }
+    : { found: "Found VLC media player [VideoLAN.VLC] Version 3.0.21", lic: "This application is licensed to you by its owner.", ms: "Microsoft is not responsible for, nor does it grant any licenses to, third-party packages.",
+      dl: "Downloading", hash: "Successfully verified installer hash", start: "Starting package install...", ok: "Successfully installed" };
+  const terminal = pin(GLYPHS.terminal);
+  const b = (n: number, intent: [string, string], acts: Act[]) => beat(n, es ? intent[0] : intent[1], screen, acts, n > 2 ? "exec.run" : "input.act");
+  return { beats: [
+    b(1, ["Abriendo PowerShell", "Opening PowerShell"], [click(terminal, openWin({ kind: "terminal", at,
+      term: { lines: ["Windows PowerShell", es ? "Copyright (C) Microsoft Corporation. Todos los derechos reservados." : "Copyright (C) Microsoft Corporation. All rights reserved.", ""], input: prompt } }))]),
+    b(2, ["Instalando VLC con winget", "Installing VLC with winget"], [click([box.x + box.w * 0.5, box.y + box.h * 0.45]), typing(cmd.length),
+      wait(cmd.length * 36 + 250, letters(cmd.length, 36, (i) => term((t) => ({ ...t, input: prompt + cmd.slice(0, i) })))),
+      key("enter", term((t) => ({ lines: [...t.lines, prompt + cmd], input: "" })))]),
+    b(3, ["Descargando VLC", "Downloading VLC"], [wait(steps * perStep + 500, [
+      [150, add(tx.found)], [350, add(tx.lic, tx.ms)], [600, add(`${tx.dl} https://get.videolan.org/vlc/3.0.21/win64/vlc-3.0.21-win64.exe`, bar(0))],
+      ...Array.from({ length: steps }, (_, i): [number, Fn] => [700 + i * perStep, setBar((i + 1) / steps)]),
+    ])]),
+    b(4, ["Instalando VLC", "Installing VLC"], [wait(2000, [[100, add(tx.hash)], [450, add(tx.start)]],
+      (s) => ({ ...term((t) => ({ lines: [...t.lines, tx.ok, ""], input: prompt }))(s), icons: [[GLYPHS.vlc, "vlc"]], pinned: [GLYPHS.vlc] }))]),
+    // A new app on a centered taskbar: everything moves half a button left and VLC comes after the terminal.
+    b(5, ["VLC quedó instalado", "VLC is installed"], [move([terminal[0] + 17, terminal[1]]), wait(2400)]),
+  ] };
+}
+
+/** c) The browser: the address typed, a video picked on the site and played. */
+function browseScene({ W, H, es, pin }: SceneCtx): Plan {
+  const screen = { w: W, h: H };
+  const at = clear([0.07, 0.03, 0.86, 0.77], H);
+  const L = browserLayout(stageBox(at, W, H));
+  const br = (p: Partial<BrowserStage>) => withWin("browser", (w) => ({ ...w, browser: { ...(w.browser ?? { address: "", page: "new" }), ...p } }));
+  const thumb = L.thumbs[0];
+  const b = (n: number, intent: [string, string], acts: Act[]) => beat(n, es ? intent[0] : intent[1], screen, acts);
+  return { beats: [
+    b(1, ["Abriendo el navegador", "Opening the browser"], [click(pin(GLYPHS.chrome), openWin({ kind: "browser", at, browser: { address: "", page: "new" } }))]),
+    b(2, ["Escribiendo la dirección", "Typing the address"], [click([L.address.x + Math.min(70, L.address.w / 3), L.address.y + L.address.h / 2], br({ editing: true })), typing(SITE.length),
+      wait(SITE.length * 55 + 250, letters(SITE.length, 55, (i) => br({ address: SITE.slice(0, i) }))), key("enter", br({ editing: false, page: "site" }))]),
+    b(3, ["Eligiendo un video", "Choosing a video"], [click([thumb.x + thumb.w / 2, thumb.y + thumb.h / 2], br({ page: "video", playing: false, address: `${SITE}/watch/${es ? "lago-alpino" : "alpine-lake"}` })), wait(500)]),
+    b(4, ["Reproduciendo el video", "Playing the video"], [click(L.play, br({ playing: true })), wait(4200)]),
+  ] };
+}
+
+const SCENES = [paintScene, installScene, browseScene];
+
 function AgentsDemo() {
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  const [scene, setScene] = useState(0);
+  const [plan, setPlan] = useState<Plan | null>(null);
+  const [stage, setStage] = useState<Stage>(EMPTY);
   const [step, setStep] = useState<LiveEvent | null>(null);
+  const timers = useRef<number[]>([]);
+  /** The scene playing now: steps and timers of one that ended never reach the desktop. */
+  const current = useRef<Plan | null>(null);
   useSite();
-  const es = getLang() === "es";
+  const lang = getLang();
   useEffect(() => {
     const el = box.current;
     if (!el) return;
-    const measure = () => { const r = el.getBoundingClientRect(); if (r.width > 0) setSize({ w: Math.round(r.width), h: Math.round(r.height - 34) }); };
+    const measure = () => { const r = el.getBoundingClientRect(); if (r.width > 0) setSize((s) => (s && s.w === Math.round(r.width) && s.h === Math.round(r.height - BAR) ? s : { w: Math.round(r.width), h: Math.round(r.height - BAR) })); };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => { ro.disconnect(); timers.current.forEach(clearTimeout); };
   }, []);
-  const script = useMemo<LiveEvent[] | null>(() => {
-    if (!size) return null;
-    const { w: W, h: H } = size;
-    // The Paint canvas, in fractions of the desktop above the taskbar (MachineDesktop's paint window).
-    const P = (fx: number, fy: number): [number, number] => [Math.round(W * (0.165 + fx * 0.74)), Math.round(H * (0.2 + fy * 0.6))];
-    const star = (cx: number, cy: number, r: number) => Array.from({ length: 11 }, (_, i) => {
-      const a = -Math.PI / 2 + (i * Math.PI) / 5, rr = i % 2 ? r * 0.45 : r;
-      return P(cx + Math.cos(a) * rr * 0.6, cy + Math.sin(a) * rr);
-    });
-    const moon = [...Array.from({ length: 14 }, (_, i) => { const a = Math.PI * 0.35 + (i / 13) * Math.PI * 1.3; return P(0.32 + Math.cos(a) * 0.09, 0.32 + Math.sin(a) * 0.17); }),
-      ...Array.from({ length: 10 }, (_, i) => { const a = Math.PI * 1.65 - (i / 9) * Math.PI * 1.3; return P(0.355 + Math.cos(a) * 0.07, 0.32 + Math.sin(a) * 0.13); })];
-    const hills = [P(0, 0.92), P(0.18, 0.7), P(0.34, 0.86), P(0.52, 0.62), P(0.7, 0.84), P(0.86, 0.68), P(1, 0.8)];
-    const name = "Claude Code", screen = { w: W, h: H };
-    const s = (n: number, intent: string, method: string, shapes: LiveEvent["shapes"]): LiveEvent => ({ phase: "start", step: n, clientName: name, screen, intent, method, shapes });
-    return [
-      s(1, es ? "Eligiendo el color" : "Picking a color", "input.act", [{ type: "click", x: Math.round(W * 0.175), y: Math.round(H * 0.125) }]),
-      s(2, es ? "Dibujando la luna" : "Drawing the moon", "input.act", [{ type: "drag", strokes: [moon], ms: 1600 }]),
-      s(3, es ? "Dibujando las estrellas" : "Drawing the stars", "input.act", [{ type: "drag", strokes: [star(0.62, 0.22, 0.07), star(0.8, 0.4, 0.05), star(0.12, 0.18, 0.045)], ms: 2000 }]),
-      s(4, es ? "Dibujando las montañas" : "Drawing the mountains", "input.act", [{ type: "drag", strokes: [hills], ms: 1500 }]),
-      s(5, es ? "Guardando el dibujo" : "Saving the drawing", "input.act", [{ type: "key", keys: "ctrl+s" }]),
-      s(6, es ? "Entregándote el dibujo" : "Delivering the drawing to you", "outbox.offer", []),
-    ];
-  }, [size, es]);
+  // A new scene, size or language starts the scene over on a clear desktop...
+  const sceneKey = size ? `${scene}|${size.w}x${size.h}|${lang}` : "";
+  useLayoutEffect(() => {
+    timers.current.forEach(clearTimeout);
+    timers.current = [];
+    current.current = null;
+    setPlan(null); setStage(EMPTY); setStep(null);
+  }, [sceneKey]);
+  // ...where its script is laid out, with the taskbar's buttons found where they are drawn.
+  useLayoutEffect(() => {
+    const root = box.current;
+    if (plan || stage !== EMPTY || !size || !root) return;
+    const r0 = root.getBoundingClientRect();
+    const pin = (id: string): Pt => {
+      const r = root.querySelector(`[data-pin="${CSS.escape(id)}"]`)?.getBoundingClientRect();
+      return r ? [r.left - r0.left + r.width / 2, r.top - r0.top + r.height / 2] : [size.w / 2, size.h + BAR / 2];
+    };
+    const made = { ...SCENES[scene]({ W: size.w, H: size.h, es: lang === "es", pin }), key: sceneKey };
+    current.current = made;
+    setPlan(made);
+  }, [plan, stage, size, scene, lang, sceneKey]);
+  const onStep = useCallback((ev: LiveEvent | null) => {
+    const playing = current.current;
+    if (!playing || !ev || !playing.beats.includes(ev as Beat)) return;
+    setStep(ev);
+    for (const [ms, f] of (ev as Beat).then ?? []) timers.current.push(window.setTimeout(() => { if (current.current === playing) setStage(f); }, ms));
+  }, []);
+  const next = useCallback(() => setScene((n) => (n + 1) % SCENES.length), []);
   const item: StatusItem = step
     ? { id: "live", kind: "live", clientName: "Claude Code", method: step.method ?? null, intent: step.intent ?? null, shape: step.shapes?.[0]?.type ?? null }
     : { id: "live", kind: "live", clientName: "Claude Code", thinking: true };
   return (
     <div className="site-agents">
       <div className="site-agents-screen" ref={box}>
-        <MachineDesktop vm="agent" locked>
-          {script && <LiveOverlay key={`${size?.w}x${size?.h}-${es}`} script={script} keep onStep={setStep} />}
+        <MachineDesktop vm="agent" locked stage={stage}>
+          {plan && plan.key === sceneKey && <LiveOverlay key={sceneKey} script={plan.beats} keep pause={420} onStep={onStep} onEnd={next} />}
         </MachineDesktop>
       </div>
       <div className="site-agents-notch sn"><StatusRow item={item} onAction={async () => {}} /></div>
@@ -475,7 +659,7 @@ const scopedCss = appCss
   .site-agents { position: relative; height: 100%; border-radius: var(--r-lg); overflow: hidden; background: #000; box-shadow: inset 0 0 0 1px var(--line); }
   .site-agents-screen { position: absolute; inset: 0; }
   .site-agents-screen .lv-root { position: absolute; }
-  .site-agents-notch { position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); border-radius: 14px 14px 0 0; z-index: 6; max-width: calc(100% - 24px); }
+  .site-agents-notch { position: absolute; left: 50%; bottom: 46px; transform: translateX(-50%); border-radius: 14px; z-index: 6; max-width: calc(100% - 24px); }
   .site-agents-notch .sn-row { white-space: nowrap; }
   .site-viewer-panel .viewer-panel { position: absolute; }
   @media (max-width: 760px) { .site-viewer { grid-template-columns: 1fr !important; grid-template-rows: 220px minmax(0, 1fr); } .site-viewer-panel .viewer-panel-edge { display: none; } }
