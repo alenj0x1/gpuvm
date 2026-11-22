@@ -278,6 +278,9 @@ function Invoke-GuestPendingWork {
         # it took ~10 s of every open).
         [string]$DiskBytes
     )
+    # C:\GpuVM of machines made before it was created restricted: once, then remembered (security review 2026-11-21).
+    try { Protect-GuestGpuVMRoot -Name $Name -Credential $Credential }
+    catch { Write-Warning "Couldn't restrict C:\GpuVM in the VM: $($_.Exception.Message)" }
     $state = Get-GpuVMState -Name $Name
     if (-not $DiskBytes -or -not $state.Contains('diskExpandedBytes') -or [string]$state['diskExpandedBytes'] -ne $DiskBytes) {
         try {

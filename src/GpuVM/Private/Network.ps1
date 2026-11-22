@@ -63,19 +63,24 @@ function Update-GpuVMNetworkIsolation {
         [System.Collections.IDictionary]$State
     )
     if (-not $State) { $State = Get-GpuVMState -Name $Name }
+    # An agent machine is never left on the LAN unisolated: it doesn't start with any adapter on an external or
+    # private switch (review 2, #3). Every adapter, not only the first one: a second adapter on an external switch
+    # put the guest on the LAN while the first passed (security review 2026-11-21).
+    if ([string]$State['use'] -eq 'agent') { Assert-AgentSwitch -Name $Name }
     $current = @(Get-GpuVMIsolationAcl -Name $Name)
     if (-not (Get-GpuVMNetworkIsolation -State $State)) {
         if ($current) { Remove-GpuVMIsolationAcl -Name $Name -Acl $current }
         return
     }
 
-    $switchName = (Get-VMNetworkAdapter -VMName $Name | Select-Object -First 1).SwitchName
+    # The first adapter that is connected (the rules below apply to all of them): a disconnected first adapter left
+    # the others without rules.
+    $connected = @(Get-VMNetworkAdapter -VMName $Name | Where-Object { $_.SwitchName })
+    $switchName = if ($connected) { $connected[0].SwitchName } else { $null }
     if (-not $switchName) { return }
     # On an external switch the DHCP and DNS servers are on the LAN, which these rules block.
     $switch = Get-VMSwitch -Name $switchName -ErrorAction SilentlyContinue
     if ($switch -and $switch.SwitchType -ne 'Internal') {
-        # An agent machine is never left on the LAN unisolated: it doesn't start there (review 2, #3).
-        if ([string]$State['use'] -eq 'agent') { Assert-AgentSwitch -Name $Name }
         if ($current) { Remove-GpuVMIsolationAcl -Name $Name -Acl $current }
         Write-Warning "The VM '$Name' uses the external switch '$switchName': network isolation only works with the Default Switch or an internal one."
         return
@@ -107,6 +112,14 @@ function Update-GpuVMNetworkIsolation {
         $weight--
     }
     if ($current) { Remove-GpuVMIsolationAcl -Name $Name -Acl $current }
+}
+
+# Checked by the module's Start-VM and Restart-VM (GpuPower.ps1), so every way GpuVM turns a machine on checks it,
+# not only the ones that update the isolation first (security review 2026-11-21). A VM without GpuVM state is skipped.
+function Assert-AgentMachineSwitch {
+    param([Parameter(Mandatory)][string]$Name)
+    $state = try { Get-GpuVMState -Name $Name } catch { $null }
+    if ($state -and [string]$state['use'] -eq 'agent') { Assert-AgentSwitch -Name $Name }
 }
 
 # An agent machine only runs on the Default Switch or an internal one, where its isolation rules work: an external or

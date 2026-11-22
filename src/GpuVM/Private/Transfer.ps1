@@ -145,45 +145,61 @@ function Write-UstarHeader {
 
 # ---------------------------------------------------------------- the receiving side, in the guest
 
-# Starts tar in the guest, reading the stream into a hidden folder inside Desktop\<Folder> of the user signed in at
-# the VM's screen (or of the session's user if nobody is). Returns the folder and the free space there.
+# Starts tar in the guest, reading the stream into a hidden folder of its own, and checks the destination: Desktop\
+# <Folder> of the user signed in at the VM's screen (or of the session's user if nobody is). Returns the destination,
+# the hidden folder and the free space there.
+# Security review 2026-11-21: the desktop's path comes from the person's own registry and the folder is theirs, so on
+# an agent machine `agent` controls both, while this runs as the guest's administrator. The archive is unpacked (and
+# big files written) in a new folder only Administrators and SYSTEM can open (GuestFolders.ps1), never inside the
+# person's folder; the destination is only used while Enter-GpuVMDestination holds it, checked (under the profile, no
+# junction or link on the way) and impossible to swap.
 function Open-GuestReceiver {
     param([Parameter(Mandatory)]$Session, [Parameter(Mandatory)][string]$Id, [Parameter(Mandatory)][string]$Folder)
-    $answer = Invoke-Command -Session $Session -ErrorAction Stop -ArgumentList $Id, $Folder, $script:GuestDesktopResolver.ToString() -ScriptBlock {
-        param($id, $folder, $resolver)
+    $answer = Invoke-Command -Session $Session -ErrorAction Stop -ArgumentList $Id, $Folder, $script:GuestDesktopResolver.ToString(), $script:GuestFolderCode -ScriptBlock {
+        param($id, $folder, $resolver, $folderCode)
+        . ([scriptblock]::Create($folderCode))
         $desktop = $null
+        $profilePath = $null
+        $sid = $null
         $user = (Get-CimInstance Win32_ComputerSystem).UserName
         if ($user) {
             try {
                 $sid = ([Security.Principal.NTAccount]$user).Translate([Security.Principal.SecurityIdentifier]).Value
-                $profile = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$sid").ProfileImagePath
-                $desktop = & ([scriptblock]::Create($resolver)) "Registry::HKEY_USERS\$sid\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" $profile
+                $profilePath = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$sid").ProfileImagePath
+                $desktop = & ([scriptblock]::Create($resolver)) "Registry::HKEY_USERS\$sid\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" $profilePath
             }
             catch { $desktop = $null }
         }
-        if (-not $desktop) { $desktop = [Environment]::GetFolderPath('Desktop') }
+        if (-not $desktop) {
+            $desktop = [Environment]::GetFolderPath('Desktop')
+            $profilePath = $env:USERPROFILE
+            $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        }
         $tar = Join-Path $env:SystemRoot 'System32\tar.exe'
         if (-not (Test-Path $tar)) { return @{ error = 'Windows in the machine has no tar.exe (Windows 10 1803 or later is needed).' } }
-        $dest = Join-Path $desktop $folder
-        if ($folder -eq 'Received') {
-            # Versions before 0.9 named it in Spanish: that folder becomes this one, with its files.
-            $old = Join-Path $desktop 'Recibidos'
-            if (-not (Test-Path -LiteralPath $dest) -and (Test-Path -LiteralPath $old)) { Rename-Item -LiteralPath $old -NewName $folder }
-            New-Item -ItemType Directory -Force -Path $dest | Out-Null
-            # On disk it is Received; Explorer shows it in Windows' language through desktop.ini.
-            $shown = @{ es = 'Recibidos' }[[Globalization.CultureInfo]::InstalledUICulture.TwoLetterISOLanguageName]
-            $ini = Join-Path $dest 'desktop.ini'
-            if ($shown -and -not (Test-Path -LiteralPath $ini)) {
-                [IO.File]::WriteAllText($ini, "[.ShellClassInfo]`r`nLocalizedResourceName=$shown`r`n", [Text.Encoding]::Unicode)
-                (Get-Item -LiteralPath $ini -Force).Attributes = 'Hidden, System'
-                # Explorer only reads desktop.ini in a folder marked read-only (files can still go in).
-                $dir = Get-Item -LiteralPath $dest -Force
-                $dir.Attributes = $dir.Attributes -bor [IO.FileAttributes]::ReadOnly
+        try { $guard = Enter-GpuVMDestination -ProfilePath $profilePath -Desktop $desktop -Folder $folder -Id $id -Create }
+        catch { return @{ error = "$($_.Exception.Message)" } }
+        try {
+            $dest = $guard.Dest
+            if ($folder -eq 'Received') {
+                # On disk it is Received; Explorer shows it in Windows' language through desktop.ini.
+                $shown = @{ es = 'Recibidos' }[[Globalization.CultureInfo]::InstalledUICulture.TwoLetterISOLanguageName]
+                $ini = Join-Path $dest 'desktop.ini'
+                if ($shown -and -not (Test-Path -LiteralPath $ini)) {
+                    # CreateNew: never written through a file (or link) put there in the meantime.
+                    $bytes = [Text.Encoding]::Unicode.GetPreamble() + [Text.Encoding]::Unicode.GetBytes("[.ShellClassInfo]`r`nLocalizedResourceName=$shown`r`n")
+                    $s = [IO.FileStream]::new($ini, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+                    try { $s.Write([byte[]]$bytes, 0, $bytes.Length) } finally { $s.Dispose() }
+                    (Get-Item -LiteralPath $ini -Force).Attributes = 'Hidden, System'
+                    # Explorer only reads desktop.ini in a folder marked read-only (files can still go in).
+                    $dir = Get-Item -LiteralPath $dest -Force
+                    $dir.Attributes = $dir.Attributes -bor [IO.FileAttributes]::ReadOnly
+                }
             }
         }
-        $staging = Join-Path $dest ".gpuvm-$id"
-        New-Item -ItemType Directory -Force -Path $staging | Out-Null
-        (Get-Item -LiteralPath $staging -Force).Attributes = 'Hidden, Directory'
+        finally { & $guard.Close }
+        # On the destination's volume, so what is unpacked there moves into place without being copied.
+        $staging = New-GpuVMAdminFolder -Volume ([IO.Path]::GetPathRoot($dest)) -Prefix 'GpuVM-receive'
         $psi = [Diagnostics.ProcessStartInfo]::new($tar, "-x -f - -C `"$staging`"")
         $psi.UseShellExecute = $false
         $psi.CreateNoWindow = $true
@@ -191,12 +207,13 @@ function Open-GuestReceiver {
         $psi.RedirectStandardError = $true
         if (-not (Test-Path variable:global:GpuVMReceive)) { $global:GpuVMReceive = @{} }
         $process = [Diagnostics.Process]::Start($psi)
-        $global:GpuVMReceive[$id] = @{ process = $process; dest = $dest; staging = $staging; error = $process.StandardError.ReadToEndAsync() }
+        $global:GpuVMReceive[$id] = @{ process = $process; dest = $dest; staging = $staging; error = $process.StandardError.ReadToEndAsync()
+            profile = $profilePath; desktop = $desktop; folder = $folder; sid = $sid }
         $drive = [IO.DriveInfo]::new([IO.Path]::GetPathRoot($dest))
         @{ dest = $dest; staging = $staging; free = [int64]$drive.AvailableFreeSpace }
     }
     $answer = @($answer)[-1]
-    if ($answer['error']) { throw (ConvertTo-GuestString $answer['error']) }
+    if ($answer['error']) { throw (ConvertTo-GuestString $answer['error'] -MaxLength 400) }
     [pscustomobject]@{ Dest = ConvertTo-GuestString $answer['dest'] -MaxLength 400; Staging = ConvertTo-GuestString $answer['staging'] -MaxLength 460; Free = [int64]$answer['free'] }
 }
 
@@ -227,8 +244,9 @@ $script:GuestDesktopResolver = {
 
 function Close-GuestReceiver {
     param([Parameter(Mandatory)]$Session, [Parameter(Mandatory)][string]$Id, [switch]$Cancel)
-    $answer = Invoke-Command -Session $Session -ErrorAction Stop -ArgumentList @($Id, $Cancel.IsPresent) -ScriptBlock {
-        param($id, $cancel)
+    $answer = Invoke-Command -Session $Session -ErrorAction Stop -ArgumentList @($Id, $Cancel.IsPresent, $script:GuestFolderCode) -ScriptBlock {
+        param($id, $cancel, $folderCode)
+        . ([scriptblock]::Create($folderCode))
         $r = $global:GpuVMReceive[$id]
         if (-not $r) { return @{ ok = $false; error = 'nothing was receiving' } }
         $global:GpuVMReceive.Remove($id)
@@ -237,29 +255,64 @@ function Close-GuestReceiver {
         if ($cancel) { try { $p.Kill() } catch { } }
         $null = $p.WaitForExit(60000)
         $ok = -not $cancel -and $p.HasExited -and $p.ExitCode -eq 0
-        $names = @()
-        if ($ok) {
-            foreach ($item in Get-ChildItem -LiteralPath $r.staging -Force) {
-                $name = $item.Name
-                $base = [IO.Path]::GetFileNameWithoutExtension($name); $ext = if ($item.PSIsContainer) { '' } else { [IO.Path]::GetExtension($name) }
-                if ($item.PSIsContainer) { $base = $name }
-                for ($i = 2; Test-Path -LiteralPath (Join-Path $r.dest $name); $i++) { $name = "$base ($i)$ext" }
-                Move-Item -LiteralPath $item.FullName -Destination (Join-Path $r.dest $name)
-                $names += $name
-            }
-        }
-        Remove-Item -LiteralPath $r.staging -Recurse -Force -ErrorAction SilentlyContinue
-        # What is now in the destination, measured there: the sender compares it with what it sent.
-        $bytes = [int64]0; $files = 0
-        foreach ($name in $names) {
-            $placed = Get-Item -LiteralPath (Join-Path $r.dest $name) -Force -ErrorAction SilentlyContinue
-            if (-not $placed) { continue }
-            if ($placed.PSIsContainer) {
-                foreach ($f in Get-ChildItem -LiteralPath $placed.FullName -Recurse -File -Force -ErrorAction SilentlyContinue) { $bytes += $f.Length; $files++ }
-            }
-            else { $bytes += $placed.Length; $files++ }
-        }
         $err = if ($ok -or $cancel) { '' } else { "tar $(if ($p.HasExited) { $p.ExitCode } else { 'still running' }): $("$($r.error.Result)".Trim())" }
+        $names = @()
+        $bytes = [int64]0; $files = 0
+        if ($ok) {
+            try {
+                $items = @(Get-ChildItem -LiteralPath $r.staging -Force)
+                # What arrived, measured where only administrators can write (the hidden folder holds only what tar
+                # and the big-file lanes wrote, no links): the sender compares it with what it sent.
+                foreach ($item in $items) {
+                    if ($item.PSIsContainer) {
+                        foreach ($f in Get-ChildItem -LiteralPath $item.FullName -Recurse -File -Force) { $bytes += $f.Length; $files++ }
+                    }
+                    else { $bytes += $item.Length; $files++ }
+                }
+                # The person gets full control of what they received, as when it was unpacked in their own folder
+                # (owner Administrators, as before). Given here, before it leaves the folder they can't reach.
+                $who = New-Object Security.Principal.SecurityIdentifier $r.sid
+                foreach ($item in $items) {
+                    $acl = $item.GetAccessControl('Access')
+                    $rule = if ($item.PSIsContainer) {
+                        New-Object Security.AccessControl.FileSystemAccessRule ($who, 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow')
+                    }
+                    else { New-Object Security.AccessControl.FileSystemAccessRule ($who, 'FullControl', 'Allow') }
+                    $acl.AddAccessRule($rule)
+                    $item.SetAccessControl($acl)
+                }
+                $guard = Enter-GpuVMDestination -ProfilePath $r.profile -Desktop $r.desktop -Folder $r.folder -Id $id
+                try {
+                    if ($guard.Dest -ne $r.dest) { throw "The destination changed to $($guard.Dest)." }
+                    foreach ($item in $items) {
+                        $name = $item.Name
+                        $base = if ($item.PSIsContainer) { $name } else { [IO.Path]::GetFileNameWithoutExtension($name) }
+                        $ext = if ($item.PSIsContainer) { '' } else { [IO.Path]::GetExtension($name) }
+                        # A name already there gets " (2)". [IO.Directory]::Move and [IO.File]::Move fail when the
+                        # target exists, instead of moving into it as Move-Item does with a folder (or junction) of that name.
+                        for ($i = 2; ; $i++) {
+                            $target = Join-Path $r.dest $name
+                            if (-not (Test-Path -LiteralPath $target)) {
+                                try {
+                                    if ($item.PSIsContainer) { [IO.Directory]::Move($item.FullName, $target) } else { [IO.File]::Move($item.FullName, $target) }
+                                    break
+                                }
+                                catch { if (-not (Test-Path -LiteralPath $target) -or $i -gt 1000) { throw } }
+                            }
+                            $name = "$base ($i)$ext"
+                        }
+                        $names += $name
+                    }
+                }
+                finally { & $guard.Close }
+            }
+            catch {
+                $ok = $false
+                $err = "$($_.Exception.Message)"
+            }
+        }
+        # Not Remove-Item -Recurse (Windows PowerShell 5.1 goes into junctions): see Remove-GpuVMFolder.
+        Remove-GpuVMFolder -Path $r.staging
         @{ ok = $ok; names = $names; error = $err; dest = $r.dest; bytes = $bytes; files = $files }
     }
     $answer = @($answer)[-1]
@@ -447,6 +500,8 @@ function Copy-TransferBigFiles {
     $marker = $Pipe.Marker
     try {
         foreach ($file in $Big) {
+            # Inside the hidden folder only Administrators and SYSTEM can open (Open-GuestReceiver): no user can have
+            # put a junction on this path.
             $dest = Join-Path $Staging $file.Rel
             Invoke-Command -Session $targets[0] -ErrorAction Stop -ArgumentList $dest, $file.Size -ScriptBlock {
                 param($p, [int64]$len)

@@ -520,12 +520,35 @@ InModuleScope GpuVM {
             Mock Invoke-Command { 'ok' } -ParameterFilter { $Session }
             Mock Save-GpuVMComponent { 'C:\cache\usbip\USBip-0.9.8.0-x64.exe' }
             Mock New-PSSession { [Runtime.Serialization.FormatterServices]::GetUninitializedObject([System.Management.Automation.Runspaces.PSSession]) }
-            Mock Copy-Item { $script:copied += @($LiteralPath) }
+            Mock Copy-Item { $script:copied += @($LiteralPath); $script:into += @($Destination) }
             Mock Remove-PSSession { }
             Mock Write-Step { }
-            $script:copied = @()
+            Mock New-GuestAdminFolder { 'C:\Windows\Temp\GpuVM-audio-1' }
+            Mock Remove-GuestAdminFolder { $script:removed = $Path }
+            $script:copied = @(); $script:into = @(); $script:removed = $null
             Install-GuestAudio -Name 'vm' -Credential $cred | Should Be $true
             ($script:copied | Split-Path -Leaf) -join ',' | Should Be 'USBip-0.9.8.0-x64.exe,UsbAudioServer.cs'
+            # Into a folder of this run only administrators can open, not C:\GpuVM (security review 2026-11-21).
+            ($script:into -join ',') | Should Be 'C:\Windows\Temp\GpuVM-audio-1\streaming,C:\Windows\Temp\GpuVM-audio-1\audio'
+            $script:removed | Should Be 'C:\Windows\Temp\GpuVM-audio-1'
+        }
+
+        It 'checks and runs the gamepad driver''s installer from a folder only administrators can open' {
+            $cred = [pscredential]::new('gpuvm', (ConvertTo-SecureString 'x' -AsPlainText -Force))
+            Mock Invoke-Guest { $false }
+            Mock Write-Step { }
+            Mock Save-GpuVMComponent { 'C:\cache\vigembus\ViGEmBus_1.22.0_x64_x86_arm64.exe' }
+            Mock Get-ComponentManifest { @{ vigembus = @{ sha256 = 'ABC' } } }
+            Mock New-PSSession { [Runtime.Serialization.FormatterServices]::GetUninitializedObject([System.Management.Automation.Runspaces.PSSession]) }
+            Mock Remove-PSSession { }
+            Mock New-GuestAdminFolder { 'C:\Windows\Temp\GpuVM-gamepad-1' }
+            Mock Remove-GuestAdminFolder { $script:removed = $Path }
+            Mock Copy-Item { $script:into = $Destination }
+            Mock Invoke-Command { $script:ran = $ArgumentList[0]; 'ok' } -ParameterFilter { $Session }
+            Install-GuestGamepad -Name 'vm' -Credential $cred | Should Be $true
+            $script:into | Should Be 'C:\Windows\Temp\GpuVM-gamepad-1'
+            $script:ran | Should Be 'C:\Windows\Temp\GpuVM-gamepad-1\ViGEmBus_1.22.0_x64_x86_arm64.exe'
+            $script:removed | Should Be 'C:\Windows\Temp\GpuVM-gamepad-1'
         }
 
         It 'the guest server only listens on loopback and caps what a client can send' {
@@ -1938,6 +1961,67 @@ InModuleScope GpuVM {
             finally { Remove-Item $key -Recurse -Force }
         }
 
+        # Security review 2026-11-21: the guest's administrator writes into a folder `agent` owns.
+        It 'uses the destination only under the profile and with no junction on the way' {
+            . ([scriptblock]::Create($script:GuestFolderCode))
+            $profilePath = Join-Path $TestDrive 'Users\agent'
+            $desktop = Join-Path $profilePath 'Desktop'
+            New-Item -ItemType Directory -Path $desktop -Force | Out-Null
+            $guard = Enter-GpuVMDestination -ProfilePath $profilePath -Desktop $desktop -Folder 'Received' -Id 'a1' -Create
+            try {
+                $guard.Dest | Should Be ([IO.Path]::GetFullPath((Join-Path $desktop 'Received')))
+                Test-Path -LiteralPath $guard.Dest -PathType Container | Should Be $true
+                # Held: the folder (and the desktop above it) can't be renamed away and swapped for a junction.
+                Test-Throws { [IO.Directory]::Move($guard.Dest, "$($guard.Dest)-x") } | Should Be $true
+                Test-Throws { [IO.Directory]::Move($desktop, "$desktop-x") } | Should Be $true
+            }
+            finally { & $guard.Close }
+            @(Get-ChildItem -LiteralPath $guard.Dest -Force).Count | Should Be 0
+            [IO.Directory]::Move($guard.Dest, "$($guard.Dest)-x"); [IO.Directory]::Move("$($guard.Dest)-x", $guard.Dest)
+
+            # Outside the profile (the registry value is the user's own), or out of it with "..".
+            Test-Throws { Enter-GpuVMDestination -ProfilePath $profilePath -Desktop (Join-Path $TestDrive 'Windows') -Folder 'Received' -Id 'a2' -Create } | Should Be $true
+            Test-Throws { Enter-GpuVMDestination -ProfilePath $profilePath -Desktop "$profilePath\..\Administrator\Desktop" -Folder 'Received' -Id 'a3' -Create } | Should Be $true
+
+            # Received, or a folder above it, turned into a junction to somewhere else.
+            $elsewhere = Join-Path $TestDrive 'System32'
+            New-Item -ItemType Directory -Path $elsewhere -Force | Out-Null
+            Remove-Item -LiteralPath $guard.Dest -Force
+            New-Item -ItemType Junction -Path $guard.Dest -Target $elsewhere | Out-Null
+            Test-Throws { Enter-GpuVMDestination -ProfilePath $profilePath -Desktop $desktop -Folder 'Received' -Id 'a4' -Create } | Should Be $true
+            [IO.Directory]::Delete($guard.Dest)
+            $other = Join-Path $profilePath 'OneDesk'
+            New-Item -ItemType Junction -Path $other -Target $elsewhere | Out-Null
+            Test-Throws { Enter-GpuVMDestination -ProfilePath $profilePath -Desktop $other -Folder 'Received' -Id 'a5' -Create } | Should Be $true
+            @(Get-ChildItem -LiteralPath $elsewhere -Force).Count | Should Be 0
+        }
+
+        It 'deletes a folder without going into a junction inside it' {
+            . ([scriptblock]::Create($script:GuestFolderCode))
+            $staging = Join-Path $TestDrive 'staging'
+            $target = Join-Path $TestDrive 'precious'
+            New-Item -ItemType Directory -Path (Join-Path $staging 'sub'), $target -Force | Out-Null
+            'keep' | Set-Content -LiteralPath (Join-Path $target 'keep.txt')
+            'x' | Set-Content -LiteralPath (Join-Path $staging 'sub\x.txt')
+            New-Item -ItemType Junction -Path (Join-Path $staging 'sub\link') -Target $target | Out-Null
+            Remove-GpuVMFolder -Path $staging
+            Test-Path -LiteralPath $staging | Should Be $false
+            Test-Path -LiteralPath (Join-Path $target 'keep.txt') | Should Be $true
+        }
+
+        It 'gives its own folders to Administrators and SYSTEM only, inheriting nothing' {
+            . ([scriptblock]::Create($script:GuestFolderCode))
+            $security = New-GpuVMFolderSecurity
+            $security.AreAccessRulesProtected | Should Be $true
+            $security.GetOwner([Security.Principal.SecurityIdentifier]).Value | Should Be 'S-1-5-32-544'
+            $rules = @($security.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]))
+            ($rules | ForEach-Object { $_.IdentityReference.Value } | Sort-Object) -join ',' | Should Be 'S-1-5-18,S-1-5-32-544'
+            Test-GpuVMLockedAcl -Acl $security | Should Be $true
+            # C:\GpuVM: Users may read and run what is there, never change it.
+            Test-GpuVMLockedAcl -Acl (New-GpuVMFolderSecurity -Extra @(, @('S-1-5-32-545', 'ReadAndExecute'))) | Should Be $true
+            Test-GpuVMLockedAcl -Acl (New-GpuVMFolderSecurity -Extra @(, @('S-1-5-32-545', 'Modify'))) | Should Be $false
+        }
+
         It 'reports a copy done only when the destination holds every file and byte' {
             $ok = [pscustomobject]@{ Ok = $true; Error = ''; Dest = 'C:\Users\agent\Desktop\Received'; Bytes = [int64]106697424; Files = 1 }
             Test-Throws { Assert-TransferArrived -Done $ok -Bytes 106697424 -Files 1 -Name vm } | Should Be $false
@@ -2171,6 +2255,45 @@ InModuleScope GpuVM {
             Assert-AgentSwitch -Name a
             Mock Get-VMSwitch { $null }
             Test-Throws { Assert-AgentSwitch -Name a } | Should Be $true
+        }
+        It 'an agent machine is checked on every adapter, not only the first (security review 2026-11-21)' {
+            Mock Get-VMNetworkAdapter { [pscustomobject]@{ SwitchName = 'Default Switch' }; [pscustomobject]@{ SwitchName = 'LAN' } }
+            Mock Get-VMSwitch { [pscustomobject]@{ Name = $Name; SwitchType = $(if ($Name -eq 'LAN') { 'External' } else { 'Internal' }) } }
+            Mock Get-VMNetworkAdapterExtendedAcl { @() }
+            Mock Get-GpuVMHostNetwork { [pscustomobject]@{ Address = '172.29.96.1'; PrefixLength = 20 } }
+            Mock Add-VMNetworkAdapterExtendedAcl { }
+            Mock Remove-VMNetworkAdapterExtendedAcl { }
+            Test-Throws { Update-GpuVMNetworkIsolation -Name a -State @{ use = 'agent'; config = @{ vm = @{} } } } | Should Be $true
+            Assert-MockCalled Add-VMNetworkAdapterExtendedAcl -Times 0 -Scope It
+            # A person's machine keeps going (its isolation follows the first connected adapter, as before).
+            Update-GpuVMNetworkIsolation -Name a -State @{ config = @{ vm = @{} } } -WarningAction SilentlyContinue
+            Assert-MockCalled Add-VMNetworkAdapterExtendedAcl -Times 12 -Exactly -Scope It
+        }
+        It 'a disconnected first adapter doesn''t leave the others without rules' {
+            Mock Get-VMNetworkAdapter { [pscustomobject]@{ SwitchName = '' }; [pscustomobject]@{ SwitchName = 'Default Switch' } }
+            Mock Get-VMSwitch { [pscustomobject]@{ Name = 'Default Switch'; SwitchType = 'Internal' } }
+            Mock Get-VMNetworkAdapterExtendedAcl { @() }
+            Mock Get-GpuVMHostNetwork { [pscustomobject]@{ Address = '172.29.96.1'; PrefixLength = 20 } }
+            Mock Add-VMNetworkAdapterExtendedAcl { }
+            Update-GpuVMNetworkIsolation -Name a -State @{ use = 'agent'; config = @{ vm = @{} } }
+            Assert-MockCalled Add-VMNetworkAdapterExtendedAcl -Times 12 -Exactly -Scope It
+        }
+        It 'the module''s Start-VM and Restart-VM refuse an agent machine on a LAN switch, whoever calls them' {
+            Mock Get-GpuVMState { @{ use = 'agent'; config = @{ vm = @{} } } }
+            Mock Get-VMNetworkAdapter { [pscustomobject]@{ SwitchName = 'Default Switch' }; [pscustomobject]@{ SwitchName = 'LAN' } }
+            Mock Get-VMSwitch { [pscustomobject]@{ Name = $Name; SwitchType = $(if ($Name -eq 'LAN') { 'External' } else { 'Internal' }) } }
+            Mock Invoke-GpuPowerTransition { $script:powered = $true }
+            $script:powered = $false
+            Test-Throws { Start-VM -Name a } | Should Be $true
+            Test-Throws { Restart-VM -Name a -Force } | Should Be $true
+            $script:powered | Should Be $false
+            Mock Get-GpuVMState { @{ config = @{ vm = @{} } } }
+            Start-VM -Name a
+            $script:powered | Should Be $true
+            Mock Get-GpuVMState { throw 'not a GpuVM machine' }
+            $script:powered = $false
+            Start-VM -Name a
+            $script:powered | Should Be $true
         }
         It 'an agent session copies only a template made for agents' {
             Mock Assert-Admin { }

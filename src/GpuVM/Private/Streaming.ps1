@@ -334,16 +334,23 @@ function Install-GuestAudio {
         $installer = Save-GpuVMComponent -Name 'usbip'
         $session = New-PSSession -VMName $Name -Credential $Credential -ErrorAction Stop
         try {
-            Invoke-Command -Session $session { New-Item -ItemType Directory -Force 'C:\GpuVM\audio', 'C:\GpuVM\streaming' | Out-Null }
-            Copy-Item -LiteralPath $installer -Destination 'C:\GpuVM\streaming' -ToSession $session -Force
-            Copy-Item -LiteralPath $server -Destination 'C:\GpuVM\audio' -ToSession $session -Force
-            $answer = Invoke-Command -Session $session -ErrorAction Stop -ArgumentList $code, (Split-Path $installer -Leaf) -ScriptBlock {
-                param($code, $file)
-                . ([scriptblock]::Create($code))
-                try { Install-GpuVMAudio -Dir 'C:\GpuVM\streaming' -Root 'C:\GpuVM' }
-                finally { Remove-Item (Join-Path 'C:\GpuVM\streaming' $file) -Force -ErrorAction SilentlyContinue }
+            # The installer runs and the server's source is compiled into a LOCAL SERVICE program as administrator: both
+            # go into a folder of this run only Administrators and SYSTEM can open, not C:\GpuVM, where a user of the
+            # guest could swap them first (security review 2026-11-21).
+            $dir = New-GuestAdminFolder -Session $session -Prefix 'GpuVM-audio'
+            try {
+                Invoke-Command -Session $session -ErrorAction Stop -ArgumentList $dir { param($d) New-Item -ItemType Directory (Join-Path $d 'audio'), (Join-Path $d 'streaming') | Out-Null }
+                Copy-Item -LiteralPath $installer -Destination "$dir\streaming" -ToSession $session -Force
+                Copy-Item -LiteralPath $server -Destination "$dir\audio" -ToSession $session -Force
+                $answer = Invoke-Command -Session $session -ErrorAction Stop -ArgumentList $code, $dir, $hash -ScriptBlock {
+                    param($code, $dir, $hash)
+                    . ([scriptblock]::Create($code))
+                    if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $dir 'audio\UsbAudioServer.cs')).Hash -ne $hash) { return 'error: the audio server''s source isn''t the one sent' }
+                    Install-GpuVMAudio -Dir (Join-Path $dir 'streaming') -Root $dir
+                }
+                $answer = ConvertTo-GuestString (@($answer)[-1])
             }
-            $answer = ConvertTo-GuestString (@($answer)[-1])
+            finally { Remove-GuestAdminFolder -Session $session -Path $dir }
         }
         finally { Remove-PSSession $session -ErrorAction SilentlyContinue }
     }
@@ -369,14 +376,15 @@ function Install-GuestGamepad {
     $hash = (Get-ComponentManifest)['vigembus']['sha256']
     $session = New-PSSession -VMName $Name -Credential $Credential -ErrorAction Stop
     try {
-        Invoke-Command -Session $session { New-Item -ItemType Directory -Force 'C:\GpuVM\streaming' | Out-Null }
-        Copy-Item -LiteralPath $installer -Destination 'C:\GpuVM\streaming' -ToSession $session -Force
-        $answer = Invoke-Command -Session $session -ErrorAction Stop -ArgumentList (Split-Path $installer -Leaf), $hash -ScriptBlock {
-            param($file, $hash)
-            $path = Join-Path 'C:\GpuVM\streaming' $file
-            try {
-                if ((Get-FileHash -Algorithm SHA256 $path).Hash -ne $hash) { return 'error: the installer isn''t the expected one' }
-                $signature = Get-AuthenticodeSignature $path
+        # Checked and run from a folder of this run only Administrators and SYSTEM can open: in C:\GpuVM a user of the
+        # guest could swap the installer between its checks and Start-Process (security review 2026-11-21).
+        $dir = New-GuestAdminFolder -Session $session -Prefix 'GpuVM-gamepad'
+        try {
+            Copy-Item -LiteralPath $installer -Destination $dir -ToSession $session -Force
+            $answer = Invoke-Command -Session $session -ErrorAction Stop -ArgumentList "$dir\$(Split-Path $installer -Leaf)", $hash -ScriptBlock {
+                param($path, $hash)
+                if ((Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash -ne $hash) { return 'error: the installer isn''t the expected one' }
+                $signature = Get-AuthenticodeSignature -LiteralPath $path
                 if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch '^CN=Nefarius Software Solutions e\.U\.,') {
                     return 'error: the installer doesn''t have its author''s signature'
                 }
@@ -385,8 +393,8 @@ function Install-GuestGamepad {
                 if (-not (Get-CimInstance Win32_SystemDriver -Filter "Name='ViGEmBus'")) { return 'error: the driver didn''t get installed' }
                 'ok'
             }
-            finally { Remove-Item $path -Force -ErrorAction SilentlyContinue }
         }
+        finally { Remove-GuestAdminFolder -Session $session -Path $dir }
     }
     finally { Remove-PSSession $session -ErrorAction SilentlyContinue }
     $answer = ConvertTo-GuestString (@($answer)[-1])
