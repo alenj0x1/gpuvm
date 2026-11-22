@@ -376,3 +376,7 @@ html:not([data-world="blocks"]) [data-seg="time"] { display: none; }
   .points li { align-items: center; }
   .points li > span { padding-top: 0; }
 }
+
+/* The agents chapter: the machine's desktop with the agent drawing on it. */
+.agents-demo { height: 420px; width: 100%; }
+@media (max-width: 760px) { .agents-demo { height: 300px; } }

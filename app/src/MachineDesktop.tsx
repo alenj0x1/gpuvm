@@ -16,10 +16,16 @@ import epic from "./assets/apps/epic.png";
 // Windows' own marks are drawn faithfully; the apps use their real icons.
 
 type Os = "win10" | "win11";
-interface Desk { scene: PixelSceneKind; os: Os; icons: [string, string][]; pinned: string[]; window: "terminal" | "explorer" | "notes" | "paint" | null }
+interface Desk { scene: PixelSceneKind; os: Os; icons: [string, string][]; pinned: string[]; window: "terminal" | "explorer" | "notes" | "paint" | "browser" | null }
 
 const RECYCLE = "recycle", FOLDER = "folder", TERMINAL = "terminal", EXPLORER = "explorer", NOTEPAD = "notepad", PAINT = "paint";
 const APP: Record<string, string> = { chrome, steam, discord, spotify, brave, firefox, vlc, obs, epic };
+const BROWSERS = new Set([chrome, brave, firefox]);
+/** What the text files in Received hold when opened (Notepad shows them). */
+const FILES: Record<string, string> = {
+  "informe-pruebas.md": "# Prueba del instalador\n\n- Instaló en 41 s, sin errores\n- La app abrió y detectó la GPU\n- Capturas en la carpeta capturas",
+  "notas-reunion.txt": "Reunión del viernes\n- Revisar los tiempos de apertura\n- Probar con dos máquinas a la vez",
+};
 
 export const DESKS: Record<string, Desk> = {
   win10: { scene: "sakura", os: "win10", icons: [[RECYCLE, "Papelera"], [steam, "Steam"], [epic, "Epic Games"], [discord, "Discord"], [FOLDER, "Recibidos"]],
@@ -64,18 +70,18 @@ function Clock() {
 type Kind = NonNullable<Desk["window"]>;
 interface Box { x: number; y: number; w: number; h: number }
 /** Each window's smallest size, so its text never breaks, and where it opens (fractions of the desktop). */
-const MIN: Record<Kind, [number, number]> = { terminal: [300, 120], explorer: [330, 180], notes: [240, 130], paint: [360, 240] };
-const START: Record<Kind, [number, number, number, number]> = { terminal: [0.24, 0.1, 0.52, 0.36], explorer: [0.22, 0.12, 0.56, 0.5], notes: [0.26, 0.1, 0.48, 0.36], paint: [0.08, 0.05, 0.84, 0.8] };
-const ICON_OF: Record<Kind, string> = { terminal: TERMINAL, explorer: EXPLORER, notes: NOTEPAD, paint: PAINT };
+const MIN: Record<Kind, [number, number]> = { terminal: [300, 120], explorer: [330, 180], notes: [240, 130], paint: [360, 240], browser: [380, 240] };
+const START: Record<Kind, [number, number, number, number]> = { terminal: [0.24, 0.1, 0.52, 0.4], explorer: [0.22, 0.12, 0.56, 0.5], notes: [0.3, 0.16, 0.44, 0.4], paint: [0.14, 0.05, 0.8, 0.8], browser: [0.16, 0.05, 0.7, 0.8] };
+const ICON_OF: Record<Kind, string> = { terminal: TERMINAL, explorer: EXPLORER, notes: NOTEPAD, paint: PAINT, browser: chrome };
 const BAR = 34;
 
 interface WinProps {
-  kind: Kind; os: Os; box: Box; max: boolean; front: boolean; locked: boolean;
+  kind: Kind; os: Os; box: Box; max: boolean; front: boolean; locked: boolean; icon?: string; file?: string; onOpenFile(name: string): void;
   onFocus(): void; onMove(b: Box): void; onMin(): void; onMax(): void; onClose(): void; bounds(): { w: number; h: number };
 }
 
-function Window({ kind, os, box, max, front, locked, onFocus, onMove, onMin, onMax, onClose, bounds }: WinProps) {
-  const title = { terminal: "Windows PowerShell", explorer: "Recibidos", notes: "notas.txt: Bloc de notas", paint: "Sin título: Paint" }[kind];
+function Window({ kind, os, box, max, front, locked, icon, file, onOpenFile, onFocus, onMove, onMin, onMax, onClose, bounds }: WinProps) {
+  const title = { terminal: "Windows PowerShell", explorer: "Recibidos", notes: `${file ?? "notas.txt"}: Bloc de notas`, paint: "Sin título: Paint", browser: "gpuvm" }[kind];
   // Dragging the title bar moves it; an edge or the corner resizes it, never below its minimum nor out of the desktop.
   const drag = (e: ReactPointerEvent, mode: "move" | "e" | "s" | "se") => {
     if (locked || e.button !== 0) return;
@@ -105,35 +111,70 @@ function Window({ kind, os, box, max, front, locked, onFocus, onMove, onMin, onM
   return (
     <div className={`md-window ${kind} ${os}${max ? " max" : ""}${front ? " front" : ""}`} style={{ ...style, zIndex: front ? 3 : 2 }} onPointerDown={onFocus}>
       <div className="md-titlebar" onPointerDown={(e) => !max && drag(e, "move")} onDoubleClick={() => !locked && onMax()}>
-        <Glyph id={ICON_OF[kind]} size={14} /><span>{title}</span>
+        <Glyph id={icon ?? ICON_OF[kind]} size={14} /><span>{title}</span>
         <button type="button" className="md-ctl" aria-label="Minimizar" onPointerDown={(e) => e.stopPropagation()} onClick={onMin}>─</button>
         <button type="button" className="md-ctl" aria-label="Maximizar" onPointerDown={(e) => e.stopPropagation()} onClick={onMax}>{max ? "❐" : "☐"}</button>
         <button type="button" className="md-ctl x" aria-label="Cerrar" onPointerDown={(e) => e.stopPropagation()} onClick={onClose}>✕</button>
       </div>
-      {kind === "terminal" && (
-        <pre className="md-term">{`PS C:\\Users\\Ale> nvidia-smi --query-gpu=name,memory.used --format=csv
-name, memory.used [MiB]
-NVIDIA GeForce RTX 4060, 1342 MiB
-PS C:\\Users\\Ale> `}<span className="md-caret" /></pre>
-      )}
+      {kind === "terminal" && <Terminal />}
       {kind === "explorer" && (
         <div className="md-explorer">
           <div className="md-side">{["Inicio", "Escritorio", "Descargas", "Documentos", "Imágenes"].map((n) => <span key={n}><Glyph id={FOLDER} size={13} />{n}</span>)}</div>
           <div className="md-files">
             <div className="md-file head"><span>Nombre</span><span>Tamaño</span></div>
             {[["informe-pruebas.md", "18 KB"], ["capturas", ""], ["GpuVM_1.0.0_x64-setup.exe", "119 MB"], ["notas-reunion.txt", "3 KB"]].map(([n, s]) => (
-              <div className="md-file" key={n}><span><Glyph id={s ? NOTEPAD : FOLDER} size={13} />{n}</span><span>{s}</span></div>
+              <div className="md-file" key={n} onDoubleClick={() => FILES[n] && onOpenFile(n)}><span><Glyph id={s ? NOTEPAD : FOLDER} size={13} />{n}</span><span>{s}</span></div>
             ))}
           </div>
         </div>
       )}
-      {kind === "notes" && <div className="md-notes">{"Ideas para el video\n- Abrir con la toma del lago\n- Música: algo tranquilo\n- Exportar en 1440p"}</div>}
+      {kind === "notes" && <textarea className="md-notes" spellCheck={false} defaultValue={file ? FILES[file] : "Ideas para el video\n- Abrir con la toma del lago\n- Música: algo tranquilo\n- Exportar en 1440p"} onPointerDown={(e) => e.stopPropagation()} />}
+      {kind === "browser" && (
+        <div className="md-browser">
+          <div className="md-address"><svg className="md-lock" width="10" height="10" viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="#6b6b6b" /><path d="M5 7V5a3 3 0 0 1 6 0v2" stroke="#6b6b6b" strokeWidth="1.6" fill="none" /></svg><span>{location.host || "gpuvm"}</span></div>
+          <div className="md-page"><iframe title="gpuvm" src={`${location.origin}${location.pathname}`} loading="lazy" tabIndex={-1} /></div>
+        </div>
+      )}
       {kind === "paint" && <div className="md-paint"><div className="md-paint-tools">{["#23252a", "#e5483f", "#f2b636", "#2f9e6a", "#2f5bd3", "#ffffff"].map((c) => <i key={c} style={{ background: c }} />)}</div><div className="md-canvas" /></div>}
       {!max && !locked && <>
         <span className="md-grip e" onPointerDown={(e) => drag(e, "e")} />
         <span className="md-grip s" onPointerDown={(e) => drag(e, "s")} />
         <span className="md-grip se" onPointerDown={(e) => drag(e, "se")} />
       </>}
+    </div>
+  );
+}
+
+/** PowerShell that answers a few commands, enough to type in it. */
+function Terminal() {
+  const prompt = "PS C:\\Users\\Ale> ";
+  const [lines, setLines] = useState<string[]>([`${prompt}nvidia-smi --query-gpu=name,memory.used --format=csv`, "name, memory.used [MiB]", "NVIDIA GeForce RTX 4060, 1342 MiB"]);
+  const [input, setInput] = useState("");
+  const end = useRef<HTMLDivElement>(null);
+  useEffect(() => { end.current?.scrollIntoView({ block: "nearest" }); }, [lines]);
+  const answer = (cmd: string): string[] => {
+    const c = cmd.trim().toLowerCase();
+    if (!c) return [];
+    if (c === "cls" || c === "clear") return ["\u0000"];
+    if (c.startsWith("nvidia-smi")) return ["NVIDIA GeForce RTX 4060, 1342 MiB, 47 °C"];
+    if (c === "dir" || c === "ls") return ["Desktop", "Documents", "Downloads", "Pictures"];
+    if (c === "whoami") return ["gpuvm\\ale"];
+    if (c === "hostname") return ["win10"];
+    if (c.startsWith("echo ")) return [cmd.trim().slice(5)];
+    if (c === "help" || c === "get-help") return ["Prueba: nvidia-smi, dir, whoami, hostname, echo, cls"];
+    return [`${cmd.trim().split(/\s+/)[0]}: el término no se reconoce como nombre de un cmdlet, función o programa.`];
+  };
+  const run = () => {
+    const out = answer(input);
+    setLines((l) => (out[0] === "\u0000" ? [] : [...l, `${prompt}${input}`, ...out]).slice(-40));
+    setInput("");
+  };
+  return (
+    <div className="md-term" onPointerDown={(e) => { e.stopPropagation(); (e.currentTarget.querySelector("input") as HTMLInputElement | null)?.focus(); }}>
+      {lines.map((l, i) => <div key={i}>{l || "\u00a0"}</div>)}
+      <div className="md-term-line" ref={end}><span>{prompt}</span>
+        <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") run(); }} spellCheck={false} aria-label="PowerShell" />
+      </div>
     </div>
   );
 }
@@ -167,7 +208,8 @@ const CSS = `
 .md-grip { position: absolute; touch-action: none; } .md-grip.e { top: 0; right: 0; width: 6px; height: 100%; cursor: ew-resize; }
 .md-grip.s { left: 0; bottom: 0; width: 100%; height: 6px; cursor: ns-resize; } .md-grip.se { right: 0; bottom: 0; width: 14px; height: 14px; cursor: nwse-resize; }
 .md-window.terminal .md-titlebar { background: #1f1f1f; color: #eee; } .md-window.terminal .md-ctl { color: #ccc; } .md-window.terminal .md-ctl:not(.x):hover { background: rgba(255,255,255,.1); }
-.md-term { margin: 0; padding: 8px 10px 12px; overflow: auto !important; background: #012456; color: #eaeaea; font: 10.5px/1.5 Consolas, "Cascadia Mono", monospace; white-space: pre-wrap; }
+.md-term { margin: 0; padding: 8px 10px 12px; overflow: auto !important; cursor: text; background: #012456; color: #eaeaea; font: 10.5px/1.5 Consolas, "Cascadia Mono", monospace; white-space: pre-wrap; }
+.md-term-line { display: flex; white-space: pre; } .md-term-line input { flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; caret-color: #eaeaea; }
 .md-caret { display: inline-block; width: 6px; height: 11px; background: #eaeaea; vertical-align: -1px; animation: md-blink 1s steps(1) infinite; }
 @keyframes md-blink { 50% { opacity: 0; } }
 .md-explorer { display: grid; grid-template-columns: 110px minmax(0, 1fr); }
@@ -175,7 +217,13 @@ const CSS = `
 .md-side span, .md-file span:first-child { display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .md-files { padding: 4px 8px; } .md-file { display: grid; grid-template-columns: 1fr 60px; padding: 4px 2px; border-bottom: 1px solid #f0f0f0; } .md-file.head { color: #6b6b6b; font-size: 10px; }
 .md-file span:last-child { color: #6b6b6b; text-align: right; }
-.md-notes { padding: 10px 12px 18px; white-space: pre-wrap; font: 11.5px/1.55 Consolas, monospace; }
+.md-notes { width: 100%; padding: 10px 12px 18px; border: 0; outline: 0; resize: none; white-space: pre-wrap; background: #fff; color: #1f1f1f; font: 11.5px/1.55 Consolas, monospace; }
+.md-browser { display: flex; flex-direction: column; background: #f3f3f3; }
+.md-address { display: flex; align-items: center; gap: 6px; height: 26px; margin: 4px 8px; padding: 0 10px; border-radius: 13px; background: #fff; color: #444; font-size: 10.5px; flex: none; }
+.md-lock { font-size: 9px; color: #6b6b6b; }
+.md-page { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #161616; }
+.md-page iframe { position: absolute; left: 0; top: 0; width: 200%; height: 200%; border: 0; transform: scale(.5); transform-origin: 0 0; }
+.md-file { cursor: default; } .md-file:not(.head):hover { background: #eef5fd; }
 .md-paint { display: grid; grid-template-rows: auto 1fr; } .md-paint-tools { display: flex; gap: 5px; padding: 6px 10px; background: #f3f3f3; border-bottom: 1px solid #e3e3e3; } .md-paint-tools i { width: 14px; height: 14px; border-radius: 50%; box-shadow: inset 0 0 0 1px #0002; }
 .md-canvas { margin: 10px; background: #fff; box-shadow: 0 0 0 1px #d9d9d9; }
 .md-window.paint .md-paint { background: #e9edf2; }
@@ -184,9 +232,10 @@ const CSS = `
 `;
 
 /** Which window a desktop icon opens (folders open the Explorer); apps only get selected. */
-const OPENS: Record<string, Kind> = { [FOLDER]: "explorer", [EXPLORER]: "explorer", [TERMINAL]: "terminal", [NOTEPAD]: "notes", [PAINT]: "paint" };
+const OPENS: Record<string, Kind> = { [FOLDER]: "explorer", [EXPLORER]: "explorer", [TERMINAL]: "terminal", [NOTEPAD]: "notes", [PAINT]: "paint",
+  [chrome]: "browser", [brave]: "browser", [firefox]: "browser" };
 
-interface Win { kind: Kind; box: Box; min: boolean; max: boolean }
+interface Win { kind: Kind; box: Box; min: boolean; max: boolean; icon?: string; file?: string }
 
 /** The machine `vm`'s screen; `children` go over the desktop (the agent's overlay, for one). It can be used like a
  *  desktop: windows move, resize (never below the size their text needs), minimize, maximize and close; icons are
@@ -214,9 +263,13 @@ export function MachineDesktop({ vm, children, locked }: { vm: string; children?
   const front = order[order.length - 1];
   const focus = (k: Kind) => setOrder((o) => [...o.filter((x) => x !== k), k]);
   const update = (k: Kind, f: (w: Win) => Win) => setWins((list) => list.map((w) => (w.kind === k ? f(w) : w)));
-  const open = (k: Kind) => {
-    setWins((list) => (list.some((w) => w.kind === k) ? list.map((w) => (w.kind === k ? { ...w, min: false } : w)) : [...list, { kind: k, box: place(k), min: false, max: false }]));
+  const open = (k: Kind, extra: Partial<Win> = {}) => {
+    setWins((list) => (list.some((w) => w.kind === k) ? list.map((w) => (w.kind === k ? { ...w, ...extra, min: false } : w)) : [...list, { kind: k, box: place(k), min: false, max: false, ...extra }]));
     focus(k);
+  };
+  const launch = (glyph: string) => {
+    const k = OPENS[glyph];
+    if (k && !locked) open(k, BROWSERS.has(glyph) ? { icon: glyph } : {});
   };
   const pin = (k: Kind) => {
     const w = wins.find((x) => x.kind === k);
@@ -229,12 +282,13 @@ export function MachineDesktop({ vm, children, locked }: { vm: string; children?
       <PixelScene scene={d.scene} />
       <div className="md-icons">{d.icons.map(([g, n]) => (
         <div key={n} className={`md-icon${selected === n ? " sel" : ""}`} onPointerDown={(e) => { e.stopPropagation(); setSelected(n); }}
-          onDoubleClick={() => { const k = OPENS[g]; if (k && !locked) open(k); }}>
+          onDoubleClick={() => launch(g)}>
           <Glyph id={g} size={28} /><span>{n}</span>
         </div>
       ))}</div>
       {wins.filter((w) => !w.min).map((w) => (
-        <Window key={w.kind} kind={w.kind} os={d.os} box={w.box} max={w.max} front={front === w.kind} locked={!!locked} bounds={bounds}
+        <Window key={w.kind + (w.file ?? "")} kind={w.kind} os={d.os} box={w.box} max={w.max} front={front === w.kind} locked={!!locked} bounds={bounds}
+          icon={w.icon} file={w.file} onOpenFile={(name) => open("notes", { file: name })}
           onFocus={() => focus(w.kind)} onMove={(box) => update(w.kind, (x) => ({ ...x, box }))}
           onMin={() => update(w.kind, (x) => ({ ...x, min: true }))} onMax={() => update(w.kind, (x) => ({ ...x, max: !x.max }))}
           onClose={() => setWins((list) => list.filter((x) => x.kind !== w.kind))} />
@@ -244,8 +298,8 @@ export function MachineDesktop({ vm, children, locked }: { vm: string; children?
         <span className="md-search">{d.os === "win11" ? "Buscar" : "Escribe aquí para buscar"}</span>
         {d.pinned.map((p) => {
           const k = OPENS[p];
-          const w = k && wins.find((x) => x.kind === k);
-          return <span key={p} className={`md-pin${w ? (w.min ? " min" : " open") : ""}`} onClick={() => k && !locked && pin(k)}><Glyph id={p} size={18} /></span>;
+          const w = k && wins.find((x) => x.kind === k && (k !== "browser" || x.icon === p));
+          return <span key={p} className={`md-pin${w ? (w.min ? " min" : " open") : ""}`} onClick={() => { if (!k || locked) return; if (k === "browser" && !w) launch(p); else pin(k); }}><Glyph id={p} size={18} /></span>;
         })}
         <span className="md-tray"><Clock /></span>
       </div>

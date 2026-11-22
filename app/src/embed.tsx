@@ -28,9 +28,11 @@ import {
 import type { HostMonitor, MouseMode, VmOverview } from "./types";
 import appCss from "./styles.css?inline";
 import { MachineDesktop } from "./MachineDesktop";
+import { LiveOverlay, type LiveEvent } from "./LiveOverlay";
+import { StatusRow, type StatusItem } from "./StatusNotch";
 import { ViewerPanel } from "./ViewerPanel";
 
-type View = "app" | "home" | "cleanup" | "apps" | "shared" | "stream" | "prompt" | "cube" | "machine" | "customize" | "games" | "viewer";
+type View = "app" | "home" | "cleanup" | "apps" | "shared" | "stream" | "prompt" | "cube" | "machine" | "customize" | "games" | "viewer" | "agents";
 type Theme = "light" | "dark";
 interface Site { lang: Lang; theme: Theme; accent: AccentPref; world: AmbientId; time: AmbientTime; dice: number }
 interface RunningJob extends JobInfo { vm: string; after?: () => void }
@@ -353,6 +355,62 @@ function ViewerDemo() {
   );
 }
 
+/** The agents chapter: an agent drawing in Paint on its machine, with the app's own overlay (cursor, rings, strokes,
+ *  keys) and its line in the status notch, in a loop. The script is laid out in fractions of the desktop and turned
+ *  into its pixels once measured, so the strokes land on the Paint canvas at any size. */
+function AgentsDemo() {
+  const box = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  const [step, setStep] = useState<LiveEvent | null>(null);
+  useSite();
+  const es = getLang() === "es";
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const measure = () => { const r = el.getBoundingClientRect(); if (r.width > 0) setSize({ w: Math.round(r.width), h: Math.round(r.height - 34) }); };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const script = useMemo<LiveEvent[] | null>(() => {
+    if (!size) return null;
+    const { w: W, h: H } = size;
+    // The Paint canvas, in fractions of the desktop above the taskbar (MachineDesktop's paint window).
+    const P = (fx: number, fy: number): [number, number] => [Math.round(W * (0.165 + fx * 0.74)), Math.round(H * (0.2 + fy * 0.6))];
+    const star = (cx: number, cy: number, r: number) => Array.from({ length: 11 }, (_, i) => {
+      const a = -Math.PI / 2 + (i * Math.PI) / 5, rr = i % 2 ? r * 0.45 : r;
+      return P(cx + Math.cos(a) * rr * 0.6, cy + Math.sin(a) * rr);
+    });
+    const moon = [...Array.from({ length: 14 }, (_, i) => { const a = Math.PI * 0.35 + (i / 13) * Math.PI * 1.3; return P(0.32 + Math.cos(a) * 0.09, 0.32 + Math.sin(a) * 0.17); }),
+      ...Array.from({ length: 10 }, (_, i) => { const a = Math.PI * 1.65 - (i / 9) * Math.PI * 1.3; return P(0.355 + Math.cos(a) * 0.07, 0.32 + Math.sin(a) * 0.13); })];
+    const hills = [P(0, 0.92), P(0.18, 0.7), P(0.34, 0.86), P(0.52, 0.62), P(0.7, 0.84), P(0.86, 0.68), P(1, 0.8)];
+    const name = "Claude Code", screen = { w: W, h: H };
+    const s = (n: number, intent: string, method: string, shapes: LiveEvent["shapes"]): LiveEvent => ({ phase: "start", step: n, clientName: name, screen, intent, method, shapes });
+    return [
+      s(1, es ? "Eligiendo el color" : "Picking a color", "input.act", [{ type: "click", x: Math.round(W * 0.175), y: Math.round(H * 0.125) }]),
+      s(2, es ? "Dibujando la luna" : "Drawing the moon", "input.act", [{ type: "drag", strokes: [moon], ms: 1600 }]),
+      s(3, es ? "Dibujando las estrellas" : "Drawing the stars", "input.act", [{ type: "drag", strokes: [star(0.62, 0.22, 0.07), star(0.8, 0.4, 0.05), star(0.12, 0.18, 0.045)], ms: 2000 }]),
+      s(4, es ? "Dibujando las montañas" : "Drawing the mountains", "input.act", [{ type: "drag", strokes: [hills], ms: 1500 }]),
+      s(5, es ? "Guardando el dibujo" : "Saving the drawing", "input.act", [{ type: "key", keys: "ctrl+s" }]),
+      s(6, es ? "Entregándote el dibujo" : "Delivering the drawing to you", "outbox.offer", []),
+    ];
+  }, [size, es]);
+  const item: StatusItem = step
+    ? { id: "live", kind: "live", clientName: "Claude Code", method: step.method ?? null, intent: step.intent ?? null, shape: step.shapes?.[0]?.type ?? null }
+    : { id: "live", kind: "live", clientName: "Claude Code", thinking: true };
+  return (
+    <div className="site-agents">
+      <div className="site-agents-screen" ref={box}>
+        <MachineDesktop vm="agent" locked>
+          {script && <LiveOverlay key={`${size?.w}x${size?.h}-${es}`} script={script} keep onStep={setStep} />}
+        </MachineDesktop>
+      </div>
+      <div className="site-agents-notch sn"><StatusRow item={item} onAction={async () => {}} /></div>
+    </div>
+  );
+}
+
 /* ---------- Mounting ---------- */
 
 /** Everything inside a demo is drawn again when the language changes, as the app does (without starting it over). */
@@ -414,6 +472,11 @@ const scopedCss = appCss
   .site-viewer-picture > * { position: absolute; inset: 0; width: 100%; height: 100%; }
   .pixel-scene { object-fit: cover; image-rendering: pixelated; }
   .site-viewer-panel { position: relative; min-height: 0; }
+  .site-agents { position: relative; height: 100%; border-radius: var(--r-lg); overflow: hidden; background: #000; box-shadow: inset 0 0 0 1px var(--line); }
+  .site-agents-screen { position: absolute; inset: 0; }
+  .site-agents-screen .lv-root { position: absolute; }
+  .site-agents-notch { position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); border-radius: 14px 14px 0 0; z-index: 6; max-width: calc(100% - 24px); }
+  .site-agents-notch .sn-row { white-space: nowrap; }
   .site-viewer-panel .viewer-panel { position: absolute; }
   @media (max-width: 760px) { .site-viewer { grid-template-columns: 1fr !important; grid-template-rows: 220px minmax(0, 1fr); } .site-viewer-panel .viewer-panel-edge { display: none; } }
   /* The whole app: drawn at a desktop window's size and scaled to fit. The transform also keeps its dialogs and
@@ -473,6 +536,7 @@ function mount(el: HTMLElement, options: { view: View; vm?: string }) {
   if (view === "customize") { host.classList.add("cube"); render(() => <CustomizeDemo />); return; }
   if (view === "games") { host.classList.add("cube"); render(() => <GamesDemo />); return; }
   if (view === "viewer") { host.classList.add("cube"); render(() => <ViewerDemo />); return; }
+  if (view === "agents") { host.classList.add("cube"); render(() => <AgentsDemo />); return; }
   render(() => <Demo view={view} vmName={options.vm ?? "win10"} />);
 }
 
