@@ -386,6 +386,12 @@ Register-GpuVMBackend -Name 'hyperv-gpup'-Description 'Hyper-V with GPU Partitio
 
             $guestDir = Join-Path $root 'GpuVM'
             New-Item -ItemType Directory -Path $guestDir -Force | Out-Null
+            # C:\GpuVM would inherit "Authenticated Users: Modify" from C:\, and what is in it is run as the guest's
+            # administrator (setup.ps1 at first sign-in): Administrators and SYSTEM full, Users read and run, nothing
+            # inherited, before anything is copied in (security review 2026-11-21). Well-known SIDs, the same in the guest.
+            & icacls.exe $guestDir /setowner '*S-1-5-32-544' /Q | Out-Null
+            & icacls.exe $guestDir /inheritance:r /grant:r '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-545:(OI)(CI)RX' /Q | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Couldn't restrict the permissions of the guest's C:\GpuVM." }
             Copy-Item -Path (Join-Path (Get-RepoPath 'guest') '*') -Destination $guestDir -Recurse -Force
             Write-JsonFile -Path (Join-Path $guestDir 'guest-config.json') -Data $config['guest']
             foreach ($file in @($Context.GuestFiles)) {

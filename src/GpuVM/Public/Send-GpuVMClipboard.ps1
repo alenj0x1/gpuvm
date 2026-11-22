@@ -50,45 +50,56 @@ function Send-GpuVMClipboard {
         $receivedIn = [string]$sent['path']
     }
 
-    $raw = Invoke-Command -VMName $Name -Credential $guest -ErrorAction Stop -ArgumentList $kind, $payload, $receivedIn, $received -ScriptBlock {
-        param($kind, [byte[]]$payload, $receivedIn, [string[]]$received)
-        # The clipboard belongs to the user's desktop session, so a task in that session sets it.
+    $raw = Invoke-Command -VMName $Name -Credential $guest -ErrorAction Stop -ArgumentList $kind, $payload, $receivedIn, $received, $script:GuestFolderCode -ScriptBlock {
+        param($kind, [byte[]]$payload, $receivedIn, [string[]]$received, $folderCode)
+        . ([scriptblock]::Create($folderCode))
+        # The clipboard belongs to the user's desktop session, so a task in that session sets it. What the
+        # administrator writes goes into C:\GpuVM, which only administrators can change; the task's "done" comes back
+        # through a folder of this run the user can write and the administrator only reads (security review
+        # 2026-11-21, GuestFolders.ps1).
         $dir = 'C:\GpuVM'
+        Protect-GpuVMGuestRoot -Path $dir
         $file = Join-Path $dir 'clipboard.bin'
         $list = Join-Path $dir 'clipboard.txt'
-        $done = Join-Path $dir 'clipboard.done'
         $script = Join-Path $dir 'set-clipboard.ps1'
-        New-Item -ItemType Directory -Path $dir -Force | Out-Null
         $user = (Get-CimInstance Win32_ComputerSystem).UserName
         if (-not $user) { return 'nosession' }
-        if ($kind -eq 'files') {
-            # The received items, by full path in the folder the copy put them in.
-            $paths = $received | ForEach-Object { Join-Path $receivedIn $_ }
-            [IO.File]::WriteAllLines($list, [string[]]$paths, [Text.UTF8Encoding]::new($false))
-        }
-        else { [IO.File]::WriteAllBytes($file, $payload) }
-        $set = switch ($kind) {
-            'text' { "Set-Clipboard -Value ([IO.File]::ReadAllText('$file', [Text.Encoding]::UTF8))" }
-            'image' {
-                "Add-Type -AssemblyName System.Windows.Forms, System.Drawing`n" +
-                "`$img = [Drawing.Image]::FromStream([IO.MemoryStream]::new([IO.File]::ReadAllBytes('$file')))`n" +
-                "[Windows.Forms.Clipboard]::SetImage(`$img)"
+        $drop = New-GpuVMUserFolder -Root $dir -User $user
+        try {
+            $done = Join-Path $drop 'clipboard.done'
+            foreach ($old in $file, $list, $script) { Remove-GpuVMItem -Path $old }
+            if ($kind -eq 'files') {
+                # The received items, by full path in the folder the copy put them in.
+                $paths = $received | ForEach-Object { Join-Path $receivedIn $_ }
+                [IO.File]::WriteAllLines($list, [string[]]$paths, [Text.UTF8Encoding]::new($false))
             }
-            'files' { "Set-Clipboard -Path (Get-Content -Encoding UTF8 -LiteralPath '$list')" }
-        }
-        Set-Content -Path $script -Encoding UTF8 -Value @"
-try { $set } finally { Remove-Item -LiteralPath '$file', '$list' -Force -ErrorAction SilentlyContinue }
+            else { [IO.File]::WriteAllBytes($file, $payload) }
+            $set = switch ($kind) {
+                'text' { "Set-Clipboard -Value ([IO.File]::ReadAllText('$file', [Text.Encoding]::UTF8))" }
+                'image' {
+                    "Add-Type -AssemblyName System.Windows.Forms, System.Drawing`n" +
+                    "`$img = [Drawing.Image]::FromStream([IO.MemoryStream]::new([IO.File]::ReadAllBytes('$file')))`n" +
+                    "[Windows.Forms.Clipboard]::SetImage(`$img)"
+                }
+                'files' { "Set-Clipboard -Path (Get-Content -Encoding UTF8 -LiteralPath '$list')" }
+            }
+            Set-Content -Path $script -Encoding UTF8 -Value @"
+$set
 Set-Content -LiteralPath '$done' -Value ok
 "@
-        Remove-Item $done -Force -ErrorAction SilentlyContinue
-        $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$script`""
-        $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
-        Register-ScheduledTask -TaskName 'GpuVM-Clipboard' -Action $action -Principal $principal -Force | Out-Null
-        Start-ScheduledTask -TaskName 'GpuVM-Clipboard'
-        for ($i = 0; $i -lt 40 -and -not (Test-Path $done); $i++) { Start-Sleep -Milliseconds 250 }
-        Unregister-ScheduledTask -TaskName 'GpuVM-Clipboard' -Confirm:$false
-        Remove-Item $file, $list -Force -ErrorAction SilentlyContinue
-        if (Test-Path $done) { 'ok' } else { 'timeout' }
+            $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$script`""
+            $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
+            Register-ScheduledTask -TaskName 'GpuVM-Clipboard' -Action $action -Principal $principal -Force | Out-Null
+            Start-ScheduledTask -TaskName 'GpuVM-Clipboard'
+            for ($i = 0; $i -lt 40 -and -not (Test-Path $done); $i++) { Start-Sleep -Milliseconds 250 }
+            Unregister-ScheduledTask -TaskName 'GpuVM-Clipboard' -Confirm:$false
+            if (Test-Path $done) { 'ok' } else { 'timeout' }
+        }
+        finally {
+            # Deleted here: the task (as the user) can only read them.
+            Remove-Item -LiteralPath $file, $list -Force -ErrorAction SilentlyContinue
+            Remove-GpuVMFolder -Path $drop
+        }
     }
     switch ([string](@($raw)[0])) {
         'ok' { Write-Step 'Ready in the VM: paste it with Ctrl+V' }

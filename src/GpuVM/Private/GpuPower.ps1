@@ -74,6 +74,8 @@ function Invoke-GpuPowerTransition {
 function Start-VM {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Name)
+    # An agent machine never starts with an adapter on a switch where it isn't isolated (Network.ps1).
+    Assert-AgentMachineSwitch -Name $Name
     Invoke-GpuPowerTransition -Name $Name -UntilUp -Do { Hyper-V\Start-VM -Name $Name }
 }
 
@@ -92,5 +94,6 @@ function Restart-VM {
     $splat = @{ Name = $Name; Force = $Force }
     if ($Type) { $splat['Type'] = $Type }
     if ($Wait) { $splat['Wait'] = $true; $splat['For'] = $For; $splat['Timeout'] = $Timeout }
+    Assert-AgentMachineSwitch -Name $Name
     Invoke-GpuPowerTransition -Name $Name -UntilUp -Do { Hyper-V\Restart-VM @splat }
 }
