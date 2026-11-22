@@ -42,7 +42,8 @@ function Update-GpuVMTemplate {
             continue
         }
         $failed = Get-TemplateUpdateFailure -Template $meta
-        if (-not $Name -and -not $Force -and $failed -and $failed['at'] -gt (Get-Date).ToUniversalTime().AddDays(-1)) { continue }
+        $retryAfter = if ($failed -and $failed['message'] -match 'allocate|Insufficient system resources|memory') { (Get-Date).ToUniversalTime().AddHours(-1) } else { (Get-Date).ToUniversalTime().AddDays(-1) }
+        if (-not $Name -and -not $Force -and $failed -and $failed['at'] -gt $retryAfter) { continue }
         if (Test-TemplateUpdating -Template $meta) { Write-Warning "The template '$n' is already being updated."; continue }
         if (-not $PSCmdlet.ShouldProcess($n, 'Add a layer with this GpuVM''s Sunshine and agent')) { continue }
         Add-TemplateLayer -Template $meta -Bundled $bundled
@@ -135,7 +136,7 @@ function Add-TemplateLayer {
         # Right after the install Windows shuts down but the machine never turns off; after one more boot it shuts down cleanly.
         if (-not $installed['restarted']) { Restart-GpuVMCold -Name $copy }
         Wait-GuestReady -Name $copy -Credential $credential | Out-Null
-        # Read and cleaned inside the copy: this PC never mounts a disk the copy wrote.
+        # Read and cleaned inside the copy, not by mounting its disk on this PC.
         $keys = @(Get-TemplateComponentKeys -Template $Template -Bundled $Bundled)
         $components = Clear-GuestIdentityForLayer -Name $copy -Credential $credential -Keys $keys
         foreach ($key in $keys) {
@@ -206,11 +207,14 @@ function Add-TemplateLayer {
 function Clear-GuestIdentityForLayer {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential, [string[]]$Keys = @())
     Write-Step 'Removing the temporary copy''s own identity'
-    $result = Invoke-Command -VMName $Name -Credential $Credential -ErrorAction Stop -ArgumentList (, $Keys) -ScriptBlock {
+    $job = Invoke-Command -VMName $Name -Credential $Credential -AsJob -ArgumentList (, $Keys) -ScriptBlock {
         param($keys)
         $ErrorActionPreference = 'Stop'
         foreach ($service in 'GpuVMAgent', 'SunshineService') {
-            Get-Service -Name $service -ErrorAction SilentlyContinue | Stop-Service -Force -ErrorAction SilentlyContinue -WarningAction SilentlyContinue
+            $svc = Get-Service -Name $service -ErrorAction SilentlyContinue
+            if (-not $svc -or $svc.Status -eq 'Stopped') { continue }
+            & sc.exe stop $service | Out-Null
+            try { $svc.WaitForStatus('Stopped', '00:00:20') } catch { Stop-Process -Name (@{ GpuVMAgent = 'gpuvm-agent'; SunshineService = 'sunshine' })[$service] -Force -ErrorAction SilentlyContinue }
         }
         $config = Join-Path $env:ProgramFiles 'Sunshine\config'
         $statePath = Join-Path $config 'sunshine_state.json'
@@ -225,8 +229,10 @@ function Clear-GuestIdentityForLayer {
         }
         $agent = Join-Path $env:ProgramData 'GpuVM\Agent'
         if (Test-Path -LiteralPath $agent) {
-            Get-ChildItem -LiteralPath $agent -Force | Where-Object { $_.Name -eq 'secret' -or $_.Name -like '*.log' -or $_.Name -eq 'staging' } |
-                Remove-Item -Recurse -Force
+            Remove-Item -LiteralPath (Join-Path $agent 'secret') -Force -ErrorAction SilentlyContinue
+            if (Test-Path -LiteralPath (Join-Path $agent 'secret')) { throw "The copy's agent secret couldn't be removed." }
+            Get-ChildItem -LiteralPath $agent -Force | Where-Object { $_.Name -like '*.log' -or $_.Name -eq 'staging' } |
+                Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
         }
         $stamp = @{}
         foreach ($key in $keys) {
@@ -235,6 +241,11 @@ function Clear-GuestIdentityForLayer {
         }
         $stamp
     }
+    try {
+        if (-not (Wait-Job $job -Timeout 180)) { throw "The temporary copy didn't answer in 3 minutes." }
+        $result = Receive-Job $job -ErrorAction Stop
+    }
+    finally { $job | Stop-Job -PassThru -ErrorAction SilentlyContinue | Remove-Job -Force -ErrorAction SilentlyContinue }
     $components = [ordered]@{}
     foreach ($key in $Keys) {
         $hash = [string]$result[$key]

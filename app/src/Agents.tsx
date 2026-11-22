@@ -175,6 +175,25 @@ const REQUEST_ICON: Record<AgentRequestKind, Icon> = { deliver: IconFileDownload
 
 const left = (r: AgentRequest, now: number) => Math.max(0, Math.round((new Date(r.expiresAt).getTime() - now) / 1000));
 
+const ARM_MS = 800;
+
+// Allow and Accept answer only a deliberate click: not one already on its way when GpuVM came to the front (an agent
+// can raise the window) or when the window got the focus.
+function useArmed() {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    let timer = 0;
+    const arm = () => { setArmed(false); window.clearTimeout(timer); timer = window.setTimeout(() => setArmed(true), ARM_MS); };
+    arm();
+    window.addEventListener("focus", arm);
+    let off: (() => void) | undefined;
+    let gone = false;
+    import("@tauri-apps/api/event").then(({ listen }) => listen("app-raised", arm)).then((f) => { if (gone) f(); else off = f; }).catch(() => {});
+    return () => { gone = true; window.clearTimeout(timer); window.removeEventListener("focus", arm); off?.(); };
+  }, []);
+  return armed;
+}
+
 export function RequestRow({ r, showMachine = true, onView }: { r: AgentRequest; showMachine?: boolean; onView?: (machine: string) => void }) {
   const [busy, setBusy] = useState<"allow" | "deny" | "task" | null>(null);
   const [error, setError] = useState("");
@@ -188,7 +207,8 @@ export function RequestRow({ r, showMachine = true, onView }: { r: AgentRequest;
   };
   const sec = left(r, now);
   const send = r.kind === "send" ? r.send ?? null : null;
-  const canAllow = r.kind !== "send" || !!send;
+  const armed = useArmed();
+  const canAllow = (r.kind !== "send" || !!send) && armed;
   return (
     <div className={`ag-request${r.kind === "revert" || r.kind === "delete" ? " risky" : ""}${r.human ? " human" : ""}`}
       onContextMenu={(e) => { if (r.human) return; e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY }); }}>
@@ -221,7 +241,7 @@ export function RequestRow({ r, showMachine = true, onView }: { r: AgentRequest;
       {menu && <Menu at={menu} onClose={() => setMenu(null)} items={[
         ...(canAllow ? [{ icon: IconCheck, label: r.kind === "deliver" ? t("Accept") : t("Allow"), run: () => answer("allow") }] : []),
         // A copy from the PC names one exact path: never allowed ahead for the rest of the task.
-        ...(r.kind !== "send" ? [{ icon: IconHistory, label: t("Allow for this task"), run: () => answer("task") }] : []),
+        ...(r.kind !== "send" && armed ? [{ icon: IconHistory, label: t("Allow for this task"), run: () => answer("task") }] : []),
         { icon: IconX, label: t("Refuse"), run: () => answer("deny") },
       ]} />}
     </div>
@@ -252,6 +272,7 @@ const fileIcon = (name: string): Icon => {
 };
 
 function OfferRow({ o, showMachine }: { o: AgentOffer; showMachine: boolean }) {
+  const armed = useArmed();
   const [busy, setBusy] = useState<"accept" | "refuse" | null>(null);
   const [error, setError] = useState("");
   const I = fileIcon(o.name);
@@ -275,7 +296,7 @@ function OfferRow({ o, showMachine }: { o: AgentOffer; showMachine: boolean }) {
       {o.state === "pending" && (
         <div className="ag-request-actions">
           <button type="button" className="btn ghost compact" disabled={!!busy} onClick={() => resolve(false)}>{busy === "refuse" ? <IconLoader2 size={15} className="spin" /> : <IconX size={15} />}{t("Refuse")}</button>
-          <button type="button" className="btn compact" disabled={!!busy} onClick={() => resolve(true)}>{busy === "accept" ? <IconLoader2 size={15} className="spin" /> : <IconFileDownload size={15} />}{t("Accept")}</button>
+          <button type="button" className="btn compact" disabled={!!busy || !armed} onClick={() => resolve(true)}>{busy === "accept" ? <IconLoader2 size={15} className="spin" /> : <IconFileDownload size={15} />}{t("Accept")}</button>
         </div>
       )}
     </div>

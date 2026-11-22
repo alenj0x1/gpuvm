@@ -124,8 +124,11 @@ pub(crate) fn raise_without_focus(hwnd: isize, restore: bool) {
             ShowWindow(hwnd as _, if IsIconic(hwnd as _) != 0 { SW_SHOWNOACTIVATE } else { SW_SHOWNA });
         }
         let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW;
+        let topmost = windows_sys::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(hwnd as _, windows_sys::Win32::UI::WindowsAndMessaging::GWL_EXSTYLE) as u32 & windows_sys::Win32::UI::WindowsAndMessaging::WS_EX_TOPMOST != 0;
         SetWindowPos(hwnd as _, HWND_TOPMOST, 0, 0, 0, 0, flags);
-        SetWindowPos(hwnd as _, HWND_NOTOPMOST, 0, 0, 0, 0, flags);
+        if !topmost {
+            SetWindowPos(hwnd as _, HWND_NOTOPMOST, 0, 0, 0, 0, flags);
+        }
     }
 }
 
@@ -760,8 +763,10 @@ pub async fn viewer_reveal(app: AppHandle, vm: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn viewer_home(app: AppHandle, vm: String, keep: bool) -> Result<(), String> {
     crate::overlay::close(&app);
+    crate::overlay::hide_all(&app, &vm);
     let viewer = viewers().as_ref().and_then(|v| v.get(&vm).cloned()).ok_or("This machine's viewer isn't open.")?;
     viewer.visible.store(false, Ordering::Relaxed);
+    crate::status::refresh(&app);
     announce_cover();
     let msg = if keep { json!({ "type": "hide" }) } else { json!({ "type": "quit" }) };
     if send_raw(&viewer, &msg) { Ok(()) } else { Err("The viewer didn't respond.".into()) }
@@ -782,6 +787,8 @@ pub async fn viewer_show(app: AppHandle, vm: String) -> Result<(), String> {
     }
     allow_foreground(viewer.child.pid);
     allow_raise(&viewer);
+    viewer.visible.store(true, Ordering::Relaxed);
+    viewer.revealed.store(true, Ordering::Relaxed);
     if !send_raw(&viewer, &json!({ "type": "show" })) {
         return Err("The viewer didn't respond.".into());
     }

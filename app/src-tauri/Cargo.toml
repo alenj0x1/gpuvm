@@ -24,6 +24,7 @@ png = "0.18"
 base64 = "0.23"
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
+    "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
     "Win32_Security",
     "Win32_Security_Authorization",
@@ -54,3 +55,12 @@ codegen-units = 1
 lto = true
 opt-level = "s"
 strip = true
+
+# Test builds (scripts/dev-install.ps1): minutes faster than release, same behavior.
+[profile.fast]
+inherits = "release"
+lto = false
+codegen-units = 256
+incremental = true
+opt-level = 1
+strip = false

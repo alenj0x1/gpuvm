@@ -32,7 +32,6 @@ fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
 }
 
 pub fn set(app: &AppHandle, vm: &str, id: &str, item: Option<Value>) {
-    crate::diag(&format!("notch set {vm} {id} {}", if item.is_some() { "on" } else { "off" }));
     with(|s| {
         let list = s.items.entry(vm.to_string()).or_default();
         list.retain(|i| i["id"] != id);
@@ -113,12 +112,6 @@ pub fn refresh(app: &AppHandle) {
     let payload = now.as_ref().map(|(vm, items, placement)| json!({ "vm": vm, "items": items, "placement": placement }));
     let _ = app.emit("status-items", payload.clone().unwrap_or(json!({ "vm": Value::Null, "items": [] })));
     let in_panel = now.as_ref().is_some_and(|(_, _, p)| p == "panel");
-    if now.is_none() {
-        let wants: Vec<String> = with(|s| s.items.iter().filter(|(_, l)| !l.is_empty()).map(|(vm, _)| format!("{vm} (visible {}, window {})", crate::viewer::viewer_visible(vm), crate::viewer::viewer_hwnd(vm).is_some())).collect());
-        if !wants.is_empty() {
-            crate::diag(&format!("notch refresh: nothing to show; notices for {}", wants.join(", ")));
-        }
-    }
     let Some((vm, _, _)) = now.filter(|_| !in_panel) else {
         with(|s| s.shown = None);
         if let Some(w) = app.get_webview_window(LABEL) {
@@ -128,21 +121,24 @@ pub fn refresh(app: &AppHandle) {
                 std::thread::sleep(Duration::from_millis(320));
                 if with(|s| s.shown.is_none()) {
                     if let Some(w) = app.get_webview_window(LABEL) {
-                        let _ = w.destroy();
+                        crate::overlay::hide_quiet(&w);
                     }
                 }
             });
         }
         return;
     };
-    crate::diag(&format!("notch refresh: shows {vm}"));
     let switched = with(|s| { let other = s.shown.as_deref() != Some(&vm); s.shown = Some(vm.clone()); other });
+    // One window, reused: a destroyed one could linger on screen while its replacement opened.
     let window = match app.get_webview_window(LABEL) {
-        Some(w) if !switched => w,
-        existing => {
-            if let Some(w) = existing {
-                let _ = w.destroy();
+        Some(w) => {
+            if switched {
+                crate::overlay::hide_quiet(&w);
+                with(|s| s.size = (0.0, 0.0));
             }
+            w
+        }
+        None => {
             let Ok(w) = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into())).additional_browser_args(crate::BROWSER_ARGS)
                 .title("GpuVM").decorations(false).transparent(true).shadow(false).resizable(false)
                 .skip_taskbar(true).focused(false).visible(false).build() else { return };
@@ -152,27 +148,6 @@ pub fn refresh(app: &AppHandle) {
     };
     let _ = window.emit("status-notch", payload);
     place(app, &window, &vm, false);
-}
-
-// On Windows 10 a transparent WebView2 window shows pale: cut to the notch's shape (needs the frame off, or it gets a title bar).
-fn shape(hwnd: HWND, w: i32, h: i32, radius: i32, (fx, fy): (f64, f64)) {
-    use windows_sys::Win32::Graphics::Gdi::{CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, SetWindowRgn, RGN_OR};
-    let (top, bottom, left, right) = (fy <= 0.001, fy >= 0.999, fx <= 0.001, fx >= 0.999);
-    let r = radius.min(w / 2).min(h / 2).max(0);
-    // SAFETY: GDI regions this function creates; the one given to SetWindowRgn belongs to the window afterwards.
-    unsafe {
-        let region = CreateRoundRectRgn(0, 0, w + 1, h + 1, r * 2, r * 2);
-        for (square, (x0, y0)) in [(top || left, (0, 0)), (top || right, (w - r, 0)), (bottom || right, (w - r, h - r)), (bottom || left, (0, h - r))] {
-            if square && r > 0 {
-                let corner = CreateRectRgn(x0, y0, x0 + r, y0 + r);
-                CombineRgn(region, region, corner, RGN_OR);
-                DeleteObject(corner);
-            }
-        }
-        if SetWindowRgn(hwnd, region, 1) == 0 {
-            DeleteObject(region);
-        }
-    }
 }
 
 fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str, slide: bool) {
@@ -203,8 +178,6 @@ fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str, slide: bool) 
     if let Ok(own) = window.hwnd() {
         // SAFETY: the viewer becomes the window's owner, so the notch stays just above the picture and moves with it.
         unsafe { SetWindowLongPtrW(own.0 as HWND, GWLP_HWNDPARENT, viewer) };
-        let corners = if under { (0.5, 0.5) } else { (fx, fy) };
-        shape(own.0 as HWND, nw, nh, (14.0 * scale).round() as i32, corners);
     }
     if (slide || was_under != under) && window.is_visible().unwrap_or(false) {
         let from = window.outer_position().map(|p| (p.x, p.y)).unwrap_or((px, py));
@@ -225,9 +198,8 @@ fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str, slide: bool) 
     } else {
         let _ = window.set_position(PhysicalPosition::new(px, py));
     }
-    crate::diag(&format!("notch place {vm} at {px},{py} {nw}x{nh} visible {}", window.is_visible().unwrap_or(false)));
     if !window.is_visible().unwrap_or(false) {
-        let _ = window.show();
+        crate::overlay::show_quiet(window);
         crate::overlay::mark_taskbar(window, crate::viewer::viewer_full_screen(vm));
     }
     let _ = window.emit("status-place", json!({ "placement": placement, "under": under }));
@@ -258,7 +230,6 @@ pub fn dock_changed(app: &AppHandle) {
 
 #[tauri::command]
 pub fn status_resize(app: AppHandle, width: f64, height: f64) {
-    crate::diag(&format!("notch page measured {width}x{height}"));
     with(|s| s.size = (width.clamp(1.0, 900.0), height.clamp(1.0, 400.0)));
     let Some(vm) = with(|s| s.shown.clone()) else { return };
     if let Some(w) = app.get_webview_window(LABEL) {
@@ -299,7 +270,7 @@ pub fn set_status_prefs(app: AppHandle, placement: String, x: Option<f64>, y: Op
     if changed {
         with(|s| s.size = (0.0, 0.0));
         if let Some(w) = app.get_webview_window(LABEL) {
-            let _ = w.destroy();
+            crate::overlay::hide_quiet(&w);
         }
         with(|s| s.shown = None);
         refresh(&app);

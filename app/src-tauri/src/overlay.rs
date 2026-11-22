@@ -100,6 +100,9 @@ pub(crate) fn borderless(window: &tauri::WebviewWindow) {
     let hwnd = own.0 as HWND;
     // SAFETY: reads and rewrites this app's own window's style, then asks Windows to recompute its frame.
     unsafe {
+        // Windows' show/hide animation draws a captioned ghost of the window ("GpuVM") for a moment.
+        let off: i32 = 1;
+        windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute(hwnd, windows_sys::Win32::Graphics::Dwm::DWMWA_TRANSITIONS_FORCEDISABLED as u32, (&off as *const i32).cast(), 4);
         let style = GetWindowLongPtrW(hwnd, GWL_STYLE) as u32;
         let frame = WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
         if style & frame == 0 && style & WS_POPUP != 0 {
@@ -107,6 +110,54 @@ pub(crate) fn borderless(window: &tauri::WebviewWindow) {
         }
         SetWindowLongPtrW(hwnd, GWL_STYLE, ((style & !frame) | WS_POPUP) as isize);
         SetWindowPos(hwnd, std::ptr::null_mut(), 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+}
+
+// tao re-applies its own style, caption included, whenever it shows or hides a window, and Windows draws that caption
+// for a frame: done off screen.
+const AWAY: i32 = -32000;
+
+fn move_raw(window: &tauri::WebviewWindow, x: i32, y: i32) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER};
+    if let Ok(own) = window.hwnd() {
+        // SAFETY: moves this app's own window.
+        unsafe { SetWindowPos(own.0 as HWND, std::ptr::null_mut(), x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE) };
+    }
+}
+
+pub(crate) fn show_quiet(window: &tauri::WebviewWindow) {
+    let at = window.outer_position().ok();
+    move_raw(window, AWAY, AWAY);
+    let _ = window.show();
+    borderless(window);
+    if let Some(at) = at {
+        move_raw(window, at.x, at.y);
+    }
+}
+
+pub(crate) fn hide_quiet(window: &tauri::WebviewWindow) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
+    let Ok(own) = window.hwnd() else { return };
+    move_raw(window, AWAY, AWAY);
+    // SAFETY: this app's own window loses its owner (one that closes would redraw it with its frame) and hides.
+    unsafe {
+        SetWindowLongPtrW(own.0 as HWND, GWLP_HWNDPARENT, 0);
+        ShowWindow(own.0 as HWND, SW_HIDE);
+    }
+}
+
+/// Everything over a machine's picture goes at once (its viewer is about to close or hide).
+pub fn hide_all(app: &AppHandle, vm: &str) {
+    {
+        let mut p = panel();
+        if p.vm.as_deref() == Some(vm) {
+            p.open = false;
+        }
+    }
+    for label in [LABEL, "status-notch", "agent-live", "agent-dock"] {
+        if let Some(w) = app.get_webview_window(label) {
+            hide_quiet(&w);
+        }
     }
 }
 
@@ -166,7 +217,7 @@ pub fn open(app: &AppHandle, vm: &str) {
     }
     let _ = crate::viewer::send_to(vm, &json!({ "type": "capture", "on": false }));
     let _ = crate::viewer::send_to(vm, &json!({ "type": "inset", "fraction": width as f64 / total as f64, "durationMs": SLIDE_MS }));
-    let _ = window.show();
+    show_quiet(&window);
     mark_full_screen(&window, crate::viewer::viewer_full_screen(vm));
     let _ = window.emit("viewer-panel", json!({ "open": true, "vm": vm }));
     if let Ok(own) = window.hwnd() {
@@ -194,7 +245,7 @@ pub fn close(app: &AppHandle) {
                 return;
             }
             if let Some(w) = app.get_webview_window(LABEL) {
-                let _ = w.hide();
+                hide_quiet(&w);
             }
         });
     }
@@ -227,15 +278,11 @@ pub fn on_viewer(app: &AppHandle, vm: &str, msg: &Value) {
                 }
             }
         }
-        "closed" => {
+        "ended" | "closed" => {
+            hide_all(app, vm);
             let mut p = panel();
             if p.vm.as_deref() == Some(vm) {
-                p.open = false;
                 p.vm = None;
-                drop(p);
-                if let Some(w) = app.get_webview_window(LABEL) {
-                    let _ = w.hide();
-                }
             }
         }
         _ => {}

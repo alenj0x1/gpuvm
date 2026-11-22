@@ -1,0 +1,3 @@
+{
+  "bundle": { "windows": { "nsis": { "compression": "none" } } }
+}

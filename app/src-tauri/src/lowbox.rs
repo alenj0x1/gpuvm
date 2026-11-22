@@ -39,7 +39,7 @@ const VIEWER_MITIGATIONS: u64 = (1 << 8)  // FORCE_RELOCATE_IMAGES_ALWAYS_ON
     | (1 << 56); // IMAGE_LOAD_NO_LOW_LABEL_ALWAYS_ON
 
 struct Attributes {
-    buffer: Vec<u8>,
+    buffer: Vec<usize>,
     _policy: Box<u64>,
 }
 
@@ -47,7 +47,7 @@ impl Attributes {
     unsafe fn mitigations() -> Option<Attributes> {
         let mut size = 0usize;
         InitializeProcThreadAttributeList(std::ptr::null_mut(), 1, 0, &mut size);
-        let mut buffer = vec![0u8; size];
+        let mut buffer = vec![0usize; size.div_ceil(std::mem::size_of::<usize>())];
         let list = buffer.as_mut_ptr() as LPPROC_THREAD_ATTRIBUTE_LIST;
         if InitializeProcThreadAttributeList(list, 1, 0, &mut size) == 0 {
             return None;

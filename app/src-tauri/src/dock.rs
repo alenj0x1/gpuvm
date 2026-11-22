@@ -76,7 +76,7 @@ pub fn show(app: &AppHandle, prompt: Value) {
         return;
     }
     let _ = crate::viewer::send_to(&vm, &json!({ "type": "capture", "on": false }));
-    let _ = window.show();
+    crate::overlay::show_quiet(&window);
     crate::overlay::mark_taskbar(&window, crate::viewer::viewer_full_screen(&vm));
     crate::status::dock_changed(app);
     if let Ok(own) = window.hwnd() {

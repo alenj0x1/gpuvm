@@ -1567,9 +1567,12 @@ fn new_request(args: &Map<String, Value>, ctx: &Ctx) -> Result<Value, CmdError> 
     let timeout = if send.is_some() { timeout.min(600) } else { timeout };
     // Taking one of the person's machines: the title is GpuVM's own, naming the machine (never the session's words).
     let title = if kind == "take" { format!("Use the machine '{}'", reg.name) } else { title };
+    // "Allow for this task" covers this session's later requests of the same kind on the same machine.
+    let granted = kind != "send" && kind != "take" && list.iter().any(|o| o.connection == id && o.machine.eq_ignore_ascii_case(&reg.name)
+        && o.kind == kind && o.state == "allowed" && o.for_task);
     let r = Request { id: wire::hex(&wire::random::<8>()), connection: id.to_string(), client_name, vm_id: reg.vm_id.clone(), machine: reg.name.clone(),
         kind: kind.to_string(), title, reason: clean(s("Reason").unwrap_or(""), 1000), created: now, expires: now + timeout * 1000,
-        state: "pending".into(), for_task: false, used: false, reserved: false, resolved: None, send };
+        state: if granted { "allowed" } else { "pending" }.into(), for_task: granted, used: false, reserved: false, resolved: granted.then_some(now), send };
     let out = json!({ "requestId": r.id, "expiresAt": r.expires });
     vm_log(&reg, json!({ "event": "request", "id": r.id, "kind": r.kind, "connection": id }));
     list.push(r);

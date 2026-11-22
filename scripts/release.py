@@ -103,7 +103,8 @@ def main() -> int:
         sys.exit(f"Tag v{a.version} already exists.")
     stamp = ROOT / "tests" / "e2e" / ".last-pass.json"
     head = git("rev-parse", "HEAD")
-    passed = json.loads(read(stamp)).get("commit") if stamp.exists() else None
+    record = json.loads(read(stamp)) if stamp.exists() else {}
+    passed = record.get("commit") if record.get("checks", 0) >= 100 else None
     if passed != head and not a.skip_e2e:
         sys.exit("No passing end-to-end check for this commit. Build and install it, then run "
                  "pwsh -File tests/e2e/run.ps1 (or --skip-e2e for a test release).")

@@ -46,3 +46,4 @@ app/guest-agent-target/
 /sunshine/
 labs/055-wgc-stream-user/ddxprobe/target/
 tests/e2e/.last-pass.json
+__pycache__/

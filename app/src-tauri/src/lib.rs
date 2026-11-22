@@ -298,6 +298,7 @@ pub(crate) fn raise_main_quietly(app: &AppHandle) {
     let Some(window) = app.get_webview_window("main") else { return };
     let Ok(hwnd) = window.hwnd() else { return };
     viewer::raise_without_focus(hwnd.0 as isize, !window.is_visible().unwrap_or(true) || window.is_minimized().unwrap_or(false));
+    let _ = window.emit("app-raised", ());
 }
 
 // Only a valid machine name passes; the page checks it is one of the machines.
@@ -472,6 +473,10 @@ pub fn mcp(fake: bool) -> i32 {
 
 fn log_to_file() {
     use std::os::windows::io::IntoRawHandle;
+    // Elevated, a path under the user's own folder could be redirected to any file.
+    if elevated() {
+        return;
+    }
     let Some(dir) = std::env::var_os("LOCALAPPDATA").map(|d| std::path::PathBuf::from(d).join("GpuVM")) else { return };
     let _ = std::fs::create_dir_all(&dir);
     let path = dir.join("app.log");
@@ -484,9 +489,21 @@ fn log_to_file() {
     }
 }
 
-pub(crate) fn diag(what: &str) {
-    let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
-    eprintln!("{ms} {what}");
+fn elevated() -> bool {
+    use windows_sys::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+    // SAFETY: queries this process's own token into a local struct; the handle is closed.
+    unsafe {
+        let mut token = std::ptr::null_mut();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+            return true;
+        }
+        let mut e = TOKEN_ELEVATION { TokenIsElevated: 0 };
+        let mut len = 0u32;
+        let ok = GetTokenInformation(token, TokenElevation, (&mut e as *mut TOKEN_ELEVATION).cast(), std::mem::size_of::<TOKEN_ELEVATION>() as u32, &mut len);
+        windows_sys::Win32::Foundation::CloseHandle(token);
+        ok == 0 || e.TokenIsElevated != 0
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

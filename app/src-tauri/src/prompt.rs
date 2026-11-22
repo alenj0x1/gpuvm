@@ -120,7 +120,7 @@ fn show(app: &AppHandle, prompts: Value) {
         let y = monitor.position().y + (24.0 * scale) as i32;
         let _ = window.set_position(PhysicalPosition::new(x, y));
     }
-    let _ = window.show();
+    crate::overlay::show_quiet(&window);
     crate::overlay::borderless(&window);
     if take_focus {
         if let Some(hwnd) = card_hwnd(&window) {

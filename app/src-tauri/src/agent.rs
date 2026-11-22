@@ -64,7 +64,12 @@ fn release_view(app: &AppHandle, clients: &[Value]) {
         }
     };
     *lock(&AGENT_VIEW_READY) = Some(name.clone());
-    crate::raise_main_quietly(app);
+    // Not over a request waiting for the person: a click meant for another window must never land on it.
+    if WAITING.load(Ordering::Relaxed) == 0 {
+        crate::raise_main_quietly(app);
+    } else if let Some(w) = app.get_webview_window("main") {
+        let _ = w.request_user_attention(Some(tauri::UserAttentionType::Informational));
+    }
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.emit("agent-view", name);
     }
@@ -162,15 +167,6 @@ fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Ve
     waiting.sort_by(|a, b| a["createdAt"].as_f64().unwrap_or(0.0).total_cmp(&b["createdAt"].as_f64().unwrap_or(0.0)));
 
     let on_input = TAKE_ON_INPUT.load(Ordering::Relaxed);
-    {
-        static LAST: Mutex<String> = Mutex::new(String::new());
-        let now = clients.iter().map(|c| format!("{}:{}:{}", c["name"].as_str().unwrap_or("?"), c["machine"].as_str().unwrap_or("-"), c["state"].as_str().unwrap_or("?"))).collect::<Vec<_>>().join(" ");
-        let mut last = lock(&LAST);
-        if *last != now {
-            crate::diag(&format!("agents: {now}"));
-            *last = now;
-        }
-    }
     let working: HashSet<String> = clients.iter()
         .filter(|c| holds(c))
         .filter_map(|c| c["machine"].as_str().map(str::to_string))
@@ -178,22 +174,10 @@ fn update(app: &AppHandle, clients: Vec<Value>, requests: Vec<Value>, offers: Ve
         .filter(|vm| !person_has(vm) && !lock(&PAUSING).as_ref().is_some_and(|p| p.contains(vm)))
         .collect();
     {
-        static LAST: Mutex<String> = Mutex::new(String::new());
-        let why = clients.iter().filter(|c| holds(c)).filter_map(|c| c["machine"].as_str()).map(|vm| format!("{vm}: input {on_input}, viewer {}, person {}, pausing {}",
-            crate::viewer::viewer_is_open(vm.to_string()), person_has(vm), lock(&PAUSING).as_ref().is_some_and(|p| p.contains(vm)))).collect::<Vec<_>>().join("; ");
-        let mut last = lock(&LAST);
-        if *last != why {
-            crate::diag(&format!("take-control candidates: {why}"));
-            *last = why;
-        }
-    }
-    {
         let mut watching = lock(&WATCHING);
         let watching = watching.get_or_insert_with(HashSet::new);
         for vm in working.difference(watching).cloned().collect::<Vec<_>>() {
-            let sent = crate::viewer::send_to(&vm, &json!({ "type": "agent-watch", "on": true }));
-            crate::diag(&format!("take-control watch {vm} on: {sent:?}"));
-            if sent.is_ok() {
+            if crate::viewer::send_to(&vm, &json!({ "type": "agent-watch", "on": true })).is_ok() {
                 watching.insert(vm);
             }
         }
@@ -366,10 +350,11 @@ fn show_dock(app: &AppHandle, request: Value) {
         return;
     }
     DOCK_LOADING.store(true, Ordering::Relaxed);
+    let generation = DOCK_GENERATION.fetch_add(1, Ordering::Relaxed) + 1;
     let app = app.clone();
     std::thread::spawn(move || {
         std::thread::sleep(Duration::from_millis(1500));
-        if DOCK_LOADING.swap(false, Ordering::Relaxed) {
+        if DOCK_GENERATION.load(Ordering::Relaxed) == generation && DOCK_LOADING.swap(false, Ordering::Relaxed) {
             let app2 = app.clone();
             let _ = app.run_on_main_thread(move || reveal_dock(&app2));
         }
@@ -377,14 +362,17 @@ fn show_dock(app: &AppHandle, request: Value) {
 }
 
 static DOCK_LOADING: AtomicBool = AtomicBool::new(false);
+static DOCK_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 fn reveal_dock(app: &AppHandle) {
     let Some((vm, human)) = lock(&DOCKED).as_ref().map(|d| (d.vm.clone(), d.request["human"].as_bool() == Some(true))) else { return };
     let Some(window) = app.get_webview_window(DOCK) else { return };
     if !place(app, &window, &vm, if human { Rect::Top } else { Rect::Picture }) {
+        let _ = window.destroy();
+        *lock(&DOCKED) = None;
         return;
     }
-    let _ = window.show();
+    crate::overlay::show_quiet(&window);
     crate::overlay::mark_taskbar(&window, crate::viewer::viewer_full_screen(&vm));
     crate::status::dock_changed(app);
     if !human {
@@ -555,7 +543,6 @@ fn resume_args(client: &str, vm: &str) -> Value {
 }
 
 pub fn on_input(app: &AppHandle, vm: &str) {
-    crate::diag(&format!("take-control input {vm}: watching {}, settle {:?}", lock(&WATCHING).as_ref().is_some_and(|w| w.contains(vm)), lock(&SHOWN_AT).as_ref().and_then(|s| s.get(vm)).map(|t| t.elapsed())));
     if !TAKE_ON_INPUT.load(Ordering::Relaxed) || !lock(&WATCHING).as_mut().is_some_and(|w| w.remove(vm)) {
         return;
     }
@@ -571,6 +558,8 @@ pub fn on_input(app: &AppHandle, vm: &str) {
         at.insert(vm.to_string(), Instant::now());
     }
     let Some(client) = lock(&CLIENTS).iter().find(|c| c["machine"].as_str() == Some(vm) && holds(c)).cloned() else { return };
+    // The viewer stops watching and shows the machine's cursor again.
+    let _ = crate::viewer::send_to(vm, &json!({ "type": "agent-watch", "on": false }));
     let started = Instant::now();
     let app = app.clone();
     let vm = vm.to_string();
@@ -596,6 +585,12 @@ pub fn on_viewer(app: &AppHandle, vm: &str, msg: &Value) {
             let docked = lock(&DOCKED).as_ref().filter(|d| d.vm == vm).map(|d| d.request["human"].as_bool() == Some(true));
             if let (Some(human), Some(w)) = (docked, app.get_webview_window(DOCK)) {
                 place(app, &w, vm, if human { Rect::Top } else { Rect::Picture });
+            }
+        }
+        // A viewer drops commands sent before its session is up: watching is asked again once it is.
+        "connected" | "first-frame" => {
+            if lock(&WATCHING).as_ref().is_some_and(|w| w.contains(vm)) {
+                let _ = crate::viewer::send_to(vm, &json!({ "type": "agent-watch", "on": true }));
             }
         }
         "closed" | "ended" => {
@@ -772,6 +767,7 @@ pub fn viewer_replaced(vm: &str) {
     if let Some(r) = lock(&RECS).as_mut().and_then(|r| r.get_mut(vm)) {
         r.confirmed = false;
     }
+    lock(&WATCHING).as_mut().map(|w| w.remove(vm));
 }
 
 fn close_if_ours(vm: &str, ours: bool) {
