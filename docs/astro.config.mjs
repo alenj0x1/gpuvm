@@ -9,7 +9,7 @@ export default defineConfig({
   integrations: [
     starlight({
       title: 'gpuvm',
-      description: 'Windows VMs that use your GPU with Hyper-V GPU partitioning, streamed to GpuVM's own viewer, and usable by AI agents.',
+      description: "Windows VMs that use your GPU with Hyper-V GPU partitioning, shown in GpuVM's own viewer and usable by AI agents.",
       logo: { src: './src/assets/logo.svg', alt: 'GpuVM' },
       favicon: '/favicon.svg',
       defaultLocale: 'root',
