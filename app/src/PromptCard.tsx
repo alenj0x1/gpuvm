@@ -5,10 +5,7 @@ import { humanError } from "./ui";
 import { t, translateModule } from "./i18n";
 import type { AdminPrompt } from "./types";
 
-/**
- * The small always-on-top card shown over Moonlight while Windows in a VM asks for administrator permission (WGC
- * can't stream that prompt). It shows what asks and from whom, as Windows does, and answers it on the person's click.
- */
+/** Shown over the viewer because WGC can't capture the guest's administrator prompt. */
 export function PromptCard() {
   const [prompts, setPrompts] = useState<AdminPrompt[]>([]);
   const [busy, setBusy] = useState<"Allow" | "Deny" | null>(null);
@@ -34,7 +31,7 @@ export function PromptCard() {
     setError("");
     try {
       if (!inTauri) { await new Promise((r) => setTimeout(r, 400)); setPrompts([]); return; }
-      // A narrow command: only a prompt GpuVM put on this card can be answered (prompt.rs, card_answer).
+      // Narrow command: only a prompt GpuVM put on this card can be answered (prompt.rs).
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("card_answer", { name: prompt.name, id: prompt.id, allow: choice === "Allow" });
     }

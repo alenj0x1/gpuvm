@@ -30,13 +30,10 @@ function Test-GpuInstancePathSupport {
     (Get-Command Add-VMGpuPartitionAdapter -ErrorAction SilentlyContinue).Parameters.ContainsKey('InstancePath')
 }
 
-# Lists the files installed by the GPU driver, split into DriverStore folders and loose files.
-# Uses WMI (Win32_PnPSignedDriverCIMDataFile, ~30 s); that provider sometimes fails with "Shutting down",
-# so it is retried and, if it keeps failing, the list is built from the driver's .inf.
+# Win32_PnPSignedDriverCIMDataFile sometimes fails with "Shutting down": retried, then built from the .inf.
 function Get-GpuDriverFileSet {
     param(
         [Parameter(Mandatory)][string]$PnpDeviceId,
-        # With the driver's version, the list is remembered: asking WMI walks every driver's files (~30 s, lab 027).
         [string]$DriverVersion
     )
     $cached = if ($DriverVersion) { Read-GpuDriverFileSetCache -PnpDeviceId $PnpDeviceId -DriverVersion $DriverVersion }
@@ -58,9 +55,7 @@ function Get-GpuDriverFileSet {
     Get-GpuDriverFileSetFromInf -PnpDeviceId $PnpDeviceId
 }
 
-# The remembered list is only used for the same device and driver version, when every path is still a file or folder
-# of the host's Windows where drivers live (it decides what is copied from the host into a VM, so nothing else is
-# accepted even if the file was changed) and still exists. Otherwise WMI is asked again.
+# It decides what is copied from the host into a VM: only paths still under the host's driver folders are accepted.
 function Read-GpuDriverFileSetCache {
     param([string]$PnpDeviceId, [string]$DriverVersion)
     $path = Get-DataPath 'gpu-driver-files.json'
@@ -94,8 +89,6 @@ function Save-GpuDriverFileSetCache {
     catch { Write-Verbose "Couldn't remember the driver's file list: $_" }
 }
 
-# The DriverStore folder is the one containing an identical copy of the device's oemNN.inf.
-# Loose files are the ones the driver copied to System32/SysWOW64 with the same name as in that folder.
 function Get-GpuDriverFileSetFromInf {
     param([Parameter(Mandatory)][string]$PnpDeviceId)
     $infName = (Get-PnpDeviceProperty -InstanceId $PnpDeviceId -KeyName DEVPKEY_Device_DriverInfPath).Data
@@ -142,7 +135,6 @@ function Get-GpuDriverFileSetFromWmi {
                 [void]$folders.Add(($path.Split('\')[0..5] -join '\'))
             }
             elseif (-not $path.StartsWith('c:\windows\inf\', [StringComparison]::OrdinalIgnoreCase)) {
-                # The .inf registers the driver on the host; the guest does not install it, it only uses the binaries.
                 [void]$files.Add($path)
             }
         }
@@ -153,9 +145,7 @@ function Get-GpuDriverFileSetFromWmi {
     }
 }
 
-# The guest's disk is written to as administrator, so a junction or symlink planted by the guest
-# (e.g. System32 -> the host's C:\Windows) would redirect the write to the host. Each component of
-# $Path below $Root that exists must be a plain file or folder; the root itself (a mount point) is not checked.
+# The guest could plant a junction (System32 -> the host's C:\Windows): every existing component below $Root must be plain.
 function Assert-NoReparsePoint {
     param(
         [Parameter(Mandatory)][string]$Root,
@@ -172,7 +162,6 @@ function Assert-NoReparsePoint {
         # GetAttributes does not follow links: it describes the link itself, even a dangling one.
         $attributes = try { [IO.File]::GetAttributes($current) }
         catch [IO.FileNotFoundException], [IO.DirectoryNotFoundException] { $null }
-        # Nothing exists from here down: it will be created as plain folders.
         if ($null -eq $attributes) { return }
         if ($attributes -band [IO.FileAttributes]::ReparsePoint) {
             throw "The VM's disk has a link at $current; nothing is written through it so nothing lands outside the VM."
@@ -180,7 +169,6 @@ function Assert-NoReparsePoint {
     }
 }
 
-# Deletes a folder of the guest's disk without following the links inside it: a link is removed, not its target.
 function Remove-GuestDirectory {
     param([Parameter(Mandatory)][string]$Path)
     foreach ($entry in [IO.DirectoryInfo]::new($Path).EnumerateFileSystemInfos()) {
@@ -196,7 +184,6 @@ function Remove-GuestDirectory {
     [IO.Directory]::Delete($Path, $false)
 }
 
-# Copies the host driver into a mounted Windows (e.g. 'X:\').
 # DriverStore folders go to HostDriverStore, which is where GPU-P looks for them inside the guest.
 function Copy-GpuDriverToWindows {
     param(
@@ -209,11 +196,9 @@ function Copy-GpuDriverToWindows {
         if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
         [pscustomobject]@{ Source = $file; Target = Join-Path $WindowsRoot ($file.Substring(3)) }
     })
-    # Every destination is checked before writing anything, and again right before each write.
     foreach ($path in @($hostStore, $staging) + $looseFiles.Target) { Assert-NoReparsePoint -Root $WindowsRoot -Path $path }
 
-    # Copy to a staging folder first and only replace the previous one at the end:
-    # if the copy fails halfway, the guest keeps the driver it had.
+    # Staged first: if the copy fails halfway, the guest keeps the driver it had.
     if (Test-Path -LiteralPath $staging) { Remove-GuestDirectory -Path $staging }
     Assert-NoReparsePoint -Root $WindowsRoot -Path $staging
     New-Item -ItemType Directory -Path $staging -Force | Out-Null

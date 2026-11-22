@@ -11,7 +11,6 @@ function Update-GpuVMSettings {
     )
     Assert-Admin
     $state = Get-GpuVMState -Name $Name
-    # Validate before shutting down: if the change is not possible, the VM stays as it was.
     $null = Resolve-GpuVMSettings -State $state -Override $Override
     $previous = Merge-Hashtable -Base $state['config']
 

@@ -8,10 +8,6 @@ import { useReportDockSize } from "./dockSize";
 import { locale, t, translateModule } from "./i18n";
 import type { AgentRequest, AgentRequestKind } from "./types";
 
-// The two windows of GpuVM over a machine's picture while an agent works on it (agent.rs):
-// - the agent dock: what the agent asks, dropped from the top like the administrator dock (dock B), answered only here;
-// The viewer (Low integrity, it draws what the guest sends) can't click either window (UIPI).
-
 const ICON: Record<AgentRequestKind, Icon> = { deliver: IconFileDownload, admin: IconShieldLock, network: IconWorld, revert: IconHistory, delete: IconTrash, send: IconFileUpload, take: IconDeviceDesktop, other: IconRobot };
 /** Like the administrator dock: a click meant for the picture never answers it. */
 const ARM_MS = 450;
@@ -22,7 +18,6 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
   return core.invoke<T>(cmd, args);
 }
 
-/** Samples for the browser (?agent-dock=network|deliver|revert|human). */
 function sample(kind: string | null): AgentRequest | null {
   const base = { id: "r1", client: "c1", clientName: "Claude Code", machine: "win-agent", createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 54000).toISOString() };
   switch (kind) {
@@ -82,12 +77,10 @@ export function AgentDock() {
     setBusy(kind); setError("");
     try {
       if (!inTauri) { await new Promise((r) => setTimeout(r, 400)); setShown(false); return; }
-      // Only which button: the request is the one GpuVM put in this dock (agent.rs).
+      // Only the choice is sent: agent.rs knows which request this dock shows.
       await invoke("agent_dock_answer", { id: request.id, allow: kind !== "deny", forTask: kind === "task" });
     } catch (e) { setError(humanError(e)); setBusy(null); }
   };
-  // A copy from this PC into the machine: who, where to, and exactly what (path, size, files). Without a path there is
-  // nothing to allow (agent.rs refuses it too).
   const send = request.kind === "send" ? (request.send ?? sendOf(request as unknown as Record<string, unknown>)) : null;
   const title = request.kind === "send" ? t("{name} wants to copy to {machine}", { name: request.clientName, machine: request.machine }) : translateModule(request.title);
   const detail = send
@@ -96,7 +89,6 @@ export function AgentDock() {
   const canAllow = request.kind !== "send" || !!send;
 
   if (request.human) {
-    // Only the person can do it, in the machine itself: no veil, the picture stays usable; once done, the agent goes on.
     const back = async () => {
       setBusy("allow"); setError("");
       try {

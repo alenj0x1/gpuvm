@@ -4,21 +4,17 @@ import { FIGURES } from "./figures";
 import type { CubeMachine } from "../MachineCube";
 import { t } from "../i18n";
 
-// Machines made up at random for an empty Home: a color, a sign, a few stickers and a figure or two, so the space
-// shows what a machine can look like before there is one.
-
 const pick = <T,>(list: T[]) => list[Math.floor(Math.random() * list.length)];
 const between = (a: number, b: number) => a + Math.random() * (b - a);
 const shuffle = <T,>(list: T[]) => list.map((v) => [Math.random(), v] as const).sort((a, b) => a[0] - b[0]).map(([, v]) => v);
 
-// A function, so the Spanish ones come out in the language in use.
+// A function, so texts follow the current language.
 const signs = () => ["PLAYER ONE", "NIGHT CITY", t("GAME MODE"), "144 FPS", "READY", t("HELLO WORLD"), "LEVEL UP", "RTX ON", "PRESS START"];
 const APPS = ["steam", "discord", "chrome", "spotify", "obs", "epic", "vscode", "vlc"];
 
 export function randomDecor(): Decor {
   const stickers: StickerPlacement[] = [];
   for (const id of shuffle(STICKERS.map((s) => s.id)).slice(0, 2 + Math.floor(Math.random() * 3))) {
-    // A free spot on a side or the top, away from the others on the same face.
     for (let tries = 0; tries < 12; tries++) {
       const face: Face = pick(FACES.filter((f) => f !== "back")), size = between(0.55, 0.8), m = 1 - size / 2;
       const u = between(-m, m), v = face === "top" ? between(-m, m) : between(-0.2, m);

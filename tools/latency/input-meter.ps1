@@ -1,9 +1,4 @@
-# Input latency meter for the target in input-target.ps1. Dot-source it, then call Measure-InputLatency.
-# For each sample it injects one input with SendInput (or, for the gamepad, waits for a real press on an XInput pad
-# connected to this PC), then reads the matching square on this screen until it flips between black and white.
-# Screen reads go through GDI, which hands back a freshly composed DWM frame on every read: the time resolution is
-# one host refresh (5.6 ms at 180 Hz). The monitor's own scan-out and pixel response are not included.
-# The pad's own USB polling is included, as in a game on this PC.
+# Dot-source it, then call Measure-InputLatency.
 Add-Type -AssemblyName System.Windows.Forms
 if (-not ('GpuVMInputMeter' -as [type])) {
     Add-Type -TypeDefinition @'
@@ -35,8 +30,7 @@ public static class GpuVMInputMeter {
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
 
-    // Windows refuses SetForegroundWindow to a process that didn't get the last input; an Alt tap from this process
-    // lifts that lock. Without it the elevated console stays in front of Moonlight and the inputs never reach the VM.
+    // Windows refuses SetForegroundWindow to a process that didn't get the last input; an Alt tap lifts that lock.
     public static bool BringToFront(IntPtr h) {
         for (int i = 0; i < 5 && GetForegroundWindow() != h; i++) {
             var alt = new INPUT { type = 1 };
@@ -51,7 +45,6 @@ public static class GpuVMInputMeter {
         return GetForegroundWindow() == h;
     }
 
-    // Screen rectangle of a window's client area: left, top, width, height.
     public static int[] ClientBounds(IntPtr h) {
         RECT r; GetClientRect(h, out r);
         var p = new POINT();
@@ -72,7 +65,6 @@ public static class GpuVMInputMeter {
         SelectObject(mem, CreateCompatibleBitmap(screen, 1, 1));
     }
 
-    // Brightness 0-255 of one screen pixel, from the latest composed frame.
     public static int Brightness(int x, int y) {
         Init();
         BitBlt(mem, 0, 0, 1, 1, screen, x, y, 0x00CC0020);
@@ -95,9 +87,7 @@ public static class GpuVMInputMeter {
         Send(i);
     }
 
-    // kind: 0 key, 1 click, 2 move. Returns the milliseconds from the injection until the square at (x, y) flips;
-    // -1 on timeout. With a window, nothing is injected unless that window is in front (-3): otherwise the
-    // clicks, keys and moves would land on whatever else is open on this PC.
+    // kind: 0 key, 1 click, 2 move. -1 on timeout; -3 when the window isn't in front (nothing is injected).
     public static double Measure(int kind, int x, int y, int timeoutMs, IntPtr window) {
         if (window != IntPtr.Zero && GetForegroundWindow() != window) return -3;
         bool wasLit = Brightness(x, y) > 128;
@@ -122,7 +112,6 @@ public static class GpuVMInputMeter {
         return false;
     }
 
-    // Waits up to waitMs for a real press of A on a pad connected to this PC, then times until the square flips.
     // -2 when nobody pressed, -1 when the square did not flip within timeoutMs.
     public static double MeasurePad(int x, int y, int waitMs, int timeoutMs) {
         Init();
@@ -140,8 +129,6 @@ public static class GpuVMInputMeter {
 '@
 }
 
-# Small always-on-top box in the top-left corner that tells the person when to press A and how many presses are left.
-# It never takes the focus or the clicks (Moonlight keeps them) and stays away from the squares the meter reads.
 if (-not ('GpuVMPadPrompt' -as [type])) {
     # PowerShell 7 needs the assemblies .NET split WinForms into.
     $refs = 'System.Windows.Forms', 'System.Drawing'
@@ -217,14 +204,12 @@ function Get-InputPercentile([double[]]$Values, [double]$P) {
     [math]::Round($sorted[$index], 1)
 }
 
-# Screen point at the center of square $Index (0 key, 1 click, 2 move, 3 pad) of a target filling $Bounds.
 function Get-InputSquarePoint {
     param([Parameter(Mandatory)][System.Drawing.Rectangle]$Bounds, [Parameter(Mandatory)][int]$Index)
     [pscustomobject]@{ X = $Bounds.Left + [int]($Bounds.Width * ($Index + 1) / 5); Y = $Bounds.Top + [int]($Bounds.Height / 2) }
 }
 
-# Runs $Samples samples of each kind in $Kinds (key, click, move, pad) and returns one summary per kind.
-# Pauses between samples are random (150-400 ms) so the injections don't line up with any frame clock.
+# Random pauses (150-400 ms), so the injections don't line up with any frame clock.
 function Measure-InputLatency {
     param(
         [Parameter(Mandatory)][System.Drawing.Rectangle]$Bounds,
@@ -232,7 +217,6 @@ function Measure-InputLatency {
         [int]$Samples = 60,
         [int]$TimeoutMs = 500,
         [int]$PadWaitSec = 120,
-        # Moonlight's window: samples are only taken while it is in front, and the run stops if it can't be brought back.
         [IntPtr]$Window = [IntPtr]::Zero
     )
     $assertFront = {
@@ -258,8 +242,6 @@ function Measure-InputLatency {
             if ($ms -eq -3) { & $assertFront; $i--; continue }
             if ($ms -lt 0) { $misses++ } else { $times.Add($ms) }
             if ($kind -eq 'pad') { [GpuVMPadPrompt]::Say("Presiona A  -  $($i + 1) / $Samples") }
-            # Let the square settle on the next frames before the next sample. Not for the pad: a person's presses
-            # are already irregular, and a press during the pause would go uncounted.
             if ($kind -ne 'pad') { Start-Sleep -Milliseconds (150 + $random.Next(0, 250)) }
         }
         if ($kind -eq 'pad') {

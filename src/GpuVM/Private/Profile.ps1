@@ -11,7 +11,6 @@ function Find-ProfilePath {
     Join-Path (Get-UserProfileDirectory) "$Name.json"
 }
 
-# Loads a profile by name or path, resolves the "extends" chain and applies an optional override.
 # Objects are deep-merged; lists are replaced entirely.
 function Resolve-GpuVMProfile {
     param(
@@ -48,7 +47,6 @@ function Resolve-ProfileChain {
     $data
 }
 
-# Returns the list of profile problems (empty if valid). Checks against the hardware if provided.
 function Test-GpuVMProfileData {
     param(
         [Parameter(Mandatory)][System.Collections.IDictionary]$Config,
@@ -76,7 +74,6 @@ function Test-GpuVMProfileData {
         $problems.Add("vm.memoryGB ($mem) leaves less than 4 GB to the host (it has $([math]::Round($HostMemoryGB,1)) GB).")
     }
 
-    # Differencing: a VM built on a template (set by GpuVM, never by a profile).
     if ($vm['disk']['type'] -notin 'Dynamic', 'Fixed', 'Differencing') { $problems.Add('vm.disk.type must be "Dynamic" or "Fixed".') }
     if ($vm['disk']['sizeGB'] -lt 64) { $problems.Add('vm.disk.sizeGB must be at least 64.') }
 

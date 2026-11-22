@@ -1,16 +1,5 @@
-//! Files dropped on the viewer's picture, and the copies into machines (lab 043).
-//!
-//! The viewer runs at Low integrity and talks to a host the guest controls, so it never names files: when something
-//! is dragged over its window it only sends "drag". This app then shows, over the picture, its drop area (a web view
-//! window that dims the picture and shows where the files go) and above it a native window of its own that is
-//! invisible (alpha 1) and takes the drop: an OLE drop target that reads the paths Windows hands it. Both are owned by
-//! the viewer (kept just above it) and never activated (activating a window mid-drag makes Windows cancel the drag).
-//! The web view can't take the drop itself: wry registers its drop target on the web view's child windows when the
-//! window is built, and this one is built hidden. A viewer that sends "drag" on its own only makes the drop area
-//! appear for 1.5 s.
-//!
-//! The copies run in the GpuVM service (Send-GpuVMFile), which first opens every path as this user, unelevated.
-//! Their state lives here, so the drop window, the side panel and the app all show the same list.
+// Never activated: activating a window mid-drag makes Windows cancel the drag.
+// The web view can't take the drop: wry registers its drop target when the window is built, and this one is built hidden.
 
 use serde_json::{json, Value};
 use std::ffi::c_void;
@@ -30,23 +19,18 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 pub const LABEL: &str = "viewer-drop";
-/// A "drag" no files confirm (nothing came over the drop area) hides it again after this long.
 const UNCONFIRMED: Duration = Duration::from_millis(1500);
-/// Copies kept in the list after they end.
 const KEEP: usize = 20;
 
 struct Zone {
     vm: Option<String>,
     shown_at: Option<Instant>,
-    /// What the page shows: "drag", "over" or "card", and the copy of the card.
     state: &'static str,
     id: Option<String>,
 }
 static ZONE: Mutex<Zone> = Mutex::new(Zone { vm: None, shown_at: None, state: "drag", id: None });
-/// Files are over the drop area right now.
 static HOVER: AtomicBool = AtomicBool::new(false);
 static APP: Mutex<Option<AppHandle>> = Mutex::new(None);
-/// The native window that takes the drop (made on its own thread, which runs its messages).
 static CATCHER: AtomicIsize = AtomicIsize::new(0);
 
 fn zone() -> std::sync::MutexGuard<'static, Zone> {
@@ -83,7 +67,6 @@ fn drop_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
     Some(w)
 }
 
-/// Tells the page what to show, and keeps it for a page that loads later (the first drag builds the window).
 fn tell(app: &AppHandle, state: &'static str, id: Option<&str>) {
     let vm = {
         let mut z = zone();
@@ -94,7 +77,6 @@ fn tell(app: &AppHandle, state: &'static str, id: Option<&str>) {
     let _ = app.emit_to(LABEL, "viewer-drop", json!({ "vm": vm, "state": state, "id": id }));
 }
 
-/// The viewer reported a drag over its picture: cover the picture (not the side panel) with the drop area.
 pub fn on_drag(app: &AppHandle, vm: &str) {
     let Some(viewer) = crate::viewer::viewer_hwnd(vm) else { return };
     let Some((x, y, w, h)) = crate::overlay::picture_rect(viewer, vm) else { return };
@@ -108,8 +90,7 @@ pub fn on_drag(app: &AppHandle, vm: &str) {
     HOVER.store(false, Ordering::Relaxed);
     tell(app, "drag", None);
     if let Ok(own) = window.hwnd() {
-        // SAFETY: our windows: the drop area owned by the viewer (kept just above it) and the catcher owned by the
-        // drop area (just above that), shown without activation.
+        // SAFETY: our own windows, owned by the viewer and by the drop area, shown without activation.
         unsafe {
             SetWindowLongPtrW(own.0 as HWND, GWLP_HWNDPARENT, viewer);
             SetWindowPos(own.0 as HWND, HWND_TOP, x, y, w, h, SWP_SHOWWINDOW | SWP_NOACTIVATE);
@@ -129,7 +110,6 @@ pub fn on_drag(app: &AppHandle, vm: &str) {
     });
 }
 
-/// The card in the bottom right corner of the picture (logical size, scaled with the viewer's monitor).
 const CARD: (f64, f64) = (300.0, 76.0);
 const CARD_MARGIN: f64 = 16.0;
 
@@ -157,8 +137,7 @@ fn hide_catcher() {
     }
 }
 
-/// Hides the drop area. With Win32, not through Tauri: the window was shown with Win32 (without activation), so
-/// Tauri still takes it for hidden and its hide() did nothing (the drop area stayed over the picture, lab 043).
+// Hidden with Win32: shown with Win32 without activation, Tauri still takes it for hidden and its hide() does nothing.
 pub fn hide(app: &AppHandle) {
     zone().shown_at = None;
     HOVER.store(false, Ordering::Relaxed);
@@ -178,17 +157,12 @@ fn dropped(app: &AppHandle, paths: Vec<String>) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         match start(&app, vm.clone(), paths, None, folder.to_string()).await {
-            // The drop area becomes a small card in the picture's corner with the copy's progress.
             Ok(id) => show_card(&app, &vm, &id),
             Err(_) => hide(&app),
         }
     });
 }
 
-// ---------------------------------------------------------------- the native window that takes the drop
-
-/// Its OLE drop target: a static object with IDropTarget's vtable (IUnknown, then DragEnter, DragOver, DragLeave,
-/// Drop), counted as always alive.
 #[repr(C)]
 struct DropTargetVtbl {
     query_interface: unsafe extern "system" fn(*mut c_void, *const GUID, *mut *mut c_void) -> i32,
@@ -231,10 +205,7 @@ unsafe extern "system" fn add_ref(_: *mut c_void) -> u32 {
 unsafe extern "system" fn release(_: *mut c_void) -> u32 {
     1
 }
-/// Whether the program dragging onto the drop area runs at Medium integrity or above (Explorer, a normal app). The
-/// viewer runs at Low: if the stream took it over, it could drag files of this PC onto the drop area itself and have
-/// them copied into the VM. The OLE call arrives through COM from the source's process, so its token is read by
-/// impersonating the caller. Without a COM caller (a drag from this app's own windows) it is allowed.
+// Only Medium integrity or above: a Low viewer taken over by the stream could drag this PC's files onto the drop area.
 static SOURCE_OK: AtomicBool = AtomicBool::new(false);
 
 unsafe fn source_trusted() -> bool {
@@ -307,7 +278,6 @@ unsafe extern "system" fn drop(_: *mut c_void, data: *mut c_void, _: u32, _: POI
     0
 }
 
-/// The files of a drop: IDataObject::GetData (its fourth method) for CF_HDROP.
 unsafe fn paths_of(data: *mut c_void) -> Vec<String> {
     if data.is_null() {
         return Vec::new();
@@ -333,8 +303,7 @@ unsafe fn paths_of(data: *mut c_void) -> Vec<String> {
     paths
 }
 
-/// The catcher window, made once on its own thread (OLE drop targets need a single-threaded apartment that runs
-/// its messages). Its handle, or 0 if it couldn't be made.
+// OLE drop targets need a single-threaded apartment that runs its messages.
 fn ensure_catcher(app: &AppHandle) -> isize {
     let current = CATCHER.load(Ordering::Relaxed);
     if current != 0 {
@@ -373,13 +342,11 @@ fn ensure_catcher(app: &AppHandle) -> isize {
     hwnd
 }
 
-/// What the drop window shows, for its page when it loads.
 #[tauri::command]
 pub fn viewer_drop_state() -> Value {
     let z = zone();
     json!({ "vm": z.vm, "state": z.state, "id": z.id })
 }
-// ---------------------------------------------------------------- the copies
 
 static TRANSFERS: Mutex<Vec<Value>> = Mutex::new(Vec::new());
 
@@ -403,13 +370,11 @@ fn new_id() -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// "Sending 42 % · 1.2 of 2.9 GB" -> 42.
 fn percent_of(message: &str) -> Option<u32> {
     let rest = message.strip_prefix("Sending ")?;
     rest.split_whitespace().next()?.parse().ok()
 }
 
-/// Copies files into `vm`: from this PC (paths of this PC) or from the machine `from` (paths inside it).
 #[tauri::command]
 pub async fn transfer_start(app: AppHandle, vm: String, paths: Vec<String>, from: Option<String>, folder: String) -> Result<String, String> {
     start(&app, vm, paths, from, folder).await
@@ -487,7 +452,6 @@ pub fn transfer_list() -> Vec<Value> {
     TRANSFERS.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
-/// Hides the drop window (Escape, or the page saw the drag leave).
 #[tauri::command]
 pub fn viewer_drop_hide(app: AppHandle) {
     hide(&app);

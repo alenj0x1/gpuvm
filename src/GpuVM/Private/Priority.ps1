@@ -1,7 +1,4 @@
-# Heavy host work (applying Windows, copying disks) runs at the lowest priority Windows has for CPU, disk and memory:
-# it takes every idle core and the disk when nothing else wants them, and steps aside the moment the user does
-# something. A program runs inside a job object at idle priority, and so does every process it starts (DISM does the
-# real work in DismHost.exe), each with low I/O and memory priority. The job also ends them if GpuVM goes away.
+# A job object keeps every child at idle CPU, I/O and memory priority (DISM works in DismHost.exe) and ends them with GpuVM.
 
 if (-not ('GpuVMLowPriority' -as [type])) {
     Add-Type -TypeDefinition @'
@@ -138,7 +135,7 @@ public static class GpuVMPacedCopy {
     const uint READ = 0x80000000, WRITE = 0x40000000, NO_BUFFERING = 0x20000000, WRITE_THROUGH = 0x80000000, SEQUENTIAL = 0x08000000;
     const int Chunk = 4 << 20;
     // MB/s: where it starts, the most and the least it goes, and how slow one 4 MB write may be before backing off.
-    // Defaults: what the paced copy uses (lab 027); the labs pass others to compare.
+    // Defaults: what the paced copy uses; the labs pass others to compare.
     public static double StartRate = 200, MaxRate = 400, MinRate = 25, SlowWriteMs = 40, RateStep = 10;
 
     // { seconds, average MB/s, times it backed off }
@@ -180,14 +177,12 @@ public static class GpuVMPacedCopy {
 '@
 }
 
-# Quotes one argument for a Windows command line.
 function ConvertTo-CommandLineArgument {
     param([Parameter(Mandatory)][AllowEmptyString()][string]$Value)
     if ($Value -and $Value -notmatch '[\s"]') { return $Value }
     '"' + ($Value -replace '(\\*)"', '$1$1\"' -replace '(\\+)$', '$1$1') + '"'
 }
 
-# Runs a program at low priority (see above) and returns its exit code. Its output is not shown.
 function Invoke-LowPriority {
     param(
         [Parameter(Mandatory)][string]$FilePath,
@@ -197,11 +192,7 @@ function Invoke-LowPriority {
     [GpuVMLowPriority]::Run($line)
 }
 
-# Copies a large file (a disk) without flooding the SSD. A plain copy queues gigabytes of writes and every program
-# that saves a file waits behind them (lab 027: half a second per save while the base was copied). This one writes
-# 4 MB at a time straight to the disk (no file cache, so the user's programs stay in memory), one write in flight,
-# and paces itself: it speeds up while each write is quick and backs off as soon as one is slow (the disk is busy).
-# The copy is never read-only, even when the source is. Returns how long it took and how often it backed off.
+# Unbuffered 4 MB writes, one in flight, paced by write latency: a plain copy queues gigabytes and stalls every other save.
 function Copy-PacedFile {
     param(
         [Parameter(Mandatory)][string]$Source,

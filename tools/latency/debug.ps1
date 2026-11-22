@@ -1,5 +1,4 @@
-# Diagnoses the end-to-end meter: saves what the host screen and the VM show around one Scroll Lock press,
-# and how the measured pixel's brightness evolves. Run as administrator.
+# Run as administrator.
 param(
     [Parameter(Mandatory)][string]$Name,
     [Parameter(Mandatory)][string]$OutDir

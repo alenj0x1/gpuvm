@@ -1,8 +1,4 @@
-// Prepares what the installer carries besides the app (runs before `tauri build`):
-// - gpuvm-host.exe, the GpuVM service (app/host), built in release.
-// - PowerShell 7 (tools.json: pinned version, SHA-256 checked) extracted to .cache/pwsh. The service runs the
-//   module with it: the Store's PowerShell only runs for processes with its package identity, which a process
-//   started by a service does not get.
+// Bundled PowerShell 7: the Store's PowerShell won't run in processes started by a service (no package identity).
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { createReadStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -37,7 +33,6 @@ async function download(url, file, expected) {
 
 mkdirSync(cache, { recursive: true });
 
-// PowerShell 7: extracted again only when the version changes.
 const pwsh = tools.pwsh;
 const zip = join(cache, `PowerShell-${pwsh.version}-win-x64.zip`);
 const dest = join(cache, "pwsh");
@@ -51,8 +46,7 @@ if (!existsSync(stamp) || readFileSync(stamp, "utf8") !== pwsh.version) {
   writeFileSync(stamp, pwsh.version);
 }
 
-// The guest agent, into guest/agent/dist (shipped with guest/); its build output stays in app/guest-agent-target.
 execFileSync("pwsh", ["-NoProfile", "-File", join(app, "..", "guest", "agent", "build.ps1")], { stdio: "inherit" });
 
-// The service, always into host/target (where tauri.conf.json takes it from), whatever CARGO_TARGET_DIR says.
+// Always into host/target (tauri.conf.json reads it there), whatever CARGO_TARGET_DIR says.
 execFileSync("cargo", ["build", "--release", "--manifest-path", join(app, "host", "Cargo.toml"), "--target-dir", join(app, "host", "target")], { stdio: "inherit" });

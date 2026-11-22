@@ -18,24 +18,21 @@ import { locale, t, tn, translateModule } from "./i18n";
 
 export type LibraryTab = "profiles" | "templates" | "disks" | "shared" | "isos";
 
-// What each tab loaded last, so switching tabs shows it at once while it refreshes.
 const cache: { bases?: BaseInfo[]; profiles?: ProfileInfo[]; apps?: AppInfo[]; disks?: DiskInfo[]; isos?: IsoFile[]; templates?: TemplateInfo[]; shared?: SharedDiskInfo[] } = {};
 
 interface Props {
   tab: LibraryTab;
   onTab: (tab: LibraryTab) => void;
   host: HostInfo | null;
-  /** Long jobs (restoring a disk) run like the VM ones, with their progress in the sidebar. */
   startJob: (vm: string, cmd: string, args: Record<string, unknown>, after?: () => void) => void;
   busy: (vm: string) => boolean;
-  /** The running job's progress message for a key (a template or shared disk), if any. */
   progress: (key: string) => string | null;
   notify: (kind: "ok" | "error", text: string) => void;
   onOpenVm: (name: string) => void;
   onCreateFromTemplate: (template: string) => void;
 }
 
-// Labels are getters so they are read in the language shown.
+// Getters, so labels follow the current language.
 const SECTIONS: { tab: LibraryTab; readonly label: string; icon: React.ReactNode; readonly desc: string }[] = [
   { tab: "profiles", get label() { return t("Profiles"); }, icon: <IconAdjustmentsHorizontal size={17} />, get desc() { return t("Machine recipes: resources, apps and cleanup ready to use."); } },
   { tab: "templates", get label() { return t("Templates"); }, icon: <IconTemplate size={17} />, get desc() { return t("Windows already installed, with its apps, to create machines in seconds."); } },
@@ -44,7 +41,6 @@ const SECTIONS: { tab: LibraryTab; readonly label: string; icon: React.ReactNode
   { tab: "isos", get label() { return t("ISOs"); }, icon: <IconDisc size={17} />, get desc() { return t("Windows images to create machines from scratch."); } },
 ];
 
-/** A section's head: its icon, name and what it is for, with the section's own action at the right. */
 function SectionHead({ tab }: { tab: LibraryTab }) {
   const x = SECTIONS.find((s) => s.tab === tab)!;
   return (
@@ -55,10 +51,6 @@ function SectionHead({ tab }: { tab: LibraryTab }) {
   );
 }
 
-/** The Library on one page: every section one after the other, and a bar on top that marks the one in view and
- *  takes you to the others (the route still names a section, so links from Inicio land on it). */
-
-// The profiles GpuVM ships with describe themselves in the app's language (their JSON keeps an English note).
 const BUILT_IN_DESC: Record<string, () => string> = {
   balanced: () => t("Good performance with room left for your PC: 8 threads, 8 GB and a dynamic disk."),
   "max-performance": () => t("Maximum performance: the processor reserved at 100 %, your PC's topology, 8 GB fixed and an optimized Windows."),
@@ -70,12 +62,9 @@ export function Library({ tab, onTab, host, startJob, busy, progress, notify, on
   // A tab clicked here already scrolls; the route it changes must not scroll again (it cut the glide short).
   const clicked = useRef<LibraryTab | null>(null);
   const goTo = (t: LibraryTab, smooth = true) => {
-    // The first section goes back to the very top, with the space overview above it in view.
     const main = mainRef.current, el = t === SECTIONS[0].tab ? main?.querySelector<HTMLElement>(".section-nav + *") : refs.current[t];
     if (main && el) scrollToSection(main, el, smooth);
   };
-  // Arriving with a section in the route (from Inicio) scrolls to it.
-  // The first section opens at the very top, with the storage overview above it in view.
   useEffect(() => {
     if (clicked.current === tab) { clicked.current = null; return; }
     const id = setTimeout(() => { if (tab === SECTIONS[0].tab) mainRef.current?.scrollTo({ top: 0 }); else goTo(tab, false); }, 60);
@@ -115,18 +104,12 @@ export function Library({ tab, onTab, host, startJob, busy, progress, notify, on
   );
 }
 
-/** A grid of Library cards whose cards glide to their new places when the window changes size or one comes or goes. */
 function FlipGrid({ children }: { children: React.ReactNode }) {
   const ref = useFlip<HTMLDivElement>();
   return <div ref={ref} className="profile-grid">{children}</div>;
 }
 
-/* ---------- Storage ---------- */
-
-/** Where the drive's space goes: machine disks, templates, shared disks and ISOs, each with its color, and what is
- *  left free. */
 type Storage = { parts: { gb: number; cls: string }[]; free: number };
-// What it last showed, so coming back to the Library shows it at once while it refreshes.
 let storageCache: Storage | null = null;
 const STORAGE_PARTS = ["st-machines", "st-templates", "st-shared", "st-isos"];
 const partLabel = (cls: string) => cls === "st-machines" ? t("Machine disks") : cls === "st-templates" ? t("Templates") : cls === "st-shared" ? t("Shared disks") : t("ISOs");
@@ -148,7 +131,6 @@ function StorageOverview({ hostFreeGB }: { hostFreeGB: number | null }) {
     }).catch(() => {});
   }, []);
   const fmt = (n: number) => `${Math.round(n).toLocaleString(locale())} GB`;
-  // While it loads: the same panel, with its bar and legend waiting, never a bare strip.
   if (!data) {
     return (
       <div className="card storage loading" aria-busy="true">
@@ -171,8 +153,6 @@ function StorageOverview({ hostFreeGB }: { hostFreeGB: number | null }) {
     </div>
   );
 }
-
-/* ---------- Profiles ---------- */
 
 type Editing = { previous?: string; name: string; description: string; extends: string; settings: ProfileSettings };
 
@@ -198,7 +178,6 @@ function Profiles({ tabs, host, notify }: { tabs: React.ReactNode; host: HostInf
   return (
     <>
     <div className="library-head">{tabs}</div>
-    {/* One card per profile, with its cube built from what it gives; the grid grows with however many there are. */}
     <FlipGrid>
       {profiles === null && [0, 1, 2].map((i) => <div key={i} className="card skeleton profile-skeleton" />)}
       {profiles?.map((p) => (
@@ -226,7 +205,6 @@ function Profiles({ tabs, host, notify }: { tabs: React.ReactNode; host: HostInf
           </div>
         </div>
       ))}
-      {/* The last card makes a new one: an empty cube waiting for its pieces. */}
       {profiles && (
         <div className="card profile-card profile-new">
           <MiniCube className="profile-cube" ghost machine={{ cores: 8, memoryGB: 16, gpuPercent: 60, diskGB: 256, apps: 2 }} />
@@ -247,7 +225,6 @@ function Profiles({ tabs, host, notify }: { tabs: React.ReactNode; host: HostInf
   );
 }
 
-// Same dialog as "Create machine": over the list, Esc closes, clicking outside closes only when nothing changed.
 function ProfileEditor({ initial, host, apps, existing, onCancel, onSaved, notify }: {
   initial: Editing; host: HostInfo | null; apps: AppInfo[]; existing: ProfileInfo[];
   onCancel: () => void; onSaved: (name: string) => void; notify: Props["notify"];
@@ -278,7 +255,6 @@ function ProfileEditor({ initial, host, apps, existing, onCancel, onSaved, notif
   const bases = existing.filter((p) => p.BuiltIn);
   const diskLeft = host?.disk?.availableGB.toLocaleString(locale()) ?? "";
 
-  // Checked as you type; "Save profile" stays disabled until the name is valid.
   const trimmed = draft.name.trim();
   const nameError = !trimmed ? "" : !/^[\w-]{1,40}$/.test(trimmed) ? t("Use letters, numbers or hyphens, no spaces")
     : existing.some((p) => p.Name === trimmed && p.Name !== draft.previous) ? t("There's already a profile with that name") : "";
@@ -351,7 +327,6 @@ function ProfileEditor({ initial, host, apps, existing, onCancel, onSaved, notif
             </div>
             <div className="field">
               <div className="field-top"><span>{t("Disk")}</span><strong>{s.diskGB} GB</strong></div>
-              {/* A new machine's disk can't be bigger than the room left once every VM disk is full. */}
               <Slider label={t("Disk")} value={Math.min(s.diskGB, diskMax)} min={64} max={diskMax} step={16} onChange={(diskGB) => set({ diskGB })} />
               {host?.disk && <span className="hint">{t("{gb} GB left on {drive} for a new machine, counting what's reserved for the others", { gb: diskLeft, drive: host.disk.drive })}</span>}
             </div>
@@ -405,7 +380,6 @@ function ProfileEditor({ initial, host, apps, existing, onCancel, onSaved, notif
             <IsoPicker isos={isos} value={s.iso} onChange={(iso) => set({ iso })} onBrowse={browse} allowNone />
           </div>
         </div>
-        {/* The machine this profile makes, built as it is edited, as when creating a machine. */}
         <aside className="profile-editor-cube">
           <MachineCube name={draft.name} machine={{
             power: "on", cores: s.cpu, memoryGB: s.memoryGB, gpuPercent: s.gpuPercent, diskGB: s.diskGB,
@@ -426,8 +400,6 @@ function ProfileEditor({ initial, host, apps, existing, onCancel, onSaved, notif
     </div>,
     portalRoot());
 }
-
-/* ---------- Disks ---------- */
 
 function Disks({ tabs, startJob, busy, notify, onOpenVm }: Pick<Props, "startJob" | "busy" | "notify" | "onOpenVm"> & { tabs: React.ReactNode }) {
   const [disks, setDisks] = useState<DiskInfo[] | null>(cache.disks ?? null);
@@ -510,18 +482,14 @@ function Disks({ tabs, startJob, busy, notify, onOpenVm }: Pick<Props, "startJob
   );
 }
 
-/* ---------- Templates ---------- */
-
 function Templates({ tabs, notify, onOpenVm, onCreate, startJob }: { tabs: React.ReactNode; notify: Props["notify"]; onOpenVm: Props["onOpenVm"]; onCreate: (name: string) => void; startJob: Props["startJob"] }) {
   const [templates, setTemplates] = useState<TemplateInfo[] | null>(cache.templates ?? null);
-  // "New template": pick the machine whose Windows it saves.
   const [newFrom, setNewFrom] = useState<VmOverview[] | null>(null);
   const openNew = () => api.overview().then((list) => setNewFrom(list.filter((v) => v.managed))).catch((e) => notify("error", humanError(e)));
   const [confirm, setConfirm] = useState<string | null>(null);
   const cleanupLevels = useCleanupLevels();
   const load = useCallback(() => api.templates().then((t) => { cache.templates = t; setTemplates(t); }).catch((e) => { setTemplates([]); notify("error", humanError(e)); }), [notify]);
   useEffect(() => { load(); }, [load]);
-  // A throwaway copy in one click: named like the module would ("<template>-desechable", -2…), started, and opened.
   const openDisposable = async (template: string) => {
     try {
       const taken = new Set((await api.overview()).map((v) => v.name.toLowerCase()));
@@ -583,8 +551,6 @@ function Templates({ tabs, notify, onOpenVm, onCreate, startJob }: { tabs: React
     </>
   );
 }
-
-/* ---------- Shared disks ---------- */
 
 const PURPOSE_LABEL = { games: "Games", general: "General" } as const;
 
@@ -649,8 +615,6 @@ function SharedDisks({ tabs, startJob, progress, notify, onOpenVm }: Pick<Props,
 function NewSharedDisk({ existing, notify, onCancel, onCreated }: {
   existing: SharedDiskInfo[]; notify: Props["notify"]; onCancel: () => void; onCreated: () => void;
 }) {
-  // The name offered follows the use (games, shared), in the app's language, with a number when it is taken; once
-  // typed in, it stays as written.
   const suggest = (use: "games" | "general") => {
     const base = use === "games" ? t("games|disk name") : t("shared|disk name");
     let n = base;
@@ -661,7 +625,6 @@ function NewSharedDisk({ existing, notify, onCancel, onCreated }: {
   const [typed, setTyped] = useState(false);
   const [purpose, setPurposeOnly] = useState<"games" | "general">("games");
   const setPurpose = (use: "games" | "general") => { setPurposeOnly(use); if (!typed) setName(suggest(use)); };
-  // Dynamic: it only takes what its files use, so the size is a ceiling, not space taken now.
   const maxGB = 2048;
   const [sizeGB, setSizeGB] = useState(512);
   const [saving, setSaving] = useState(false);
@@ -724,8 +687,6 @@ function NewSharedDisk({ existing, notify, onCancel, onCreated }: {
     </div>,
     portalRoot());
 }
-
-/* ---------- ISOs ---------- */
 
 function Isos({ tabs, notify }: { tabs: React.ReactNode; notify: Props["notify"] }) {
   const [isos, setIsos] = useState<IsoFile[] | null>(cache.isos ?? null);

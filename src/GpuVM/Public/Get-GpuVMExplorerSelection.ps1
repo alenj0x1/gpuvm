@@ -17,9 +17,7 @@ function Get-GpuVMExplorerSelection {
     $raw = Invoke-Command -VMName $Name -Credential $guest -ErrorAction Stop -ArgumentList $script:GuestFolderCode -ScriptBlock {
         param($folderCode)
         . ([scriptblock]::Create($folderCode))
-        # C:\GpuVM only administrators can change (the script is written there as administrator); the answer comes
-        # back through a folder of this run the user can write and the administrator only reads (security review
-        # 2026-11-21, GuestFolders.ps1).
+        # The script is in admin-only C:\GpuVM; the answer comes back through a folder the administrator only reads.
         $dir = 'C:\GpuVM'
         Protect-GpuVMGuestRoot -Path $dir
         $script = Join-Path $dir 'get-selection.ps1'
@@ -29,7 +27,6 @@ function Get-GpuVMExplorerSelection {
         try {
             $out = Join-Path $drop 'selection.txt'
             Remove-GpuVMItem -Path $script
-            # Shell windows come in the order they were opened; the one in front (or used last) goes first.
             Set-Content -Path $script -Encoding UTF8 -Value @"
 Add-Type -Namespace GpuVM -Name W -MemberDefinition '[DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();'
 `$front = [GpuVM.W]::GetForegroundWindow().ToInt64()

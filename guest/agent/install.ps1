@@ -1,62 +1,16 @@
-<#
-.SYNOPSIS
-    Prepares a Windows guest for GpuVM's "Agent" usage type, or undoes it. Run once by the host broker over PowerShell
-    Direct as an administrator of the guest (Windows PowerShell 5.1). Idempotent: running it again updates the agent
-    and rotates the agent user's password.
-
-.DESCRIPTION
-    - Installs gpuvm-agent.exe under C:\Program Files\GpuVM Agent (Administrators/SYSTEM write, Users read+execute)
-      and the GpuVMAgent service (SYSTEM, automatic, restarts on failure).
-    - Creates C:\ProgramData\GpuVM\Agent with an ACL of SYSTEM + Administrators only (the service refuses anything
-      else), for the per-VM secret and the logs. The secret comes from -Secret or is copied later by the host with
-      Copy-VMFile into that folder (it inherits the ACL).
-    - Creates the standard user `agent` (member of Users only, never Administrators) with a random password that is
-      returned to the host, which keeps it with DPAPI; the guest keeps it only as the autologon LSA secret.
-    - Signs in as `agent` automatically (Winlogon + LSA secret DefaultPassword, never the plain registry value). The
-      previous autologon (the person's) is backed up, its password into another LSA secret, and restored by
-      -SignInAs previous or -Uninstall.
-    - In the agent's profile only: Desktop\Received and Desktop\Outbox (fixed English names, localized display names
-      via desktop.ini), Edge first-run and promotions off by user policy, visual effects and animations off, screen
-      saver off, Windows tips and "finish setting up" screens off.
-    - Machine-wide, backed up and restored on uninstall: the new-user privacy screen and the first sign-in animation
-      are skipped (they would block the agent's first sign-in). Nothing else of the person's user, data or UAC changes.
-
-    - Fast path (a disposable clone of a template, or the same version again): only a new secret if given, a NEW
-      random password for `agent` (autologon LSA secret updated) and a service restart. -Full forces everything.
-    - -PrepareTemplate: stops the service and removes the secret and the agent's logs, so a template never carries a
-      secret; a clone waits (no dialing) until the host gives it its own secret and runs this script again.
-
-.NOTES
-    The host runs it over PowerShell Direct as the guest's administrator, as a script block or with
-    Invoke-Command -FilePath (guests keep the Restricted execution policy, which blocks .ps1 files on disk). The
-    staging folder holds the contents of guest/agent/dist (gpuvm-agent.exe, VERSION), copied with Copy-VMFile; it is
-    deleted after a successful run when it is inside C:\ProgramData\GpuVM\Agent. The `agent` password is only in the
-    output object (never written to disk in the guest, never logged). Restart from inside the guest
-    (Restart-Computer) when rebootNeeded: Restart-VM -Force right after the install lost its registry changes (lab 051).
-
-.OUTPUTS
-    One object: ok, version, user, password (set this run), signInAs, secret, rebootNeeded, fastPath, notes.
-#>
+# Run over PowerShell Direct as a script block or Invoke-Command -FilePath: guests keep the Restricted execution policy.
+# When rebootNeeded, restart from inside the guest: Restart-VM -Force right after the install loses its registry changes.
 [CmdletBinding()]
 param(
-    # folder that holds gpuvm-agent.exe and VERSION (the host copies guest/agent/dist there)
     [string]$Staging = 'C:\ProgramData\GpuVM\Agent\staging',
-    # the per-VM secret (32 bytes); optional when the host already copied it to C:\ProgramData\GpuVM\Agent\secret
     [byte[]]$Secret,
-    # who Windows signs in automatically: the agent user, or whatever was configured before (the person)
     [ValidateSet('agent', 'previous')][string]$SignInAs = 'agent',
     [switch]$Uninstall,
-    # with -Uninstall: also delete the agent user and its profile
     [switch]$RemoveUser,
-    # stop the service and remove the secret and logs before the VM is saved as a template
     [switch]$PrepareTemplate,
-    # the full install even when the same version is already installed
     [switch]$Full,
-    # SHA-256 (hex) the staged gpuvm-agent.exe must have; checked before it is run
     [string]$ExpectedSha256,
-    # the mode the stream will use, WIDTHxHEIGHT@HZ (e.g. 1920x1080@60): the agent sets the virtual display to it once
-    # it starts, so the viewer finds it ready and Sunshine doesn't restart under the first session. Empty: keep what is
-    # recorded; '-': remove it.
+    # Empty: keep what is recorded; '-': remove it.
     [ValidatePattern('^(|-|[0-9]{4}x[0-9]{3,4}@[0-9]{2,3})\z')][string]$StreamMode = ''
 )
 $ErrorActionPreference = 'Stop'
@@ -77,7 +31,6 @@ $notes = New-Object Collections.Generic.List[string]
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $principal.IsInRole($SidAdmins)) { throw 'Run as an administrator of the guest.' }
 
-# --- LSA secrets (the autologon password lives here, never in the plain registry) ---------------------------------
 if (-not ('GpuVMAgentLsa' -as [type])) {
     Add-Type -TypeDefinition @'
 using System;
@@ -157,13 +110,11 @@ public static class GpuVMAgentProfile {
 '@
 }
 
-# --- small helpers ------------------------------------------------------------------------------------------------
 function Set-Value([string]$Path, [string]$Name, $Value, [string]$Type = 'DWord') {
     if (-not (Test-Path $Path)) { New-Item -Path $Path -Force | Out-Null }   # creates missing keys only; existing values stay
     New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
 }
 
-# The backup key: only SYSTEM and Administrators can read it (it lists the previous sign-in settings).
 function Initialize-BackupKey {
     if (-not (Test-Path $BackupKey)) { New-Item -Path $BackupKey -Force | Out-Null }
     $acl = New-Object Security.AccessControl.RegistrySecurity
@@ -174,7 +125,6 @@ function Initialize-BackupKey {
     Set-Acl -Path $BackupKey -AclObject $acl
 }
 
-# Saves a machine value once (before the first change), so uninstall can put it back exactly; '<absent>' if it wasn't set.
 function Backup-Value([string]$Path, [string]$Name) {
     $id = ($Path -replace '^HKLM:\\', '') + '|' + $Name
     Initialize-BackupKey
@@ -219,7 +169,6 @@ function Set-ProtectedAcl([string]$Path, [bool]$UsersReadExecute) {
     }
     $acl.SetOwner($SidAdmins)
     Set-Acl -Path $Path -AclObject $acl
-    # children too (files that were there before get the same protected rules); links are removed, never followed
     $todo = New-Object Collections.Generic.Queue[string]
     $todo.Enqueue($Path)
     while ($todo.Count) {
@@ -238,10 +187,7 @@ function Set-ProtectedAcl([string]$Path, [bool]$UsersReadExecute) {
     }
 }
 
-# C:\ProgramData\GpuVM\Agent made safely: Users may create folders under C:\ProgramData, so a standard user could
-# plant GpuVM or GpuVM\Agent beforehand as a junction (the secret and the SYSTEM service's log would then go
-# wherever it points) or as their own folder. Anything there that is a link or not owned by SYSTEM/Administrators
-# is removed without following it, then the folder is created and protected (security review H2).
+# Users may create folders under C:\ProgramData: a planted junction or foreign folder is removed without following it.
 function Test-Trusted([string]$Path) {
     $item = Get-Item -LiteralPath $Path -Force
     if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { return $false }
@@ -275,7 +221,6 @@ function Get-AgentProfile([string]$Sid) {
     if ($p) { [Environment]::ExpandEnvironmentVariables($p.ProfileImagePath) } else { $null }
 }
 
-# Runs $Script against the agent's registry hive (HKU\<sid> when signed in, else NTUSER.DAT loaded for the moment).
 function Invoke-AgentHive([string]$Sid, [string]$ProfilePath, [scriptblock]$Script) {
     $loaded = Test-Path "Registry::HKEY_USERS\$Sid"
     $root = "Registry::HKEY_USERS\$Sid"
@@ -309,7 +254,6 @@ function Set-AgentAutologon([string]$Password) {
         New-ItemProperty -Path $BackupKey -Name $plainMarker -Value $(if ($null -ne $plain) { 'lsa' } else { '<absent>' }) -PropertyType String -Force | Out-Null
         $plain = $null
     }
-    # the previous autologon password (an LSA secret written by Windows setup) is kept in another LSA secret
     $marker = 'LSA|DefaultPassword'
     if ($null -eq (Get-ItemProperty -Path $BackupKey -Name $marker -ErrorAction SilentlyContinue)) {
         $had = [GpuVMAgentLsa]::Copy('DefaultPassword', $PrevSecret)
@@ -355,8 +299,6 @@ $MachinePolicies = @(
     @{ Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'; Name = 'EnableFirstLogonAnimation'; Value = 0 }
 )
 
-# Who the session helper may run as (read by the service, which compares SIDs, never names): the agent user's SID
-# and whether the machine signs in as the agent or as the person. HKLM: only administrators can change it.
 $ModeKey = 'HKLM:\SOFTWARE\GpuVM\Agent'
 function Set-AgentMode([string]$Sid, [string]$Mode) {
     if (-not (Test-Path $ModeKey)) { New-Item -Path $ModeKey -Force | Out-Null }
@@ -364,7 +306,7 @@ function Set-AgentMode([string]$Sid, [string]$Mode) {
     New-ItemProperty -Path $ModeKey -Name 'SignInAs' -Value $Mode -PropertyType String -Force | Out-Null
     Set-StreamMode
 }
-# Same bounds as the agent's parser (display.rs parse_mode): anything else is refused here, ignored there.
+# Same bounds as display.rs parse_mode.
 function Set-StreamMode {
     if ($StreamMode -eq '-') { Remove-ItemProperty -Path $ModeKey -Name 'StreamMode' -ErrorAction SilentlyContinue; return }
     if (-not $StreamMode) { return }
@@ -374,9 +316,7 @@ function Set-StreamMode {
 }
 function Get-StreamMode { if (Test-Path $ModeKey) { (Get-ItemProperty -Path $ModeKey -Name 'StreamMode' -ErrorAction SilentlyContinue).StreamMode } }
 
-# A folder in the agent's profile that this script (as an administrator) is about to touch: the agent owns the
-# profile and could have put a junction there, which would make an administrator's write or ownership change land
-# somewhere else (C:\Program Files...: security review). A link is removed without being followed; then created.
+# The agent owns its profile and could plant a junction to redirect an administrator's write: links are removed unfollowed.
 function Initialize-ProfileFolder([string]$Path) {
     if (Test-Path -LiteralPath $Path) {
         $item = Get-Item -LiteralPath $Path -Force
@@ -390,8 +330,7 @@ function Initialize-ProfileFolder([string]$Path) {
     if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "$Path is still a link" }
 }
 
-# desktop.ini written as a NEW file (FileMode CreateNew never follows or reuses an existing name): whatever was there
-# (a link, a hard link to another file, a folder) is removed first, without following it.
+# CreateNew never follows or reuses an existing name (a link or hard link).
 function Write-NewFile([string]$Path, [string]$Text) {
     if (Test-Path -LiteralPath $Path) {
         $item = Get-Item -LiteralPath $Path -Force
@@ -403,8 +342,6 @@ function Write-NewFile([string]$Path, [string]$Text) {
     finally { $fs.Dispose() }
 }
 
-# The staged exe is run by this script as an administrator: its folder and the file must be owned by
-# SYSTEM/Administrators and not be links (and match -ExpectedSha256 when given) before anything runs it.
 function Assert-Staging {
     if (-not $Staging -or -not (Test-Path -LiteralPath $Staging)) { throw "the staging folder $Staging doesn't exist" }
     $full = [IO.Path]::GetFullPath($Staging).TrimEnd('\')
@@ -422,14 +359,12 @@ function Assert-Staging {
 function Remove-SecretFile {
     $f = Join-Path $DataDir 'secret'
     if (Test-Path -LiteralPath $f) {
-        # overwritten before it is deleted (best effort on an SSD: no copy of K is left in the file's clusters)
         $junk = New-Object byte[] 32; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($junk)
         [IO.File]::WriteAllBytes($f, $junk)
         Remove-Item -LiteralPath $f -Force
     }
 }
 
-# --- uninstall ----------------------------------------------------------------------------------------------------
 if ($Uninstall) {
     $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     if ($svc) {
@@ -458,7 +393,6 @@ if ($Uninstall) {
     return
 }
 
-# --- template: no secret, no logs ----------------------------------------------------------------------------------
 function Remove-Staging {
     if ($Staging -and (Test-Path $Staging) -and ([IO.Path]::GetFullPath($Staging) + '\').StartsWith($DataDir + '\', 'OrdinalIgnoreCase')) {
         Remove-Item -LiteralPath $Staging -Recurse -Force
@@ -471,8 +405,7 @@ if ($PrepareTemplate) {
     Remove-SecretFile
     Remove-Item -LiteralPath (Join-Path $DataDir 'logs') -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Staging
-    # no password travels in a template (security review): the agent's autologon password, the person's backed-up
-    # one and the Winlogon backup go; the copy signs in once its install sets a new agent password
+    # No password travels in a template.
     [GpuVMAgentLsa]::Store('DefaultPassword', $null)
     [GpuVMAgentLsa]::Store($PrevSecret, $null)
     [GpuVMAgentLsa]::Store($PrevPlainSecret, $null)
@@ -481,19 +414,16 @@ if ($PrepareTemplate) {
         foreach ($n in @($b.Property | Where-Object { $_ -like '*Winlogon|*' -or $_ -like 'LSA|*' -or $_ -like 'PLAIN|*' })) { Remove-ItemProperty -Path $BackupKey -Name $n }
     }
     Set-Value $Winlogon 'AutoAdminLogon' '0' 'String'
-    # each copy's install records its own stream mode
     if (Test-Path $ModeKey) { Remove-ItemProperty -Path $ModeKey -Name 'StreamMode' -ErrorAction SilentlyContinue }
     [pscustomobject]@{ ok = $true; template = $true; secret = 'removed'; passwords = 'removed'
         notes = @('a copy signs in as agent only after its install (new secret + new agent password) and a restart') }
     return
 }
 
-# --- install / update ---------------------------------------------------------------------------------------------
 if ($Secret -and $Secret.Length -ne 32) { throw 'the secret must be 32 bytes' }
 $srcExe = Assert-Staging
 $newVersion = (& $srcExe version 2>$null | Out-String).Trim()
 
-# fast path: same version installed, user and service there -> new secret (if any), new password, restart
 $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 $user = Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue
 $oldVersion = if (Test-Path $Exe) { (& $Exe version 2>$null | Out-String).Trim() } else { '' }
@@ -507,7 +437,7 @@ if (-not $Full -and $svc -and $user -and $SignInAs -eq 'agent' -and $oldVersion 
     $before = "$(Get-Reg $Winlogon 'AutoAdminLogon')|$(Get-Reg $Winlogon 'DefaultUserName')"
     Set-AgentAutologon $password
     Set-AgentMode $user.SID.Value 'agent'
-    # a copy of a template sits at the sign-in screen (no password there): it needs the restart to sign in
+    # A template's copy sits at the sign-in screen: it needs the restart to sign in.
     $console = "$((Get-CimInstance Win32_ComputerSystem).UserName)"
     $restart = ($before -ne "1|$UserName") -or ($console -notlike "*\$UserName")
     Start-Service -Name $ServiceName
@@ -520,14 +450,12 @@ if (-not $Full -and $svc -and $user -and $SignInAs -eq 'agent' -and $oldVersion 
     return
 }
 
-# 1. data folder: SYSTEM + Administrators only (checked again by the service before every connection)
 Initialize-DataDir
 if ($Secret) {
     [IO.File]::WriteAllBytes((Join-Path $DataDir 'secret'), $Secret)
     Set-ProtectedAcl $DataDir $false
 }
 
-# 2. binaries + service
 if ($svc -and $svc.Status -ne 'Stopped') { Stop-Service -Name $ServiceName -Force }
 if (-not (Test-Path $AppDir)) { New-Item -ItemType Directory -Path $AppDir -Force | Out-Null }
 Copy-Item -LiteralPath $srcExe -Destination $Exe -Force
@@ -540,7 +468,6 @@ if (-not $svc) {
 }
 & sc.exe failure $ServiceName reset= 86400 actions= restart/2000/restart/2000/restart/10000 | Out-Null
 
-# 3. the agent user: standard (Users only), random password returned to the host
 $password = New-Password
 $secure = ConvertTo-SecureString $password -AsPlainText -Force
 $user = Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue
@@ -560,11 +487,9 @@ if (Get-LocalGroupMember -SID $SidAdmins.Value -ErrorAction SilentlyContinue | W
     $notes.Add('the agent user was an administrator: removed from Administrators')
 }
 
-# 4. its profile, created now so its folders and settings exist before the first sign-in
 $profilePath = Get-AgentProfile $sid
 if (-not $profilePath) {
-    # a leftover C:\Users\agent that belongs to no profile (an earlier agent user, or an install undone by a hard
-    # reset) would make Windows pick C:\Users\agent.000: move it aside so the profile gets the fixed path (lab 051)
+    # A leftover C:\Users\agent with no profile would make Windows pick C:\Users\agent.000.
     $profilesDir = [Environment]::ExpandEnvironmentVariables((Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList').ProfilesDirectory)
     $wanted = Join-Path $profilesDir $UserName
     if (Test-Path -LiteralPath $wanted) {
@@ -579,7 +504,6 @@ if (-not $profilePath) {
 }
 if (-not $profilePath -or -not (Test-Path $profilePath)) { throw "the agent's profile folder wasn't created" }
 
-# 5. Desktop\Received and Desktop\Outbox, localized display names
 $spanish = [Globalization.CultureInfo]::InstalledUICulture.TwoLetterISOLanguageName -eq 'es'
 $desktop = Join-Path $profilePath 'Desktop'
 Initialize-ProfileFolder $desktop
@@ -599,10 +523,9 @@ foreach ($f in @(@{ Name = 'Received'; Es = 'Recibidos' }, @{ Name = 'Outbox'; E
         Write-NewFile $ini ''; Remove-Item -LiteralPath $ini -Force
     }
 }
-# what this script created belongs to the agent: exactly these paths, never recursively, never through a link (/L)
+# Exactly these paths: never recursive, never through a link (/L).
 foreach ($p in $owned) { & icacls.exe $p /setowner "*$sid" /L /C /Q | Out-Null }
 
-# 6. the agent's own settings (its registry hive; the person's user is not touched)
 Invoke-AgentHive $sid $profilePath {
     param($root)
     $edge = "$root\SOFTWARE\Policies\Microsoft\Edge"
@@ -629,13 +552,11 @@ Invoke-AgentHive $sid $profilePath {
     Set-Value "$root\SOFTWARE\Microsoft\Windows\CurrentVersion\UserProfileEngagement" 'ScoobeSystemSettingEnabled' 0
 }
 
-# 7. machine: skip the privacy screen and the animation of a new user's first sign-in (backed up)
 foreach ($p in $MachinePolicies) {
     Backup-Value $p.Path $p.Name
     Set-Value $p.Path $p.Name $p.Value
 }
 
-# 8. who signs in automatically (and, for the service, whom the session helper may run as)
 Set-AgentMode $sid $SignInAs
 $reboot = $false
 if ($SignInAs -eq 'agent') {
@@ -646,7 +567,6 @@ if ($SignInAs -eq 'agent') {
     $reboot = Restore-PreviousAutologon
 }
 
-# 9. start (the service waits for the secret if the host hasn't copied it yet)
 Start-Service -Name $ServiceName
 $secretState = if (Test-Path (Join-Path $DataDir 'secret')) { 'present' } else { 'missing' }
 if ($secretState -eq 'missing') { $notes.Add("copy the 32-byte secret to $DataDir\secret (Copy-VMFile); the service dials the host once it is there") }

@@ -6,13 +6,6 @@ import { stickerImage } from "../decor/stickers";
 import { background, cube, type World } from "./bitHop";
 import { t } from "../i18n";
 
-// "Cache": brick figures rain down and your machine catches them, moving along the floor with the mouse (or A/D,
-// the arrows). Every figure that reaches the floor costs a heart; with none left the game is over. Now and then a
-// spider (a bug) falls too: catching it costs a heart, letting it go costs nothing. Stickers bring help for a while:
-// a second machine that catches beside you (Clone), a wider catcher, slow time, a magnet that pulls figures in, a
-// shield that saves the next miss, or a heart. Golden figures are worth five. It gets faster and thicker as the score
-// grows. Played in the studio, on a motherboard or among blocks. In a demo it plays by itself.
-
 type Kind = "figure" | "gold" | "bug" | "pick";
 type Pick = "clone" | "wide" | "slow" | "magnet" | "shield" | "heart";
 interface Drop { kind: Kind; x: number; y: number; vy: number; rot: number; vr: number; img: HTMLCanvasElement | null; pick?: Pick }
@@ -36,12 +29,10 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
   let W = 0, H = 0, dpr = 1;
   const resize = () => { dpr = Math.min(2, window.devicePixelRatio || 1); W = canvas.clientWidth; H = canvas.clientHeight; canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); };
   resize();
-  // Refit once the size settles, and draw again right away if nothing is running to do it.
   const ro = settledResize(() => { resize(); if (!running) draw(0); });
   ro.observe(canvas);
   const unit = () => Math.max(0.75, Math.min(1.3, H / 520));
 
-  // The figures that fall, drawn once on the GPU: a handful picked at random, plus the machine's own on top of it.
   const thumb = (id: string, color: string, size = 72) => { const c = document.createElement("canvas"); c.width = c.height = size * dpr; drawFigureThumb(c.getContext("2d")!, id, size, 0.7, color, dpr); return c; };
   const pool = FIGURES.map((f) => f.id).sort(() => Math.random() - 0.5).slice(0, 8);
   const sprites = pool.map((id) => thumb(id, host.player.color));
@@ -104,15 +95,12 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     for (const k of Object.keys(power) as Pick[]) if (k !== "heart") power[k] = Math.max(0, power[k] - dt);
     if (power.clone <= 0) clone.on = false;
     hurt = Math.max(0, hurt - dt);
-    // Keys move it; the mouse sets where it goes.
     if (keys) me.tx = Math.max(0, Math.min(W, me.tx + keys * 620 * unit() * dt));
     if (demo) {
-      // In a demo it heads for the lowest figure that it can still reach, and lets bugs go.
       const target = drops.filter((d) => d.kind !== "bug").sort((a, b) => b.y - a.y)[0];
       if (target) me.tx = target.x;
     }
     me.x += (me.tx - me.x) * Math.min(1, dt * 16);
-    // The clone mirrors you across the middle, so two places are covered.
     if (clone.on) clone.x += ((W - me.x) - clone.x) * Math.min(1, dt * 12);
     spawn -= dt;
     if (spawn <= 0) { spawnOne(); spawn = Math.max(0.28, 0.95 - level() * 0.6) * (0.7 + Math.random() * 0.6); }
@@ -142,7 +130,6 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     g.globalAlpha = 1;
     const u = unit(), fy = floorY(), hw = halfW();
     if (power.slow > 0) { g.fillStyle = "rgba(125,156,240,.07)"; g.fillRect(0, 0, W, H); }
-    // The floor line where figures are lost.
     g.fillStyle = host.light ? "rgba(28,27,24,.12)" : "rgba(235,232,225,.1)"; g.fillRect(0, fy + 12 * u, W, 2);
     for (const d of drops) {
       const s = (d.kind === "pick" ? 46 : d.kind === "bug" ? 48 : 66) * u;
@@ -150,7 +137,6 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
       if (!d.img) continue;
       g.save(); g.translate(d.x, d.y); g.rotate(d.kind === "figure" || d.kind === "gold" ? d.rot * 0.25 : d.rot * 0.15); g.drawImage(d.img, -s / 2, -s / 2, s, s); g.restore();
     }
-    // Your machine (and its clone): a wide cube that catches, with its figure riding on it.
     const catcher = (x: number, ghost: boolean) => {
       g.globalAlpha = ghost ? 0.6 : 1;
       cube(g, x, fy, 18 * u, host.player.color, 0);
@@ -211,8 +197,7 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
 
 export const CATCH: GameDef = {
   id: "catch",
-  // Getters: the texts come out in the language in use.
-  // One name in every language, like Overclock: it catches, and a cache keeps.
+  // Getters, so texts follow the current language.
   name: "Cache",
   get description() { return t("Catch the falling figures before they hit the floor. Each one that falls costs a heart."); },
   get modes() {

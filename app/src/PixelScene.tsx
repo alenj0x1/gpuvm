@@ -1,12 +1,6 @@
 import { useEffect, useRef } from "react";
 import { animFps, onAnimBudget, paceFrame } from "./animBudget";
 
-// Pixel-art landscapes for the website's viewer demo, one per sample machine so switching machines in the panel shows
-// another picture: cherry trees by a lake at sunset, a misty forest in the morning and snowy mountains at dawn over a still lake
-// (it replaced the ocean, 2026-11-21: the person didn't like it). Drawn at
-// 192 × 108 pixels (ordered dithering for the gradients) and scaled up without smoothing; a few things move (petals,
-// light, ripples, birds) at a few frames a second.
-
 export type PixelSceneKind = "sakura" | "forest" | "alpine";
 
 const W = 192, H = 108;
@@ -14,11 +8,9 @@ const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => 
 type RGB = [number, number, number];
 const hex = (h: string): RGB => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 const mix = (a: RGB, b: RGB, t: number): RGB => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
-/** A repeatable 0..1 value for a pixel (texture of leaves, sparkles). */
 const hash = (x: number, y: number) => { let h = (x * 374761393 + y * 668265263) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
 const solid = (h: string) => { const [r, g, b] = hex(h); return (255 << 24) | (b << 16) | (g << 8) | r; };
 
-/** A gradient through color stops, t from 0 to 1. */
 function ramp(stops: [number, RGB][], t: number): RGB {
   t = Math.max(0, Math.min(1, t));
   let i = 0;
@@ -27,7 +19,6 @@ function ramp(stops: [number, RGB][], t: number): RGB {
   return mix(c0, c1, (t - t0) / (t1 - t0));
 }
 
-/** Stored as the canvas pixel, quantized with ordered dithering so the gradients read as pixel art. */
 function put(buf: Uint32Array, x: number, y: number, c: RGB, step = 22) {
   const b = BAYER[(y & 3) * 4 + (x & 3)] - 0.5;
   const q = (v: number) => Math.max(0, Math.min(255, Math.round((v + b * step) / step) * step));
@@ -37,14 +28,11 @@ const inside = (x: number, y: number) => x >= 0 && x < W && y >= 0 && y < H;
 
 interface Scene { build(): Uint32Array; frame(buf: Uint32Array, layer: Uint32Array, T: number): void }
 
-/* ---------- Cherry trees at sunset ---------- */
-
 const sakura: Scene = (() => {
   const HORIZON = 64, SUN = { x: 112, y: HORIZON - 4, r: 9 };
   const SKY: [number, RGB][] = [[0, hex("#1b2447")], [0.32, hex("#3f3160")], [0.55, hex("#a4475f")], [0.78, hex("#ea7a48")], [1, hex("#ffc970")]];
   const skyAt = (x: number, y: number): RGB => {
     const c = ramp(SKY, y / HORIZON);
-    // The glow around the sun, wider along the horizon.
     const dx = (x - SUN.x) / 1.6, dy = y - SUN.y, glow = Math.max(0, 1 - Math.sqrt(dx * dx + dy * dy) / 46);
     return mix(c, hex("#ffd98c"), glow * glow * 0.75);
   };
@@ -69,7 +57,6 @@ const sakura: Scene = (() => {
         }
       }
     };
-    // Blossom clouds: overlapping blobs with a ragged edge, lit from the sun's side (sunlit petals turn peach).
     const canopy = (blobs: [number, number, number][]) => {
       for (const [cx, cy, r] of blobs) {
         for (let y = Math.floor(cy - r - 2); y <= cy + r + 2; y++) for (let x = Math.floor(cx - r - 2); x <= cx + r + 2; x++) {
@@ -104,7 +91,6 @@ const sakura: Scene = (() => {
       const d = Math.hypot(x - SUN.x, y - SUN.y);
       if (d <= SUN.r) buf[y * W + x] = solid(d < SUN.r - 3 ? "#fff6d6" : "#ffe08f");
     }
-    // Clouds: thin bands lit from below by the sun, drifting.
     for (const c of clouds) {
       const x0 = ((c.x + T * c.s) % (W + c.w)) - c.w;
       for (let row = 0; row < 4; row++) {
@@ -119,7 +105,6 @@ const sakura: Scene = (() => {
       for (let y = Math.ceil(far[x]); y < HORIZON; y++) put(buf, x, y, mix(skyAt(x, y), hex("#5b2f4f"), 0.7));
       for (let y = Math.ceil(near[x]); y < HORIZON; y++) put(buf, x, y, hex("#3a2038"));
     }
-    // The lake: the sky mirrored and darker, rippling, with the sun's reflection broken into streaks.
     for (let y = HORIZON; y < H; y++) {
       const r = y - HORIZON;
       for (let x = 0; x < W; x++) {
@@ -149,12 +134,9 @@ const sakura: Scene = (() => {
   return { build, frame };
 })();
 
-/* ---------- A misty forest in the morning ---------- */
-
 const forest: Scene = (() => {
   const SUN = { x: 138, y: 22 };
   const SKY: [number, RGB][] = [[0, hex("#7fbcd6")], [0.45, hex("#bfe0dc")], [0.8, hex("#f3e7b8")], [1, hex("#fff3cf")]];
-  // Rows of pines from far to near: their color fades into the morning haze with distance.
   const ROWS = [
     { base: 58, h: 16, gap: 7, color: "#8fb7a6", seed: 1 },
     { base: 68, h: 22, gap: 9, color: "#5f9180", seed: 2 },
@@ -167,12 +149,10 @@ const forest: Scene = (() => {
     const top = base - h;
     for (let y = Math.max(0, Math.floor(top)); y < Math.min(H, base); y++) {
       const t = (y - top) / h;
-      // Tiers of branches: the outline widens and steps in again, as a pine does.
       const tier = (t * 4) % 1;
       const half = (1.2 + t * h * 0.32) * (0.72 + tier * 0.28);
       for (let x = Math.round(cx - half); x <= cx + half; x++) {
         if (!inside(x, y)) continue;
-        // The side toward the sun is lit.
         const c = x > cx + half * 0.35 && hash(x, y) > 0.35 ? lit : color;
         layer[y * W + x] = (255 << 24) | (Math.round(c[2]) << 16) | (Math.round(c[1]) << 8) | Math.round(c[0]);
       }
@@ -181,23 +161,19 @@ const forest: Scene = (() => {
   }
 
   function build() {
-    // Each row in its own layer value; drawn in order so nearer rows cover farther ones.
     const layer = new Uint32Array(W * H);
     for (const r of ROWS) {
       const c = hex(r.color), lit = mix(c, hex("#f7e3a1"), 0.35);
       for (let x = -6, i = 0; x < W + 6; x += r.gap * (0.7 + hash(i, r.seed) * 0.6), i++) {
         pine(layer, x, r.base + hash(i, r.seed + 9) * 3, r.h * (0.7 + hash(i, r.seed + 5) * 0.5), c, lit);
       }
-      // The ground of that row, under its trees.
       for (let x = 0; x < W; x++) for (let y = Math.round(r.base); y < H; y++) layer[y * W + x] = (255 << 24) | (Math.round(c[2] * 0.9) << 16) | (Math.round(c[1] * 0.9) << 8) | Math.round(c[0] * 0.9);
     }
-    // The forest floor up front, with ferns and a few flowers.
     for (let x = 0; x < W; x++) for (let y = 100; y < H; y++) layer[y * W + x] = solid(hash(x, y) > 0.8 ? "#3f6b36" : "#2c4a2a");
     for (let i = 0; i < 26; i++) {
       const x = Math.floor(hash(i, 40) * W), y = 99 + Math.floor(hash(i, 41) * 7);
       layer[y * W + x] = solid(hash(i, 42) > 0.5 ? "#f4e27a" : "#f1f1e6");
     }
-    // Two big trunks framing the view.
     for (const [x0, w] of [[8, 7], [180, 8]]) for (let y = 0; y < H; y++) for (let x = x0 - w / 2; x < x0 + w / 2; x++) {
       if (!inside(Math.round(x), y)) continue;
       const side = x > x0 + w * 0.15;
@@ -213,7 +189,6 @@ const forest: Scene = (() => {
     }
     for (let y = SUN.y - 5; y <= SUN.y + 5; y++) for (let x = SUN.x - 5; x <= SUN.x + 5; x++) if (Math.hypot(x - SUN.x, y - SUN.y) <= 5) buf[y * W + x] = solid("#fffdf0");
     for (let i = 0; i < buf.length; i++) if (layer[i]) buf[i] = layer[i];
-    // Light shafts from the sun, slanting down to the left, slowly breathing; and mist drifting between the rows.
     for (let y = 0; y < 100; y++) for (let x = 0; x < W; x++) {
       const band = ((x - SUN.x) * 0.55 + (y - SUN.y) * 0.85 + 600) % 23;
       const shaft = band < 5 && x < SUN.x + 10 ? (0.18 + 0.08 * Math.sin(T * 0.8 + band)) * Math.max(0, 1 - Math.hypot(x - SUN.x, y - SUN.y) / 150) : 0;
@@ -224,7 +199,6 @@ const forest: Scene = (() => {
       const c: RGB = [v & 255, (v >> 8) & 255, (v >> 16) & 255];
       put(buf, x, y, mix(c, hex("#fff6d8"), Math.min(0.6, k)), 14);
     }
-    // Dust and pollen floating in the light.
     for (const m of motes) {
       const x = Math.floor(((m.x + Math.sin(T * 0.7 + m.p) * 6 + T * m.s) % W + W) % W), y = Math.floor(m.y + Math.sin(T * 1.1 + m.p) * 3);
       if (inside(x, y)) buf[y * W + x] = solid(hash(m.p * 100, 1) > 0.5 ? "#fff3b0" : "#fffbe6");
@@ -232,8 +206,6 @@ const forest: Scene = (() => {
   }
   return { build, frame };
 })();
-
-/* ---------- Snowy mountains at dawn, over a still lake ---------- */
 
 const alpine: Scene = (() => {
   const HORIZON = 70, SUN = { x: 64, y: 44, r: 7 };
@@ -243,7 +215,6 @@ const alpine: Scene = (() => {
     const dx = (x - SUN.x) / 1.5, dy = y - SUN.y, glow = Math.max(0, 1 - Math.sqrt(dx * dx + dy * dy) / 40);
     return mix(c, hex("#fff1cf"), glow * glow * 0.7);
   };
-  // Three ranges: a far pale one, the big snowy peaks, and dark wooded foothills by the water.
   const ridge = (x: number, peaks: [number, number, number][]) => peaks.reduce((top, [px, h, w]) => Math.min(top, HORIZON - Math.max(0, h - Math.abs(x - px) * w)), HORIZON);
   const FAR: [number, number, number][] = [[10, 26, 0.7], [40, 22, 0.55], [92, 30, 0.6], [140, 24, 0.5], [178, 28, 0.65]];
   const BIG: [number, number, number][] = [[28, 34, 0.95], [70, 22, 0.8], [118, 44, 1.05], [160, 30, 0.85], [196, 36, 1.1]];
@@ -255,7 +226,6 @@ const alpine: Scene = (() => {
 
   function build() {
     const layer = new Uint32Array(W * H);
-    // Pines on the near shore, left and right, dark against the water.
     const pine = (cx: number, base: number, h: number) => {
       for (let y = base - h; y <= base; y++) {
         const half = Math.max(0, Math.round(((y - (base - h)) / h) * (h * 0.32)) - ((y - base + h) % 3 === 0 ? 1 : 0));
@@ -272,7 +242,6 @@ const alpine: Scene = (() => {
 
   function frame(buf: Uint32Array, layer: Uint32Array, T: number) {
     for (let y = 0; y < HORIZON; y++) for (let x = 0; x < W; x++) put(buf, x, y, skyAt(x, y));
-    // The last stars of the night, fading in and out near the top.
     for (const st of stars) if (Math.sin(T * 1.3 + st.p) > 0.2) buf[st.y * W + st.x] = solid("#e9e6ff");
     for (let y = SUN.y - SUN.r; y <= SUN.y + SUN.r; y++) for (let x = SUN.x - SUN.r; x <= SUN.x + SUN.r; x++) {
       const d = Math.hypot(x - SUN.x, y - SUN.y);
@@ -281,7 +250,6 @@ const alpine: Scene = (() => {
     for (let x = 0; x < W; x++) {
       for (let y = Math.ceil(far[x]); y < HORIZON; y++) put(buf, x, y, mix(skyAt(x, y), hex("#8e86b4"), 0.55));
       for (let y = Math.ceil(big[x]); y < HORIZON; y++) {
-        // Snow on the upper part of each peak, lit pink-gold from the sun's side; rock below, bluish in shade.
         const depth = y - big[x];
         const left = x < big.length - 1 && big[x + 1] < big[x];
         const snow = depth < 7 + hash(x, y) * 4;
@@ -290,13 +258,11 @@ const alpine: Scene = (() => {
       }
       for (let y = Math.ceil(hills[x]); y < HORIZON; y++) put(buf, x, y, hash(x, y) < 0.2 ? hex("#26363d") : hex("#2d4046"));
     }
-    // Birds crossing slowly in front of the sun's glow.
     for (const b of birds) {
       const bx = Math.round((b.x + T * b.s) % (W + 20)) - 10, by = Math.round(b.y + Math.sin(T * 2 + b.x) * 1.2);
       const wing = Math.sin(T * 7 + b.x) > 0 ? -1 : 0;
       for (const [dx, dy] of [[-2, wing], [-1, 0], [0, 1], [1, 0], [2, wing]]) if (inside(bx + dx, by + dy)) buf[(by + dy) * W + bx + dx] = solid("#3a3554");
     }
-    // The lake: the mountains and sky mirrored, darker and rippling, with the sun's reflection broken into streaks.
     for (let y = HORIZON; y < H; y++) {
       const r = y - HORIZON;
       for (let x = 0; x < W; x++) {
@@ -335,7 +301,6 @@ export function PixelScene({ scene }: { scene: PixelSceneKind }) {
     let raf = 0, drawnAt = 0, visible = true;
     const start = performance.now();
     const draw = (now: number) => { s.frame(buf, layer, (now - start) / 1000); g.putImageData(img, 0, 0); };
-    // A few frames a second suit pixel art; the app's budget (and the page's cap) still apply.
     const loop = (now: number) => {
       raf = 0;
       const cap = animFps();

@@ -1,8 +1,3 @@
-// GpuVMAudio.exe: a USB/IP server (protocol 1.1.1) that exports one virtual device, a USB Audio Class 1 speaker,
-// 48 kHz 16-bit stereo, full speed. Windows' inbox usbaudio.sys drives it once usbip-win2 attaches it, so the VM gets
-// a normal audio output that WASAPI loopback (Sunshine) can capture. The audio itself is consumed at real-time pace
-// and discarded; only its level is kept for diagnostics. Listens on 127.0.0.1 only and serves one session at a time.
-// Proven in labs/012-usb-audio-over-usbip. Compiled inside the VM by Add-Type (C# 5) and run as LOCAL SERVICE.
 // Usage: GpuVMAudio.exe <port> <log file> <status file>
 using System;
 using System.Collections.Generic;
@@ -37,7 +32,6 @@ public static class UsbAudioServer {
     };
     static readonly string[] Strings = { null, "GpuVM", "GpuVM Audio", "GPUVM0001" };
 
-    // Diagnostics, written to the status file every second.
     static long urbs, isoBytes, nonZeroBytes, controls, unlinks, stalls, sessions;
     static int peak;
     static string lastError = "";
@@ -51,7 +45,6 @@ public static class UsbAudioServer {
         lock (logLock) { if (log != null) { log.WriteLine(DateTime.Now.ToString("HH:mm:ss.fff") + " " + text); log.Flush(); } }
     }
 
-    // Largest transfer a full-speed audio device sees; anything bigger is a misbehaving client.
     const int MaxTransfer = 65536, MaxPackets = 1024;
     static int active;
 
@@ -63,7 +56,6 @@ public static class UsbAudioServer {
 
     public static void Run(int port, string logPath, string statusPath) {
         timeBeginPeriod(1);
-        // A fresh log each start keeps it small; the status file has the running totals.
         log = new StreamWriter(logPath, false, new UTF8Encoding(false));
         var status = new Thread(() => {
             while (true) {
@@ -105,7 +97,6 @@ public static class UsbAudioServer {
                 var busid = Encoding.ASCII.GetString(ReadExact(stream, 32)).TrimEnd('\0');
                 Log("import " + busid);
                 var reply = new List<byte>();
-                // One speaker only: a second import while the first is attached is refused.
                 bool ok = busid == "1-1" && Interlocked.CompareExchange(ref active, 1, 0) == 0;
                 reply.AddRange(new byte[] { 0x01, 0x11, 0x00, 0x03, 0, 0, 0, (byte)(ok ? 0 : 1) });
                 if (ok) reply.AddRange(DeviceInfo());
@@ -254,7 +245,6 @@ public static class UsbAudioServer {
                     if (wait > 0) { Monitor.Wait(queueLock, TimeSpan.FromMilliseconds(Math.Min(wait, 5))); continue; }
                     queue.RemoveAt(0);
                 }
-                // Every packet delivered whole: actual_length = length, status 0.
                 var desc = new byte[next.Packets * 16];
                 for (int i = 0; i < next.Packets; i++) {
                     Array.Copy(next.Iso, i * 16, desc, i * 16, 8);

@@ -4,12 +4,6 @@ import { MachineDesktop } from "./MachineDesktop";
 import { cornersAt, DOCK_POS, NOTCH_POS, savePrefs, usePrefs, type Pos } from "./prefs";
 import { t } from "./i18n";
 
-// Settings › Appearance: where requests (the dock) and status notices (the notch) go over a machine's picture
-// (2026-11-21, asked by the person: anywhere, not a few fixed places). A preview of a picture with its taskbar where
-// both are dragged freely; near an edge, a corner or the middle they snap to it (a line shows where), and their
-// corners are the real ones as they move: square on every edge they touch, rounded everywhere else.
-
-/** How close (preview px) to an edge or the middle a piece snaps to it. */
 const SNAP = 10;
 
 type Piece = "dock" | "notch";
@@ -19,7 +13,6 @@ export function PlacementEditor() {
   const stage = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 520, h: 325 });
   const [drag, setDrag] = useState<{ piece: Piece; pos: Pos; guides: { v?: number; h?: number } } | null>(null);
-  // The preview's real size (it follows the Settings card's width).
   useEffect(() => {
     const el = stage.current;
     if (!el) return;
@@ -44,7 +37,6 @@ export function PlacementEditor() {
     e.preventDefault();
     const el = e.currentTarget, r = stage.current!.getBoundingClientRect();
     const d = dims[piece], b0 = box(piece, posOf(piece));
-    // Where in the piece it was grabbed: it moves with the pointer from there, without jumping.
     const grab = { x: e.clientX - r.left - b0.x, y: e.clientY - r.top - b0.y };
     el.setPointerCapture(e.pointerId);
     const roomX = Math.max(1, size.w - d.w), roomY = Math.max(1, size.h - d.h);
@@ -52,7 +44,6 @@ export function PlacementEditor() {
       let x = Math.min(roomX, Math.max(0, ev.clientX - r.left - grab.x));
       let y = Math.min(roomY, Math.max(0, ev.clientY - r.top - grab.y));
       const guides: { v?: number; h?: number } = {};
-      // Snaps: the edges (touching them), the middle of the picture (centered on it).
       if (x < SNAP) { x = 0; guides.v = 0; } else if (roomX - x < SNAP) { x = roomX; guides.v = size.w; }
       else if (Math.abs(x + d.w / 2 - size.w / 2) < SNAP) { x = roomX / 2; guides.v = size.w / 2; }
       if (y < SNAP) { y = 0; guides.h = 0; } else if (roomY - y < SNAP) { y = roomY; guides.h = size.h; }

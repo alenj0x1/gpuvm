@@ -19,9 +19,6 @@ const POINT_CMDS = ["New-GpuVMRestorePoint", "Restore-GpuVMRestorePoint", "Remov
 const when = (iso: string) => new Date(iso).toLocaleString(locale(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 const gb = (n: number) => `${n.toLocaleString(locale(), { maximumFractionDigits: 1 })} GB`;
 
-/** Restore points of a machine (Machine section): Windows as it was at a moment, to go back to. Taken and applied with
- *  the machine off (GpuVM shuts it down cleanly and starts it again). A disposable machine shows instead that it is
- *  deleted when it turns off, and lets it be kept. */
 export function RestorePoints({ vm, busy, startJob, run }: Props) {
   const [list, setList] = useState<RestorePointList | null>(cache[vm.name] ?? null);
   const [back, setBack] = useState<RestorePoint | null>(null);
@@ -29,7 +26,6 @@ export function RestorePoints({ vm, busy, startJob, run }: Props) {
   const load = () => api.restorePoints(vm.name).then((l) => { if (l) { cache[vm.name] = l; setList(l); } }).catch(() => {});
   useEffect(() => { setList(cache[vm.name] ?? null); setArmed(null); }, [vm.name]);
   useEffect(() => { if (vm.managed && !vm.disposable) load(); }, [vm.name, vm.restorePoints, busy?.cmd]);
-  // A delete that was armed and not confirmed goes back to the trash icon.
   useEffect(() => { if (!armed) return; const id = setTimeout(() => setArmed(null), 4000); return () => clearTimeout(id); }, [armed]);
   if (!vm.managed) return null;
 
@@ -113,7 +109,6 @@ export function RestorePoints({ vm, busy, startJob, run }: Props) {
   );
 }
 
-/** Going back: what comes back, and whether the present is kept as a point first (on by default). */
 function ConfirmGoBack({ vm, point, canSave, onClose, onConfirm }: {
   vm: VmOverview; point: RestorePoint; canSave: boolean; onClose: () => void; onConfirm: (saveCurrent: boolean) => void;
 }) {

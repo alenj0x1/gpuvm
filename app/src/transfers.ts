@@ -2,8 +2,6 @@ import { useEffect, useState } from "react";
 import { inTauri } from "./api";
 import { locale, t } from "./i18n";
 
-// Copies of files into machines (dropzone.rs keeps the list; every window sees the same one).
-
 export type TransferState = "running" | "done" | "error" | "cancelled";
 export interface Transfer {
   id: string; vm: string; from: string | null; names: string[]; state: TransferState;
@@ -20,7 +18,6 @@ export const startTransfer = (vm: string, paths: string[], folder: string, from?
   invoke<string>("transfer_start", { vm, paths, folder, from: from ?? null });
 export const cancelTransfer = (id: string) => invoke("transfer_cancel", { id });
 
-/** "Sending 42 % · 1.2 of 2.9 GB" -> "1,2 de 2,9 GB" in the app's language (the module sends invariant numbers). */
 export const transferAmount = (tr: Transfer) => {
   const m = /· ([\d.]+) of ([\d.]+) (\w+)$/.exec(tr.message);
   if (!m) return "";
@@ -34,9 +31,7 @@ const SAMPLE: Transfer[] = [
   { id: "c", vm: "win10", from: null, names: ["setup.iso"], state: "error", percent: 0, message: "", error: "It doesn't fit: it's 6200 MB and win10 has 4100 MB free.", items: [] },
 ];
 
-/** Every copy the app knows, newest first, kept up to date. */
 export function useTransfers(): Transfer[] {
-  // In the browser preview: one copy going and two that ended, so the widget can be seen with content.
   const [list, setList] = useState<Transfer[]>(() => inTauri || new URLSearchParams(location.search).has("empty") ? [] : SAMPLE);
   useEffect(() => {
     if (!inTauri) return;

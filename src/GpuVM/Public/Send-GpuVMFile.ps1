@@ -40,14 +40,12 @@ function Send-GpuVMFile {
         $files = @($entries | Where-Object { -not $_.Dir }).Count
         $receiver = Open-GuestReceiver -Session $target -Id $TransferId -Folder $Folder
         $receiving = $true
-        # Room for the copy and for the VM to keep working.
         if ($total + 512MB -gt $receiver.Free) {
             throw "It doesn't fit: it's $([math]::Ceiling($total / 1MB)) MB and $Name has $([math]::Floor($receiver.Free / 1MB)) MB free."
         }
         $pipe = New-TransferPipe -Session $target -Id $TransferId -Total $total -Marker $marker
         $buffer = [byte[]]::new($script:TransferChunk)
         $big = [System.Collections.Generic.List[object]]::new()
-        # From another VM, small files are read several per round trip (up to 4 MB): one each took ~0.1 s.
         $batch = [System.Collections.Generic.List[object]]::new()
         $batchBytes = [int64]0
         foreach ($entry in $entries) {
@@ -62,7 +60,6 @@ function Send-GpuVMFile {
                 continue
             }
             Write-TransferBytes -Pipe $pipe -Bytes (New-TarHeader -Name $entry.Rel -Size $entry.Size)
-            # With the person's rights, and only if still under the folder that was checked (UserFiles.cs).
             try { $stream = [GpuVM.UserFiles]::OpenFile($entry.Full, $entry.Root) }
             catch [Management.Automation.MethodInvocationException] { throw (Get-InnerMessage $_) }
             try {

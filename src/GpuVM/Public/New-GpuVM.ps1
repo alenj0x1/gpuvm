@@ -31,7 +31,6 @@ function New-GpuVM {
     )
     Assert-Admin
     if ($ForAgent -and -not $Template) { throw 'An agent session only makes copies of a template made for agents.' }
-    # An agent machine gets 4 GB unless its memory is chosen (the person, 2026-11-19).
     if ($Use -eq 'agent') {
         $Override = Add-DefaultMemory -Override $Override -MemoryGB $script:AgentMemoryGB
         # Its first-time setup must not turn the Hyper-V display off (the agent needs a display before any viewer).
@@ -98,7 +97,6 @@ function New-GpuVM {
         if (-not $state) { throw "The backend didn't return the state of the VM '$Name'. Recover it with: ./gpuvm.ps1 repair -Name $Name -Profile $Profile" }
         $state['edition'] = $image.Name
         $state['streaming'] = if ($streaming) { $streaming.State } else { $null }
-        # Lets GpuVM fix things inside the VM via PowerShell Direct (session, logs) without prompting.
         $state['guest'] = [ordered]@{ user = $Credential.UserName; password = $Credential.Password | ConvertFrom-SecureString }
         $state['pendingApps'] = @(if ($config['guest'].Contains('apps')) { $config['guest']['apps'] })
         Save-GpuVMState $state
@@ -124,22 +122,17 @@ function New-GpuVMFromTemplate {
         [hashtable]$Override,
         [switch]$Start,
         [switch]$Disposable,
-        # A profile chosen by name: its memory and processors count; otherwise the template's own.
         [switch]$ProfileGiven,
-        # An agent session asked: only a template made for agents.
         [switch]$ForAgent
     )
     # Not $template: PowerShell names are case-insensitive, and that would overwrite the -Template string.
     $base = Read-GpuVMTemplate -Name $Template
-    # A copy keeps its template's memory and processors (agent-tpl: 4 GB) unless a profile or the override says otherwise.
     if (-not $ProfileGiven) { $Override = Get-TemplateMachineOverride -Template $base -Override $Override }
     # The copy's disk only grows with what it writes: the host check must not ask for a profile's fixed disk.
     $diskOverride = @{ vm = @{ disk = @{ type = 'Dynamic'; sizeGB = [int]$base['sizeGB'] } } }
     $checkOverride = if ($Override) { Merge-Hashtable -Base $Override -Override $diskOverride } else { $diskOverride }
     $failed = @(Test-GpuVMHost -Profile $Profile -Override $checkOverride | Where-Object Status -eq 'Fail')
     if ($Disposable) {
-        # A disposable machine reserves a fixed amount, not the template's full size: it is shut down (and deleted) if
-        # the drive gets near the host's margin (Remove-GpuVMDisposable).
         $failed = @($failed | Where-Object Name -ne 'Disk')
         $budget = Get-GpuVMDiskBudget -Root (Get-GpuVMDefaultRoot)
         if ($budget['availableGB'] -lt $script:DisposableReserveGB) {
@@ -155,7 +148,6 @@ function New-GpuVMFromTemplate {
     if ($ForAgent -and -not $agentCopy) {
         throw "An agent session can only copy a template made for agents, and '$Template' isn't one (its source wasn't an agent machine)."
     }
-    # An agent machine is always isolated (as Set-GpuVMUse agent does): an explicit false goes back to the default.
     if ($agentCopy) {
         Set-AgentNetworkIsolation -Config $config
         Set-AgentKeepsHyperVVideo -Config $config
@@ -166,22 +158,16 @@ function New-GpuVMFromTemplate {
         Where-Object { $_ -is [System.Collections.IDictionary] } | Select-Object -Last 1
     if (-not $state) { throw "The backend didn't return the state of the VM '$Name'." }
     $state['edition'] = $base['edition']
-    # Sunshine keeps the template's web credentials; Moonlight pairs again with the copy's new identity.
     $state['streaming'] = $base['streaming']
     $state['guest'] = $base['guest']
     $state['pendingRename'] = $true
-    # The controllers' driver the template already has (Update-GpuVMTemplate): the first open doesn't install it again.
     if ($base['gamepad']) { $state['gamepad'] = [string]$base['gamepad'] }
     $state['pendingApps'] = @(if ($base.Contains('pendingApps')) { $base['pendingApps'] })
     $state['installedApps'] = @(if ($base.Contains('installedApps')) { $base['installedApps'] })
     if ($Disposable) { $state['disposable'] = [ordered]@{ createdAt = (Get-Date).ToString('o'); startedAt = $null } }
     if ($agentCopy) {
-        # Born an agent machine; the agent itself (a new secret, a new password) is installed when it is first opened
-        # (Connect-GpuVM) or claimed (Install-GpuVMAgent): the template never carries one.
         $state['use'] = 'agent'
         $state['agent'] = [ordered]@{ pending = $true; signInAs = $(if ($base['agentSignInAs'] -eq 'own') { 'own' } else { 'agent' }) }
-        # A template brought up to this build by Update-GpuVMTemplate already carries Sunshine's agent settings (it ran
-        # the whole setup and checked it finished); one only saved with New-GpuVMTemplate isn't trusted for that.
         if ($base['updatedAt'] -and $base['components'] -and -not (Test-GpuVMTemplateStale -Template $base)) { $state['streamingFromTemplate'] = $true }
     }
     Save-GpuVMState $state
@@ -191,9 +177,6 @@ function New-GpuVMFromTemplate {
     Add-StartResult -Info (Get-GpuVM -Name $Name) -Start $startResult
 }
 
-# Starts a machine just made: {started, startError, neededGB, freeGB} (the figures when memory was short). Disposable
-# copies are marked as started. A machine that can't turn on is kept (the caller decides: the MCP server deletes its
-# disposable copy, the app shows the reason); the warning stays for older callers.
 function Start-NewGpuVM {
     param([Parameter(Mandatory)][string]$Name, [System.Collections.IDictionary]$State)
     try {
@@ -215,10 +198,8 @@ function Start-NewGpuVM {
     }
 }
 
-# The machine's info with how its start went (started, startError, neededGB, freeGB), when it was asked to start.
 function Add-StartResult {
     param($Info, [System.Collections.IDictionary]$Start)
-    # The copy's VM id: GpuVM's service keys what an agent session made by it, not by a name that can be reused.
     if ($Info -and $Info.PSObject.Properties['Name'] -and -not $Info.PSObject.Properties['vmId']) {
         $id = try { [string](Get-VM -Name $Info.Name -ErrorAction Stop).Id.Guid } catch { $null }
         if ($id) { $Info | Add-Member -NotePropertyName vmId -NotePropertyValue $id.ToLowerInvariant() -Force }
@@ -233,7 +214,6 @@ function Add-StartResult {
 
 $script:AgentMemoryGB = 4
 
-# The override with vm.memoryGB set when it doesn't say one (a person's choice always wins).
 function Add-DefaultMemory {
     param([hashtable]$Override, [Parameter(Mandatory)][int]$MemoryGB)
     $copy = @{}
@@ -245,7 +225,6 @@ function Add-DefaultMemory {
     $copy
 }
 
-# The template's memory and processor count as the base of a copy's override; what the override says wins.
 function Get-TemplateMachineOverride {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Template, [hashtable]$Override)
     $source = if ($Template['config'] -is [System.Collections.IDictionary]) { $Template['config']['vm'] }
@@ -267,7 +246,6 @@ function Get-TemplateMachineOverride {
     $copy
 }
 
-# An agent machine's network is isolated: an explicit "isolation = false" in its config goes back to the default (on).
 function Set-AgentNetworkIsolation {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Config)
     $vm = $Config['vm']
@@ -276,8 +254,6 @@ function Set-AgentNetworkIsolation {
     if ($network -is [System.Collections.IDictionary] -and $network.Contains('isolation') -and $network['isolation'] -eq $false) { $network['isolation'] = $true }
 }
 
-# An agent machine never has its Hyper-V display turned off by GpuVM: until a viewer connects, it is the console's
-# only display (the agent turns its desktop off itself once the virtual one is active).
 function Set-AgentKeepsHyperVVideo {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Config)
     if ($Config['streaming'] -is [System.Collections.IDictionary]) { $Config['streaming']['disableHyperVVideo'] = $false }

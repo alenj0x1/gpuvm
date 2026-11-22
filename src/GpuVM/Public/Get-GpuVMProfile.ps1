@@ -30,7 +30,6 @@ function Get-GpuVMProfile {
     }
 }
 
-# The values the app shows and edits, flattened from a resolved profile.
 function ConvertTo-ProfileSettings {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Config)
     $client = if ($Config['streaming']) { $Config['streaming']['client'] } else { $null }
@@ -46,7 +45,6 @@ function ConvertTo-ProfileSettings {
         resolution  = if ($client) { $client['resolution'] } else { $null }
         fps         = if ($client) { $client['fps'] } else { $null }
         displayMode = if ($client -and $client.Contains('displayMode') -and $client['displayMode']) { $client['displayMode'] } else { 'fullscreen' }
-        # Unset = Moonlight's own defaults (V-Sync on, frame pacing off, mouse captured).
         vsync       = if ($client -and $client.Contains('vsync') -and $null -ne $client['vsync']) { [bool]$client['vsync'] } else { $true }
         framePacing = if ($client -and $client.Contains('framePacing') -and $null -ne $client['framePacing']) { [bool]$client['framePacing'] } else { $false }
         mouse       = if ($client -and $client.Contains('mouse') -and $client['mouse']) { $client['mouse'] } else { 'capture' }

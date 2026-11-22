@@ -1,5 +1,3 @@
-// Spanish for agents: the Agents view, an agent's state on its machine and in the viewer, its requests (dock and
-// notifications), the Outbox review, the usage type Agent and Ajustes › Agentes.
 export default {
   "Agents": "Agentes",
   "Agent": "Agente",
@@ -19,7 +17,6 @@ export default {
   "{n} min": "{n} min",
   "{n} h": "{n} h",
 
-  // State
   "Working": "Trabajando",
   "Paused|agent": "En pausa",
   "Pause|agent": "Pausar",
@@ -40,7 +37,6 @@ export default {
   "{n} request waits for you": "{n} solicitud te espera",
   "{n} requests wait for you": "{n} solicitudes te esperan",
 
-  // Requests
   "Requests": "Solicitudes",
   "An agent waits for your answer. With no answer, it's refused.": "Un agente espera tu respuesta. Sin respuesta, se rechaza.",
   "View": "Ver",
@@ -58,7 +54,6 @@ export default {
   "Allow for this task": "Permitir en esta tarea",
   "You took control · {name} paused": "Tomaste el control · {name} en pausa",
 
-  // Deliveries
   "Deliveries": "Entregas",
   "Files agents leave in a machine's Outbox. Nothing reaches your PC until you accept it.": "Archivos que los agentes dejan en la Bandeja de salida de una máquina. Nada llega a tu PC hasta que lo aceptas.",
   "No deliveries": "Sin entregas",
@@ -69,7 +64,6 @@ export default {
   "Copying to Downloads…": "Copiando a Descargas…",
   "Expired|offer": "Vencido",
 
-  // Clients
   "Connected agents": "Agentes conectados",
   "Clients using your machines through GpuVM.": "Clientes que usan tus máquinas a través de GpuVM.",
   "Stop all": "Detener todos",
@@ -94,7 +88,6 @@ export default {
   "Agents can't reach their machines: {error}": "Los agentes no llegan a sus máquinas: {error}",
   "the channel isn't open": "el canal no está abierto",
 
-  // The status notch (over the picture) and where it goes
   "Only in the side panel": "Solo en el panel lateral",
   "Screenshot saved": "Captura guardada",
   "Recording saved": "Grabación guardada",
@@ -104,7 +97,6 @@ export default {
   "The agent": "El agente",
   "{name} paused": "{name} en pausa",
 
-  // Usage type and agents' user
   "For AI agents": "Para agentes de IA",
   "With the GpuVM agent, a 1280x800 picture recorded while an agent works and an isolated network. Disposable unless you uncheck it.": "Con el agente de GpuVM, imagen de 1280x800 grabada mientras un agente trabaja y red aislada. Desechable salvo que lo desmarques.",
   "With the GpuVM agent, a 1280x800 picture recorded while an agent works and an isolated network.": "Con el agente de GpuVM, imagen de 1280x800 grabada mientras un agente trabaja y red aislada.",

@@ -30,21 +30,16 @@ function Import-GpuVM {
         $vmName = if ($Name) { Assert-GpuVMNameFree -Name $Name -Root (Get-GpuVMDefaultRoot); $Name }
             else { Get-FreeGpuVMName -Base $(if ($manifest['name']) { $manifest['name'] } else { 'importada' }) }
         $diskBytes = [int64]$manifest['disk']['bytes']
-        # Profiles ask for at least 64 GB: a smaller disk grows to that when the VM is set up (Windows extends C: on its
-        # next start, as when the disk is enlarged in Options).
         $sizeGB = [math]::Max(64, [math]::Ceiling([math]::Max($diskBytes, [int64]$manifest['diskSizeBytes']) / 1GB))
-        # The disk is the file's: its size and type win over the profile and the override.
         $diskOverride = @{ vm = @{ disk = @{ type = 'Dynamic'; sizeGB = $sizeGB } } }
         $config = Resolve-GpuVMProfile -Name $Profile -Override $(if ($Override) { Merge-Hashtable -Base $Override -Override $diskOverride } else { $diskOverride })
         if ($manifest['cleanup']) { $config['guest']['cleanup'] = $manifest['cleanup'] }
         if ($manifest['user']) { $config['guest']['userName'] = $manifest['user'] }
         if ($config.Contains('iso')) { $config.Remove('iso') }
         $root = $config['vm']['root']
-        # The unpacked disk must fit now, and the VM must be able to grow to its size like any other (lab 027 budget).
         $freeGB = Get-DriveFreeGB $root
         $needGB = [math]::Ceiling($diskBytes / 1GB) + $script:DiskMarginGB
         if ($needGB -gt $freeGB) { throw "There's no room to import: the disk takes $([math]::Ceiling($diskBytes / 1GB)) GB and $freeGB GB are free." }
-        # Same rule as any new machine: its disk at full size must fit next to what the other disks may still grow.
         $checkOverride = if ($Override) { Merge-Hashtable -Base $Override -Override $diskOverride } else { $diskOverride }
         $failed = @(Test-GpuVMHost -Profile $Profile -Override $checkOverride | Where-Object Status -eq 'Fail')
         if ($failed) { throw ("This PC doesn't pass the check: " + (($failed | ForEach-Object { "$($_.Name): $($_.Detail)" }) -join '; ')) }
@@ -65,8 +60,7 @@ function Import-GpuVM {
         $vhd = Get-VHD -Path $vhdPath
         if ($vhd.VhdType -eq 'Differencing') { throw 'The file''s disk depends on another disk; it isn''t imported.' }
 
-        # The disk comes from a file of unknown origin: it is never mounted on this PC. Sunshine's identity and web login
-        # are reset inside the VM, over PowerShell Direct, the first time it is opened (Connect-GpuVM).
+        # The disk comes from a file of unknown origin: it is never mounted on this PC.
         $webPassword = New-RandomPassword
 
         Write-Step "Registering the machine '$vmName' in Hyper-V"

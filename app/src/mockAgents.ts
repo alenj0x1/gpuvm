@@ -1,14 +1,11 @@
 import type { AgentAction, AgentClient, AgentOffer, AgentRequest } from "./types";
 
-// Agents in the browser (no broker there): ?agents=none | working (default) | paused | control | waiting | human | many.
-// The working ones keep acting while the page is open, so the live state can be designed.
 const params = new URLSearchParams(location.search);
 const scenario = params.get("vms") === "0" || params.get("mock") === "empty" ? "none" : params.get("agents") ?? "working";
 
 const ago = (s: number) => new Date(Date.now() - s * 1000).toISOString();
 const later = (s: number) => new Date(Date.now() + s * 1000).toISOString();
 
-// What a test of the GpuVM installer in a clean Windows looks like, step by step (the goal demo).
 const SCRIPT: [string, string][] = [
   ["screen.capture", "Took a screenshot"],
   ["exec.run", "Downloaded GpuVM-setup.exe"],
@@ -41,7 +38,6 @@ const claude = (over: Partial<AgentClient> = {}): AgentClient => ({
 let clients: AgentClient[] = [];
 let requests: AgentRequest[] = [];
 let offers: AgentOffer[] = [];
-/** The service's time to answer (Set-GpuVMAgentSettings keeps it; 10 minutes by default). */
 let approvalTimeoutSec = 600;
 let maxMinutes = 0;
 
@@ -58,7 +54,6 @@ switch (scenario) {
     clients = [claude({ state: "control", reason: "You took control" })];
     break;
   case "nodisplay":
-    // The agent is signed in but sees no screen (Get-GpuVMAgent "no-display"): its session waits.
     clients = [claude({ state: "idle", reason: null })];
     break;
   case "human":
@@ -70,7 +65,6 @@ switch (scenario) {
     clients = [claude({ state: "waiting", reason: "Waiting for your approval" })];
     requests = [{ id: "r-net", client: "c1", clientName: "Claude Code", machine: "win-agent", kind: "network", title: "Connect to github.com",
       reason: "Download the latest release of GpuVM to test it", createdAt: ago(6), expiresAt: later(54) },
-      // A copy from this PC into the machine (broker's "send"): the exact path, its size and files.
       { id: "r-send", client: "c1", clientName: "Claude Code", machine: "win-agent", kind: "send", title: "", reason: "The installer to test",
         createdAt: ago(3), expiresAt: later(57), send: { paths: ["C:\\Users\\you\\Downloads\\GpuVM_0.9.0_x64-setup.exe"], bytes: 48_234_496, files: 1 } }];
     offers = [deliver("o1", "report.md", 18_432, "Results of the installer test, with 6 screenshots", 40)];
@@ -98,13 +92,12 @@ switch (scenario) {
       ...Array.from({ length: 8 }, (_, i) => deliver(`ox${i}`, `step-${String(i + 1).padStart(2, "0")}.png`, 180_000 + i * 9_000, `Step ${i + 1}`, 4000 + i * 60, i % 3 ? "accepted" : "pending", "lab-04")),
     ];
     break;
-  default: // working
+  default:
     clients = [claude()];
     offers = [deliver("o1", "report.md", 18_432, "Results of the installer test, with 6 screenshots", 40)];
 }
 offers = offers.map((o) => o.state === "accepted" ? { ...o, savedTo: `Downloads\\GpuVM\\${o.machine}\\${o.name}` } : o);
 
-// The working ones take a step every few seconds while the page is open.
 let k = 42;
 setInterval(() => {
   clients = clients.map((c) => {
@@ -117,8 +110,6 @@ setInterval(() => {
 const want = (args: Record<string, unknown>) => (c: AgentClient) => args.All === true || args.Connection === "*" || c.id === args.Connection || (!!args.Name && c.machine === args.Name);
 const ms = (s: string) => new Date(s).getTime();
 
-/** The agent commands the mock answers, with the broker's names and shapes (times in ms, the client is a
- *  "connection"), so the browser goes through the same normalization as the app (agentStore.fromBroker). */
 export function agentCommand(cmd: string, args: Record<string, unknown>): unknown[] | null {
   switch (cmd) {
     case "Get-GpuVMAgentClient":
@@ -144,12 +135,10 @@ export function agentCommand(cmd: string, args: Record<string, unknown>): unknow
       clients = clients.map((c) => want(args)(c) && c.state !== "idle" ? { ...c, state: args.Reason === "control" ? "control" : "paused", reason: String(args.Message ?? "Paused by you") } : c);
       return [];
     case "Resume-GpuVMAgent":
-      // Name and Connection: only that machine of the session (the service's contract after the security review).
       clients = clients.map((c) => want(args)(c) && (!args.Name || c.machine === args.Name) && (c.state === "paused" || c.state === "control" || c.state === "human") ? { ...c, state: "working", reason: null } : c);
       requests = requests.filter((r) => !(r.human && clients.some((c) => c.id === r.client && c.state === "working")));
       return [];
     case "Stop-GpuVMAgentClient":
-      // A stopped session keeps its row until its client goes; it has no machine any more.
       clients = clients.map((c) => want(args)(c) ? { ...c, state: "idle", machine: null, reason: null, task: null } : c);
       requests = requests.filter((r) => !(args.All === true || r.client === args.Connection));
       return [];
@@ -169,11 +158,8 @@ export function agentCommand(cmd: string, args: Record<string, unknown>): unknow
       return null;
   }
 }
-/** The machines the agents work on, so their pages exist in the mock. */
 export const agentMachines = scenario === "none" ? [] : scenario === "many" ? ["win-agent", "lab-02", "lab-03", "lab-04", "lab-05"] : ["win-agent"];
 
-/** Recordings of the agents' work in the mock (agent.rs keeps the real ones). */
-/** Finished sessions for the browser preview (none with ?agents=none). */
 export const agentHistory = (): Record<string, unknown>[] => {
   if (scenario === "none") return [];
   const h = 3600_000, now = Date.now();

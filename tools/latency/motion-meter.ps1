@@ -1,11 +1,5 @@
-# Smoothness meter for the bar in motion-target.ps1. Dot-source it, then call Measure-Motion.
-# On every host refresh (each GDI read waits for one freshly composed DWM frame, so a read copies a single row: two
-# copies would take two refreshes) it finds the bar's left edge on a row near the top of the stream. From the moments
-# the bar moves it gets:
-#   intervals   time between picture updates; even = smooth, spread = judder
-#   stutters    gaps longer than one stream frame plus one host refresh (a frame shown twice or lost)
-#   speed       how evenly the bar advances per millisecond between updates
-# Tearing can't be measured this way: it happens while the monitor scans the picture out, after composition.
+# Dot-source it, then call Measure-Motion.
+# Each GDI read waits for one freshly composed DWM frame, so a read copies a single row.
 Add-Type -AssemblyName System.Windows.Forms
 if (-not ('GpuVMMotionMeter' -as [type])) {
     Add-Type -TypeDefinition @'
@@ -36,7 +30,6 @@ public static class GpuVMMotionMeter {
         return -1;
     }
 
-    // Returns [ms, edge] for every read during `seconds`; the edge is relative to x0, -1 if not found.
     public static double[] Sample(int x0, int width, int y, double seconds) {
         timeBeginPeriod(1);
         IntPtr screen = GetDC(IntPtr.Zero), mem = CreateCompatibleDC(screen), bmp = CreateCompatibleBitmap(screen, width, 1);
@@ -67,8 +60,6 @@ function Get-MotionStdDev([double[]]$Values) {
     [math]::Sqrt((($Values | ForEach-Object { ($_ - $mean) * ($_ - $mean) }) | Measure-Object -Sum).Sum / [math]::Max(1, $Values.Count - 1))
 }
 
-# Samples the bar for $Seconds inside $Bounds (the stream's rectangle on this screen) and summarizes it for a stream
-# of $Fps frames per second.
 function Measure-Motion {
     param(
         [Parameter(Mandatory)][System.Drawing.Rectangle]$Bounds,
@@ -92,13 +83,11 @@ function Measure-Motion {
         $intervals.Add($dt)
         $speeds.Add($dx / $dt)
     }
-    # No bar found or it never moved: the stream showed something else (black, another window).
     if ($intervals.Count -lt 10) {
         return [pscustomobject][ordered]@{ reads = $reads; readsPerSec = [math]::Round($reads / $Seconds, 1); updatesPerSec = 0; error = 'bar not seen' }
     }
     $frameMs = 1000 / $Fps
-    # An update can only land on a host refresh, so at rates that don't divide the host's, intervals of one frame plus
-    # one host refresh are normal; a stutter is a longer gap than that (and at least 1.5 frames).
+    # An update only lands on a host refresh: one frame plus one host refresh is normal; a stutter is longer (and at least 1.5 frames).
     $hostMs = 1000 * $Seconds / [math]::Max(1, $reads)
     $stutterMs = [math]::Max(1.5 * $frameMs, $frameMs + $hostMs + 0.5)
     $meanSpeed = ($speeds | Measure-Object -Average).Average

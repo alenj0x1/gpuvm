@@ -19,7 +19,6 @@ function Rename-GpuVM {
     if (@(Get-VMSnapshot -VMName $Name -ErrorAction SilentlyContinue).Count) {
         throw "The VM '$Name' has checkpoints; delete them in Hyper-V Manager to rename it."
     }
-    # A name that only changes case is the same VM and keeps its folder.
     $root = if ($NewName -ne $Name) { Split-Path ([IO.Path]::GetFullPath($state['vmDir']).TrimEnd('\')) -Parent }
     Assert-GpuVMNameFree -Name $NewName -Root $root -Except $vm.Id
     if (-not $PSCmdlet.ShouldProcess($Name, "Rename to $NewName")) { return }
@@ -29,7 +28,6 @@ function Rename-GpuVM {
     # The ISO list only remembers which VMs used each ISO: a failure there never undoes the rename.
     try { Rename-GpuVMIsoUse -Name $Name -NewName $NewName }
     catch { Write-Warning "Couldn't update the ISO list: $($_.Exception.Message)" }
-    # The GpuVM service finds agents by this registration (name and folder).
     try { Update-GpuVMAgentRegistration -Name $NewName }
     catch { Write-Warning "Couldn't update the agent's registration: $($_.Exception.Message)" }
     Write-Step "The VM is now called '$NewName'."

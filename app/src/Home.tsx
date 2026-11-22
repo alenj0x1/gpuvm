@@ -30,7 +30,6 @@ interface Props {
   onCreate: (space?: string) => void;
 }
 
-// What the home screen last showed, so coming back shows it at once while it refreshes.
 let cache: HomeInfo | null = null;
 let libraryCache: { profiles: number; templates: number; shared: number; isos: number } | null = null;
 
@@ -43,33 +42,25 @@ const ISSUE_ICONS: Record<string, React.ReactNode> = {
 };
 
 const ROW_KEY = "gpuvm.home.rowHeight", PANEL_KEY = "gpuvm.home.panelWidth", LIB_KEY = "gpuvm.home.libraryWidth", ATT_KEY = "gpuvm.home.attentionWidth";
-// The row's lowest height still shows a machine card whole (its banner, name and button) and the Library's counts.
 const ROW_DEFAULT = 230, ROW_MIN = 214, PANEL_DEFAULT = 320, PANEL_MIN = 260, PANEL_MAX = 460;
 const LIB_DEFAULT = 280, LIB_MIN = 230, LIB_MAX = 420, ATT_DEFAULT = 360, ATT_MIN = 300, ATT_MAX = 520;
 const clamp = (n: number, a: number, b: number) => Math.min(b, Math.max(a, n));
 const readSize = (key: string, fallback: number) => { try { return Number(localStorage.getItem(key)) || fallback; } catch { return fallback; } };
-const saveSize = (key: string, n: number) => { try { localStorage.setItem(key, String(Math.round(n))); } catch { /* no storage */ } };
+const saveSize = (key: string, n: number) => { try { localStorage.setItem(key, String(Math.round(n))); } catch {} };
 
 const gb = (n: number) => `${n.toLocaleString(locale(), { maximumFractionDigits: 1 })} GB`;
 
-/** Renders `render()` again only when `sig` changes. */
 const Memo = memo(({ render }: { sig: string; render: () => React.ReactNode }) => <>{render()}</>, (a, b) => a.sig === b.sig);
 
-/** Home while it loads: the stage and the row under it, with their real shape. */
-/** Home while its data loads: the machines as a constellation (HomeLoading). */
 export function HomeSkeleton({ vms }: { vms?: VmOverview[] | null } = {}) {
   return <HomeLoading vms={vms} />;
 }
 
-/** Home: the space of machines up front, with the one in use (or the last one opened) in its cube and, beside it, how
- *  much it is using and its actions; below, the other machines, what needs attention and the Library at a glance. */
 export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Props) {
   const [home, setHome] = useState<HomeInfo | null>(cache);
   const [library, setLibrary] = useState(libraryCache);
   const [heroApps, setHeroApps] = useState<string[]>([]);
   const rowRef = useFlip<HTMLDivElement>();
-  // The stage and the row under it, and the stage's side panel, change size by dragging the line between them (as the
-  // sidebar's edge does), within limits; a double click goes back to the default. Remembered.
   const mainRef = useRef<HTMLDivElement>(null);
   const [rowH, setRowH] = useState(() => readSize(ROW_KEY, ROW_DEFAULT));
   const [panelW, setPanelW] = useState(() => readSize(PANEL_KEY, PANEL_DEFAULT));
@@ -84,7 +75,6 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
     const move = (ev: PointerEvent) => {
       if (kind === "row") setRowH(clamp(start.row - (ev.clientY - start.y), ROW_MIN, Math.max(ROW_MIN, mainH * 0.5)));
       else if (kind === "panel") setPanelW(clamp(start.panel - (ev.clientX - start.x), PANEL_MIN, PANEL_MAX));
-      // The lines in the row: left of the Library it trades width with the machines; left of the notices, with the Library.
       else if (kind === "lib") setLibW(clamp(start.lib - (ev.clientX - start.x), LIB_MIN, LIB_MAX));
       else setAttW(clamp(start.att - (ev.clientX - start.x), ATT_MIN, ATT_MAX));
     };
@@ -100,7 +90,6 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
   };
   useEffect(() => { if (!dragging) { saveSize(ROW_KEY, rowH); saveSize(PANEL_KEY, panelW); saveSize(LIB_KEY, libW); saveSize(ATT_KEY, attW); } }, [dragging, rowH, panelW, libW, attW]);
   const [othersRef, othersFade] = useScrollFade<HTMLDivElement>("x");
-  // The row of machines also moves by dragging it, like a list on a phone.
   const dragRef = useDragScroll();
   const [othersEl, setOthersEl] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -114,7 +103,6 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
     el.addEventListener("wheel", wheel, { passive: false });
     return () => el.removeEventListener("wheel", wheel);
   }, [othersEl]);
-  // Refreshed with the machines' state (the app polls it) and after any job.
   const states = vms.map((v) => `${v.name}:${v.state}`).join(",");
   const jobs = vms.map((v) => busyFor(v.name)?.cmd ?? "").join(",");
   useEffect(() => { api.home().then((h) => { cache = h; setHome(h); }).catch(() => {}); }, [states, jobs]);
@@ -124,16 +112,13 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
       .catch(() => {});
   }, [jobs]);
 
-  // The space shown: only its machines, in its ambient.
   const spaces = useSpaces();
   const shownId = useShownSpace();
   const space = spaces.find((x) => x.id === shownId) ?? spaces[0];
   const inSpace = machinesIn(space, vms, spaces);
   const [editing, setEditing] = useState<Space | "new" | null>(null);
-  // Changing spaces turns the cube once quickly while the new ambient fades in.
   const spins = useRef({ id: space.id, n: 0 });
   if (spins.current.id !== space.id) spins.current = { id: space.id, n: spins.current.n + 1 };
-  // Up front: the machine that is on, or else the last one opened, within the space.
   const hero = inSpace.find((v) => v.state === "Running") ?? (home?.lastOpened ? inSpace.find((v) => v.name === home.lastOpened!.name) : null) ?? inSpace[0];
   useEffect(() => {
     if (!hero) return;
@@ -148,7 +133,6 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
   const memUsed = home.host.memoryTotalGB - home.host.memoryFreeGB;
   const fits = home.machines.filter((m) => m.state === "Off" && m.fits).map((m) => m.name);
   const short = home.machines.filter((m) => m.state === "Off" && !m.fits);
-  // Named one by one while it is short; with many machines, counted, so the panel never turns into a list.
   const memoryHint = fits.length + short.length > 3
     ? [fits.length && tn(fits.length, "{n} more machine fits.", "{n} more machines fit."), short.length && tn(short.length, "{n} needs more free memory.", "{n} need more free memory.")].filter(Boolean).join(" ")
     : (fits.length ? t("There's room for {names}.", { names: fits.join(", ") }) : short.length ? "" : t("They're all on."))
@@ -173,7 +157,6 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
     );
   };
 
-  // How much the machine in front is using: processor, memory and GPU, each in its resource color.
   const running = hero?.state === "Running";
   const meters = hero ? [
     { cls: "res-cpu", icon: <IconCpu size={15} />, label: t("Processor"), value: running ? `${hero.cpuPercent} %` : tn(hero.options?.cpu ?? hero.processorCount, "{n} thread", "{n} threads"), pct: running ? hero.cpuPercent : 0 },
@@ -254,12 +237,8 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
         onPointerDown={drag("row")} onDoubleClick={() => setRowH(ROW_DEFAULT)}><span /></div>
 
       <div ref={rowRef} className={`home-row${home.attention.length ? " with-attention" : ""}`}>
-        {/* Every other machine in one row: they share its width and, when they don't fit, it scrolls sideways. */}
         <div ref={(el) => { othersRef(el); setOthersEl(el); dragRef(el); }} className={`home-others ${othersFade}`} style={{ "--count": Math.max(1, others.length || Math.min(4, vms.filter((v) => !inSpace.includes(v)).length + 1)) } as React.CSSProperties}>
-        {/* First the card to create one right here, then the machines of other spaces to bring in. */}
         {others.length === 0 && <NewMachineCard space={space} onCreate={() => onCreate(space.id)} />}
-        {/* With no other machine here, the row offers the ones from other spaces (brought in one click) and the
-            card to create one right in this space, in the same shape as a machine card. */}
         {others.length === 0 && vms.filter((v) => !inSpace.includes(v)).slice(0, 6).map((vm) => (
           <div key={vm.id} className="card home-machine home-bring">
             <div className="home-machine-scene" aria-hidden="true">
@@ -276,8 +255,6 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
           </div>
         ))}
         {others.map((vm) => {
-          // Each card is drawn again only when something it shows changes: with many machines, a refresh that
-          // touches one doesn't redraw them all.
           const m = home.machines.find((x) => x.name === vm.name);
           const sig = [getLang(), vm.name, vm.state, vm.memoryStartupGB, Math.round(vm.cpuPercent / 10), Math.round(vm.gpuPercent / 10), vm.managed, vm.streaming, busyFor(vm.name)?.message ?? "",
             m?.fits, m?.fitGB, m?.needGB, home.host.memoryFreeGB].join("|");
@@ -305,7 +282,6 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
         <div className="card home-library">
           <div className="home-card-head">
             <span className="home-side-title">{t("Library")}</span>
-            {/* Creating a machine lives with what it is made from, as a quiet action, not a big tile. */}
             <button type="button" className="btn ghost compact" onClick={() => onCreate(space.id)}><IconPlus size={15} />{t("Create machine")}</button>
           </div>
           <div className="home-library-grid">
@@ -332,7 +308,6 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
           <div className="card home-attention">
             {home.attention.map((a, i) => {
               const busy = a.vm ? busyFor(a.vm) : null;
-              // The job running is this notice's own: its progress goes under the text, the button keeps its size.
               const mine = !!busy && !!a.cmd && busy.cmd === a.cmd;
               const act = () => {
                 if (a.cmd && a.vm) startJob(a.vm, a.cmd, a.args ?? {}, () => api.home().then((h) => { cache = h; setHome(h); }).catch(() => {}));
@@ -360,10 +335,8 @@ export function Home({ vms, busyFor, startJob, onOpenVm, onRoute, onCreate }: Pr
   );
 }
 
-/** The spaces, over the stage: each one with its ambient's icon, and the actions to edit this one or make another. */
 function SpaceBar({ spaces, space, onEdit }: { spaces: Space[]; space: Space; onEdit: (s: Space | "new") => void }) {
   const ref = useRef<HTMLDivElement>(null);
-  // Many spaces scroll sideways: the wheel alone does it (not only with Shift), and the one shown stays in view.
   useEffect(() => {
     const list = ref.current?.querySelector<HTMLElement>(".segmented");
     if (!list) return;
@@ -376,7 +349,6 @@ function SpaceBar({ spaces, space, onEdit }: { spaces: Space[]; space: Space; on
     return () => list.removeEventListener("wheel", wheel);
   }, []);
   useEffect(() => { ref.current?.querySelector(".segmented button.on")?.scrollIntoView({ block: "nearest", inline: "nearest" }); }, [space.id]);
-  // A machine dragged over a tab lands in that space.
   const [over, setOver] = useState<number | null>(null);
   const tabAt = (e: React.DragEvent) => { const b = (e.target as HTMLElement).closest(".segmented button"); return b ? [...b.parentElement!.querySelectorAll("button")].indexOf(b as HTMLButtonElement) : -1; };
   return (
@@ -394,8 +366,6 @@ function SpaceBar({ spaces, space, onEdit }: { spaces: Space[]; space: Space; on
   );
 }
 
-/** The card to create a machine in this space, shaped like a machine's card: a banner and an icon made up at random
- *  each time Home opens, like a machine that is about to exist. */
 function NewMachineCard({ space, onCreate }: { space: Space; onCreate: () => void }) {
   const [look] = useState(() => ({ name: `nueva-${Math.random().toString(36).slice(2, 8)}`, style: SCENE_STYLES[Math.floor(Math.random() * SCENE_STYLES.length)] }));
   return (
@@ -415,15 +385,11 @@ function NewMachineCard({ space, onCreate }: { space: Space; onCreate: () => voi
   );
 }
 
-/** A space with no machines: its ambient with a machine made up, waiting. */
 function EmptySpace({ space, spin }: { space: Space; spin: number }) {
   const [machine] = useState<CubeMachine>(() => ({ ...randomMachine(), power: "off" }));
   return <MachineCube key="home" ambient={space.ambient} time={space.time} spaceName={space.name} spin={spin} machine={machine} name="" decorShown={EMPTY_DECOR} />;
 }
 
-/** A machine that doesn't exist yet: the cube with its pieces off, waiting. */
-/** With no machines yet, the space shows machines made up at random: a new decoration every few seconds, arriving
- *  with a quick spin. The machine itself stays (changing its pieces would send the camera around them). */
 function Showcase({ space }: { space?: Space }) {
   const [machine] = useState<CubeMachine>(randomMachine);
   const [shown, setShown] = useState(() => ({ decor: randomDecor(), n: 0 }));
@@ -435,8 +401,6 @@ function Showcase({ space }: { space?: Space }) {
   );
 }
 
-/** Home with no machines: the same stage, with an empty machine in its cube, and beside it the invitation to create
- *  the first one and what the Library already has ready for it. */
 export function EmptyHome({ gpuName, onCreate, onRoute }: { gpuName: string | null; onCreate: (space?: string) => void; onRoute: (route: string) => void }) {
   const spaces = useSpaces();
   const [library, setLibrary] = useState(libraryCache);

@@ -1,9 +1,4 @@
-//! Agent-mode displays: GpuVM's virtual display must be the ONLY desktop display (so it is also the primary one) even
-//! with no viewer connected, or the windows the agent opens land on the GPU-P guest's extra "Microsoft Basic Display"
-//! (1024x768, primary by default) that the agent doesn't see (lab 051). Same technique as GpuVM's
-//! guest/set-resolution.ps1 (MakeOnlyDisplay + SetMode), run by the session helper, so only machines with the agent.
-//! The size is raised to the agent's minimum only when the virtual display is smaller (it starts at 800x600); a size
-//! the viewer sets later is left alone.
+//! GpuVM's virtual display must be the only desktop display, or the agent's windows land on the GPU-P guest's extra Microsoft Basic Display.
 use crate::util::{wide, wstr};
 use serde_json::{json, Value};
 use windows::core::PCWSTR;
@@ -45,7 +40,6 @@ fn current(dev: &str) -> Option<DEVMODEW> {
     unsafe { EnumDisplaySettingsW(PCWSTR(w.as_ptr()), ENUM_CURRENT_SETTINGS, &mut dm).as_bool().then_some(dm) }
 }
 
-/// The best mode of exactly w x h (highest refresh <= 60).
 fn find_mode(dev: &str, w: u32, h: u32) -> Option<DEVMODEW> {
     let wd = wide(dev);
     let mut best: Option<DEVMODEW> = None;
@@ -66,7 +60,6 @@ fn find_mode(dev: &str, w: u32, h: u32) -> Option<DEVMODEW> {
     best
 }
 
-/// A display mode: width x height @ refresh.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Mode {
     pub w: u32,
@@ -80,8 +73,6 @@ impl Mode {
     }
 }
 
-/// "1920x1080@60" -> Mode, within sane bounds (the value comes from the registry the install wrote; anything else is
-/// ignored, never guessed).
 pub fn parse_mode(s: &str) -> Option<Mode> {
     let (size, hz) = s.trim().split_once('@')?;
     let (w, h) = size.split_once('x')?;
@@ -93,21 +84,17 @@ pub fn parse_mode(s: &str) -> Option<Mode> {
     ((1280..=7680).contains(&m.w) && (720..=4320).contains(&m.h) && (24..=500).contains(&m.hz)).then_some(m)
 }
 
-/// The stream's mode the install recorded (HKLM\SOFTWARE\GpuVM\Agent StreamMode), if any and valid.
 pub fn stream_mode() -> Option<Mode> {
     crate::util::reg_hklm(r"SOFTWARE\GpuVM\Agent", "StreamMode").and_then(|s| parse_mode(&s))
 }
 
-/// Set at the helper's start: the stream's mode is applied once, by the first ensure() that finds the virtual display.
 pub static STREAM_PENDING: AtomicBool = AtomicBool::new(true);
 
-/// For agent.info: the stream mode wanted and the virtual display's current mode.
 pub fn stream_info() -> Value {
     let cur = devices().into_iter().find(|d| is_vdd(&d.adapter)).and_then(|d| current(&d.name)).map(|c| format!("{}x{}@{}", c.dmPelsWidth, c.dmPelsHeight, c.dmDisplayFrequency));
     json!({"wanted": stream_mode().map(|m| m.text()), "current": cur})
 }
 
-/// Exactly w x h at the refresh closest to hz (exact when offered).
 fn find_mode_hz(dev: &str, w: u32, h: u32, hz: u32) -> Option<DEVMODEW> {
     let wd = wide(dev);
     let mut best: Option<DEVMODEW> = None;
@@ -129,7 +116,6 @@ fn find_mode_hz(dev: &str, w: u32, h: u32, hz: u32) -> Option<DEVMODEW> {
     best
 }
 
-/// The sizes a display offers ("1280x800", ...), for the log when none fits.
 fn offered(dev: &str) -> Vec<String> {
     let wd = wide(dev);
     let mut v: Vec<String> = Vec::new();
@@ -148,8 +134,6 @@ fn offered(dev: &str) -> Vec<String> {
     v
 }
 
-/// Keeps only the active path whose source is `gdi_name` (\\.\DISPLAYn), at 0,0, and applies it for now.
-/// Returns the GDI names of the sources turned off.
 fn only_this_source(gdi_name: &str) -> Result<Vec<String>, String> {
     use windows::Win32::Devices::Display::*;
     unsafe {
@@ -210,12 +194,8 @@ fn change(dev: Option<&str>, dm: Option<&DEVMODEW>, flags: CDS_TYPE) -> i32 {
     }
 }
 
-/// The last result of ensure(), for agent.info's diagnosis.
 pub static LAST_ENSURE: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
 
-/// What this process sees of the displays, for diagnosis (lab 051/052: some copies reported no display at all while
-/// Windows said the adapters were up): every display device with its state flags, the active CCD paths (or the
-/// error), the window station and desktop of this thread, and the last ensure() result.
 pub fn diag() -> Value {
     use windows::Win32::Devices::Display::*;
     use windows::Win32::System::StationsAndDesktops::*;
@@ -264,10 +244,7 @@ pub fn diag() -> Value {
     json!({"devices": devs, "ccd": qdc, "desktop": station, "lastEnsure": LAST_ENSURE.lock().unwrap().clone()})
 }
 
-/// Why this session has no display at all, or None. Lab 051: on ~1 of 5 copies Windows gave the session no display
-/// path whatsoever (not even an inactive one: QDC_ALL_PATHS is empty), every display device detached, a 1024x768
-/// stand-in desktop. Nothing inside the guest brought it back (layout calls, device restarts, sign-out, restarting
-/// Windows, Restart-VM); turning the VM off and on did, every time. So the agent says so plainly and the host repairs.
+/// Nothing inside the guest brings a missing display path back; turning the VM off and on does.
 pub fn no_display() -> Option<&'static str> {
     use windows::Win32::Devices::Display::*;
     let (mut np, mut nm) = (0u32, 0u32);
@@ -275,7 +252,6 @@ pub fn no_display() -> Option<&'static str> {
     (r.is_ok() && np == 0).then_some("Windows gives this machine no display path at all; turning the VM off and on again (not a restart) brings it back")
 }
 
-/// True when the virtual display (if any) is the only attached display, at 0,0.
 pub fn settled() -> bool {
     let devs = devices();
     let Some(vdd) = devs.iter().find(|d| is_vdd(&d.adapter)) else { return true };
@@ -283,8 +259,6 @@ pub fn settled() -> bool {
     alone && current(&vdd.name).is_some_and(|c| unsafe { c.Anonymous1.Anonymous2.dmPosition.x == 0 && c.Anonymous1.Anonymous2.dmPosition.y == 0 })
 }
 
-/// Makes the virtual display the only (hence primary) display and at least MIN_W x MIN_H. Returns what it did
-/// (None when nothing had to change), or an error text.
 pub fn ensure() -> Result<Option<Value>, String> {
     let r = ensure_inner();
     let text = match &r {
@@ -302,11 +276,9 @@ fn ensure_inner() -> Result<Option<Value>, String> {
         return Ok(None);
     }
     let devs = devices();
-    let Some(vdd) = devs.iter().find(|d| is_vdd(&d.adapter)) else { return Ok(None) }; // no virtual display: not GpuVM
+    let Some(vdd) = devs.iter().find(|d| is_vdd(&d.adapter)) else { return Ok(None) };
     let mut did = serde_json::Map::new();
-    // 0. the stream's mode (HKLM StreamMode, written by the install), once per helper start, before the hello: the
-    // viewer then finds the display already at its mode and changes nothing, so Sunshine doesn't restart under the
-    // first session (the black first open). Only while pending: a mode a viewer sets later is never fought.
+    // Before the hello, so Sunshine doesn't restart under the first session; never fights a mode a viewer set later.
     if vdd.attached && STREAM_PENDING.swap(false, Ordering::SeqCst) {
         if let (Some(sm), Some(cur)) = (stream_mode(), current(&vdd.name)) {
             let now = Mode { w: cur.dmPelsWidth, h: cur.dmPelsHeight, hz: cur.dmDisplayFrequency };
@@ -325,12 +297,9 @@ fn ensure_inner() -> Result<Option<Value>, String> {
             }
         }
     }
-    // 1. size, only when smaller than the agent's minimum (the viewer may set a bigger one later)
     if let Some(cur) = current(&vdd.name) {
-        // only when it is below every usable size (it starts at 800x600); 1366x768 or a viewer's size stays: a change
-        // every few seconds would make Sunshine re-test its encoders each time (first lab run did exactly that)
+        // A change every few seconds would make Sunshine re-test its encoders each time.
         if vdd.attached && (cur.dmPelsWidth < 1280 || cur.dmPelsHeight < 720) {
-            // the stream's mode first, when the install gave one (a display that fell back to 800x600 later)
             if let Some(sm) = stream_mode() {
                 if let Some(mut m) = find_mode_hz(&vdd.name, sm.w, sm.h, sm.hz) {
                     m.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFREQUENCY;
@@ -339,12 +308,12 @@ fn ensure_inner() -> Result<Option<Value>, String> {
                     return finish(&devs, vdd, did);
                 }
             }
-            // the first of these the virtual display offers (it doesn't offer every size, lab 048: no 1280x720)
+            // The virtual display doesn't offer every size (no 1280x720).
             let sizes = [(MIN_W, MIN_H), (1366, 768), (1280, 720), (1440, 900), (1600, 900), (1680, 1050), (1920, 1080)];
             match sizes.iter().find_map(|&(w, h)| find_mode(&vdd.name, w, h).map(|m| (w, h, m))) {
                 Some((w, h, mut m)) => {
                     m.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFREQUENCY;
-                    // dynamic: not saved in the registry (security review), so nothing outlives the agent's session
+                    // dynamic: not saved in the registry, so nothing outlives the agent's session
                     let r = change(Some(&vdd.name), Some(&m), CDS_TYPE(0));
                     did.insert("mode".into(), json!({"from": [cur.dmPelsWidth, cur.dmPelsHeight], "to": [w, h], "code": r}));
                 }
@@ -357,16 +326,13 @@ fn ensure_inner() -> Result<Option<Value>, String> {
     finish(&devs, vdd, did)
 }
 
-/// 2. alone at 0,0
 fn finish(devs: &[Dev], vdd: &Dev, mut did: serde_json::Map<String, Value>) -> Result<Option<Value>, String> {
     let others: Vec<&Dev> = devs.iter().filter(|d| d.name != vdd.name && d.attached).collect();
     let at_origin = current(&vdd.name).is_some_and(|c| unsafe { c.Anonymous1.Anonymous2.dmPosition.x == 0 && c.Anonymous1.Anonymous2.dmPosition.y == 0 });
     if vdd.attached && at_origin && others.is_empty() {
         return Ok((!did.is_empty()).then(|| Value::Object(did)));
     }
-    // the topology through SetDisplayConfig WITHOUT SDC_SAVE_TO_DATABASE: applied now, never written to the
-    // machine's display database (security review: the old ChangeDisplaySettingsEx + CDS_UPDATEREGISTRY batch
-    // persisted it for every user)
+    // SetDisplayConfig WITHOUT SDC_SAVE_TO_DATABASE: never written to the machine's display database.
     let off = only_this_source(&vdd.name)?;
     did.insert("turnedOff".into(), json!(off.iter().map(|d| format!("{d}")).collect::<Vec<_>>()));
     Ok(Some(Value::Object(did)))

@@ -1,17 +1,4 @@
-//! What an agent is doing, live over its machine's picture (2026-11-21, chosen by the person): the agent's cursor with
-//! its name, a ring on each click, the stroke of a drag, and in the status notch what it is doing ("Claude Code ·
-//! Drawing the moon", from the step's `intent`, or a plain text from the step itself).
-//!
-//! - The service tells what each step is as it starts and ends (agent_log.rs in app/host): this module waits for it on
-//!   a pipe connection of its own (`Wait-GpuVMAgentActivity`, a long poll), so the app's other calls never wait
-//!   behind it and nothing polls fast.
-//! - The overlay is one window of this app over the picture in view, owned by the viewer, transparent and
-//!   click-through: the person's clicks always reach the picture. Only while an agent acts on the machine whose picture
-//!   is on screen (never over a hidden viewer, one opened only to record) and gone as soon as the person takes control,
-//!   so watching costs nothing the rest of the time (an overlay takes the stream off Windows' direct path to the screen
-//!   while it is shown).
-//! - Shapes only: where a click or a drag went, which keys, how many characters were typed; never the text typed or
-//!   a command line.
+// Shown only while needed: an overlay takes the stream off Windows' direct path to the screen.
 
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -20,12 +7,8 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Listener, Manager, WebviewUrl, WebviewWindowBuilder};
 
 pub const LABEL: &str = "agent-live";
-/// With no step for this long, the notch says the agent is thinking.
 const THINKING: Duration = Duration::from_millis(1800);
-/// With no step for this long, the overlay and the notch go (the agent stopped or waits for something long).
 const GONE: Duration = Duration::from_secs(25);
-/// A step whose end never came (the pipe dropped, the service restarted) stops counting as running after this long:
-/// longer than any step may take (a command's 580 s).
 const STEP_MAX: Duration = Duration::from_secs(620);
 
 struct Step {
@@ -39,7 +22,6 @@ struct Step {
 struct Live {
     client: String,
     client_name: String,
-    /// Steps started and not ended yet (the newest one is shown).
     running: Vec<Step>,
     last: Instant,
     thinking: bool,
@@ -47,7 +29,6 @@ struct Live {
 
 static LIVE: Mutex<Option<HashMap<String, Live>>> = Mutex::new(None);
 
-/// The overlay window: the machine it is over, whether its page listens yet, and what came before it did.
 struct Over {
     vm: String,
     ready: bool,
@@ -59,7 +40,6 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Starts following the service (a thread of its own) and tidying what went quiet.
 pub fn start(app: &AppHandle) {
     let handle = app.clone();
     std::thread::spawn(move || follow(handle));
@@ -68,7 +48,6 @@ pub fn start(app: &AppHandle) {
         std::thread::sleep(Duration::from_millis(400));
         tidy(&handle);
     });
-    // The overlay's page listens now: what came while it loaded is sent (the first step of a session used to be lost).
     let handle = app.clone();
     app.listen_any("agent-live-ready", move |_| {
         let (pending, vm) = {
@@ -78,7 +57,6 @@ pub fn start(app: &AppHandle) {
             (std::mem::take(&mut o.pending), o.vm.clone())
         };
         if let Some(w) = handle.get_webview_window(LABEL) {
-            // Shown once its page is drawn, so it never flashes over the picture while loading.
             if !w.is_visible().unwrap_or(false) && crate::agent::place_over_picture(&handle, &w, &vm) {
                 let _ = w.show();
                 crate::overlay::mark_taskbar(&w, crate::viewer::viewer_full_screen(&vm));
@@ -110,14 +88,12 @@ fn follow(app: AppHandle) {
             }
             let Ok(data) = crate::recv_result(&mut conn, &request).and_then(crate::into_data) else { break };
             let data = match data { Value::Array(mut a) if !a.is_empty() => a.remove(0), other => other };
-            // A service that doesn't know the command (an older one) answers at once: don't spin on it.
             let Some(last) = data["last"].as_u64() else { break };
             // A restarted service counts from 1 again: what it has is from before the app looked, as at the start.
             if last < after {
                 primed = false;
             }
             after = last;
-            // What happened before the app was looking isn't replayed.
             if !primed {
                 primed = true;
                 continue;
@@ -126,7 +102,6 @@ fn follow(app: AppHandle) {
                 on_event(&app, event);
             }
         }
-        // The connection broke: steps whose end may have been lost don't stay "running".
         if let Some(map) = lock(&LIVE).as_mut() {
             for l in map.values_mut() {
                 l.running.clear();
@@ -138,7 +113,6 @@ fn follow(app: AppHandle) {
 
 fn on_event(app: &AppHandle, event: &Value) {
     let Some(vm) = event["machine"].as_str().map(str::to_string) else { return };
-    // Only the picture on screen, and never once the person has the machine.
     if !crate::dock::wants(&vm) || crate::agent::person_has(&vm) {
         return;
     }
@@ -157,7 +131,6 @@ fn on_event(app: &AppHandle, event: &Value) {
             entry.client_name = n.to_string();
         }
         if start {
-            // A drag of several strokes is drawing; the first shape names what an input step does.
             let first = &event["shapes"][0];
             let shape = match first["type"].as_str() {
                 Some("drag") if first["strokes"].as_array().is_some_and(|s| s.len() > 1) => Some("draw".to_string()),
@@ -175,7 +148,6 @@ fn on_event(app: &AppHandle, event: &Value) {
     overlay_send(app, &vm, event);
 }
 
-/// The status notch line for the machine: the newest running step, or "thinking" between steps.
 fn notch(app: &AppHandle, vm: &str) {
     let item = lock(&LIVE).as_ref().and_then(|m| m.get(vm)).map(|l| {
         let now = l.running.last();
@@ -186,8 +158,6 @@ fn notch(app: &AppHandle, vm: &str) {
     crate::status::set(app, vm, "live", item);
 }
 
-/// Sends an event to the overlay over this machine's picture, making or moving it there as needed. One overlay: a
-/// second machine's picture on screen at the same time keeps only its notch line while the first one has it.
 fn overlay_send(app: &AppHandle, vm: &str, event: &Value) {
     let current = lock(&OVER).as_ref().map(|o| o.vm.clone());
     if let Some(other) = current.as_deref().filter(|o| *o != vm) {
@@ -204,7 +174,6 @@ fn overlay_send(app: &AppHandle, vm: &str, event: &Value) {
             let Ok(w) = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into())).additional_browser_args(crate::BROWSER_ARGS)
                 .title("GpuVM").decorations(false).transparent(true).shadow(false).resizable(false)
                 .skip_taskbar(true).focused(false).visible(false).build() else { return };
-            // Click-through: every click and the wheel go to the picture underneath.
             let _ = w.set_ignore_cursor_events(true);
             *lock(&OVER) = Some(Over { vm: vm.to_string(), ready: false, pending: Vec::new() });
             w
@@ -244,7 +213,6 @@ fn close_overlay(app: &AppHandle, vm: &str) {
     }
 }
 
-/// Everything about a machine goes: its viewer closed or hid, the person took control, or the agent went quiet.
 pub fn clear(app: &AppHandle, vm: &str) {
     let had = lock(&LIVE).as_mut().and_then(|m| m.remove(vm)).is_some();
     if had {
@@ -270,14 +238,12 @@ fn tidy(app: &AppHandle) {
             notch(app, &vm);
         }
     }
-    // An overlay left without its machine (it hid before any step was tracked).
     let orphan = lock(&OVER).as_ref().map(|o| o.vm.clone()).filter(|vm| !crate::dock::wants(vm));
     if let Some(vm) = orphan {
         close_overlay(app, &vm);
     }
 }
 
-/// The viewer moved, resized or opened its side panel: the overlay follows the picture.
 pub fn on_viewer(app: &AppHandle, vm: &str, msg: &Value) {
     match msg["type"].as_str().unwrap_or("") {
         "window" | "panel" => {

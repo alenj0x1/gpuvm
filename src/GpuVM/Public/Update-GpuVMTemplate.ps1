@@ -2,7 +2,7 @@ function Update-GpuVMTemplate {
     <#
     .SYNOPSIS
     Brings a template up to this GpuVM's Sunshine (and agent, for an agent template), as a new layer on top of it, so
-    its copies don't install them one by one (an agent copy: under a minute instead of ~5, lab 053 parts 6-7).
+    its copies don't install them one by one.
 
     .DESCRIPTION
     A temporary copy of the template gets the exact install every copy would otherwise get (GpuVM's Sunshine fork and
@@ -41,7 +41,6 @@ function Update-GpuVMTemplate {
             if ($Name) { Write-Step "The template '$n' already has this GpuVM's Sunshine$(if ([string]$meta['use'] -eq 'agent') { ' and agent' })." }
             continue
         }
-        # An update that failed isn't retried every hour (it would boot a copy for nothing): a day later, or when named.
         $failed = Get-TemplateUpdateFailure -Template $meta
         if (-not $Name -and -not $Force -and $failed -and $failed['at'] -gt (Get-Date).ToUniversalTime().AddDays(-1)) { continue }
         if (Test-TemplateUpdating -Template $meta) { Write-Warning "The template '$n' is already being updated."; continue }
@@ -50,7 +49,6 @@ function Update-GpuVMTemplate {
     }
 }
 
-# <template>\update-failed.json: when and why the last update failed ({at (UTC), message}), or $null.
 function Get-TemplateUpdateFailure {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Template)
     $path = Join-Path $Template['dir'] 'update-failed.json'
@@ -63,7 +61,6 @@ function Get-TemplateUpdateFailure {
     @{ at = $at; message = [string]$data['message'] }
 }
 
-# The update itself (see Update-GpuVMTemplate). Returns {name, layer, layers, ms}.
 function Add-TemplateLayer {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Template, [System.Collections.IDictionary]$Bundled)
     $ErrorActionPreference = 'Stop'
@@ -92,20 +89,16 @@ function Add-TemplateLayer {
         # PowerShell wraps the IOException of an existing file; anything else (no folder, no rights) stops here.
         if (-not (Test-Path -LiteralPath $marker)) { throw }
         if (Test-TemplateUpdating -Template $Template) { throw "The template '$n' is already being updated." }
-        # Left by a run that died: taken over.
         Write-JsonFile -Path $marker -Data ([ordered]@{ pid = $PID; startedAt = (Get-Date).ToUniversalTime().ToString('o'); copy = $copy; run = $run })
     }
     $created = $false
     try {
-        # A layer file the template doesn't list, that no machine sits on: left by a run that died before recording it.
         if (Test-Path -LiteralPath $layer) {
             if (@(Get-TemplateChildVM -VhdPath $layer).Count) { throw "The template '$n' has a disk $layerName that it doesn't list and a machine uses; GpuVM leaves it alone." }
             (Get-Item -LiteralPath $layer).IsReadOnly = $false
             Remove-Item -LiteralPath $layer -Force
         }
-        # The account the copy is opened with, before anything is made.
         if (-not (Get-GpuVMGuestCredential -State $Template)) { throw "GpuVM doesn't know the Windows account of the template '$n', so it can't update it." }
-        # Left over from an update that died: only a machine this kind of run marked as its own copy of this template.
         if (Get-VM -Name $copy -ErrorAction SilentlyContinue) {
             $old = try { Get-GpuVMState -Name $copy } catch { $null }
             $mark = if ($old) { $old['templateUpdate'] }
@@ -124,12 +117,9 @@ function Add-TemplateLayer {
         Start-VM -Name $copy
         $credential = Get-GpuVMGuestCredential -State (Get-GpuVMState -Name $copy)
         if ([string]$Template['use'] -eq 'agent') {
-            # The agent's install brings GpuVM's Sunshine and its settings with it (Initialize-GuestStreamingForAgent);
-            # a setup that only half worked isn't kept as the template's.
             $signIn = if ([string]$Template['agentSignInAs'] -eq 'own') { 'own' } else { 'agent' }
             $installed = Install-GpuVMAgent -Name $copy -User $signIn
             if ($installed['streaming'] -eq 'failed') { throw "Sunshine's setup in the temporary copy didn't finish; the template stays as it was." }
-            # An agent template without the virtual display skips that setup: the fork still goes in.
             $streams = $Template['streaming'] -is [System.Collections.IDictionary] -and [string]$Template['streaming']['provider'] -eq 'sunshine'
             if ($streams -and $installed['streaming'] -ne 'ready') { $null = Install-GuestSunshineCapture -Name $copy -Credential $credential }
         }
@@ -140,13 +130,9 @@ function Add-TemplateLayer {
             $null = Set-GuestCaptureMode -Name $copy -Credential $credential
             $installed = @{ restarted = $false; ms = @{ total = $sw2.ElapsedMilliseconds } }
         }
-        # The controllers' driver (ViGEmBus) too: every copy's first open installed it and restarted Sunshine for it,
-        # ~30 s of its "Preparing" (2026-11-21: 79 s first open of a copy).
         $streams = $Template['streaming'] -is [System.Collections.IDictionary] -and [string]$Template['streaming']['provider'] -eq 'sunshine'
         if ($streams) { $null = Install-GuestGamepad -Name $copy -Credential $credential }
-        # Right after the install Windows shuts down but the machine never turns off (lab 053 part 6: the guest logs
-        # its shutdown 3 s in, Hyper-V waits 90 s and turns it off). After one more boot it shuts down in seconds, and
-        # only a clean shutdown makes a layer worth copying.
+        # Right after the install Windows shuts down but the machine never turns off; after one more boot it shuts down cleanly.
         if (-not $installed['restarted']) { Restart-GpuVMCold -Name $copy }
         Wait-GuestReady -Name $copy -Credential $credential | Out-Null
         # Read and cleaned inside the copy: this PC never mounts a disk the copy wrote.
@@ -161,7 +147,6 @@ function Add-TemplateLayer {
         }
         $timing = [ordered]@{ install = $installed['ms']['total']; ready = $sw.ElapsedMilliseconds }
 
-        # Its disk becomes the layer: out of the copy's folder first, then the copy goes (with its agent registration).
         $disk = (Get-VMHardDiskDrive -VMName $copy | Select-Object -First 1).Path
         if (-not $disk -or [IO.Path]::GetFullPath((Get-VHD -Path $disk).ParentPath) -ne [IO.Path]::GetFullPath($Template['vhdPath'])) {
             throw "The temporary copy's disk isn't on the template's newest layer; the template stays as it was."
@@ -218,10 +203,6 @@ function Add-TemplateLayer {
     }
 }
 
-# Inside the temporary copy, right before it shuts down: Sunshine and the agent stop (so neither writes again), the
-# copy's Sunshine identity and paired devices, the agent's secret, logs and staging go (each copy of the template
-# makes its own), and the hashes of this build's files are read. Returns {key: SHA-256 or $null}. Links inside the
-# guest only lead to the guest's own files: nothing here touches this PC's.
 function Clear-GuestIdentityForLayer {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential, [string[]]$Keys = @())
     Write-Step 'Removing the temporary copy''s own identity'
@@ -254,7 +235,6 @@ function Clear-GuestIdentityForLayer {
         }
         $stamp
     }
-    # Only the keys asked for, as text: nothing else the guest sends back is kept.
     $components = [ordered]@{}
     foreach ($key in $Keys) {
         $hash = [string]$result[$key]
@@ -263,8 +243,6 @@ function Clear-GuestIdentityForLayer {
     $components
 }
 
-# Asks Windows to shut down and waits for the machine to be off: $true when it was, $false when it had to be turned
-# off (then the disk may not be clean).
 function Stop-GuestCleanly {
     param([Parameter(Mandatory)][string]$Name, [int]$TimeoutSec = 120)
     if ((Get-VM -Name $Name).State -eq 'Off') { return $true }
@@ -278,7 +256,7 @@ function Stop-GuestCleanly {
         $false
     }
     finally {
-        # As Stop-GpuVMBounded: a Hyper-V job is only removed once it finished (lab 052).
+        # A Hyper-V job is only removed once it finished (see Stop-GpuVMBounded).
         $job | Wait-Job -Timeout 15 -ErrorAction SilentlyContinue | Out-Null
         $job | Where-Object { $_.State -in 'Completed', 'Failed', 'Stopped' } | Remove-Job -Force -ErrorAction SilentlyContinue
     }

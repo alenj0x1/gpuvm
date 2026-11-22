@@ -14,9 +14,6 @@ export function miniOf(vm: VmOverview): MiniMachine {
   };
 }
 
-/** Home while its data loads: a constellation of the machines themselves (their cubes, with their pieces) around the
- *  first one, joined to it by lines where light travels (the host's GPU feeding them), and a tip underneath. Without
- *  the list yet, faint machines wait in their places. */
 export function HomeLoading({ vms }: { vms?: VmOverview[] | null }) {
   const list = (vms ?? []).slice(0, 9);
   const center = list[0] ?? null;

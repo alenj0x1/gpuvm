@@ -31,38 +31,29 @@ export interface JobInfo {
 
 interface Props {
   vm: VmOverview;
-  /** Every machine, for the space around this one's cube. */
   vms?: VmOverview[];
   host: HostInfo | null;
   samples: Sample[];
-  /** Long job or power action in progress for this VM. */
   busy: JobInfo | null;
   startJob: (vm: string, cmd: string, args: Record<string, unknown>, after?: () => void, failed?: () => void) => void;
   run: (vm: string, label: string, task: () => Promise<unknown>) => Promise<boolean>;
   onRemoved: () => void;
-  /** The rename finished: the page, the sidebar and the route follow the new name. */
   onRenamed?: (from: string, to: string) => void;
 }
 
 const transitionText = (state: string): string | undefined => ({ Starting: t("Starting"), Stopping: t("Shutting down"), Saving: t("Saving"), Pausing: t("Pausing"), Resuming: t("Resuming") } as Record<string, string>)[state];
 
 type VmTab = "machine" | "agent" | "display" | "windows" | "custom";
-// The cube's column: dragged anywhere between the two edges. Near the right edge the cube folds into a thin rail
-// (0 is stored); near the left one it takes the whole width and the options fold (FULL is stored). In between, both
-// keep a usable width.
 const CUBE_KEY = "gpuvm.cubeWidth", CUBE_DEFAULT = 380, CUBE_MIN = 220, OPTIONS_MIN = 300, FOLD = 140, FULL = 99999, RAIL = 14;
 const readCubeW = () => { try { return Number(localStorage.getItem(CUBE_KEY)) || CUBE_DEFAULT; } catch { return CUBE_DEFAULT; } };
-/** Where the last machine page was left, to open the next one at the same place. */
 let lastPlace: { section: VmTab; offset: number; at: number } | null = null;
 const NEW_SPACE = "__new__";
 const tabLabel = (tab: VmTab) => ({ machine: t("Machine"), agent: t("Agent"), display: t("Picture and control"), windows: t("Windows"), custom: t("Customize") })[tab];
 
 export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRemoved, onRenamed }: Props) {
   const [variant, setVariant] = useState(() => patternVariant(vm.name));
-  // What is being changed and not saved yet (resources, cleanup level, apps picked to install), for the cube.
   const [preview, setPreview] = useState<{ cpu?: number; memoryGB?: number; gpuPercent?: number; diskGB?: number; cleanup?: CleanupLevelId }>({});
   const [previewApps, setPreviewApps] = useState<string[]>([]);
-  // The name being typed in "Rename" (and then being applied), so the cube's plate engraves it as it is typed.
   const [draftName, setDraftName] = useState<string | null>(null);
   const [renameOpen, setRenameOpen] = useState(false);
   useEffect(() => { setPreview({}); setPreviewApps([]); setDraftName(null); }, [vm.name]);
@@ -70,7 +61,6 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
   const off = vm.state === "Off";
   const tabs: VmTab[] = [];
   if (vm.managed && vm.options) tabs.push("machine");
-  // A machine made for agents, or one an agent works on now, shows its Agent section right after Machine.
   const agentHere = useAgents().clients.some((c) => c.machine === vm.name);
   if (vm.use === "agent" || vm.forAgents || agentHere) tabs.push("agent");
   if (vm.managed && vm.options && vm.streaming) tabs.push("display");
@@ -82,7 +72,6 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
   const [cubeW, setCubeW] = useState(readCubeW);
   const [resizing, setResizing] = useState(false);
   const span = () => bodyRef.current?.clientWidth ?? 1200;
-  /** A width as the person left it, fitted to the page now: folded, full or in between. */
   const fitCube = (w: number) => (w <= 0 ? 0 : w >= FULL || span() - w - 16 < OPTIONS_MIN ? FULL : Math.max(CUBE_MIN, w));
   const resizeCube = (e: React.PointerEvent<HTMLDivElement>) => {
     const el = e.currentTarget, startX = e.clientX, startW = cubeW;
@@ -92,21 +81,18 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
     const from = startW >= FULL ? span() : startW <= 0 ? RAIL : startW;
     const move = (ev: PointerEvent) => {
       const raw = from - (ev.clientX - startX);
-      // Past the folding points it snaps to the edge; in between it follows the pointer.
       w = raw < FOLD ? 0 : span() - raw - 16 < OPTIONS_MIN * 0.6 ? FULL : Math.round(Math.min(span() - OPTIONS_MIN - 16, Math.max(CUBE_MIN, raw)));
       setCubeW(w);
     };
     const up = () => {
       el.removeEventListener("pointermove", move); el.removeEventListener("pointerup", up); el.removeEventListener("pointercancel", up);
       setResizing(false);
-      try { localStorage.setItem(CUBE_KEY, String(w)); } catch { /* no storage */ }
+      try { localStorage.setItem(CUBE_KEY, String(w)); } catch {}
     };
     el.addEventListener("pointermove", move); el.addEventListener("pointerup", up); el.addEventListener("pointercancel", up);
   };
   const decorEdit = useDecorEdit(decorSource);
-  // While decorating, a fixed view of the cube (front, a side, the top) that stays still.
   const [cubeView, setCubeView] = useState<CubeView | null>(null);
-  // Every section is on the same page; the bar above them marks the one in view and takes you to the others.
   const mainRef = useRef<HTMLDivElement>(null);
   const sectionRefs = useRef<Partial<Record<VmTab, HTMLElement | null>>>({});
   const [active, setActive] = useState<VmTab | undefined>(tabs[0]);
@@ -123,7 +109,6 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
         const el = sectionRefs.current[t];
         if (el && el.getBoundingClientRect().top <= line) current = t;
       }
-      // At the very bottom the last section is the one in view, however short it is.
       if (main.scrollHeight > main.clientHeight + 4 && main.scrollTop + main.clientHeight >= main.scrollHeight - 4) current = list[list.length - 1];
       setActive(current);
     };
@@ -131,8 +116,6 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
     main.addEventListener("scroll", spy, { passive: true });
     return () => main.removeEventListener("scroll", spy);
   }, [tabKey, vm.name]);
-  // Switching to another machine keeps the place on the page: the same section, as far into it as before, so a
-  // section (Personalizar, Windows) can be compared machine after machine. Coming from elsewhere starts at the top.
   useLayoutEffect(() => {
     const main = mainRef.current;
     if (!main) return;
@@ -145,7 +128,6 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
         main.scrollTop += el.getBoundingClientRect().top - main.getBoundingClientRect().top + from.offset;
       };
       place();
-      // What loads after opening (apps, disks) changes heights: follow it until the person scrolls.
       const ro = new ResizeObserver(place);
       const body = main.querySelector(".vm-sections");
       if (body) ro.observe(body);
@@ -177,7 +159,6 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
       <Header vm={vm} vms={vms} busy={busy} variant={variant} startJob={startJob} run={run} onRemoved={onRemoved}
         onRenameDraft={setDraftName} onRenameOpen={setRenameOpen} onRenamed={onRenamed}
         onPattern={() => {
-          // The third quick click switches every pattern's palette; the two before it are undone.
           const v = patternClick() ? Math.max(0, variant - 2) : variant + 1;
           setPatternVariant(vm.name, v);
           setVariant(v);
@@ -195,7 +176,6 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
           sub={vm.gpuName ?? t("Basic graphics only")} spark={running && vm.hasGpu ? series(samples, (s) => s.gpu) : []} color="var(--chart-gpu)" />
         <Stat icon={<IconClock size={15} />} label={t("Uptime")} value={running ? formatUptime(vm.uptimeSeconds) : "—"}
           sub={running ? (vm.address ?? t("Waiting for network")) : t("No network")}
-          // Its line, in the text color: how busy the machine has been overall (processor and GPU together).
           spark={running ? series(samples, (s) => (s.cpu + (vm.hasGpu ? s.gpu : s.cpu)) / 2) : []} color="var(--text)" />
       </div>
 
@@ -254,11 +234,10 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
       )}
       </div>
       {decorEdit.menu}
-      {/* The machine itself, always in view beside its options, following what is being changed before it is saved. */}
       {vm.managed && vm.options && (
         <aside className={`vm-cube${renameOpen ? " lifted" : ""}`}>
           <div className="vm-cube-split" role="separator" aria-orientation="vertical" aria-label={t("Cube width")} title={t("Drag to change the width")}
-            onPointerDown={resizeCube} onDoubleClick={() => { setCubeW(CUBE_DEFAULT); try { localStorage.setItem(CUBE_KEY, String(CUBE_DEFAULT)); } catch { /* no storage */ } }}><span /></div>
+            onPointerDown={resizeCube} onDoubleClick={() => { setCubeW(CUBE_DEFAULT); try { localStorage.setItem(CUBE_KEY, String(CUBE_DEFAULT)); } catch {} }}><span /></div>
           {active === "custom" && (
             <div className="cube-views" role="radiogroup" aria-label={t("Cube view")}>
               {([[null, t("Free"), <IconRotate360 size={15} key="i" />, t("Rotate freely")], ["front", t("Front"), null, t("View from the front")], ["right", t("Right"), null, t("View from the right")], ["back", t("Back"), null, t("View from the back")], ["left", t("Left"), null, t("View from the left")], ["top", t("Top"), null, t("View from the top")]] as const).map(([v, label, icon, hint]) => (
@@ -285,9 +264,6 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
   );
 }
 
-/** Shared disks: attach one to this machine or take it away, also while it runs. Hidden until a disk exists. */
-// The shared disks are asked for once GpuVM opens and kept: the card is there when the page shows, instead of
-// appearing a moment later and pushing what is under it.
 let sharedCache: SharedDiskInfo[] = [];
 const sharedReady = api.sharedDisks().then((d) => { sharedCache = d; }).catch(() => {});
 
@@ -303,7 +279,6 @@ export function SharedDisks({ vm, busy, startJob }: Pick<Props, "vm" | "busy" | 
       <div className="opt-rows">
         {disks.map((d) => {
           const here = d.vm === vm.name;
-          // Another running machine has it: it has to be taken away there first.
           const elsewhere = !!d.vm && !here;
           const state = here ? t("Connected") : elsewhere ? t("In {vm}", { vm: d.vm! }) : t("Free");
           return (
@@ -313,7 +288,6 @@ export function SharedDisks({ vm, busy, startJob }: Pick<Props, "vm" | "busy" | 
                 <span className="opt-title">{d.name}
                   <span className={`disk-state${here ? " here" : elsewhere ? " away" : ""}`}><i />{state}</span>
                 </span>
-                {/* What a shared disk is, said plainly: its name alone ("juegos") doesn't tell. */}
                 <span className="opt-desc">{d.purpose === "games"
                   ? t("Shared {size} disk for games. Install them once and connect it to whichever machine needs them.", { size: gb(d.sizeGB) })
                   : t("Shared {size} disk. Your files, on whichever machine connects it.", { size: gb(d.sizeGB) })}</span>
@@ -342,10 +316,6 @@ export function SharedDisks({ vm, busy, startJob }: Pick<Props, "vm" | "busy" | 
   );
 }
 
-// What each cleanup level is about, in a few words; what it does comes from the module, item by item.
-
-/** Windows cleanup: the levels as cards (each includes the ones before it), what the chosen one does, and Aplicar
- *  only when a different level is chosen. */
 export function Cleanup({ vm, busy, startJob, onPreview }: Pick<Props, "vm" | "busy" | "startJob"> & { onPreview?: (level: CleanupLevelId) => void }) {
   const levels = useCleanupLevels();
   const current = vm.options?.cleanup ?? "none";
@@ -394,13 +364,10 @@ type AppsView = "tiles" | "list";
 const APPS_VIEW_KEY = "gpuvm.appsView";
 const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 
-/** Apps of a machine: the installed ones on top (each with its menu), then the catalog as tiles to pick several
- *  and install them together, or as a list with each app's own action. The chosen view is remembered. */
 export function Apps({ vm, busy, startJob, onPreview }: Pick<Props, "vm" | "busy" | "startJob"> & { onPreview?: (apps: string[]) => void }) {
   const [catalog, setCatalog] = useState<AppInfo[]>([]);
   const [chosen, setChosen] = useState<string[]>([]);
   const [installed, setInstalled] = useState<string[]>([]);
-  // The cube shows what is installed and what is picked to install.
   useEffect(() => onPreview?.([...installed, ...chosen.filter((id) => !installed.includes(id))]), [installed, chosen]);
   const [uninstalling, setUninstalling] = useState<AppInfo | null>(null);
   const [query, setQuery] = useState("");
@@ -408,11 +375,9 @@ export function Apps({ vm, busy, startJob, onPreview }: Pick<Props, "vm" | "busy
   const [view, setView] = useState<AppsView>(() => { try { return (localStorage.getItem(APPS_VIEW_KEY) as AppsView) || "tiles"; } catch { return "tiles"; } });
   const [menu, setMenu] = useState<{ app: AppInfo; x: number; y: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  // The catalog keeps a set height and scrolls inside, fading where it continues, so the page doesn't grow with it.
   const [listRef, listFade] = useScrollFade<HTMLDivElement>();
-  useEffect(() => { try { localStorage.setItem(APPS_VIEW_KEY, view); } catch { /* no storage */ } }, [view]);
+  useEffect(() => { try { localStorage.setItem(APPS_VIEW_KEY, view); } catch {} }, [view]);
   useEffect(() => { api.apps().then(setCatalog).catch(() => {}); }, []);
-  // Checked again when the machine turns on and after every job (an install, a template, a cleanup) ends.
   const idle = !busy;
   useEffect(() => {
     if (!idle) return;
@@ -447,7 +412,6 @@ export function Apps({ vm, busy, startJob, onPreview }: Pick<Props, "vm" | "busy
   };
   const categories = [...new Map(catalog.map((a) => [a.category, a.categoryName ? translateModule(a.categoryName) : a.category])).entries()];
   const q = fold(query.trim());
-  // The catalog shows every app of the category, the installed ones too (marked, not installable again).
   const available = catalog
     .filter((a) => (q ? fold(`${a.name} ${a.categoryName ?? ""} ${translateModule(a.categoryName ?? "")}`).includes(q) : category === "all" || a.category === category));
   const mine = catalog.filter((a) => installed.includes(a.id));
@@ -466,7 +430,6 @@ export function Apps({ vm, busy, startJob, onPreview }: Pick<Props, "vm" | "busy
       </div>
 
       <div className="apps-layout">
-        {/* Left: the catalog, by category; it renews with a short animation whenever the category or view changes. */}
         <div className="apps-catalog">
           <Segmented value={category} onChange={setCategory} options={[{ value: "all", label: t("All") }, ...categories.map(([id, name]) => ({ value: id, label: name }))]} />
           {available.length === 0 ? (
@@ -502,7 +465,6 @@ export function Apps({ vm, busy, startJob, onPreview }: Pick<Props, "vm" | "busy
               ))}
             </div>
           )}
-          {/* The tiles' selection: what is chosen and the one button that installs it. */}
           {view === "tiles" && (chosen.length > 0 || working) && (
             <div className="apps-selection">
               <span>{working ? translateModule(busy!.message) : tn(chosen.length, "{n} app picked", "{n} apps picked")}</span>
@@ -515,7 +477,6 @@ export function Apps({ vm, busy, startJob, onPreview }: Pick<Props, "vm" | "busy
           )}
         </div>
 
-        {/* Right: the search (it looks through both sides) and what this machine already has. */}
         <div className="apps-mine">
           <label className="search-box">
             <IconSearch size={16} />
@@ -592,7 +553,6 @@ function Stat({ icon, label, value, sub, spark, color }: { icon: React.ReactNode
       <span className="label">{icon}{label}</span>
       <span className="value">{value}</span>
       <span className="sub" title={sub}>{sub}</span>
-      {/* The line's room is kept even without data, so the strip never changes height. */}
       <div className="spark-room">{spark && color && <Sparkline values={spark} color={color} />}</div>
     </div>
   );
@@ -638,11 +598,9 @@ function Header({ vm, vms = [], busy, variant, startJob, run, onRemoved, onRenam
   const job = (cmd: string, args: Record<string, unknown>) => { setMenu(false); startJob(vm.name, cmd, args); };
 
   let primary: { label: string; icon: React.ReactNode; onClick: () => void; disabled?: boolean; title?: string };
-  // Off and doesn't fit in the free memory as configured: said before the click, with a way out.
   const short = off && !vm.fits;
   if (paused) primary = { label: t("Resume"), icon: <IconPlayerPlay size={17} />, onClick: () => power("Resume", t("Resuming")) };
   else if (short && vm.managed && vm.streaming && vm.fitGB >= 4 && vm.fitGB < vm.memoryStartupGB) {
-    // Opens with what does fit; it is saved, like changing it in Options.
     primary = { label: t("Open with {gb} GB", { gb: vm.fitGB }), icon: <IconPlayerPlay size={17} />, onClick: () => job("Connect-GpuVM", { Name: vm.name, MemoryGB: vm.fitGB }),
       title: t("Uses {gb} GB of memory instead of {total} GB; you can raise it again in Options", { gb: vm.fitGB, total: vm.memoryStartupGB }) };
   } else if (short) {
@@ -671,8 +629,6 @@ function Header({ vm, vms = [], busy, variant, startJob, run, onRemoved, onRenam
         <h1 title={vm.name}>{vm.name}</h1>
         <div className="meta">
           <span className="state-pill"><span className={`dot ${vm.state}`} />{stateText(vm.state)}</span>
-          {/* What the machine is, as small labeled pieces: its Windows, its GPU and the profile it was made from. In a
-              narrow header they move to a row of their own under the icon and the name. */}
           <span className="specs">
             {vm.edition && <span className="spec-chip" title="Windows"><IconBrandWindows size={13} />{vm.edition}</span>}
             {vm.hasGpu && vm.gpuName && <span className="spec-chip" title="GPU"><IconBolt size={13} />{vm.gpuName.replace("NVIDIA GeForce ", "")}</span>}
@@ -695,8 +651,6 @@ function Header({ vm, vms = [], busy, variant, startJob, run, onRemoved, onRenam
           </button>
         )}
         <button className="icon-btn" aria-label={t("More options")} aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((m) => !m)}><IconDots size={18} /></button>
-        {/* In a narrow header the main button shows its icon alone (its label stays its name and tooltip); a job's
-            steps always show. */}
         {working ? (
           <span className="primary busy" role="status" title={working}><IconLoader2 size={17} className="spin" /><span className="ellipsis">{working}</span></span>
         ) : (
@@ -773,7 +727,6 @@ function Header({ vm, vms = [], busy, variant, startJob, run, onRemoved, onRenam
           onRename={(to) => {
             const from = vm.name;
             setRenaming(false);
-            // The plate keeps the new name while the job runs; a failure engraves the old one back.
             onRenameDraft(to);
             startJob(from, "Rename-GpuVM", { Name: from, NewName: to, Confirm: false }, () => onRenamed?.(from, to), () => onRenameDraft(null));
           }} />
@@ -786,9 +739,6 @@ function Header({ vm, vms = [], busy, variant, startJob, run, onRemoved, onRenam
   );
 }
 
-/** Names the template; the copy itself runs as a job on the machine (its button shows the progress). */
-/** Save a machine's Windows as a template. From a machine's menu it is that machine; from the Library, `vms` lists the
- *  machines to pick from. */
 export function NewTemplate({ vm: fixed, vms, onClose, onCreate }: {
   vm?: VmOverview; vms?: VmOverview[]; onClose: () => void; onCreate: (name: string, vm: string) => void;
 }) {
@@ -841,7 +791,6 @@ export function NewTemplate({ vm: fixed, vms, onClose, onCreate }: {
   );
 }
 
-/** Renames a machine that is off. The name is checked as it is typed, and the cube beside engraves it on its plate. */
 function RenameMachine({ vm, vms, onClose, onDraft, onRename }: {
   vm: VmOverview; vms: VmOverview[]; onClose: () => void; onDraft: (name: string | null) => void; onRename: (name: string) => void;
 }) {
@@ -854,8 +803,6 @@ function RenameMachine({ vm, vms, onClose, onDraft, onRename }: {
   const trimmed = name.trim();
   const nameError = vmNameError(trimmed, vms, vm.name);
   const complete = !nameError && trimmed !== vm.name;
-  // The cube stays above the scrim to show the plate taking the name: the dialog is centered in the room left of it,
-  // never over it.
   const [besideCube, setBesideCube] = useState<number | null>(null);
   useLayoutEffect(() => {
     const place = () => {
@@ -960,12 +907,9 @@ function GuestPassword({ vm, run }: { vm: VmOverview; run: Props["run"] }) {
   );
 }
 
-/** The drive as it would be with this disk at sizeGB and every VM disk full: this machine, what the other machines'
- * disks can still take, and what would be left. Changes as the slider moves. */
 export function DiskRoom({ budget, sizeGB }: { budget: DiskBudget; sizeGB: number }) {
   const used = budget.usedGB ?? 0;
   const ownPromised = Math.max(0, sizeGB - used);
-  // What the drive has now, split: this VM's file, its unwritten part, the others' unwritten parts, what is left.
   const total = used + budget.freeGB;
   const left = Math.max(0, budget.freeGB - budget.promisedGB - ownPromised);
   const pct = (gb: number) => `${Math.max(0, Math.min(100, (gb / Math.max(1, total)) * 100))}%`;
@@ -987,10 +931,8 @@ export function DiskRoom({ budget, sizeGB }: { budget: DiskBudget; sizeGB: numbe
   );
 }
 
-/** One option: icon, name and a short line that explains it, with its control at the right (or below, `wide`). */
 function OptionRow({ icon, title, value, desc, wide, section, sub, below, children }: {
   icon: React.ReactNode; title: string; value?: string; desc: string; wide?: boolean; below?: React.ReactNode; children?: React.ReactNode;
-  /** Heads a group whose rows it changes (Tipo de uso); `sub` rows belong to the group above. */
   section?: boolean; sub?: boolean;
 }) {
   return (
@@ -1006,7 +948,6 @@ function OptionRow({ icon, title, value, desc, wide, section, sub, below, childr
   );
 }
 
-/** The machine's settings, in two parts: "machine" (resources and network) and "display" (use, picture, connection). */
 function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props, "vm" | "host" | "busy" | "startJob" | "run"> & {
   part: "machine" | "display";
   onPreview?: (r: { cpu: number; memoryGB: number; gpuPercent: number; diskGB: number }) => void;
@@ -1022,7 +963,6 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
     codec: vm.client?.codec ?? "auto",
     bitrateKbps: vm.client?.bitrateKbps ?? 0,
     networkIsolation: vm.options!.networkIsolation ?? true,
-    // "default": the monitor chosen in Preferences.
     monitor: vm.client?.monitor ?? "default",
     forAgents: vm.use === "agent" || (vm.forAgents ?? false),
     agentUser: (vm.agentUser ?? vm.agent?.user ?? "agent") as "agent" | "own",
@@ -1038,8 +978,7 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
   const hostMem = Math.round(host?.memoryGB ?? 16);
   const maxCpu = Math.max(2, hostCpu - 1);
   const maxMem = Math.max(4, hostMem - 4);
-  // A disk only grows, and never past what the drive can hold once every VM disk on it is full (the module checks
-  // the same limit). Without the budget (older module), the old rule.
+  // The module enforces the same limit; without a budget (older module), the old rule.
   const budget = vm.options!.diskBudget ?? null;
   const maxDisk = budget ? Math.max(initial.diskGB, Math.floor(budget.maxGB / 8) * 8)
     : Math.max(initial.diskGB, Math.min(1024, initial.diskGB + (vm.options!.diskType === "Fixed" ? vm.options!.diskFreeGB - 10 : 1024)));
@@ -1049,7 +988,6 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
   const clientDirty = draft.resolution !== initial.resolution || draft.fps !== initial.fps || draft.displayMode !== initial.displayMode
     || Object.keys(streamChanges).length > 0;
   const use = streamUseOf(draft);
-  // "Custom" picked by hand stays chosen until a use is picked; a change by hand also lands there.
   const [customUse, setCustomUse] = useState(false);
   const shownUse = customUse ? null : use;
   const [advanced, setAdvanced] = useState(false);
@@ -1064,8 +1002,6 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
     if (clientDirty && !(await run(vm.name, t("Saving"), () => api.setClient(vm.name, draft.resolution, draft.fps, draft.displayMode !== initial.displayMode ? draft.displayMode : undefined, streamChanges)))) return;
     if (networkDirty && !(await run(vm.name, t("Changing network"), () => api.setNetworkIsolation(vm.name, draft.networkIsolation)))) return;
     if (monitorDirty && !(await run(vm.name, t("Saving"), () => api.setMonitor(vm.name, draft.monitor)))) return;
-    // The use and the agents' user install or remove the guest agent (Set-GpuVMUse, Set-GpuVMAgentUser): jobs, with
-    // their steps on the button (back to a person's machine asks for administrator, like a deletion).
     if (draft.forAgents !== initial.forAgents) {
       const user = draft.agentUser;
       startJob(vm.name, "Set-GpuVMUse", { Name: vm.name, Use: draft.forAgents ? "agent" : "none" },
@@ -1116,7 +1052,6 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
         {part === "display" && (
           <>
         {vm.streaming && (
-          // Five uses: a list with each one's icon and what it's for (a row of five doesn't fit).
           <OptionRow icon={<IconDeviceGamepad2 size={17} />} title={t("Use|machine")} section
             desc={draft.forAgents ? AGENT_USE.description : shownUse ? USES.find((u) => u.id === shownUse)!.description : t("Set by hand. Pick a use to go back to its values.")}>
             <Dropdown<string> short label={t("Use|machine")} value={draft.forAgents ? AGENT_USE.id : shownUse ?? "custom"} onChange={(id) => {
@@ -1236,7 +1171,6 @@ function Options({ part, vm, host, busy, startJob, run, onPreview }: Pick<Props,
   );
 }
 
-/** The space the machine is in: changing it moves the machine there, and the cube takes that space's ambient. */
 function SpaceRow({ name, vms }: { name: string; vms: VmOverview[] }) {
   const spaces = useSpaces();
   const space = useSpaceOf(name);
@@ -1260,7 +1194,6 @@ function SpaceRow({ name, vms }: { name: string; vms: VmOverview[] }) {
   );
 }
 
-/** A tiny cube with the face it shows filled, so each fixed view says which side it is. */
 function FaceGlyph({ face }: { face: CubeView }) {
   const faces: Record<CubeView, string> = {
     front: "M3 6h7v7H3z", right: "M10 6l3-3v7l-3 3z", top: "M3 6l3-3h7l-3 3z", back: "M6 3h7v7H6z", left: "M3 6l3-3v7l-3 3z",

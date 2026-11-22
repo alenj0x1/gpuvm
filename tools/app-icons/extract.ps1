@@ -1,9 +1,4 @@
-# Extracts each catalog app's own icon from its official installer into app/src/assets/apps/<id>.png (64 px).
-# The installers are downloaded and checked (signer, hash) beforehand by whoever runs this; nothing is executed,
-# the icon resources are only read. Run on Windows with PowerShell 7:
 #   pwsh tools/app-icons/extract.ps1 -InstallerDir <folder with steam.exe, epic.msi, ...>
-# Some installers carry a generic setup icon (Chrome, Brave) or a boxed one (Firefox, Spotify); -Source gives those
-# the installed program or the publisher's own icon (.exe or .png) instead:
 #   -Source @{ chrome = 'C:\Program Files\Google\Chrome\Application\chrome.exe'; firefox = '<firefox.com favicon>.png' }
 param(
     [Parameter(Mandatory)][string]$InstallerDir,
@@ -20,7 +15,7 @@ public static extern uint PrivateExtractIcons(string file, int index, int cx, in
 public static extern bool DestroyIcon(IntPtr icon);
 '@
 
-# The first icon of the file at 256 px (Windows picks the closest size the file has), scaled down smoothly.
+# Windows picks the closest size the file has.
 function Save-FileIcon {
     param([string]$Path, [string]$Target)
     $handles = [IntPtr[]]::new(1)
@@ -69,8 +64,7 @@ function Export-MsiIcon {
 New-Item -ItemType Directory -Force $OutDir | Out-Null
 $catalog = (Get-Content -Raw (Join-Path $PSScriptRoot '..\..\apps\catalog.json') | ConvertFrom-Json).apps
 foreach ($id in $catalog.PSObject.Properties.Name) {
-    # An app with its own .svg (Spotify: the green logo, drawn from the publisher's mark) is left as it is.
-    if (Test-Path -LiteralPath (Join-Path $OutDir "$id.svg")) { "$id: svg"; continue }
+    if (Test-Path -LiteralPath (Join-Path $OutDir "$id.svg")) { "${id}: svg"; continue }
     $target = Join-Path $OutDir "$id.png"
     if ($Source[$id] -and $Source[$id].EndsWith('.png')) {
         $image = [Drawing.Image]::FromFile($Source[$id])

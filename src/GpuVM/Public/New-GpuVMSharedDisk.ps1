@@ -22,7 +22,6 @@ function New-GpuVMSharedDisk {
     try {
         Write-Step "Creating the disk '$Name' of $SizeGB GB"
         New-VHD -Path $path -SizeBytes ([uint64]$SizeGB * 1GB) -Dynamic | Out-Null
-        # Formatted here, without a drive letter on this PC; the VM gives it one when it is attached.
         Mount-VHD -Path $path -NoDriveLetter
         try {
             $number = (Get-VHD -Path $path).DiskNumber

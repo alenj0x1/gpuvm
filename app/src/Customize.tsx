@@ -13,7 +13,6 @@ import { ACCENTS, usePrefs } from "./prefs";
 import { Segmented, Slider, portalRoot } from "./ui";
 import { t } from "./i18n";
 
-/** The color the decoration is drawn with right now: the machine's own or the accent. */
 function useDecorColor(decor: Decor) {
   const prefs = usePrefs();
   const light = document.documentElement.dataset.theme === "light";
@@ -22,23 +21,17 @@ function useDecorColor(decor: Decor) {
   return own ? (light ? own.light : own.dark) : light ? accent.light : accent.dark;
 }
 
-// Where a sticker or figure added with a click goes: the first free spot, so they don't pile up.
 const STICKER_SPOTS: [number, number][] = [[-0.45, 0.45], [0.45, 0.45], [-0.45, -0.1], [0.45, -0.1], [0, 0.72], [0, 0.18]];
 const FIGURE_SPOTS: [number, number][] = [[0.42, -0.3], [-0.42, -0.3], [0.42, 0.42], [-0.42, 0.42], [0, 0.05]];
 const free = <T,>(spots: [number, number][], taken: T[], at: (t: T) => [number, number]) =>
   spots.find(([a, b]) => taken.every((t) => { const [x, y] = at(t); return Math.hypot(x - a, y - b) > 0.35; })) ?? spots[Math.floor(Math.random() * spots.length)];
 
-/** Copied stickers and figures, kept between machines: copy on one, paste on another. `pastes` counts the pastes since
- *  the copy, so each one lands a cell further aside instead of on top of the last. */
 let clipboard: { stickers: Decor["stickers"]; figures: Decor["figures"]; from: DecorSource | null; pastes: number } | null = null;
-/** The editors open, the last one on top (Create machine over a machine's page): only the top one pastes. */
 const editors: DecorSource[] = [];
 
-/** The selection and right-click menu shared by the cube and the panel. */
 export function useDecorEdit(source: DecorSource) {
   const [selected, setSelected] = useState<string[]>([]);
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
-  // Each "Decorate at random" turns the cube once, as Home's showcase does.
   const [spins, setSpins] = useState(0);
   useEffect(() => { setSelected([]); setMenu(null); }, [source]);
   const edit: CubeEdit = { selected, onSelect: setSelected, onMenu: (id, x, y) => setMenu({ id, x, y }), write: source.set };
@@ -54,7 +47,6 @@ export function useDecorEdit(source: DecorSource) {
       randomize: () => { source.set(randomDecor()); setSelected([]); setSpins((n) => n + 1); },
       copy,
       cut: (ids: string[]) => { copy(ids); if (clipboard) clipboard.from = null; base.remove(ids); },
-      /** Pastes what was copied, on any machine; on the same one, a cell aside from the originals. */
       paste: () => {
         const c = clipboard;
         if (!c || (!c.stickers.length && !c.figures.length)) return;
@@ -71,7 +63,6 @@ export function useDecorEdit(source: DecorSource) {
     };
   }, [source]);
   useEffect(() => { editors.push(source); return () => { const i = editors.lastIndexOf(source); if (i >= 0) editors.splice(i, 1); }; }, [source]);
-  // Ctrl+V pastes even with nothing picked, in the editor on top.
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (editors[editors.length - 1] !== source || (e.target as HTMLElement)?.closest("input, textarea, [contenteditable]")) return;
@@ -81,8 +72,6 @@ export function useDecorEdit(source: DecorSource) {
     return () => window.removeEventListener("keydown", key);
   }, [ops, source]);
 
-  // With something picked (not while typing): Delete removes it, Ctrl+D duplicates, Ctrl+A picks everything, the
-  // arrows move it one cell (with Shift, four), Escape lets go.
   useEffect(() => {
     if (!selected.length) return;
     const key = (e: KeyboardEvent) => {
@@ -113,7 +102,6 @@ export function useDecorEdit(source: DecorSource) {
     return () => { window.removeEventListener("pointerdown", close, true); window.removeEventListener("keydown", key); };
   }, [menu]);
   const act = (f: () => void) => () => { f(); setMenu(null); };
-  // The menu acts on everything picked when it was opened on one of them.
   const targets = menu ? (selected.includes(menu.id) ? selected : [menu.id]) : [];
   const menuNode = menu && createPortal(
     <div ref={menuRef} className="menu floating decor-menu" role="menu"
@@ -135,7 +123,6 @@ export function useDecorEdit(source: DecorSource) {
 }
 
 const STICKER_MIN = 0.28, STICKER_MAX = 1.4, FIGURE_MIN = 0.5, FIGURE_MAX = 1.8;
-/** How big a sticker is placed (cube units; a face is 2): its 100 %. */
 export const STICKER_SIZE = 0.7;
 
 function decorOps(change: (f: (d: Decor) => Decor) => void, select: (ids: string[]) => void) {
@@ -168,7 +155,6 @@ function decorOps(change: (f: (d: Decor) => Decor) => void, select: (ids: string
     set: (id: string, rot: number, size: number) => both(id,
       (s) => { const m = 1 - size / 2; return { ...s, rot, size, u: Math.max(-m, Math.min(m, s.u)), v: Math.max(-m, Math.min(m, s.v)) }; },
       (f) => ({ ...f, rot, size })),
-    /** Copies, a cell aside, and the copies become what is picked. */
     duplicate(ids: string[]) {
       const made: string[] = [];
       change((d) => {
@@ -182,7 +168,6 @@ function decorOps(change: (f: (d: Decor) => Decor) => void, select: (ids: string
       change((d) => ({ ...d, stickers: d.stickers.filter((s) => !ids.includes(s.id)), figures: d.figures.filter((f) => !ids.includes(f.id)) }));
       select([]);
     },
-    /** Moves what is picked on its face (stickers) or on the top (figures); right and up are positive. */
     nudge(ids: string[], dx: number, dy: number) {
       each(ids,
         (s) => { const m = 1 - s.size / 2; return { ...s, u: Math.max(-m, Math.min(m, s.u + dx)), v: Math.max(-m, Math.min(m, s.v + dy)) }; },
@@ -191,7 +176,6 @@ function decorOps(change: (f: (d: Decor) => Decor) => void, select: (ids: string
   };
 }
 
-/** Half as it looks in light, half in dark, split by a wavy diagonal, like the accent swatches in Ajustes. */
 function Swatch({ light, dark, on, title, onClick }: { light: string; dark: string; on: boolean; title: string; onClick: () => void }) {
   return (
     <button type="button" role="radio" aria-checked={on} title={title} aria-label={title} className={`swatch${on ? " on" : ""}`} onClick={onClick}>
@@ -208,14 +192,12 @@ const urlOf = (img: HTMLCanvasElement) => { let u = urls.get(img); if (!u) { u =
 const StickerThumb = memo(function StickerThumb({ id, color, small }: { id: string; color: string; small?: boolean }) {
   const [, tick] = useState(0);
   const img = stickerImage(id, color);
-  // Only a custom image still loading listens for when it is ready.
   useEffect(() => (img ? undefined : onDecorChange(() => tick((n) => n + 1))), [img]);
   const src = img ? urlOf(img) : "";
   const size = small ? { width: 24, height: 24 } : undefined;
   return src ? <img className="decor-thumb" style={size} src={src} alt="" draggable={false} /> : <span className="decor-thumb" style={size} />;
 });
 
-/** The figure turning slowly while the pointer is over its tile. */
 const FigureThumb = memo(function FigureThumb({ id, color, spin, size = 64 }: { id: string; color: string; spin: boolean; size?: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const yaw = useRef(0.6);
@@ -231,7 +213,6 @@ const FigureThumb = memo(function FigureThumb({ id, color, spin, size = 64 }: { 
       last = now;
       g.setTransform(1, 0, 0, 1, 0, 0);
       g.clearRect(0, 0, cv.width, cv.height);
-      // Still: the kept bitmap. Turning (pointer over the tile): drawn live.
       if (spin) drawFigureThumb(g, id, size, yaw.current, color, dpr);
       else g.drawImage(figureThumbImage(id, size, color, dpr), 0, 0);
       if (spin) frame = requestAnimationFrame(draw);
@@ -255,13 +236,8 @@ function Tile({ kind, id, label, onAdd, onContext, children }: {
   );
 }
 
-/** The Personalizar section: the machine's color, its LED sign, stickers for the glass and figures for its top.
- *  The cube beside it is where they are placed: dragged in, moved, turned and taken off. */
-/** What is already on the machine, as chips: a click picks it on the cube, the cross takes it off, a right click
- *  opens the same menu as on the cube. */
 function Placed({ items, selected, onPick, onRemove, onMenu }: {
   items: { id: string; label: string; thumb: React.ReactNode }[]; selected: string[];
-  /** `add`: Shift or Ctrl held, the chip joins or leaves the picked ones. */
   onPick: (id: string, add: boolean) => void; onRemove: (id: string) => void; onMenu: (id: string, x: number, y: number) => void;
 }) {
   if (!items.length) return null;
@@ -279,9 +255,7 @@ function Placed({ items, selected, onPick, onRemove, onMenu }: {
 }
 
 export function Customize({ source, ops, selected, setSelected, openMenu, bare, first }: Pick<ReturnType<typeof useDecorEdit>, "source" | "ops" | "selected" | "setSelected" | "openMenu"> & {
-  /** Without its own card (inside Create machine, which already frames each section). */
   bare?: boolean;
-  /** Rows that go before the decoration (the machine's space, on its page). */
   first?: React.ReactNode;
 }) {
   const decor = useSource(source);
@@ -456,7 +430,6 @@ export function Customize({ source, ops, selected, setSelected, openMenu, bare, 
               <span className="opt-desc">{pickedSticker ? t("On the glass. Delete removes it.") : t("On top of the cube. Delete removes it.")}</span>
             </div>
             <div className="opt-ctl decor-picked-ctl">
-              {/* Size in percent of how it is first placed (a sticker starts at half a face). */}
               <div className="field">
                 <div className="field-top"><span>{t("Size")}</span><strong>{Math.round(picked.size * (pickedSticker ? 100 / STICKER_SIZE : 100))} %</strong></div>
                 <Slider label={t("Size")} value={Math.round(picked.size * (pickedSticker ? 100 / STICKER_SIZE : 100))} step={5}

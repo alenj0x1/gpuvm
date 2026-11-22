@@ -11,14 +11,6 @@ import vlc from "./assets/apps/vlc.png";
 import obs from "./assets/apps/obs.png";
 import epic from "./assets/apps/epic.png";
 
-// A machine's screen for the website (2026-11-21, asked by the person): the machine's pixel landscape as wallpaper with
-// a Windows desktop on it (icons, the taskbar with its clock, an open window), different for each sample machine so
-// switching machines shows another Windows. Used wherever the site shows a machine's picture (the viewer, agents).
-// Windows' own marks are drawn faithfully; the apps use their real icons. Every text follows the page's language.
-// With a `stage` the desktop is played by a script instead (the agents chapter): which windows are open and where,
-// what the terminal shows, the browser's page, the Paint canvas. The layout helpers below (stageBox, paintLayout,
-// browserLayout) are what both the desktop and the script use, so the agent's cursor lands where things are.
-
 type Os = "win10" | "win11";
 export type Kind = "terminal" | "explorer" | "notes" | "paint" | "browser";
 interface Desk { scene: PixelSceneKind; os: Os; icons: [string, string][]; pinned: string[]; window: Kind | null }
@@ -26,10 +18,7 @@ interface Desk { scene: PixelSceneKind; os: Os; icons: [string, string][]; pinne
 const RECYCLE = "recycle", FOLDER = "folder", TERMINAL = "terminal", EXPLORER = "explorer", NOTEPAD = "notepad", PAINT = "paint";
 const APP: Record<string, string> = { chrome, steam, discord, spotify, brave, firefox, vlc, obs, epic };
 const BROWSERS = new Set([chrome, brave, firefox]);
-/** The glyphs a script can put on the desktop or the taskbar (and find there by `data-pin`). */
 export const GLYPHS = { chrome, vlc, terminal: TERMINAL, paint: PAINT, explorer: EXPLORER };
-
-/* ---------- Texts, in the page's language ---------- */
 
 const TEXT = {
   es: {
@@ -56,7 +45,6 @@ const TEXT = {
 type Texts = (typeof TEXT)["es"];
 const label = (tx: Texts, key: string) => (key in tx && typeof tx[key as keyof Texts] === "string" ? (tx[key as keyof Texts] as string) : key);
 
-/** What is in Received (the text files open in Notepad). */
 const FILES: Record<Lang, { name: string; size: string; text?: string }[]> = {
   es: [
     { name: "informe-pruebas.md", size: "18 KB", text: "# Prueba del instalador\n\n- Instaló en 41 s, sin errores\n- La app abrió y detectó la GPU\n- Capturas en la carpeta capturas" },
@@ -72,7 +60,6 @@ const FILES: Record<Lang, { name: string; size: string; text?: string }[]> = {
   ],
 };
 
-/** The sample videos of the browser's page: a landscape each (the player shows the first). */
 export const VIDEOS: { scene: PixelSceneKind; length: number; title: Record<Lang, string> }[] = [
   { scene: "alpine", length: 252, title: { es: "Amanecer en el lago alpino", en: "Dawn at the alpine lake" } },
   { scene: "sakura", length: 185, title: { es: "Cerezos al atardecer", en: "Cherry trees at sunset" } },
@@ -91,24 +78,18 @@ export const DESKS: Record<string, Desk> = {
     pinned: [EXPLORER, chrome, PAINT, TERMINAL], window: "paint" },
 };
 
-/* ---------- Layout shared with the agents' script ---------- */
-
 export interface Box { x: number; y: number; w: number; h: number }
 type Point = [number, number];
-/** A window's place in fractions of the desktop above the taskbar: x, y, width, height. */
 export type Frac = [number, number, number, number];
 export const BAR = 34;
 const TITLE = 26;
 export const stageBox = (at: Frac, W: number, H: number): Box => ({ x: Math.round(W * at[0]), y: Math.round(H * at[1]), w: Math.round(W * at[2]), h: Math.round(H * at[3]) });
 
-/** Paint's colors and tools, as its toolbar shows them. */
 export const PAINT_COLORS = ["#23252a", "#ffffff", "#1d2654", "#56619f", "#161c40", "#9cc3f0", "#f7d774", "#fff4cc", "#b5483e", "#7a5240", "#ffc857", "#3c4a86"];
 export const PAINT_TOOLS = ["pencil", "bucket", "brush"] as const;
 export type PaintTool = (typeof PAINT_TOOLS)[number];
 const P_TOOLS = 34, P_PAD = 10, P_TOOL_X = 8, P_TOOL_STEP = 24, P_CURRENT_X = 95, P_SWATCH_X = 122, P_SWATCH = 11;
-/** The colors sit closer in a narrow Paint, so all of them fit. */
 const swatchStep = (w?: number) => (w !== undefined && w < 330 ? 13 : 15);
-/** Where Paint's canvas, tools and colors are, for a Paint window at `b` (desktop pixels). */
 export function paintLayout(b: Box) {
   const mid = b.y + TITLE + P_TOOLS / 2;
   return {
@@ -118,7 +99,6 @@ export function paintLayout(b: Box) {
   };
 }
 
-/** Where the browser's address bar, page, video thumbnails and player are, for a browser window at `b`. */
 export function browserLayout(b: Box) {
   const address: Box = { x: b.x + 8, y: b.y + TITLE + 4, w: b.w - 16, h: 26 };
   const page: Box = { x: b.x, y: b.y + TITLE + 34, w: b.w, h: b.h - TITLE - 34 };
@@ -132,20 +112,13 @@ export function browserLayout(b: Box) {
   return { address, page, thumbs, player, side, play: [player.x + player.w / 2, player.y + player.h / 2] as Point };
 }
 
-/* ---------- What a script shows ---------- */
-
 export interface PaintStage { color?: number; tool?: PaintTool; background?: string; fills?: { pts: Point[]; color: string }[]; title?: string }
-/** A terminal's lines; a line made by `termBar` is drawn as winget's progress bar. */
 export interface TermStage { lines: string[]; input: string }
 const BAR_MARK = "\u0001";
-/** winget's download bar: `done` from 0 to 1, `cells` characters wide, `text` after it. */
 export const termBar = (done: number, cells: number, text: string) => `${BAR_MARK}${done}|${cells}|${text}`;
 export interface BrowserStage { address: string; editing?: boolean; page: "new" | "site" | "video"; playing?: boolean }
 export interface StageWindow { kind: Kind; at: Frac; paint?: PaintStage; term?: TermStage; browser?: BrowserStage }
-/** The desktop as a script has it now: its windows (the last one in front), and icons or pinned apps it added. */
 export interface Stage { windows: StageWindow[]; icons?: [string, string][]; pinned?: string[] }
-
-/* ---------- Drawings ---------- */
 
 function Glyph({ id, size = 22 }: { id: string; size?: number }) {
   if (APP[id] || id.includes("/") || id.startsWith("data:")) return <img src={APP[id] ?? id} width={size} height={size} alt="" draggable={false} />;
@@ -164,7 +137,6 @@ function Glyph({ id, size = 22 }: { id: string; size?: number }) {
   }
 }
 
-/** Paint's tools, drawn as its toolbar draws them. */
 function ToolIcon({ tool }: { tool: PaintTool }) {
   const line = { fill: "none", stroke: "#3b3b3b", strokeWidth: 1.3, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
   if (tool === "pencil") return <svg viewBox="0 0 16 16"><path d="M3 13l.6-2.6L10.8 3.2a1.2 1.2 0 0 1 1.7 0l.3.3a1.2 1.2 0 0 1 0 1.7L5.6 12.4z" {...line} /><path d="M9.6 4.4l2 2" {...line} /></svg>;
@@ -185,9 +157,6 @@ function Clock({ lang }: { lang: Lang }) {
   return <span className="md-clock"><b>{now.toLocaleTimeString(loc, { hour: lang === "es" ? "2-digit" : "numeric", minute: "2-digit" })}</b><small>{now.toLocaleDateString(loc, { day: "2-digit", month: "2-digit", year: "numeric" })}</small></span>;
 }
 
-/* ---------- Windows ---------- */
-
-/** Each window's smallest size, so its text never breaks, and where it opens (fractions of the desktop). */
 const MIN: Record<Kind, [number, number]> = { terminal: [300, 120], explorer: [330, 180], notes: [240, 130], paint: [360, 240], browser: [380, 240] };
 const START: Record<Kind, Frac> = { terminal: [0.24, 0.1, 0.52, 0.4], explorer: [0.22, 0.12, 0.56, 0.5], notes: [0.3, 0.16, 0.44, 0.4], paint: [0.14, 0.05, 0.8, 0.8], browser: [0.16, 0.05, 0.7, 0.8] };
 const ICON_OF: Record<Kind, string> = { terminal: TERMINAL, explorer: EXPLORER, notes: NOTEPAD, paint: PAINT, browser: chrome };
@@ -201,10 +170,8 @@ interface WinProps {
 function Window({ kind, os, tx, lang, box, max, front, locked, icon, file, onOpenFile, onFocus, onMove, onMin, onMax, onClose, bounds, title, body, appear }: WinProps) {
   const files = FILES[lang];
   const opened = file !== undefined ? files[file] : undefined;
-  // The page inside the browser opens in the page's own mode and language (the head script honors them for that load).
   const theme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
   const name = title ?? { terminal: "Windows PowerShell", explorer: tx.received, notes: `${opened?.name ?? tx.notesFile}: ${tx.notepad}`, paint: `${tx.untitled}: Paint`, browser: "gpuvm" }[kind];
-  // Dragging the title bar moves it; an edge or the corner resizes it, never below its minimum nor out of the desktop.
   const drag = (e: ReactPointerEvent, mode: "move" | "e" | "s" | "se") => {
     if (locked || e.button !== 0) return;
     e.preventDefault(); e.stopPropagation();
@@ -271,7 +238,6 @@ function Window({ kind, os, tx, lang, box, max, front, locked, icon, file, onOpe
 
 const Lock = () => <svg className="md-lock" width="10" height="10" viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="#6b6b6b" /><path d="M5 7V5a3 3 0 0 1 6 0v2" stroke="#6b6b6b" strokeWidth="1.6" fill="none" /></svg>;
 
-/** PowerShell that answers a few commands, enough to type in it. */
 function Terminal({ tx }: { tx: Texts }) {
   const prompt = "PS C:\\Users\\Ale> ";
   const [lines, setLines] = useState<string[]>([`${prompt}nvidia-smi --query-gpu=name,memory.used --format=csv`, "name, memory.used [MiB]", "NVIDIA GeForce RTX 4060, 1342 MiB"]);
@@ -305,7 +271,6 @@ function Terminal({ tx }: { tx: Texts }) {
   );
 }
 
-/** The terminal as a script has it: its lines and what is being typed, the newest at the bottom. */
 function ScriptTerminal({ term }: { term: TermStage }) {
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => { const el = end.current?.parentElement; if (el) el.scrollTop = el.scrollHeight; }, [term]);
@@ -321,7 +286,6 @@ function ScriptTerminal({ term }: { term: TermStage }) {
   );
 }
 
-/** Paint: its tools, its colors (the chosen one beside them) and the canvas, with what the bucket filled. */
 function PaintBody({ stage, width }: { stage: PaintStage; width?: number }) {
   const color = PAINT_COLORS[stage.color ?? 0];
   return (
@@ -345,7 +309,6 @@ function PaintBody({ stage, width }: { stage: PaintStage; width?: number }) {
 
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
-/** A video playing on the browser's page: a landscape as its picture, its bar moving while it plays. */
 function Player({ playing, rect, tx, lang }: { playing: boolean; rect: Box; tx: Texts; lang: Lang }) {
   const v = VIDEOS[0];
   const [time, setTime] = useState(0);
@@ -371,7 +334,6 @@ function Player({ playing, rect, tx, lang }: { playing: boolean; rect: Box; tx: 
   );
 }
 
-/** The browser as a script has it: a new tab, the videos site or one of its videos playing. */
 function ScriptBrowser({ b, box, tx, lang }: { b: BrowserStage; box: Box; tx: Texts; lang: Lang }) {
   const L = browserLayout(box);
   const rel = (r: Box): Box => ({ x: r.x - L.page.x, y: r.y - L.page.y, w: r.w, h: r.h });
@@ -521,21 +483,12 @@ const CSS = `
 @media (max-width: 560px) { .md-icons { display: none; } .md-search { display: none; } }
 `;
 
-/* ---------- The desktop ---------- */
-
-/** Which window a desktop icon opens (folders open the Explorer); apps only get selected. */
 const OPENS: Record<string, Kind> = { [FOLDER]: "explorer", [EXPLORER]: "explorer", [TERMINAL]: "terminal", [NOTEPAD]: "notes", [PAINT]: "paint",
   [chrome]: "browser", [brave]: "browser", [firefox]: "browser" };
 
 interface Win { kind: Kind; box: Box; min: boolean; max: boolean; icon?: string; file?: number }
 const noop = () => {};
 
-/** The machine `vm`'s screen; `children` go over the desktop (the agent's overlay, for one). It can be used like a
- *  desktop: windows move, resize (never below the size their text needs), minimize, maximize and close; icons are
- *  selected with a click and folders open with a double click; the taskbar brings windows back. `locked`: the windows
- *  stay where they are (under an agent's overlay, whose strokes are drawn where the window is). `stage`: a script
- *  plays the desktop (see Stage), which then stays as the script has it. */
-/** `bare`: only the wallpaper, icons and taskbar, no window open (the app's placement preview). */
 export function MachineDesktop({ vm, children, locked, stage, bare }: { vm: string; children?: ReactNode; locked?: boolean; stage?: Stage; bare?: boolean }) {
   const d = DESKS[vm] ?? DESKS.win10;
   const lang = getLang();
@@ -561,7 +514,6 @@ export function MachineDesktop({ vm, children, locked, stage, bare }: { vm: stri
     const w = Math.min(W, Math.max(mw, W * fw)), h = Math.min(H - BAR, Math.max(mh, (H - BAR) * fh));
     return { x: Math.max(0, Math.min(W - w, W * fx)), y: Math.max(0, Math.min(H - BAR - h, (H - BAR) * fy)), w, h };
   };
-  // A new machine starts with its own window where it belongs.
   useLayoutEffect(() => {
     setWins(d.window && !bare ? [{ kind: d.window, box: place(d.window), min: false, max: false }] : []);
     setOrder(d.window ? [d.window] : []);

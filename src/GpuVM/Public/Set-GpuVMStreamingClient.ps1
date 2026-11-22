@@ -7,13 +7,13 @@
     param(
         [Parameter(Mandatory)][string]$Name,
         [ValidatePattern('^\d{3,5}x\d{3,5}$')][string]$Resolution,
-        # 0 = the host monitor's refresh rate, read each time the VM is opened (lab 022).
+        # 0 = the host monitor's refresh rate, read each time the VM is opened.
         [ValidateScript({ $_ -eq 0 -or ($_ -ge 10 -and $_ -le 480) })][int]$Fps,
         [ValidateRange(0, 500000)][int]$BitrateKbps = -1,
         [ValidateSet('auto', 'H.264', 'HEVC', 'AV1')][string]$Codec,
         # windowed: a window the size of the resolution, which can be resized.
         [ValidateSet('fullscreen', 'windowed', 'borderless')][string]$DisplayMode,
-        # Unset = leave as is. V-Sync shows each frame whole; frame pacing evens them out (labs 020 and 021).
+        # Unset = leave as is. V-Sync shows each frame whole; frame pacing evens them out.
         [Nullable[bool]]$VSync,
         [Nullable[bool]]$FramePacing,
         # capture: the VM takes the mouse (games); absolute: the pointer moves freely, as in remote desktop.

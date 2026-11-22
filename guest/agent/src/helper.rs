@@ -1,6 +1,4 @@
-//! The session helper: started by the service in the signed-in user's session with that user's medium token, it
-//! talks to the service over its stdin/stdout (unauthenticated frames: only the service holds these pipes) and does
-//! the on-screen work. It never runs elevated (the service refuses to start it with an elevated token).
+//! Never runs elevated; its frames are unauthenticated because only the service holds these pipes.
 use crate::capture::{self, CallResult};
 use crate::proto::*;
 use crate::state;
@@ -17,16 +15,9 @@ use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
 
 type Out = Arc<Mutex<File>>;
 
-/// Requests the host cancelled: long work (exec.run, input.act) checks this and stops.
 static CANCELLED: Mutex<Vec<u64>> = Mutex::new(Vec::new());
 
-/// Where a request runs. The main thread only reads frames and routes them, so a cancel always gets through and
-/// nothing waits behind a long command (lab 058):
-/// - `Own`: a thread of its own per request (commands and files: long, and independent of each other);
-/// - `Input`: one thread, first in first out (actions keep the order they were sent in);
-/// - `Screen`: one thread for captures and the cheap reads (agent.info, screen.state/refresh), so a screenshot never
-///   waits behind a command, an action or a slow UI Automation call;
-/// - `Ui`: one thread for UI Automation (its element cache lives in that thread).
+/// The main thread only routes frames, so a cancel always gets through; UI Automation's element cache lives in the `Ui` thread.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Lane {
     Own,
@@ -44,10 +35,9 @@ pub fn lane(method: &str) -> Lane {
     }
 }
 
-/// Requests waiting in one lane: more than the service lets in flight (32), so a full lane means something is stuck.
+/// More than the service lets in flight (32): a full lane means something is stuck.
 const LANE_QUEUE: usize = 64;
 
-/// A worker thread that runs the jobs sent to it one at a time, in the order they were sent.
 pub fn spawn_lane<J: Send + 'static>(name: &str, run: impl Fn(J) + Send + 'static) -> std::sync::mpsc::SyncSender<J> {
     let (tx, rx) = std::sync::mpsc::sync_channel::<J>(LANE_QUEUE);
     let _ = std::thread::Builder::new().name(format!("lane-{name}")).spawn(move || {
@@ -76,15 +66,14 @@ fn send(out: &Out, v: &Value, blob: Option<&[u8]>) {
     let mut f = out.lock().unwrap();
     let mut bytes = serde_json::to_vec(v).unwrap();
     let mut blob = blob;
-    // room for what the service adds (seq, MAC, blob fields: review M3) and the blob limit checked BEFORE writing
-    // the JSON that announces it (review L1)
+    // room for what the service adds (seq, MAC, blob fields); the blob limit is checked before writing the JSON that announces it
     if bytes.len() > MAX_JSON - 1024 || blob.is_some_and(|b| b.len() > MAX_BLOB) {
         let id = v["id"].as_u64().unwrap_or(0);
         bytes = serde_json::to_vec(&json!({"t": "res", "id": id, "ok": false, "error": {"code": "too_large", "message": "the result is over the frame limits (63 KiB JSON, 16 MiB blob)"}})).unwrap();
         blob = None;
     }
     if write_frame(&mut *f, KIND_JSON, &bytes).is_err() || blob.is_some_and(|b| write_frame(&mut *f, KIND_BLOB, b).is_err()) {
-        std::process::exit(0); // the service is gone
+        std::process::exit(0);
     }
 }
 
@@ -103,7 +92,7 @@ fn info() -> Value {
     let screen = capture::output_rect().map(|r| json!({"w": r.right - r.left, "h": r.bottom - r.top}));
     json!({"version": VERSION, "os": os, "lang": lang, "user": user, "session": session, "screen": screen, "signedIn": true,
            "integrity": crate::token::il_name(state::own_integrity()), "agentUser": crate::files::root().is_ok(),
-           // the profile folder files.* paths are relative to (normally C:\Users\agent, but Windows may pick another name)
+           // normally C:\Users\agent, but Windows may pick another name
            "home": std::env::var("USERPROFILE").unwrap_or_default(),
            "displays": capture::displays_json(), "noDisplay": crate::display::no_display(), "streamMode": crate::display::stream_info(), "diag": crate::display::diag()})
 }
@@ -114,7 +103,6 @@ fn dispatch(method: &str, p: &Value, blob: Option<Vec<u8>>, id: u64) -> CallResu
         "screen.capture" => capture::screen_capture(p),
         "screen.state" => Ok((state::screen_state(), None)),
         "screen.refresh" => Ok((refresh(), None)),
-        // one at a time and in order: the Input lane runs them
         "input.act" => crate::input::input_act(p, id),
         "ui.tree" => crate::uia::ui_tree(p),
         "ui.invoke" => crate::uia::ui_invoke(p),
@@ -126,22 +114,15 @@ fn dispatch(method: &str, p: &Value, blob: Option<Vec<u8>>, id: u64) -> CallResu
     }
 }
 
-/// screen.refresh: repaint the whole desktop so the compositor presents a new frame (a still desktop gives a
-/// duplication-based stream nothing to send, and Sunshine's ddx stayed black 1 time in 3 when a viewer connected,
-/// lab 054). Repaints only: no window is moved, no input is sent, the cursor stays where it is.
 pub fn refresh() -> Value {
     use windows::Win32::Graphics::Gdi::*;
     let t = Instant::now();
     let ok = unsafe { RedrawWindow(None, None, None, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN | RDW_UPDATENOW).as_bool() };
-    // a repaint of identical pixels barely helped (agent-ui: 3/10 vs 1/10 pictures on open): add a REAL pixel change
-    // nobody can see or touch
+    // a repaint of identical pixels barely helped: add a real pixel change nobody can see or touch
     let blipped = blip();
     json!({"ok": ok || blipped, "blip": blipped, "ms": (t.elapsed().as_secs_f64() * 1e4).round() / 10.0})
 }
 
-/// A 1x1 window at the screen's top-left corner, alpha 1/255, for ~50 ms: the compositor has a changed pixel to
-/// present, so a duplication-based stream sends a frame of a still desktop. Never activated, never takes focus or
-/// input (WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW, SW_SHOWNOACTIVATE), destroyed right after.
 fn blip() -> bool {
     use windows::core::PCWSTR;
     use windows::Win32::UI::WindowsAndMessaging::*;
@@ -178,7 +159,6 @@ fn guarded(method: &str, p: &Value, blob: Option<Vec<u8>>, id: u64) -> CallResul
     r
 }
 
-/// secure_desktop on change, foreground at most 4/s (latest wins), error_box once per box; closes an idle capture.
 fn events(out: Out) {
     let mut desk = state::desktop_state();
     let mut fg = unsafe { GetForegroundWindow() }.0 as isize;
@@ -207,12 +187,10 @@ fn events(out: Out) {
             fg_dirty = false;
             fg_sent = Instant::now();
         }
-        // every 5 s: a display that came back (Windows, a driver, a disconnect) goes off again
         if tick % 50 == 25 && desk == "default" {
             match crate::display::ensure() {
                 Ok(Some(did)) => hlog(&out, &format!("displays arranged again: {did}")),
                 Ok(None) => {}
-                // once per new error, not every 5 s (a machine with no display at all logged it 12 times a minute)
                 Err(e) => {
                     static LAST: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
                     let mut last = LAST.lock().unwrap();
@@ -223,14 +201,12 @@ fn events(out: Out) {
                 }
             }
         }
-        // the agent's screen changed size (display arranged, viewer connected): clients recapture
         if tick % 5 == 2 {
             let s = size();
             if s != last_size {
                 if let Some((w, h)) = s {
                     send(&out, &json!({"t": "evt", "event": "screen", "data": {"w": w, "h": h}}), None);
                 }
-                // a new mode: give a duplication-based stream a fresh frame of the still desktop
                 let _ = refresh();
                 last_size = s;
             }
@@ -261,7 +237,7 @@ pub fn run() {
             eprintln!("the helper is started by the GpuVM agent service");
             std::process::exit(2);
         }
-        // the pipes to the service must never reach a program the helper starts (security review H1)
+        // the pipes to the service must never reach a program the helper starts
         use windows::Win32::Foundation::{SetHandleInformation, HANDLE_FLAGS, HANDLE_FLAG_INHERIT};
         for h in [i, o, GetStdHandle(STD_ERROR_HANDLE).unwrap_or_default()] {
             if !h.is_invalid() && !h.0.is_null() {
@@ -270,10 +246,8 @@ pub fn run() {
         }
         (File::from_raw_handle(i.0 as _), Arc::new(Mutex::new(File::from_raw_handle(o.0 as _))))
     };
-    // the virtual display alone and primary BEFORE the helper announces itself: the host treats `signed_in` as
-    // ready, and a client that captured at 800x600 a moment before the change got stale sizes (lab 053)
-    // right after sign-in the input desktop is still Winlogon's: captures are refused and Windows refuses the display
-    // layout (ERROR_ACCESS_DENIED, lab 051). Wait for the normal desktop (<= 60 s), then retry the layout (<= 10 s).
+    // before announcing itself: the host treats `signed_in` as ready
+    // right after sign-in the input desktop is still Winlogon's: Windows refuses captures and the display layout
     let t = Instant::now();
     while t.elapsed() < Duration::from_secs(60) && state::desktop_state() != "default" {
         std::thread::sleep(Duration::from_millis(250));
@@ -285,7 +259,6 @@ pub fn run() {
         arranged = crate::display::ensure();
     }
     if matches!(arranged, Ok(Some(_))) {
-        // wait (<= 2 s) until Windows reports the new layout
         let t = std::time::Instant::now();
         while t.elapsed() < Duration::from_secs(2) && !crate::display::settled() {
             std::thread::sleep(Duration::from_millis(50));
@@ -316,7 +289,7 @@ pub fn run() {
                 Err(_) => continue,
             },
             Ok(Frame::Blob(_)) => continue,
-            Err(_) => std::process::exit(0), // the service closed the pipe
+            Err(_) => std::process::exit(0),
         };
         let blob = if v["blob"] == true {
             match read_frame(&mut input) {
@@ -366,7 +339,7 @@ mod tests {
 
     #[test]
     fn requests_go_to_their_lanes() {
-        // a screenshot must never share a thread with a command, an action or UI Automation (lab 058)
+        // a screenshot must never share a thread with a command, an action or UI Automation
         for m in ["exec.run", "files.read", "files.write", "files.list"] {
             assert_eq!(lane(m), Lane::Own, "{m}");
         }
@@ -382,7 +355,6 @@ mod tests {
     fn a_lane_keeps_the_order_jobs_were_sent_in() {
         let (done_tx, done_rx) = channel();
         let lane = spawn_lane("order", move |n: u32| {
-            // later jobs are quicker: only a single FIFO worker keeps them in order
             std::thread::sleep(Duration::from_millis((20 - n as u64 % 20) / 4));
             done_tx.send(n).unwrap();
         });
@@ -399,7 +371,6 @@ mod tests {
         let gate_rx = Mutex::new(gate_rx);
         let (done_tx, done_rx) = channel();
         let d1 = done_tx.clone();
-        // the "input" lane is stuck in a long job until the gate opens
         let slow = spawn_lane("slow", move |_: ()| {
             let _ = gate_rx.lock().unwrap().recv_timeout(Duration::from_secs(10));
             d1.send("slow").unwrap();
@@ -421,7 +392,6 @@ mod tests {
         let lane = spawn_lane("full", move |_: ()| {
             let _ = gate_rx.lock().unwrap().recv_timeout(Duration::from_secs(10));
         });
-        // one running + LANE_QUEUE waiting; the next one is refused at once
         let mut accepted = 0;
         let t = Instant::now();
         while lane.try_send(()).is_ok() {

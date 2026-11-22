@@ -16,39 +16,29 @@ import "@fontsource/plus-jakarta-sans/600.css";
 import "./styles.css";
 
 initPrefs();
-// The web view's own menu (Back, Reload, Inspect) has no place in an app: right click only opens GpuVM's menus.
-// Text fields keep it, for copy and paste.
 window.addEventListener("contextmenu", (e) => {
   if (!(e.target as HTMLElement)?.closest?.("input, textarea, [contenteditable='true']")) e.preventDefault();
 });
-// Only GpuVM's own drags (machines, spaces) start a drag: the web view's drag of selected text or of an image showed
-// the "not allowed" cursor and swallowed the pointer, so sliders and handles stopped following the mouse.
+// Only GpuVM's own drags: the web view's text/image drag swallowed the pointer, so sliders stopped following it.
 window.addEventListener("dragstart", (e) => {
   if (!(e.target as HTMLElement)?.closest?.("[draggable='true']")) e.preventDefault();
 });
-// The administrator-prompt card runs in its own small window (label "prompt"; "?prompt" in the browser).
 const isPrompt = "__TAURI_INTERNALS__" in window
   ? (window as unknown as { __TAURI_INTERNALS__: { metadata: { currentWindow: { label: string } } } }).__TAURI_INTERNALS__.metadata.currentWindow.label === "prompt"
   : new URLSearchParams(location.search).has("prompt");
 if (isPrompt) document.documentElement.classList.add("prompt-window");
-// The side panel over GpuVM's viewer (label "viewer-panel"; "?viewer-panel" in the browser).
 const isViewerPanel = "__TAURI_INTERNALS__" in window
   ? (window as unknown as { __TAURI_INTERNALS__: { metadata: { currentWindow: { label: string } } } }).__TAURI_INTERNALS__.metadata.currentWindow.label === "viewer-panel"
   : new URLSearchParams(location.search).has("viewer-panel");
 if (isViewerPanel) document.documentElement.classList.add("viewer-panel-window");
-// The administrator-prompt dock over a machine's picture (label "prompt-dock"; "?prompt-dock" in the browser). It is
-// part of the picture, so it is always drawn in the dark theme.
 const isPromptDock = "__TAURI_INTERNALS__" in window
   ? (window as unknown as { __TAURI_INTERNALS__: { metadata: { currentWindow: { label: string } } } }).__TAURI_INTERNALS__.metadata.currentWindow.label === "prompt-dock"
   : new URLSearchParams(location.search).has("prompt-dock");
 if (isPromptDock) document.documentElement.classList.add("prompt-dock-window");
-// The drop area over GpuVM's viewer (label "viewer-drop"; "?viewer-drop" in the browser).
 const isDropZone = "__TAURI_INTERNALS__" in window
   ? (window as unknown as { __TAURI_INTERNALS__: { metadata: { currentWindow: { label: string } } } }).__TAURI_INTERNALS__.metadata.currentWindow.label === "viewer-drop"
   : new URLSearchParams(location.search).has("viewer-drop");
 if (isDropZone) document.documentElement.classList.add("drop-window");
-// The agent's dock and the status notch over a machine's picture (labels "agent-dock" and "status-notch";
-// "?agent-dock" and "?status-notch" in the browser), drawn dark like the administrator dock.
 const label = (name: string) => "__TAURI_INTERNALS__" in window
   ? (window as unknown as { __TAURI_INTERNALS__: { metadata: { currentWindow: { label: string } } } }).__TAURI_INTERNALS__.metadata.currentWindow.label === name
   : new URLSearchParams(location.search).has(name);
@@ -56,8 +46,7 @@ const isAgentDock = label("agent-dock"), isStatusNotch = label("status-notch"), 
 if (isLive) document.documentElement.classList.add("agent-live-window");
 if (isAgentDock) document.documentElement.classList.add("agent-dock-window");
 if (isStatusNotch) document.documentElement.classList.add("status-notch-window");
-// A change of language draws the app again (the root re-renders everything under it) without starting it over: a
-// remount reset the panels' sizes and left the scenes and cards gray until their data came back.
+// Re-render, not remount: a remount reset panel sizes and left scenes gray until their data came back.
 function Root() {
   resolveLang(usePrefs().lang);
   return isLive ? <LiveOverlay /> : isAgentDock ? <AgentDock /> : isStatusNotch ? <StatusNotch /> : isPromptDock ? <PromptDock /> : isPrompt ? <PromptCard /> : isViewerPanel ? <ViewerPanel /> : isDropZone ? <DropZone /> : <App />;

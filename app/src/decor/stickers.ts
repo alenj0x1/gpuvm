@@ -1,12 +1,8 @@
 import { t } from "../i18n";
-// The stickers that go on the cube's glass. Each one is drawn once into an image with a die-cut white border
-// (like a real vinyl sticker) and then mapped onto the glass. Adding a sticker is adding an entry to STICKERS:
-// its art is drawn in a 200 × 200 box and the border is made from its shape.
 
 export interface StickerDef {
   id: string;
   name: string;
-  /** Draws the art in a 200 × 200 box. `color` is the machine's color, for stickers that follow it. */
   draw: (g: CanvasRenderingContext2D, color: string) => void;
 }
 
@@ -23,7 +19,6 @@ const stroke = (g: G, pts: number[][], color: string, w: number, alpha = 1) => {
   g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
   g.globalAlpha = alpha; g.lineCap = "round"; g.lineJoin = "round"; g.lineWidth = w; g.strokeStyle = color; g.stroke(); g.globalAlpha = 1;
 };
-/** An eye: a dark oval with a glint, the way cute stickers draw them. */
 const eye = (g: G, x: number, y: number, rx: number, ry: number, ink = "#2a2220") => {
   ell(g, x, y, rx, ry, ink);
   ell(g, x - rx * 0.32, y - ry * 0.38, rx * 0.36, ry * 0.3, "#ffffff");
@@ -143,7 +138,6 @@ export const STICKERS: StickerDef[] = [
       g.lineWidth = 3; g.lineCap = "round"; g.strokeStyle = "#5a3a24"; g.stroke();
       ell(g, 64, 128, 9, 6, "rgba(255,120,130,.4)");
       ell(g, 136, 128, 9, 6, "rgba(255,120,130,.4)");
-      // Floppy ears hanging over the sides of the head.
       ell(g, 52, 112, 20, 44, brown, 0.32);
       ell(g, 148, 112, 20, 44, brown, -0.32);
       ell(g, 56, 116, 11, 30, "#b07b4b", 0.32);
@@ -201,7 +195,6 @@ export const STICKERS: StickerDef[] = [
     id: "rocket", get name() { return t("Rocket"); },
     draw: (g) => {
       g.save(); g.translate(100, 100); g.rotate(Math.PI / 4);
-      // Flame, fins, body, nose and window.
       g.beginPath(); g.moveTo(-16, 58); g.quadraticCurveTo(0, 104, 16, 58); g.closePath(); g.fillStyle = "#ff8a2e"; g.fill();
       g.beginPath(); g.moveTo(-8, 58); g.quadraticCurveTo(0, 86, 8, 58); g.closePath(); g.fillStyle = "#ffd23f"; g.fill();
       for (const s of [1, -1]) poly(g, [[s * 22, 14], [s * 46, 52], [s * 22, 52]], "#e04848", 8);
@@ -290,7 +283,6 @@ export const STICKERS: StickerDef[] = [
   },
 ];
 
-/** Images the person added as stickers, shared by every machine. */
 const CUSTOM_KEY = "gpuvm.decor.custom";
 const IMG_KEY = "gpuvm.decor.img.";
 export function customStickers(): string[] {
@@ -300,8 +292,6 @@ export function customImage(id: string): string | null {
   try { return localStorage.getItem(IMG_KEY + id); } catch { return null; }
 }
 
-/** Reads an image file, makes it at most 256 px on its longer side (keeping its transparency) and keeps it as a
- *  sticker. Returns its sticker id, or throws with a message to show. */
 export async function addCustomSticker(file: File): Promise<string> {
   if (!/^image\/(png|webp|jpeg|gif)$/.test(file.type)) throw new Error(t("Use a PNG, WEBP, JPG or GIF image."));
   if (file.size > 8 * 1024 * 1024) throw new Error(t("The image is larger than 8 MB."));
@@ -323,14 +313,12 @@ export function removeCustomSticker(id: string) {
   try {
     localStorage.removeItem(IMG_KEY + id);
     localStorage.setItem(CUSTOM_KEY, JSON.stringify(customStickers().filter((c) => c !== id)));
-  } catch { /* no storage */ }
+  } catch {}
   images.forEach((_, k) => { if (k.startsWith(`custom:${id}`)) images.delete(k); });
   window.dispatchEvent(new Event("gpuvm-decor"));
 }
 
 const SIZE = 256, PAD = 28, BORDER = 9;
-/** The art with its die-cut border: a white margin following its shape. Drawn stickers
- *  also get an ink line around the art, like printed illustrations, and every sticker a soft vinyl sheen. */
 function dieCut(art: HTMLCanvasElement, ink = false): HTMLCanvasElement {
   const out = document.createElement("canvas");
   out.width = out.height = SIZE;
@@ -344,11 +332,9 @@ function dieCut(art: HTMLCanvasElement, ink = false): HTMLCanvasElement {
     l.fillStyle = color; l.fillRect(0, 0, SIZE, SIZE);
     g.drawImage(layer, 0, 0);
   };
-  // Just the white margin: no gray edge around it, which read as a shadow.
   ring(BORDER, "#f8f6f1");
   if (ink) ring(2.6, "#2b2420");
   g.drawImage(art, 0, 0);
-  // The vinyl's sheen: a wide light band across the upper left, only on the sticker itself.
   g.globalCompositeOperation = "source-atop";
   const sheen = g.createLinearGradient(0, 0, SIZE, SIZE);
   sheen.addColorStop(0, "rgba(255,255,255,0.22)");
@@ -361,7 +347,6 @@ function dieCut(art: HTMLCanvasElement, ink = false): HTMLCanvasElement {
 }
 
 const images = new Map<string, HTMLCanvasElement | null>();
-/** The sticker as an image ready to draw (256 px square, the art centered), or null while a custom one loads. */
 export function stickerImage(id: string, color: string): HTMLCanvasElement | null {
   const key = `${id}|${id === "logo" || id === "gamepad" ? color : ""}`;
   if (images.has(key)) return images.get(key)!;

@@ -1,6 +1,3 @@
-# Opens Moonlight with its performance overlay for each variant and saves screenshots of the overlay,
-# so its numbers (host processing, network, decoding, queue and rendering times, dropped frames) can be recorded.
-# Before each variant the VM's virtual display is set to that frame rate, as "Start and open" does.
 # Run as administrator, with the latency target running in the VM (start-target.ps1).
 param(
     [Parameter(Mandatory)][string]$Name,

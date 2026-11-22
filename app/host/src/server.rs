@@ -1,16 +1,3 @@
-//! The pipe the GpuVM window talks to, and the PowerShell bridge behind it.
-//!
-//! Who may connect: GpuVM's own `gpuvm.exe` (next to this service, in an administrators-only folder), run by the
-//! user signed in to that session, whose account is an administrator. Each connection gets its own bridge
-//! (`bridge.ps1` in GpuVM's PowerShell 7) running with that user's elevated token: the same profile, saved
-//! passwords and folders as when the app itself ran elevated. The protocol is the bridge's own: one JSON request
-//! per line, events back until the request's result.
-//!
-//! What the service adds on top:
-//! - Paths of this PC in a request (ISO, folder to import) are opened first as the user, unelevated: the service
-//!   never reads for them a file they could not read themselves.
-//! - Deleting machines or disks needs the user to confirm it in a UAC prompt (an elevated `gpuvm.exe --consent`).
-
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::fs::File;
@@ -34,35 +21,26 @@ use windows_sys::Win32::System::Threading::*;
 use crate::win::*;
 
 pub const PIPE: &str = r"\\.\pipe\gpuvm";
-// What a user may do on the pipe: read, write, read attributes, synchronize. Not GENERIC_WRITE: on a pipe it
-// includes FILE_CREATE_PIPE_INSTANCE, which would let any user program serve its own instances of the name.
+// Not GENERIC_WRITE: on a pipe it includes FILE_CREATE_PIPE_INSTANCE, letting any user program serve its own instances.
 const CLIENT_ACCESS: u32 = 0x0010_0083;
-/// Commands that destroy data: they run only after a UAC confirmation.
 const NEEDS_CONSENT: &[&str] = &["Remove-GpuVM", "Remove-GpuVMDisk", "Remove-GpuVMSharedDisk", "Remove-GpuVMTemplate", "Remove-GpuVMBase",
     "Remove-GpuVMRestorePoint", "Uninstall-GpuVMAgent"];
 const CONSENT_TTL: Duration = Duration::from_secs(120);
 
-/// Requests running right now: a stop waits for them.
 pub static BUSY: AtomicUsize = AtomicUsize::new(0);
-/// Requests that only read or that can be cut (Get-*, agent requests): a stop waits for them a few seconds at most.
 pub static QUICK: AtomicUsize = AtomicUsize::new(0);
-/// Set while the service stops: new requests are refused.
 pub static STOPPING: AtomicBool = AtomicBool::new(false);
-/// Open connections, and whether the app asked the service to stop once none is left (when it quits).
 static CONNECTIONS: AtomicUsize = AtomicUsize::new(0);
 static STOP_WHEN_IDLE: AtomicBool = AtomicBool::new(false);
 
-/// Install folder (where this service lives): only administrators can change it.
 pub fn install_dir() -> PathBuf {
     std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).unwrap_or_default()
 }
 
 pub fn log(line: &str) {
-    // Unit tests never write into the real service's log.
     if cfg!(test) {
         return;
     }
-    // Next to the module's data (ProgramData\GpuVM, administrators only), and only once the module created it.
     let dir = PathBuf::from(std::env::var("ProgramData").unwrap_or(r"C:\ProgramData".into())).join("GpuVM");
     if !dir.is_dir() {
         return;
@@ -77,8 +55,6 @@ pub fn log(line: &str) {
     }
 }
 
-// ---------------------------------------------------------------- consent for destructive commands
-
 struct Pending {
     client_pid: u32,
     sid: String,
@@ -89,7 +65,7 @@ struct Pending {
 
 static PENDING: Mutex<Option<HashMap<String, Pending>>> = Mutex::new(None);
 
-/// Canonical text of a request (command and arguments), so a confirmation only covers exactly what was shown.
+// Canonical text of a request (command and arguments), so a confirmation only covers exactly what was shown.
 fn request_key(request: &Value) -> String {
     json!({ "cmd": request["cmd"], "args": request["args"] }).to_string()
 }
@@ -114,7 +90,6 @@ fn approve_consent(nonce: &str, sid: &str) -> bool {
     }
 }
 
-/// Uses up an approved confirmation: same program instance, same command and arguments, still fresh.
 fn take_consent(nonce: &str, client_pid: u32, request: &Value) -> bool {
     let mut guard = PENDING.lock().unwrap();
     let Some(map) = guard.as_mut() else { return false };
@@ -126,9 +101,6 @@ fn take_consent(nonce: &str, client_pid: u32, request: &Value) -> bool {
     ok
 }
 
-// ---------------------------------------------------------------- paths of this PC in requests
-
-/// Arguments that name a file or folder of this PC, by command, with the access the user must have to it.
 fn host_paths(request: &Value) -> Vec<(String, PathAccess)> {
     let args = &request["args"];
     let mut paths = Vec::new();
@@ -143,7 +115,6 @@ fn host_paths(request: &Value) -> Vec<(String, PathAccess)> {
         "Import-GpuVMSharedDisk" => add(&args["Path"], PathAccess::ListFolder),
         "Save-GpuVMProfile" => add(&args["Settings"]["iso"], PathAccess::ReadFile),
         "Import-GpuVM" | "Get-GpuVMImportInfo" => add(&args["Path"], PathAccess::ReadFile),
-        // The export file doesn't exist yet: the user must be able to create files in its folder.
         "Export-GpuVM" => {
             if let Some((folder, _)) = args["Path"].as_str().and_then(|p| p.rsplit_once('\\')) {
                 let folder = if folder.len() == 2 { format!("{folder}\\") } else { folder.to_string() };
@@ -152,10 +123,7 @@ fn host_paths(request: &Value) -> Vec<(String, PathAccess)> {
                 add(&args["Path"], PathAccess::WriteFolder);
             }
         }
-        // Files and folders of this PC sent into a VM (dropped on the viewer). Opened for reading data, which works
-        // for both. With FromVM the paths are inside the source VM, not on this PC.
-        // Anything that is not a text (a number, an object) is kept as an invalid path, so it is refused instead of
-        // skipping the check.
+        // A non-text value is kept as an invalid path, so it is refused instead of skipping the check.
         "Send-GpuVMClipboard" if !args["Files"].is_null() => {
             let list = match &args["Files"] { Value::Array(list) => list.clone(), other => vec![other.clone()] };
             for v in list {
@@ -173,16 +141,12 @@ fn host_paths(request: &Value) -> Vec<(String, PathAccess)> {
     paths
 }
 
-/// Whether a request destroys data and so waits for a UAC confirmation. Going back to a restore point does only
-/// when it throws away the present (without -SaveCurrent).
 fn needs_consent(request: &Value) -> bool {
     let cmd = request["cmd"].as_str().unwrap_or("");
     NEEDS_CONSENT.contains(&cmd) || (cmd == "Restore-GpuVMRestorePoint" && request["args"]["SaveCurrent"] != json!(true))
-        // Taking a machine back from the agent removes its user and profile.
         || (cmd == "Set-GpuVMUse" && request["args"]["Use"].as_str().is_some_and(|u| u.trim().eq_ignore_ascii_case("none")))
 }
 
-/// Checks each path as the user on the other end of the pipe (unelevated), then goes back to the service's identity.
 fn check_paths_as_client(pipe: HANDLE, request: &Value) -> Result<(), String> {
     for (path, kind) in host_paths(request) {
         if !is_plain_local_path(&path) {
@@ -202,8 +166,6 @@ fn check_paths_as_client(pipe: HANDLE, request: &Value) -> Result<(), String> {
     Ok(())
 }
 
-// ---------------------------------------------------------------- the bridge
-
 struct Bridge {
     process: Handle,
     stdin: File,
@@ -222,7 +184,6 @@ static SPAWN: Mutex<()> = Mutex::new(());
 
 fn job() -> HANDLE {
     JOB.get_or_init(|| unsafe {
-        // Bridges die with the service, even if it crashes: the job closes when its process exits.
         let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
         let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
         info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
@@ -289,9 +250,6 @@ fn spawn_bridge(token: &Handle) -> Result<Bridge, String> {
     }
 }
 
-// ---------------------------------------------------------------- one connection
-
-/// Counts a request as running while it lives: a job that changes machines (a stop lets it finish), or a quick one.
 pub struct Busy(bool);
 impl Busy {
     pub fn start() -> Self {
@@ -302,7 +260,6 @@ impl Busy {
         QUICK.fetch_add(1, Ordering::SeqCst);
         Busy(false)
     }
-    /// A module command: reading ones (Get-*, Test-*) are quick, the rest change something and are let finish.
     pub fn for_command(cmd: &str) -> Self {
         if cmd.starts_with("Get-") || cmd.starts_with("Test-") { Busy::quick() } else { Busy::start() }
     }
@@ -320,7 +277,6 @@ struct Client {
     elevated: bool,
 }
 
-/// Who is on the other end: GpuVM's own program, run by a user signed in to this PC.
 fn identify(pipe: HANDLE) -> Result<Client, String> {
     let mut pid = 0;
     if unsafe { GetNamedPipeClientProcessId(pipe, &mut pid) } == 0 {
@@ -340,7 +296,6 @@ fn send(out: &mut &File, value: &Value) -> bool {
     writeln!(out, "{value}").and_then(|_| out.flush()).is_ok()
 }
 
-/// The longest request line the pipe accepts (16 MiB of blob is 22.4 MB in base64, plus its JSON).
 const MAX_REQUEST_LINE: u64 = 24 << 20;
 
 fn handle(pipe: HANDLE) {
@@ -355,14 +310,11 @@ fn handle(pipe: HANDLE) {
     let mut out: &File = &file;
     let mut reader = BufReader::new(&*file);
     let mut bridge: Option<Bridge> = None;
-    // Agent commands are answered by the broker in this process (no PowerShell in the way: they are the MCP
-    // server's hot path). Its connections registered on this pipe end with it.
     let mut agent_ctx = crate::agent::Ctx::new(pipe, client.pid, false);
     let mut line = String::new();
     // One request at a time, as the app sends them: the synchronous pipe is never read and written at once.
     loop {
         line.clear();
-        // One request per line, bounded: the largest legitimate one is a 16 MiB blob in base64 (review 2, #9).
         let n = std::io::Read::take(&mut reader, MAX_REQUEST_LINE).read_line(&mut line).unwrap_or(0);
         if n == 0 {
             return;
@@ -379,14 +331,12 @@ fn handle(pipe: HANDLE) {
         let id = request["id"].clone();
         let fail = |out: &mut &File, error: String| send(out, &json!({ "id": id, "type": "result", "ok": false, "error": error }));
 
-        // An elevated gpuvm.exe (after the user said yes in UAC) confirms a pending deletion.
         if let Some(nonce) = request["consent"].as_str().filter(|_| request["cmd"].is_null()) {
             let ok = client.elevated && approve_consent(nonce, &client.sid);
             log(&format!("confirmation {}", if ok { "accepted" } else { "rejected" }));
             send(&mut out, &json!({ "type": "consent", "ok": ok }));
             continue;
         }
-        // The app quits: stop once every connection is closed (requests still running finish first).
         if request["control"] == "stop-when-idle" {
             STOP_WHEN_IDLE.store(true, Ordering::SeqCst);
             send(&mut out, &json!({ "type": "control", "ok": true }));
@@ -408,8 +358,6 @@ fn handle(pipe: HANDLE) {
             }
             continue;
         }
-        // An agent session (the MCP server acting for a model) may run only some commands, some with the person's
-        // approval; the person's app is never limited here.
         let mut request = request;
         let mut gated = match crate::agent::gate(&mut request, client.pid, agent_ctx.is_agent_pipe()) {
             Ok(g) => Some(g),
@@ -448,8 +396,7 @@ fn handle(pipe: HANDLE) {
             fail(&mut out, "PowerShell stopped responding.".into());
             return;
         }
-        // Relay every event (progress, warnings) until this request's result. If the app goes away meanwhile
-        // (it quit, or "shut down on quit" sent its last request) the request still finishes: never stop halfway.
+        // The request still finishes if the app goes away meanwhile: never stop halfway.
         let mut client_gone = false;
         let mut event = String::new();
         loop {
@@ -465,7 +412,6 @@ fn handle(pipe: HANDLE) {
             }
             let parsed = serde_json::from_str::<Value>(&event).unwrap_or(Value::Null);
             if parsed["type"] == "result" && parsed["id"] == id {
-                // An agent session's new disposable copy is its own from now on.
                 if parsed["ok"] == json!(true) {
                     if let Some(g) = gated.take() {
                         g.succeeded(&parsed["data"]);
@@ -513,8 +459,7 @@ pub fn serve() {
         if !connected {
             continue;
         }
-        // Counted here, in order: a connection opened before the app's "stop when idle" keeps the service up
-        // until it ends; one opened after it (GpuVM opened again) cancels that stop.
+        // Counted in order: a connection opened before the app's "stop when idle" keeps the service up; one opened after cancels the stop.
         CONNECTIONS.fetch_add(1, Ordering::SeqCst);
         STOP_WHEN_IDLE.store(false, Ordering::SeqCst);
         std::thread::spawn(move || {

@@ -1,7 +1,3 @@
-//! exec.run: runs a program as the signed-in `agent` user (the helper's own medium token, never elevated), without a
-//! shell, with stdin, a timeout and 1 MiB caps on stdout and stderr. The program leaves the helper's job (so the
-//! service's lifetime doesn't bound it) and goes into its own job: on timeout the whole tree is ended; when it exits
-//! normally, what it started (e.g. `cmd /c start app`) keeps running.
 use crate::capture::CallResult;
 use crate::token::Owned;
 use crate::util::wide;
@@ -46,7 +42,6 @@ fn quote(a: &str) -> String {
     o
 }
 
-/// Console output is UTF-8 or the OEM code page; decode whichever it is.
 fn decode(b: &[u8]) -> String {
     if let Ok(s) = std::str::from_utf8(b) {
         return s.to_string();
@@ -66,13 +61,12 @@ fn pipe() -> Result<(Owned, Owned), (&'static str, String)> {
     Ok((Owned(r), Owned(w)))
 }
 
-/// Reads what is available without blocking; keeps at most CAP bytes, counts the rest.
 fn drain(h: HANDLE, out: &mut Vec<u8>, dropped: &mut usize) -> bool {
     let mut buf = [0u8; 65536];
     loop {
         let mut avail = 0u32;
         if unsafe { PeekNamedPipe(h, None, 0, None, Some(&mut avail), None) }.is_err() {
-            return false; // closed
+            return false;
         }
         if avail == 0 {
             return true;
@@ -132,8 +126,7 @@ pub fn exec_run(p: &Value, id: u64) -> CallResult {
     let t0 = Instant::now();
     let mut pi = PROCESS_INFORMATION::default();
     unsafe {
-        // exactly these three handles are inherited (never the helper's pipes to the service, nor another
-        // exec.run's pipes: security review H1)
+        // exactly these three handles are inherited, never the helper's pipes to the service or another exec.run's
         let handles = [in_r.0, out_w.0, err_w.0];
         let mut size = 0usize;
         let _ = InitializeProcThreadAttributeList(None, 1, None, &mut size);
@@ -180,7 +173,7 @@ pub fn exec_run(p: &Value, id: u64) -> CallResult {
         ResumeThread(thread.0);
     }
     drop((in_r, out_w, err_w));
-    // stdin from its own thread (a child that doesn't read must not block us)
+    // stdin from its own thread: a child that doesn't read must not block us
     let in_w_raw = in_w.0 .0 as isize;
     let data = stdin.as_bytes().to_vec();
     let writer = std::thread::spawn(move || {
@@ -217,7 +210,7 @@ pub fn exec_run(p: &Value, id: u64) -> CallResult {
             break;
         }
     }
-    // what is still in the pipes (children that inherited them may keep them open: give them 100 ms)
+    // children that inherited the pipes may keep them open: give them 100 ms
     let grace = Instant::now();
     while grace.elapsed() < Duration::from_millis(100) {
         let a = drain(out_r.0, &mut out, &mut dout);
@@ -232,7 +225,7 @@ pub fn exec_run(p: &Value, id: u64) -> CallResult {
         let _ = GetExitCodeProcess(proc_.0, &mut code);
     }
     drop(job); // no kill-on-close: what the program started on its own keeps running
-    // a stdin write can block forever when a grandchild holds stdin and nobody reads: cancel it (review L2)
+    // a stdin write can block forever when a grandchild holds stdin and nobody reads: cancel it
     if !writer.is_finished() {
         let th = HANDLE(std::os::windows::io::AsRawHandle::as_raw_handle(&writer) as _);
         let t = Instant::now();
@@ -256,14 +249,13 @@ pub fn exec_run(p: &Value, id: u64) -> CallResult {
         "exitCode": if timed_out { Value::Null } else { json!(code as i32) },
         "timedOut": timed_out, "truncated": truncated, "ms": t0.elapsed().as_millis() as u64,
     });
-    // measured as JSON: escaping can make control characters 6x bigger (review L4)
+    // measured as JSON: escaping can make control characters 6x bigger
     let json_len = serde_json::to_string(&stdout).map(|s| s.len()).unwrap_or(usize::MAX) + serde_json::to_string(&stderr).map(|s| s.len()).unwrap_or(usize::MAX);
     if json_len <= INLINE {
         r["stdout"] = json!(stdout);
         r["stderr"] = json!(stderr);
         Ok((r, None))
     } else {
-        // too big for a JSON frame: both go in the blob, stdout then stderr, UTF-8
         r["outputInBlob"] = json!(true);
         r["stdoutBytes"] = json!(stdout.len());
         r["stderrBytes"] = json!(stderr.len());

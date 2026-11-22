@@ -9,15 +9,11 @@ import { randomMachine } from "./decor/random";
 import { CheckMark, Segmented, stateText, useScrollFade } from "./ui";
 import { t, tn } from "./i18n";
 
-/** Creating or editing a space: its name, its ambient and which machines are in it, with the real space beside it,
- *  already in the chosen ambient, so it is seen before it is saved. */
 export function SpaceDialog({ space, vms, onClose, onSaved, initialMachines = [] }: {
-  /** The space to edit; none to create one. */
   space?: Space;
   vms: VmOverview[];
   onClose: () => void;
   onSaved?: (s: Space) => void;
-  /** Machines already picked for a new space (the one it was created from). */
   initialMachines?: string[];
 }) {
   const editing = !!space;
@@ -36,7 +32,6 @@ export function SpaceDialog({ space, vms, onClose, onSaved, initialMachines = []
   const save = (e: React.FormEvent) => {
     e.preventDefault();
     if (!valid) return;
-    // Machines taken out of the space being edited go back to the first space.
     const s = saveSpace({ id: space?.id, name: trimmed, ambient, time, machines: picked });
     if (space && space.id !== MAIN_SPACE) {
       const removed = vms.filter((v) => spaceOf(v.name).id === space.id && !picked.includes(v.name)).map((v) => v.name);
@@ -45,7 +40,6 @@ export function SpaceDialog({ space, vms, onClose, onSaved, initialMachines = []
     onSaved?.(s);
     onClose();
   };
-  // The preview: the first machine picked in front and the others around it, or a made-up one while none is.
   const shown = vms.filter((v) => picked.includes(v.name));
   const sample = useMemo(randomMachine, []);
   const hero = shown[0];

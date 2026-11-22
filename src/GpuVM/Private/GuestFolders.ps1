@@ -1,21 +1,10 @@
-# Folders GpuVM touches inside a guest as its administrator (PowerShell Direct), while the guest's own users are
-# untrusted: on an agent machine `agent`, and anything it runs, may be hostile (security review 2026-11-21). A folder
-# such a user can write is one where it can swap a file between a check and its use, or plant a junction that turns an
-# administrator's write or delete into one anywhere on the disk. So:
-# - what is verified or run as administrator is copied first into a new folder only Administrators and SYSTEM can
-#   open, under %SystemRoot%\Temp, created with that ACL already in place (no moment with inherited rights);
-# - C:\GpuVM (which would inherit "Authenticated Users: Modify" from C:\) is Administrators/SYSTEM full, Users read and
-#   run, nothing inherited;
-# - a folder that may hold reparse points is deleted with `rmdir /s /q`, which removes a junction without entering it
-#   (Windows PowerShell 5.1's Remove-Item -Recurse goes into junctions and deletes what they point to).
-# Guest code (Windows PowerShell 5.1), sent as text and dot-sourced where it is needed.
+# Guest users are untrusted: what is verified or run as administrator goes in a new Administrators/SYSTEM-only folder,
+# and folders that may hold junctions are deleted with rmdir /s /q (5.1's Remove-Item -Recurse follows junctions).
 $script:GuestFolderCode = {
     $GpuVMAdminSid = 'S-1-5-32-544'
     $GpuVMSystemSid = 'S-1-5-18'
     $GpuVMUsersSid = 'S-1-5-32-545'
 
-    # Administrators and SYSTEM full control, inherited by everything inside; nothing from the parent; owned by
-    # Administrators. $Extra adds more rules ([sid, rights] pairs) with the same inheritance.
     function New-GpuVMFolderSecurity {
         param([object[]]$Extra = @())
         $security = New-Object Security.AccessControl.DirectorySecurity
@@ -29,16 +18,14 @@ $script:GuestFolderCode = {
         $security
     }
 
-    # Created with $Security from its first moment (CreateDirectory with a security descriptor; in PowerShell 7, where
-    # tests run, the same call lives in FileSystemAclExtensions).
+    # In PowerShell 7, where tests run, the same call lives in FileSystemAclExtensions.
     function New-GpuVMSecuredDirectory {
         param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)]$Security)
         if ([IO.Directory].GetMethod('CreateDirectory', [type[]]@([string], [Security.AccessControl.DirectorySecurity]))) { $null = [IO.Directory]::CreateDirectory($Path, $Security) }
         else { $null = [IO.FileSystemAclExtensions]::CreateDirectory($Security, $Path) }
     }
 
-    # A new folder with that ACL from the moment it exists: under %SystemRoot%\Temp, or at the root of $Volume when
-    # that is another drive (a file moved out of it must stay on its volume to keep the rights it was given).
+    # A file moved out of it must stay on its volume to keep the rights it was given.
     function New-GpuVMAdminFolder {
         param([string]$Volume, [string]$Prefix = 'GpuVM', [object[]]$Extra = @())
         $temp = Join-Path $env:SystemRoot 'Temp'
@@ -55,15 +42,12 @@ $script:GuestFolderCode = {
         $dir
     }
 
-    # Deletes a folder and what is in it without following any junction or link inside (they are removed as links).
     function Remove-GpuVMFolder {
         param([Parameter(Mandatory)][string]$Path)
         if (-not (Test-Path -LiteralPath $Path)) { return }
         & "$env:SystemRoot\System32\cmd.exe" /d /c rmdir /s /q "`"$Path`"" 2>&1 | Out-Null
     }
 
-    # Deletes one file (or a link, as a link) so the administrator can write a new one in its place: never through a
-    # hard link or file someone left there.
     function Remove-GpuVMItem {
         param([Parameter(Mandatory)][string]$Path)
         if ([IO.Directory]::Exists($Path)) {
@@ -73,7 +57,6 @@ $script:GuestFolderCode = {
         elseif ([IO.File]::Exists($Path)) { [IO.File]::Delete($Path) }
     }
 
-    # True when the folder is owned by Administrators/SYSTEM, inherits nothing, and only they can write it.
     function Test-GpuVMLockedAcl {
         param([Parameter(Mandatory)]$Acl)
         $admins = @($GpuVMAdminSid, $GpuVMSystemSid)
@@ -87,9 +70,6 @@ $script:GuestFolderCode = {
         $true
     }
 
-    # C:\GpuVM as Administrators/SYSTEM full and Users read & run, nothing inherited. Cheap when it already is (one
-    # Get-Acl). -Deep also goes through what is inside (once per machine): links are removed, and anything a user made
-    # while it was writable (and owns, so could still change) is taken back for Administrators.
     function Protect-GpuVMGuestRoot {
         param([string]$Path = 'C:\GpuVM', [switch]$Deep)
         $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
@@ -106,7 +86,6 @@ $script:GuestFolderCode = {
         if (-not $locked) {
             & "$env:SystemRoot\System32\takeown.exe" /F $Path /A 2>&1 | Out-Null
             & "$env:SystemRoot\System32\icacls.exe" $Path /inheritance:r /grant:r '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-545:(OI)(CI)RX' /Q 2>&1 | Out-Null
-            # Explicit grants other than those three (a user's own) are removed.
             $acl = Get-Acl -LiteralPath $Path
             $extra = @($acl.GetAccessRules($true, $false, [Security.Principal.SecurityIdentifier]) |
                 Where-Object { $_.IdentityReference.Value -notin $GpuVMAdminSid, $GpuVMSystemSid, $GpuVMUsersSid })
@@ -114,8 +93,7 @@ $script:GuestFolderCode = {
             if (-not (Test-GpuVMLockedAcl -Acl (Get-Acl -LiteralPath $Path))) { throw "Couldn't restrict the permissions of $Path." }
         }
         if (-not $Deep) { return }
-        # Top-down: each folder is taken back before what is in it is listed, so nothing a user still controls is
-        # walked into (the folder above it already lets no user add or rename anything).
+        # Top-down: each folder is taken back before it is listed, so nothing a user still controls is walked into.
         $pending = [Collections.Generic.Stack[string]]::new()
         $pending.Push($Path)
         while ($pending.Count) {
@@ -135,9 +113,7 @@ $script:GuestFolderCode = {
         }
     }
 
-    # A folder inside C:\GpuVM that one user (a task GpuVM runs in that user's session) can write its answer into.
-    # The administrator only reads from it and deletes it with Remove-GpuVMFolder: never writes there, since the user
-    # could turn it into a junction.
+    # The administrator only reads and deletes here, never writes: the user could turn it into a junction.
     function New-GpuVMUserFolder {
         param([Parameter(Mandatory)][string]$Root, [Parameter(Mandatory)][string]$User)
         $sid = ([Security.Principal.NTAccount]$User).Translate([Security.Principal.SecurityIdentifier]).Value
@@ -146,18 +122,13 @@ $script:GuestFolderCode = {
         $dir
     }
 
-    # The folder files are received in (Desktop\<Folder> of the person), checked and held while the administrator
-    # works in it: it must be under the person's profile, and neither it nor any folder above it a junction or link
-    # (`agent` owns its desktop and could point Received anywhere). An open file inside (no delete sharing) keeps
-    # Windows from renaming or deleting it or any folder above it until Close, and a folder that isn't empty can't
-    # become a junction: what was checked is what is written to. Returns @{ Dest; Close = { … } } or throws.
+    # An open file inside (no delete sharing) pins it and every folder above until Close: what was checked is written to.
     function Enter-GpuVMDestination {
         param(
             [Parameter(Mandatory)][string]$ProfilePath,
             [Parameter(Mandatory)][string]$Desktop,
             [Parameter(Mandatory)][string]$Folder,
             [Parameter(Mandatory)][string]$Id,
-            # Creates the folder (and migrates "Recibidos" when it is "Received").
             [switch]$Create
         )
         $profileFull = [IO.Path]::GetFullPath($ProfilePath).TrimEnd('\')
@@ -172,7 +143,6 @@ $script:GuestFolderCode = {
             for ($p = $Path; $p -and $p.Length -gt 3; $p = [IO.Path]::GetDirectoryName($p)) {
                 $info = [IO.DirectoryInfo]::new($p)
                 if (-not $info.Exists) {
-                    # Something that isn't a folder (a file, a link to a file) in its place.
                     if (Test-Path -LiteralPath $p) { throw "$p isn't a folder; nothing is copied." }
                     continue
                 }
@@ -195,7 +165,7 @@ $script:GuestFolderCode = {
             & $assertPlain $desktopFull
             if ($Create) {
                 if ($Folder -eq 'Received') {
-                    # Versions before 0.9 named it in Spanish: that folder becomes this one, with its files.
+                    # Older versions named it in Spanish: that folder becomes this one, with its files.
                     $old = Join-Path $desktopFull 'Recibidos'
                     if (-not (Test-Path -LiteralPath $dest) -and (Test-Path -LiteralPath $old)) { Rename-Item -LiteralPath $old -NewName $Folder }
                 }
@@ -214,8 +184,6 @@ $script:GuestFolderCode = {
     }
 }.ToString()
 
-# A new folder in the guest only Administrators and SYSTEM can open (New-GpuVMAdminFolder), for files that are
-# verified and then run or compiled there as administrator: no user of the guest can swap them in between.
 function New-GuestAdminFolder {
     param([Parameter(Mandatory)]$Session, [string]$Prefix = 'GpuVM')
     $dir = Invoke-Command -Session $Session -ErrorAction Stop -ArgumentList $script:GuestFolderCode, $Prefix -ScriptBlock {
@@ -237,8 +205,6 @@ function Remove-GuestAdminFolder {
     }
 }
 
-# C:\GpuVM restricted once per machine (Protect-GpuVMGuestRoot -Deep), for machines made before it was created that
-# way (security review 2026-11-21). Remembered in the machine's state, so later opens don't ask the guest again.
 function Protect-GuestGpuVMRoot {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential)
     $state = Get-GpuVMState -Name $Name

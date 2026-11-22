@@ -28,7 +28,6 @@ function Uninstall-GpuVMAgent {
                 if ($r -and $r.PSObject.Properties['rebootNeeded'] -and $r.rebootNeeded) {
                     Write-Step 'Restarting Windows in the machine to finish'
                     Invoke-Command -VMName $Name -Credential $credential -ScriptBlock { Restart-Computer -Force } -ErrorAction SilentlyContinue
-                    # The `agent` user and its profile go once it is no longer signed in (review 3, #12).
                     $pending = -not (Complete-GuestAgentRemoval -Name $Name -Credential $credential -BootBefore $boot)
                 }
             }
@@ -45,7 +44,6 @@ function Uninstall-GpuVMAgent {
     Remove-GpuVMAgentRegistration -VMId $vm.Id.Guid
     $state = Get-GpuVMState -Name $Name
     if ($state.Contains('agent')) { $state.Remove('agent') }
-    # No longer an agent machine: opening it must not install the agent the person just removed (review 3, #13).
     if ($state.Contains('use')) { $state.Remove('use') }
     if ($pending) { $state['agentRemovalPending'] = $true } elseif ($state.Contains('agentRemovalPending')) { $state.Remove('agentRemovalPending') }
     Save-GpuVMState $state

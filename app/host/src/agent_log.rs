@@ -1,13 +1,3 @@
-//! What agent sessions did, for the person (2026-11-21):
-//! - **Activity**: each step of a session as it starts and ends, for the viewer to show live (the agent's cursor, a
-//!   ring on each click, the stroke of a drag, and what it is doing in the status notch). The app waits for it on a
-//!   pipe connection of its own (`Wait-GpuVMAgentActivity`, a long poll), so nothing polls fast. Only shapes reach
-//!   it: where a click or drag went (desktop pixels), which keys, the length of typed text; never the text, a command
-//!   line or a file's content.
-//! - **History**: one line per finished session in `history.jsonl` (agents_dir): who, which machines, the task, from
-//!   when to when, how many actions, scripts, approvals and deliveries, how often the person took control, and how
-//!   it ended. Kept to the last ~1000 sessions.
-
 use serde_json::{json, Value};
 use std::collections::VecDeque;
 use std::io::Write;
@@ -22,10 +12,8 @@ struct Feed {
 static FEED: Mutex<Feed> = Mutex::new(Feed { next: 1, list: VecDeque::new() });
 static FEED_CHANGED: Condvar = Condvar::new();
 const FEED_MAX: usize = 300;
-/// The longest a waiter is held (the app asks again at once).
 pub const WAIT_MAX_MS: u64 = 15_000;
 
-/// One event for the live view; `seq` is added here.
 pub fn push(mut event: Value) {
     let mut feed = FEED.lock().unwrap_or_else(|e| e.into_inner());
     event["seq"] = json!(feed.next);
@@ -37,8 +25,6 @@ pub fn push(mut event: Value) {
     FEED_CHANGED.notify_all();
 }
 
-/// The events after `after`, waiting up to `timeout` for the first one. `last` is where to continue from (an `after`
-/// from before the service started, or older than the feed keeps, gets what there is).
 pub fn wait(after: u64, timeout: Duration) -> Value {
     let feed = FEED.lock().unwrap_or_else(|e| e.into_inner());
     let after = if after >= feed.next { 0 } else { after };
@@ -55,7 +41,6 @@ fn num(v: &Value, k: &str) -> Option<i64> {
     v.get(k).and_then(Value::as_f64).map(|f| f.round() as i64)
 }
 
-/// Points of a path, evenly thinned to `max`.
 fn thin(points: &[(i64, i64)], max: usize) -> Vec<Value> {
     if points.len() <= max {
         return points.iter().map(|(x, y)| json!([x, y])).collect();
@@ -64,7 +49,7 @@ fn thin(points: &[(i64, i64)], max: usize) -> Vec<Value> {
     (0..max).map(|i| points[((i as f64 * step).round() as usize).min(points.len() - 1)]).map(|(x, y)| json!([x, y])).collect()
 }
 
-/// The shape of one input action, for drawing: never what was typed.
+// Never what was typed: only shapes.
 fn shape(a: &Value) -> Option<Value> {
     let kind = a["type"].as_str()?;
     Some(match kind {
@@ -93,7 +78,6 @@ fn shape(a: &Value) -> Option<Value> {
     })
 }
 
-/// What the live view draws for a step: input actions with their places, in the desktop's pixels.
 pub fn shapes(method: &str, params: &Value) -> Option<Value> {
     match method {
         "input.act" => {
@@ -105,8 +89,6 @@ pub fn shapes(method: &str, params: &Value) -> Option<Value> {
     }
 }
 
-// ---------------------------------------------------------------- history
-
 fn history_path() -> std::path::PathBuf {
     crate::agent::agents_dir().join("history.jsonl")
 }
@@ -114,7 +96,6 @@ fn history_path() -> std::path::PathBuf {
 static HISTORY_LOCK: Mutex<()> = Mutex::new(());
 const HISTORY_MAX_BYTES: u64 = 2 << 20;
 
-/// Adds a finished session. Past ~2 MB the oldest half goes.
 pub fn append(entry: &Value) {
     let _guard = HISTORY_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let path = history_path();
@@ -136,7 +117,6 @@ pub fn append(entry: &Value) {
     }
 }
 
-/// The last `limit` sessions, newest first.
 pub fn read(limit: usize) -> Value {
     let _guard = HISTORY_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let text = std::fs::read_to_string(history_path()).unwrap_or_default();
@@ -170,7 +150,6 @@ mod tests {
 
     #[test]
     fn feed_waits_and_continues() {
-        // Other tests push into the same feed at the same time: only this test's events are looked at.
         let mine = |v: &Value| v["events"].as_array().unwrap().iter().filter(|e| e["feedTest"].is_number()).cloned().collect::<Vec<_>>();
         push(json!({ "feedTest": 1 }));
         let first = wait(0, Duration::from_millis(10));

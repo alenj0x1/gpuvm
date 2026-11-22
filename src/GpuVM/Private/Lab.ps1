@@ -27,7 +27,6 @@ function Save-Lab {
     Write-JsonFile -Path (Join-Path $Lab['path'] 'lab.json') -Data $copy
 }
 
-# Averages each metric per variant and computes the candidate's difference against the baseline.
 function Get-LabSummary {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Lab)
     $results = @($Lab['results'])

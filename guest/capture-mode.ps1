@@ -1,14 +1,4 @@
-﻿# Makes Sunshine capture with Windows.Graphics.Capture through the fork's helper (tools\sunshine_wgc_capture.exe),
-# which captures as the signed-in user and holds nothing secret. Runs inside the VM as administrator (PowerShell
-# Direct). Windows PowerShell 5.1. Sunshine is always the service (SYSTEM), on every machine; GpuVM ships its own
-# Sunshine fork for that. Shows the picture at once and games in exclusive fullscreen; administrator prompts (secure
-# desktop) are answered from GpuVM's own card. Without the helper Sunshine falls back to desktop duplication (answer
-# prefixed "nofork-"), which on the virtual display over GPU-P loses access after every frame (lab 055).
-# Machines from before the fork ran Sunshine as the user from a logon task (GpuVM-Sunshine-User): it is removed here,
-# and so is a "ddx" choice an older machine kept.
-# Does nothing if it already captures that way, so opening the VM doesn't restart Sunshine for no reason.
-# -Restart restarts it anyway: after the display changed, so it tests its encoders now instead of when the viewer connects.
-param([switch]$Restart)
+﻿param([switch]$Restart)
 
 $exe = 'C:\Program Files\Sunshine\sunshine.exe'
 $conf = 'C:\Program Files\Sunshine\config\sunshine.conf'

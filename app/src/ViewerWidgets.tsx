@@ -16,22 +16,14 @@ import { usePrefs } from "./prefs";
 import { locale, t } from "./i18n";
 import type { VmOverview } from "./types";
 
-// The viewer panel's board (ViewerPanel.tsx): widgets on a grid of 2 columns (3 when the panel is wide) that fill in
-// order without leaving holes. Dragging one moves it among the others, which slide aside while it passes; its corner
-// resizes it in whole cells, each kind within its own limits. The layout is remembered.
-
 export type WidgetType = "machines" | "actions" | "capture" | "agent" | "stats" | "clock" | "shelf" | "games" | "weather" | "files" | "clipboard";
-/** A widget on the board: its kind, its size in cells and the cell of its top left corner. */
 export interface WidgetItem { id: string; type: WidgetType; w: number; h: number; x: number; y: number }
 interface Spec { icon: Icon; name: () => string; minW: number; maxW: number; minH: number; maxH: number; w: number; h: number }
 
-// Each kind's sizes: up to where its content still gains something (the games' covers fit in three rows; the
-// machines can grow with a long list).
 export const SPEC: Record<WidgetType, Spec> = {
   machines: { icon: IconDeviceDesktop, name: () => t("Machines"), minW: 1, maxW: 3, minH: 1, maxH: 6, w: 2, h: 2 },
   actions: { icon: IconBolt, name: () => t("Actions"), minW: 1, maxW: 3, minH: 1, maxH: 2, w: 2, h: 1 },
   capture: { icon: IconCamera, name: () => t("Capture"), minW: 1, maxW: 3, minH: 1, maxH: 2, w: 2, h: 2 },
-  // One row: who and what it did last; from two, its budget and controls; each row more shows more actions.
   agent: { icon: IconRobot, name: () => t("Agent"), minW: 2, maxW: 3, minH: 1, maxH: 4, w: 2, h: 2 },
   stats: { icon: IconActivity, name: () => t("Picture"), minW: 1, maxW: 3, minH: 1, maxH: 3, w: 1, h: 2 },
   clock: { icon: IconClock, name: () => t("Clock"), minW: 1, maxW: 3, minH: 1, maxH: 2, w: 1, h: 1 },
@@ -42,8 +34,6 @@ export const SPEC: Record<WidgetType, Spec> = {
   clipboard: { icon: IconClipboard, name: () => t("Clipboard"), minW: 2, maxW: 3, minH: 2, maxH: 5, w: 2, h: 3 },
 };
 const ORDER: WidgetType[] = ["machines", "actions", "capture", "agent", "stats", "clock", "files", "clipboard", "shelf", "games", "weather"];
-// The shelf and the games ask for the whole width: two columns in a narrow panel, three in a wide one (no empty
-// column beside them). Placed in this order, the first free cell each.
 const DEFAULT_SIZES: [WidgetType, number, number][] = [["machines", 2, 2], ["stats", 1, 2], ["clock", 1, 2], ["actions", 2, 2], ["capture", 3, 2], ["files", 3, 2], ["clipboard", 3, 3], ["shelf", 3, 2], ["games", 3, 2]];
 
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
@@ -51,10 +41,8 @@ const GAP = 8, ROW = 76;
 interface Cell { x: number; y: number; w: number; h: number }
 const hit = (a: Cell, b: Cell) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
-/** Each widget's width as shown: what it asked for, within its limits and the columns there are. */
 const shownW = (it: { type: WidgetType; w: number }, cols: number) => clamp(it.w, Math.min(SPEC[it.type].minW, cols), Math.min(SPEC[it.type].maxW, cols));
 
-/** Gives widgets without a place the first free cell, in order (a layout saved before places existed, new ones). */
 function settle(list: Omit<WidgetItem, "x" | "y">[] | WidgetItem[], cols = 3): WidgetItem[] {
   const out: WidgetItem[] = [], taken: Cell[] = [];
   for (const it of list) {
@@ -69,12 +57,8 @@ function settle(list: Omit<WidgetItem, "x" | "y">[] | WidgetItem[], cols = 3): W
   return out;
 }
 
-/** Where each widget shows: at its own column and row, moved up while the cells above are free (no empty rows under
- *  nothing), and down when another one is already there. `first` goes first and keeps its place (the one being
- *  dragged or resized), the others make room around it. */
 function place(items: WidgetItem[], cols: number, first?: string): Record<string, Cell> {
   const out: Record<string, Cell> = {}, taken: Cell[] = [];
-  // A widget without a place (an older layout, one just added) gets the first free cell before anything else.
   const seq = settle(items, cols).sort((a, b) => (a.id === first ? -1 : b.id === first ? 1 : a.y - b.y || a.x - b.x));
   for (const it of seq) {
     const w = shownW(it, cols), c = { x: clamp(it.x, 0, cols - w), y: Math.max(0, it.y), w, h: it.h };
@@ -86,15 +70,11 @@ function place(items: WidgetItem[], cols: number, first?: string): Record<string
     out[it.id] = c;
   }
   if (!first) return out;
-  // Then everything (the held one too) moves up into the free cells, so what is shown while holding it is exactly
-  // where it stays when dropped.
   return place(items.map((o) => ({ ...o, x: out[o.id].x, y: out[o.id].y })), cols);
 }
 
 const KEY = "gpuvm.viewerPanelWidgets";
-/** Widgets added after the first layouts were saved (Captura, Archivos and Portapapeles, 0.10). */
 const NEWER: WidgetType[] = ["capture", "files", "clipboard"];
-// v2: test builds of one feature each wrote the first key while their boards lacked the others' widgets.
 const OFFERED = "gpuvm.viewerPanelWidgetsOffered.v2";
 export function loadWidgets(): WidgetItem[] {
   try {
@@ -106,13 +86,11 @@ export function loadWidgets(): WidgetItem[] {
       const base = { id: x.type, type: x.type as WidgetType, w: clamp(Number(x.w) || 1, s.minW, s.maxW), h: clamp(Number(x.h) || 1, s.minH, s.maxH) };
       return Number.isFinite(x.x) && Number.isFinite(x.y) ? { ...base, x: clamp(x.x, 0, 2), y: Math.max(0, x.y) } : base;
     });
-    // Widgets that came out after the layout was saved go under it once; removed later, they stay removed.
     const offered = new Set<string>(JSON.parse(localStorage.getItem(OFFERED) ?? "[]"));
     let added = false;
     for (const type of NEWER) {
       if (!offered.has(type) && !list.some((x) => x.type === type)) { list.push(newWidget(type, settle(list))); added = true; }
     }
-    // Saved with the board right away: the panel loads it more than once, and the offer is noted only once.
     if (added) saveWidgets(settle(list));
     else localStorage.setItem(OFFERED, JSON.stringify(NEWER));
     return settle(list);
@@ -121,17 +99,14 @@ export function loadWidgets(): WidgetItem[] {
 export function saveWidgets(items: WidgetItem[]) {
   try {
     localStorage.setItem(KEY, JSON.stringify(items.map(({ type, w, h, x, y }) => ({ type, w, h, x, y }))));
-    // A board saved from the defaults already had every widget: one taken off later stays off.
     localStorage.setItem(OFFERED, JSON.stringify(NEWER));
-  } catch { /* no storage */ }
+  } catch {}
 }
 export const defaultWidgets = () => settle(DEFAULT_SIZES.map(([type, w, h]) => ({ id: type, type, w, h })));
 export const missingWidgets = (items: WidgetItem[]) => ORDER.filter((type) => !items.some((x) => x.type === type));
-/** A new widget goes under the others. */
 export const newWidget = (type: WidgetType, items: WidgetItem[]): WidgetItem =>
   ({ id: type, type, w: SPEC[type].w, h: SPEC[type].h, x: 0, y: Math.max(0, ...items.map((o) => (Number(o.y) || 0) + o.h)) });
 
-/** What a widget knows about its size: cells and pixels. */
 export interface WidgetSize { w: number; h: number; px: number; py: number }
 
 export function WidgetBoard({ items, onChange, edit, children }: {
@@ -140,11 +115,8 @@ export function WidgetBoard({ items, onChange, edit, children }: {
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
-  // The widget being dragged follows the pointer (x, y in pixels) and asks for the cell under it (cx, cy).
   const [drag, setDrag] = useState<{ id: string; x: number; y: number; cx: number; cy: number } | null>(null);
-  // The widget being resized: its cells while the pointer pulls (it moves from cell to cell, never in between).
   const [sizing, setSizing] = useState<{ id: string; w: number; h: number } | null>(null);
-  // Nothing slides in when the board first appears: transitions start after the first layout.
   const [ready, setReady] = useState(false);
   const live = useRef(items);
   live.current = items;
@@ -157,8 +129,7 @@ export function WidgetBoard({ items, onChange, edit, children }: {
     setWidth(el.clientWidth);
     return () => ro.disconnect();
   }, []);
-  // And on every redraw: a panel resized by its own edge redraws the board, and some browsers (Brave) delivered the
-  // observer's last size late or not at all, leaving the widgets at the old width.
+  // Also on every redraw: some browsers (Brave) deliver the observer's last size late or never.
   useLayoutEffect(() => {
     const w = ref.current?.clientWidth ?? 0;
     if (w && w !== width) setWidth(w);
@@ -167,8 +138,6 @@ export function WidgetBoard({ items, onChange, edit, children }: {
 
   const cols = width >= 416 ? 3 : 2;
   const cellW = (width - GAP * (cols - 1)) / cols;
-  // A layout arranged in two columns, shown in three for the first time: full-width widgets stay full width and the
-  // rest fill the new column (once; a layout that already uses the third column is kept).
   useEffect(() => {
     if (cols !== 3) return;
     const list = live.current;
@@ -180,7 +149,6 @@ export function WidgetBoard({ items, onChange, edit, children }: {
   }, [cols]);
   const px = (c: Cell) => ({ x: c.x * (cellW + GAP), y: c.y * (ROW + GAP), w: c.w * cellW + (c.w - 1) * GAP, h: c.h * ROW + (c.h - 1) * GAP });
 
-  // The layout as shown: with the dragged widget at the cell it asks for, or the resized one at its new size.
   const shown = useMemo(() => {
     if (drag) return { list: items.map((o) => (o.id === drag.id ? { ...o, x: drag.cx, y: drag.cy } : o)), first: drag.id };
     if (sizing) return { list: items.map((o) => (o.id === sizing.id ? { ...o, w: sizing.w, h: sizing.h } : o)), first: sizing.id };
@@ -188,16 +156,12 @@ export function WidgetBoard({ items, onChange, edit, children }: {
   }, [items, drag, sizing]);
   const cells = useMemo(() => place(shown.list, cols, shown.first), [shown, cols]);
   const rows = Math.max(0, ...Object.values(cells).map((c) => c.y + c.h));
-  // While a widget is being changed there is a row of room under the board, so it can be dropped or grown there.
   const boardH = Math.max(0, (rows + (drag || sizing ? 1 : 0)) * (ROW + GAP) - GAP);
-  /** Keeps what is shown: each widget's place as it is now. */
   const commit = (list: WidgetItem[], first?: string) => {
     const at = place(list, cols, first);
     onChange(list.map((o) => ({ ...o, x: at[o.id].x, y: at[o.id].y })));
   };
 
-  /* While dragging or resizing near the top or bottom of the panel, it scrolls by itself (gently, faster closer to
-     the edge), so the widget being changed stays in view. Runs only while the pointer is held. */
   const edgeScroll = (pointerY: () => number | null, onScroll: () => void) => {
     const sc = ref.current?.closest(".viewer-panel-body") as HTMLElement | null;
     let frame = 0;
@@ -215,7 +179,6 @@ export function WidgetBoard({ items, onChange, edit, children }: {
   };
 
   const startDrag = (e: React.PointerEvent, id: string) => {
-    // Widgets move only while editing (so using one never shifts it by accident).
     if (!edit || e.button !== 0 || (e.target as HTMLElement).closest(".vp-remove, .vp-grip")) return;
     const me = live.current.find((o) => o.id === id);
     if (!me) return;
@@ -227,7 +190,6 @@ export function WidgetBoard({ items, onChange, edit, children }: {
       frame = 0;
       const ev = pending!;
       const b = ref.current!.getBoundingClientRect(), x = ev.clientX - b.left - gx, y = ev.clientY - b.top - gy;
-      // The cell under the widget's top left corner, as it is held: it lands there, the others make room.
       cell = { cx: clamp(Math.round(x / (cellW + GAP)), 0, cols - w), cy: Math.max(0, Math.round(y / (ROW + GAP))) };
       setDrag({ id, x, y, ...cell });
     };
@@ -264,7 +226,6 @@ export function WidgetBoard({ items, onChange, edit, children }: {
     const step = () => {
       frame = 0;
       const ev = pending!;
-      // The cells it would take, within its limits (what the panel scrolled by itself counts as pulling further).
       const w = at.w + ev.clientX - sx, h = at.h + ev.clientY - sy + auto.top() - top0;
       const cw = clamp(Math.round((w + GAP) / (cellW + GAP)), Math.min(s.minW, cols), Math.min(s.maxW, cols, cols - cells[it.id].x));
       const ch = clamp(Math.round((h + GAP) / (ROW + GAP)), s.minH, s.maxH);
@@ -313,9 +274,6 @@ export function WidgetBoard({ items, onChange, edit, children }: {
   );
 }
 
-/* ---------------------------------------------------------------------------------------------------------------- */
-
-/** A list that scrolls inside its widget fades at the edge where more is hidden, and only there. */
 function useFade<T extends HTMLElement>() {
   const ref = useRef<T>(null);
   useEffect(() => {
@@ -335,15 +293,12 @@ function useFade<T extends HTMLElement>() {
   return ref;
 }
 
-/** The machines with their cubes: the one on screen marked by tone, the others a click away. */
 export function MachinesWidget({ vms, current, size, onSwitch }: { vms: VmOverview[]; current: string; size: WidgetSize; onSwitch: (name: string) => void }) {
   const list = useMemo(() => vms.filter((v) => v.streaming).sort((a, b) => (a.name === current ? -1 : b.name === current ? 1 : 0)), [vms, current]);
   const cubesRef = useFade<HTMLDivElement>(), listRef = useFade<HTMLUListElement>();
   if (list.length <= 1) {
     return <WidgetEmpty icon={IconDeviceDesktop} title={t("No other machines")} />;
   }
-  // One column, or a single row: the cubes alone (name on hover). With room: a list with name, state and action,
-  // roomier and with the machine's size when it is tall and wide.
   if (size.w === 1 || size.h === 1) {
     return (
       <div className={`vp-cubes vp-scroll${size.h >= 3 ? " big" : ""}`} ref={cubesRef}>
@@ -383,7 +338,6 @@ export function MachinesWidget({ vms, current, size, onSwitch }: { vms: VmOvervi
   );
 }
 
-/** The usual actions: back to Home, full screen or inside GpuVM, the numbers over the picture, disconnect. */
 export function ActionsWidget({ size, fullScreen, overlay, onHome, onFullscreen, onOverlay, onDisconnect }: {
   size: WidgetSize; fullScreen: boolean; overlay: boolean; onHome: () => void; onFullscreen: () => void; onOverlay: () => void; onDisconnect: () => void;
 }) {
@@ -393,8 +347,6 @@ export function ActionsWidget({ size, fullScreen, overlay, onHome, onFullscreen,
     { icon: IconChartLine, label: t("Stats on the picture"), on: overlay, run: onOverlay },
     { icon: IconPlugConnectedX, label: t("Disconnect"), run: onDisconnect },
   ];
-  // Labels when each button has room for one; otherwise icons in a row (or a square of four, or a column).
-  // Two rows of room: each button with its name, beside the icon when wide, under it when narrow (never cut).
   const labels = size.h >= 2 && size.px >= 260, beside = labels && size.px >= 440;
   const perRow = !labels && size.h === 1 && size.px >= 200 ? 4 : 2;
   return (
@@ -408,12 +360,9 @@ export function ActionsWidget({ size, fullScreen, overlay, onHome, onFullscreen,
   );
 }
 
-/** A file the app saved from the viewer (capture.rs "capture-saved"). */
 export interface SavedCapture { kind: "shot" | "clip" | "replay"; path: string; name: string; thumb: string | null; durationMs: number; at: number }
-/** What the capture widget shows and does (kept by the panel, which hears the viewer). */
 export interface CaptureState {
   recording: boolean;
-  /** When the recording started (Date.now()), for the time shown. */
   since: number;
   replay: boolean;
   last: SavedCapture | null;
@@ -437,8 +386,6 @@ function useNow(on: boolean) {
   return now;
 }
 
-/** Capture: a screenshot, recording (Detener while it records, with its time) and the last 30 s; with room, the
- *  newest file with its picture (opens it) and a button that shows it in its folder. */
 export function CaptureWidget({ size, state, onShot, onRecord, onReplay, onOpen, onReveal }: {
   size: WidgetSize; state: CaptureState; onShot: () => void; onRecord: () => void; onReplay: () => void;
   onOpen: (c: SavedCapture) => void; onReveal: (c: SavedCapture) => void;
@@ -493,10 +440,8 @@ export function CaptureWidget({ size, state, onShot, onRecord, onReplay, onOpen,
 
 export interface ViewerStats { receivedFps: number; renderedFps: number; networkDropPercent: number; decodeMs: number; renderMs: number; hostLatencyMs: number; networkLatencyMs: number }
 
-/** The picture's numbers: frames per second (with its recent history when there is room) and the delays. */
 export function StatsWidget({ stats, history, size }: { stats: ViewerStats | null; history: number[]; size: WidgetSize }) {
   const ms = (n: number | undefined) => (n && n > 0 ? `${n.toLocaleString(locale(), { maximumFractionDigits: 1, minimumFractionDigits: 1 })} ms` : "—");
-  // One row: the number and one delay (two delays beside it when wide). Taller: its recent history and more numbers.
   const tall = size.h >= 2, wide = size.px >= 220;
   const rows: [string, string][] = tall || wide
     ? [[t("Network"), ms(stats?.networkLatencyMs)], [t("Machine"), ms(stats?.hostLatencyMs)]]
@@ -524,7 +469,6 @@ function Spark({ values, height }: { values: number[]; height: number }) {
   );
 }
 
-/** The time and the date, redrawn when the minute changes. */
 export function ClockWidget({ size }: { size: WidgetSize }) {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -533,7 +477,6 @@ export function ClockWidget({ size }: { size: WidgetSize }) {
     timer = window.setTimeout(tick, 60000 - (Date.now() % 60000) + 50);
     return () => clearTimeout(timer);
   }, []);
-  // The time big and, where the language has one, a. m. / p. m. small beside it (it made the time wrap in one cell).
   const parts = new Intl.DateTimeFormat(locale(), { hour: "numeric", minute: "2-digit" }).formatToParts(now);
   const time = parts.filter((p) => p.type !== "dayPeriod").map((p) => p.value).join("").trim();
   const period = parts.find((p) => p.type === "dayPeriod")?.value;
@@ -546,8 +489,6 @@ export function ClockWidget({ size }: { size: WidgetSize }) {
   );
 }
 
-/* The shelf: every figure the machines carry (Personalizar), standing on boards. Each is drawn once from the figures'
-   thumbnail cache; the one under the pointer turns slowly, and only that one draws while it does. */
 function useAllDecor(names: string[]) {
   const key = names.join("|");
   const snap = useRef<{ key: string; figures: { id: string; figure: string; vm: string; color: string | null }[] } | null>(null);
@@ -593,7 +534,6 @@ export function ShelfWidget({ vms, size }: { vms: VmOverview[]; size: WidgetSize
   const figures = useAllDecor(names);
   const accent = useAccent();
   if (!figures.length) return <WidgetEmpty icon={IconBooks} title={t("No figures yet")} text={size.h >= 2 ? t("They go on each machine from Customize.") : undefined} />;
-  // The figures grow with the boards (one board per row of the widget), as many on each as fit, spread evenly.
   const fig = Math.round(clamp((size.py - 12) / size.h - 14, 40, 84));
   const perRow = Math.max(1, Math.floor((size.px - 20) / (fig + 4)));
   const each = Math.min(perRow, Math.ceil(figures.length / size.h));
@@ -614,15 +554,10 @@ function useAccent() {
   return useMemo(() => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#7d9cf0", [prefs.theme, prefs.accent]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
-/** The games for the waits: each with its record and a button to play it (the game takes the whole panel). */
 export function GamesWidget({ size, player, fallback, onPlay }: { size: WidgetSize; player: string; fallback: Decor; onPlay: (g: GameDef) => void }) {
   const ref = useFade<HTMLUListElement>(), coversRef = useFade<HTMLDivElement>();
   const record = (g: GameDef) => Math.max(bestScore(g.id), ...(g.modes ?? []).map((m) => bestScore(`${g.id}.${m.id}`)));
-  // With room (two cells wide and two tall), each game shows its cover: a frame of its own demo, which plays while
-  // the pointer is over it.
   if (size.w >= 2 && size.h >= 2) {
-    // Four games: four across when wide, two by two otherwise, always all four inside the widget (a second row that
-    // only showed by scrolling looked cut off).
     const cols = size.px >= 500 ? 4 : 2, rows = cols === 2 ? 2 : 1;
     const cardW = (size.px - 12 - 8 * (cols - 1)) / cols;
     const cardH = (size.py - 12 - 8 * (rows - 1)) / rows;
@@ -666,9 +601,6 @@ export function GamesWidget({ size, player, fallback, onPlay }: { size: WidgetSi
   );
 }
 
-/* A game's cover: its demo runs a moment, a frame of it stays as a still picture (kept per game and theme, retaken
-   when the card grows past its width) and the demo stops; with the pointer over the card it plays again. So the board
-   never keeps several games running. */
 const covers = new Map<string, { url: string; width: number }>();
 function GameCover({ game, player, fallback }: { game: GameDef; player: string; fallback: Decor }) {
   const theme = usePrefs().theme;
@@ -687,13 +619,12 @@ function GameCover({ game, player, fallback }: { game: GameDef; player: string; 
     ro.observe(el);
     return () => ro.disconnect();
   }, [key]);
-  // While it plays without the pointer (the first time), a frame is taken after a moment and the demo stops.
   const hover = useRef(false);
   useEffect(() => {
     if (!live) return;
     const timer = window.setTimeout(() => {
       const cv = box.current?.querySelector("canvas");
-      try { if (cv && cv.width) { const url = cv.toDataURL("image/webp", 0.9); covers.set(key, { url, width: cv.width }); setStill(url); } } catch { /* nothing to keep */ }
+      try { if (cv && cv.width) { const url = cv.toDataURL("image/webp", 0.9); covers.set(key, { url, width: cv.width }); setStill(url); } } catch {}
       if (!hover.current) setLive(false);
     }, 1400);
     return () => clearTimeout(timer);
@@ -706,12 +637,11 @@ function GameCover({ game, player, fallback }: { game: GameDef; player: string; 
   );
 }
 
-/* Weather: off until the person turns it on and types a city. Only the city's name goes to Open-Meteo (a free service
-   without accounts or keys) to find it, and then its coordinates to ask for the weather; never the PC's location. */
+/* Privacy: only the typed city name, then its coordinates, go to Open-Meteo; never the PC's location. */
 const WEATHER_KEY = "gpuvm.weather";
 interface Place { name: string; lat: number; lon: number }
 interface Now { temp: number; code: number; day: boolean; at: number }
-export const forgetWeather = () => { try { localStorage.removeItem(WEATHER_KEY); } catch { /* no storage */ } };
+export const forgetWeather = () => { try { localStorage.removeItem(WEATHER_KEY); } catch {} };
 const readPlace = (): Place | null => { try { const p = JSON.parse(localStorage.getItem(WEATHER_KEY) ?? "null"); return p && typeof p.lat === "number" ? p : null; } catch { return null; } };
 
 async function getJson<T>(url: string): Promise<T> {
@@ -741,7 +671,6 @@ export function WeatherWidget({ size, open }: { size: WidgetSize; open: boolean 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  // The weather while the panel is open, every 30 minutes; nothing is asked while it is closed.
   useEffect(() => {
     if (!place || !open) return;
     let alive = true;
@@ -765,7 +694,7 @@ export function WeatherWidget({ size, open }: { size: WidgetSize; open: boolean 
       const hit = r.results?.[0];
       if (!hit) { setError(t("City not found")); return; }
       const p = { name: hit.name, lat: hit.latitude, lon: hit.longitude };
-      try { localStorage.setItem(WEATHER_KEY, JSON.stringify(p)); } catch { /* no storage */ }
+      try { localStorage.setItem(WEATHER_KEY, JSON.stringify(p)); } catch {}
       setNow(null); setPlace(p); setAsking(false); setCity("");
     } catch { setError(t("No connection")); } finally { setBusy(false); }
   };
@@ -802,7 +731,6 @@ export function WeatherWidget({ size, open }: { size: WidgetSize; open: boolean 
   );
 }
 
-/** A widget with nothing to show: its icon in a soft square and a short title (and a line when it adds something). */
 function WidgetEmpty({ icon: Ico, title, text }: { icon: Icon; title: string; text?: string }) {
   return (
     <div className="vp-empty">
@@ -813,10 +741,8 @@ function WidgetEmpty({ icon: Ico, title, text }: { icon: Icon; title: string; te
   );
 }
 
-/** The add row while editing: the widgets not on the board, each a click away. */
 export function WidgetTray({ items, onAdd, onReset }: { items: WidgetItem[]; onAdd: (type: WidgetType) => void; onReset: () => void }) {
   const missing = missingWidgets(items);
-  // Opening Edit brings the tray into view: below a long board it sat under the panel's edge.
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => { ref.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, []);
   return (

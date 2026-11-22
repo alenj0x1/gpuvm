@@ -4,15 +4,6 @@
     python scripts/release.py 0.3.0 --dry-run  # only shows what it would do
     python scripts/release.py --next           # suggests the number from the commits
 
-Steps:
-  1. Checks that the tree is clean and that "Unreleased" (CHANGELOG.md) and "Sin publicar"
-     (CHANGELOG.es.md) have entries.
-  2. Sets the version in the module (GpuVM.psd1, GpuVM.psm1), the app (package.json, Cargo.toml,
-     Cargo.lock, tauri.conf.json) and the docs (package.json).
-  3. Turns those sections into "## [<version>] - <date>" with a compare link, leaving no empty
-     section above it. The docs changelog is generated from them when the docs are built.
-  4. Commits "chore(release): <version>" and creates the annotated tag v<version> with the notes.
-
 It does not push: review, then `git push --follow-tags`.
 """
 
@@ -26,9 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 REPO_URL = "https://github.com/alenj0x1/gpuvm"
-# Each changelog with the title of its section of unreleased changes.
 CHANGELOGS = [(ROOT / "CHANGELOG.md", "Unreleased"), (ROOT / "CHANGELOG.es.md", "Sin publicar")]
-# File and the pattern whose first group is followed by the version (only the first match is replaced).
 VERSION_SPOTS = [
     (ROOT / "src" / "GpuVM" / "GpuVM.psd1", r"(ModuleVersion\s*=\s*')[^']+"),
     (ROOT / "src" / "GpuVM" / "GpuVM.psm1", r"(\$script:ToolVersion\s*=\s*')[^']+"),
@@ -86,7 +75,6 @@ def release_changelog(text: str, title: str, version: str, previous: str, today:
     if not notes:
         sys.exit(f"«{title}» is empty: write the changes there before releasing.")
     text = text[:m.start()] + f"## [{version}] - {today}\n\n{notes}\n\n" + text[m.end():]
-    # Compare links: the unreleased one (if any) goes away with its section; the new version goes first.
     text = re.sub(rf"^\[{re.escape(title)}\]: .*\n", "", text, flags=re.M)
     link = f"[{version}]: {REPO_URL}/compare/v{previous}...v{version}\n"
     first = re.search(r"^\[\d+\.\d+\.\d+\]: ", text, re.M)
@@ -118,7 +106,7 @@ def main() -> int:
     passed = json.loads(read(stamp)).get("commit") if stamp.exists() else None
     if passed != head and not a.skip_e2e:
         sys.exit("No passing end-to-end check for this commit. Build and install it, then run "
-                 "pwsh -File tests/e2e/overlays.ps1 (or --skip-e2e for a test release).")
+                 "pwsh -File tests/e2e/run.ps1 (or --skip-e2e for a test release).")
 
     previous, today = current(), dt.date.today().isoformat()
     updated = [(path, *release_changelog(read(path), title, a.version, previous, today)) for path, title in CHANGELOGS]

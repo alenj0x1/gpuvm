@@ -29,8 +29,6 @@ function Remove-GpuVMDisposable {
     $root = Get-GpuVMDefaultRoot
     $removed = [System.Collections.Generic.List[string]]::new()
     $known = @{}
-    # Disposable machines only reserve a fixed amount of the drive: when it gets down to the host's margin, the running
-    # ones are shut down cleanly (in the background), and the next sweep deletes them.
     if ((Get-DriveFreeGB $root) -lt $script:DiskMarginGB) {
         foreach ($vm in @(Get-VM -ErrorAction Stop | Where-Object State -eq 'Running')) {
             if (-not (Test-GpuVMDisposableByName -Name $vm.Name)) { continue }
@@ -47,14 +45,12 @@ function Remove-GpuVMDisposable {
         if (-not $state -or -not (Test-GpuVMDisposableDone -State $state -VMState $vm.State.ToString())) { continue }
         if (-not $PSCmdlet.ShouldProcess($vm.Name, 'Delete the disposable machine')) { continue }
         Write-Step "Deleting the disposable machine '$($vm.Name)'"
-        # Only its own folder inside GpuVM's root is deleted (the backend refuses any other path).
         try {
             Invoke-GpuVMBackend -Backend $state['backend'] -Operation Remove -Arguments $vm.Name, $state, $true
             $removed.Add($vm.Name)
         }
         catch { Write-Warning "Couldn't delete the disposable machine '$($vm.Name)': $($_.Exception.Message)" }
     }
-    # A disposable machine whose VM is gone (the app or PC closed halfway through deleting it): its folder goes too.
     foreach ($dir in @(Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue | Where-Object Name -notlike '.*')) {
         if ($known.ContainsKey($dir.Name) -or $dir.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
         $statePath = Join-Path $dir.FullName 'gpuvm.json'

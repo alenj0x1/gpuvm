@@ -3,14 +3,6 @@ import { settledResize } from "./types";
 import { drawFigureThumb } from "../decor/figureGL";
 import { t } from "../i18n";
 
-// "Stack": your machine is the base, and a block slides from side to side above the top of the tower.
-// One click drops it: what hangs past the block below falls off and what is left is the new top, so a miss makes the
-// tower narrower. Landing it right on top is a Perfect: it keeps its width, and three in a row make the block grow
-// back a little. The machine's first figure rides on the top block. The tower climbs and the camera follows. Every
-// eight floors it climbs into another world (blocks, a motherboard, the studio, then space), each with its own kind of
-// block, and it gets harder as it goes: faster, then a speed that swells and eases, then blocks from either side.
-// Missing the tower completely ends the game. In a demo it plays by itself.
-
 type World = "studio" | "board" | "blocks" | "space";
 interface Floor { x: number; w: number; color: string; world: World }
 const ORDER: World[] = ["blocks", "board", "studio", "space"];
@@ -22,17 +14,14 @@ interface Spark { x: number; y: number; vx: number; vy: number; life: number; co
 const rgba = (hex: string, a: number) => { const h = hex.replace("#", ""); return `rgba(${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)},${a})`; };
 const BRICKS = ["#cc4f43", "#d9a03a", "#3f6fb5", "#4f9c45", "#e9e3d6", "#8a5cc2"];
 
-/** The world behind, scrolled by how high the camera has climbed. */
 function background(g: CanvasRenderingContext2D, w: number, h: number, world: World, cam: number, light: boolean) {
   if (world === "space") {
-    // Up past the sky: deep graphite with stars drifting by as the tower climbs.
     g.fillStyle = light ? "#20232b" : "#0f1013"; g.fillRect(0, 0, w, h);
     for (let n = 0; n < 70; n++) {
       const x = (n * 97.3) % w, y = (((n * 53.7 + cam * (0.15 + (n % 3) * 0.1)) % (h + 20)) + h + 20) % (h + 20) - 10, s = n % 7 === 0 ? 2 : 1;
       g.fillStyle = n % 5 === 0 ? "rgba(255,236,190,.8)" : "rgba(235,232,225,.55)"; g.fillRect(x, y, s, s);
     }
   } else if (world === "board") {
-    // Kept close to its own tone: it is only a backdrop, the chips of the tower must stand out from it.
     g.fillStyle = light ? "#e4ebe6" : "#121814"; g.fillRect(0, 0, w, h);
     g.strokeStyle = light ? "#d2ddd5" : "#1b2a23"; g.lineWidth = 1.5;
     const off = (cam * 0.7) % 22;
@@ -43,7 +32,6 @@ function background(g: CanvasRenderingContext2D, w: number, h: number, world: Wo
       g.stroke();
     }
   } else if (world === "blocks") {
-    // A sky that gets deeper as the tower climbs, with clouds of blocks going by.
     const k = Math.min(1, cam / 2400);
     const sky = g.createLinearGradient(0, 0, 0, h);
     sky.addColorStop(0, light ? mix("#8fbfe2", "#3e6f9e", k) : mix("#4d7899", "#1d3047", k));
@@ -71,12 +59,8 @@ function mix(a: string, b: string, k: number) {
   return "#" + x.map((v, i) => Math.round(v + (y[i] - v) * k).toString(16).padStart(2, "0")).join("");
 }
 
-/** A color made lighter (k > 0) or darker (k < 0). */
 function tone(hex: string, k: number) { return k >= 0 ? mix(hex, "#ffffff", k) : mix(hex, "#000000", -k); }
 
-/** One block of the tower with its volume: the front, its top going back and its right side, drawn as the world's
- *  kind of piece (a toy brick with studs, a chip with pins and its marking, a hologram slab, a solar panel). `d` is
- *  how deep it goes back (0 for a piece falling off, seen flat). */
 function block(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, color: string, world: World, light: boolean, ink: string, d = h * 0.32) {
   if (w <= 0) return;
   const dx = d, dy = d * 0.62;
@@ -85,10 +69,8 @@ function block(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: 
   const side = (c: string) => { g.fillStyle = c; g.beginPath(); g.moveTo(x + w, y); g.lineTo(x + w + dx, y - dy); g.lineTo(x + w + dx, y + h - dy); g.lineTo(x + w, y + h); g.closePath(); g.fill(); };
   if (world === "blocks") {
     side(tone(color, -0.28)); face(color); top(tone(color, 0.18));
-    // The brick's lower lip and a soft shine on its front.
     g.fillStyle = tone(color, -0.18); g.fillRect(x, y + h - h * 0.12, w, h * 0.12);
     g.fillStyle = "rgba(255,255,255,.16)"; g.fillRect(x + 4, y + 4, Math.max(0, Math.min(w * 0.35, w - 8)), 3);
-    // Studs on top: little cylinders in rows, as many as fit the brick.
     if (d > 0) {
       const sw = Math.min(h * 0.42, 22), n = Math.max(1, Math.floor(w / (sw * 1.7)));
       for (let row = 0; row < 2; row++) for (let k = 0; k < n; k++) {
@@ -102,16 +84,13 @@ function block(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: 
   } else if (world === "board") {
     const body = light ? "#2b3034" : "#3a4449";
     side(tone(body, -0.25)); face(body); top(tone(body, 0.12));
-    // Pins along the front's top and bottom, gold pads on the top, the notch and a marking in the machine's color.
     g.fillStyle = light ? "#b9bfc1" : "#c4cacc";
     for (let px = x + 6; px < x + w - 5; px += 10) { g.fillRect(px, y + h, 3, 5); }
     g.fillStyle = "#c9a24a";
     for (let px = x + 8; px < x + w - 4; px += 14) { g.fillRect(px + dx * 0.5, y - dy * 0.5 - 1, 5, 2); }
     g.fillStyle = tone(body, 0.2); g.beginPath(); g.arc(x + 10, y + 10, 3, 0, Math.PI * 2); g.fill();
-    // A small mark in the machine's color (never printed words).
     g.fillStyle = color; g.fillRect(x + w / 2 - 8, y + h / 2 - 2, 16, 4);
   } else if (world === "space") {
-    // A solar panel: a frame in the machine's color and a grid of cells.
     side(tone("#1b2140", -0.3)); top(tone(color, 0.1));
     face(light ? "#26304f" : "#1b2140");
     const cols = Math.max(1, Math.floor(w / 18)), cw = (w - 6) / cols;
@@ -119,7 +98,6 @@ function block(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: 
     for (let c = 0; c < cols; c++) for (let rI = 0; rI < 2; rI++) g.fillRect(x + 3 + c * cw + 1, y + 3 + rI * ((h - 6) / 2) + 1, cw - 2, (h - 6) / 2 - 2);
     g.strokeStyle = color; g.lineWidth = 1.5; g.strokeRect(x + 0.75, y + 0.75, w - 1.5, h - 1.5);
   } else {
-    // A hologram slab: translucent faces, scan lines and corner marks.
     side(rgba(color, light ? 0.1 : 0.14)); top(rgba(color, light ? 0.22 : 0.28));
     g.fillStyle = rgba(color, light ? 0.14 : 0.18); g.fillRect(x, y, w, h);
     g.strokeStyle = rgba(ink, 0.1); g.lineWidth = 1; g.beginPath();
@@ -134,7 +112,6 @@ function block(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: 
 
 function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
   const g = canvas.getContext("2d")!;
-  // The world it starts in (the mode picked), then the others in order as the tower climbs.
   let startWorld = (["studio", "board", "blocks"].includes(host.mode) ? host.mode : host.world && ["studio", "board", "blocks"].includes(host.world) ? host.world : "blocks") as World;
   const zoneOf = (floor: number) => { const k = ORDER.indexOf(startWorld); return ORDER[(k + Math.floor(floor / FLOORS_PER_ZONE)) % ORDER.length]; };
   let world: World = startWorld, bannerAt = -9;
@@ -143,7 +120,6 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
   let W = 0, H = 0, dpr = 1;
   const resize = () => { dpr = Math.min(2, window.devicePixelRatio || 1); W = canvas.clientWidth; H = canvas.clientHeight; canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); };
   resize();
-  // Refit once the size settles, and draw again right away if nothing is running to do it.
   const ro = settledResize(() => { resize(); if (!running) draw(0); });
   ro.observe(canvas);
   const sprite = document.createElement("canvas");
@@ -158,17 +134,13 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
   const unit = () => Math.max(0.75, Math.min(1.3, H / 520));
   const bh = () => 58 * unit();
   const baseW = () => Math.min(W * 0.46, 280 * unit());
-  // Where a floor sits on screen: the base near the bottom, each floor one block higher, scrolled by the camera.
   const yOf = (i: number) => H - 64 * unit() - (i + 1) * bh() + cam;
   const colorFor = (i: number) => zoneOf(i) === "blocks" ? BRICKS[i % BRICKS.length] : i % 3 === 0 ? host.player.color : mix(host.player.color, host.light ? "#ffffff" : "#000000", 0.25 + (i % 3) * 0.12);
-  // Faster with every floor; from the second world the speed swells and eases as the block crosses.
   const speed = () => (260 + Math.min(560, floors.length * 13)) * unit() * (floors.length > FLOORS_PER_ZONE ? 1 + 0.4 * Math.sin(clock * 3.2) : 1);
   const nextBlock = () => {
     const top = floors[floors.length - 1];
-    // From the third world on, the next block may come from either side.
     const fromLeft = floors.length > FLOORS_PER_ZONE * 2 ? Math.random() < 0.5 : floors.length % 2 === 1;
     moving = { x: fromLeft ? -top.w : W, w: top.w, dir: fromLeft ? 1 : -1, color: colorFor(floors.length) };
-    // In a demo it aims for the top with a small, random error now and then.
     demoAim = top.x + (Math.random() < 0.8 ? (Math.random() - 0.5) * 6 : (Math.random() - 0.5) * top.w * 0.5);
   };
   const reset = () => {
@@ -186,7 +158,6 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     const top = floors[floors.length - 1], y = yOf(floors.length);
     const left = Math.max(top.x, moving.x), right = Math.min(top.x + top.w, moving.x + moving.w);
     if (right - left <= 0) {
-      // Missed the tower: the block falls and the game is over.
       falling.push({ x: moving.x, y, w: moving.w, vx: moving.dir * 60, vy: 0, rot: 0, vr: moving.dir * 2, color: moving.color });
       if (demo) { setTimeout(() => { if (!over) reset(); }, 600); moving.w = 0; return; }
       over = true; running = false; burst(top.x + top.w / 2, yOf(floors.length - 1), host.player.color, 30);
@@ -197,7 +168,6 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     let x = left, w = right - left;
     if (perfect) {
       x = top.x; w = top.w; streak++;
-      // Three in a row: the block grows back a little (never past the base).
       if (streak % 3 === 0) { const grow = Math.min(baseW() - w, 22 * unit()); x -= grow / 2; w += grow; label = "grow"; }
       else label = "perfect";
       perfectAt = clock;
@@ -205,15 +175,12 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
       score += 2;
     } else {
       streak = 0; score += 1;
-      // What hangs past the block below falls off.
       const cutLeft = moving.x < left, cx = cutLeft ? moving.x : right, cw = moving.w - w;
       falling.push({ x: cx, y, w: cw, vx: (cutLeft ? -1 : 1) * 80, vy: -40, rot: 0, vr: (cutLeft ? -1 : 1) * 3, color: moving.color });
     }
     floors.push({ x, w, color: moving.color, world: zoneOf(floors.length) });
-    // Into the next world: the backdrop fades over and its name shows for a moment.
     const next = zoneOf(floors.length);
     if (next !== world) { prevWorld = world; world = next; fade = 0; bannerAt = clock; }
-    // The camera climbs to keep the top in the upper third.
     camTo = Math.max(0, (floors.length + 1) * bh() - H * 0.5);
     nextBlock();
   };
@@ -234,7 +201,6 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     background(g, W, H, world, cam, host.light);
     g.globalAlpha = 1;
     const h = bh(), u = unit();
-    // The machine: a glass slab with its color, the base of everything.
     const base = floors[0];
     if (base) {
       const by = yOf(0);
@@ -244,7 +210,6 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
       g.fillRect(base.x + base.w * 0.1, by + 14 * u, base.w * 0.35, 8 * u); g.fillRect(base.x + base.w * 0.55, by + 12 * u, base.w * 0.3, 12 * u);
     }
     for (let i = 1; i < floors.length; i++) { const f = floors[i], y = yOf(i); if (y > H + h || y < -h * 2) continue; block(g, f.x, y, f.w, h, f.color, f.world, host.light, ink); }
-    // The figure rides on the top block.
     const top = floors[floors.length - 1];
     if (top && !over) { const s = 64 * u, y = yOf(floors.length - 1); const d = h * 0.32; g.drawImage(sprite, top.x + top.w / 2 + d * 0.5 - s / 2, y - d * 0.31 - s * 0.92 - (zoneOf(floors.length - 1) === "blocks" ? h * 0.14 : 0), s, s); }
     if (moving.w > 0 && !over) block(g, moving.x, yOf(floors.length), moving.w, h, moving.color, zoneOf(floors.length), host.light, ink);
@@ -256,7 +221,6 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     for (const s of sparks) { s.x += s.vx * dt; s.y += s.vy * dt; s.vy += 420 * dt; s.life -= dt; g.globalAlpha = Math.max(0, Math.min(1, s.life * 2)); g.fillStyle = s.color; g.fillRect(s.x - s.size / 2, s.y - s.size / 2, s.size, s.size); }
     g.globalAlpha = 1;
     sparks = sparks.filter((s) => s.life > 0);
-    // A new world: its name on a small plate at the top, for a moment.
     const sinceZone = clock - bannerAt;
     if (sinceZone < 2.2 && !demo) {
       const a = Math.min(1, sinceZone * 4, (2.2 - sinceZone) * 3), text = t("{name} zone", { name: zoneName(world) });
@@ -265,7 +229,6 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
       g.fillStyle = host.light ? "rgba(255,255,255,.9)" : "rgba(28,28,28,.9)"; g.beginPath(); g.roundRect(x, y, tw, 30 * u, 8); g.fill();
       g.fillStyle = ink; g.textAlign = "center"; g.fillText(text, W / 2, y + 20 * u); g.textAlign = "left"; g.globalAlpha = 1;
     }
-    // A Perfect: a ring of light opens around the top block; a grow also sweeps a line along its new width.
     const since = clock - perfectAt;
     if (label && since < 0.6 && top) {
       const k = since / 0.6, y = yOf(floors.length - 1), pad = 6 + k * 18;
@@ -306,8 +269,7 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
 
 export const BRICK_TOWER: GameDef = {
   id: "brick-tower",
-  // Getters: the texts come out in the language in use.
-  // One name in every language, like Overclock.
+  // Getters, so texts follow the current language.
   name: "Stack",
   get description() { return t("Drop each block right on the one below. What hangs over falls off and the tower narrows."); },
   get modes() {

@@ -1,7 +1,4 @@
-# How many frames the VM's compositor (DWM) actually composes and shows per second, from its own counters
-# (DwmGetCompositionTimingInfo), without reading the screen. Run as administrator on the host; the sampler runs in the
-# VM's desktop session. With -Target gdi or gpu it first starts the moving bar (motion-target.ps1 or the Edge page of
-# labs/021-stream-smoothness/gdi-vs-gpu.ps1), so the desktop changes all the time.
+# Run as administrator on the host.
 #   tools/latency/guest-dwm.ps1 -Name win-gpu [-Seconds 5]
 param([Parameter(Mandatory)][string]$Name, [double]$Seconds = 5)
 $ErrorActionPreference = 'Stop'

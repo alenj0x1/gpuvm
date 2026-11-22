@@ -1,4 +1,3 @@
-//! GpuVM guest agent (docs/agents/protocol.md). `proto` and `hv` are shared with the host-side lab harness.
 pub mod util;
 pub mod proto;
 pub mod hv;

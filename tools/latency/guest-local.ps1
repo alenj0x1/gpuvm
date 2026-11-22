@@ -1,8 +1,4 @@
-# References measured inside a VM, without streaming: the target and the meter both run in the VM's desktop session,
-# so the VM's own cost is told apart from what the stream adds.
-#   -Kind input   input latency (input-target + input-meter): input to the VM's composed screen
-#   -Kind motion  smoothness (motion-target + motion-meter): how often the VM's own screen shows the bar move
-# Run as administrator on the host; the meter runs in the VM through a one-shot task of the signed-in user.
+# Run as administrator on the host.
 #   tools/latency/guest-local.ps1 -Name win-gpu [-Kind motion] [-Windowed]
 # Takes over the VM's screen for about a minute; no stream may be open (the target covers the VM's desktop).
 param(
@@ -10,7 +6,6 @@ param(
     [ValidateSet('input', 'motion')][string]$Kind = 'input',
     [int]$Samples = 40,
     [double]$Seconds = 15,
-    # motion: the target as a normal window over 70 % of the screen instead of full screen.
     [switch]$Windowed,
     [string]$Out = (Join-Path $PSScriptRoot "..\..\labs\$(if ($Kind -eq 'input') { '020-input-latency' } else { '021-stream-smoothness' })\out\guest-$Kind-$(Get-Date -Format 'yyyyMMdd-HHmmss').json")
 )
@@ -30,7 +25,6 @@ try {
     `$rows = @(Measure-InputLatency -Bounds `$screen -Kinds key, click, move -Samples $Samples)
 "@
     } else {
-        # The windowed target sits at 15 %..85 % of the screen: the meter reads inside it.
         $bounds = if ($Windowed) { '[System.Drawing.Rectangle]::new([int]($screen.Width * 0.2), [int]($screen.Height * 0.2), [int]($screen.Width * 0.6), [int]($screen.Height * 0.6))' } else { '$screen' }
         @"
     . C:\GpuVM\latency\motion-meter.ps1

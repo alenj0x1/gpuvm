@@ -1,13 +1,4 @@
-# Files into a running VM, from this PC or from another VM (lab 043). Everything goes as one tar stream over
-# PowerShell Direct: GpuVM writes the archive itself (pax headers, names it checked) from the files it chose, and the
-# guest's own tar.exe unpacks it into a hidden folder that is moved into place at the end. One round trip per 4 MB
-# instead of per file (2000 small files: a few seconds instead of a minute), nothing is written to this PC's disk, and
-# the VM never reads anything of this PC: it only receives bytes.
-
 $script:TransferChunk = 4MB
-# Files from this size up don't go in the stream: several PowerShell Direct sessions write parts of each at once.
-# One session tops out near 10 MB/s; 2, 4 and 8 reached ~20, ~32 and ~42 MB/s (lab 043, parallel.ps1), with no new
-# channel into the VM.
 $script:TransferDirectMin = 16MB
 $script:TransferLanes = 8
 # Names and counts a guest (the source of a VM -> VM copy) may report: anything else stops the copy.
@@ -19,9 +10,6 @@ function Get-TransferMarker {
     Join-Path (Get-DataPath 'transfers') "$Id.cancel"
 }
 
-# A path of this PC that may be sent to a VM: a plain file or folder (not a link), never GpuVM's own data (VM disks,
-# saved passwords), Windows, or a folder that contains them (a drive, Users). The service has already opened it as
-# the user (unelevated), so it is something the user can read.
 function Assert-SendablePath {
     param([Parameter(Mandatory)][string]$Path)
     # A full path as given (a relative one would be resolved against this process's folder, not checked by the service).
@@ -37,8 +25,7 @@ function Assert-SendablePath {
     }
 }
 
-# A name that came from a guest, as a relative path inside the copy: no drive, no "..", no stream (":"), no control
-# or reserved characters. A guest that sends anything else is trying to write outside the folder of the other VM.
+# A name from a guest: no drive, no "..", no stream (":"), no control or reserved characters, or it writes outside the folder.
 function Assert-TransferName {
     param([AllowEmptyString()][string]$Name)
     if (-not $Name -or $Name.Length -gt $script:TransferMaxName) { throw 'A file name isn''t valid; nothing is copied.' }
@@ -49,12 +36,10 @@ function Assert-TransferName {
     }
 }
 
-# The person's own rights for everything read from this PC (UserFiles.cs), loaded the first time a copy needs it.
 function Initialize-UserFiles {
     if (-not ('GpuVM.UserFiles' -as [type])) { Add-Type -Path (Join-Path $PSScriptRoot 'UserFiles.cs') }
 }
 
-# A .NET call's own message (not PowerShell's "Exception calling ... with 2 argument(s)").
 function Get-InnerMessage {
     param($ErrorRecord)
     $e = $ErrorRecord.Exception
@@ -62,10 +47,6 @@ function Get-InnerMessage {
     $e.Message
 }
 
-# What will be sent from this PC: every file and folder under the chosen paths, listed with the person's rights
-# (UserFiles.cs): links skipped (never followed), a folder they can't read stops the copy, names relative to each
-# chosen item's parent. Every entry keeps the real path of the item it came from (Root): when it is read, it must
-# still be under it. Two chosen items with the same name get " (2)".
 function Get-HostTransferEntries {
     param([Parameter(Mandatory)][string[]]$Path)
     Initialize-UserFiles
@@ -101,9 +82,6 @@ function Get-UniqueName {
     for ($i = 2; ; $i++) { $candidate = "$base ($i)$ext"; if (-not $Taken.ContainsKey($candidate)) { return $candidate } }
 }
 
-# ---------------------------------------------------------------- tar (POSIX pax)
-
-# The 512-byte headers of one entry: a pax record with its real name (UTF-8, any length) and the ustar header.
 function New-TarHeader {
     param([Parameter(Mandatory)][string]$Name, [int64]$Size = 0, [switch]$Directory, [datetime]$Modified = [datetime]::UtcNow)
     $tarName = $Name.Replace('\', '/') + $(if ($Directory) { '/' } else { '' })
@@ -143,16 +121,8 @@ function Write-UstarHeader {
     & $put 148 ([Convert]::ToString($sum, 8).PadLeft(6, '0') + "`0 ")
 }
 
-# ---------------------------------------------------------------- the receiving side, in the guest
-
-# Starts tar in the guest, reading the stream into a hidden folder of its own, and checks the destination: Desktop\
-# <Folder> of the user signed in at the VM's screen (or of the session's user if nobody is). Returns the destination,
-# the hidden folder and the free space there.
-# Security review 2026-11-21: the desktop's path comes from the person's own registry and the folder is theirs, so on
-# an agent machine `agent` controls both, while this runs as the guest's administrator. The archive is unpacked (and
-# big files written) in a new folder only Administrators and SYSTEM can open (GuestFolders.ps1), never inside the
-# person's folder; the destination is only used while Enter-GpuVMDestination holds it, checked (under the profile, no
-# junction or link on the way) and impossible to swap.
+# The desktop's path and folder are the person's (on an agent machine, `agent`'s) and this runs as administrator:
+# unpacked in an admin-only folder, and the destination is only used while Enter-GpuVMDestination holds it.
 function Open-GuestReceiver {
     param([Parameter(Mandatory)]$Session, [Parameter(Mandatory)][string]$Id, [Parameter(Mandatory)][string]$Folder)
     $answer = Invoke-Command -Session $Session -ErrorAction Stop -ArgumentList $Id, $Folder, $script:GuestDesktopResolver.ToString(), $script:GuestFolderCode -ScriptBlock {
@@ -182,7 +152,6 @@ function Open-GuestReceiver {
         try {
             $dest = $guard.Dest
             if ($folder -eq 'Received') {
-                # On disk it is Received; Explorer shows it in Windows' language through desktop.ini.
                 $shown = @{ es = 'Recibidos' }[[Globalization.CultureInfo]::InstalledUICulture.TwoLetterISOLanguageName]
                 $ini = Join-Path $dest 'desktop.ini'
                 if ($shown -and -not (Test-Path -LiteralPath $ini)) {
@@ -225,13 +194,7 @@ function Send-GuestBytes {
     }
 }
 
-# Ends the stream. Done: each item moves from the hidden folder into Desktop\<Folder> (a name already there gets
-# " (2)"), and the names it got come back. Cancelled or failed: tar is stopped and the hidden folder deleted.
-# The desktop of the person signed in at the VM's screen, from their own registry hive (run inside the guest, also by
-# Send-GpuVMClipboard). The value is REG_EXPAND_SZ, usually "%USERPROFILE%\Desktop": it is read unexpanded, since
-# Get-ItemProperty expands it with this session's variables, the PowerShell Direct user's, and copies went to that
-# user's desktop while another one was signed in (lab 053: "Copied", and nothing in the person's Received).
-# Any other variable left (a OneDrive folder) falls back to <profile>\Desktop.
+# REG_EXPAND_SZ read unexpanded: Get-ItemProperty would expand it with the PowerShell Direct user's variables.
 $script:GuestDesktopResolver = {
     param([string]$KeyPath, [string]$ProfilePath)
     $key = Get-Item -LiteralPath $KeyPath -ErrorAction SilentlyContinue
@@ -261,16 +224,13 @@ function Close-GuestReceiver {
         if ($ok) {
             try {
                 $items = @(Get-ChildItem -LiteralPath $r.staging -Force)
-                # What arrived, measured where only administrators can write (the hidden folder holds only what tar
-                # and the big-file lanes wrote, no links): the sender compares it with what it sent.
+                # Measured where only administrators can write: the sender compares it with what it sent.
                 foreach ($item in $items) {
                     if ($item.PSIsContainer) {
                         foreach ($f in Get-ChildItem -LiteralPath $item.FullName -Recurse -File -Force) { $bytes += $f.Length; $files++ }
                     }
                     else { $bytes += $item.Length; $files++ }
                 }
-                # The person gets full control of what they received, as when it was unpacked in their own folder
-                # (owner Administrators, as before). Given here, before it leaves the folder they can't reach.
                 $who = New-Object Security.Principal.SecurityIdentifier $r.sid
                 foreach ($item in $items) {
                     $acl = $item.GetAccessControl('Access')
@@ -288,8 +248,7 @@ function Close-GuestReceiver {
                         $name = $item.Name
                         $base = if ($item.PSIsContainer) { $name } else { [IO.Path]::GetFileNameWithoutExtension($name) }
                         $ext = if ($item.PSIsContainer) { '' } else { [IO.Path]::GetExtension($name) }
-                        # A name already there gets " (2)". [IO.Directory]::Move and [IO.File]::Move fail when the
-                        # target exists, instead of moving into it as Move-Item does with a folder (or junction) of that name.
+                        # [IO.Directory]::Move and [IO.File]::Move fail when the target exists; Move-Item would move into a folder (or junction).
                         for ($i = 2; ; $i++) {
                             $target = Join-Path $r.dest $name
                             if (-not (Test-Path -LiteralPath $target)) {
@@ -326,7 +285,6 @@ function Close-GuestReceiver {
     }
 }
 
-# A copy is only reported done when the destination holds what was sent: the same number of files and bytes.
 function Assert-TransferArrived {
     param([Parameter(Mandatory)]$Done, [int64]$Bytes, [int]$Files, [string]$Name)
     if (-not $Done.Ok) { throw "The machine couldn't save the files. $($Done.Error)" }
@@ -335,10 +293,6 @@ function Assert-TransferArrived {
     }
 }
 
-# ---------------------------------------------------------------- the sending side
-
-# Collects bytes into 4 MB chunks and sends each full chunk; checks for a cancel and reports progress (at most
-# twice a second) as it goes.
 function New-TransferPipe {
     param($Session, [string]$Id, [int64]$Total, [string]$Marker)
     @{ Session = $Session; Id = $Id; Buffer = [byte[]]::new($script:TransferChunk); Fill = 0; Sent = [int64]0
@@ -371,16 +325,12 @@ function Send-TransferChunk {
 }
 function Write-TransferProgress {
     param([int]$Percent, [int64]$Sent, [int64]$Total)
-    # The stream also carries tar headers and padding: never more than the files themselves.
     $Sent = [math]::Min($Sent, $Total)
     $unit = if ($Total -ge 1GB) { 1GB, 'GB' } else { 1MB, 'MB' }
     $fmt = { param($n) [math]::Round($n / $unit[0], 1).ToString([cultureinfo]::InvariantCulture) }
     Write-Step "Sending $Percent % · $(& $fmt $Sent) of $(& $fmt $Total) $($unit[1])"
 }
 
-# ---------------------------------------------------------------- sessions and the source VM
-
-# A PowerShell Direct session to a running VM with its saved Windows password.
 function Open-TransferSession {
     param([Parameter(Mandatory)][string]$Name)
     $state = Get-GpuVMState -Name $Name
@@ -390,8 +340,6 @@ function Open-TransferSession {
     New-PSSession -VMName $Name -Credential $guest -ErrorAction Stop
 }
 
-# The source VM's own listing of the chosen paths: each chosen item first, then what is under it. Its answer is
-# checked by Get-GuestTransferEntries.
 function Get-GuestRawEntries {
     param([Parameter(Mandatory)]$Session, [Parameter(Mandatory)][string[]]$Path)
     Invoke-Command -Session $Session -ErrorAction Stop -ArgumentList (, $Path) -ScriptBlock {
@@ -419,8 +367,6 @@ function Get-GuestRawEntries {
     }
 }
 
-# What the source VM has under the chosen paths. The VM answers, so every name and size is checked here: names stay
-# relative and inside the copy (Assert-TransferName), sizes are whole numbers, and the list has a limit.
 function Get-GuestTransferEntries {
     param([Parameter(Mandatory)]$Session, [Parameter(Mandatory)][string[]]$Path)
     $raw = @(Get-GuestRawEntries -Session $Session -Path $Path)[-1]
@@ -435,8 +381,6 @@ function Get-GuestTransferEntries {
         $size = $e['size']
         if ($size -isnot [int64] -and $size -isnot [int32]) { throw 'The source machine gave a size that isn''t valid.' }
         if ($size -lt 0) { throw 'The source machine gave a size that isn''t valid.' }
-        # Each chosen item comes first, then what is under it: two items with the same name get " (2)", like from
-        # this PC (otherwise the second would overwrite the first in the other VM).
         $parts = $rel.Split('\')
         if ($parts.Count -eq 1) {
             $topFrom = $rel
@@ -451,10 +395,7 @@ function Get-GuestTransferEntries {
     [pscustomobject]@{ Entries = $entries; Skipped = [int]$raw['skipped'] }
 }
 
-# Several small files of the source VM into the stream with one round trip: each must come back with exactly the
-# size it reported (more or less means the file changed, or the VM lies, and the copy stops). The archive itself is
-# still written here, with the names checked here: a tar made by the source VM could carry links that write outside
-# the folder in the other VM.
+# The archive is written here: a tar made by the source VM could carry links that write outside the folder.
 function Copy-GuestFilesToPipe {
     param([Parameter(Mandatory)]$Session, [Parameter(Mandatory)][object[]]$Entries, [Parameter(Mandatory)][hashtable]$Pipe)
     $paths = [string[]]@($Entries | ForEach-Object { $_.Full })
@@ -476,8 +417,6 @@ function Copy-GuestFilesToPipe {
     }
 }
 
-# The big files, each written into the hidden folder by several sessions at once (every lane writes every n-th 4 MB
-# part at its offset). From another VM each lane also reads its parts there: the bytes only pass through memory.
 function Copy-TransferBigFiles {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -487,7 +426,6 @@ function Copy-TransferBigFiles {
         [Parameter(Mandatory)][hashtable]$Pipe
     )
     $sum = [int64]($Big | Measure-Object -Property Size -Sum | ForEach-Object Sum)
-    # One lane per 64 MB, up to 8: opening a session costs ~0.2 s and a small file gains nothing from more.
     $lanes = [int][math]::Min($script:TransferLanes, [math]::Max(1, [math]::Ceiling($sum / 64MB)))
     $targetCred = Get-GpuVMGuestCredential -State (Get-GpuVMState -Name $Name)
     $targets = @(1..$lanes | ForEach-Object { New-PSSession -VMName $Name -Credential $targetCred -ErrorAction Stop })
@@ -500,8 +438,7 @@ function Copy-TransferBigFiles {
     $marker = $Pipe.Marker
     try {
         foreach ($file in $Big) {
-            # Inside the hidden folder only Administrators and SYSTEM can open (Open-GuestReceiver): no user can have
-            # put a junction on this path.
+            # Inside the admin-only hidden folder (Open-GuestReceiver): no user can have put a junction on this path.
             $dest = Join-Path $Staging $file.Rel
             Invoke-Command -Session $targets[0] -ErrorAction Stop -ArgumentList $dest, $file.Size -ScriptBlock {
                 param($p, [int64]$len)
@@ -545,8 +482,7 @@ function Copy-TransferBigFiles {
                             while ($got -lt $want -and ($r = $local.Read($buf, $got, $want - $got)) -gt 0) { $got += $r }
                             if ($got -eq $buf.Length) { $bytes = $buf } else { $bytes = [byte[]]::new($got); [Array]::Copy($buf, $bytes, $got) }
                         }
-                        # Exactly the size the file had when it was measured: more or less means it changed (or the
-                        # source VM lies), and the copy stops.
+                        # Exactly the measured size: more or less means it changed (or the source VM lies), and the copy stops.
                         if ($bytes -isnot [byte[]] -or $bytes.Length -ne $want) { $state.error = "$($entry.Rel) changed while it was sent; try again."; break }
                         Invoke-Command -Session $t -ErrorAction Stop -ArgumentList $at, $bytes -ScriptBlock {
                             param([int64]$from, [byte[]]$b)
@@ -563,8 +499,7 @@ function Copy-TransferBigFiles {
                 }
             }
             try {
-                # Wait-Job's timeout is whole seconds (0.5 became 0 and this loop spun, flooding the app with progress):
-                # the job's own state, checked twice a second.
+                # Wait-Job's timeout is whole seconds (0.5 becomes 0): the job's own state, checked twice a second.
                 while ($job.State -in 'NotStarted', 'Running') {
                     Start-Sleep -Milliseconds 500
                     Write-TransferProgress -Percent ([math]::Min(99, [math]::Floor(100 * ($Pipe.Sent + $state.bytes) / $Pipe.Total))) -Sent ($Pipe.Sent + $state.bytes) -Total $Pipe.Total

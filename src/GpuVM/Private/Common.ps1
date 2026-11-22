@@ -9,23 +9,19 @@ function Assert-Admin {
     }
 }
 
-# A GPU-P VM has fixed memory: it must be free on the host at power-on.
 function Assert-FreeMemory {
     param(
         [Parameter(Mandatory)][double]$RequiredGB,
         [double]$ExtraFreeGB = 0
     )
     $freeGB = (Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1MB + $ExtraFreeGB
-    # The figure shown already includes the margin Windows keeps for itself, so "needs 6, has 6.1" never happens.
     if ($freeGB -lt $RequiredGB + 0.3) {
-        # Rounded so the figures never look equal: what is needed up, what is free down.
         $message = "The VM needs {0:N1} GB free and there are {1:N1} GB. Close programs" -f ([math]::Ceiling(($RequiredGB + 0.3) * 10) / 10), ([math]::Floor($freeGB * 10) / 10)
         $fit = Get-FittingMemoryGB -FreeGB $freeGB
         throw $(if ($fit) { "$message or lower its memory to $fit GB in Options." } else { "$message." })
     }
 }
 
-# The most memory a VM could start with right now (whole GB, keeping the same margin), or 0 below the 4 GB minimum.
 function Get-FittingMemoryGB {
     param([Parameter(Mandatory)][double]$FreeGB)
     $fit = [math]::Floor($FreeGB - 0.3)
@@ -36,7 +32,7 @@ function Assert-VMCanStart {
     param([Parameter(Mandatory)][string]$Name)
     $vm = Get-VM -Name $Name
     if ($vm.State -eq 'Off') { Assert-FreeMemory -RequiredGB ($vm.MemoryStartup / 1GB) }
-    # A GpuVM VM starts isolated, with the host's address of today (the Default Switch changes it on restart).
+    # The Default Switch changes the host's address on every restart.
     $state = try { Get-GpuVMState -Name $Name } catch { $null }
     if ($state) { Update-GpuVMNetworkIsolation -Name $Name -State $state }
 }
@@ -45,7 +41,6 @@ $script:AdminSids = @('S-1-5-32-544', 'S-1-5-18')
 # WriteData, AppendData, WriteEA, DeleteChild, WriteAttributes, Delete, WRITE_DAC, WRITE_OWNER, GENERIC_ALL, GENERIC_WRITE.
 $script:WriteRightsMask = 0x2 -bor 0x4 -bor 0x10 -bor 0x40 -bor 0x100 -bor 0x10000 -bor 0x40000 -bor 0x80000 -bor 0x10000000 -bor 0x40000000
 
-# True when the ACL is owned by Administrators/SYSTEM, does not inherit, and only they can write.
 function Test-GpuVMRootAcl {
     param([Parameter(Mandatory)][System.Security.AccessControl.FileSystemSecurity]$Acl)
     $owner = $Acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
@@ -57,10 +52,8 @@ function Test-GpuVMRootAcl {
     $true
 }
 
-# C:\GpuVM inherits the "Authenticated Users: Modify" permission from C:\ (and ProgramData lets users create folders).
-# Since the app runs as administrator and reads/deletes what is in there, only Administrators and SYSTEM can write;
-# Hyper-V VMs (S-1-5-83-0) only read: Hyper-V grants each VM's own SID access to its disk and configuration files.
-# A folder a user created beforehand (and therefore owns) is taken back, not trusted.
+# C:\GpuVM inherits "Authenticated Users: Modify" from C:\ and the app runs elevated over it: only Administrators and
+# SYSTEM write; Hyper-V VMs (S-1-5-83-0) read. A folder a user created beforehand is taken back, not trusted.
 function Initialize-GpuVMRoot {
     param([Parameter(Mandatory)][string]$Path)
     if (-not (Test-Path -LiteralPath $Path)) { New-Item -ItemType Directory -Path $Path -Force | Out-Null }
@@ -75,7 +68,6 @@ function Initialize-GpuVMRoot {
     }
     & icacls.exe $Path /inheritance:r /grant:r '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' '*S-1-5-83-0:(OI)(CI)RX' /Q | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Couldn't restrict the permissions of $Path." }
-    # Explicit grants other than the three above (e.g. a user's own) are removed.
     $acl = Get-Acl -LiteralPath $Path
     $extra = @($acl.GetAccessRules($true, $false, [Security.Principal.SecurityIdentifier]) |
         Where-Object { $_.IdentityReference.Value -notin ($script:AdminSids + 'S-1-5-83-0') })
@@ -88,7 +80,6 @@ function Initialize-GpuVMRoot {
 
 function Write-Step {
     param([Parameter(Mandatory)][string]$Message)
-    # The desktop app installs a sink to show progress on the button that started the job.
     # Get-Variable: under StrictMode, reading the variable when it does not exist (CLI) would throw.
     $sink = Get-Variable -Name GpuVMProgressSink -Scope Global -ValueOnly -ErrorAction Ignore
     if ($sink) { & $sink $Message; return }
@@ -106,7 +97,6 @@ function Get-RepoPath {
     Join-Path $script:RepoRoot $Relative
 }
 
-# Deep merge: values from $Override win; hashtables are merged recursively.
 function Merge-Hashtable {
     param(
         [Parameter(Mandatory)][System.Collections.IDictionary]$Base,
@@ -147,8 +137,7 @@ function Write-JsonFile {
     )
     $dir = Split-Path $Path -Parent
     if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-    # Written next to it and swapped in, so a reader never sees half a file and a failure leaves the old one whole
-    # (review 2026-11-21: a cut template.json broke the template). Replace keeps the file's own permissions.
+    # Written next to it and swapped in: a reader never sees half a file. Replace keeps the file's own permissions.
     $full = [IO.Path]::GetFullPath($Path)
     $tmp = "$full.$([guid]::NewGuid().ToString('n')).tmp"
     try {
@@ -173,7 +162,6 @@ function Get-GpuVMStatePath {
     Join-Path (Join-Path $VMRoot $Name) 'gpuvm.json'
 }
 
-# Finds the state file of an existing VM from the path Hyper-V has registered.
 function Get-GpuVMState {
     param([Parameter(Mandatory)][string]$Name)
     $vm = Get-VM -Name $Name -ErrorAction Stop

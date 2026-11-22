@@ -1,6 +1,4 @@
-//! ui.tree / ui.invoke: UI Automation of the foreground window in one cross-process call (CacheRequest, control
-//! view, lab 049), filtered to visible + interactive elements. Chromium builds its accessibility tree only after the
-//! first query, so Chromium windows are queried twice. Element ids are indexes valid until the next ui.tree.
+//! Chromium builds its accessibility tree only after the first query, so Chromium windows are queried twice.
 use crate::capture::{output_rect, CallResult};
 use crate::state::*;
 use serde_json::{json, Value};
@@ -13,7 +11,6 @@ use windows::Win32::UI::Accessibility::*;
 thread_local! {
     static AUTO: RefCell<Option<IUIAutomation>> = const { RefCell::new(None) };
     static LAST: RefCell<Vec<IUIAutomationElement>> = const { RefCell::new(Vec::new()) };
-    /// Chromium windows already queried twice (their accessibility tree exists from then on, lab 049)
     static WARM: RefCell<Vec<isize>> = const { RefCell::new(Vec::new()) };
 }
 
@@ -143,7 +140,6 @@ pub fn ui_tree(p: &Value) -> CallResult {
         oy: origin.1,
     };
     let chromium = window_class(f.hwnd).starts_with("Chrome_WidgetWin");
-    // query twice only the first time a Chromium window is seen (each query of Edge took ~150 ms in lab 051)
     let twice = chromium
         && WARM.with(|w| {
             let mut w = w.borrow_mut();
@@ -214,7 +210,6 @@ pub fn ui_invoke(p: &Value) -> CallResult {
         return Err(("secure_desktop", format!("the input desktop is {desk}: only the person can act there")));
     }
     unsafe {
-        // the element's process must not be above our level (UIPI)
         let pid = e.CachedProcessId().unwrap_or(0) as u32;
         let info = crate::token::process_info(pid);
         if info.integrity.map_or(true, |il| il > own_integrity()) {

@@ -1,22 +1,18 @@
-# Network isolation (labs/010): extended port ACLs on the VM's vSwitch port, enforced by the host, so a guest
-# cannot lift them. The VM keeps internet, but reaches neither the LAN nor the host, except for the host's DHCP
-# and DNS (Default Switch NAT) and the replies to the connections Moonlight opens to Sunshine (stateful rules).
+# Extended port ACLs on the VM's vSwitch port are enforced by the host, so a guest cannot lift them.
 
-# GpuVM's rules live in two weight blocks; new rules go into the free one before the old ones are removed,
-# so the VM is never left without rules while it is running. Other weights belong to the user.
+# GpuVM's rules live in two weight blocks: the new one is filled before the old is removed. Other weights are the user's.
 $script:IsolationWeightBlocks = @(20000, 20100)
 $script:IsolationBlockSize = 100
 
 function Get-GpuVMNetworkIsolation {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$State)
-    # An agent machine is always isolated, whatever its config says (review 2, #3).
+    # An agent machine is always isolated, whatever its config says.
     if ([string]$State['use'] -eq 'agent') { return $true }
     $network = $State['config']['vm']['network']
     # VMs created before this option are isolated too: only an explicit false turns it off.
     -not ($network -and $network.Contains('isolation') -and $network['isolation'] -eq $false)
 }
 
-# The rules for a host reachable at the given IPv4 addresses on the VM's switch, highest priority first.
 function Get-GpuVMIsolationRules {
     param([Parameter(Mandatory)][AllowEmptyCollection()][string[]]$HostAddress)
     foreach ($address in $HostAddress) {
@@ -33,7 +29,6 @@ function Get-GpuVMIsolationRules {
     }
 }
 
-# One comparable line per rule, the same for a rule to add and one read back from Hyper-V.
 function Get-IsolationRuleKey {
     param([Parameter(Mandatory)]$Rule)
     $get = { param($n, $default) if ($Rule -is [System.Collections.IDictionary]) { if ($Rule.Contains($n)) { $Rule[$n] } else { $default } } else { $Rule.$n } }
@@ -55,17 +50,14 @@ function Remove-GpuVMIsolationAcl {
     foreach ($rule in $Acl) { Remove-VMNetworkAdapterExtendedAcl -VMName $Name -Weight $rule.Weight -Direction $rule.Direction }
 }
 
-# Applies (or removes) the isolation to match the VM's settings and the host's current address on its switch,
-# which the Default Switch changes on every host restart. Called before every start, and when the option changes.
+# The Default Switch changes the host's address on every host restart: called before every start.
 function Update-GpuVMNetworkIsolation {
     param(
         [Parameter(Mandatory)][string]$Name,
         [System.Collections.IDictionary]$State
     )
     if (-not $State) { $State = Get-GpuVMState -Name $Name }
-    # An agent machine is never left on the LAN unisolated: it doesn't start with any adapter on an external or
-    # private switch (review 2, #3). Every adapter, not only the first one: a second adapter on an external switch
-    # put the guest on the LAN while the first passed (security review 2026-11-21).
+    # Every adapter of an agent machine: one on an external or private switch would put the guest on the LAN.
     if ([string]$State['use'] -eq 'agent') { Assert-AgentSwitch -Name $Name }
     $current = @(Get-GpuVMIsolationAcl -Name $Name)
     if (-not (Get-GpuVMNetworkIsolation -State $State)) {
@@ -73,8 +65,7 @@ function Update-GpuVMNetworkIsolation {
         return
     }
 
-    # The first adapter that is connected (the rules below apply to all of them): a disconnected first adapter left
-    # the others without rules.
+    # The first connected adapter: a disconnected first adapter left the others without rules.
     $connected = @(Get-VMNetworkAdapter -VMName $Name | Where-Object { $_.SwitchName })
     $switchName = if ($connected) { $connected[0].SwitchName } else { $null }
     if (-not $switchName) { return }
@@ -85,8 +76,7 @@ function Update-GpuVMNetworkIsolation {
         Write-Warning "The VM '$Name' uses the external switch '$switchName': network isolation only works with the Default Switch or an internal one."
         return
     }
-    # Without the host's address there is nothing to allow: the blocks alone are applied (the VM gets no network
-    # until the next start finds it, instead of reaching the LAN).
+    # Without the host's address only the blocks apply: no network until the next start, rather than the LAN.
     $hostAddresses = @(try { (Get-GpuVMHostNetwork -Name $Name).Address } catch { Write-Warning $_.Exception.Message })
     $rules = @(Get-GpuVMIsolationRules -HostAddress $hostAddresses)
 
@@ -114,16 +104,14 @@ function Update-GpuVMNetworkIsolation {
     if ($current) { Remove-GpuVMIsolationAcl -Name $Name -Acl $current }
 }
 
-# Checked by the module's Start-VM and Restart-VM (GpuPower.ps1), so every way GpuVM turns a machine on checks it,
-# not only the ones that update the isolation first (security review 2026-11-21). A VM without GpuVM state is skipped.
+# Checked by the module's Start-VM and Restart-VM (GpuPower.ps1), so every way GpuVM turns a machine on checks it.
 function Assert-AgentMachineSwitch {
     param([Parameter(Mandatory)][string]$Name)
     $state = try { Get-GpuVMState -Name $Name } catch { $null }
     if ($state -and [string]$state['use'] -eq 'agent') { Assert-AgentSwitch -Name $Name }
 }
 
-# An agent machine only runs on the Default Switch or an internal one, where its isolation rules work: an external or
-# private switch would put the guest (untrusted) on the LAN or leave it unisolated.
+# An external or private switch would put the untrusted guest on the LAN or leave it unisolated.
 function Assert-AgentSwitch {
     param([Parameter(Mandatory)][string]$Name)
     foreach ($adapter in @(Get-VMNetworkAdapter -VMName $Name)) {

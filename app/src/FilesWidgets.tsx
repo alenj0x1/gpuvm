@@ -7,9 +7,6 @@ import { cancelTransfer, startTransfer, transferAmount, useTransfers, type Trans
 import type { VmOverview } from "./types";
 import type { WidgetSize } from "./ViewerWidgets";
 
-// The panel's Archivos and Portapapeles widgets. Everything goes from the PC into the machines (or from one machine
-// into another through the PC's memory); nothing ever comes out of a machine to the PC.
-
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T | null> {
   if (!inTauri) return null;
   const core = await import("@tauri-apps/api/core");
@@ -21,10 +18,8 @@ const bytes = (n: number) => n >= 1 << 30
   : n >= 1 << 20 ? `${(n / (1 << 20)).toLocaleString(locale(), { maximumFractionDigits: 1 })} MB`
     : `${Math.max(1, Math.round(n / 1024)).toLocaleString(locale())} KB`;
 
-/** "photo.png", "photo.png and 2 more". */
 export const namesOf = (names: string[]) => names.length <= 1 ? names[0] ?? "" : t("{first} and {n} more", { first: names[0], n: names.length - 1 });
 
-/** One copy: the percent before the name (a long name never hides it), its bar and Cancelar; once done, where it went. */
 export function TransferRow({ tr }: { tr: Transfer }) {
   const running = tr.state === "running";
   const sub = running ? (transferAmount(tr) || t("Preparing…"))
@@ -49,8 +44,6 @@ export function TransferRow({ tr }: { tr: Transfer }) {
   );
 }
 
-/** Archivos: the copies into this machine (and from it) and, with other machines running, what is selected in this
- *  machine's File Explorer goes to one of them in a click. */
 export function FilesWidget({ vm, vms, size }: { vm: string; vms: VmOverview[]; size: WidgetSize }) {
   const all = useTransfers();
   const list = all.filter((tr) => tr.vm === vm || tr.from === vm);
@@ -113,7 +106,6 @@ const CLIP_SAMPLE: ClipItem[] = [
 ];
 
 function useClipboard(): ClipItem[] {
-  // In the browser preview: a few copies of each kind.
   const [items, setItems] = useState<ClipItem[]>(() => inTauri || new URLSearchParams(location.search).has("empty") ? [] : CLIP_SAMPLE);
   useEffect(() => {
     if (!inTauri) return;
@@ -127,8 +119,6 @@ function useClipboard(): ClipItem[] {
   return items;
 }
 
-/** Portapapeles: the last copies made on this PC while a machine is open (text, images, files), each pasted into
- *  this machine with a click; "On copy" sends every new text or image on its own. Kept in memory only. */
 export function ClipboardWidget({ vm, size }: { vm: string; size: WidgetSize }) {
   const items = useClipboard();
   const [state, setState] = useState<Record<number, "busy" | "done" | string>>({});

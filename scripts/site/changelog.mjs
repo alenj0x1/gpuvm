@@ -1,5 +1,4 @@
-// Builds site/data/changelog.json from CHANGELOG.md and CHANGELOG.es.md, so the landing's "what's new" always
-// shows the latest release without editing the page. Usage: node scripts/site/changelog.mjs
+// Builds site/data/changelog.json from CHANGELOG.md and CHANGELOG.es.md. Usage: node scripts/site/changelog.mjs
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,7 +8,6 @@ const SECTIONS = {
   es: { "Añadido": "added", "Agregado": "added", "Cambiado": "changed", "Corregido": "fixed", "Seguridad": "security" },
 };
 
-/** Released versions (newest first) of a Keep a Changelog file: { version, date, sections: { added: [...] } }. */
 export function parseChangelog(text, lang) {
   const releases = [];
   let release = null;
@@ -23,7 +21,6 @@ export function parseChangelog(text, lang) {
       section = null;
       continue;
     }
-    // Unreleased / Sin publicar and anything that isn't a version ends the current release.
     if (line.startsWith("## ")) { release = null; section = null; continue; }
     if (!release) continue;
     const sub = line.match(/^### (.+)$/);
@@ -34,7 +31,6 @@ export function parseChangelog(text, lang) {
     }
     if (!section) continue;
     if (line.startsWith("- ")) release.sections[section].push(line.slice(2).trim());
-    // A bullet that wraps onto the next line continues the same item.
     else if (line.startsWith("  ") && release.sections[section].length) {
       const items = release.sections[section];
       items[items.length - 1] += " " + line.trim();

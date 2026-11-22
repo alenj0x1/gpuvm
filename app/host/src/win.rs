@@ -1,5 +1,3 @@
-//! Small safe wrappers over the Win32 calls the service needs (processes, tokens, files).
-
 use std::path::{Path, PathBuf};
 
 use windows_sys::Win32::Foundation::*;
@@ -23,7 +21,6 @@ pub fn last_error(what: &str) -> String {
     format!("{what} failed (error {})", unsafe { GetLastError() })
 }
 
-/// An owned kernel handle, closed on drop.
 pub struct Handle(pub HANDLE);
 unsafe impl Send for Handle {}
 unsafe impl Sync for Handle {}
@@ -91,8 +88,7 @@ pub fn token_elevated(token: HANDLE) -> Result<bool, String> {
     Ok(unsafe { (*(buf.as_ptr() as *const TOKEN_ELEVATION)).TokenIsElevated } != 0)
 }
 
-/// The elevated token of the user signed in to `session`, who must be `expected_sid`. That is the linked token of
-/// their filtered token: the same rights a UAC "Yes" gives them. Accounts that are not administrators have none.
+// The linked token of their filtered token: the rights a UAC "Yes" gives; non-administrators have none.
 pub fn elevated_user_token(session: u32, expected_sid: &str) -> Result<Handle, String> {
     let mut raw = std::ptr::null_mut();
     if unsafe { WTSQueryUserToken(session, &mut raw) } == 0 {
@@ -118,29 +114,23 @@ pub fn elevated_user_token(session: u32, expected_sid: &str) -> Result<Handle, S
     Ok(Handle(primary))
 }
 
-/// 128 random bits as hex, from the system's cryptographic generator.
 pub fn random_hex() -> String {
     let mut bytes = [0u8; 16];
     unsafe { BCryptGenRandom(std::ptr::null_mut(), bytes.as_mut_ptr(), bytes.len() as u32, BCRYPT_USE_SYSTEM_PREFERRED_RNG) };
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// Only plain local paths (`D:\ISOs\x.iso`): no network shares, device paths or relative paths.
 pub fn is_plain_local_path(path: &str) -> bool {
     let b = path.as_bytes();
     b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'\\' && !path.contains("\\\\") && !path.contains('/')
         && !path.split('\\').any(|part| part == ".." || part == ".")
 }
 
-/// Opens `path` with the caller's current identity (the service impersonates the app's user before calling it)
-/// and checks it leads where it says: a link anywhere in the path (junction, symbolic link) changes the final path.
+// A link anywhere in the path (junction, symbolic link) changes the final path, so the open is checked against it.
 #[derive(Clone, Copy)]
 pub enum PathAccess {
-    /// A file the user can read.
     ReadFile,
-    /// A folder the user can list.
     ListFolder,
-    /// A folder the user can create files in (where GpuVM writes something the user asked for, e.g. an export).
     WriteFolder,
 }
 

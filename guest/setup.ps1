@@ -1,5 +1,4 @@
-﻿# Guest first logon (launched by unattend.xml). Windows PowerShell 5.1.
-$ErrorActionPreference = 'Continue'
+﻿$ErrorActionPreference = 'Continue'
 $root = 'C:\GpuVM'
 Start-Transcript -Path (Join-Path $root 'setup.log') -Append | Out-Null
 
@@ -60,8 +59,6 @@ finally {
     Stop-Transcript | Out-Null
 }
 
-# A restart leaves the virtual display as the only one; automatic logon signs back in.
-# Audio needs no restart: usbip-win2 attaches GpuVM's speaker again every time Windows starts.
 if ($streaming -and $streaming.hyperVVideo -eq 'disabled') {
     shutdown.exe /r /t 15 /c "GpuVM: restarting to finish installing streaming"
 }

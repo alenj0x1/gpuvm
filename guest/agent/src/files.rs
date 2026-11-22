@@ -1,7 +1,4 @@
-//! files.list / files.read / files.write, limited to the `agent` user's profile (`C:\Users\agent`).
-//! Run by the helper as that user, so Windows' own ACLs apply too. On top of them: no `..`, no device names or
-//! alternate streams, no links anywhere on the path (junctions, symlinks, hard links with more than one name), and
-//! the opened handle's final path must still be inside the profile.
+//! On top of Windows' ACLs: no `..`, device names, alternate streams or links on the path, and the opened handle must stay inside the profile.
 use crate::capture::CallResult;
 use crate::proto::{hex, sha256};
 use crate::util::{wide, wstr};
@@ -17,7 +14,6 @@ use windows::Win32::Storage::FileSystem::*;
 pub const MAX_FILE: u64 = 16 * 1024 * 1024;
 type Fail = (&'static str, String);
 
-/// The profile root, only when the helper runs as `agent` (protocol: files and commands are the agent user's).
 pub fn root() -> Result<&'static PathBuf, Fail> {
     static R: OnceLock<Option<PathBuf>> = OnceLock::new();
     R.get_or_init(|| {
@@ -37,7 +33,6 @@ fn lower(p: &Path) -> String {
 
 const DEVICES: &[&str] = &["con", "prn", "aux", "nul", "conin$", "conout$", "clock$"];
 
-/// Checks a path given by the host and returns it absolute, normalized, inside the root, with no link on the way.
 pub fn resolve(input: &str) -> Result<PathBuf, Fail> {
     let root = root()?;
     if input.is_empty() || input.len() > 1024 || input.contains('\0') {
@@ -75,7 +70,6 @@ pub fn resolve(input: &str) -> Result<PathBuf, Fail> {
             return Err(("bad_request", format!("'{c}' is a device name")));
         }
         out.push(c);
-        // no link on the way (checked for the parts that exist)
         let w = wide(&out.to_string_lossy());
         let a = unsafe { GetFileAttributesW(PCWSTR(w.as_ptr())) };
         if a != INVALID_FILE_ATTRIBUTES && a & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0 {
@@ -85,7 +79,6 @@ pub fn resolve(input: &str) -> Result<PathBuf, Fail> {
     Ok(out)
 }
 
-/// Opens without following links, then checks: not a link, one name only, final path inside the root.
 fn open_checked(p: &Path, access: u32, disposition: FILE_CREATION_DISPOSITION, dir: bool) -> Result<(OwnedHandle, BY_HANDLE_FILE_INFORMATION, bool), Fail> {
     let root = root()?;
     let w = wide(&p.to_string_lossy());
@@ -169,13 +162,11 @@ pub fn list(p: &Value) -> CallResult {
         }
         let _ = FindClose(h);
     }
-    // the folder may have been swapped for a link while listing by name: check again (security review L3)
+    // the folder may have been swapped for a link while listing by name: check again
     open_checked(&path, FILE_LIST_DIRECTORY.0, OPEN_EXISTING, true)?;
     Ok((json!({"path": path.to_string_lossy(), "entries": entries, "truncated": truncated}), None))
 }
 
-/// files.read {path, offset?, length?}: the bytes from `offset` (at most `length` and 16 MiB) as the blob, with the
-/// whole file's size, so the host can copy big files (Outbox deliveries up to 2 GB) in pieces.
 pub fn read(p: &Value) -> CallResult {
     use std::io::{Seek, SeekFrom};
     let path = resolve(p["path"].as_str().unwrap_or(""))?;
@@ -212,7 +203,7 @@ pub fn write(p: &Value, blob: Option<Vec<u8>>) -> CallResult {
     }
     if p["mkdirs"] == true {
         if let Some(parent) = path.parent() {
-            // one level at a time, each checked (not a link, still inside) before the next is made (review L3)
+            // one level at a time, each checked (not a link, still inside) before the next is made
             let root = root()?;
             let rel = parent.strip_prefix(root).map_err(|_| ("denied", "outside the agent's folder".to_string()))?;
             let mut cur = root.clone();

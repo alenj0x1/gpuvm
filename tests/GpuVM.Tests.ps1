@@ -287,8 +287,7 @@ InModuleScope GpuVM {
 
     Describe 'Labs' {
         $env:GPUVM_LABS_ROOT = Join-Path $TestDrive 'labs'
-        # An elevated module ignores the variable (by design), so the folder is also redirected here: an elevated run
-        # never writes labs into the repository.
+        # An elevated module ignores the variable, so the folder is redirected here too.
         Mock Get-LabRoot { Join-Path $TestDrive 'labs' }
 
         It 'creates, records and compares' {
@@ -374,7 +373,6 @@ InModuleScope GpuVM {
                 [pscustomobject]@{ Key = 'tools\sunshine_wgc_capture.exe'; Path = 'C:\b\tools\sunshine_wgc_capture.exe'; Hash = 'H2' }
             }
             $payload = New-StreamingPayload -Config (Resolve-GpuVMProfile -Name 'balanced')
-            # The four components plus GpuVM's Sunshine fork, which goes over the official install.
             @($payload.GuestFiles).Count | Should Be 6
             $fork = @($payload.GuestFiles | Where-Object { $_.Source -like 'C:\b\*' })
             ($fork | Where-Object Sha256 -eq 'H2').Destination | Should Be 'streaming\fork\tools'
@@ -418,7 +416,6 @@ InModuleScope GpuVM {
             $script:sent = $null
             $script:checks = 0
             Mock Start-UnelevatedProcess { $script:moonlightArgs = $ArgumentList; $script:keepTask = [bool]$KeepTask; 'task' }
-            # Moonlight keeps running until the PIN is sent, then exits with 0.
             Mock Get-UnelevatedTaskState { [pscustomobject]@{ Running = -not $script:sent; Finished = [bool]$script:sent; ExitCode = 0 } }
             Mock Remove-UnelevatedTask { $script:removed = $TaskName }
             Mock Test-SunshineClientPaired { $true }
@@ -528,7 +525,7 @@ InModuleScope GpuVM {
             $script:copied = @(); $script:into = @(); $script:removed = $null
             Install-GuestAudio -Name 'vm' -Credential $cred | Should Be $true
             ($script:copied | Split-Path -Leaf) -join ',' | Should Be 'USBip-0.9.8.0-x64.exe,UsbAudioServer.cs'
-            # Into a folder of this run only administrators can open, not C:\GpuVM (security review 2026-11-21).
+            # Into a folder of this run only administrators can open, not C:\GpuVM.
             ($script:into -join ',') | Should Be 'C:\Windows\Temp\GpuVM-audio-1\streaming,C:\Windows\Temp\GpuVM-audio-1\audio'
             $script:removed | Should Be 'C:\Windows\Temp\GpuVM-audio-1'
         }
@@ -621,7 +618,6 @@ InModuleScope GpuVM {
                 $categories.Contains($entry['category']) | Should Be $true
                 $app['categoryName'] | Should Not BeNullOrEmpty
                 $entry['installed'] | Should Not BeNullOrEmpty
-                # Uninstall finds the app in Windows' list of programs and runs its uninstaller silently, or opens it.
                 $entry['uninstall']['match'] | Should Not BeNullOrEmpty
                 [regex]::new($entry['uninstall']['match']) | Should Not BeNullOrEmpty
                 [bool]($entry['uninstall']['interactive'] -or $entry['uninstall'].Contains('args')) | Should Be $true
@@ -681,7 +677,6 @@ InModuleScope GpuVM {
     Describe 'Network isolation' {
         $acl = { param($w, $action, $dir, $ip, $proto = 'ANY', $local = 'ANY', $remote = 'ANY', $stateful = $false)
             [pscustomobject]@{ Weight = $w; Action = $action; Direction = $dir; RemoteIPAddress = $ip; Protocol = $proto; LocalPort = $local; RemotePort = $remote; Stateful = $stateful } }
-        # What Hyper-V returns after the rules for a host at $ip were applied from weight $base.
         $applied = { param($ip, $base)
             $rules = @(Get-GpuVMIsolationRules -HostAddress $ip)
             $w = $base + $rules.Count
@@ -709,10 +704,8 @@ InModuleScope GpuVM {
             }
             $allow = @($rules | Where-Object { $_['Action'] -eq 'Allow' })
             @($allow | Where-Object { $_['RemoteIPAddress'] -ne '172.29.96.1' }).Count | Should Be 0
-            # From the VM, only DHCP and DNS; anything else toward the host has to be a reply to Moonlight.
             (@($allow | Where-Object { $_['Direction'] -eq 'Outbound' } | ForEach-Object { $_['RemotePort'] } | Sort-Object -Unique) -join ',') | Should Be '53,67'
             @($allow | Where-Object { $_['Direction'] -eq 'Inbound' -and -not $_['Stateful'] }).Count | Should Be 0
-            # Allows get the higher weights.
             $rules[0]['Action'] | Should Be 'Allow'
             $rules[-1]['Action'] | Should Be 'Deny'
         }
@@ -999,7 +992,6 @@ InModuleScope GpuVM {
             $saved['lastOpenedAt'] | Should Not BeNullOrEmpty
             Assert-MockCalled Rename-VM -Times 1 -Exactly -Scope It -ParameterFilter { $NewName -eq 'juegos' }
             Assert-MockCalled Move-VMStorage -Times 1 -Exactly -Scope It -ParameterFilter { $VirtualMachinePath -eq $newDir -and $SnapshotFilePath -eq $newDir }
-            # The shared disk lives outside the VM folder: it stays attached where it is.
             Assert-MockCalled Set-VMHardDiskDrive -Times 1 -Exactly -Scope It -ParameterFilter { $VMName -eq 'juegos' -and $Path -eq $new['vhdPath'] }
         }
 
@@ -1078,7 +1070,6 @@ InModuleScope GpuVM {
             $p = Get-GuestAdminPromptState -Name 'vm'
             $p.nonce | Should Be ('a' * 32)
             $p.reading | Should Be $true
-            # The code never reaches the app.
             (Get-GuestAdminPrompt -Name 'vm').PSObject.Properties['nonce'] | Should Be $null
         }
 
@@ -1180,7 +1171,6 @@ InModuleScope GpuVM {
 }
 
 
-# Front 4: restore points, disposable machines, export/import (pure logic; the disk work is proven in labs/045-disks).
 InModuleScope GpuVM {
     Describe 'Restore points' {
         It 'accepts only ids GpuVM makes' {
@@ -1308,7 +1298,6 @@ InModuleScope GpuVM {
             $root = [GpuVM.UserFiles]::Root($top, $true)
             $links = 0
             $null = [GpuVM.UserFiles]::List($top, 'Proyecto', $root, [ref]$links)
-            # The swap: sub becomes a junction to another folder, keeping the same names below it.
             Remove-Item (Join-Path $top 'sub') -Recurse -Force
             New-Item -ItemType Junction -Path (Join-Path $top 'sub') -Target $outside | Out-Null
             Get-InnerError { [GpuVM.UserFiles]::OpenFile((Join-Path $top 'sub\a.txt'), $root) } | Should Match 'outside the chosen folder'
@@ -1337,7 +1326,6 @@ InModuleScope GpuVM {
                 }
                 Set-Acl $target $acl
             }
-            # The elevated process itself can read it (that was the hole).
             [IO.File]::ReadAllText($secret).Trim() | Should Be 'clave'
             $root = [GpuVM.UserFiles]::Root($top, $true)
             Get-InnerError { [GpuVM.UserFiles]::OpenFile($secret, $root) } | Should Match "can't access"
@@ -1491,8 +1479,7 @@ InModuleScope GpuVM {
             Mock Update-GpuVMNetworkIsolation { $script:calls.Add('isolated') }
             Mock Sync-GuestAgentDisplayMode { $script:calls.Add('mode') }
             Mock Copy-ToAgentSession { $script:calls.Add("copy-to-session $Destination") }
-            # Which guest call it is, by its arguments: setup (hash), fast-path copy (2 paths), installer (text, dir,
-            # secret), cleanup (dir), restart (none).
+            # Which guest call it is, by its arguments: setup (hash), fast-path copy (2 paths), installer (text, dir, secret), cleanup (dir), restart (none).
             Mock Invoke-InAgentSession { Invoke-FakeGuest $ArgumentList }
             Mock Invoke-Command { Invoke-FakeGuest $ArgumentList }
             function script:Invoke-FakeGuest($ArgumentList) {
@@ -1525,7 +1512,6 @@ InModuleScope GpuVM {
             $script:sentSecret.GetType().Name | Should Be 'Byte[]'
             $script:sentSecret.Length | Should Be 32
             Assert-MockCalled Write-AgentSecret -Times 1 -Scope It
-            # The host keeps exactly what the guest got (the local copy is wiped afterwards).
             ([Convert]::ToBase64String($script:storedSecret)) | Should Be ([Convert]::ToBase64String($script:sentSecret))
             $script:saved['agent']['password'] | Should Not Be 'S3cret!'
             (ConvertTo-SecureString $script:saved['agent']['password'] | ConvertFrom-SecureString -AsPlainText) | Should Be 'S3cret!'
@@ -1564,7 +1550,7 @@ InModuleScope GpuVM {
             [IO.File]::WriteAllBytes("$root\ProgramData\GpuVM\Agent\secret", [byte[]](1..32))
             Remove-GuestAgentSecret -WindowsRoot $root
             Test-Path "$root\ProgramData\GpuVM\Agent\secret" | Should Be $false
-            Remove-GuestAgentSecret -WindowsRoot $root   # nothing there: no error
+            Remove-GuestAgentSecret -WindowsRoot $root
         }
     }
 
@@ -1598,12 +1584,9 @@ InModuleScope GpuVM {
             Test-GpuVMTemplateStale -Template @{ use = 'agent'; streaming = $s } -Bundled $b | Should Be $true
             Test-GpuVMTemplateStale -Template @{ use = 'agent'; streaming = $s; components = @{ 'Program Files\GpuVM Agent\gpuvm-agent.exe' = 'A1'; 'Program Files\Sunshine\sunshine.exe' = 'S0' } } -Bundled $b | Should Be $true
             Test-GpuVMTemplateStale -Template @{ use = 'agent'; streaming = $s; gamepad = 'vigembus'; components = @{ 'Program Files\GpuVM Agent\gpuvm-agent.exe' = 'A1'; 'Program Files\Sunshine\sunshine.exe' = 'S1' } } -Bundled $b | Should Be $false
-            # A normal machine's template: only Sunshine counts.
             Test-GpuVMTemplateStale -Template @{ streaming = $s; components = @{ 'Program Files\Sunshine\sunshine.exe' = 'S0' } } -Bundled $b | Should Be $true
             Test-GpuVMTemplateStale -Template @{ streaming = $s; gamepad = 'vigembus'; components = @{ 'Program Files\Sunshine\sunshine.exe' = 'S1' } } -Bundled $b | Should Be $false
-            # ...and the controllers' driver: a template without it is stale (its copies would install it on every first open).
             Test-GpuVMTemplateStale -Template @{ streaming = $s; components = @{ 'Program Files\Sunshine\sunshine.exe' = 'S1' } } -Bundled $b | Should Be $true
-            # No streaming and no agent: nothing of GpuVM's to keep current.
             Test-GpuVMTemplateStale -Template @{ use = $null } -Bundled $b | Should Be $false
         }
         It 'reads the stamp from a mounted Windows and refuses a planted link' {
@@ -1961,7 +1944,6 @@ InModuleScope GpuVM {
             finally { Remove-Item $key -Recurse -Force }
         }
 
-        # Security review 2026-11-21: the guest's administrator writes into a folder `agent` owns.
         It 'uses the destination only under the profile and with no junction on the way' {
             . ([scriptblock]::Create($script:GuestFolderCode))
             $profilePath = Join-Path $TestDrive 'Users\agent'
@@ -1971,7 +1953,6 @@ InModuleScope GpuVM {
             try {
                 $guard.Dest | Should Be ([IO.Path]::GetFullPath((Join-Path $desktop 'Received')))
                 Test-Path -LiteralPath $guard.Dest -PathType Container | Should Be $true
-                # Held: the folder (and the desktop above it) can't be renamed away and swapped for a junction.
                 Test-Throws { [IO.Directory]::Move($guard.Dest, "$($guard.Dest)-x") } | Should Be $true
                 Test-Throws { [IO.Directory]::Move($desktop, "$desktop-x") } | Should Be $true
             }
@@ -1979,11 +1960,9 @@ InModuleScope GpuVM {
             @(Get-ChildItem -LiteralPath $guard.Dest -Force).Count | Should Be 0
             [IO.Directory]::Move($guard.Dest, "$($guard.Dest)-x"); [IO.Directory]::Move("$($guard.Dest)-x", $guard.Dest)
 
-            # Outside the profile (the registry value is the user's own), or out of it with "..".
             Test-Throws { Enter-GpuVMDestination -ProfilePath $profilePath -Desktop (Join-Path $TestDrive 'Windows') -Folder 'Received' -Id 'a2' -Create } | Should Be $true
             Test-Throws { Enter-GpuVMDestination -ProfilePath $profilePath -Desktop "$profilePath\..\Administrator\Desktop" -Folder 'Received' -Id 'a3' -Create } | Should Be $true
 
-            # Received, or a folder above it, turned into a junction to somewhere else.
             $elsewhere = Join-Path $TestDrive 'System32'
             New-Item -ItemType Directory -Path $elsewhere -Force | Out-Null
             Remove-Item -LiteralPath $guard.Dest -Force
@@ -2017,7 +1996,6 @@ InModuleScope GpuVM {
             $rules = @($security.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]))
             ($rules | ForEach-Object { $_.IdentityReference.Value } | Sort-Object) -join ',' | Should Be 'S-1-5-18,S-1-5-32-544'
             Test-GpuVMLockedAcl -Acl $security | Should Be $true
-            # C:\GpuVM: Users may read and run what is there, never change it.
             Test-GpuVMLockedAcl -Acl (New-GpuVMFolderSecurity -Extra @(, @('S-1-5-32-545', 'ReadAndExecute'))) | Should Be $true
             Test-GpuVMLockedAcl -Acl (New-GpuVMFolderSecurity -Extra @(, @('S-1-5-32-545', 'Modify'))) | Should Be $false
         }
@@ -2050,7 +2028,6 @@ InModuleScope GpuVM {
             Mock Start-NewGpuVM { @{ started = $false; startError = 'no memory'; neededGB = 8.3; freeGB = 7.3 } }
             $r = New-GpuVM -Name copy1 -Template t -Start -Confirm:$false
             "$($r.started) $($r.startError) $($r.neededGB)" | Should Be 'False no memory 8.3'
-            # Without -Start nothing about starting is added.
             (New-GpuVM -Name copy1 -Template t -Confirm:$false).PSObject.Properties['started'] | Should Be $null
         }
     }
@@ -2066,7 +2043,6 @@ InModuleScope GpuVM {
             "$($o.vm.memoryGB) $($o.vm.cpu.count)" | Should Be '6 4'
             $o = Get-TemplateMachineOverride -Template $tpl -Override @{ vm = @{ cpu = @{ count = 2 } }; guest = @{ x = 1 } }
             "$($o.vm.memoryGB) $($o.vm.cpu.count) $($o.guest.x)" | Should Be '4 2 1'
-            # A template without the figures changes nothing.
             (Get-TemplateMachineOverride -Template @{ config = @{ vm = @{} } } -Override $null).vm.Count | Should Be 0
         }
         It 'an agent machine gets 4 GB unless memory is chosen' {
@@ -2124,7 +2100,6 @@ InModuleScope GpuVM {
             Update-GpuVMAgentIfStale -Name c -Credential $cred | Should Be $false
             Assert-MockCalled Install-GpuVMAgent -Times 1 -Exactly -Scope It -ParameterFilter { $Name -eq 'c' -and $User -eq 'own' }
 
-            # Windows restarts: back only once the boot time changed.
             Mock Install-GpuVMAgent { [ordered]@{ restarted = $true } }
             $script:boots = [System.Collections.Generic.Queue[object]]::new([object[]]@('100', '100', $null, '200'))
             Mock Get-GuestBootTime { $b = $script:boots.Dequeue(); if ($null -eq $b) { throw 'not up' }; $b }
@@ -2136,7 +2111,6 @@ InModuleScope GpuVM {
             $w = Update-GpuVMAgentIfStale -Name c -Credential $cred 3>&1
             ($w | Where-Object { $_ -is [System.Management.Automation.WarningRecord] }).Message | Should Match 'no session'
 
-            # Not an agent machine, or a build without the agent: nothing.
             Mock Get-GpuVMState { @{ agent = @{ version = '0.3.2' } } }
             Update-GpuVMAgentIfStale -Name c -Credential $cred | Should Be $false
             Mock Get-GpuVMState { @{ use = 'agent'; agent = @{ version = '0.3.2' } } }
@@ -2265,7 +2239,6 @@ InModuleScope GpuVM {
             Mock Remove-VMNetworkAdapterExtendedAcl { }
             Test-Throws { Update-GpuVMNetworkIsolation -Name a -State @{ use = 'agent'; config = @{ vm = @{} } } } | Should Be $true
             Assert-MockCalled Add-VMNetworkAdapterExtendedAcl -Times 0 -Scope It
-            # A person's machine keeps going (its isolation follows the first connected adapter, as before).
             Update-GpuVMNetworkIsolation -Name a -State @{ config = @{ vm = @{} } } -WarningAction SilentlyContinue
             Assert-MockCalled Add-VMNetworkAdapterExtendedAcl -Times 12 -Exactly -Scope It
         }
@@ -2471,7 +2444,7 @@ InModuleScope GpuVM {
             $script:calls.Clear()
             Test-Throws { Restart-GpuVMCold -Name c -ShutdownTimeoutSec 0 -TurnOffTimeoutSec 0 } | Should Be $true
             $script:calls -contains 'start' | Should Be $false
-            Test-GpuVMDisposableDone -State $script:st -VMState 'Off' | Should Be $true # the mark is cleared even then
+            Test-GpuVMDisposableDone -State $script:st -VMState 'Off' | Should Be $true
         }
     }
 }
@@ -2583,7 +2556,6 @@ InModuleScope GpuVM {
                 '<resolution><width>1920</width><height>1080</height><refresh_rate>30</refresh_rate></resolution>' +
                 '<resolution><width>2560</width><height>1440</height><refresh_rate>30</refresh_rate></resolution>' +
                 '</resolutions><global><g_refresh_rate>60</g_refresh_rate></global></vdd_settings>')
-            # The guest's script, run here against a copy of the driver's settings.
             Mock Invoke-Guest {
                 $code = $ScriptBlock.ToString().Replace('C:\VirtualDisplayDriver\vdd_settings.xml', $script:vdd)
                 & ([scriptblock]::Create($code)) @ArgumentList
@@ -2617,13 +2589,11 @@ InModuleScope GpuVM {
             Mock Install-GuestSunshineCapture { $script:steps.Add('fork'); 'installed' }
             Initialize-GuestStreamingForAgent -Name a -Credential $cred
             ($script:steps -join ',') | Should Be 'fork,ready,capture wgc,ready,display True'
-            # A failed copy of the fork warns and goes on (the guest falls back to ddx).
             Mock Install-GuestSunshineCapture { throw 'no session' }
             Mock Write-Warning { }
             $script:steps.Clear()
             Initialize-GuestStreamingForAgent -Name a -Credential $cred
             ($script:steps -join ',') | Should Be 'ready,capture wgc,ready,display True'
-            # A copy of a current template: nothing changes, so Sunshine's start isn't waited for; the mark is used once.
             $script:saved = $null
             Mock Get-GpuVMState { @{ use = 'agent'; streamingFromTemplate = $true; streaming = @{ x = 1 }; config = @{ streaming = @{ virtualDisplay = $true } } } }
             Mock Save-GpuVMState { $script:saved = $State }
@@ -2633,7 +2603,6 @@ InModuleScope GpuVM {
             Initialize-GuestStreamingForAgent -Name a -Credential $cred
             ($script:steps -join ',') | Should Be 'fork,capture wgc'
             $script:saved.Contains('streamingFromTemplate') | Should Be $false
-            # The mode had to change after all: the full setup follows.
             Mock Set-GuestCaptureMode { $script:steps.Add("capture wgc"); $true }
             $script:steps.Clear()
             Initialize-GuestStreamingForAgent -Name a -Credential $cred

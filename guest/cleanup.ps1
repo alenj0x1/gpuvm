@@ -1,9 +1,4 @@
-﻿# Windows cleanup levels: privacy, apps and minimal. Each level includes the ones before it.
-# Every item is data (registry values, services, Store packages) applied by one engine, so it can be undone
-# by lowering the level; removed Store apps are the exception (they come back from Microsoft Store).
-# Nothing here touches Microsoft Defender, Windows Update, SmartScreen, UAC or the firewall: a cleaner
-# Windows must never be a less secure one.
-# Runs on Windows PowerShell 5.1 inside the VM, as the VM's user with administrator rights.
+﻿# Never touch Microsoft Defender, Windows Update, SmartScreen, UAC or the firewall.
 
 $GpuVMCleanupLevels = @('none', 'privacy', 'apps', 'minimal')
 $GpuVMCleanupLevelNames = @{ none = 'Normal'; privacy = 'Privacy'; apps = 'No extra apps'; minimal = 'Minimal' }
@@ -154,7 +149,6 @@ function Get-GpuVMCleanupItem {
     }
 }
 
-# Applies the items of the level and undoes those of higher levels. Returns what it did, item by item.
 function Invoke-GpuVMCleanup {
     param([Parameter(Mandatory)][string]$Level)
     foreach ($entry in Get-GpuVMCleanupItem -Level $Level) {
@@ -186,7 +180,6 @@ function Invoke-GpuVMCleanup {
             if ($entry.Included -and $item['Packages']) {
                 $removed = 0
                 foreach ($package in $item['Packages']) {
-                    # Provisioned: so new users do not get it; installed: for the users that already have it.
                     Get-AppxProvisionedPackage -Online | Where-Object DisplayName -eq $package |
                         ForEach-Object { Remove-AppxProvisionedPackage -Online -PackageName $_.PackageName -ErrorAction SilentlyContinue | Out-Null }
                     Get-AppxPackage -AllUsers -Name $package | ForEach-Object {

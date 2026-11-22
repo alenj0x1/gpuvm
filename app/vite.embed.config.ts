@@ -1,4 +1,3 @@
-// Builds the app's real components for the website (src/embed.tsx) into one script: site/assets/embed.js.
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -10,7 +9,6 @@ export default defineConfig({
     outDir: "../site/assets",
     emptyOutDir: false,
     publicDir: false,
-    // App icons and fonts inline into the script, so the demo is one file.
     assetsInlineLimit: 200_000,
   },
 });

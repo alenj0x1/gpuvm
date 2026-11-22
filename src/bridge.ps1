@@ -1,19 +1,10 @@
-﻿# Bridge between the desktop app and the GpuVM module.
-# Reads one JSON request per line from stdin: {"id": "...", "cmd": "Get-GpuVMOverview", "args": {...}}
-# and writes one JSON line per event to stdout:
-#   {"id", "type": "progress", "message"}   progress (Write-Step)
-#   {"id", "type": "warning", "message"}    warning (Write-Warning)
-#   {"id", "type": "result", "ok", "data" | "error"}
-# With -Once it handles a single request and exits (long jobs run in their own process).
-param([switch]$Once)
+﻿param([switch]$Once)
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 [Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
-# The bridge runs elevated (the GpuVM service starts it with the user's elevated token): modules (Hyper-V,
-# Storage, ...) are only resolved from system folders and this one, never from folders in the user's environment
-# (Documents\PowerShell\Modules, a PSModulePath they set).
+# Runs elevated: modules resolve only from system folders and this one, never from the user's environment.
 $env:PSModulePath = @("$PSHOME\Modules", "$([Environment]::GetFolderPath('System'))\WindowsPowerShell\v1.0\Modules", $PSScriptRoot) -join ';'
 Import-Module (Join-Path $PSScriptRoot 'GpuVM\GpuVM.psd1') -Force -DisableNameChecking
 
@@ -26,7 +17,6 @@ function global:Send-Event([hashtable]$Event) {
     [Console]::Out.Flush()
 }
 
-# {"user","password"} → PSCredential; everything else is passed as is.
 function ConvertTo-Argument($Value) {
     if ($Value -is [System.Collections.IDictionary] -and $Value.Contains('user') -and $Value.Contains('password')) {
         return [pscredential]::new($Value['user'], (ConvertTo-SecureString $Value['password'] -AsPlainText -Force))
@@ -36,7 +26,6 @@ function ConvertTo-Argument($Value) {
 
 while ($null -ne ($line = [Console]::In.ReadLine())) {
     if (-not $line.Trim()) { continue }
-    # A line that is not valid JSON gets an error back instead of ending the bridge.
     try { $request = $line | ConvertFrom-Json -AsHashtable }
     catch {
         Send-Event @{ id = $null; type = 'result'; ok = $false; error = 'Invalid request.' }
@@ -45,8 +34,7 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
     $id = $request['id']
     $global:GpuVMProgressSink = { param($message) Send-Event @{ id = $id; type = 'progress'; message = $message } }.GetNewClosure()
     try {
-        # Names must match exactly, letter case included: the service decides consent and checks paths by the exact
-        # command and argument names, and PowerShell itself would accept "remove-gpuvm" or "path" (or a prefix).
+        # Exact names, case included: the service decides consent by them, and PowerShell would accept other case or a prefix.
         if ($request['cmd'] -isnot [string] -or $request['cmd'] -cnotin $allowed) { throw "Command not allowed: $($request['cmd'])" }
         $parameters = (Get-Command -Name $request['cmd'] -Module GpuVM).Parameters.Keys
         $arguments = @{}
@@ -56,7 +44,6 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
                 $arguments[$key] = ConvertTo-Argument $request['args'][$key]
             }
         }
-        # Warnings are sent as soon as they appear, not at the end of a 15-minute job.
         $data = [System.Collections.Generic.List[object]]::new()
         & $request['cmd'] @arguments 3>&1 6>$null | ForEach-Object {
             if ($_ -is [System.Management.Automation.WarningRecord]) {

@@ -8,9 +8,6 @@ function New-RandomPassword {
     -join ($bytes | ForEach-Object { $alphabet[$_ % $alphabet.Length] })
 }
 
-# GpuVM's Sunshine fork (gpuvm-sunshine, built from upstream Sunshine at the version components.json pins, with the
-# WGC helper): the files that go over C:\Program Files\Sunshine, each with its place there (Key) and SHA-256. Every
-# machine runs it; a build without it can't make or open machines with streaming.
 function Get-SunshineForkFiles {
     $bundle = Get-RepoPath 'sunshine'
     foreach ($key in 'sunshine.exe', 'tools\sunshine_wgc_capture.exe') {
@@ -22,7 +19,6 @@ function Get-SunshineForkFiles {
     }
 }
 
-# Components the guest needs according to the profile's "streaming" section.
 function Get-StreamingComponentNames {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Streaming)
     $names = @()
@@ -33,13 +29,11 @@ function Get-StreamingComponentNames {
     $names
 }
 
-# Whether the VM has GpuVM's USB speaker. "vbcable" is how VMs created before 0.3 named it; they move to the speaker on open.
 function Test-GpuVMAudio {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Streaming)
     $Streaming['audio'] -in 'usb', 'vbcable'
 }
 
-# Prepares what is copied to the guest and what is saved in the host state.
 # The Sunshine password travels in plain text to the guest (deleted after install) and is stored DPAPI-encrypted on the host.
 function New-StreamingPayload {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Config)
@@ -51,7 +45,6 @@ function New-StreamingPayload {
         # The hash travels with the file so it can be re-verified right before copying it to the VM disk.
         @{ Source = Save-GpuVMComponent -Name $name -Manifest $manifest; Destination = 'streaming'; Sha256 = $manifest[$name]['sha256'] }
     })
-    # GpuVM's Sunshine fork goes over the official install (guest\streaming.ps1): every machine runs it.
     if ($streaming['provider'] -eq 'sunshine') {
         foreach ($file in Get-SunshineForkFiles) {
             $files += @{ Source = $file.Path; Destination = Join-Path 'streaming\fork' (Split-Path $file.Key -Parent); Sha256 = $file.Hash }
@@ -88,8 +81,7 @@ function Get-SunshineCredential {
     [pscredential]::new($s['user'], (ConvertTo-SecureString $s['password']))
 }
 
-# Values that come from the guest (PowerShell Direct, KVP) are untrusted: only a string of bounded length
-# without control characters is kept; anything else (objects, arrays) becomes ''.
+# Guest values are untrusted: only a bounded string without control characters is kept.
 function ConvertTo-GuestString {
     param($Value, [int]$MaxLength = 200)
     if ($Value -isnot [string] -and $Value -isnot [ValueType]) { return '' }
@@ -98,7 +90,6 @@ function ConvertTo-GuestString {
     $text
 }
 
-# Dotted IPv4 ("172.20.1.5") to a number; $null if it is anything else.
 function ConvertTo-IPv4Number {
     param([AllowEmptyString()][string]$Address)
     if ($Address -notmatch '^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$') { return $null }
@@ -111,8 +102,7 @@ function ConvertTo-IPv4Number {
     $number
 }
 
-# The guest reports its own IP (KVP), so it could point the host at any machine. It is only accepted if it is an
-# IPv4 host address of the subnet of the host's adapter on the VM's switch, and not the host itself.
+# The guest reports its own IP: only a host address of the host adapter's subnet on the VM's switch is accepted.
 function Test-GuestAddressInHostSubnet {
     param(
         [AllowEmptyString()][string]$Address,
@@ -129,7 +119,6 @@ function Test-GuestAddressInHostSubnet {
     $true
 }
 
-# The host's IPv4 addresses on the switch the VM is connected to (its "vEthernet (<switch>)" adapter).
 function Get-GpuVMHostNetwork {
     param([Parameter(Mandatory)][string]$Name)
     $switch = (Get-VMNetworkAdapter -VMName $Name | Select-Object -First 1).SwitchName
@@ -141,14 +130,12 @@ function Get-GpuVMHostNetwork {
     $networks
 }
 
-# The VM's IP and the host's IP on the same subnet (the address Moonlight connects from).
 function Get-GpuVMEndpoint {
     param(
         [Parameter(Mandatory)][string]$Name,
         [int]$TimeoutSec = 1200
     )
     $networks = Get-GpuVMHostNetwork -Name $Name
-    # The first boot installs Windows and restarts once; the IP only shows up once Windows is running.
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     $started = Get-Date
     $lastReport = [datetime]::MinValue
@@ -168,7 +155,6 @@ function Get-GpuVMEndpoint {
             throw ("The VM '{0}' reports the IP {1}, which isn't on the host's network with the VM ({2}). For safety it won't connect: check the VM's network adapter." -f
                 $Name, (ConvertTo-GuestString ($reported -join ', ') -MaxLength 100), $subnets)
         }
-        # A VM that is off never gets an IP: say so now instead of waiting 20 minutes.
         $vm = Get-VM -Name $Name
         $stopped = @{ Off = 'off'; Saved = 'saved'; Paused = 'paused' }
         if ($stopped.ContainsKey([string]$vm.State)) { throw "The VM '$Name' is $($stopped[[string]$vm.State]). Open it from GpuVM to turn it on." }
@@ -222,7 +208,6 @@ function Wait-SunshineReady {
         [Parameter(Mandatory)][string]$Address,
         [Parameter(Mandatory)][pscredential]$Credential,
         [int]$TimeoutSec = 900,
-        # What is shown while waiting: only the caller knows whether this is the first boot or just a restart.
         [string]$Message = 'Waiting for Sunshine'
     )
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
@@ -246,17 +231,13 @@ function ConvertFrom-SunshineDisplayLog {
     @(($json -join "`n") | ConvertFrom-Json)
 }
 
-# With the Hyper-V display active, Sunshine captures the primary one (Hyper-V, no GPU) and Moonlight shows black.
-# Pin the virtual display (EDID manufacturer "MTT"). If the Hyper-V display is still there, Sunshine is asked to keep
-# the virtual one as the only active display while streaming. If GpuVM already disabled it (-OnlyDisplay), Sunshine is
-# told not to touch displays: any change it makes per session forces it to re-test every encoder, and the first frame
-# then takes 15 to 25 s instead of about 2 s (lab 008).
+# With the Hyper-V display active Sunshine captures it (no GPU) and streams black: pin the virtual display (EDID "MTT").
+# Any per-session display change makes Sunshine re-test every encoder (first frame in 15-25 s instead of ~2 s).
 function Set-SunshineVirtualDisplay {
     param(
         [Parameter(Mandatory)][string]$Address,
         [Parameter(Mandatory)][pscredential]$Credential,
         [switch]$OnlyDisplay,
-        # For restarting Sunshine in WGC mode (Update-SunshineConfig).
         [string]$Name,
         [pscredential]$GuestCredential
     )
@@ -265,18 +246,13 @@ function Set-SunshineVirtualDisplay {
     if (-not $vdd) { Write-Warning 'Sunshine doesn''t see the virtual display; the picture may be black. Check C:\GpuVM\setup.log in the VM.'; return }
 
     $mode = if ($OnlyDisplay) { 'disabled' } else { 'ensure_only_display' }
-    # nvenc_twopass: NVENC without its quarter-resolution first pass, ~1.1 ms less from capture to packet (lab 041);
-    # also for VMs created before it. Other encoders ignore it. Applied in the same restart as the display.
+    # nvenc_twopass: no quarter-resolution first pass, ~1.1 ms less from capture to packet. Other encoders ignore it.
     $settings = [ordered]@{ output_name = $vdd.device_id; dd_configuration_option = $mode; nvenc_twopass = 'disabled' }
     if (Update-SunshineConfig -Address $Address -Credential $Credential -Settings $settings -Name $Name -GuestCredential $GuestCredential) {
         Write-Step "Sunshine will capture the virtual display ($($vdd.display_name))"
     }
 }
 
-# Writes keys to sunshine.conf through the API and restarts Sunshine, only if something changes.
-# Returns $true when it changed the configuration.
-# Given the VM's name and guest credential, Sunshine is restarted the way GpuVM runs it (Set-GuestCaptureMode -Restart);
-# otherwise through its own /api/restart.
 function Update-SunshineConfig {
     param(
         [Parameter(Mandatory)][string]$Address,
@@ -298,8 +274,6 @@ function Update-SunshineConfig {
     foreach ($key in $Settings.Keys) { $body[$key] = $Settings[$key] }
     Invoke-SunshineApi -Address $Address -Credential $Credential -Method POST -Path '/api/config' -Body $body | Out-Null
     if ($Name -and $GuestCredential) {
-        # Restarted as GpuVM runs it: the service, capturing through the fork's helper (this also moves a machine from
-        # before the fork off its user-mode task).
         $null = Set-GuestCaptureMode -Name $Name -Credential $GuestCredential -Restart
     }
     else {
@@ -311,9 +285,6 @@ function Update-SunshineConfig {
     $true
 }
 
-# GpuVM's USB speaker in the guest (guest\audio, lab 012). The guest code is sent every time, so this installs it on
-# VMs created before it existed (they had VB-CABLE, whose capture is silent in a VM), updates its server when the
-# source changes, and attaches it again if Windows lost it. Returns $true when it installed it (Sunshine was restarted).
 function Install-GuestAudio {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -334,9 +305,7 @@ function Install-GuestAudio {
         $installer = Save-GpuVMComponent -Name 'usbip'
         $session = New-PSSession -VMName $Name -Credential $Credential -ErrorAction Stop
         try {
-            # The installer runs and the server's source is compiled into a LOCAL SERVICE program as administrator: both
-            # go into a folder of this run only Administrators and SYSTEM can open, not C:\GpuVM, where a user of the
-            # guest could swap them first (security review 2026-11-21).
+            # Installed and compiled as administrator from an admin-only folder, not C:\GpuVM, where a guest user could swap them.
             $dir = New-GuestAdminFolder -Session $session -Prefix 'GpuVM-audio'
             try {
                 Invoke-Command -Session $session -ErrorAction Stop -ArgumentList $dir { param($d) New-Item -ItemType Directory (Join-Path $d 'audio'), (Join-Path $d 'streaming') | Out-Null }
@@ -354,14 +323,10 @@ function Install-GuestAudio {
         }
         finally { Remove-PSSession $session -ErrorAction SilentlyContinue }
     }
-    # The guest answers 'error: <reason>'; the reason alone follows the colon.
     if ($answer -ne 'ok') { throw "The VM's audio isn't ready: $($answer -replace '^error: ')" }
     $installed
 }
 
-# Gamepads in the VM: Moonlight forwards them and Sunshine creates them through ViGEmBus. Without the driver Sunshine
-# also spends ~16 s looking for it every time it starts (lab 019). Installs it once, checking inside the VM that the
-# installer is the pinned one and signed by its author. Returns $true when it installed it (Sunshine must restart).
 function Install-GuestGamepad {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -376,8 +341,7 @@ function Install-GuestGamepad {
     $hash = (Get-ComponentManifest)['vigembus']['sha256']
     $session = New-PSSession -VMName $Name -Credential $Credential -ErrorAction Stop
     try {
-        # Checked and run from a folder of this run only Administrators and SYSTEM can open: in C:\GpuVM a user of the
-        # guest could swap the installer between its checks and Start-Process (security review 2026-11-21).
+        # Checked and run from an admin-only folder: in C:\GpuVM a guest user could swap the installer between check and run.
         $dir = New-GuestAdminFolder -Session $session -Prefix 'GpuVM-gamepad'
         try {
             Copy-Item -LiteralPath $installer -Destination $dir -ToSession $session -Force
@@ -402,9 +366,6 @@ function Install-GuestGamepad {
     $true
 }
 
-# Right after boot the speaker can take ~15 s to come back (usbip-win2 reattaches it; lab 019). This starts the same
-# check as Install-GuestAudio on a connection of its own, so it waits while the rest is prepared; Install-GuestAudio
-# then finds it ready. Returns $null if it could not start (Install-GuestAudio still does it all).
 function Start-GuestAudioCheck {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -436,8 +397,7 @@ function Stop-GuestAudioCheck {
     Remove-PSSession $Check.Session -ErrorAction SilentlyContinue
 }
 
-# Name of GpuVM's speaker inside the guest. Windows localizes it ("Speakers (GpuVM Audio)", "Altavoces (GpuVM Audio)"),
-# so it is found by being a render endpoint ({0.0.0.…}) of the device we name.
+# Windows localizes the speaker's name: found as a render endpoint ({0.0.0.…}) of the device we name.
 function Get-GuestAudioSink {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -451,7 +411,6 @@ function Get-GuestAudioSink {
     ConvertTo-GuestString (@($sink)[0]) -MaxLength 128
 }
 
-# Makes Sunshine capture GpuVM's speaker (virtual_sink), in case its name changed or the install could not set it.
 function Set-SunshineAudioSink {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -466,8 +425,6 @@ function Set-SunshineAudioSink {
     }
 }
 
-# PowerShell Direct opens a new connection on every Invoke-Command -VMName (~1.5 s each, most of a warm open in lab
-# 019). While Connect-GpuVM runs, the guest calls share one session; anywhere else they open their own as before.
 $script:GuestSessions = @{}
 
 function Invoke-Guest {
@@ -484,7 +441,6 @@ function Invoke-Guest {
     Invoke-Command -VMName $Name -Credential $Credential -ErrorAction Stop -ScriptBlock $ScriptBlock -ArgumentList $ArgumentList
 }
 
-# Without a session (it could not be opened) the calls still work, each with its own connection.
 function Open-GuestSession {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential)
     Close-GuestSession -Name $Name
@@ -497,7 +453,6 @@ function Close-GuestSession {
     $script:GuestSessions.Remove($Name)
 }
 
-# When the guest's Windows last started, as UTC ticks in text. Work done once per boot is remembered against it.
 # Not an ISO date: ConvertFrom-Json would read that back as a DateTime, which never equals the text.
 function Get-GuestBootTime {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential)
@@ -505,9 +460,7 @@ function Get-GuestBootTime {
     ConvertTo-GuestString (@($boot)[0]) -MaxLength 40
 }
 
-# Hyper-V's heartbeat answers once Windows has started its integration services. Asking PowerShell Direct before
-# that blocks ~30 s before failing (lab 019), so the first try lands after Windows is up. Without a heartbeat service
-# (turned off) it counts as up, so nothing waits on it forever.
+# PowerShell Direct before the heartbeat blocks ~30 s before failing. No heartbeat service counts as up.
 function Test-GuestHeartbeat {
     param([Parameter(Mandatory)][string]$Name)
     $heartbeat = Get-VMIntegrationService -VMName $Name -ErrorAction SilentlyContinue |
@@ -516,14 +469,12 @@ function Test-GuestHeartbeat {
     "$($heartbeat.PrimaryOperationalStatus)" -eq 'Ok'
 }
 
-# The first boot installs streaming and restarts the VM once. Pairing before that restart cuts it off halfway,
-# so wait until the guest reports it is done (setup.done.json) and, if it asked to restart, until it has restarted.
+# Pairing before the first boot's restart cuts it off halfway: wait for setup.done.json and that restart.
 function Wait-GuestReady {
     param(
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][pscredential]$Credential,
         [int]$TimeoutSec = 1800,
-        # What the wait for Windows to start is called (it finishes installing updates first when they were pending).
         [string]$BootMessage = 'Waiting for Windows'
     )
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
@@ -540,8 +491,7 @@ function Wait-GuestReady {
         $answer = @(try {
             Invoke-Command -VMName $Name -Credential $Credential -ErrorAction Stop -ScriptBlock {
                 $path = 'C:\GpuVM\setup.done.json'
-                # The first-time setup runs at the first sign-in of the machine's own account (unattend.xml). With
-                # GpuVM's agent signing in instead (`agent`), it can't run any more: waiting for it would never end.
+                # The first-time setup runs at the first sign-in of the machine's own account: with `agent` signing in, it never will.
                 $console = [string](Get-CimInstance Win32_ComputerSystem).UserName
                 if (-not (Test-Path $path) -and $console -like '*\agent') { return 'agent' }
                 if (-not (Test-Path $path)) { return $false }
@@ -557,7 +507,6 @@ function Wait-GuestReady {
             Write-Warning 'GpuVM''s agent signs in to this machine, but its first-time setup never finished (the agent took over the sign-in before it did); carrying on without it.'
             return
         }
-        # No answer is Windows still booting; an answer of "not done" is the first-time setup.
         $message = if ($answer.Count) { 'Windows is finishing its setup (first time only)' } else { $BootMessage }
         if ($announced -ne $message) { Write-Step $message; $announced = $message }
         Start-Sleep -Seconds 3
@@ -565,11 +514,6 @@ function Wait-GuestReady {
     Write-Warning 'The VM''s first-time setup is taking longer than usual; carrying on anyway.'
 }
 
-# Windows signs in on its own after it starts (automatic sign-in), but the display, Sunshine's capture (which runs in
-# that session) and the sound need the session: preparing them before it exists fails. Measured on a VM that had just
-# installed updates: Windows answered 92 s after starting, and signed in 98 s after that (2026-11-09). Waits until the
-# desktop is there, saying what Windows is doing; if Windows restarts to finish its updates, it waits for it again.
-# Returns $false when no one signed in in time (automatic sign-in turned off): the rest goes on as before.
 function Wait-GuestSignIn {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -598,7 +542,6 @@ function Wait-GuestSignIn {
         }
         if ($announced -ne $message) { Write-Step $message; $announced = $message }
         if ($status -eq 'restarting') {
-            # The session died with the restart: wait for Windows again, then reconnect.
             Close-GuestSession -Name $Name
             Start-Sleep -Seconds 3
             Wait-GuestReady -Name $Name -Credential $Credential -TimeoutSec ([math]::Max(30, ($deadline - (Get-Date)).TotalSeconds)) -BootMessage 'Windows is restarting'
@@ -612,8 +555,6 @@ function Wait-GuestSignIn {
     $false
 }
 
-# Whether Windows has updates waiting for the next restart or shutdown: they install while it shuts down and finish when
-# it starts again (measured: 4 min 38 s more to shut down, one extra restart when starting, 2026-11-09).
 function Test-GuestUpdatePending {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential)
     $pending = Invoke-Guest -Name $Name -Credential $Credential -ScriptBlock {
@@ -623,8 +564,6 @@ function Test-GuestUpdatePending {
     @($pending)[-1] -eq $true
 }
 
-# Before GpuVM shuts a VM down: if Windows will install updates on the way, remembers it so the next start says Windows
-# is finishing them. Returns whether it will. Only for running VMs whose Windows password GpuVM has; never fails.
 function Register-GuestUpdateBeforeShutdown {
     param([Parameter(Mandatory)][string]$Name)
     try {
@@ -639,9 +578,6 @@ function Register-GuestUpdateBeforeShutdown {
     catch { $false }
 }
 
-# Sets the virtual display to Moonlight's resolution and FPS. Runs in the user's session inside the VM
-# (a scheduled task launched via PowerShell Direct), so it does not depend on Sunshine's display API.
-# The script is sent every time, so it also works on VMs created with earlier versions.
 function Set-GuestDisplayResolution {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -650,7 +586,6 @@ function Set-GuestDisplayResolution {
         [int]$Fps = 60
     )
     $width, $height = $Resolution.Split('x') | ForEach-Object { [int]$_ }
-    # 0 = the host monitor's rate (Refresh.ps1); a rate the virtual display lacks is added to it first.
     $Fps = Resolve-GpuVMStreamFps $Fps
     if ($Fps -notin 30, 60, 90, 120, 144, 165, 244) {
         try { if (Add-GuestRefreshRate -Name $Name -Credential $Credential -Hz $Fps) { Write-Step "The VM's display at $Fps Hz, like your monitor" } }
@@ -660,8 +595,7 @@ function Set-GuestDisplayResolution {
     $raw = Invoke-Guest -Name $Name -Credential $Credential -ArgumentList $code, $width, $height, $Fps, $script:GuestFolderCode -ScriptBlock {
         param($code, $width, $height, $fps, $folderCode)
         . ([scriptblock]::Create($folderCode))
-        # The script goes in C:\GpuVM, which only administrators can change; the user's task answers through a folder
-        # of this run the user can write and the administrator only reads (security review 2026-11-21, GuestFolders.ps1).
+        # The script goes in admin-only C:\GpuVM; the user's task answers through a folder the administrator only reads.
         $dir = 'C:\GpuVM'
         Protect-GpuVMGuestRoot -Path $dir
         $script = Join-Path $dir 'set-resolution.ps1'
@@ -700,8 +634,7 @@ function Set-GuestDisplayResolution {
     $result
 }
 
-# If the Hyper-V console (enhanced session) or Remote Desktop took the user's session, Sunshine
-# only sees an empty screen. The session is returned to the console with tscon, run as SYSTEM inside the VM.
+# If the Hyper-V console or Remote Desktop took the session, Sunshine sees an empty screen: tscon returns it, as SYSTEM.
 function Repair-GuestConsoleSession {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -736,20 +669,14 @@ function Test-SunshineClientPaired {
     ($clients | ConvertTo-Json -Depth 6) -match [regex]::Escape("`"$ClientName`"")
 }
 
-# GpuVM's own viewer (fork of Moonlight, repo gpuvm-viewer), installed next to the module. The app launches it
-# itself (unelevated, with a private pipe); the module only pairs it and returns the stream arguments.
 function Get-GpuVMViewerPath {
     $path = Join-Path $script:RepoRoot 'viewer\GpuVMViewer.exe'
     if (Test-Path -LiteralPath $path -PathType Leaf) { $path }
 }
 
-# The name the viewer's pairing has in Sunshine: apart from a Moonlight paired from this same PC, which has its own
-# certificate.
 function Get-GpuVMViewerClientName { "$($env:COMPUTERNAME) GpuVM" }
 
-# Moonlight talks to a server the guest controls, so it never runs elevated: it starts as the interactive
-# user through a one-shot scheduled task (Limited run level). Returns the task name.
-# With -KeepTask the task stays registered so the caller can follow it (Get-UnelevatedTaskState) and remove it.
+# Moonlight talks to a server the guest controls, so it never runs elevated: a one-shot task at Limited run level.
 function Start-UnelevatedProcess {
     param(
         [Parameter(Mandatory)][string]$FilePath,
@@ -760,8 +687,7 @@ function Start-UnelevatedProcess {
     $actionParams = @{ Execute = $FilePath }
     if ($ArgumentList) { $actionParams['Argument'] = $ArgumentList -join ' ' }
     $action = New-ScheduledTaskAction @actionParams
-    # The user signed in at the console: if GpuVM was elevated with another administrator account, that account has
-    # no desktop session and the task would never show Moonlight.
+    # The console user: another administrator account GpuVM was elevated with has no desktop session.
     $user = (Get-CimInstance Win32_ComputerSystem).UserName
     if (-not $user) { $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name }
     $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
@@ -785,7 +711,6 @@ function Start-UnelevatedProcess {
     $taskName
 }
 
-# Running: the process is still open. Finished: it ran and exited with ExitCode.
 function Get-UnelevatedTaskState {
     param([Parameter(Mandatory)][string]$TaskName)
     $task = Get-ScheduledTask -TaskName $TaskName -TaskPath '\GpuVM\' -ErrorAction SilentlyContinue
@@ -801,9 +726,7 @@ function Remove-UnelevatedTask {
     Unregister-ScheduledTask -TaskName $TaskName -TaskPath '\GpuVM\' -Confirm:$false -ErrorAction SilentlyContinue
 }
 
-# Picks the pairing request that Moonlight on this host started. Another device on the guest's network
-# could ask to pair at the same time; its request must not get the PIN. Sunshine reports where the request
-# came from (address), which must be the host's IP on the VM's network; without an address, the name must match.
+# Another device on the guest's network could ask to pair at the same time: only the host's request gets the PIN.
 function Select-MoonlightPairingRequest {
     param(
         [object[]]$Pending,
@@ -819,17 +742,14 @@ function Select-MoonlightPairingRequest {
     if ($matched.Count) { $matched[0] }
 }
 
-# Moonlight starts pairing with a PIN; the PIN is handed to Sunshine through its API, without opening the web UI.
 function Register-MoonlightPairing {
     param(
         [Parameter(Mandatory)][string]$Address,
         [Parameter(Mandatory)][pscredential]$Credential,
         [Parameter(Mandatory)][string]$MoonlightPath,
         [Parameter(Mandatory)][string]$ClientName,
-        # The host's IP on the VM's network: the pairing request must come from it.
         [Parameter(Mandatory)][string]$HostAddress,
         [int]$TimeoutSec = 60,
-        # GpuVM's viewer pairs without showing any window.
         [switch]$Quiet
     )
     $pin = '{0:D4}' -f [Security.Cryptography.RandomNumberGenerator]::GetInt32(0, 10000)
@@ -881,7 +801,6 @@ function Get-MoonlightStreamArguments {
     if ($Client.Contains('fps') -and $null -ne $Client['fps']) { $arguments += '--fps', [string](Resolve-GpuVMStreamFps $Client['fps']) }
     if ($Client['bitrateKbps']) { $arguments += '--bitrate', [string]$Client['bitrateKbps'] }
     if ($Client['codec'] -and $Client['codec'] -ne 'auto') { $arguments += '--video-codec', $Client['codec'] }
-    # Latency settings: only passed if the profile defines them (undefined = Moonlight's default).
     $toggles = [ordered]@{ vsync = 'vsync'; framePacing = 'frame-pacing'; performanceOverlay = 'performance-overlay' }
     foreach ($key in $toggles.Keys) {
         if ($Client.Contains($key) -and $null -ne $Client[$key]) {
@@ -894,9 +813,6 @@ function Get-MoonlightStreamArguments {
     if ($Client.Contains('displayMode') -and $Client['displayMode'] -in 'fullscreen', 'windowed', 'borderless') {
         $arguments += '--display-mode', $Client['displayMode']
     }
-    # Alt+F4, Alt+Tab and the Windows key go to the VM instead of closing or leaving Moonlight on this PC
-    # (Ctrl+Alt+Shift+Q still quits the stream).
-    # VMs created before this option existed get it too.
     $keys = if ($Client.Contains('captureSystemKeys')) { $Client['captureSystemKeys'] } else { 'fullscreen' }
     if ($keys -in 'never', 'fullscreen', 'always') { $arguments += '--capture-system-keys', $keys }
     $arguments

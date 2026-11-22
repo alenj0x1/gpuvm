@@ -1,8 +1,6 @@
-// Spanish for Home, the Library, creating a machine, spaces, ambients and the cleanup pieces.
 export default {
   "Good performance with room left for your PC: 8 threads, 8 GB and a dynamic disk.": "Buen rendimiento dejando holgura a tu PC: 8 hilos, 8 GB y disco dinámico.",
   "Maximum performance: the processor reserved at 100 %, your PC's topology, 8 GB fixed and an optimized Windows.": "Máximo rendimiento: procesador reservado al 100 %, la topología de tu PC, 8 GB fijos y Windows optimizado.",
-  // Home
   "There's room for {names}.": "Cabe {names}.",
   "{n} more machine fits.": "Cabe {n} máquina más.",
   "{n} more machines fit.": "Caben {n} máquinas más.",
@@ -54,7 +52,6 @@ export default {
   "Create your first machine": "Crea tu primera máquina",
   "Windows 10 or 11 with your {gpu}, ready to open with one click.": "Windows 10 u 11 con tu {gpu}, lista para abrir en un clic.",
 
-  // Spaces and ambients
   "My machines": "Mis máquinas",
   "Space": "Espacio",
   "Day": "Día",
@@ -86,7 +83,6 @@ export default {
   "Save": "Guardar",
   "Create space": "Crear espacio",
 
-  // Cleanup
   "Diagnostic data": "Datos de diagnóstico",
   "Windows sends usage data to Microsoft": "Windows envía datos de uso a Microsoft",
   "Windows sends the minimum to Microsoft": "Windows envía lo mínimo a Microsoft",
@@ -128,7 +124,6 @@ export default {
   "Removes the preinstalled": "Quita lo preinstalado",
   "Only the essentials": "Solo lo necesario",
 
-  // Create machine
   "Name and space": "Nombre y espacio",
   "Starting point": "Punto de partida",
   "Resources": "Recursos",
@@ -174,7 +169,6 @@ export default {
   "Profile name": "Nombre del perfil",
   "Save as profile": "Guardar como perfil",
 
-  // Library
   "Machine recipes: resources, apps and cleanup ready to use.": "Recetas de máquina: recursos, apps y limpieza listos para usar.",
   "Windows already installed, with its apps, to create machines in seconds.": "Un Windows ya instalado, con sus apps, para crear máquinas en segundos.",
   "They attach to whichever machine needs them: your games or files, stored once.": "Se conectan a la máquina que los necesite: tus juegos o archivos, una sola vez.",

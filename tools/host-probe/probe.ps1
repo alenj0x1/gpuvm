@@ -1,8 +1,3 @@
-# How the host feels while something heavy runs: every 200 ms, at normal priority (like the user's programs), it times
-#   work   a fixed piece of CPU work calibrated to take ~2 ms on an idle PC
-#   write  writing 4 KB to a file on the system drive and flushing it to disk (saving a document)
-#   read   reading 64 KB from a random spot of a 256 MB file, bypassing the file cache (opening a file not in memory)
-# and samples free memory. One JSON line per sample to -Out, until -StopFile appears (or -MaxSec passes).
 # Run it in its own process: pwsh -File tools/host-probe/probe.ps1 -Out x.jsonl -StopFile x.stop
 param(
     [Parameter(Mandatory)][string]$Out,
@@ -29,7 +24,6 @@ public static class HostProbe {
     static volatile int sink;
     static void Spin(long n) { int x = 0; for (long i = 0; i < n; i++) x = unchecked(x * 31 + (int)i); sink = x; }
 
-    // Finds how many iterations take ~2 ms here when idle (median of several tries).
     public static void Calibrate() {
         long n = 100000;
         var sw = new Stopwatch();

@@ -46,17 +46,13 @@ function Send-GpuVMClipboard {
     if ($kind -eq 'files') {
         $sent = Send-GpuVMFile -Name $Name -Path $Files -Folder $Folder
         $received = @($sent['items'])
-        # The folder the copy measured its files in (the signed-in person's Desktop\<Folder>).
         $receivedIn = [string]$sent['path']
     }
 
     $raw = Invoke-Command -VMName $Name -Credential $guest -ErrorAction Stop -ArgumentList $kind, $payload, $receivedIn, $received, $script:GuestFolderCode -ScriptBlock {
         param($kind, [byte[]]$payload, $receivedIn, [string[]]$received, $folderCode)
         . ([scriptblock]::Create($folderCode))
-        # The clipboard belongs to the user's desktop session, so a task in that session sets it. What the
-        # administrator writes goes into C:\GpuVM, which only administrators can change; the task's "done" comes back
-        # through a folder of this run the user can write and the administrator only reads (security review
-        # 2026-11-21, GuestFolders.ps1).
+        # The clipboard belongs to the user's session: a task there sets it and answers through a folder the administrator only reads.
         $dir = 'C:\GpuVM'
         Protect-GpuVMGuestRoot -Path $dir
         $file = Join-Path $dir 'clipboard.bin'
@@ -69,7 +65,6 @@ function Send-GpuVMClipboard {
             $done = Join-Path $drop 'clipboard.done'
             foreach ($old in $file, $list, $script) { Remove-GpuVMItem -Path $old }
             if ($kind -eq 'files') {
-                # The received items, by full path in the folder the copy put them in.
                 $paths = $received | ForEach-Object { Join-Path $receivedIn $_ }
                 [IO.File]::WriteAllLines($list, [string[]]$paths, [Text.UTF8Encoding]::new($false))
             }

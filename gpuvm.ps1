@@ -11,7 +11,6 @@ param(
     [Parameter(Position = 0)][string]$Command = 'help',
     [Parameter(ValueFromRemainingArguments)][object[]]$Rest
 )
-# If launched from Windows PowerShell 5.1, re-run under PowerShell 7 with the same arguments.
 if ($PSVersionTable.PSVersion.Major -lt 7) {
     # The MSI's pwsh first: an elevated console must not run a pwsh.exe that comes earlier in the PATH.
     $pwsh = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'PowerShell\7\pwsh.exe'
@@ -22,7 +21,6 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
 }
 
 # Usually run as administrator: modules only come from system folders and this repository, not the user's environment.
-# The console gets its own PSModulePath back when the command ends.
 $userModulePath = $env:PSModulePath
 $env:PSModulePath = @("$PSHOME\Modules", "$([Environment]::GetFolderPath('System'))\WindowsPowerShell\v1.0\Modules", (Join-Path $PSScriptRoot 'src')) -join ';'
 try { Import-Module (Join-Path $PSScriptRoot 'src\GpuVM\GpuVM.psd1') -Force } catch { $env:PSModulePath = $userModulePath; throw }
@@ -52,11 +50,9 @@ if (-not $commands.Contains($Command)) {
     return
 }
 
-# Turns "-Name value -Switch" into a hashtable for splatting.
 $params = @{}
 for ($i = 0; $i -lt $Rest.Count; $i++) {
     $token = [string]$Rest[$i]
-    # -Name:value (e.g. -Confirm:$false)
     if ($token -match '^-(\w+):(.*)$') {
         $value = $Matches[2]
         $params[$Matches[1]] = if ($value -in '$false', 'false') { $false } elseif ($value -in '$true', 'true') { $true } else { $value }

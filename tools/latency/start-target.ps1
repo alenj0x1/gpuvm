@@ -1,11 +1,8 @@
-# Copies a latency target (target.ps1 by default, input-target.ps1 for input latency, motion-target.ps1 for
-# smoothness) into the VM and starts it in the signed-in user's session.
 # Run as administrator (PowerShell Direct). The guest's Windows password must be saved in GpuVM.
 param(
     [Parameter(Mandatory)][string]$Name,
     [int]$Minutes = 20,
     [ValidateSet('target.ps1', 'input-target.ps1', 'motion-target.ps1')][string]$Script = 'target.ps1',
-    # Only -Windowed is passed through (motion-target.ps1).
     [switch]$Windowed
 )
 $ErrorActionPreference = 'Stop'

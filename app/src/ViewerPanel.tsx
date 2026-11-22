@@ -34,7 +34,6 @@ async function listen<T>(event: string, handler: (payload: T) => void): Promise<
 
 const send = (vm: string, msg: Record<string, unknown>) => invoke("viewer_send", { vm, msg }).catch(() => {});
 
-/** Why a capture failed, in words (the viewer and the app send a short reason). */
 const captureErrorText = (reason: string) => ({
   "disk-full": t("The disk is full"),
   "too-slow": t("The disk can't keep up, the recording stopped"),
@@ -44,14 +43,9 @@ const captureErrorText = (reason: string) => ({
   "replay-off": t("Turn it on in Settings, in Captures"),
 }[reason] ?? t("Couldn't save"));
 
-/** The panel beside GpuVM's viewer: it slides in from the right while the picture moves aside. A board of widgets
- *  the person arranges (ViewerWidgets.tsx): machines to switch to, the usual actions, the picture's numbers, the time,
- *  the shelf with the machines' figures, games for the waits and, if turned on, the weather. */
 export function ViewerPanel({ machine, onSwitched, onResize, sample }: {
   machine?: string; onSwitched?: (name: string) => void;
-  /** The website's sample: adjusts the machines it lists (all on, so they can be switched to). */
   sample?: (vms: VmOverview[]) => VmOverview[];
-  /** The website's sample: the edge drag reports the width here instead of resizing a window. */
   onResize?: (width: number) => void;
 } = {}) {
   const [vm, setVm] = useState<string>(() => machine ?? new URLSearchParams(location.search).get("vm") ?? "");
@@ -68,7 +62,6 @@ export function ViewerPanel({ machine, onSwitched, onResize, sample }: {
   const [edit, setEdit] = useState(false);
   const [game, setGame] = useState<GameDef | null>(null);
   const decor = useDecor(vm);
-  // Screenshots and recordings: per machine, as the viewers report them (they may record while the panel is closed).
   const prefs = usePrefs();
   const [captures, setCaptures] = useState<Record<string, { recording: boolean; since: number; last: SavedCapture | null; error: string }>>({});
   const captureOf = (name: string) => captures[name] ?? { recording: false, since: 0, last: null, error: "" };
@@ -91,11 +84,9 @@ export function ViewerPanel({ machine, onSwitched, onResize, sample }: {
     const offs = [
       listen<{ open: boolean; vm: string }>("viewer-panel", (p) => { setVm(p.vm); setOpen(p.open); if (!p.open) setEdit(false); }),
       listen<{ vm: string; msg: Record<string, unknown> & { type: string } }>("viewer", (p) => {
-        // Recording state is kept for every machine (it can record while another one is on screen).
         if (p.msg.type === "recording") setCapture(p.vm, p.msg.on ? { recording: true, since: Date.now(), error: "" } : { recording: false });
         if (p.msg.type === "capture-error") showError(p.vm, captureErrorText(String(p.msg.reason ?? "")));
         if (p.msg.type === "closed" || p.msg.type === "ended") setCapture(p.vm, { recording: false });
-        // Another machine may stay connected in the background: only this one's numbers.
         if (p.vm !== vmRef.current) return;
         if (p.msg.type === "stats") onStats(p.msg as unknown as ViewerStats);
         if (p.msg.type === "window") setFullScreen(!!p.msg.fullScreen);
@@ -107,10 +98,8 @@ export function ViewerPanel({ machine, onSwitched, onResize, sample }: {
     return () => { offs.forEach((o) => o.then((f) => f())); };
   }, []);
 
-  // The panel lives on hidden between uses: each time it opens it takes the theme and accent chosen meanwhile.
   useEffect(() => { if (open) refreshPrefs(); }, [open]);
 
-  // And the machine's newest capture and recording, which may have happened before the panel existed (keys).
   useEffect(() => {
     if (!open || !vm || !inTauri) return;
     invoke<{ last: (SavedCapture & { at: number }) | null; recordingSince: number | null }>("capture_state", { vm }).then((s) => {
@@ -122,14 +111,12 @@ export function ViewerPanel({ machine, onSwitched, onResize, sample }: {
     }).catch(() => {});
   }, [open, vm]);
 
-  // In the browser preview there is no viewer: made-up numbers so the widget can be seen working.
   useEffect(() => {
     if (inTauri) return;
     const timer = setInterval(() => onStats({ receivedFps: 60, renderedFps: 57 + Math.random() * 3 - (Math.random() < 0.08 ? 8 : 0), networkDropPercent: 0, decodeMs: 1.2, renderMs: 0.4, hostLatencyMs: 4 + Math.random(), networkLatencyMs: 1.5 + Math.random() * 0.6 }), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // The machine list while the panel is open; nothing runs while it is hidden.
   useEffect(() => {
     if (!open) return;
     let alive = true;
@@ -142,11 +129,9 @@ export function ViewerPanel({ machine, onSwitched, onResize, sample }: {
   const change = (next: WidgetItem[]) => {
     setItems(next);
     saveWidgets(next);
-    // Taking the weather off forgets its city too.
     if (!next.some((x) => x.type === "weather")) forgetWeather();
   };
 
-  // The panel's width: dragged from its left edge, within limits (overlay.rs), remembered.
   useEffect(() => {
     const saved = Number(localStorage.getItem(WIDTH_KEY));
     if (saved) invoke("viewer_panel_resize", { width: saved });
@@ -166,7 +151,7 @@ export function ViewerPanel({ machine, onSwitched, onResize, sample }: {
       target.removeEventListener("pointerup", up);
       target.removeEventListener("pointercancel", up);
       if (!inTauri) return;
-      invoke<number>("viewer_panel_resize", { width: last }).then((w) => { try { localStorage.setItem(WIDTH_KEY, String(w ?? last)); } catch { /* no storage */ } });
+      invoke<number>("viewer_panel_resize", { width: last }).then((w) => { try { localStorage.setItem(WIDTH_KEY, String(w ?? last)); } catch {} });
     };
     target.addEventListener("pointermove", move);
     target.addEventListener("pointerup", up);
@@ -180,9 +165,7 @@ export function ViewerPanel({ machine, onSwitched, onResize, sample }: {
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      // The viewer's shortcuts also work while the panel has the focus: the same keys close it or go Home.
-      // By the key's position, its letter or its key code: input without a scan code (remote desktops, test
-      // tools) has no `code`.
+      // Matched by code, key or keyCode: input without a scan code (remote desktops, test tools) has no `code`.
       const letter = e.code === "KeyG" || e.keyCode === 71 || e.key.toLowerCase() === "g" ? "g"
         : e.code === "KeyH" || e.keyCode === 72 || e.key.toLowerCase() === "h" ? "h" : "";
       if (e.ctrlKey && e.altKey && e.shiftKey && letter) {
@@ -202,7 +185,6 @@ export function ViewerPanel({ machine, onSwitched, onResize, sample }: {
 
   const switchTo = async (name: string) => {
     setError("");
-    // The website's sample: switching shows the other machine in the panel.
     if (!inTauri) { setVm(name); onSwitched?.(name); return; }
     try {
       const { emitTo } = await import("@tauri-apps/api/event");
@@ -213,7 +195,7 @@ export function ViewerPanel({ machine, onSwitched, onResize, sample }: {
 
   return (
     <aside className={`viewer-panel${open ? " open" : ""}`} aria-label={t("Viewer panel")}>
-      <div className="viewer-panel-edge" onPointerDown={startResize} onDoubleClick={() => { onResize?.(340); invoke("viewer_panel_resize", { width: 340 }); try { localStorage.removeItem(WIDTH_KEY); } catch { /* no storage */ } }} aria-hidden="true" />
+      <div className="viewer-panel-edge" onPointerDown={startResize} onDoubleClick={() => { onResize?.(340); invoke("viewer_panel_resize", { width: 340 }); try { localStorage.removeItem(WIDTH_KEY); } catch {} }} aria-hidden="true" />
       <div className="viewer-panel-top">
         <span className="viewer-panel-machine"><MachineIcon name={vm} size={20} radius={6} /><span>{vm}</span></span>
         {!game && (
@@ -224,8 +206,7 @@ export function ViewerPanel({ machine, onSwitched, onResize, sample }: {
         <button type="button" className="icon-btn" aria-label={t("Close")} title={t("Close")} onClick={() => invoke("viewer_panel_close")}><IconX size={16} /></button>
       </div>
       <div className="viewer-panel-body" onScroll={(e) => {
-        // Only up and down: while the panel narrows the board is wider for a moment, and a sideways scroll left the
-        // widgets cut on the left once it widened again.
+        // Vertical only: a sideways scroll while the panel narrows left widgets cut on the left.
         if (e.currentTarget.scrollLeft) e.currentTarget.scrollLeft = 0;
       }}>
         {game ? (
@@ -254,7 +235,6 @@ export function ViewerPanel({ machine, onSwitched, onResize, sample }: {
                     case "capture": {
                       const c = captureOf(vm);
                       const state: CaptureState = { ...c, replay: prefs.replay };
-                      // The website's sample: made-up files so the widget can be seen working.
                       const sampleShot = (kind: SavedCapture["kind"], durationMs = 0) =>
                         setCapture(vm, { last: { kind, path: "", name: `${vm} 2026-11-18 21.04.13.${kind === "shot" ? "png" : "mp4"}`, thumb: null, durationMs, at: Date.now() } });
                       return (

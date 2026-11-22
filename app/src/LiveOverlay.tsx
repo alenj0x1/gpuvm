@@ -2,10 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { inTauri } from "./api";
 import { t } from "./i18n";
 
-// The agent's live overlay (live.rs): a click-through window over a machine's picture that shows where the agent acts
-// — its cursor with its name, a ring on each click, the stroke of a drag, the keys it presses. Only shapes arrive
-// (desktop pixels, key names, a count of typed characters), never what is typed. What it is doing in words goes in the
-// status notch, not here.
+// Only shapes arrive (desktop pixels, key names, a count of typed characters), never the typed text.
 
 type Point = [number, number];
 type Shape =
@@ -23,7 +20,6 @@ interface Mark { id: number; x: number; y: number; kind: "ring" | "double" | "sc
 interface Stroke { id: number; d: string; length: number; ms: number; fading: boolean; color?: string; width?: number }
 interface Chip { id: number; text: string }
 
-/** Desktop pixels → the overlay's pixels: the picture is fitted whole (letterboxed) in the viewer. */
 function fit(screen: { w: number; h: number }, box: HTMLElement | null) {
   const W = box?.clientWidth || window.innerWidth, H = box?.clientHeight || window.innerHeight;
   const s = Math.min(W / screen.w, H / screen.h);
@@ -32,16 +28,10 @@ function fit(screen: { w: number; h: number }, box: HTMLElement | null) {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-/** Keys as people write them: "ctrl+shift+s" is "Ctrl + Shift + S". */
 const keyLabel = (keys: string) => keys.split("+").map((k) => k.trim()).filter(Boolean)
   .map((k) => (k.length === 1 ? k.toUpperCase() : k[0].toUpperCase() + k.slice(1))).join(" + ");
-/** How long the cursor glides to a new place: quick, so it never lags far behind the machine. */
 const GLIDE_MS = 240;
 
-/** `script`: events to play in a loop instead of the app's (the website's demo), with `keep` strokes staying drawn until
- *  the loop starts over and `onStep` told each step as it plays (for its notch line). With `onEnd` the script plays
- *  once and `onEnd` is called after its last pause (the website alternates scenes); `pause` is the wait between its
- *  steps. In a script, a drag can carry its own `color` and `width` (a drawing) and `wait` holds the step. */
 export function LiveOverlay({ script, keep, onStep, onEnd, pause }: { script?: LiveEvent[]; keep?: boolean; onStep?: (ev: LiveEvent | null) => void; onEnd?: () => void; pause?: number } = {}) {
   const box = useRef<HTMLDivElement>(null);
   const [name, setName] = useState("");
@@ -53,7 +43,6 @@ export function LiveOverlay({ script, keep, onStep, onEnd, pause }: { script?: L
   const queue = useRef<Promise<void>>(Promise.resolve());
   const next = useRef(1);
   const at = useRef<Point>([0, 0]);
-  /** Events waiting behind the one playing: past two, they play at once (never far behind the machine). */
   const waiting = useRef(0);
 
   useEffect(() => {
@@ -86,7 +75,6 @@ export function LiveOverlay({ script, keep, onStep, onEnd, pause }: { script?: L
         else if (s.type === "drag") {
           const all = s.strokes.flat();
           const total = s.strokes.reduce((n, st) => n + st.slice(1).reduce((len, p, i) => len + Math.hypot(p[0] - st[i][0], p[1] - st[i][1]), 0), 0);
-          // The machine draws at ~1500 desktop px/s (or in `ms`); the overlay follows at that pace, 3 s at most.
           const ms = hurry ? 0 : Math.min(3000, Math.max(250, s.ms ?? (total / 1500) * 1000));
           if (!all.length) continue;
           await glide(all[0]);
@@ -98,7 +86,6 @@ export function LiveOverlay({ script, keep, onStep, onEnd, pause }: { script?: L
             const stMs = total > 0 ? (ms * stLen) / total : ms / s.strokes.length;
             const id = next.current++;
             setStrokes((list) => [...list.slice(keep ? -600 : -30), { id, d: "M" + pts.map((p) => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" L"), length, ms: stMs, fading: false, color: s.color, width: s.width }]);
-            // The cursor rides the stroke: a few hops along it.
             const hops = Math.max(2, Math.min(24, Math.round(stMs / 40)));
             for (let h = 1; h <= hops; h++) {
               const p = st[Math.round(((st.length - 1) * h) / hops)];
@@ -120,7 +107,6 @@ export function LiveOverlay({ script, keep, onStep, onEnd, pause }: { script?: L
     };
 
     if (script || !inTauri) {
-      // The website's demo, or the browser preview (?agent-live): a loop of what an agent does.
       const demo: LiveEvent[] = script ?? [
         { phase: "start", step: 1, clientName: "Claude Code", screen: { w: 1280, h: 800 }, shapes: [{ type: "click", x: 300, y: 240 }] },
         { phase: "start", step: 2, shapes: [{ type: "drag", strokes: [Array.from({ length: 40 }, (_, i): Point => [640 + 120 * Math.cos(i / 6), 380 + 120 * Math.sin(i / 6)])] }] },
@@ -152,13 +138,12 @@ export function LiveOverlay({ script, keep, onStep, onEnd, pause }: { script?: L
       const u = await w.listen<LiveEvent>("agent-live", (e) => take(e.payload));
       if (gone) { u(); return; }
       off = u;
-      // Listening now: the app sends what came while this page loaded (live.rs).
+      // Listening now: the app replays what arrived while this page loaded (live.rs).
       await w.emit("agent-live-ready", {});
     })();
     return () => { gone = true; off?.(); };
   }, []);
 
-  // A resize of the viewer moves the picture: the cursor goes back to where it was on the machine.
   useEffect(() => {
     const onResize = () => setCursor((c) => (c ? { p: fit(screen.current, box.current)(at.current), glide: 0 } : c));
     window.addEventListener("resize", onResize);

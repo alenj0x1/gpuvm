@@ -1,6 +1,4 @@
-//! What the session looks like right now: which desktop has the input (default / secure / locked), the foreground
-//! window and whether the agent may act on it (lab 049: an elevated window drops our input silently; a csrss
-//! hard-error box leaves no foreground window and blocks all input), and the system error boxes on screen.
+//! An elevated window drops our input silently; a csrss hard-error box leaves no foreground window and blocks all input.
 use crate::token::*;
 use crate::util::wstr;
 use serde_json::{json, Value};
@@ -12,8 +10,7 @@ use windows::Win32::System::RemoteDesktop::*;
 use windows::Win32::System::StationsAndDesktops::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-/// "default" when this process can open the input desktop and it is `Default`; otherwise "locked" when the session is
-/// locked, else "secure" (UAC prompt, Ctrl+Alt+Del screen: lab 048, OpenInputDesktop fails with error 5).
+/// OpenInputDesktop fails (error 5) on the secure desktop: UAC prompt, Ctrl+Alt+Del screen.
 pub fn desktop_state() -> &'static str {
     unsafe {
         if let Ok(h) = OpenInputDesktop(DESKTOP_CONTROL_FLAGS(0), false, DESKTOP_ACCESS_FLAGS(0x0001)) {
@@ -47,15 +44,11 @@ fn session_locked() -> bool {
     }
 }
 
-/// Every csrss.exe (owners of the system hard-error boxes), by name from a process snapshot. No session filter:
-/// that needs to open the process, which a standard user can't do for csrss (protected, SYSTEM-only), so the list
-/// came back empty for `agent` (lab 051). The windows enumerated are this session's anyway. Found once (csrss lives
-/// as long as the session).
+/// A standard user can't open csrss (protected), so it can't be filtered by opening the process.
 fn csrss_pids() -> &'static Vec<u32> {
     static P: OnceLock<Vec<u32>> = OnceLock::new();
     P.get_or_init(|| unsafe {
-        // the terminal server's process list carries the session id without opening the process (a standard user
-        // can't open csrss): csrss.exe of THIS session only (security review 9); Toolhelp by name as a fallback
+        // the terminal server's list carries the session id without opening csrss: this session's only; Toolhelp by name as a fallback
         let mut own = 0u32;
         let _ = windows::Win32::System::RemoteDesktop::ProcessIdToSessionId(std::process::id(), &mut own);
         let mut v = Vec::new();
@@ -103,7 +96,6 @@ pub fn window_pid(h: HWND) -> u32 {
     pid
 }
 
-/// Visible top-level windows owned by csrss (system error boxes) as (hwnd, title).
 pub fn error_boxes() -> Vec<(isize, String)> {
     struct Acc<'a> {
         pids: &'a [u32],
@@ -137,22 +129,20 @@ pub struct Fg {
     pub title: String,
     pub process: String,
     pub integrity: Option<u32>,
-    /// None when the agent may act; otherwise the protocol error code.
     pub blocked: Option<&'static str>,
 }
 
-/// Window integrity check: Some(code) when our input would be dropped (above our level, or unreadable).
 pub fn window_block(h: HWND) -> (Option<&'static str>, ProcInfo) {
     let info = process_info(window_pid(h));
     let b = match info.integrity {
-        // a UIAccess process (osk.exe...) can drive elevated windows: input to it would reach them (security review)
+        // a UIAccess process (osk.exe...) can drive elevated windows: input to it would reach them
         Some(il) if il <= own_integrity() && !info.uiaccess => None,
         _ => Some("blocked_elevated"),
     };
     (b, info)
 }
 
-/// The foreground window, waiting up to `wait` for one to appear (right after a window closes there briefly is none).
+/// Right after a window closes there briefly is no foreground window.
 pub fn foreground(wait: Duration) -> Fg {
     let desk = desktop_state();
     let mut hwnd = unsafe { GetForegroundWindow() };
@@ -168,7 +158,7 @@ pub fn foreground(wait: Duration) -> Fg {
         return Fg { hwnd, title: String::new(), process: String::new(), integrity: None, blocked: Some("no_foreground") };
     }
     let (blocked, info) = window_block(hwnd);
-    // a csrss box in front counts as blocked too (lab 049: input to it hung the session)
+    // a csrss box in front counts as blocked too: input to it hung the session
     let blocked = blocked.or_else(|| csrss_pids().contains(&window_pid(hwnd)).then_some("no_foreground"));
     Fg { hwnd, title: window_text(hwnd), process: info.image, integrity: info.integrity, blocked }
 }
@@ -181,11 +171,9 @@ pub fn fg_json(f: &Fg) -> Value {
     })
 }
 
-/// A human-readable reason for a refusal.
 pub fn block_message(code: &str, f: &Fg) -> String {
     match code {
         "secure_desktop" => "a secure desktop (UAC prompt, lock or sign-in screen) has the input: only the person can act there".into(),
-        // a system error box (csrss) in front: say so, and whether it is out of the agent's view (lab 051)
         "blocked_elevated" if !f.hwnd.0.is_null() && csrss_pids().contains(&window_pid(f.hwnd)) => {
             let where_ = if window_on_screen(f.hwnd) { "" } else { " outside the visible screen (the agent's screenshot doesn't show it)" };
             format!("a system error box '{}' is open{where_}: only the person can close it; ask the person", f.title)
@@ -201,7 +189,6 @@ pub fn block_message(code: &str, f: &Fg) -> String {
     }
 }
 
-/// Whether any part of the window lies on the agent's screen.
 pub fn window_on_screen(h: HWND) -> bool {
     let mut rc = windows::Win32::Foundation::RECT::default();
     if unsafe { GetWindowRect(h, &mut rc) }.is_err() {
@@ -218,7 +205,7 @@ pub fn screen_state() -> Value {
     let f = foreground(Duration::from_millis(0));
     let all = error_boxes();
     let boxes: Vec<String> = all.iter().map(|(_, t)| t.clone()).collect();
-    // where they are, relative to the agent's screen (a box csrss places by an old layout can be off-screen)
+    // a box csrss places by an old layout can be off-screen
     let origin = crate::capture::output_rect().map(|r| (r.left, r.top)).unwrap_or((0, 0));
     let rects: Vec<Value> = all
         .iter()

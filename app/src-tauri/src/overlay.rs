@@ -1,10 +1,4 @@
-//! What GpuVM draws over its viewer: the side panel. It opens with Ctrl+Alt+Shift+G inside the viewer (or from the
-//! app) and pushes the picture aside instead of covering it: the viewer shrinks the picture to the left while the
-//! panel slides in on the right, both with the same duration and curve.
-//!
-//! The panel is a window owned by the viewer's window (always just above it, minimized and moved with it) and is
-//! hidden, not just transparent, while closed: nothing is drawn over the stream, so Windows keeps presenting the
-//! picture directly (no extra latency).
+// Hidden, not just transparent, while closed: then Windows keeps presenting the stream directly.
 
 use serde_json::{json, Value};
 use std::sync::atomic::Ordering;
@@ -16,16 +10,13 @@ use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
 use windows_sys::Win32::UI::WindowsAndMessaging::{GetClientRect, IsIconic, IsWindow, SetWindowLongPtrW, GWLP_HWNDPARENT};
 
 pub const LABEL: &str = "viewer-panel";
-/// Panel width in logical pixels (scaled with the viewer's monitor); the person can drag its edge between the limits.
 static WIDTH: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(340);
 const MIN_WIDTH: u32 = 300;
 const MAX_WIDTH: u32 = 560;
-/// Same as the page's slide (styles.css, .viewer-panel).
 const SLIDE_MS: u64 = 320;
 
 #[derive(Default)]
 struct Panel {
-    /// Machine whose viewer the panel is on.
     vm: Option<String>,
     open: bool,
 }
@@ -36,7 +27,6 @@ fn panel() -> std::sync::MutexGuard<'static, Panel> {
     PANEL.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// The viewer's client area on screen, in physical pixels, and its DPI scale.
 pub(crate) fn client_rect(hwnd: isize) -> Option<(i32, i32, i32, i32, f64)> {
     // SAFETY: plain queries on a window handle; a stale handle only makes them fail.
     unsafe {
@@ -71,8 +61,6 @@ fn panel_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
         .ok()
 }
 
-/// The picture of a viewer on screen (physical x, y, width, height): its client area without the side panel when
-/// the panel is open on it. Where the drop area goes (dropzone.rs).
 pub fn picture_rect(viewer: isize, vm: &str) -> Option<(i32, i32, i32, i32)> {
     let (x, y, w, h, scale) = client_rect(viewer)?;
     let open_here = { let p = panel(); p.open && p.vm.as_deref() == Some(vm) };
@@ -80,7 +68,6 @@ pub fn picture_rect(viewer: isize, vm: &str) -> Option<(i32, i32, i32, i32)> {
     Some((x, y, w - panel_w, h))
 }
 
-/// Puts the panel over the right edge of the viewer's picture area.
 fn place(window: &tauri::WebviewWindow, viewer: isize) -> Option<(i32, i32, f64)> {
     let (x, y, w, h, scale) = client_rect(viewer)?;
     let logical = WIDTH.load(std::sync::atomic::Ordering::Relaxed) as f64;
@@ -95,19 +82,15 @@ fn place(window: &tauri::WebviewWindow, viewer: isize) -> Option<(i32, i32, f64)
     Some((width, w, scale))
 }
 
-/// The panel's last taskbar mark: 0 none yet, 1 off, 2 on (a viewer's repeated reports don't redo the COM call).
 static MARKED: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 
-/// Tells the taskbar the panel belongs to a full-screen picture, so it stays hidden while the panel has the focus
-/// (otherwise Windows shows the taskbar over the bottom of the stream). Off when the picture is inside the app.
+// Marked full-screen so the taskbar stays hidden while the panel has the focus.
 fn mark_full_screen(window: &tauri::WebviewWindow, on: bool) {
     MARKED.store(if on { 2 } else { 1 }, Ordering::Relaxed);
     mark_taskbar(window, on);
 }
 
-/// A floating window over the picture without any frame. Tauri's undecorated windows keep WS_CAPTION, which Windows 10
-/// draws as a 1px grey rectangle around a transparent window (the "Recording" notch showed it, 2026-11-21): only
-/// WS_POPUP is kept. Applied again on every show, since the window's own style updates can bring the caption back.
+// Tauri's undecorated windows keep WS_CAPTION, drawn by Windows 10 as a 1px grey frame: only WS_POPUP, reapplied on every show.
 pub(crate) fn borderless(window: &tauri::WebviewWindow) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         GetWindowLongPtrW, SetWindowPos, GWL_STYLE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
@@ -127,8 +110,6 @@ pub(crate) fn borderless(window: &tauri::WebviewWindow) {
     }
 }
 
-/// The taskbar's full-screen mark for one of GpuVM's windows over a viewer (the panel, the admin-prompt dock). Also
-/// takes the frame off (borderless): every window over the picture comes through here when it shows.
 pub(crate) fn mark_taskbar(window: &tauri::WebviewWindow, on: bool) {
     borderless(window);
     use windows_sys::core::GUID;
@@ -148,8 +129,7 @@ pub(crate) fn mark_taskbar(window: &tauri::WebviewWindow, on: bool) {
     const CLSID_TASKBAR_LIST: GUID = GUID::from_u128(0x56FDF344_FD6D_11d0_958A_006097C9A090);
     const IID_ITASKBAR_LIST2: GUID = GUID::from_u128(0x602D4995_B13A_429b_A66E_1935E44F4317);
     let Ok(own) = window.hwnd() else { return };
-    // SAFETY: COM is set up for this call and released; the object is used through ITaskbarList2's documented
-    // vtable order and released once.
+    // SAFETY: COM set up for this call; ITaskbarList2 used through its documented vtable order and released once.
     unsafe {
         let init = CoInitializeEx(std::ptr::null(), COINIT_APARTMENTTHREADED as u32);
         let mut list: *mut std::ffi::c_void = std::ptr::null_mut();
@@ -210,7 +190,6 @@ pub fn close(app: &AppHandle) {
         let app = app.clone();
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(SLIDE_MS));
-            // Opened again meanwhile: keep it.
             if panel().open {
                 return;
             }
@@ -227,7 +206,6 @@ pub fn close(app: &AppHandle) {
     let _ = crate::viewer::send_to(&vm, &json!({ "type": "capture", "on": true }));
 }
 
-/// Messages from a viewer that concern the panel.
 pub fn on_viewer(app: &AppHandle, vm: &str, msg: &Value) {
     match msg["type"].as_str().unwrap_or("") {
         "panel" => {
@@ -264,7 +242,6 @@ pub fn on_viewer(app: &AppHandle, vm: &str, msg: &Value) {
     }
 }
 
-/// The panel's edge was dragged (or its page loaded with the saved width): new width in logical pixels.
 #[tauri::command]
 pub async fn viewer_panel_resize(app: AppHandle, width: u32) -> u32 {
     let width = width.clamp(MIN_WIDTH, MAX_WIDTH);
@@ -274,7 +251,6 @@ pub async fn viewer_panel_resize(app: AppHandle, width: u32) -> u32 {
         if let (Some(viewer), Some(window)) = (crate::viewer::viewer_hwnd(&vm), app.get_webview_window(LABEL)) {
             if let Some((w, total, scale)) = place(&window, viewer) {
                 let _ = crate::viewer::send_to(&vm, &json!({ "type": "inset", "fraction": w as f64 / total as f64, "durationMs": 0 }));
-                // The width it really has (at most half the viewer) is the one to remember.
                 return ((w as f64 / scale).round() as u32).min(width);
             }
         }
@@ -282,13 +258,11 @@ pub async fn viewer_panel_resize(app: AppHandle, width: u32) -> u32 {
     width
 }
 
-/// The panel's close button and Escape.
 #[tauri::command]
 pub async fn viewer_panel_close(app: AppHandle) {
     close(&app);
 }
 
-/// The panel's width in physical pixels when it is open on this machine's viewer (the dock leaves it uncovered).
 pub fn open_width(app: &AppHandle, vm: &str) -> Option<i32> {
     let p = panel();
     if !p.open || p.vm.as_deref() != Some(vm) {
@@ -299,7 +273,6 @@ pub fn open_width(app: &AppHandle, vm: &str) -> Option<i32> {
     Some(size.width as i32)
 }
 
-/// The machine the panel is on, for its page when it loads.
 #[tauri::command]
 pub fn viewer_panel_vm() -> Option<String> {
     panel().vm.clone()

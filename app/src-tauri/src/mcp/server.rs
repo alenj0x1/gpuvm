@@ -1,13 +1,3 @@
-//! MCP over stdio, both eras:
-//! - modern (2026-07-28): stateless; every request carries `_meta` with its protocol version, client info and
-//!   capabilities; `server/discover`; results carry `resultType` and the server's identity; approvals use
-//!   `input_required` results (multi round-trip requests).
-//! - legacy (2025-11-25 and earlier): `initialize` handshake; approvals are `elicitation/create` requests sent
-//!   to the client.
-//!
-//! One JSON-RPC message per line on stdout; logs go to stderr. Tool calls run on their own threads so a long one
-//! (creating a machine, waiting for the person) never blocks `ping`, cancellations or other calls.
-
 use super::broker::Broker;
 use super::tools::{self, Ctx};
 use serde_json::{json, Map, Value};
@@ -45,7 +35,6 @@ fn server_info() -> Value {
     json!({ "name": SERVER_NAME, "title": "GpuVM", "version": server_version() })
 }
 
-/// Where replies go (stdout in production, a buffer in tests).
 pub type Out = Arc<Mutex<Box<dyn Write + Send>>>;
 
 pub fn send(out: &Out, message: &Value) {
@@ -60,7 +49,6 @@ pub fn log(line: &str) {
     eprintln!("[gpuvm-mcp] {line}");
 }
 
-/// What the server knows about the client on the other end.
 #[derive(Default, Clone, Debug)]
 pub struct Client {
     pub name: String,
@@ -73,9 +61,7 @@ pub struct Client {
 pub struct Server {
     pub ctx: Arc<Ctx>,
     out: Out,
-    /// Legacy session negotiated by `initialize` (None until then).
     legacy: Mutex<Option<Client>>,
-    /// Requests the server sent to the client (legacy elicitation), waiting for their response.
     waiting: Mutex<HashMap<String, mpsc::Sender<Value>>>,
     pub cancelled: Arc<Mutex<HashSet<String>>>,
     next_id: std::sync::atomic::AtomicU64,
@@ -95,7 +81,6 @@ impl Server {
         })
     }
 
-    /// Reads requests until stdin closes, then waits for running calls and says goodbye to the broker.
     pub fn serve(self: &Arc<Self>, input: impl BufRead) {
         for line in input.lines() {
             let Ok(line) = line else { break };
@@ -107,15 +92,12 @@ impl Server {
         self.finish();
     }
 
-    /// stdin closed: running waits end at once, the session is closed (the broker cancels its requests), then the
-    /// calls still running are waited for.
     pub fn finish(&self) {
         self.ctx.shutting_down.store(true, std::sync::atomic::Ordering::Relaxed);
         self.ctx.disconnect();
         self.join();
     }
 
-    /// Waits for the tool calls running now.
     pub fn join(&self) {
         let handles: Vec<_> = std::mem::take(&mut *self.threads.lock().unwrap());
         for h in handles {
@@ -132,7 +114,6 @@ impl Server {
             return send(&self.out, &rpc_error(Value::Null, -32600, "Batches aren't supported; send one message per line.", None));
         }
         let id = message.get("id").cloned();
-        // A response to something the server asked (legacy elicitation).
         if message.get("method").is_none() {
             if let Some(id) = id {
                 let key = id.to_string();
@@ -145,7 +126,6 @@ impl Server {
         let method = message["method"].as_str().unwrap_or("").to_string();
         let params = message.get("params").cloned().unwrap_or(json!({}));
         let Some(id) = id else {
-            // Notifications.
             if method == "notifications/cancelled" {
                 if let Some(rid) = params.get("requestId") {
                     self.cancelled.lock().unwrap().insert(rid.to_string());
@@ -154,7 +134,6 @@ impl Server {
             return;
         };
 
-        // Which era is this request?
         let meta = params.get("_meta").cloned().unwrap_or(Value::Null);
         let client = if let Some(version) = meta.get(META_VERSION).and_then(Value::as_str) {
             if version != MODERN {
@@ -234,7 +213,6 @@ impl Server {
                 threads.retain(|h| !h.is_finished());
                 threads.push(handle);
             }
-            // Nothing else is offered: no resources, prompts, completions or logging.
             "resources/list" | "resources/templates/list" | "prompts/list" if client.legacy => {
                 let key = method.split('/').next().unwrap_or("resources");
                 let key = if method == "resources/templates/list" { "resourceTemplates" } else { key };
@@ -276,7 +254,6 @@ impl Server {
         };
         let started = std::time::Instant::now();
         let result = tools::call(&self.ctx, name, &call);
-        // Clients show stderr as errors: failures always, every call only with GPUVM_MCP_LOG=1.
         if result["isError"] == true {
             log(&format!("{name} failed after {} ms: {}", started.elapsed().as_millis(), result["content"][0]["text"].as_str().unwrap_or("")));
         } else if std::env::var_os("GPUVM_MCP_LOG").is_some() {
@@ -285,8 +262,6 @@ impl Server {
         result
     }
 
-    /// Legacy elicitation: asks the client (who asks the person) and waits up to 5 minutes. None when the
-    /// client can't ask.
     fn ask(&self, client: &Client, message: &str) -> Option<bool> {
         if !client.legacy || !client.elicitation {
             return None;
@@ -318,7 +293,6 @@ pub fn rpc_error(id: Value, code: i64, message: &str, data: Option<Value>) -> Va
     json!({ "jsonrpc": "2.0", "id": id, "error": Value::Object(error) })
 }
 
-/// `gpuvm.exe --mcp [--fake]`: serves stdin/stdout until the client closes them.
 pub fn run(fake: bool) -> i32 {
     let broker: Arc<dyn Broker> = if fake {
         Arc::new(super::fake::FakeBroker::new())

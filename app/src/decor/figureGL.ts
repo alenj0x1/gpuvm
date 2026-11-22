@@ -1,10 +1,5 @@
 import { BRICK, FIGURES, figureBricks, figureExtent, figureHeight, type V3 } from "./figures";
 
-// The figures drawn on the GPU: each one becomes a mesh of its blocks once and is drawn with light per pixel and a
-// depth buffer, into one shared WebGL canvas that the cube (or a thumbnail) then
-// copies in. Drawing them as 2D polygons cost 18 to 70 ms per figure and frame; here a frame with several costs
-// well under a millisecond.
-
 type Mat3 = number[]; // column-major
 
 interface Mesh { pos: number[]; nrm: number[]; col: number[]; mach: number[]; idx: number[] }
@@ -21,7 +16,6 @@ const DIRS: { n: V3; quad: V3[] }[] = [
 ];
 const STUD_SIDES = 12, STUD_R = 0.3, STUD_H = 0.18;
 
-/** The figure's blocks as one mesh: only the faces no other block covers, and a stud on every free top. */
 function brickMesh(id: string): Mesh {
   const m: Mesh = { pos: [], nrm: [], col: [], mach: [], idx: [] };
   const grid = figureBricks(id);
@@ -32,7 +26,6 @@ function brickMesh(id: string): Mesh {
   };
   for (const [k, c] of grid) {
     const [x, y, z] = k.split(",").map(Number);
-    // Blocks are centered on x and z, standing on y = 0.
     const o: V3 = [x - 0.5, y, z - 0.5];
     for (const d of DIRS) {
       if (grid.has(`${x + d.n[0]},${y + d.n[1]},${z + d.n[2]}`)) continue;
@@ -139,22 +132,17 @@ function mesh(s: GLState, id: string) {
 
 export interface FigureDraw {
   id: string;
-  /** Model point to screen: x and y in CSS pixels of the target, z its depth (bigger is nearer). Column-major. */
   m: Mat3;
   t: V3;
-  /** Model direction to view space (x right, y up, z toward the viewer). Column-major. */
   n: Mat3;
-  /** How much of the selection color lies over it (0 for none). */
   tint?: number;
 }
 
-/** Draws the figures into `target` (a 2D context the size of W × H CSS pixels), over what it already has. */
 export function drawFigures(target: CanvasRenderingContext2D, draws: FigureDraw[], machineColor: string, W: number, H: number, dpr: number, tintColor = "#7d9cf0") {
   if (!draws.length) return;
   const s = setup();
   if (!s) return;
   const { gl, canvas, loc } = s;
-  // Only the rectangle the figures cover is drawn and copied, not the whole target: their boxes' corners on screen.
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   const ready: { d: FigureDraw; me: NonNullable<ReturnType<typeof mesh>> }[] = [];
   for (const d of draws) {
@@ -170,7 +158,6 @@ export function drawFigures(target: CanvasRenderingContext2D, draws: FigureDraw[
   x0 = Math.max(0, Math.floor(x0 - 2)); y0 = Math.max(0, Math.floor(y0 - 2)); x1 = Math.min(W, Math.ceil(x1 + 2)); y1 = Math.min(H, Math.ceil(y1 + 2));
   if (!ready.length || x1 <= x0 || y1 <= y0) return;
   const rw = x1 - x0, rh = y1 - y0, w = Math.max(1, Math.ceil(rw * dpr)), h = Math.max(1, Math.ceil(rh * dpr));
-  // Grows when needed and shrinks back when far bigger than what has been drawn for a while.
   if (canvas.width < w || canvas.height < h) { canvas.width = Math.max(canvas.width, w); canvas.height = Math.max(canvas.height, h); small = 0; }
   else if (canvas.width * canvas.height > 4 * w * h && ++small > 240) { canvas.width = w; canvas.height = h; small = 0; }
   gl.viewport(0, canvas.height - h, w, h);
@@ -205,16 +192,13 @@ export const mul3 = (a: Mat3, b: Mat3): Mat3 => {
   for (let c = 0; c < 3; c++) for (let r = 0; r < 3; r++) o[c * 3 + r] = a[r] * b[c * 3] + a[3 + r] * b[c * 3 + 1] + a[6 + r] * b[c * 3 + 2];
   return o;
 };
-/** Turn around the vertical axis (the same direction the cube uses), times a uniform size. */
 export const turnY = (t: number, k = 1): Mat3 => { const c = Math.cos(t) * k, s = Math.sin(t) * k; return [c, 0, -s, 0, k, 0, s, 0, c]; };
-/** The view rotation of a camera at `yaw` and `pitch`, as the cube's projection uses it. */
 export const viewRot = (yaw: number, pitch: number): Mat3 => {
   const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
   return [cy, -sy * sp, sy * cp, 0, cp, sp, -sy, -cy * sp, cy * cp];
 };
 
 const thumbs = new Map<string, HTMLCanvasElement>();
-/** A still thumbnail, rendered once and kept (tiles and chips draw it instead of rendering each time). */
 export function figureThumbImage(id: string, size: number, color: string, dpr: number): HTMLCanvasElement {
   const key = `${id}|${size}|${color}|${dpr}`;
   let c = thumbs.get(key);
@@ -228,7 +212,6 @@ export function figureThumbImage(id: string, size: number, color: string, dpr: n
   return c;
 }
 
-/** A thumbnail: the figure seen a little from above, turned `yaw`, filling a `size` px square. */
 export function drawFigureThumb(target: CanvasRenderingContext2D, id: string, size: number, yaw: number, color: string, dpr: number) {
   if (!FIGURES.some((f) => f.id === id)) return;
   const height = figureHeight(id);

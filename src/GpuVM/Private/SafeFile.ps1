@@ -1,8 +1,4 @@
-# Files GpuVM opens as administrator in folders the user chose (an export's destination, a file to import). The
-# service checks the path as the user first, but GpuVM opens it later with the elevated token: in between, a folder
-# of the path could be swapped for a link to somewhere else (C:\Windows\System32). So each such file is opened once,
-# the real path of the open handle is compared with the path asked for, and everything after (writing, reading,
-# deleting on failure) goes through that same handle, never through the path again.
+# Opened once and checked by its handle's real path: a folder could be swapped for a link after the service checked it.
 
 if (-not ('GpuVMSafeFile' -as [type])) {
     Add-Type -TypeDefinition @'
@@ -83,7 +79,6 @@ public static class GpuVMSafeFile {
 '@
 }
 
-# A plain-words error for what GpuVMSafeFile throws.
 function ConvertTo-SafeFileError {
     param([Parameter(Mandatory)][string]$Message, [Parameter(Mandatory)][string]$Path)
     if ($Message -match 'REDIRECTED:(.+)') { return "$Path goes through a link to another folder; choose the real location." }
@@ -93,7 +88,6 @@ function ConvertTo-SafeFileError {
     "Couldn't open $Path."
 }
 
-# A FileStream over a new file at $Path, checked as above. On failure, Close-GpuVMNewFile -Discard deletes it.
 function New-GpuVMSafeFile {
     param([Parameter(Mandatory)][string]$Path)
     try { $handle = [GpuVMSafeFile]::CreateNew($Path) }

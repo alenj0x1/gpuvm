@@ -10,11 +10,7 @@ import { useReportDockSize } from "./dockSize";
 /** Time after the dock lands before its buttons take clicks: a click meant for the picture never answers it. */
 const ARM_MS = 450;
 
-/**
- * The administrator-prompt dock (lab 042): a window of GpuVM over the machine's picture, the size of the picture. The
- * picture darkens like Windows' secure desktop and the prompt drops from its top center, attached to the edge. The
- * answer is decided here, never by the viewer (dock.rs).
- */
+/** The answer is decided here, never by the viewer (dock.rs). */
 export function PromptDock() {
   const [prompt, setPrompt] = useState<AdminPrompt | null>(null);
   const [shown, setShown] = useState(false);
@@ -30,7 +26,6 @@ export function PromptDock() {
     const take = (p: AdminPrompt | null) => {
       if (p) {
         setPrompt((old) => {
-          // A different prompt (or the first): arms again after it lands.
           if (!old || old.id !== p.id || old.name !== p.name) {
             setBusy(null); setError(""); setArmed(false);
             window.clearTimeout(armTimer.current);
@@ -38,8 +33,7 @@ export function PromptDock() {
           }
           return p;
         });
-        // A moment after the first paint, so it drops instead of appearing (a timer, not rAF: it also runs when the
-        // window isn't painting yet).
+        // A timer, not rAF: it must also run while the window isn't painting yet.
         window.setTimeout(() => setShown(true), 30);
       } else {
         setShown(false);
@@ -65,7 +59,7 @@ export function PromptDock() {
     setError("");
     try {
       if (!inTauri) { await new Promise((r) => setTimeout(r, 400)); setShown(false); return; }
-      // Only which button: the machine and the prompt are the ones GpuVM put in this dock (dock.rs).
+      // Only the choice is sent: dock.rs knows which machine and prompt this dock shows.
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("dock_answer", { allow: choice === "Allow" });
     }

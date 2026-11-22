@@ -3,8 +3,8 @@ function Resolve-GpuVMAdminPrompt {
     .SYNOPSIS
     Answers the Windows administrator prompt open in a VM (Allow or Deny), on the person's order from the app.
     -PromptId is the prompt they saw (from Get-GpuVMAdminPrompt); if another one is open by now, nothing is pressed.
-    The answer goes through Hyper-V's data exchange with the prompt's one-time code (lab 042, about a second); with a
-    watcher from before that, through PowerShell Direct (about 5 s).
+    The answer goes through Hyper-V's data exchange with the prompt's one-time code; with an older watcher, through
+    PowerShell Direct.
     #>
     [CmdletBinding()]
     param(

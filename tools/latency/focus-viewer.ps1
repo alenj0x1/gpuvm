@@ -1,6 +1,4 @@
-# Gives GpuVM's viewer window the keyboard without clicking into the picture (a click there would reach the VM:
-# pause a video, press a button). Windows only lets the process with the last input change the foreground, so an Alt
-# tap comes first. Prints whether it worked.
+# Windows only lets the process with the last input change the foreground: an Alt tap comes first.
 Add-Type -Namespace FV -Name W -MemberDefinition @'
 [DllImport("user32.dll")] public static extern bool SetForegroundWindow(System.IntPtr h);
 [DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();

@@ -64,9 +64,6 @@ function Get-WindowsImageLanguage {
     [string]$languages[$default]
 }
 
-# Creates a VM's VHDX with the chosen edition of Windows and boot set up. Windows comes from the edition's base disk
-# (Bases.ps1), applied from the ISO only the first time. $Customize receives the root of the disk's Windows
-# (a folder, the disk has no drive letter) to copy files before dismounting.
 function New-WindowsVhdx {
     param(
         [Parameter(Mandatory)][string]$Path,
@@ -98,9 +95,7 @@ function New-WindowsVhdx {
     }
 }
 
-# Partitions a new disk for UEFI and applies an edition of Windows to it, at low priority (Priority.ps1). The disk
-# never gets a drive letter (Explorer, the indexer and AutoPlay don't open it): its volumes are mounted on folders
-# under the admin-only mount root while the image is applied.
+# No drive letter (Explorer, the indexer and AutoPlay don't open it): mounted on admin-only folders.
 function New-WindowsBaseVhdx {
     param(
         [Parameter(Mandatory)][string]$Path,
@@ -146,7 +141,6 @@ function New-WindowsBaseVhdx {
         }
         if ($efi) { Set-Partition -DiskNumber $efi.DiskNumber -PartitionNumber $efi.PartitionNumber -GptType $script:GptTypes.Efi -ErrorAction SilentlyContinue }
         Dismount-VHD -Path $Path
-        # Only empty, plain folders are removed.
         foreach ($folder in $folders.Values) {
             $item = Get-Item -LiteralPath $folder -Force -ErrorAction SilentlyContinue
             if ($item -and -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { [IO.Directory]::Delete($folder, $false) }
@@ -154,7 +148,6 @@ function New-WindowsBaseVhdx {
     }
 }
 
-# Admin-only folder where existing guest disks are mounted (%ProgramData%\GpuVM\mount).
 function Get-GpuVMMountRoot {
     $base = Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'GpuVM'
     Initialize-GpuVMRoot -Path $base
@@ -166,14 +159,11 @@ function Get-GpuVMMountRoot {
     $mount
 }
 
-# Mounts the VHDX of a stopped VM, finds the Windows partition and runs $ScriptBlock with its root.
-# The guest's content is untrusted (a damaged or infected VM wrote it): the disk gets no drive letter
-# (Explorer, the indexer and antivirus do not open it) and is mounted on an empty folder only administrators can reach.
+# Untrusted content: no drive letter, mounted on an empty folder only administrators can reach.
 function Invoke-WithMountedWindows {
     param(
         [Parameter(Mandatory)][string]$Path,
         [Parameter(Mandatory)][scriptblock]$ScriptBlock,
-        # Grows the Windows partition into the free space at the end of the disk (after Resize-VHD).
         [switch]$ExpandPartition
     )
     $accessPath = Join-Path (Get-GpuVMMountRoot) ([guid]::NewGuid().ToString('n'))

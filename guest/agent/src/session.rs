@@ -1,7 +1,3 @@
-//! Starting the session helper from the SYSTEM service (lab 048: WTSQueryUserToken + CreateProcessAsUser, ~5 ms).
-//! The helper gets two anonymous pipes as stdin/stdout, passed with an explicit handle list so nothing else the
-//! service holds is inherited. It runs in a job that kills it when the service goes away; it may let the programs it
-//! starts break away (they belong to the person's session, not to the agent's lifetime).
 use crate::token::*;
 use crate::util::wide;
 use std::fs::File;
@@ -43,8 +39,6 @@ pub fn active_session() -> Option<u32> {
     (s != 0xFFFF_FFFF).then_some(s)
 }
 
-/// The signed-in user's token for `session`, never elevated: the filtered token when the user is an administrator
-/// with UAC on; refused when only a full administrator token exists (UAC off) or the integrity is above medium.
 pub fn user_token(session: u32) -> Result<Owned, String> {
     unsafe {
         let mut tok = HANDLE::default();
@@ -76,14 +70,10 @@ fn pipe() -> Result<(HANDLE, HANDLE), String> {
 pub fn launch(exe: &std::path::Path, session: u32) -> Result<Helper, String> {
     let tok = user_token(session)?;
     let user = token_user(tok.0).0;
-    // The helper keeps its user's default process DACL: a restricted one (only query/wait for the user) broke
-    // Windows.Graphics.Capture with E_ACCESSDENIED (the process opens itself by id), lab 051. Programs the agent
-    // runs as the same user can therefore still open the helper; they don't inherit its pipes (handle lists), and
-    // the host treats everything from the guest as untrusted.
+    // Default process DACL: a restricted one broke Windows.Graphics.Capture with E_ACCESSDENIED (the process opens itself by id).
     unsafe {
-        let (in_r, in_w) = pipe()?; // service writes in_w, helper reads in_r
-        let (out_r, out_w) = pipe()?; // helper writes out_w, service reads out_r
-        // our ends must not be inherited
+        let (in_r, in_w) = pipe()?;
+        let (out_r, out_w) = pipe()?;
         let _ = SetHandleInformation(in_w, HANDLE_FLAG_INHERIT.0, HANDLE_FLAGS(0));
         let _ = SetHandleInformation(out_r, HANDLE_FLAG_INHERIT.0, HANDLE_FLAGS(0));
         let to_helper = File::from_raw_handle(in_w.0 as _);
@@ -125,7 +115,7 @@ pub fn launch(exe: &std::path::Path, session: u32) -> Result<Helper, String> {
         si.StartupInfo.hStdError = nul.0;
         si.lpAttributeList = attrs;
 
-        // the user's own environment (lab 049: with SYSTEM's, Edge never opened)
+        // the user's own environment: with SYSTEM's, Edge never opened
         let mut env: *mut core::ffi::c_void = std::ptr::null_mut();
         let have_env = CreateEnvironmentBlock(&mut env, Some(tok.0), false).is_ok();
         let exe_w = wide(&exe.to_string_lossy());
@@ -152,7 +142,6 @@ pub fn launch(exe: &std::path::Path, session: u32) -> Result<Helper, String> {
         let process = std::sync::Arc::new(Owned(pi.hProcess));
         let thread = Owned(pi.hThread);
 
-        // the job: kill the helper with the service; its children may break away
         let job = Owned(CreateJobObjectW(None, PCWSTR::null()).map_err(|e| format!("job {e}"))?);
         let mut lim = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
         lim.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK;

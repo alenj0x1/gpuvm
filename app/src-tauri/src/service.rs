@@ -1,7 +1,3 @@
-//! The GpuVM service as Windows sees it: its state, and starting or stopping it. The installer lets users signed
-//! in at this PC start and stop it (nothing else), so the app does it without a UAC prompt. Changing whether it
-//! starts with Windows does need one (`gpuvm-host.exe startup`).
-
 use windows_sys::Win32::Foundation::*;
 use windows_sys::Win32::System::Services::*;
 
@@ -28,11 +24,9 @@ fn open(access: u32) -> Option<Sc> {
 }
 
 pub struct Status {
-    /// "running", "starting", "stopping", "stopped" or "missing" (not installed).
     pub state: &'static str,
     #[cfg_attr(debug_assertions, allow(dead_code))]
     pub pid: u32,
-    /// Starts with Windows (otherwise only when the app starts it).
     pub with_windows: bool,
 }
 
@@ -66,7 +60,6 @@ pub fn start() -> Result<(), String> {
     Ok(())
 }
 
-/// Asks it to stop; it lets what is running finish first.
 pub fn stop() -> Result<(), String> {
     let svc = open(SERVICE_STOP).ok_or("Couldn't stop the GpuVM service.")?;
     let mut s: SERVICE_STATUS = unsafe { std::mem::zeroed() };

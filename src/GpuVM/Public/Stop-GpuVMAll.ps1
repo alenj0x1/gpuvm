@@ -12,11 +12,10 @@ function Stop-GpuVMAll {
         })
     if (-not $running) { return }
     Write-Step "Shutting down $(($running.Name) -join ', ')"
-    # The next start of each one that installs updates on the way says Windows is finishing them.
     foreach ($vm in $running) { $null = Register-GuestUpdateBeforeShutdown -Name $vm.Name }
     $jobs = foreach ($vm in $running) { Stop-VM -Name $vm.Name -Force -AsJob }
     $null = $jobs | Wait-Job -Timeout $TimeoutSec
-    # Only finished jobs: removing one Hyper-V hasn't completed yet ends the PowerShell process (Stop-GpuVMBounded).
+    # Only finished jobs: removing one Hyper-V hasn't completed yet ends the PowerShell process.
     $jobs | Where-Object { $_.State -in 'Completed', 'Failed', 'Stopped' } | Remove-Job -Force
     foreach ($vm in $running) { [ordered]@{ name = $vm.Name; state = (Get-VM -Name $vm.Name).State.ToString() } }
 }

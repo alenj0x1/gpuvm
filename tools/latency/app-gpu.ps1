@@ -1,9 +1,7 @@
-# How much of the host GPU the GpuVM app's own window takes (its WebView's 3D engine), averaged over -Seconds.
 #   tools/latency/app-gpu.ps1 [-Seconds 4]
 param([double]$Seconds = 4)
 $app = Get-Process gpuvm -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $app) { return 'GpuVM is not running' }
-# Its WebView processes: children (and grandchildren) of gpuvm.exe.
 $all = Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'"
 $ids = [System.Collections.Generic.HashSet[int]]::new()
 $frontier = @($app.Id)

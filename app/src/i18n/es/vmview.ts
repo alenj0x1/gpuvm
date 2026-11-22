@@ -1,6 +1,4 @@
-// Spanish for the machine page (VmView.tsx): header, stats, options, shared disks, cleanup, apps and its dialogs.
 export default {
-  // Sections and machine states in progress
   "Machine": "Máquina",
   "Picture and control": "Imagen y control",
   "Windows": "Windows",
@@ -11,7 +9,6 @@ export default {
   "Pausing": "Pausando",
   "Resuming": "Reanudando",
 
-  // Stats
   "Processor": "Procesador",
   "{n} threads": "{n} hilos",
   "{n} % in use": "{n} % en uso",
@@ -29,7 +26,6 @@ export default {
   "Update now": "Actualizar ahora",
   "Shut down and update": "Apagar y actualizar",
 
-  // The cube beside the options
   "Cube width": "Ancho del cubo",
   "Drag to change the width": "Arrastra para cambiar el ancho",
   "Cube view": "Vista del cubo",
@@ -46,7 +42,6 @@ export default {
   "Top": "Arriba",
   "View from the top": "Ver desde arriba",
 
-  // Shared disks
   "Connected": "Conectado",
   "In {vm}": "En {vm}",
   "Shared {size} disk for games. Install them once and connect it to whichever machine needs them.": "Disco compartido de {size} para juegos. Se instalan una sola vez y se conecta a la máquina que los necesite.",
@@ -58,7 +53,6 @@ export default {
   "Bring from {vm}": "Traer desde {vm}",
   "Connect": "Conectar",
 
-  // Windows cleanup
   "Windows cleanup": "Limpieza de Windows",
   "Each level includes the ones before it.": "Cada nivel incluye lo de los anteriores.",
   "Start and apply": "Encender y aplicar",
@@ -67,7 +61,6 @@ export default {
   "Applied": "Aplicado",
   "Microsoft Defender, Windows Update, SmartScreen and the firewall are never touched.": "Microsoft Defender, Windows Update, SmartScreen y el firewall nunca se tocan.",
 
-  // Apps
   "Apps": "Apps",
   "From their official source, verified before installing.": "Desde su fuente oficial, verificadas antes de instalarse.",
   "Tiles": "Mosaico",
@@ -92,7 +85,6 @@ export default {
   "The machine starts to do it.": "La máquina se enciende para hacerlo.",
   "Cancel": "Cancelar",
 
-  // Header and its menu
   "Resume": "Reanudar",
   "Open with {gb} GB": "Abrir con {gb} GB",
   "Uses {gb} GB of memory instead of {total} GB; you can raise it again in Options": "Usa {gb} GB de memoria en vez de {total} GB; puedes volver a subirla en Opciones",
@@ -127,7 +119,6 @@ export default {
   "Another banner": "Otro banner",
   "Delete machine": "Eliminar máquina",
 
-  // New template and rename
   "Use letters, numbers or hyphens, no spaces": "Usa letras, números o guiones, sin espacios",
   "There's already a template with that name": "Ya hay una plantilla con ese nombre",
   "Create a machine first: the template saves its Windows.": "Primero crea una máquina: la plantilla guarda su Windows.",
@@ -137,7 +128,6 @@ export default {
   "Rename {name}": "Cambiar el nombre de {name}",
   "Its folder and disk are renamed too. The viewer stays paired and shared disks stay connected.": "Cambian también su carpeta y su disco. El visor sigue emparejado y los discos compartidos siguen conectados.",
 
-  // Delete
   "Delete {name}": "Eliminar {name}",
   "The machine is removed from Hyper-V. This can't be undone.": "La máquina se quita de Hyper-V. Esto no se puede deshacer.",
   "Keep the disk": "Conservar el disco",
@@ -147,21 +137,18 @@ export default {
   "Deleting": "Eliminando",
   "Delete": "Eliminar",
 
-  // Windows password
   "Save this machine's Windows password so GpuVM can fix problems inside it without asking you.": "Guarda la contraseña de Windows de esta máquina para que GpuVM corrija problemas dentro de ella sin preguntarte.",
   "User: {user}": "Usuario: {user}",
   "Type the password": "Escribe la contraseña",
   "Windows password": "Contraseña de Windows",
   "Save": "Guardar",
 
-  // Disk room
   "{drive} would have {free} free with every disk full": "En {drive} quedarían {free} libres con todos los discos llenos",
   "This machine, {used} used of {size}": "Esta máquina, {used} usados de {size}",
   "Reserved for {who}, {size}": "Reservado para {who}, {size}",
   "other machines": "otras máquinas",
   "Free on {drive} with everything full, {free}": "Libre en {drive} con todo lleno, {free}",
 
-  // Options
   "Changing network": "Cambiando la red",
   "Applying": "Aplicando",
   "{n} threads left for your PC": "Quedan {n} hilos para tu PC",
@@ -220,14 +207,12 @@ export default {
   "Discard": "Descartar",
   "Shut down and apply": "Apagar y aplicar",
 
-  // Space
   "Space": "Espacio",
   "Where it sits with other machines, and its ambience. On Home they show together.": "Dónde está con otras máquinas, y su ambiente. En Inicio se ven juntas.",
   "New space": "Nuevo espacio",
   "With {name} and its own ambience": "Con {name} y un ambiente propio",
   "View space": "Ver espacio",
 
-  // Export and import (machine menu, Create machine)
   "Export to a file": "Exportar a un archivo",
   "Shut down and export": "Apagar y exportar",
   "GpuVM machine": "Máquina de GpuVM",
@@ -239,7 +224,6 @@ export default {
   "No file": "Sin archivo",
   "{n} app": "{n} app",
   "{n} apps": "{n} apps",
-  // Restore points and disposable machines
   "Restore points": "Puntos de restauración",
   "Windows goes back to how it was at that moment, with its apps and files. The machine's settings don't change.": "Windows vuelve a como estaba en ese momento, con sus apps y archivos. Los ajustes de la máquina no cambian.",
   "Save Windows as it is now to go back to this moment if something goes wrong.": "Guarda cómo está Windows ahora para volver a ese momento si algo sale mal.",

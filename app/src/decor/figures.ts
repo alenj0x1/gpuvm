@@ -1,11 +1,7 @@
 import { t } from "../i18n";
-// The figures that stand on top of the cube, built from toy bricks: each one is a set of colored blocks on a grid,
-// with a stud on every block whose top is free, like building toys. A new figure is a few calls on the builder
-// (fill a box, set a block), so adding more is quick. figureGL.ts turns them into meshes and draws them on the GPU.
 
 export type V3 = [number, number, number];
 
-/** Places blocks on the grid: x left to right, y up, z back to front (the front faces the viewer). */
 export interface Bricks {
   box: (x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, color: string) => void;
   set: (x: number, y: number, z: number, color: string) => void;
@@ -15,11 +11,9 @@ export interface Bricks {
 export interface FigureDef {
   id: string;
   name: string;
-  /** "$" as a color means the machine's color. */
   build: (b: Bricks) => void;
 }
 
-/** One block's side, in the figure's own units (a figure about 12 blocks tall is about 1 unit). */
 export const BRICK = 0.08;
 
 const WHITE = "#f6f2ea", INK = "#2a2522", PINK = "#f29aa8", RED = "#d8443c", GOLD = "#ecbc4c", ORANGE = "#ec9a45";
@@ -230,8 +224,6 @@ export const FIGURES: FigureDef[] = [
   {
     id: "magic-cube", get name() { return t("Magic cube"); },
     build: (b) => {
-      // Ten blocks a side: a black frame and lines, and three by three tiles of two by two blocks on each face,
-      // mixed as if it were half solved.
       b.box(-5, 4, 0, 9, -5, 4, "#1f2024");
       const C = ["#2fa35b", "#d8443c", "#2f6fd6", "#f08a2b", "#f4f1e8", "#f2cf3b"];
       let n = 7;
@@ -245,7 +237,6 @@ export const FIGURES: FigureDef[] = [
       }
     },
   },
-  // Pastel animals, sitting or standing, with dark eyes and a little blush.
   {
     id: "bunny", get name() { return t("Bunny"); },
     build: (b) => {
@@ -349,7 +340,6 @@ export const FIGURES: FigureDef[] = [
 
 export const figureName = (id: string) => FIGURES.find((f) => f.id === id)?.name ?? id;
 
-/** A figure's blocks, built once: grid position ("x,y,z") and color of each. */
 const cache = new Map<string, Map<string, string>>();
 export function figureBricks(id: string): Map<string, string> {
   const hit = cache.get(id);
@@ -365,7 +355,6 @@ export function figureBricks(id: string): Map<string, string> {
   return grid;
 }
 
-/** The figure's height in its own units (block layers plus the studs on top), to pick it and frame its thumbnail. */
 const heights = new Map<string, number>();
 export function figureHeight(id: string): number {
   const hit = heights.get(id);
@@ -377,7 +366,6 @@ export function figureHeight(id: string): number {
   return h;
 }
 
-/** The figure's widest side (across, deep or tall) in its own units, to fit it in a thumbnail. */
 const extents = new Map<string, number>();
 export function figureExtent(id: string): number {
   const hit = extents.get(id);

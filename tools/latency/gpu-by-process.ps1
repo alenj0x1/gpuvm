@@ -1,5 +1,3 @@
-# The host GPU's 3D engine use per process, averaged over -Seconds (Windows' GPU Engine counters): who draws, and how
-# much. -Match keeps the processes whose name matches.
 #   tools/latency/gpu-by-process.ps1 [-Seconds 4] [-Match 'chrome|webview']
 param([double]$Seconds = 4, [string]$Match = '.')
 $sums = @{}

@@ -1,10 +1,4 @@
-﻿# Latency target that runs inside the VM, in the user's session (Windows PowerShell 5.1).
-# - A bar moves across the bottom all the time, so Sunshine streams real frames instead of a still desktop.
-# - The center square switches between black and white on every Scroll Lock press (read globally, so the
-#   focus doesn't matter) or click; the host measures how long that change takes to show up in Moonlight
-#   (tools/latency/measure.ps1).
-# It closes itself after -Minutes so it never stays behind.
-param([int]$Minutes = 20)
+﻿param([int]$Minutes = 20)
 
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 Add-Type -TypeDefinition @'
@@ -45,7 +39,6 @@ $canvas.Add_Paint({
     $fill = if ($script:lit) { [System.Drawing.Brushes]::White } else { [System.Drawing.Brushes]::Black }
     $g.FillRectangle($fill, $square)
     $g.DrawRectangle([System.Drawing.Pens]::DimGray, $square)
-    # Moving bar: one full sweep per second.
     $x = [int](($clock.Elapsed.TotalSeconds % 1) * ($w - 120))
     $g.FillRectangle([System.Drawing.Brushes]::OrangeRed, $x, $h - 80, 120, 60)
 })

@@ -25,7 +25,6 @@ function Export-GpuVM {
     $target = Assert-GpuVMExportPath -Path $target
     $source = (Get-VMHardDiskDrive -VMName $Name | Select-Object -First 1).Path
     if (-not $source) { throw "The machine '$Name' has no disk." }
-    # The merged copy is made in GpuVM's own folder and the file in the chosen one: each needs up to what the chain takes.
     $chain = Get-VhdChainBytes -Path $source
     $root = Get-GpuVMDefaultRoot
     $chainGB = [math]::Ceiling($chain / 1GB) + 5
@@ -37,9 +36,7 @@ function Export-GpuVM {
     }
     if (-not $PSCmdlet.ShouldProcess($Name, "Export to $target")) { return }
 
-    # The destination file is created now, once, and checked to be exactly where it was asked (no folder of the path
-    # swapped for a link since the service checked it as the user). Everything after writes and, on failure, deletes it
-    # through this handle, never through its path again.
+    # Created once and checked by its handle; everything after goes through the handle, never the path.
     $file = New-GpuVMSafeFile -Path $target
     # The merged disk is made in a folder only administrators can write (inside GpuVM's root), never in the user's folder.
     Initialize-GpuVMRoot -Path $root
@@ -84,7 +81,6 @@ function Export-GpuVM {
         $ok = $true
     }
     finally {
-        # A file that didn't finish is deleted through its handle.
         Close-GpuVMNewFile -Stream $file -Discard:(-not $ok)
         if (Test-Path -LiteralPath $temp) {
             $vhdInfo = Get-VHD -Path $temp -ErrorAction SilentlyContinue; if ($vhdInfo -and $vhdInfo.Attached) { Dismount-VHD -Path $temp -ErrorAction SilentlyContinue }

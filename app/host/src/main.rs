@@ -1,12 +1,3 @@
-//! gpuvm-host: GpuVM's elevated half. The GpuVM window runs without administrator (so other programs, like
-//! Console UI, can drive it); this Windows service does the Hyper-V work for it. See server.rs.
-//!
-//!   gpuvm-host service     run by the Service Control Manager
-//!   gpuvm-host install     register (or update) the service; the installer calls it
-//!   gpuvm-host stop        stop it, so the installer can replace its files
-//!   gpuvm-host startup auto|demand   start it with Windows, or only when the app does (UAC from the app)
-//!   gpuvm-host uninstall   stop and remove it
-
 #![windows_subsystem = "windows"]
 
 mod agent;
@@ -32,8 +23,6 @@ use win::{last_error, wide};
 
 const SERVICE: &str = "GpuVM";
 
-// ---------------------------------------------------------------- running as a service
-
 static STATUS: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
 
 fn set_state(state: SERVICE_STATUS_CURRENT_STATE, checkpoint: u32) {
@@ -49,7 +38,6 @@ fn set_state(state: SERVICE_STATUS_CURRENT_STATE, checkpoint: u32) {
     unsafe { SetServiceStatus(STATUS.load(Ordering::SeqCst), &status) };
 }
 
-/// Ends the service now; the bridges' job object takes them with it.
 pub fn stop_now() -> ! {
     set_state(SERVICE_STOPPED, 0);
     std::thread::sleep(Duration::from_millis(100));
@@ -58,13 +46,8 @@ pub fn stop_now() -> ! {
 
 unsafe extern "system" fn control(code: u32, _: u32, _: *mut c_void, _: *mut c_void) -> u32 {
     if code == SERVICE_CONTROL_SHUTDOWN {
-        // Windows is shutting down: Hyper-V shuts the machines down by itself.
         std::thread::spawn(|| stop_now());
     } else if code == SERVICE_CONTROL_STOP {
-        // Stopping from the app or Windows: a job that changes machines (a VM being created, shutting them down)
-        // finishes first, up to 10 minutes; reading requests and agent requests get 5 s (a hung Get-* or a long
-        // agent request no longer holds the stop). New requests are refused meanwhile. Then the service ends and
-        // its job object ends every bridge with it, idle or hung. The installer bounds it further (stop_and_wait).
         server::STOPPING.store(true, Ordering::SeqCst);
         let long = 600;
         std::thread::spawn(move || {
@@ -97,8 +80,6 @@ unsafe extern "system" fn service_main(_: u32, _: *mut PWSTR) {
     std::thread::spawn(server::serve);
 }
 
-// ---------------------------------------------------------------- install / stop / uninstall
-
 struct ScHandle(SC_HANDLE);
 impl Drop for ScHandle {
     fn drop(&mut self) {
@@ -128,12 +109,9 @@ fn stop_and_wait(svc: &ScHandle) {
         };
         (ok != 0).then_some(info)
     };
-    // The process asked to stop: a service started again meanwhile (another process id) is never touched.
     let asked = process_info().map(|i| i.dwProcessId).unwrap_or(0);
     let mut status: SERVICE_STATUS = unsafe { std::mem::zeroed() };
     unsafe { ControlService(svc.0, SERVICE_CONTROL_STOP, &mut status) };
-    // The installer (and install/uninstall) waits 30 s for what is running to finish, then ends the service's
-    // process: its job object takes every bridge with it. An upgrade never hangs on a stuck PowerShell.
     for _ in 0..300 {
         match process_info() {
             Some(i) if i.dwCurrentState == SERVICE_STOPPED || i.dwProcessId != asked => return,
@@ -147,9 +125,7 @@ fn stop_and_wait(svc: &ScHandle) {
         end_process(info.dwProcessId);
         server::log(&format!("the service didn't stop in 30 s (state {}); its process {} was ended", info.dwCurrentState, info.dwProcessId));
     }
-    // Windows restarts a service whose process ended without stopping (its recovery actions, 2 s later). That new
-    // instance is stopped too, and ended if it doesn't stop within 5 s: returning while one runs leaves the installer
-    // unable to replace gpuvm-host.exe, and in silent mode the old service just stays (lab 053 part 7, 2026-11-20).
+    // Windows' recovery restarts a service whose process was ended (2 s later): stop that instance too, or the installer can't replace the exe.
     let mut other: Option<(u32, std::time::Instant)> = None;
     for _ in 0..450 {
         match process_info() {
@@ -180,7 +156,6 @@ fn stop_and_wait(svc: &ScHandle) {
     server::log("the service is still running after 75 s of stopping it; its files may not be replaced");
 }
 
-/// Ends a process and waits (up to 10 s) until it is gone, so its exe can be replaced.
 fn end_process(pid: u32) {
     use windows_sys::Win32::System::Threading::{OpenProcess, TerminateProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE};
     let process = unsafe { OpenProcess(PROCESS_TERMINATE | PROCESS_SYNCHRONIZE, 0, pid) };
@@ -201,7 +176,6 @@ fn install() -> Result<(), String> {
     let svc = match open_service(&scm) {
         Some(svc) => {
             stop_and_wait(&svc);
-            // The start type stays as the user chose it in GpuVM's preferences.
             if unsafe { ChangeServiceConfigW(svc.0, SERVICE_WIN32_OWN_PROCESS, SERVICE_NO_CHANGE, SERVICE_ERROR_NORMAL, bin.as_ptr(),
                 std::ptr::null(), std::ptr::null_mut(), std::ptr::null(), std::ptr::null(), std::ptr::null(), wide("GpuVM").as_ptr()) } == 0
             {
@@ -210,8 +184,7 @@ fn install() -> Result<(), String> {
             svc
         }
         None => {
-            // LocalSystem (no account): it needs to start each user's bridge with their own elevated token.
-            // On demand: the app starts it when it opens and stops it when it quits.
+            // LocalSystem: it needs to start each user's bridge with their own elevated token.
             let h = unsafe {
                 CreateServiceW(scm.0, wide(SERVICE).as_ptr(), wide("GpuVM").as_ptr(), SERVICE_ALL_ACCESS, SERVICE_WIN32_OWN_PROCESS,
                     SERVICE_DEMAND_START, SERVICE_ERROR_NORMAL, bin.as_ptr(), std::ptr::null(), std::ptr::null_mut(), std::ptr::null(),
@@ -226,7 +199,6 @@ fn install() -> Result<(), String> {
     let mut description = wide("Does the Hyper-V work for the GpuVM app, which opens without administrator rights.");
     let info = SERVICE_DESCRIPTIONW { lpDescription: description.as_mut_ptr() };
     unsafe { ChangeServiceConfig2W(svc.0, SERVICE_CONFIG_DESCRIPTION, &info as *const _ as *const c_void) };
-    // If it ever crashes, Windows starts it again (after 2 s, then 10 s; the counter resets after a day).
     let mut actions = [
         SC_ACTION { Type: SC_ACTION_RESTART, Delay: 2000 },
         SC_ACTION { Type: SC_ACTION_RESTART, Delay: 10000 },
@@ -240,8 +212,7 @@ fn install() -> Result<(), String> {
         lpsaActions: actions.as_mut_ptr(),
     };
     unsafe { ChangeServiceConfig2W(svc.0, SERVICE_CONFIG_FAILURE_ACTIONS, &failure as *const _ as *const c_void) };
-    // Users signed in at this PC may start and stop it (the app does, without a UAC prompt), nothing more:
-    // changing or removing it stays with administrators.
+    // Signed-in users may start and stop it (no UAC from the app), nothing more.
     let sddl = wide("D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWRPWPLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)");
     let mut sd = std::ptr::null_mut();
     if unsafe { ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.as_ptr(), SDDL_REVISION_1, &mut sd, std::ptr::null_mut()) } == 0
@@ -250,12 +221,10 @@ fn install() -> Result<(), String> {
         return Err(last_error("SetServiceObjectSecurity"));
     }
     unsafe { LocalFree(sd) };
-    // The agent channel's Hyper-V socket name (guests can only dial registered names). The service checks it too.
     agent::register_service_id()?;
     Ok(())
 }
 
-/// `startup auto|demand`: with Windows, or only when the app starts it.
 fn startup(mode: Option<&str>) -> Result<(), String> {
     let start = match mode {
         Some("auto") => SERVICE_AUTO_START,
@@ -302,16 +271,12 @@ fn main() {
         Some("stop") => stop(),
         Some("startup") => startup(std::env::args().nth(2).as_deref()),
         Some("uninstall") => uninstall(),
-        // Removes the agent registrations and secrets of VMs that no longer exist (what the service does at start
-        // and every hour), from an elevated prompt.
         Some("sweep-agents") => {
             for vm in agent::sweep_registrations() {
                 server::log(&format!("sweep-agents: {vm}"));
             }
             Ok(())
         }
-        // Debug builds only (lab 052): the agent broker alone, run as SYSTEM next to an installed service that
-        // doesn't have it yet. Release builds don't have this command.
         #[cfg(debug_assertions)]
         Some("broker") => {
             agent::start();

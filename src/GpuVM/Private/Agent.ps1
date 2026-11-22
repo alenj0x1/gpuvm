@@ -1,20 +1,14 @@
-# The agent broker lives in the GpuVM service (app/host/src/agent.rs). The module talks to it over an
-# administrators-only pipe with the same lines as the service pipe: {"id","cmd","args"} -> {"type":"result",...}.
-# The app and the MCP server send the same commands to the service pipe, where the service answers them itself.
-
 $script:AgentPipeName = 'gpuvm-agent'
 $script:AgentPipe = $null
 $script:AgentPipeIO = $null
 # Mixed into the DPAPI encryption of each VM's secret; the service uses the same (agent.rs SECRET_ENTROPY).
 $script:AgentSecretEntropy = [Text.Encoding]::ASCII.GetBytes('GpuVM agent secret v1')
-# Inside the guest (protocol.md).
 $script:GuestAgentDir = 'C:\ProgramData\GpuVM\Agent'
 
 function Get-GpuVMAgentRoot {
     Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'GpuVM\agents'
 }
 
-# One persistent connection per PowerShell session (requests are answered in order).
 function Invoke-AgentBroker {
     param(
         [Parameter(Mandatory)][string]$Command,
@@ -49,11 +43,9 @@ function Invoke-AgentBroker {
         $exception.Data['code'] = $result['code']
         throw $exception
     }
-    # Items one by one (the caller wraps with @() when it wants a list).
     foreach ($item in $result['data']) { $item }
 }
 
-# A function's bound parameters as broker arguments: common parameters (-Verbose...) left out, switches as booleans.
 function ConvertTo-AgentArguments {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Bound)
     $common = [System.Management.Automation.Cmdlet]::CommonParameters + [System.Management.Automation.Cmdlet]::OptionalCommonParameters
@@ -66,7 +58,7 @@ function ConvertTo-AgentArguments {
     $result
 }
 
-# ProgramData\GpuVM\agents\<vmid>: SYSTEM and Administrators only, nothing inherited (the service trusts what is in it).
+# SYSTEM and Administrators only, nothing inherited: the service trusts what is in it.
 function Initialize-AgentFolder {
     param([Parameter(Mandatory)][string]$Path)
     if (-not (Test-Path -LiteralPath $Path)) { New-Item -ItemType Directory -Path $Path -Force | Out-Null }
@@ -77,9 +69,7 @@ function Initialize-AgentFolder {
     if ($LASTEXITCODE -ne 0) { throw "Couldn't restrict the permissions of $Path." }
 }
 
-# Hands the VM's secret K to the GpuVM service, which keeps it as SYSTEM (DPAPI machine scope + GpuVM's entropy, a
-# file only SYSTEM can open, created that way and renamed over the old one). Done there because an elevated user
-# (the app's bridge) can't handle a file it isn't allowed to open; the folder is the VM's registration folder.
+# Handed to the service: the secret file is SYSTEM-only, which an elevated user can't open.
 function Write-AgentSecret {
     param([Parameter(Mandatory)][string]$Folder, [Parameter(Mandatory)][byte[]]$Secret)
     $text = [Convert]::ToBase64String($Secret)
@@ -88,12 +78,9 @@ function Write-AgentSecret {
 }
 
 
-# The guest agent: guest\agent\install.ps1 and gpuvm-agent.exe (dist\ in an installed GpuVM, target\release\ in a
-# developer's copy). The version is what the exe itself says (`gpuvm-agent.exe version`).
 function Get-AgentPackage {
     $root = Get-RepoPath 'guest\agent'
     $install = Join-Path $root 'install.ps1'
-    # guest\agent\build.ps1 puts what goes into a guest in dist\: gpuvm-agent.exe and VERSION.
     $dist = Join-Path $root 'dist'
     $exe = Join-Path $dist 'gpuvm-agent.exe'
     if (-not (Test-Path -LiteralPath $install) -or -not (Test-Path -LiteralPath $exe)) {
@@ -105,11 +92,9 @@ function Get-AgentPackage {
         Files = @(Get-ChildItem -LiteralPath $dist -File) }
 }
 
-# Deletes the agent's secret from a mounted guest disk (a template or a copy of one): copies never share a secret.
 function Remove-GuestAgentSecret {
     param([Parameter(Mandatory)][string]$WindowsRoot)
-    # Done on the disk copy, not in the running source VM (install.ps1 -PrepareTemplate would also take the source
-    # machine's agent offline). The same as -PrepareTemplate: the secret, the logs and a leftover staging folder.
+    # Done on the disk copy: install.ps1 -PrepareTemplate would take the source machine's agent offline.
     $dir = Join-Path $WindowsRoot 'ProgramData\GpuVM\Agent'
     Assert-NoReparsePoint -Root $WindowsRoot -Path (Join-Path $dir 'secret')
     if (-not (Test-Path -LiteralPath $dir)) { return }
@@ -125,14 +110,11 @@ function Remove-GuestAgentSecret {
     }
 }
 
-# Called when a VM is deleted or renamed: the service finds agents by these registrations.
 function Remove-GpuVMAgentRegistration {
     param([Parameter(Mandatory)][string]$VMId)
     $dir = Join-Path (Get-GpuVMAgentRoot) $VMId.ToLowerInvariant()
     if (-not (Test-Path -LiteralPath $dir)) { return }
-    # The secret is SYSTEM-only (lab 054: an administrator's Remove-Item was denied and the deletion reported an
-    # error), so the service removes the folder. The machine itself is already gone or uninstalled by then, so a
-    # service that can't be reached is a warning: its hourly sweep removes registrations of VMs that don't exist.
+    # The secret is SYSTEM-only, so the service removes the folder; its hourly sweep covers an unreachable service.
     try { Invoke-AgentBroker -Command 'Remove-GpuVMAgentRegistration' -Arguments @{ VmId = $VMId.ToLowerInvariant() } | Out-Null }
     catch { Write-Warning "GpuVM's service couldn't remove the agent registration of $VMId now ($($_.Exception.Message)); it is removed within the hour once the machine no longer exists." }
 }
@@ -150,13 +132,13 @@ function Update-GpuVMAgentRegistration {
     Write-JsonFile -Path $file -Data $registration
 }
 
-# Ends a PowerShell Direct session (a function so tests can replace it).
+# A function so tests can replace it.
 function Close-AgentSession {
     param($Session)
     Remove-PSSession -Session $Session -ErrorAction SilentlyContinue
 }
 
-# PowerShell Direct calls in one session (functions so tests can replace them; a PSSession can't be faked).
+# Functions so tests can replace them: a PSSession can't be faked.
 function Invoke-InAgentSession {
     param($Session, [scriptblock]$ScriptBlock, [object[]]$ArgumentList = @())
     Invoke-Command -Session $Session -ErrorAction Stop -ScriptBlock $ScriptBlock -ArgumentList $ArgumentList
@@ -167,8 +149,6 @@ function Copy-ToAgentSession {
     Copy-Item -LiteralPath $Path -ToSession $Session -Destination $Destination -ErrorAction Stop
 }
 
-# Whether an agent machine needs Install-GpuVMAgent: its install is pending, or the agent it has is older than the one
-# this build carries (a copy of a template made with an earlier release, lab 054: 0.3.2 in copies of agent-tpl).
 function Test-GpuVMAgentStale {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$State, [string]$BundledVersion)
     if ([string]$State['use'] -ne 'agent') { return $false }
@@ -185,10 +165,6 @@ function Test-GpuVMAgentStale {
     $have -ne $BundledVersion
 }
 
-# Connect-GpuVM on a running agent machine: installs or refreshes the agent when it is pending or older than this
-# build's (~9 s), so templates don't go stale with every release. Never stops the open: a failure is a warning.
-# Returns $true when Windows restarted for it, once the new boot is under way (the caller then waits for Windows,
-# the sign-in and the session again).
 function Update-GpuVMAgentIfStale {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential, [int]$RestartTimeoutSec = 600)
     $state = Get-GpuVMState -Name $Name
@@ -202,8 +178,7 @@ function Update-GpuVMAgentIfStale {
     try { $installed = Install-GpuVMAgent -Name $Name -User $user }
     catch { Write-Warning "GpuVM's agent couldn't be updated in '$Name': $($_.Exception.Message)"; return $false }
     if (-not ($installed -and $installed['restarted'])) { return $false }
-    # Install-GpuVMAgent asks Windows to restart and returns at once: wait until the old Windows is gone, so the next
-    # checks don't talk to the one still shutting down.
+    # Install-GpuVMAgent requests a restart and returns at once: wait until the old Windows is gone.
     $deadline = (Get-Date).AddSeconds($RestartTimeoutSec)
     while ((Get-Date) -lt $deadline) {
         $now = try { Get-GuestBootTime -Name $Name -Credential $Credential } catch { $null }
@@ -213,11 +188,7 @@ function Update-GpuVMAgentIfStale {
     $true
 }
 
-# Turns a running machine off (Windows shuts down cleanly; turned off after -ShutdownTimeoutSec) and on again. Not a
-# restart: on some copies Windows gives the session no display path at all, a state that lives in the running VM's
-# GPU partition and only a power cycle clears (agent-guest lab 051, 2026-11-19: 12 of 12 copies with a display after
-# it, against 2 of 12 without before). A disposable machine is marked meanwhile so the sweep never deletes it while it
-# is off. Returns when Start-VM did.
+# A power cycle, not a restart: some copies get no display path, a GPU partition state only a power cycle clears.
 function Restart-GpuVMCold {
     param([Parameter(Mandatory)][string]$Name, [int]$ShutdownTimeoutSec = 90, [int]$TurnOffTimeoutSec = 30)
     $state = Get-GpuVMState -Name $Name
@@ -231,7 +202,6 @@ function Restart-GpuVMCold {
         # Off and on as one transition: no other GPU machine changes power in between (GpuPower.ps1).
         Invoke-GpuPowerTransition -Name $Name -UntilUp -Do {
             Stop-GpuVMBounded -Name $Name -ShutdownTimeoutSec $ShutdownTimeoutSec -TurnOffTimeoutSec $TurnOffTimeoutSec
-            # As any start: the isolation follows the host's current address on the switch.
             Update-GpuVMNetworkIsolation -Name $Name
             # The module's Start-VM: it takes the same mutex again (a mutex is reentrant on its own thread).
             Start-VM -Name $Name
@@ -248,9 +218,6 @@ function Restart-GpuVMCold {
     }
 }
 
-# Turns a machine off within a bounded time, whatever its guest does: a clean shutdown first, then Hyper-V's turn off,
-# and last its worker process is ended (lab 052, two GPU-P machines at once: a guest hung "Shutting Down" for minutes,
-# Hyper-V refused to turn it off meanwhile, and it ended in a 0x9F blue screen; the open waited 34 minutes).
 function Stop-GpuVMBounded {
     param([Parameter(Mandatory)][string]$Name, [int]$ShutdownTimeoutSec = 90, [int]$TurnOffTimeoutSec = 30)
     $off = { param($s) $deadline = (Get-Date).AddSeconds($s); while ((Get-VM -Name $Name).State -ne 'Off' -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }; (Get-VM -Name $Name).State -eq 'Off' }
@@ -272,19 +239,13 @@ function Stop-GpuVMBounded {
         throw "'$Name' couldn't be turned off (it is $((Get-VM -Name $Name).State))."
     }
     finally {
-        # Only finished jobs are removed: Hyper-V completes its job on a thread of its own, sometimes after the machine
-        # is already off, and a job disposed before that ends the whole PowerShell process (lab 052, 2026-11-20:
-        # PSObjectDisposedException in VmJob.Complete). One still running is left to finish by itself.
+        # Only finished jobs are removed: disposing a Hyper-V job before it completes ends the PowerShell process.
         $jobs | Wait-Job -Timeout 15 -ErrorAction SilentlyContinue | Out-Null
         $jobs | Where-Object { $_.State -in 'Completed', 'Failed', 'Stopped' } | Remove-Job -Force -ErrorAction SilentlyContinue
     }
 }
 
-# An agent machine keeps the Hyper-V display on: until a viewer connects, the virtual display has no monitor plugged
-# in, and without the Hyper-V one the console session has no display at all (no screenshots, no input; agent-guest
-# 2026-11-19 on copies of a template whose source had it disabled). The agent (0.4.x) turns that display's desktop
-# off itself once the virtual one is active, and Sunshine captures the virtual display by name.
-# Returns 'enabled' (it was off), 'ok' or 'not-found'.
+# Without the Hyper-V display, an agent machine's console session has no display until a viewer connects.
 function Enable-GuestHyperVVideo {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential)
     $r = Invoke-Command -VMName $Name -Credential $Credential -ErrorAction Stop -ScriptBlock {
@@ -298,13 +259,6 @@ function Enable-GuestHyperVVideo {
     [string](@($r)[-1])
 }
 
-# GpuVM's Sunshine fork in a running machine (repo gpuvm-sunshine, shipped in sunshine\): its sunshine.exe over the
-# MSI's (same upstream version) and tools\sunshine_wgc_capture.exe. As the service (SYSTEM) with capture = wgc it
-# starts the helper with the signed-in user's own token and reads its frames from a shared texture: a picture where
-# desktop duplication stays black on the virtual display (lab 055), without the signed-in user ever owning Sunshine
-# or its keys. Every machine runs it: new ones get it at install (guest\streaming.ps1), older ones here on open.
-# Copied only when the hashes differ. Also takes Users' read access off Sunshine's config folder (lab 055).
-# Remembers the fork it installed in the machine's state (sunshineFork). Returns 'installed' or 'unchanged'.
 function Install-GuestSunshineCapture {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential)
     $files = [ordered]@{}
@@ -324,8 +278,7 @@ function Install-GuestSunshineCapture {
         try {
             if ($differ.Count) {
                 Write-Step 'Installing GpuVM''s Sunshine in the machine'
-                # The fork is built from the Sunshine version components.json pins: it only goes over that same version
-                # (or over an earlier fork), never over another, whose files around the exe would differ.
+                # The fork only goes over the Sunshine version it was built from (or an earlier fork): the files around the exe would differ.
                 $pinned = ([string](Get-ComponentManifest)['sunshine']['version']).TrimStart('v')
                 Invoke-InAgentSession $session -ArgumentList $pinned, ([string]$hashes['sunshine.exe']) -ScriptBlock {
                     param($pinned, $forkHash)
@@ -346,16 +299,14 @@ function Install-GuestSunshineCapture {
             }
             Invoke-InAgentSession $session -ScriptBlock {
                 $config = 'C:\Program Files\Sunshine\config'
-                # Keep the inherited entries as explicit ones, then drop BUILTIN\Users everywhere below (its keys too).
                 & icacls.exe $config /inheritance:d /Q | Out-Null
                 if ($LASTEXITCODE -ne 0) { throw "Couldn't change the permissions of $config." }
-                # Users, and the sandboxed Store apps (ALL APPLICATION PACKAGES and the restricted ones), which also read it.
+                # Users and sandboxed Store apps lose read access: the signed-in user must never read Sunshine's keys.
                 & icacls.exe $config /remove:g '*S-1-5-32-545' '*S-1-15-2-1' '*S-1-15-2-2' /T /Q | Out-Null
                 if ($LASTEXITCODE -ne 0) { throw "Couldn't take Users' access off $config." }
             }
         }
         finally {
-            # Sunshine runs again whatever happened above (a failed copy must not leave the machine without it).
             Invoke-InAgentSession $session -ScriptBlock {
                 Get-Service | Where-Object { $_.Name -like '*sunshine*' } | Start-Service -ErrorAction SilentlyContinue
             }
@@ -368,12 +319,8 @@ function Install-GuestSunshineCapture {
     finally { Close-AgentSession $session }
 }
 
-# One value for the fork this build carries (its files' hashes, plus the version of what Install-GuestSunshineCapture
-# does around them: 2 = Store apps lose read access to the config too), to tell a machine that already has it.
 function Get-SunshineForkStamp { (@(Get-SunshineForkFiles | ForEach-Object { "$($_.Key)=$($_.Hash)" }) + 'setup=2') -join ';' }
 
-# Install-GuestSunshineCapture only when the machine's state doesn't say it has this build's fork, so an open doesn't
-# pay the check every time. Returns 'installed', 'unchanged' or 'current'.
 function Sync-GuestSunshineFork {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential)
     $state = Get-GpuVMState -Name $Name
@@ -381,20 +328,12 @@ function Sync-GuestSunshineFork {
     Install-GuestSunshineCapture -Name $Name -Credential $Credential
 }
 
-# Sunshine's settings as the first open would leave them (capture, the virtual display pinned by its id, no display
-# changes per session), applied while the agent is installed: the copies of a template whose Sunshine never had them
-# got them on their first open, and that restart made Sunshine test its encoders again when the first viewer came,
-# which saw only black (lab 052, 2026-11-20). Nothing left to change on the first open, nothing restarts then.
 function Initialize-GuestStreamingForAgent {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential)
     $state = Get-GpuVMState -Name $Name
     if (-not $state['streaming'] -or -not $state['config']['streaming']['virtualDisplay']) { return }
-    # GpuVM's Sunshine fork first: the capture mode below needs its helper.
     $helper = try { Install-GuestSunshineCapture -Name $Name -Credential $Credential }
     catch { Write-Warning "Couldn't install GpuVM's Sunshine capture helper: $($_.Exception.Message)"; 'failed' }
-    # A copy of a template that is current (Update-GpuVMTemplate ran this very setup on it): when the helper and the
-    # capture mode are already there, Sunshine's display settings are too, so its start (~20 s on a fresh copy) isn't
-    # waited for (lab 053 part 6).
     if ($state['streamingFromTemplate'] -and $helper -eq 'unchanged') {
         $changed = Set-GuestCaptureMode -Name $Name -Credential $Credential
         $state = Get-GpuVMState -Name $Name
@@ -410,8 +349,6 @@ function Initialize-GuestStreamingForAgent {
     Set-SunshineVirtualDisplay -Address $address -Credential $web -OnlyDisplay -Name $Name -GuestCredential $Credential
 }
 
-# The display mode the viewer will ask for on this machine, as Connect-GpuVM works it out: the streaming client's
-# resolution and its fps (0 = the chosen monitor's refresh rate). "1920x1080@180".
 function Get-GpuVMStreamMode {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$State, [string]$Monitor)
     $client = $State['config']['streaming']['client']
@@ -424,13 +361,9 @@ function Get-GpuVMStreamMode {
     "$($client['resolution'])@$(Resolve-GpuVMStreamFps $fps)"
 }
 
-# Tells the agent which mode its virtual display should have from boot (HKLM\SOFTWARE\GpuVM\Agent, StreamMode =
-# "WxH@Hz", administrators only): already in the viewer's mode before Sunshine starts, no first-open mode change, no
-# Sunshine restart and no encoder re-test that leaves the first stream black (lab 052, 2026-11-20). Written only when
-# it changes; the state remembers the last one.
 function Sync-GuestAgentDisplayMode {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential, [Parameter(Mandatory)][string]$Mode)
-    # The agent's own limits (agent 0.4.6): 1280-7680 x 720-4320, 24-500 Hz.
+    # The agent's own limits: 1280-7680 x 720-4320, 24-500 Hz.
     if ($Mode -notmatch '^(\d{4})x(\d{3,4})@(\d{2,3})$' -or [int]$Matches[1] -lt 1280 -or [int]$Matches[1] -gt 7680 -or
         [int]$Matches[2] -lt 720 -or [int]$Matches[2] -gt 4320 -or [int]$Matches[3] -lt 24 -or [int]$Matches[3] -gt 500) { return $false }
     $state = Get-GpuVMState -Name $Name
@@ -447,19 +380,15 @@ function Sync-GuestAgentDisplayMode {
     $true
 }
 
-# The agent's removal inside a running machine (install.ps1 -Uninstall -RemoveUser): its last result.
 function Invoke-GuestAgentRemoval {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential)
-    # The script's text runs with named arguments (switches never bind by position; guests are Restricted).
+    # Script text with named arguments: switches never bind by position and guests are Restricted.
     $code = Get-Content -Raw -LiteralPath (Get-RepoPath 'guest\agent\install.ps1')
     Invoke-Command -VMName $Name -Credential $Credential -ErrorAction Stop -ArgumentList $code -ScriptBlock {
         param($code) & ([scriptblock]::Create($code)) -Uninstall -RemoveUser
     } | Select-Object -Last 1
 }
 
-# After the restart the removal asked for: waits for the new Windows (BootBefore = the boot it replaces; empty when
-# the machine was opened later) and runs the removal again, which now deletes the `agent` user and its profile.
-# $true when nothing is left to do.
 function Complete-GuestAgentRemoval {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential, [string]$BootBefore = '', [int]$TimeoutSec = 600)
     if ($BootBefore) {
@@ -472,12 +401,9 @@ function Complete-GuestAgentRemoval {
         Wait-GuestReady -Name $Name -Credential $Credential -BootMessage 'Waiting for Windows'
     }
     $r = try { Invoke-GuestAgentRemoval -Name $Name -Credential $Credential } catch { Write-Warning "Couldn't finish removing the agent inside '$Name': $($_.Exception.Message)"; return $false }
-    # Still signed in as `agent` (the person's sign-in didn't take): left for the next open.
     -not ($r -and $r.PSObject.Properties['rebootNeeded'] -and $r.rebootNeeded -and @($r.notes) -match 'signed in')
 }
 
-# New-GpuVM / Import-GpuVM -Use agent: remembers who signs in, waits for Windows when the machine runs, then sets the
-# use (which installs the agent). Never fails the creation: a problem leaves the agent pending, with a warning.
 function Initialize-GpuVMAgentUse {
     param([Parameter(Mandatory)][string]$Name, [ValidateSet('agent', 'own')][string]$User = 'agent')
     $state = Get-GpuVMState -Name $Name

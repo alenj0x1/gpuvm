@@ -1,7 +1,4 @@
-//! The per-VM secret K (protocol "Handshake"): `C:\ProgramData\GpuVM\Agent\secret`, 32 raw bytes (64 hex characters
-//! are accepted too). The service refuses to use it unless the file and its folder are not links, are owned by SYSTEM
-//! or Administrators, and their DACL allows access to SYSTEM and Administrators only (lab 050: any other reader could
-//! pose as the agent).
+//! K is refused unless only SYSTEM and Administrators can reach it: any other reader could pose as the agent.
 use crate::util::wide;
 use std::path::Path;
 use windows::core::PCWSTR;
@@ -17,7 +14,6 @@ fn trusted(sid: PSID) -> bool {
     unsafe { IsWellKnownSid(sid, WinLocalSystemSid).as_bool() || IsWellKnownSid(sid, WinBuiltinAdministratorsSid).as_bool() }
 }
 
-/// Ok(()) when only SYSTEM and Administrators can reach the object; Err(reason) otherwise.
 pub fn check_acl(path: &str) -> Result<(), String> {
     let w = wide(path);
     unsafe {
@@ -77,7 +73,6 @@ pub fn check_acl(path: &str) -> Result<(), String> {
     }
 }
 
-/// Reads K after checking the folder and the file.
 pub fn load() -> Result<[u8; 32], String> {
     check_acl(DIR)?;
     check_acl(FILE)?;

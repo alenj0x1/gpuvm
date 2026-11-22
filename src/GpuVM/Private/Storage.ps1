@@ -1,7 +1,4 @@
-# Disks and ISOs: the folder where GpuVM keeps VMs, growing the guest's C: and the library of used ISOs.
-
-# Where GpuVM keeps VM folders. Read from the installed base profile, never from a VM's own state file,
-# so a tampered gpuvm.json cannot point deletions somewhere else.
+# Never from a VM's own state file: a tampered gpuvm.json must not point deletions elsewhere.
 function Get-GpuVMDefaultRoot {
     $base = Read-JsonFile (Join-Path (Get-ProfileDirectory) 'base.json')
     [IO.Path]::GetFullPath($base['vm']['root']).TrimEnd('\')
@@ -12,13 +9,10 @@ function Get-DriveFreeGB {
     [math]::Floor(([IO.DriveInfo]::new((Split-Path $Path -Qualifier))).AvailableFreeSpace / 1GB)
 }
 
-# Space the host keeps for itself on a drive with VM disks (Windows, updates, the page file).
 $script:DiskMarginGB = 20
 $script:DiskCache = $null
 
-# Every VM disk on the host, by drive: its full size, what its file takes today and how much it can still grow
-# (a dynamic disk grows up to its size as the guest writes; a fixed one already takes it all). Read every 30 s at
-# most (Get-VHD costs ~0.1 s per disk and the overview is refreshed every few seconds).
+# Cached 30 s: Get-VHD costs ~0.1 s per disk and the overview refreshes every few seconds.
 function Get-VMDiskUsage {
     if ($script:DiskCache -and ((Get-Date) - $script:DiskCache.At).TotalSeconds -lt 30) { return $script:DiskCache.Disks }
     $disks = foreach ($vm in @(Get-VM -ErrorAction SilentlyContinue)) {
@@ -29,7 +23,6 @@ function Get-VMDiskUsage {
             [pscustomobject]@{
                 VM = $vm.Name; Path = $drive.Path; Drive = (Split-Path $drive.Path -Qualifier).ToUpperInvariant()
                 SizeGB = [math]::Round($vhd.Size / 1GB, 1); FileGB = [math]::Round($vhd.FileSize / 1GB, 1)
-                # A disposable machine is promised only its fixed reserve (it is shut down before the drive fills up).
                 GrowthGB = if (Test-GpuVMDisposableByName -Name $vm.Name) { [math]::Max(0, [math]::Round($script:DisposableReserveGB - $vhd.FileSize / 1GB, 1)) }
                     else { [math]::Max(0, [math]::Round(($vhd.Size - $vhd.FileSize) / 1GB, 1)) }
                 Type = [string]$vhd.VhdType
@@ -40,9 +33,6 @@ function Get-VMDiskUsage {
     @($disks)
 }
 
-# What a disk on $Root's drive can really have: the drive's free space, minus what the other VMs' disks there can
-# still grow into (space they are promised), minus the host's margin. -VMName leaves that VM's own disk out of the
-# promised space and returns how far its disk can grow (its size + its own unwritten part + what is left).
 function Get-GpuVMDiskBudget {
     param([Parameter(Mandatory)][string]$Root, [string]$VMName)
     $drive = (Split-Path $Root -Qualifier).ToUpperInvariant()
@@ -53,7 +43,6 @@ function Get-GpuVMDiskBudget {
     # With no other disk on the drive Measure-Object gets no input and returns nothing (no .Sum under StrictMode).
     $promised = if ($others) { [math]::Round([double]($others | Measure-Object GrowthGB -Sum).Sum, 1) } else { 0 }
     $ownGrowth = if ($own) { $own[0].GrowthGB } else { 0 }
-    # What a new or bigger disk can take without being able to fill the drive when every disk is full.
     $available = [math]::Max(0, [math]::Floor($free - $promised - $ownGrowth - $script:DiskMarginGB))
     [ordered]@{
         drive = $drive; freeGB = $free; promisedGB = $promised; marginGB = $script:DiskMarginGB
@@ -64,7 +53,6 @@ function Get-GpuVMDiskBudget {
     }
 }
 
-# Grows the guest's C: into the free space at the end of its disk (after Resize-VHD), from inside the guest.
 function Expand-GuestSystemDisk {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -94,8 +82,6 @@ function Save-IsoLibrary {
     Write-JsonFile -Path (Get-IsoLibraryPath) -Data ([ordered]@{ isos = @($Entries) })
 }
 
-# Remembers an ISO (and which VM used it) so the "Create machine" wizard offers it again.
-# A renamed VM keeps its place in the "used by" of each ISO.
 function Rename-GpuVMIsoUse {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$NewName)
     $entries = @(Read-IsoLibrary)
@@ -109,7 +95,6 @@ function Rename-GpuVMIsoUse {
     if ($changed) { Save-IsoLibrary $entries }
 }
 
-# A VM name must be free in Hyper-V and, with -Root, as a folder there (one left by a failed attempt also takes it).
 # -Except skips the VM being renamed, so a name that only changes case is not taken by itself.
 function Assert-GpuVMNameFree {
     param(

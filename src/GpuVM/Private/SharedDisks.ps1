@@ -1,7 +1,3 @@
-# Shared disks: a data disk (for example, a game library) that moves between VMs. It lives in <root>\.shared\
-# as <name>.vhdx plus <name>.json, and is attached to one VM at a time as a SCSI disk (it can be added and
-# removed while the VM runs). Inside the VM its NTFS volume is labeled with the disk's name.
-
 function Get-SharedDiskRoot { Join-Path (Get-GpuVMDefaultRoot) '.shared' }
 
 function Get-SharedDiskPath {
@@ -27,15 +23,12 @@ function Read-SharedDisk {
     $meta
 }
 
-# The VM drive the disk is attached to, if any.
 function Get-SharedDiskAttachment {
     param([Parameter(Mandatory)][string]$Path)
     $full = [IO.Path]::GetFullPath($Path)
     Get-VM | Get-VMHardDiskDrive | Where-Object { $_.Path -and [IO.Path]::GetFullPath($_.Path) -eq $full } | Select-Object -First 1
 }
 
-# Inside the guest: gives the volume a drive letter if it has none and, for a game disk, prepares SteamLibrary and
-# adds it to Steam's libraries (only while Steam is closed: Steam rewrites the file when it exits). Idempotent.
 $script:GuestSharedDiskSetup = {
     param($label, $purpose)
     $ErrorActionPreference = 'Stop'
@@ -59,8 +52,7 @@ $script:GuestSharedDiskSetup = {
     if ($purpose -ne 'games') { return $result }
 
     $library = "${letter}:\SteamLibrary"
-    # Another VM wrote this disk: a SteamLibrary or steamapps that is a link (to this VM's C:\Windows, say) would have
-    # Steam's service work there. Such a disk is never added.
+    # Another VM wrote this disk: a SteamLibrary or steamapps that is a link would have Steam's service work elsewhere.
     foreach ($path in $library, "$library\steamapps") {
         $item = Get-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
         if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { $result.steam = 'link'; return $result }
@@ -73,9 +65,7 @@ $script:GuestSharedDiskSetup = {
     $utf8 = [Text.UTF8Encoding]::new($false)
     $text = [IO.File]::ReadAllText($vdf, $utf8)
     if ($text.Contains("`"$escaped`"")) { $result.steam = 'registered'; return $result }
-    # Steam rewrites the file when it exits, so an open Steam is asked to close (in the signed-in user's session,
-    # where it runs), the library is added, and Steam opens again minimized. A game in progress keeps it open: then
-    # nothing is touched.
+    # Steam rewrites the file when it exits: an open Steam is closed first, and a game in progress means nothing is touched.
     $steamExe = Join-Path ${env:ProgramFiles(x86)} 'Steam\steam.exe'
     $runAsUser = {
         param($arguments)
@@ -132,9 +122,6 @@ function Initialize-GuestSharedDisk {
     $letter
 }
 
-# Folders that never go into a shared disk (a guest reads it): GpuVM's own (VM disks, templates, secrets), Windows,
-# and anything that contains them, such as a drive root or the Users folder. A folder inside Program Files (Steam's
-# own library) is fine.
 function Assert-ImportableFolder {
     param([Parameter(Mandatory)][string]$Path)
     $source = [IO.Path]::GetFullPath($Path).TrimEnd('\')
@@ -150,8 +137,7 @@ function Assert-ImportableFolder {
     }
 }
 
-# Fails closed: any folder below Path that can't be listed (a guest can deny access to it) or any link at all stops
-# the copy, since an unseen junction would send it out of the disk.
+# Fails closed: a folder that can't be listed (a guest can deny access) or any link stops the copy.
 function Assert-NoReparsePointBelow {
     param(
         [Parameter(Mandatory)][string]$Root,

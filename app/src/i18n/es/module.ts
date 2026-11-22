@@ -1,6 +1,3 @@
-// Spanish for the messages of the PowerShell module (src/GpuVM), which speaks English. `default` holds the fixed
-// ones, word for word; `patterns` the ones with values in them ($1, $2… are the regex groups, in the order the
-// Spanish wants them). Also here: the messages the desktop app's Rust side (src-tauri, app/host) and src/bridge.ps1 return.
 export default {
   "Windows Command Processor": "Procesador de comandos de Windows",
   "Browsers": "Navegadores",
@@ -8,7 +5,6 @@ export default {
   "Chat": "Comunicación",
   "Tools": "Utilidades",
   "No extra apps": "Sin apps de más",
-  // App (Rust) and bridge
   "The GpuVM service isn't installed.": "El servicio de GpuVM no está instalado.",
   "The GpuVM service is stopped.": "El servicio de GpuVM está detenido.",
   "GpuVM stopped responding.": "GpuVM dejó de responder.",
@@ -26,7 +22,6 @@ export default {
   "Unknown error": "Error desconocido",
   "Invalid request.": "Petición no válida.",
 
-  // Host checks
   "The Hyper-V module isn't installed. Turn it on in \"Windows Features\".": "El módulo Hyper-V no está instalado. Actívalo en \"Características de Windows\".",
   "Without administrator rights, Hyper-V and the partitionable GPUs can't be checked.": "Sin permisos de administrador no se puede revisar Hyper-V ni las GPU particionables.",
   "Hyper-V isn't on. Run: Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All, and restart.": "Hyper-V no está activo. Ejecuta: Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All, y reinicia.",
@@ -44,7 +39,6 @@ export default {
   "Partitionable GPU": "GPU particionable",
   "This command needs PowerShell 7 opened as administrator.": "Este comando necesita PowerShell 7 abierto como administrador.",
 
-  // Profiles
   "\"backend\" is missing.": "Falta \"backend\".",
   "The \"vm\" section is missing.": "Falta la sección \"vm\".",
   "vm.cpu.count must be at least 2 (Windows 11 requires it).": "vm.cpu.count debe ser al menos 2 (Windows 11 lo exige).",
@@ -66,7 +60,6 @@ export default {
   "A profile can't extend itself.": "Un perfil no puede extenderse a sí mismo.",
   "The description is too long.": "La descripción es demasiado larga.",
 
-  // Creating, changing and deleting machines
   "The disk of a machine created from a template is the same size as the template and can't be enlarged.": "El disco de una máquina creada desde una plantilla mide lo mismo que la plantilla y no se amplía.",
   "Moving the VM's settings to its new folder": "Moviendo la configuración de la VM a su nueva carpeta",
   "Renaming the disk": "Cambiando el nombre del disco",
@@ -92,7 +85,6 @@ export default {
   "Applying": "Aplicando",
   "Installing updates": "Instalando actualizaciones",
 
-  // Opening a machine (connect)
   "Updating the GPU driver": "Actualizando el driver de la GPU",
   "It's already open": "Ya está abierta",
   "Waiting for Windows": "Esperando a Windows",
@@ -116,7 +108,6 @@ export default {
   "The VM's audio will be ready the next time you open it.": "El audio de la VM quedará listo la próxima vez que la abras.",
   "The VM's audio will be ready in a few seconds or the next time you open it.": "El audio de la VM quedará listo en unos segundos o la próxima vez que la abras.",
   "GpuVM's viewer isn't installed. Install GpuVM again.": "El visor de GpuVM no está instalado. Reinstala GpuVM.",
-  // GpuVM's viewer (src-tauri/src/viewer.rs, overlay.rs)
   "The module didn't say how to open the machine.": "El módulo no devolvió cómo abrir la máquina.",
   "GpuVM's viewer isn't installed.": "El visor de GpuVM no está instalado.",
   "This machine's viewer isn't open.": "El visor de esta máquina no está abierto.",
@@ -155,7 +146,6 @@ export default {
   "WMI didn't return the driver files; using the fallback method based on the .inf.": "WMI no devolvió los archivos del driver; se usa el método alternativo basado en el .inf.",
   "The guest already started and erased its Sunshine credentials; connect can't pair until they're restored.": "El invitado ya arrancó y borró sus credenciales de Sunshine; connect no podrá emparejar hasta que se restablezcan.",
 
-  // Apps, cleanup, clipboard, password
   "Save the VM's Windows password so GpuVM can install apps.": "Guarda la contraseña de Windows de la VM para que GpuVM pueda instalar apps.",
   "Save the VM's Windows password so GpuVM can clean up Windows.": "Guarda la contraseña de Windows de la VM para que GpuVM pueda limpiar Windows.",
   "Cleaning up Windows": "Limpiando Windows",
@@ -165,7 +155,6 @@ export default {
   "The copied text is too long (more than a million characters).": "El texto copiado es demasiado largo (más de un millón de caracteres).",
   "Save the VM's Windows password so you can paste into it.": "Guarda la contraseña de Windows de la VM para poder pegar en ella.",
   "Text ready in the VM: paste it with Ctrl+V": "Texto listo en la VM: pégalo con Ctrl+V",
-  // Files and clipboard (Send-GpuVMFile, Send-GpuVMClipboard, Get-GpuVMExplorerSelection, dropzone.rs, clipboard.rs)
   "Ready in the VM: paste it with Ctrl+V": "Listo en la VM: pégalo con Ctrl+V",
   "Copy cancelled.": "Envío cancelado.",
   "Measuring": "Midiendo",
@@ -181,18 +170,15 @@ export default {
   "Unknown copy.": "Copia desconocida.",
   "That copy is no longer there.": "Esa copia ya no está.",
   "It couldn't be copied.": "No se pudo copiar.",
-  // GpuVM service (app/host): it checks the paths of this PC as the user, and relays PowerShell
   "PowerShell stopped responding.": "PowerShell dejó de responder.",
   "The source machine didn't send back every file; try again.": "La máquina de origen no devolvió todos los archivos; vuelve a intentarlo.",
   "The VM didn't answer in time; try again.": "La VM no respondió a tiempo; vuelve a intentarlo.",
   "The password isn't right for the VM's account.": "La contraseña no es correcta para la cuenta de la VM.",
   "The prompt changed or closed. Check the new one before answering.": "El aviso ya cambió o se cerró. Revisa el nuevo antes de responder.",
 
-  // Shared disks
   "A whole drive can't be imported; choose a folder.": "No se puede importar una unidad entera; elige una carpeta.",
   "Measuring the folder": "Midiendo la carpeta",
 
-  // Home notices
   "Its Windows password is missing, so things inside it can't be fixed": "Falta su contraseña de Windows para arreglar cosas dentro de ella",
   "The viewer isn't paired with it yet": "El visor todavía no está emparejado con ella",
   "Save password": "Guardar contraseña",
@@ -202,10 +188,8 @@ export default {
   "Install": "Instalar",
   "See disks": "Ver discos",
 
-  // Client
   "Remember to carry the candidate settings over to the matching profile in profiles/.": "Recuerda llevar la configuración candidata al perfil correspondiente en profiles/.",
 
-  // Restore points, disposable machines, export and import
   "Saving the restore point": "Guardando el punto de restauración",
   "Going back to the restore point": "Volviendo al punto de restauración",
   "Deleting the restore point": "Borrando el punto de restauración",
@@ -233,13 +217,11 @@ export default {
 
 
 export const patterns: [RegExp, string][] = [
-  // App (Rust) and bridge
   [/^Couldn't start PowerShell 7 \(pwsh\.exe\): (.+)$/, "No se pudo iniciar PowerShell 7 (pwsh.exe): $1"],
   [/^Couldn't start the GpuVM service \(error (\d+)\)\.$/, "No se pudo iniciar el servicio de GpuVM (error $1)."],
   [/^Couldn't stop the GpuVM service \(error (\d+)\)\.$/, "No se pudo detener el servicio de GpuVM (error $1)."],
   [/^Command not allowed: (.+)$/, "Comando no permitido: $1"],
 
-  // Host checks, alone or as the reason a machine can't be created
   [/^This PC doesn't pass the check: Hyper-V: the Hyper-V module isn't installed\. Turn it on in "Windows Features"\.$/i, "El equipo no pasa la revisión: Hyper-V: El módulo Hyper-V no está instalado. Actívalo en \"Características de Windows\"."],
   [/^This PC doesn't pass the check: Hyper-V: Hyper-V isn't on\. Run: (.+), and restart\.$/i, "El equipo no pasa la revisión: Hyper-V: Hyper-V no está activo. Ejecuta: $1, y reinicia."],
   [/^This PC doesn't pass the check: partitionable GPU: no GPU supports GPU-P with the current driver\.$/i, "El equipo no pasa la revisión: GPU particionable: Ninguna GPU admite GPU-P con el driver actual."],
@@ -271,13 +253,11 @@ export const patterns: [RegExp, string][] = [
   [/^Downloading (.+)$/, "Descargando $1"],
   [/^The SHA-256 of (.+?) doesn't match \(expected (.+?), got (.+?)\)\. The file won't be used\.$/, "El SHA-256 de $1 no coincide (esperado $2, recibido $3). No se usará el archivo."],
 
-  // Memory
   [/^The VM needs (.+?) GB free and there are (.+?) GB\. Close programs or lower its memory to (.+?) GB in Options\.$/, "La VM necesita $1 GB libres y hay $2 GB. Cierra programas o baja su memoria a $3 GB en Opciones."],
   [/^The VM needs (.+?) GB free and there are (.+?) GB\. Close programs\.$/, "La VM necesita $1 GB libres y hay $2 GB. Cierra programas."],
   [/^Memory: (.+?) GB$/, "Memoria: $1 GB"],
   [/^Fixed memory: (.+?) GB$/, "Memoria fija: $1 GB"],
 
-  // Folders and permissions
   [/^(.+) is a link to another folder; GpuVM won't use it\. Delete it and try again\.$/, "$1 es un enlace a otra carpeta; GpuVM no la usará. Bórralo y vuelve a intentarlo."],
   [/^(.+) is a link to another folder; GpuVM won't mount disks there\.$/, "$1 es un enlace a otra carpeta; GpuVM no montará discos ahí."],
   [/^Couldn't take back ownership of (.+) for Administrators\.$/, "No se pudo recuperar la propiedad de $1 para Administradores."],
@@ -286,7 +266,6 @@ export const patterns: [RegExp, string][] = [
   [/^(.+) is a link; GpuVM doesn't use it\.$/, "$1 es un enlace; GpuVM no lo usa."],
   [/^(.+) is a link; it won't be deleted\.$/, "$1 es un enlace; no se borra."],
 
-  // Profiles
   [/^The profile '(.+?)' doesn't exist \(built-in ones can't be deleted\)\.$/, "No existe el perfil '$1' (los incluidos no se pueden borrar)."],
   [/^The profile '(.+?)' doesn't exist \((.+)\)\.$/, "No existe el perfil '$1' ($2)."],
   [/^Profiles inherit from each other in a circle: (.+)$/, "Herencia circular de perfiles: $1"],
@@ -298,7 +277,6 @@ export const patterns: [RegExp, string][] = [
   [/^It can't be renamed: other profiles use it \((.+)\)\.$/, "No se puede renombrar: lo usan otros perfiles ($1)."],
   [/^Other profiles use it: (.+)\.$/, "Lo usan otros perfiles: $1."],
 
-  // Applying settings
   [/^The VM '(.+?)' must be off to apply the profile\.$/, "La VM '$1' debe estar apagada para aplicar el perfil."],
   [/^CPU: (.+?) threads, (.+?) % reserved, weight (.+)$/, "CPU: $1 hilos, reserva $2 %, peso $3"],
   [/^Couldn't set the SMT topology \(needs VM configuration 9\.0 or later\): (.+)$/, "No se pudo ajustar la topología SMT (requiere configuración de VM 9.0 o superior): $1"],
@@ -313,7 +291,6 @@ export const patterns: [RegExp, string][] = [
   [/^The VM didn't turn on with the new settings \((.+)\); the previous ones were restored\.$/, "La VM no encendió con los ajustes nuevos ($1); se restauraron los anteriores."],
   [/^Shutting down (.+)$/, "Apagando $1"],
 
-  // Driver
   [/^Turn off the VM '(.+?)' before syncing the driver\.$/, "Apaga la VM '$1' antes de sincronizar el driver."],
   [/^The GPU '(.+?)' wasn't found on the host\.$/, "No se encontró la GPU '$1' en el host."],
   [/^Reading the files of driver (.+?) for (.+)$/, "Leyendo archivos del driver $1 de $2"],
@@ -324,7 +301,6 @@ export const patterns: [RegExp, string][] = [
   [/^The VM's disk has a link at (.+); nothing is written through it so nothing lands outside the VM\.$/, "El disco de la VM tiene un enlace en $1; no se escribe en él para no escribir fuera de la VM."],
   [/^State rebuilt\. Assuming the host's driver (.+); if in doubt, run sync-driver\.$/, "Estado reconstruido. Se asume el driver $1 del host; si dudas, ejecuta sync-driver."],
 
-  // Renaming
   [/^Renaming it in Hyper-V to '(.+?)'$/, "Cambiando el nombre en Hyper-V a '$1'"],
   [/^The folder (.+) already exists from an earlier attempt\. Choose another name or delete it\.$/, "Ya existe la carpeta $1 de un intento anterior. Elige otro nombre o bórrala."],
   [/^The folder (.+) already exists\. Choose another name or delete it\.$/, "Ya existe la carpeta $1. Elige otro nombre o bórrala."],
@@ -335,7 +311,6 @@ export const patterns: [RegExp, string][] = [
   [/^Couldn't update the ISO list: (.+)$/, "No se pudo actualizar la lista de ISO: $1"],
   [/^The VM is now called '(.+?)'\.$/, "La VM ahora se llama '$1'."],
 
-  // Creating
   [/^There's already a VM called '(.+?)'\.$/, "Ya existe una VM llamada '$1'."],
   [/^The disk (.+) already exists\.$/, "Ya existe el disco $1."],
   [/^The file (.+) changed since it was verified; it won't be copied to the VM\.$/, "El archivo $1 cambió desde que se verificó; no se copia a la VM."],
@@ -369,7 +344,6 @@ export const patterns: [RegExp, string][] = [
   [/^The VM '(.+?)' already has its state; there's nothing to repair\.$/, "La VM '$1' ya tiene su estado; no hay nada que reparar."],
   [/^Turn off the VM '(.+?)' before repairing it\.$/, "Apaga la VM '$1' antes de repararla."],
 
-  // Restoring and deleting disks
   [/^There's no GpuVM disk called '(.+?)' in (.+)\.$/, "No hay un disco de GpuVM llamado '$1' en $2."],
   [/^There's no disk called '(.+?)' in (.+)\.$/, "No hay un disco llamado '$1' en $2."],
   [/^The VM '(.+?)' already uses the disk\.$/, "El disco ya lo usa la VM '$1'."],
@@ -377,7 +351,6 @@ export const patterns: [RegExp, string][] = [
   [/^The folder belongs to the VM '(.+?)'; delete the VM first\.$/, "La carpeta pertenece a la VM '$1'; elimina primero la VM."],
   [/^Couldn't copy the disk: (.+)$/, "No se pudo copiar el disco: $1"],
 
-  // Templates
   [/^The template '(.+?)' doesn't exist\.$/, "No existe la plantilla '$1'."],
   [/^The template '(.+?)' is missing its disk\.$/, "Falta el disco de la plantilla '$1'."],
   [/^Turn off the VM '(.+?)' before creating the template\.$/, "Apaga la VM '$1' antes de crear la plantilla."],
@@ -390,13 +363,11 @@ export const patterns: [RegExp, string][] = [
   [/^Template '(.+?)' deleted$/, "Plantilla '$1' eliminada"],
   [/^The template '(.+?)' is used by (.+); delete those machines first\.$/, "La plantilla '$1' la usan $2; elimina esas máquinas primero."],
 
-  // State
   [/^The VM '(.+?)' wasn't created with GpuVM \(gpuvm\.json wasn't found\)\.$/, "La VM '$1' no fue creada con GpuVM (no se encontró gpuvm.json)."],
   [/^The VM '(.+?)' was created without streaming\.$/, "La VM '$1' se creó sin streaming."],
   [/^The VM '(.+?)' doesn't have streaming\.$/, "La VM '$1' no tiene streaming."],
   [/^The VM '(.+?)' is off\.$/, "La VM '$1' está apagada."],
 
-  // Network and finding the VM
   [/^The VM '(.+?)' uses the external switch '(.+?)': network isolation only works with the Default Switch or an internal one\.$/, "La VM '$1' usa el conmutador externo '$2': el aislamiento de red solo funciona con el Default Switch o uno interno."],
   [/^The VM '(.+?)' isn't connected to any virtual switch\.$/, "La VM '$1' no está conectada a ningún conmutador virtual."],
   [/^The host has no IPv4 address on the switch '(.+?)' of the VM '(.+?)'; the IP the VM reports can't be checked\.$/, "El host no tiene una dirección IPv4 en el conmutador '$1' de la VM '$2'; no se puede comprobar la IP que informa la VM."],
@@ -408,7 +379,6 @@ export const patterns: [RegExp, string][] = [
   [/^Waiting for Windows on '(.+?)' \((.+?) min; state (.+?), CPU (.+?) %, heartbeat (.+?)\)\. To see its screen: (.+)$/, "Esperando a Windows en '$1' ($2 min; estado $3, CPU $4 %, latido $5). Para ver la pantalla: $6"],
   [/^The VM '(.+?)' didn't get an IP address in (\d+) min\. See its screen with: (.+)$/, "La VM '$1' no obtuvo una dirección IP en $2 min. Mira su pantalla con: $3"],
 
-  // Sunshine, Moonlight, display, audio, controllers
   [/^Sunshine isn't answering at (.+?)\. Check C:\\GpuVM\\setup\.log inside the VM\. Last error: (.+)$/s, "Sunshine no responde en $1. Revisa C:\\GpuVM\\setup.log dentro de la VM. Último error: $2"],
   [/^Sunshine will capture the virtual display \((.+)\)$/, "Sunshine capturará la pantalla virtual ($1)"],
   [/^Sunshine captures the audio from (.+)$/, "Sunshine captura el audio de $1"],
@@ -448,14 +418,12 @@ export const patterns: [RegExp, string][] = [
   [/^Controller support isn't ready: the driver didn't get installed$/, "El soporte de mandos no quedó listo: error: el driver no quedó instalado"],
   [/^Controller support isn't ready: (.*)$/, "El soporte de mandos no quedó listo: $1"],
 
-  // Administrator prompts, password
   [/^GpuVM doesn't have the Windows password for '(.+?)'\.$/, "Falta la contraseña de Windows de '$1' en GpuVM."],
   [/^Couldn't answer the prompt: error: it isn't installed$/, "No se pudo responder el aviso: error: no está instalado"],
   [/^Couldn't answer the prompt: error: no answer$/, "No se pudo responder el aviso: error: sin respuesta"],
   [/^Couldn't answer the prompt: (.*)$/, "No se pudo responder el aviso: $1"],
   [/^Couldn't check the password inside the VM \(is it still starting\?\): (.+)$/s, "No se pudo comprobar la contraseña dentro de la VM (¿sigue arrancando?): $1"],
 
-  // Apps and cleanup
   [/^The app '(.+?)' isn't in the catalog\.$/, "No existe la app '$1' en el catálogo."],
   [/^The app '(.+?)' has no signer or hash: it can't be verified\.$/, "La app '$1' no tiene firmante ni hash: no se puede verificar."],
   [/^The app '(.+?)' doesn't know how to uninstall itself\.$/, "La app '$1' no sabe desinstalarse."],
@@ -480,7 +448,6 @@ export const patterns: [RegExp, string][] = [
   [/^Couldn't apply (.+?): (.*)$/s, "No se pudo aplicar $1: $2"],
   [/^Unknown cleanup level: (.+)$/, "Nivel de limpieza desconocido: $1"],
 
-  // Shared disks
   [/^The shared disk '(.+?)' doesn't exist\.$/, "No existe el disco compartido '$1'."],
   [/^Disk '(.+?)' at (.+?): inside the VM$/, "Disco '$1' en $2: dentro de la VM"],
   [/^The VM doesn't show the disk '(.+?)' yet\.$/, "La VM no muestra el disco '$1' todavía."],
@@ -512,20 +479,16 @@ export const patterns: [RegExp, string][] = [
   [/^Disk '(.+?)' is ready$/, "Disco '$1' listo"],
   [/^Disk '(.+?)' deleted$/, "Disco '$1' eliminado"],
 
-  // Home notices
   [/^Its GPU driver isn't the one on this PC \((.+)\)$/, "Su driver de la GPU no es el del equipo ($1)"],
   [/^Still to install: (.+)$/, "Faltan por instalar: $1"],
   [/^(.+?) GB left on the machines' disk$/, "Quedan $1 GB libres en el disco de las máquinas"],
 
-  // Client
   [/^winget ended with code (.+?)\.$/, "winget terminó con código $1."],
 
-  // Labs (CLI)
   [/^The lab '(.+?)' doesn't exist\.$/, "No existe el laboratorio '$1'."],
   [/^'(.+?)' matches several labs: (.+)$/, "'$1' coincide con varios laboratorios: $2"],
   [/^The lab (.+?) is already closed \((.+?)\)\.$/, "El laboratorio $1 ya está cerrado ($2)."],
 
-  // Restore points, disposable machines, export and import
   [/^Exporting (\d+) %$/, "Exportando $1 %"],
   [/^Importing (\d+) %$/, "Importando $1 %"],
   [/^Merging the point with what came after it \((.+) GB\)$/, "Juntando el punto con lo que vino después ($1 GB)"],

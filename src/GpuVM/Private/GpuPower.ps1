@@ -1,14 +1,10 @@
-# One GPU-P machine changes power at a time on this PC. Lab 052 (two agent machines at once): one copy's shutdown
-# overlapped another's boot on the same GPU, the shutting-down guest hung in its GPU driver's power transition, ended
-# in a 0x9F blue screen, and the copy's creation waited 34 minutes. A host-wide mutex (shared by the app's PowerShell,
-# the service's, and labs) is held from the start of a transition until it is done: off, or Windows up (heartbeat).
-# Start-VM, Stop-VM and Restart-VM below shadow Hyper-V's own inside this module, so every caller takes it.
+# One GPU-P machine changes power at a time: overlapping transitions on one GPU hung a guest into a 0x9F blue screen.
+# Start-VM, Stop-VM and Restart-VM below shadow Hyper-V's own inside this module, so every caller takes the mutex.
 
 $script:GpuPowerMutexName = 'Global\GpuVM.GpuPower'
 $script:GpuPowerWaitSec = 300
 $script:GpuPowerUpSec = 90
 
-# Lines about power transitions worth keeping (a wait, a timeout, a worker process ended): ProgramData\GpuVM\power.log.
 function Write-PowerLog {
     param([Parameter(Mandatory)][string]$Message)
     try {
@@ -18,8 +14,7 @@ function Write-PowerLog {
     catch { }
 }
 
-# The mutex, created for SYSTEM and Administrators only (the service's PowerShell runs as SYSTEM, the app's as the
-# person's elevated token). $null when it can't be had: the transition then goes on unserialized, as before.
+# SYSTEM and Administrators only. $null when it can't be had: the transition then goes on unserialized.
 function Get-GpuPowerMutex {
     try { return [Threading.Mutex]::OpenExisting($script:GpuPowerMutexName) } catch { }
     try {
@@ -41,8 +36,6 @@ function Test-GpuPartitioned {
     [bool](Get-VMGpuPartitionAdapter -VMName $Name -ErrorAction SilentlyContinue)
 }
 
-# Runs one power transition of a GPU-P machine while holding the host-wide mutex; -UntilUp keeps it until Windows
-# answers (heartbeat), at most GpuPowerUpSec. Other machines just run it.
 function Invoke-GpuPowerTransition {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][scriptblock]$Do, [switch]$UntilUp, [int]$WaitSec = $script:GpuPowerWaitSec)
     if (-not (Test-GpuPartitioned -Name $Name)) { return & $Do }

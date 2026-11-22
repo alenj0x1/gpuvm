@@ -5,15 +5,6 @@ import { stickerImage } from "../decor/stickers";
 import { MACHINE_COLORS } from "../decor/store";
 import { t } from "../i18n";
 
-// "Overclock": your machine flies through bricks and rival machines. Move with the keys and aim with the mouse
-// anywhere, shooting your own figures. Stickers drift by with new weapons (faster, three at a time, in bursts, all
-// around), a shield or a life. Taking things down fills the frenzy: everything speeds up, your figures come out huge
-// and go through everything for a few seconds. Shooting and taking things down charge the ability on the right button
-// (a pulse at first); cores that drift by swap it for another (laser, slow time, clones, magnet). Every 40 seconds the
-// flight crosses into another zone, starting in the world of the space it is played in: the studio (hologram slabs),
-// a motherboard (chips, capacitors, resistors) or a world of blocks (bricks and brick figures); what comes at you is
-// made of that zone. It never ends; it only gets fuller. In a demo (the gallery's card) the machine plays by itself.
-
 type Kind = "brick" | "rival";
 type Weapon = "normal" | "rapid" | "triple" | "burst" | "ring";
 type PickKind = "heart" | "star" | Exclude<Weapon, "normal">;
@@ -26,7 +17,6 @@ interface Star { x: number; y: number; z: number }
 
 const BRICKS = ["#c2714a", "#8c939e", "#5f9e6e", "#d8443c", "#ecbc4c", "#6aa8ff"];
 const DEFAULT_FIGURES = ["lucky-cat", "duck", "robot", "rocket"];
-/** Each pickup is a sticker: what it gives and for how long. */
 const PICKS: Record<PickKind, { sticker: string; label: string; secs: number }> = {
   heart: { sticker: "heart", get label() { return t("Life"); }, secs: 0 },
   star: { sticker: "star", get label() { return t("Shield"); }, secs: 8 },
@@ -37,7 +27,6 @@ const PICKS: Record<PickKind, { sticker: string; label: string; secs: number }> 
 };
 const FRENZY_SECS = 8;
 
-/** The abilities on the right button: what each is called, how long it lasts and its glyph on the cores. */
 type AbilityId = "pulse" | "laser" | "slow" | "clones" | "magnet";
 const ABILITIES: Record<AbilityId, { name: string; secs: number }> = {
   pulse: { get name() { return t("Pulse"); }, secs: 0.6 },
@@ -47,15 +36,12 @@ const ABILITIES: Record<AbilityId, { name: string; secs: number }> = {
   magnet: { get name() { return t("Magnet"); }, secs: 8 },
 };
 const ABILITY_IDS = Object.keys(ABILITIES) as AbilityId[];
-/** The zones the flight crosses, one after another. */
-// Names are getters (and the texts below functions at this level, where t is not the game clock) so they come out in
-// the language in use.
+// Getters and functions, so texts follow the current language (at this level t is i18n, not the game clock).
 const ZONES = [{ get name() { return t("Studio"); } }, { get name() { return t("Motherboard"); } }, { get name() { return t("Blocks"); } }];
 const zoneLabel = (i: number) => t("{name} zone", { name: ZONES[i]?.name ?? "" });
 const frenzyText = (s: number) => t("Frenzy {s} s", { s });
 const shieldText = (s: number) => t("Shield {s} s", { s });
 const WORLD_ZONE: Record<string, number> = { studio: 0, board: 1, blocks: 2 };
-/** Brick figures of the app that come flying in the world of blocks. */
 const ZONE_FIGURES = ["lucky-cat", "duck", "robot", "penguin", "bear", "bunny", "cactus", "mushroom"];
 const ZONE_SECS = 40;
 const rgba = (hex: string, a: number) => { const h = hex.replace("#", ""); return `rgba(${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)},${a})`; };
@@ -69,11 +55,9 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
   };
   resize();
-  // Refit once the size settles, and draw again right away if nothing is running to do it.
   const ro = settledResize(() => { resize(); if (!running) draw(0); });
   ro.observe(canvas);
 
-  // The figures to shoot, drawn once on the GPU into small images (big enough for the frenzy's giant ones).
   const spritesFor = (ids: string[], color: string) => (ids.length ? ids : DEFAULT_FIGURES).map((id) => {
     const c = document.createElement("canvas");
     const s = 96;
@@ -82,20 +66,16 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     return c;
   });
   let figures = spritesFor(host.player.figures, host.player.color);
-  // Machines leaving the scene (after a change of machine or mode): they fly off to the left and are gone.
   let leaving: { x: number; y: number; vx: number; vy: number; color: string; img: HTMLCanvasElement; s: number }[] = [];
   const zoneFigs = spritesFor(ZONE_FIGURES, host.color);
   const demo = !!host.demo, zoneSecs = demo ? 7 : ZONE_SECS, firstZone = WORLD_ZONE[host.world ?? "studio"] ?? 0;
-  /** The zone at a moment of the flight: the space's own world first, then the others in turn. */
   const zoneAt = (time: number) => (firstZone + Math.floor(time / zoneSecs)) % ZONES.length;
   let team = host.mode === "team";
-  // Your other machines, flying beside you: each aims at the nearest thing and shoots its own figures.
   const SLOTS = [[-46, -58], [-46, 58], [-92, 0]];
   const bots = host.team.slice(0, 3).map((m, i) => ({ ...m, sprites: spritesFor(m.figures, m.color), x: 0, y: 0, slot: SLOTS[i], cool: 0.3 * i, n: 0 }));
   const pickImg = Object.fromEntries(Object.entries(PICKS).map(([k, p]) => [k, stickerImage(p.sticker, host.color)])) as Record<PickKind, HTMLCanvasElement | null>;
 
   const ink = host.light ? "#1c1b18" : "#ebe8e1";
-  // The ability: which one, how charged, and while it runs how long is left; the pulse's ring; the cores that swap it.
   const ab = { id: "pulse" as AbilityId, charge: 0, active: 0 };
   let ring: { x: number; y: number; r: number } | null = null;
   let cores: { x: number; y: number; id: AbilityId; t: number }[] = [], spawnCore = 18;
@@ -135,15 +115,12 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     score += (o.kind === "rival" ? 100 : 30) * (frenzy > 0 ? 2 : 1) * (ab.id === "magnet" && ab.active > 0 ? 2 : 1);
     ab.charge = Math.min(1, ab.charge + (o.kind === "rival" ? 0.12 : 0.05));
     burst(o.x, o.y, o.color, o.kind === "rival" ? 26 : 14);
-    // Every take-down fills the frenzy; full, it starts.
     if (frenzy <= 0) {
       meter = Math.min(1, meter + (o.kind === "rival" ? 0.14 : 0.07));
       if (meter >= 1) { frenzy = FRENZY_SECS; meter = 0; flash = 1; burst(me.x, me.y, host.color, 50); }
     }
   };
 
-  // One trigger pull: toward the mouse, with the weapon in hand; in the frenzy the figures come out huge.
-  // The right button: the ability, when it is charged.
   const useAbility = () => {
     if (ab.charge < 1 || ab.active > 0 || !running) return;
     ab.charge = 0; ab.active = ABILITIES[ab.id].secs;
@@ -168,10 +145,8 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     frenzy = Math.max(0, frenzy - dt);
     flash = Math.max(0, flash - dt * 2);
     meter = Math.max(0, meter - dt * 0.015);
-    // The galaxy runs faster in the frenzy, easing in and out.
     warp += ((frenzy > 0 ? 2.6 : 1) - warp) * (1 - Math.exp(-dt * 3));
 
-    // In a demo the machine plays by itself: it weaves up and down, aims at what is nearest ahead and uses its ability.
     if (demo) {
       let target: Thing | null = null, best = 1e9;
       for (const o of things) { const d = Math.hypot(o.x - me.x, o.y - me.y); if (o.hp > 0 && o.x > me.x && d < best) { best = d; target = o; } }
@@ -183,7 +158,6 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
       firing = true;
       if (ab.charge >= 1) useAbility();
     }
-    // Moving with the keys, with a little inertia.
     const ax = (keys.has("ArrowRight") || keys.has("d") ? 1 : 0) - (keys.has("ArrowLeft") || keys.has("a") ? 1 : 0);
     const ay = (keys.has("ArrowDown") || keys.has("s") ? 1 : 0) - (keys.has("ArrowUp") || keys.has("w") ? 1 : 0);
     const k = 1 - Math.exp(-dt * 10), top = 380;
@@ -214,8 +188,6 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
       shots.push({ x: b.x, y: b.y, vx: Math.cos(a) * 600, vy: Math.sin(a) * 600, img: b.sprites[b.n++ % b.sprites.length], size: big ? 60 : 30, hits: big ? new Set() : null });
     }
 
-    // Abilities running: the laser burns along its line, the pulse's ring opens, slow time slows everything but you,
-    // clones leave when it ends, the magnet pulls what drifts by.
     ab.active = Math.max(0, ab.active - dt);
     const wdt = ab.id === "slow" && ab.active > 0 ? dt * 0.35 : dt;
     if (ab.active <= 0) for (let i = bots.length - 1; i >= 0; i--) if ((bots[i] as { temp?: boolean }).temp) { burst(bots[i].x, bots[i].y, host.color, 10); bots.splice(i, 1); }
@@ -232,7 +204,6 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
       if (ring.r > 340) ring = null;
     }
     if (ab.id === "magnet" && ab.active > 0) for (const p of pickups) { p.x += (me.x - p.x) * dt * 3; p.y += (me.y - p.y) * dt * 3; }
-    // Cores drift by now and then: catching one swaps the ability (its charge stays).
     spawnCore -= dt;
     if (spawnCore <= 0) {
       spawnCore = 22 + Math.random() * 10;
@@ -241,14 +212,12 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     }
     const speed = (150 + 40 * level) * warp;
     score += speed * dt * 0.05 * (frenzy > 0 ? 2 : 1);
-    // With a team the stream is thicker and the rivals tougher.
     const fill = (frenzy > 0 ? 1.6 : 1) * (team ? 1.45 : 1);
 
     spawnBrick -= wdt * fill;
     if (spawnBrick <= 0) {
       spawnBrick = Math.max(0.26, 1.1 / level) * (0.6 + Math.random() * 0.8);
       const r = 16 + Math.random() * 18, c = BRICKS[Math.floor(Math.random() * BRICKS.length)];
-      // Most come from ahead; from the second level some fall in from above or below.
       const side = level > 1.4 && Math.random() < 0.3 ? (Math.random() < 0.5 ? -1 : 1) : 0;
       const skin = zoneAt(t), v = Math.random();
       if (side) things.push({ kind: "brick", x: W * (0.35 + Math.random() * 0.6), y: side < 0 ? -r : H + r, vx: -speed * 0.5, vy: -side * (90 + Math.random() * 90), r, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 2, color: c, hp: 3, phase: 0, cool: 0, skin, v });
@@ -274,7 +243,6 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
       if (o.kind === "rival") {
         o.phase += wdt * 2.2; o.y += Math.sin(o.phase) * 90 * wdt;
         o.cool -= wdt;
-        // From the second level on, rival machines shoot back at you.
         if (level > 1.6 && o.cool <= 0 && o.x < W - 20 && o.x > 20) {
           o.cool = Math.max(0.9, 2.6 - level * 0.3);
           const dx = me.x - o.x, dy = me.y - o.y, L = Math.hypot(dx, dy) || 1;
@@ -290,7 +258,6 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     scroll += speed * wdt;
     for (const s of sparks) { s.x += s.vx * dt; s.y += s.vy * dt; s.vx *= 0.94; s.vy *= 0.94; s.life -= dt; }
 
-    // Your figures against bricks and rivals; giant ones (frenzy) go through everything they hit.
     for (const s of shots) {
       if (s.x < -900) continue;
       for (const o of things) {
@@ -324,7 +291,6 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
   };
 
   const cube = (x: number, y: number, s: number, color: string, alpha: number, spin: number) => {
-    // A small glass cube seen from a corner, like the machine on Home.
     const c = Math.cos(spin), sn = Math.sin(spin);
     const pts = [[-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]].map(([px, py, pz]) => {
       const rx = px * c - pz * sn, rz = px * sn + pz * c;
@@ -340,11 +306,9 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     g.fillRect(x - s * 0.6, y + s * 0.45, s * 1.2, s * 0.18);
     g.fillRect(x - s * 0.35, y - s * 0.1, s * 0.5, s * 0.5);
   };
-  /** What comes at you, made of the zone it was born in. */
   const part = (o: Thing) => {
     const z = o.skin ?? 2, v = o.v ?? 0, s = o.r;
     if (z === 2) {
-      // Among blocks: bricks, and now and then one of the app's brick figures tumbling.
       if (v < 0.35) { const img = zoneFigs[Math.floor(v * 100) % zoneFigs.length]; g.save(); g.translate(o.x, o.y); g.rotate(o.rot * 0.5); g.drawImage(img, -s * 1.3, -s * 1.3, s * 2.6, s * 2.6); g.restore(); }
       else brick(o);
       return;
@@ -352,25 +316,21 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     g.save(); g.translate(o.x, o.y); g.rotate(o.rot);
     if (z === 1) {
       if (v < 0.4) {
-        // A chip with its pins.
         g.fillStyle = host.light ? "#26292b" : "#3a4449"; g.fillRect(-s, -s, s * 2, s * 2);
         g.fillStyle = host.light ? "#9aa1a3" : "#a7aeb0";
         for (let q = 0; q < 6; q++) { const u = -s + 4 + q * ((s * 2 - 8) / 5); g.fillRect(u - 1, -s - 4, 2, 4); g.fillRect(u - 1, s, 2, 4); g.fillRect(-s - 4, u - 1, 4, 2); g.fillRect(s, u - 1, 4, 2); }
         g.fillStyle = "rgba(255,255,255,.12)"; g.beginPath(); g.arc(-s + 6, -s + 6, 2.5, 0, 7); g.fill();
       } else if (v < 0.7) {
-        // An electrolytic capacitor: a can with its stripe and the cross on top.
         g.fillStyle = host.light ? "#2f3438" : "#2a3036"; g.fillRect(-s * 0.6, -s, s * 1.2, s * 2);
         g.fillStyle = host.light ? "#56616a" : "#4a545c"; g.fillRect(s * 0.15, -s, s * 0.25, s * 2);
         g.fillStyle = host.light ? "#8a949a" : "#59646b"; g.beginPath(); g.ellipse(0, -s, s * 0.6, s * 0.22, 0, 0, 7); g.fill();
         g.strokeStyle = "rgba(0,0,0,.4)"; g.beginPath(); g.moveTo(-s * 0.3, -s); g.lineTo(s * 0.3, -s); g.stroke();
       } else {
-        // A resistor: a beige body with its color bands and its two leads.
         g.strokeStyle = "#b9c0c2"; g.lineWidth = 2; g.beginPath(); g.moveTo(-s * 1.6, 0); g.lineTo(s * 1.6, 0); g.stroke();
         g.fillStyle = "#d9c49a"; g.beginPath(); g.roundRect(-s * 0.9, -s * 0.38, s * 1.8, s * 0.76, s * 0.3); g.fill();
         ["#7a4a2a", "#1c1c1c", "#cc4f43", "#c9a24f"].forEach((c, k) => { g.fillStyle = c; g.fillRect(-s * 0.6 + k * s * 0.36, -s * 0.38, s * 0.14, s * 0.76); });
       }
     } else {
-      // In the studio: slabs of hologram, lines in the ink of the app with scan lines across.
       const w = s * 1.6, h = s * 1.1;
       g.fillStyle = rgba(ink, 0.05); g.fillRect(-w, -h, w * 2, h * 2);
       g.strokeStyle = rgba(ink, 0.7); g.lineWidth = 1.4; g.strokeRect(-w, -h, w * 2, h * 2);
@@ -392,9 +352,6 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     g.restore();
   };
 
-  /** The background of a zone, scrolling with the flight: the studio is the app's own gray with a faint grid and dust
-   *  of light (the stars, drawn after), the motherboard has traces, vias and chips going by, the world of blocks a
-   *  baseplate of studs and brick trees. */
   const zoneBg = (z: number, alpha: number) => {
     if (alpha <= 0) return;
     g.globalAlpha = alpha;
@@ -409,11 +366,8 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     } else if (z === 1) {
       g.fillStyle = host.light ? "#e4ebe6" : "#121814"; g.fillRect(0, 0, W, H);
       const off = scroll * 0.6;
-      // The board is only a backdrop: its traces and chips sit close to its own tone, far from the chips that come
-      // at you (dark, with bright pins), so nothing in it reads as an obstacle.
       g.strokeStyle = host.light ? "#d2ddd5" : "#1b2a23"; g.lineWidth = 1.5;
       for (let row = 0; row < H / 22 + 1; row++) {
-        // Each trace keeps its length by its place in the world, so none jumps as it scrolls by.
         const y = 11 + row * 22, sh = off + row * 137, first = Math.floor(sh / 400);
         g.beginPath();
         for (let k = 0; (k - 1) * 400 < W; k++) { const i = first + k, x = i * 400 - sh, len = 180 + ((((i * 37 + row * 11) % 160) + 160) % 160); g.moveTo(x, y); g.lineTo(x + len, y); g.lineTo(x + len + 16, y + (row % 2 ? 16 : -16)); }
@@ -452,12 +406,10 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
   const draw = (dt: number) => {
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, W, H);
-    // The zone: crossing into the next one fades it in over a second and a half.
     const zt = t / zoneSecs, zi = zoneAt(t), into = (zt % 1) * zoneSecs, prev = (zi + ZONES.length - 1) % ZONES.length;
     if (t >= zoneSecs && into < 1.5) { zoneBg(prev, 1); zoneBg(zi, into / 1.5); } else zoneBg(zi, 1);
     if (zoneShown !== zi && running) { zoneShown = zi; zoneBanner = t < 1 ? 0 : 2.5; }
     zoneBanner = Math.max(0, zoneBanner - dt);
-    // The galaxy: stars drifting by, nearer ones faster; in the frenzy they stretch into streaks in your color.
     const drift = (150 + 40 * (1 + t / 35)) * warp * (running ? 1 : 0);
     const streak = Math.max(0, warp - 1.1) * 0.05;
     g.lineCap = "round";
@@ -474,7 +426,6 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
       } else { g.fillStyle = rgba(ink, a); g.fillRect(x, y, 1 + s.z * 1.5, 1 + s.z * 1.5); }
     }
     g.globalAlpha = 1;
-    // Cores: a hexagon in the machine's color with the glyph of the ability it brings.
     for (const c of cores) {
       const y = c.y + Math.sin(c.t * 3) * 4, r = 20;
       g.beginPath(); for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2 + c.t; g.lineTo(c.x + Math.cos(a) * r, y + Math.sin(a) * r); } g.closePath();
@@ -512,11 +463,9 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
       const flicker = me.hurt > 0 && Math.floor(t * 14) % 2 === 0;
       if (!flicker) {
         cube(me.x, me.y, frenzy > 0 ? 20 : 17, host.color, 1, 0.6 + Math.sin(t * 2) * 0.15);
-        // The machine's first figure rides on top of it.
         g.drawImage(figures[0], me.x - 15, me.y - 42, 30, 30);
       }
       if (me.shield > 0 || frenzy > 0) { g.strokeStyle = rgba(frenzy > 0 ? host.color : "#ffd34d", 0.45 + 0.3 * Math.sin(t * 8)); g.lineWidth = 2; g.beginPath(); g.arc(me.x, me.y, 32, 0, Math.PI * 2); g.stroke(); }
-      // Where you aim: a small sight at the pointer.
       if (aim.set && running) {
         g.strokeStyle = rgba(host.color, 0.8); g.lineWidth = 1.5;
         g.beginPath(); g.arc(aim.x, aim.y, 9, 0, Math.PI * 2);
@@ -525,7 +474,6 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
         g.stroke();
       }
     }
-    // The abilities while they run.
     if (ab.id === "laser" && ab.active > 0 && !over) {
       const a = aim.set ? Math.atan2(aim.y - me.y, aim.x - me.x) : 0, ex = me.x + Math.cos(a) * 2000, ey = me.y + Math.sin(a) * 2000;
       for (const [lw, al] of [[14, 0.18], [6, 0.5], [2, 1]] as const) { g.strokeStyle = rgba(host.color, al); g.lineWidth = lw * (0.85 + Math.random() * 0.3); g.beginPath(); g.moveTo(me.x, me.y); g.lineTo(ex, ey); g.stroke(); }
@@ -536,7 +484,6 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
     for (const s of sparks) { g.globalAlpha = Math.min(1, s.life * 2); g.fillStyle = s.color; g.fillRect(s.x - s.size / 2, s.y - s.size / 2, s.size, s.size); }
     g.globalAlpha = 1;
     if (flash > 0) { g.fillStyle = rgba(host.color, flash * 0.25); g.fillRect(0, 0, W, H); }
-    // Crossing into a zone: its name on a small plate at the top, for a moment.
     if (zoneBanner > 0) {
       const a = Math.min(1, zoneBanner * 2, (2.5 - zoneBanner) * 4), label = zoneLabel(Math.max(0, zoneShown));
       if (demo) zoneBanner = 0;
@@ -565,11 +512,10 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
 
   const local = (e: PointerEvent) => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
   const onMove = (e: PointerEvent) => { const [x, y] = local(e); aim.x = x; aim.y = y; aim.set = true; };
-  // Shooting holds the pointer only while the button is down: it is let go on release, on leaving the window, on a
-  // pause and at the end, so the mouse is never left caught by the game.
+  // Pointer capture only while the button is down, released on every exit path so the mouse is never left caught.
   let held: number | null = null;
-  const letGo = () => { firing = false; if (held !== null) { try { canvas.releasePointerCapture(held); } catch { /* already free */ } held = null; } };
-  const onDown = (e: PointerEvent) => { if (demo) return; if (e.button === 2 && running) { e.preventDefault(); useAbility(); return; } if (e.button === 0 && running) { onMove(e); firing = true; try { canvas.setPointerCapture(e.pointerId); held = e.pointerId; } catch { /* not a real pointer */ } } };
+  const letGo = () => { firing = false; if (held !== null) { try { canvas.releasePointerCapture(held); } catch {} held = null; } };
+  const onDown = (e: PointerEvent) => { if (demo) return; if (e.button === 2 && running) { e.preventDefault(); useAbility(); return; } if (e.button === 0 && running) { onMove(e); firing = true; try { canvas.setPointerCapture(e.pointerId); held = e.pointerId; } catch {} } };
   const onUp = () => letGo();
   const onBlur = () => { letGo(); keys.clear(); };
   const onKey = (e: KeyboardEvent) => {
@@ -586,20 +532,17 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
   window.addEventListener("pointercancel", onUp);
   window.addEventListener("blur", onBlur);
   canvas.addEventListener("lostpointercapture", () => { held = null; firing = false; });
-  // A demo plays by itself: the keyboard stays with the page.
   if (!demo) { window.addEventListener("keydown", onKey); window.addEventListener("keyup", onKey); }
   document.addEventListener("visibilitychange", onHidden);
 
   return {
     cast: ({ player, team: mates, mode }) => {
-      // The machine that was playing flies off to the left and the new one comes in from there.
       if (player.name !== host.player.name || player.color !== host.color) {
         leaving.push({ x: me.x, y: me.y, vx: -260, vy: -40, color: host.color, img: figures[0], s: 17 });
         host.player = player; host.color = player.color; host.figures = player.figures;
         figures = spritesFor(player.figures, player.color);
         me.x = -40; me.vx = 0;
       }
-      // Team mates who are no longer in the team leave; the new ones fly in to their place beside the machine.
       const names = mates.slice(0, 3).map((m) => m.name);
       for (let i = bots.length - 1; i >= 0; i--) {
         const b = bots[i] as (typeof bots)[number] & { temp?: boolean };
@@ -630,7 +573,7 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
 export const CUBE_FLIGHT: GameDef = {
   id: "cube-flight",
   name: "Overclock",
-  // Getters: the texts come out in the language in use.
+  // Getters, so texts follow the current language.
   get description() { return t("Fly through blocks and rival machines, collect abilities and cross from zone to zone."); },
   get modes() {
     return [

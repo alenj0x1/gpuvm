@@ -1,4 +1,3 @@
-//! Small shared helpers: wide strings, a size-capped log file, time.
 use std::io::Write;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -19,7 +18,7 @@ pub fn now_ms() -> u128 {
 }
 
 pub fn iso_now() -> String {
-    // UTC, second resolution, without pulling a date crate: days -> civil date (Howard Hinnant's algorithm).
+    // days -> civil date (Howard Hinnant's algorithm)
     let s = (now_ms() / 1000) as i64;
     let (days, rem) = (s.div_euclid(86400), s.rem_euclid(86400));
     let z = days + 719468;
@@ -35,7 +34,6 @@ pub fn iso_now() -> String {
     format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", rem / 3600, rem / 60 % 60, rem % 60)
 }
 
-/// Log file capped at `MAX` bytes: when full it is renamed to `.old` (one generation kept).
 pub struct Log {
     path: Option<std::path::PathBuf>,
     file: Option<std::fs::File>,
@@ -97,7 +95,6 @@ macro_rules! logf {
     ($($a:tt)*) => { $crate::util::log(&format!($($a)*)) };
 }
 
-/// A REG_SZ / REG_DWORD value under HKLM as text.
 pub fn reg_hklm(key: &str, value: &str) -> Option<String> {
     use windows::core::PCWSTR;
     use windows::Win32::System::Registry::*;
@@ -117,7 +114,6 @@ pub fn reg_hklm(key: &str, value: &str) -> Option<String> {
     Some(wstr(&buf))
 }
 
-/// "Windows 10 Pro 22H2 (19045.4291)" and the UI language ("es-MX").
 pub fn os_info() -> (String, String) {
     const CV: &str = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion";
     let product = reg_hklm(CV, "ProductName").unwrap_or_else(|| "Windows".into());
@@ -141,7 +137,6 @@ pub fn os_info() -> (String, String) {
     (os, lang)
 }
 
-/// Random bytes from the OS (BCryptGenRandom, system-preferred RNG).
 pub fn random<const N: usize>() -> [u8; N] {
     use windows::Win32::Security::Cryptography::*;
     let mut b = [0u8; N];

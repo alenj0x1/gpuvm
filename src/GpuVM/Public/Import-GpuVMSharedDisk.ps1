@@ -22,7 +22,6 @@ function Import-GpuVMSharedDisk {
         if ((Get-VM -Name $attachment.VMName).State -ne 'Off') { throw "Disconnect the disk '$Name' from '$($attachment.VMName)' or turn it off before importing." }
     }
 
-    # A Steam library (or Steam's own folder) brings only its games: steamapps goes to SteamLibrary\steamapps.
     $folder = Split-Path $source -Leaf
     if (-not $folder -or $folder -match '[:\\]') { $folder = 'Importado' }
     if (Test-Path -LiteralPath (Join-Path $source 'steamapps') -PathType Container) {
@@ -61,7 +60,6 @@ function Import-GpuVMSharedDisk {
         $log = Join-Path ([IO.Path]::GetTempPath()) "gpuvm-import-$([guid]::NewGuid().ToString('n')).log"
         $robocopy = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\robocopy.exe') -PassThru -WindowStyle Hidden -ArgumentList @(
             "`"$source`"", "`"$target`"", '/E', '/XJ', '/COPY:DAT', '/DCOPY:DAT', '/R:1', '/W:1', '/MT:8', '/NP', '/NFL', '/NDL', "/LOG:`"$log`"")
-        # Progress from the space the disk has used so far: cheap, and right even with many small files.
         while (-not $robocopy.WaitForExit(2000)) {
             $copied = $startFree - (Get-Volume -Partition $partition).SizeRemaining
             if ($total -gt 0) { Write-Step "Copying $([math]::Min(99, [math]::Floor(100 * $copied / $total))) %" }

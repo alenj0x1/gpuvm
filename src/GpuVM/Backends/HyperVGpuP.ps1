@@ -1,6 +1,3 @@
-# Hyper-V GPU-P (GPU Partitioning) backend: the GPU is shared between the host and the VM.
-# The guest uses the same driver as the host, copied to C:\Windows\System32\HostDriverStore.
-
 # Partition values are relative: 1e9 is the maximum for VRAM, decode and compute; UInt64.MaxValue for encode.
 function Get-GpuPartitionSettings {
     param([ValidateRange(1, 100)][int]$Percent = 100)
@@ -55,7 +52,6 @@ function Get-HyperVGpuPChecks {
             'If the VM gets the integrated one, disable it in Device Manager before turning on the VM (see labs/001).')))
     }
 
-    # The new disk must fit once every VM disk on the drive is full (dynamic disks grow up to their size).
     $sizeGB = [int]$Config['vm']['disk']['sizeGB']
     if ($sizeGB -and $Config['vm']['root']) {
         $budget = Get-GpuVMDiskBudget -Root $Config['vm']['root']
@@ -102,15 +98,14 @@ function Set-HyperVGpuPVM {
     $vhdPath = (Get-VMHardDiskDrive -VMName $Name | Select-Object -First 1).Path
     if ($vhdPath -and $c['disk']['sizeGB']) { Expand-HyperVGpuPDisk -Path $vhdPath -SizeGB $c['disk']['sizeGB'] }
 
-    # GPU-P supports neither checkpoints nor saved state; if the host shuts down, the guest shuts down cleanly.
+    # GPU-P supports neither checkpoints nor saved state.
     Set-VM -Name $Name -CheckpointType Disabled -AutomaticCheckpointsEnabled $false `
         -AutomaticStopAction ShutDown -AutomaticStartAction Nothing -GuestControlledCacheTypes $true `
         -LowMemoryMappedIoSpace ([int64]$c['mmio']['lowGB'] * 1GB) -HighMemoryMappedIoSpace ([int64]$c['mmio']['highGB'] * 1GB) `
         -Notes "Created with GpuVM. Profile: $($Config['name'])"
 
     $secureBoot = if ($c['secureBoot']) { 'On' } else { 'Off' }
-    # Only what changed: Hyper-V refuses to touch the Secure Boot template once the vTPM is initialized,
-    # which would make every later settings change fail.
+    # Only what changed: Hyper-V refuses Secure Boot template changes once the vTPM is initialized.
     $firmware = Get-VMFirmware -VMName $Name
     $tpmOn = (Get-VMSecurity -VMName $Name).TpmEnabled
     if ([string]$firmware.SecureBoot -ne $secureBoot) { Set-VMFirmware -VMName $Name -EnableSecureBoot $secureBoot }
@@ -124,7 +119,6 @@ function Set-HyperVGpuPVM {
     if ($switch -and (Get-VMSwitch -Name $switch -ErrorAction SilentlyContinue)) {
         Get-VMNetworkAdapter -VMName $Name | Connect-VMNetworkAdapter -SwitchName $switch
     }
-    # The guest cannot pose as a DHCP server or router to other machines, nor change its MAC.
     Set-VMNetworkAdapter -VMName $Name -DhcpGuard On -RouterGuard On -MacAddressSpoofing Off
     Update-GpuVMNetworkIsolation -Name $Name -State @{ config = $Config }
 
@@ -135,8 +129,7 @@ function Set-HyperVGpuPVM {
     Add-VMGpuPartitionAdapter -VMName $Name @gpuParams
 }
 
-# Disks only grow: shrinking would cut the guest's partition. The guest extends C: itself on its next start
-# (Expand-GuestSystemDisk), so the host never mounts a disk the guest has written to just for this.
+# Disks only grow: shrinking would cut the guest's partition. The guest extends C: itself on its next start.
 function Expand-HyperVGpuPDisk {
     param(
         [Parameter(Mandatory)][string]$Path,
@@ -150,7 +143,6 @@ function Expand-HyperVGpuPDisk {
     }
     if ($target -eq $vhd.Size) { return }
     if ($vhd.VhdType -eq 'Differencing') { throw 'The disk of a machine created from a template is the same size as the template and can''t be enlarged.' }
-    # Never more than the drive can really hold once every VM disk on it is full (the app shows the same limit).
     $script:DiskCache = $null
     $owner = Get-VMDiskUsage | Where-Object { $_.Path -eq $Path } | Select-Object -First 1
     $budget = Get-GpuVMDiskBudget -Root $Path -VMName $(if ($owner) { $owner.VM })
@@ -189,8 +181,6 @@ function Sync-HyperVGpuPDriver {
     $gpu
 }
 
-# Where a path inside the VM's folder ends up once the folder takes the new name; $null for a path outside it
-# (a shared disk, a template's parent disk), which stays where it is. A disk named after the VM takes the new name.
 function Get-RenamedVMPath {
     param(
         [string]$Path,
@@ -210,7 +200,6 @@ function Get-RenamedVMPath {
     $moved
 }
 
-# Moves a file or folder (same volume: a rename, nothing is copied), creating the destination's folder if needed.
 function Move-GpuVMItem {
     param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Destination)
     $parent = Split-Path $Destination -Parent
@@ -219,8 +208,6 @@ function Move-GpuVMItem {
     else { [IO.File]::Move($Path, $Destination) }
 }
 
-# Moves what is left in the old folder into the new one, merging folders Hyper-V already created there.
-# Each move is recorded in $Done so it can be undone; a file that already exists at the destination stops it.
 function Move-GpuVMFolderContent {
     param(
         [Parameter(Mandatory)][string]$From,
@@ -240,7 +227,6 @@ function Move-GpuVMFolderContent {
     }
 }
 
-# Undoes the recorded steps of a rename, newest first. Returns what could not be undone.
 function Undo-HyperVGpuPRename {
     param(
         [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[hashtable]]$Done,
@@ -272,10 +258,6 @@ function Undo-HyperVGpuPRename {
     , $problems
 }
 
-# Renames a stopped VM and moves what lives in its folder (configuration, disk, gpuvm.json) to a folder with the new
-# name. The VM is never unregistered from Hyper-V: its configuration moves with Move-VMStorage and its disk is renamed
-# in place (same volume, nothing copied) and attached again at the new path. Each step is recorded; if one fails, the
-# ones before it are undone newest first and the error is thrown. A name that only changes case keeps the folder.
 function Rename-HyperVGpuPVM {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -283,7 +265,6 @@ function Rename-HyperVGpuPVM {
         [Parameter(Mandatory)][System.Collections.IDictionary]$State
     )
     $oldDir = [IO.Path]::GetFullPath($State['vmDir']).TrimEnd('\')
-    # Only a folder named after the VM takes the new name; a VM kept in a folder of another name stays there.
     $moveFolder = $NewName -ne $Name -and (Split-Path $oldDir -Leaf) -eq $Name
     $newDir = if ($moveFolder) { Join-Path (Split-Path $oldDir -Parent) $NewName } else { $oldDir }
     $paths = @{ From = $oldDir; To = $newDir; Name = $Name; NewName = $NewName }
@@ -332,7 +313,7 @@ function Rename-HyperVGpuPVM {
             $target = Get-RenamedVMPath -Path $State[$key] @paths
             if ($target) { $renamed[$key] = $target }
         }
-        # Restore points are differencing disks that name their parent by path: point them at the new folder.
+        # Restore points name their parent disk by path: point them at the new folder.
         if ($moveFolder) { Repair-GpuVMDiskChain -State $renamed -From $oldDir -To $newDir -Name $Name -NewName $NewName }
         $done.Add(@{ step = 'state'; path = $renamed['statePath']; text = (Get-Content -Raw -LiteralPath $renamed['statePath']) })
         Save-GpuVMState $renamed
@@ -347,7 +328,6 @@ function Rename-HyperVGpuPVM {
         throw "Couldn't rename '$Name': $failure The VM was left as it was."
     }
 
-    # Only empty folders are left in the old one; a leftover never undoes a rename that worked.
     if ($moveFolder -and -not @(Get-ChildItem -LiteralPath $oldDir -Recurse -Force -File -ErrorAction SilentlyContinue).Count) {
         Remove-Item -LiteralPath $oldDir -Recurse -Force -ErrorAction SilentlyContinue
     }
@@ -374,7 +354,6 @@ Register-GpuVMBackend -Name 'hyperv-gpup'-Description 'Hyper-V with GPU Partitio
         $fileSet = Get-GpuDriverFileSet -PnpDeviceId $gpu.PnpDeviceId -DriverVersion $gpu.DriverVersion
 
         New-Item -ItemType Directory -Path (Split-Path $vhdPath -Parent) -Force | Out-Null
-        # If something fails halfway, no half-built VM or disk is left behind to get in the way of a retry.
         try {
         New-WindowsVhdx -Path $vhdPath -SizeGB $config['vm']['disk']['sizeGB'] -Type $config['vm']['disk']['type'] `
             -ImageFile $Context.ImageFile -ImageIndex $Context.ImageIndex -Edition $Context.Edition -Language $Context.Language -Customize {
@@ -386,9 +365,7 @@ Register-GpuVMBackend -Name 'hyperv-gpup'-Description 'Hyper-V with GPU Partitio
 
             $guestDir = Join-Path $root 'GpuVM'
             New-Item -ItemType Directory -Path $guestDir -Force | Out-Null
-            # C:\GpuVM would inherit "Authenticated Users: Modify" from C:\, and what is in it is run as the guest's
-            # administrator (setup.ps1 at first sign-in): Administrators and SYSTEM full, Users read and run, nothing
-            # inherited, before anything is copied in (security review 2026-11-21). Well-known SIDs, the same in the guest.
+            # C:\GpuVM would inherit "Authenticated Users: Modify" from C:\ and its contents run as the guest's administrator.
             & icacls.exe $guestDir /setowner '*S-1-5-32-544' /Q | Out-Null
             & icacls.exe $guestDir /inheritance:r /grant:r '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-545:(OI)(CI)RX' /Q | Out-Null
             if ($LASTEXITCODE -ne 0) { throw "Couldn't restrict the permissions of the guest's C:\GpuVM." }
@@ -454,8 +431,6 @@ Register-GpuVMBackend -Name 'hyperv-gpup'-Description 'Hyper-V with GPU Partitio
         }
     }
 
-    # A VM on top of a template: a differencing disk (only what changes is written), with Sunshine's identity reset
-    # on it before the first boot. Disk folder, cleanup on failure and returned state work as in New.
     Clone      = {
         param($Context)
         $name = $Context.Name
@@ -505,7 +480,6 @@ Register-GpuVMBackend -Name 'hyperv-gpup'-Description 'Hyper-V with GPU Partitio
             config      = $config
             vmDir       = $vmDir
             vhdPath     = $vhdPath
-            # The driver inside is the template's; if the host's changed since, it is updated on the first open.
             gpu         = $template['gpu']
             template    = $template['name']
             createdAt   = (Get-Date).ToString('o')
@@ -522,8 +496,7 @@ Register-GpuVMBackend -Name 'hyperv-gpup'-Description 'Hyper-V with GPU Partitio
 
     Remove     = {
         param($Name, $State, $DeleteDisk)
-        # Checked before removing anything: only the VM's own folder inside the installed GpuVM root is deleted,
-        # never any other path. A VM kept elsewhere is refused whole, instead of being removed with its disk left over.
+        # Only the VM's own folder inside the GpuVM root is ever deleted; a VM kept elsewhere is refused whole.
         $dir = $null
         if ($DeleteDisk -and $State['vmDir'] -and (Test-Path -LiteralPath $State['vmDir'])) {
             $root = Get-GpuVMDefaultRoot
@@ -538,8 +511,7 @@ Register-GpuVMBackend -Name 'hyperv-gpup'-Description 'Hyper-V with GPU Partitio
             Remove-VM -Name $Name -Force
         }
         if ($dir) { Remove-Item -LiteralPath $dir -Recurse -Force }
-        # Its agent secret and registration go last, and never stop the deletion half-way (lab 054: a denied secret
-        # left the VM's folder and disk behind). The service's hourly sweep removes what is left.
+        # Agent secret and registration go last and never stop the deletion; the service's hourly sweep removes leftovers.
         if ($vm) {
             try { Remove-GpuVMAgentRegistration -VMId $vm.Id.Guid }
             catch { Write-Warning "The agent registration of '$Name' couldn't be removed now ($($_.Exception.Message)); GpuVM's service removes it within the hour." }

@@ -1,10 +1,7 @@
-// Spanish for files into machines and the clipboard: the drop area over the viewer and the panel's widgets.
 export default {
-  // Drop area and progress card (DropZone.tsx)
   "Drop to send": "Soltar para enviar",
   "{vm} · Desktop › {folder}": "{vm} · Escritorio › {folder}",
   "Received": "Recibidos",
-  // Archivos (FilesWidgets.tsx)
   "Files": "Archivos",
   "{first} and {n} more": "{first} y {n} más",
   "Preparing…": "Preparando…",
@@ -14,7 +11,6 @@ export default {
   "Send what is selected to": "Enviar lo seleccionado a",
   "Drop files on the picture": "Suelta archivos sobre la imagen",
   "They arrive on {vm}'s desktop, in {folder}.": "Llegan al escritorio de {vm}, carpeta {folder}.",
-  // Portapapeles (FilesWidgets.tsx)
   "Clipboard": "Portapapeles",
   "What you copy on the PC goes to {vm} on its own": "Lo que copies en el PC llega solo a {vm}",
   "On copy": "Al copiar",

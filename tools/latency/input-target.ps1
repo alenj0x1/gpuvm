@@ -1,14 +1,4 @@
-﻿# Input latency target (Windows PowerShell 5.1 or PowerShell 7). Runs inside the VM in the user's session, or on the
-# host as the local reference. A black full-screen window with four squares at mid-height, each switching between
-# black and white on its own input:
-#   1 key    Scroll Lock pressed
-#   2 click  left mouse button pressed
-#   3 move   the mouse pointer moved
-#   4 pad    button A pressed on any XInput gamepad (Sunshine's virtual Xbox pad needs ViGEmBus in the VM)
-# Inputs are polled in a tight loop (not through window messages) and the square is drawn right away, so the target
-# adds well under a millisecond plus the next DWM frame. A bar keeps moving along the bottom, so Sunshine streams real
-# frames as in a game. tools/latency/input-meter.ps1 measures it. It closes itself after -Minutes.
-param([int]$Minutes = 20)
+﻿param([int]$Minutes = 20)
 
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 if (-not ('GpuVMInputTarget' -as [type])) {
@@ -55,8 +45,6 @@ public class GpuVMInputTarget : Form {
         g.DrawRectangle(Pens.DimGray, r);
     }
 
-    // How many inputs of each kind the target saw, written to %TEMP%\gpuvm-input-target.txt every second, so a miss
-    // can be told apart: the input never arrived, or it arrived and the picture didn't show it.
     readonly int[] seen = new int[4];
     public static readonly string StatusPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "gpuvm-input-target.txt");
 
@@ -90,7 +78,6 @@ public class GpuVMInputTarget : Form {
         form.g = form.CreateGraphics();
         form.g.Clear(Color.Black);
         for (int i = 0; i < 4; i++) form.DrawSquare(i);
-        // The pointer waits in the top-left corner, away from the squares; the meter moves it back and forth.
         SetCursorPos(form.ClientSize.Width / 10, form.ClientSize.Height / 6);
 
         var clock = Stopwatch.StartNew();
@@ -112,7 +99,6 @@ public class GpuVMInputTarget : Form {
             padWas = pad;
 
             long now = clock.ElapsedMilliseconds;
-            // Moving bar, redrawn every 4 ms: one sweep per second.
             if (now - lastBar >= 4) {
                 lastBar = now;
                 form.g.FillRectangle(Brushes.Black, barX, barY, barW, 60);

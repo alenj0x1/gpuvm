@@ -1,5 +1,3 @@
-//! End-to-end tests of the MCP server over JSON-RPC lines, against the fake broker.
-
 use super::fake::FakeBroker;
 use super::server::{Out, Server};
 use serde_json::{json, Value};
@@ -110,7 +108,6 @@ impl H {
         self.fake.with(|s| s.machines.iter().find(|m| m.name == machine).unwrap().actions.last().cloned().unwrap())
     }
 
-    /// A disposable machine taken by this connection, with a default screenshot.
     fn machine(&mut self) -> String {
         let t = self.ok("create_disposable", json!({ "template": "win11-agent", "name": "t1" }));
         assert!(t.contains("ready"), "{t}");
@@ -140,10 +137,8 @@ fn legacy_handshake_and_tool_list() {
     }
     let destructive: Vec<&str> = tools.iter().filter(|t| t["annotations"]["destructiveHint"] == true).map(|t| t["name"].as_str().unwrap()).collect();
     assert_eq!(destructive, ["run", "write_file", "restore_point_revert", "destroy"]);
-    // Legacy results don't carry the modern fields.
     assert!(r["result"].get("resultType").is_none() && r["result"].get("ttlMs").is_none());
     assert_eq!(h.rpc("ping", json!({}))["result"], json!({}));
-    // The client is registered with GpuVM by name.
     h.ok("list_machines", json!({}));
     assert_eq!(h.fake.with(|s| s.connections.values().next().unwrap()["name"].clone()), "claude-code");
 }
@@ -169,13 +164,11 @@ fn modern_discover_and_versions() {
     let l = h.rpc("tools/list", json!({}));
     assert_eq!(l["result"]["cacheScope"], "private");
     assert!(l["result"]["ttlMs"].is_u64());
-    // Unsupported version: the modern error with the list.
     h.server.handle_line(&json!({ "jsonrpc": "2.0", "id": 99, "method": "tools/list",
         "params": { "_meta": { "io.modelcontextprotocol/protocolVersion": "1900-01-01" } } }).to_string());
     let e = h.wait_for(99);
     assert_eq!(e["error"]["code"], -32022);
     assert_eq!(e["error"]["data"]["requested"], "1900-01-01");
-    // No era at all.
     let fresh = H::new(true);
     fresh.server.handle_line(r#"{"jsonrpc":"2.0","id":5,"method":"tools/list"}"#);
     assert_eq!(fresh.wait_for(5)["error"]["code"], -32600);
@@ -183,7 +176,6 @@ fn modern_discover_and_versions() {
     assert_eq!(fresh.lines().last().unwrap()["error"]["code"], -32700);
     fresh.server.handle_line(r#"{"jsonrpc":"2.0","id":6,"method":"nope","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}"#);
     assert_eq!(fresh.wait_for(6)["error"]["code"], -32601);
-    // A modern tool call carries resultType and serverInfo too.
     let mut h2 = H::new(true);
     let r = h2.rpc("tools/call", json!({ "name": "list_templates", "arguments": {} }));
     assert_eq!(r["result"]["resultType"], "complete");
@@ -205,28 +197,23 @@ fn screenshot_and_coordinate_round_trip() {
     h.ok("click", json!({ "machine": m, "x": 1279, "y": 719 }));
     assert_eq!(h.last_action(&m), json!({ "type": "click", "x": 1919, "y": 1079, "button": "left", "count": 1 }));
 
-    // A smaller picture: its own scale, kept per screenshot.
     let small = h.tool("screenshot", json!({ "machine": m, "maxWidth": 640, "maxHeight": 640 }));
     assert!(H::text(&small).contains("640x360"));
     h.ok("click", json!({ "machine": m, "x": 100, "y": 50 }));
     assert_eq!(h.last_action(&m)["x"], 301);
     assert_eq!(h.last_action(&m)["y"], 151);
-    // The earlier 1280x720 screenshot (id 2) still maps with its own scale.
     h.ok("click", json!({ "machine": m, "x": 640, "y": 360, "screenshot": 2 }));
     assert_eq!(h.last_action(&m)["x"], 960);
 
-    // Zoom: a part at native resolution; actions keep using the full screenshot.
     let z = h.tool("screenshot", json!({ "machine": m, "zoom": [100, 100, 200, 100] }));
     let zt = H::text(&z);
     assert!(zt.contains("[300, 300, 600, 300]") && zt.contains("600x300"), "{zt}");
     h.ok("click", json!({ "machine": m, "x": 100, "y": 50 }));
     assert_eq!(h.last_action(&m)["x"], 301);
 
-    // Big pictures stay within Anthropic's limits.
     let big = h.tool("screenshot", json!({ "machine": m, "maxWidth": 2576, "maxHeight": 2576 }));
     assert!(H::text(&big).contains("1920x1080"));
 
-    // Drag, scroll, act and screenshotAfter.
     h.ok("drag", json!({ "machine": m, "x": 10, "y": 10, "toX": 20, "toY": 20, "screenshot": 2 }));
     assert_eq!(h.last_action(&m), json!({ "type": "drag", "x": 15, "y": 15, "toX": 30, "toY": 30 }));
     let a = h.tool("act", json!({ "machine": m, "screenshot": 2, "screenshotAfter": true, "actions": [
@@ -239,19 +226,16 @@ fn screenshot_and_coordinate_round_trip() {
 #[test]
 fn drag_along_paths_and_strokes() {
     let mut h = H::new(true);
-    let m = h.machine(); // 1920x1080 desktop in a 1280x720 screenshot
+    let m = h.machine();
     h.ok("drag", json!({ "machine": m, "path": [[0, 0], [640, 360], [1279, 719]], "button": "right" }));
     let a = h.last_action(&m);
     assert_eq!(a["strokes"], json!([[0, 0, 960, 540, 1919, 1079]]));
     assert_eq!(a["button"], "right");
-    // default speed: ~2203 desktop pixels at 1500 px/s
     assert!((1460..=1480).contains(&a["ms"].as_u64().unwrap()), "{a}");
     h.ok("drag", json!({ "machine": m, "strokes": [[[10, 10], [20, 10]], [[30, 30]]], "durationMs": 800 }));
     assert_eq!(h.last_action(&m), json!({ "type": "drag", "strokes": [[15, 15, 30, 15], [45, 45]], "ms": 800 }));
-    // the broker waits for the drawing
     h.ok("drag", json!({ "machine": m, "path": [[0, 0], [10, 0]], "durationMs": 60000 }));
     assert!(h.fake.with(|s| s.timeouts.last().copied().flatten()).unwrap() >= 70);
-    // act takes drags along paths too
     h.ok("act", json!({ "machine": m, "actions": [{ "type": "drag", "path": [[1, 1], [2, 2]] }, { "type": "drag", "x": 1, "y": 1, "toX": 5, "toY": 5, "button": "middle" }] }));
     assert_eq!(h.last_action(&m)["button"], "middle");
 
@@ -270,7 +254,6 @@ fn drag_along_paths_and_strokes() {
         let e = h.err("drag", args.clone());
         assert!(e.contains(says), "{args}: {e}");
     }
-    // too many points in one call, across act's drags
     let half: Vec<_> = (0..2001).map(|i| json!([i % 1280, 5])).collect();
     let e = h.err("act", json!({ "machine": m, "actions": [{ "type": "drag", "path": half }, { "type": "drag", "path": half }] }));
     assert!(e.contains("At most 4000"), "{e}");
@@ -311,7 +294,6 @@ fn misuse_gets_plain_errors() {
     assert!(h.err("send_file", json!({ "machine": m, "hostPath": "relative.txt" })).contains("full path"));
     assert!(h.err("create_disposable", json!({ "template": "win11-agent", "name": "bad name!" })).contains("letters"));
     assert!(h.err("run", json!({ "machine": m, "command": "x", "args": ["a"] })).contains("shell 'none'"));
-    // Arguments that aren't an object.
     let r = h.rpc("tools/call", json!({ "name": "list_machines", "arguments": [1] }));
     assert_eq!(r["result"]["isError"], true);
 }
@@ -330,13 +312,10 @@ fn guest_and_broker_states() {
     assert!(h.ok("list_machines", json!({})).contains("paused: the person took control"));
     assert!(h.err("click", json!({ "machine": m, "x": 1, "y": 1 })).contains("took control"));
     h.fake.with(|s| s.machines.iter_mut().find(|x| x.name == m).unwrap().paused = false);
-    // Someone else's machine.
     h.fake.with(|s| s.machines.iter_mut().find(|x| x.name == "work-pc").unwrap().taken_by = Some("other".into()));
     assert!(h.err("take_machine", json!({ "machine": "work-pc" })).contains("another agent"));
-    // Destroyed machine.
     h.ok("destroy", json!({ "machine": m }));
     assert!(h.err("screenshot", json!({ "machine": m })).contains("no machine named t1"));
-    // Kill switch: refused from then on without asking GpuVM again.
     h.fake.with(|s| s.killed = true);
     assert!(h.err("list_machines", json!({})).contains("stopped this agent connection"));
     let calls = h.fake.with(|s| s.calls.len());
@@ -358,7 +337,6 @@ fn commands_files_and_offers() {
     assert!(blob.starts_with("Exit code 3") && blob.contains("--- stdout ---\nout-in-blob") && blob.contains("--- stderr ---\nerr-in-blob"), "{blob}");
     h.ok("write_file", json!({ "machine": m, "path": "C:/Users/agent/Desktop/Outbox/report.md", "content": "# Report\nok" }));
     assert!(h.ok("read_file", json!({ "machine": m, "path": "C:\\Users\\agent\\Desktop\\Outbox\\report.md" })).ends_with("# Report\nok"));
-    // Paths relative to the agent's home work the same.
     assert!(h.ok("read_file", json!({ "machine": m, "path": "Desktop\\Outbox\\report.md" })).ends_with("# Report\nok"));
     assert!(h.ok("offer_file", json!({ "machine": m, "path": "Desktop/Outbox/report.md", "note": "relative" })).contains("offer o"));
     assert!(h.err("read_file", json!({ "machine": m, "path": "\\\\server\\share\\x" })).contains("home folder"));
@@ -368,7 +346,6 @@ fn commands_files_and_offers() {
     assert!(h.ok("read_file", json!({ "machine": m, "path": "C:\\Users\\agent\\b.bin" })).contains("binary file (4 bytes)"));
     h.ok("write_file", json!({ "machine": m, "path": "C:\\Users\\agent\\u16.txt", "content": "//5oAGkA", "encoding": "base64" }));
     assert!(h.ok("read_file", json!({ "machine": m, "path": "C:\\Users\\agent\\u16.txt" })).ends_with("hi"));
-    // send_file: the person allows it in GpuVM first, for the exact path, size and number of files.
     assert!(h.err("send_file", json!({ "machine": m, "hostPath": "C:\\Builds\\missing.exe" })).contains("can't be read"));
     let host = std::env::temp_dir().join(format!("gpuvm-mcp-test-{}.bin", std::process::id()));
     std::fs::write(&host, vec![7u8; 1000]).unwrap();
@@ -378,15 +355,11 @@ fn commands_files_and_offers() {
     assert!(no.contains("said no") && no.contains("Copy gpuvm-mcp-test"), "{no}");
     assert!(h.fake.with(|s| !s.calls.iter().any(|c| c == "file.send")), "nothing is sent without the approval");
     h.fake.with(|s| s.approval_answer = "allowed".into());
-    // A real host file is checked inside the machine after the copy, by size.
     assert!(h.ok("send_file", json!({ "machine": m, "hostPath": host_path })).contains("1000 bytes, checked"));
-    // Only the path goes with the request (agent-broker's contract): the service measures it and writes the title.
     let asked = h.fake.with(|s| s.last_approval.clone());
     assert_eq!((asked["kind"].as_str(), asked["path"].as_str()), (Some("send"), Some(host_path.as_str())));
-    // Its own 10 minutes, whatever the session's default approval timeout is.
     assert_eq!(asked["timeoutSec"], 600);
     assert!(asked.get("sizeBytes").is_none() && asked.get("files").is_none() && asked.get("title").is_none(), "{asked}");
-    // A folder works the same; the local measure only words the refusal.
     let dir = std::env::temp_dir().join(format!("gpuvm-mcp-dir-{}", std::process::id()));
     std::fs::create_dir_all(dir.join("sub")).unwrap();
     std::fs::write(dir.join("a.txt"), b"12345").unwrap();
@@ -397,7 +370,6 @@ fn commands_files_and_offers() {
     h.fake.with(|s| s.approval_answer = "allowed".into());
     h.ok("send_file", json!({ "machine": m, "hostPath": dir.to_string_lossy() }));
     let _ = std::fs::remove_dir_all(&dir);
-    // Changed after the person allowed it: the service says needs_approval; the agent is told to ask again.
     h.fake.with(|s| s.send_changed = true);
     assert!(h.err("send_file", json!({ "machine": m, "hostPath": host_path })).contains("changed after the person allowed it"));
     h.fake.with(|s| s.send_changed = false);
@@ -411,27 +383,21 @@ fn commands_files_and_offers() {
     assert!(o.contains("offer o"), "{o}");
     let id = h.fake.with(|s| s.offers.keys().next().unwrap().clone());
     assert!(h.ok("offer_status", json!({ "machine": m, "offerId": id })).contains("still waiting"));
-    // Destroying would lose the waiting file: refused unless forced.
     let refused = h.err("destroy", json!({ "machine": m }));
     assert!(refused.contains("still waiting") && refused.contains("force"), "{refused}");
     h.fake.with(|s| s.offers.get_mut(&id).unwrap().1 = "accepted".into());
-    // Accepted: the file's name and where in general, never the person's absolute path.
     let acc = h.ok("offer_status", json!({ "machine": m, "offerId": id }));
     assert!(acc.contains("accepted") && acc.contains("(report.md)") && acc.contains("Downloads\\GpuVM") && !acc.contains("C:\\Users\\person"), "{acc}");
     assert!(h.err("offer_file", json!({ "machine": m, "path": "C:\\Users\\agent\\Desktop\\Outbox\\sub\\x.txt", "note": "n" })).contains("directly inside"));
-    // Restore points: not on disposable machines (turning them off deletes them), only on taken normal ones.
     assert!(h.err("restore_point_create", json!({ "machine": m })).contains("is disposable"));
     assert!(h.ok("open_viewer", json!({ "machine": m, "waitSeconds": 0 })).contains(m.as_str()));
-    // Only machines this connection took: the viewer can start or resume one.
     assert!(h.err("open_viewer", json!({ "machine": "work-pc" })).contains("Take work-pc first"));
-    // Step notes never carry what the model wrote, only its length.
     h.ok("type", json!({ "machine": m, "text": "secret-password-123" }));
     h.ok("run", json!({ "machine": m, "command": "echo top-secret", "stdin": "more-secret" }));
     let notes = h.fake.with(|s| s.notes.join("\n"));
     assert!(!notes.contains("secret") && notes.contains("(19 characters)"), "{notes}");
     assert!(h.err("destroy", json!({ "machine": "work-pc" })).contains("Take work-pc first"));
     assert!(h.err("restore_point_create", json!({ "machine": "work-pc" })).contains("Take work-pc first"));
-    // A normal machine that is off: take starts it.
     h.fake.with(|s| s.machines.iter_mut().find(|x| x.name == "work-pc").unwrap().off = true);
     assert!(h.ok("list_machines", json!({})).contains("work-pc: off"));
     assert!(h.ok("take_machine", json!({ "machine": "work-pc" })).contains("ready (screen 1920x1080)"));
@@ -439,7 +405,6 @@ fn commands_files_and_offers() {
     let p = h.ok("restore_point_create", json!({ "machine": "work-pc", "label": "clean" }));
     assert!(p.contains("clean"));
     assert!(h.ok("restore_point_revert", json!({ "machine": "work-pc", "point": "clean" })).contains("back at clean"));
-    // The person says no in GpuVM: nothing happens.
     h.fake.with(|s| s.approval_answer = "denied".into());
     assert!(h.err("restore_point_revert", json!({ "machine": "work-pc", "point": "clean" })).contains("said no"));
     assert!(h.err("request_approval", json!({ "machine": "work-pc", "kind": "network", "title": "Open the network", "reason": "Download a tool" })).contains("said no"));
@@ -447,7 +412,6 @@ fn commands_files_and_offers() {
     assert!(h.ok("request_approval", json!({ "machine": "work-pc", "kind": "admin", "title": "Install as admin", "reason": "Test the installer" })).contains("allowed"));
     assert!(h.err("request_approval", json!({ "machine": "work-pc", "kind": "delete", "title": "x", "reason": "y" })).contains("admin, network or other"));
     h.fake.with(|s| s.approval_answer = "pending".into());
-    // No answer in time: the approval request is withdrawn, so nobody is asked later about it.
     let late = h.err("request_approval", json!({ "machine": "work-pc", "kind": "other", "title": "x", "reason": "y", "waitSeconds": 0 }));
     assert!(late.contains("was withdrawn"), "{late}");
     assert!(h.fake.with(|s| s.approvals.values().any(|(_, st)| st == "withdrawn")));
@@ -463,7 +427,7 @@ fn commands_files_and_offers() {
 fn budgets_and_human_requests() {
     let mut h = H::new(false);
     h.fake.with(|s| s.max_steps = 3);
-    let m = h.machine(); // the capture is 1 step (the screen size came with take)
+    let m = h.machine();
     h.ok("key", json!({ "machine": m, "keys": "enter" }));
     h.ok("key", json!({ "machine": m, "keys": "enter" }));
     assert!(h.err("key", json!({ "machine": m, "keys": "enter" })).contains("budget"));
@@ -471,10 +435,8 @@ fn budgets_and_human_requests() {
     let mut h = H::new(false);
     let m = h.machine();
     assert!(h.ok("request_human", json!({ "machine": m, "message": "Please accept the UAC prompt." })).contains("paused"));
-    // Paused by its own request: the error says so, not "the person took control".
     let waiting = h.err("click", json!({ "machine": m, "x": 1, "y": 1 }));
     assert!(waiting.contains("waiting for the person to do what you asked") && !waiting.contains("took control"), "{waiting}");
-    // Waiting: handed back during the wait.
     let fake = h.fake.clone();
     let name = m.clone();
     std::thread::spawn(move || {
@@ -483,7 +445,6 @@ fn budgets_and_human_requests() {
     });
     let r = h.ok("request_human", json!({ "machine": m, "message": "Again", "waitSeconds": 10 }));
     assert!(r.contains("handed t1 back"), "{r}");
-    // Cancelled while waiting: returns at once.
     let started = Instant::now();
     let id = h.send("tools/call", json!({ "name": "request_human", "arguments": { "machine": m, "message": "x", "waitSeconds": 600 } }));
     std::thread::sleep(Duration::from_millis(30));
@@ -491,17 +452,14 @@ fn budgets_and_human_requests() {
     let r = h.wait_for(id);
     assert!(H::text(&r["result"]).contains("hasn't handed") && H::text(&r["result"]).contains("cancel_request"));
     assert!(started.elapsed() < Duration::from_secs(5));
-    // Giving up: cancel_request withdraws its own request and the machine is usable again.
     assert!(h.err("write_file", json!({ "machine": m, "path": "Desktop\\Outbox\\r.md", "content": "x" })).contains("cancel_request"));
     assert!(h.ok("cancel_request", json!({ "machine": m })).contains("yours again"));
     h.ok("write_file", json!({ "machine": m, "path": "Desktop\\Outbox\\r.md", "content": "report" }));
     assert!(h.err("cancel_request", json!({ "machine": m })).contains("no request to the person pending"));
-    // The person answered (handed it back): the broker no longer knows the request (not_found, as on the real one).
     h.ok("request_human", json!({ "machine": m, "message": "z" }));
     h.fake.with(|s| { let x = s.machines.iter_mut().find(|x| x.name == m).unwrap(); x.human_request = None; x.paused = false; });
     let answered = h.err("cancel_request", json!({ "machine": m }));
     assert!(answered.contains("already answered") && !answered.contains("took control"), "{answered}");
-    // A pause the person started can't be cancelled by the agent.
     h.ok("request_human", json!({ "machine": m, "message": "y" }));
     h.fake.with(|s| { let x = s.machines.iter_mut().find(|x| x.name == m).unwrap(); x.human_request = None; x.paused_by = "control".into(); });
     assert!(h.err("cancel_request", json!({ "machine": m })).contains("took control"));
@@ -518,7 +476,6 @@ fn approvals_modern_multi_round_trip() {
     assert_eq!(first["resultType"], "input_required");
     assert!(first["inputRequests"]["confirm"]["params"]["message"].as_str().unwrap().contains("whoami"));
     let state = first["requestState"].as_str().unwrap().to_string();
-    // Tampered or mismatched state is refused.
     let bad = h.rpc("tools/call", json!({ "name": "run", "arguments": { "machine": m, "command": "del *" }, "requestState": state,
         "inputResponses": { "confirm": { "action": "accept" } } }))["result"].clone();
     assert_eq!(bad["isError"], true);
@@ -528,30 +485,24 @@ fn approvals_modern_multi_round_trip() {
         "inputResponses": { "confirm": { "action": "accept", "content": {} } } }))["result"].clone();
     assert!(H::text(&ok).starts_with("Exit code 0"), "{ok}");
     assert_eq!(ok["resultType"], "complete");
-    // Single use.
     let again = h.rpc("tools/call", json!({ "name": "run", "arguments": args, "requestState": state,
         "inputResponses": { "confirm": { "action": "accept" } } }))["result"].clone();
     assert_eq!(again["isError"], true);
-    // Declined.
     let first = h.rpc("tools/call", json!({ "name": "run", "arguments": args }))["result"].clone();
     let declined = h.rpc("tools/call", json!({ "name": "run", "arguments": args, "requestState": first["requestState"],
         "inputResponses": { "confirm": { "action": "decline" } } }))["result"].clone();
     assert!(H::text(&declined).contains("declined"));
-    // Tools that aren't low-risk confirmations run without asking.
     h.ok("key", json!({ "machine": m, "keys": "enter" }));
 }
 
 #[test]
 fn approvals_off_by_default_and_legacy_elicitation() {
-    // Off by default: no question even if the client could ask.
     let mut h = H::with(true, json!({ "elicitation": {} }));
     let m = h.machine();
     assert!(h.ok("run", json!({ "machine": m, "command": "whoami" })).starts_with("Exit code 0"));
 
-    // Legacy clients get an elicitation/create request.
     let mut h = H::with(false, json!({ "elicitation": {} }));
     h.fake.with(|s| s.elicitation = true);
-    // The setting is read when the connection registers (at initialize): register again.
     h.server.ctx.disconnect();
     let m = h.machine();
     for (answer, expect_ok) in [("accept", true), ("decline", false)] {
@@ -575,20 +526,17 @@ fn approvals_off_by_default_and_legacy_elicitation() {
 
 #[test]
 fn approvals_fail_closed_when_the_client_cannot_ask() {
-    // Modern client without elicitation, approvals on: refused, nothing runs.
     let mut h = H::with(true, json!({}));
     h.fake.with(|s| s.elicitation = true);
     let m = h.machine();
     let e = h.err("run", json!({ "machine": m, "command": "whoami" }));
     assert!(e.contains("can't show the question"), "{e}");
     assert!(h.fake.with(|s| s.notes.iter().all(|n| !n.starts_with("run"))), "the command never reached the machine");
-    // Legacy client without elicitation: the same.
     let mut h = H::with(false, json!({}));
     h.fake.with(|s| s.elicitation = true);
     h.server.ctx.disconnect();
     let m = h.machine();
     assert!(h.err("write_file", json!({ "machine": m, "path": "Desktop\\x.txt", "content": "x" })).contains("can't show the question"));
-    // Tools outside the confirmation list are unaffected.
     h.ok("key", json!({ "machine": m, "keys": "enter" }));
 }
 
@@ -597,23 +545,19 @@ fn approvals_fail_closed_when_the_client_cannot_ask() {
 fn review_three_fixes() {
     let mut h = H::new(false);
     let m = h.machine();
-    // (7) The screen changed size after the screenshot: coordinates from it are refused, a new one works.
     h.fake.with(|s| s.machines.iter_mut().find(|x| x.name == m).unwrap().screen_changed_at = Some(1_000));
     let stale = h.err("click", json!({ "machine": m, "x": 1, "y": 1 }));
     assert!(stale.contains("changed size after screenshot"), "{stale}");
     h.ok("screenshot", json!({ "machine": m }));
     h.ok("click", json!({ "machine": m, "x": 1, "y": 1 }));
-    // (11) act: the broker waits as long as the actions can take.
     h.ok("act", json!({ "machine": m, "actions": (0..12).map(|_| json!({ "type": "wait", "ms": 5000 })).collect::<Vec<_>>() }));
     let t = h.fake.with(|s| *s.timeouts.last().unwrap());
     assert!(t.unwrap() >= 12 * 6, "{t:?}");
     h.ok("key", json!({ "machine": m, "keys": "enter" }));
     assert_eq!(h.fake.with(|s| *s.timeouts.last().unwrap()), Some(30));
-    // (14) run: at most 580 s, the broker waits 20 s more.
     assert!(h.err("run", json!({ "machine": m, "command": "x", "timeoutSeconds": 600 })).contains("1 to 580"));
     h.ok("run", json!({ "machine": m, "command": "x", "timeoutSeconds": 580 }));
     assert_eq!(h.fake.with(|s| *s.timeouts.last().unwrap()), Some(600));
-    // (8) A second copy gets "name (2).ext" in the machine: that's the name checked and reported.
     let host = std::env::temp_dir().join(format!("gpuvm-mcp-twice-{}.txt", std::process::id()));
     std::fs::write(&host, b"twice").unwrap();
     let hp = host.to_string_lossy().to_string();
@@ -621,7 +565,6 @@ fn review_three_fixes() {
     let second = h.ok("send_file", json!({ "machine": m, "hostPath": hp }));
     assert!(second.contains(&format!("gpuvm-mcp-twice-{} (2).txt", std::process::id())) && second.contains("5 bytes, checked"), "{second}");
     let _ = std::fs::remove_file(&host);
-    // (15) The person allows just as the wait ends: the answer counts, not "hasn't answered".
     let mut h2 = H::new(false);
     h2.ok("take_machine", json!({ "machine": "work-pc" }));
     h2.fake.with(|s| s.answer_late = true);
@@ -647,9 +590,7 @@ fn ready_when_the_signed_in_event_came_after_a_stale_snapshot() {
     let started = Instant::now();
     let t = h.ok("take_machine", json!({ "machine": "work-pc", "waitSeconds": 20 }));
     assert!(t.contains("its agent is ready") && started.elapsed() < Duration::from_secs(5), "{t}");
-    // No screen in the snapshot: the screenshot asks the agent itself.
     assert!(H::text(&h.tool("screenshot", json!({ "machine": "work-pc" }))).contains("desktop 1920x1080"));
-    // Nobody signed in (no event): not ready.
     h.fake.with(|s| s.machines.iter_mut().find(|x| x.name == "work-pc").unwrap().stale_snapshot = false);
 }
 
@@ -662,7 +603,6 @@ fn a_copy_with_no_display_fails_at_once_and_is_deleted() {
     assert!(e.contains("nd1 can't be used: The agent is signed in but has seen no display") && e.contains("deleted again"), "{e}");
     assert!(started.elapsed() < Duration::from_secs(5), "no 600 s wait");
     assert!(h.fake.with(|s| !s.machines.iter().any(|m| m.name == "nd1")), "the copy was deleted");
-    // take_machine on such a machine: an error, not "not ready yet".
     h.fake.with(|s| s.machines.iter_mut().find(|x| x.name == "work-pc").unwrap().no_display = true);
     assert!(h.err("take_machine", json!({ "machine": "work-pc" })).contains("can't be used"));
 }
@@ -673,25 +613,20 @@ fn control_changes_are_said_once_and_wait_for_person_waits() {
     let m = h.machine();
     assert!(h.ok("wait_for_person", json!({ "machine": m })).contains("isn't paused"));
     h.ok("screenshot", json!({ "machine": m }));
-    // The person takes control: the refused call says so itself (no second note).
     h.fake.with(|s| { let x = s.machines.iter_mut().find(|x| x.name == m).unwrap(); x.paused = true; x.paused_by = "control".into(); });
     let refused = h.err("screenshot", json!({ "machine": m }));
     assert_eq!(refused.matches("took control").count(), 1, "{refused}");
-    // Nobody hands it back within the wait.
     assert!(h.ok("wait_for_person", json!({ "machine": m, "waitSeconds": 1 })).contains("still has"));
-    // Handed back between two calls: the next result says it once.
     h.fake.with(|s| s.machines.iter_mut().find(|x| x.name == m).unwrap().paused = false);
     let back = h.ok("screenshot", json!({ "machine": m }));
     assert!(back.contains("handed") && back.contains("fresh screenshot"), "{back}");
     assert!(!h.ok("screenshot", json!({ "machine": m })).contains("handed"));
 }
 
-/// Lab 058: a screenshot or an action sent while a command runs is answered at once, not after the command.
 #[test]
 fn screenshots_and_input_do_not_wait_for_a_running_command() {
     let mut h = H::new(false);
     let m = h.machine();
-    // A run that is waited for (another thread of the client sends it): the screenshot next to it doesn't queue.
     let run = h.send("tools/call", json!({ "name": "run", "arguments": { "machine": m, "command": "wait", "shell": "none", "args": ["3000"] } }));
     std::thread::sleep(Duration::from_millis(50));
     h.ok("screenshot", json!({ "machine": m }));
@@ -700,7 +635,6 @@ fn screenshots_and_input_do_not_wait_for_a_running_command() {
     let r = h.wait_for(run);
     assert!(H::text(&r["result"]).contains("Exit code 0"), "{r}");
 
-    // run background: answers at once; screenshots and input meanwhile; run_result gives the output once.
     let t = Instant::now();
     let started = h.ok("run", json!({ "machine": m, "command": "wait", "shell": "none", "args": ["3000"], "background": true }));
     assert!(t.elapsed() < Duration::from_millis(2000) && started.contains("run-1"), "{started}");
@@ -708,7 +642,6 @@ fn screenshots_and_input_do_not_wait_for_a_running_command() {
         h.ok("screenshot", json!({ "machine": m }));
         h.ok("click", json!({ "machine": m, "x": 10, "y": 10 }));
     }
-    // all of that happened while the command still ran
     assert!(h.ok("run_result", json!({ "machine": m, "runId": "run-1" })).contains("still running"));
     let out = h.ok("run_result", json!({ "machine": m, "runId": "run-1", "waitSeconds": 10 }));
     assert!(out.contains("Exit code 0") && out.contains("wait 3000"), "{out}");
@@ -727,7 +660,6 @@ fn background_runs_are_limited_and_keep_the_pause() {
     for i in 1..=4 {
         assert!(h.ok("run_result", json!({ "machine": m, "runId": format!("run-{i}"), "waitSeconds": 10 })).contains("Exit code 0"));
     }
-    // The person took control: a background run is refused like any other step, and its result says why.
     h.fake.with(|s| { let x = s.machines.iter_mut().find(|x| x.name == m).unwrap(); x.paused = true; x.paused_by = "control".into(); });
     let started = h.ok("run", json!({ "machine": m, "command": "whoami", "background": true }));
     let id = started.split_whitespace().find(|w| w.starts_with("run-")).unwrap().to_string();
@@ -741,7 +673,6 @@ fn delay_ms_waits_before_the_screenshot_and_after_actions() {
     let t = Instant::now();
     h.ok("screenshot", json!({ "machine": m, "delayMs": 300 }));
     assert!(t.elapsed() >= Duration::from_millis(300), "{:?}", t.elapsed());
-    // After acting, before the after-screenshot: the action itself goes at once.
     let before = h.fake.with(|s| s.machines.iter().find(|x| x.name == m).unwrap().actions.len());
     let r = h.send("tools/call", json!({ "name": "key", "arguments": { "machine": m, "keys": "enter", "delayMs": 1500, "screenshotAfter": true } }));
     let t = Instant::now();
@@ -752,7 +683,6 @@ fn delay_ms_waits_before_the_screenshot_and_after_actions() {
     let r = h.wait_for(r);
     assert!(t.elapsed() >= Duration::from_millis(1400), "{:?}", t.elapsed());
     assert!(r["result"]["content"].as_array().unwrap().iter().any(|c| c["type"] == "image"));
-    // Out of range: refused before anything is done.
     assert!(h.err("screenshot", json!({ "machine": m, "delayMs": 10001 })).contains("0 to 10000"));
     let n = h.fake.with(|s| s.machines.iter().find(|x| x.name == m).unwrap().actions.len());
     assert!(h.err("key", json!({ "machine": m, "keys": "a", "delayMs": -1 })).contains("delayMs"));
@@ -763,7 +693,6 @@ fn delay_ms_waits_before_the_screenshot_and_after_actions() {
 fn input_calls_keep_their_order() {
     let mut h = H::new(false);
     let m = h.machine();
-    // Sent back to back without waiting: each runs on its own thread, yet they reach the machine in order.
     let ids: Vec<u64> = (0..30).map(|i| h.send("tools/call", json!({ "name": "type", "arguments": { "machine": m, "text": format!("t{i}") } }))).collect();
     for id in ids {
         h.wait_for(id);

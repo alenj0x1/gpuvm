@@ -2,8 +2,6 @@ import { useEffect, useState } from "react";
 import { IconBulb } from "@tabler/icons-react";
 import { t } from "./i18n";
 
-/** Shortcuts and things worth knowing about GpuVM, for the waits (Home loading, a machine opening). Facts only: the
- *  figure is lab 020's (60 FPS adds a frame). */
 function tips(): string[] {
   return [
     t("Ctrl+Alt+Shift+G opens the panel while you're on a machine."),
@@ -19,7 +17,6 @@ function tips(): string[] {
   ];
 }
 
-/** One tip at a time, changing every few seconds with a soft fade. */
 export function Tips({ className = "" }: { className?: string }) {
   const list = tips();
   const [i, setI] = useState(() => Math.floor(Math.random() * list.length));

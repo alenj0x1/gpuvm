@@ -1,6 +1,4 @@
-# Templates: a VM's Windows saved as a read-only base disk. A VM created from a template gets a differencing
-# disk on top of it (only what changes is written), so it is ready in seconds and takes a few GB.
-# Templates live in <root>\.templates\<name>\ (a dot can't start a VM name, so they never clash with VM folders).
+# A dot can't start a VM name, so <root>\.templates never clashes with VM folders.
 
 function Get-TemplateRoot { Join-Path (Get-GpuVMDefaultRoot) '.templates' }
 
@@ -9,7 +7,7 @@ function Get-TemplateDirectory {
     Join-Path (Get-TemplateRoot) $Name
 }
 
-# The template's metadata (template.json) with the paths taken from where it really is, never from the file.
+# Paths taken from where it really is, never from the file.
 function Read-GpuVMTemplate {
     param([Parameter(Mandatory)][ValidatePattern('^[\w-]{1,40}$')][string]$Name)
     $dir = Get-TemplateDirectory -Name $Name
@@ -18,8 +16,6 @@ function Read-GpuVMTemplate {
     $meta = Read-JsonFile $metaPath
     $meta['name'] = $Name
     $meta['dir'] = $dir
-    # A template is its base disk plus the layers Update-GpuVMTemplate added on top (each a read-only differencing
-    # disk of the one before). New copies sit on the last one; older copies keep the layer they were made on.
     $layers = @(if ($meta['layers']) { $meta['layers'] | ForEach-Object { [string]$_ } } else { "$Name.vhdx" })
     foreach ($layer in $layers) {
         if ($layer -notmatch '^[\w.-]{1,80}\.vhdx$' -or $layer -match '\.\.') { throw "The template '$Name' names a disk GpuVM doesn't use ($layer)." }
@@ -30,13 +26,9 @@ function Read-GpuVMTemplate {
     $meta
 }
 
-# The VMs whose disk sits on top of a template (by the disk's real parent, not by what a state file says). Several
-# paths: the template's layers (a copy made before an update sits on an inner one).
 function Get-TemplateChildVM {
     param([Parameter(Mandatory)][string[]]$VhdPath)
     $full = @($VhdPath | ForEach-Object { [IO.Path]::GetFullPath($_) })
-    # Every disk Hyper-V knows (wherever its VM lives) plus the kept disks in GpuVM's folder, following each
-    # disk's chain of parents: a copy of a copy also depends on the template.
     $disks = [ordered]@{}
     foreach ($drive in Get-VM | Get-VMHardDiskDrive) { if ($drive.Path) { $disks[[IO.Path]::GetFullPath($drive.Path)] = $drive.VMName } }
     foreach ($dir in Get-ChildItem -LiteralPath (Get-GpuVMDefaultRoot) -Directory -ErrorAction SilentlyContinue | Where-Object Name -notlike '.*') {
@@ -54,9 +46,7 @@ function Get-TemplateChildVM {
     @($users | Select-Object -Unique)
 }
 
-# A copy of a template must not look like the VM it came from to Moonlight: Sunshine gets a new identity and
-# certificate (it creates them again when they are missing) and forgets the paired devices. Its web credentials
-# stay, so GpuVM keeps using the ones saved with the template. Runs on the clone's disk before it ever boots.
+# Sunshine makes a new identity and certificate when they are missing.
 function Reset-ClonedGuestIdentity {
     param([Parameter(Mandatory)][string]$WindowsRoot)
     $config = Join-Path $WindowsRoot 'Program Files\Sunshine\config'
@@ -70,14 +60,11 @@ function Reset-ClonedGuestIdentity {
         [IO.File]::WriteAllText($statePath, ($state | ConvertTo-Json -Depth 10))
     }
     foreach ($path in $pems) { if (Test-Path -LiteralPath $path) { [IO.File]::Delete($path) } }
-    # Never the template's agent secret: each copy gets its own from Install-GpuVMAgent (an older template could
-    # still carry one).
+    # Never the template's agent secret: each copy gets its own.
     Remove-GuestAgentSecret -WindowsRoot $WindowsRoot
 }
 
-# Templates and shared disks don't inherit the root's read access for the Virtual Machines group: only
-# Administrators and SYSTEM, and Hyper-V grants each VM access to the disks it attaches (a template is reached as
-# the parent of a VM's disk). So one VM's worker process can't read another's template or shared disk.
+# Not inheriting the Virtual Machines group's read access: one VM's worker process can't read another's template or shared disk.
 function Protect-GpuVMSharedFolder {
     param([Parameter(Mandatory)][string]$Path)
     $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
@@ -86,9 +73,7 @@ function Protect-GpuVMSharedFolder {
     if ($LASTEXITCODE -ne 0) { throw "Couldn't set the permissions of $Path." }
 }
 
-# A copy's settings: processors, memory, GPU and Moonlight from the profile; what lives inside Windows (user, apps,
-# cleanup level) from the template. Its disk is a differencing disk of exactly the template's size (Hyper-V can't be
-# trusted to grow one), and there is no ISO.
+# Hyper-V can't be trusted to grow a differencing disk: exactly the template's size.
 function New-TemplateCloneConfig {
     param(
         [Parameter(Mandatory)][System.Collections.IDictionary]$Config,
@@ -101,16 +86,11 @@ function New-TemplateCloneConfig {
     $Config
 }
 
-# ---------------------------------------------------------------- keeping agent templates current (layers)
-
-# What this GpuVM build puts into its machines, by content: GpuVM's Sunshine fork, the agent's exe and, with the
-# agent, winget's release (only the parts this build carries). Keys are the files' places inside Windows.
 function Get-BundledComponentStamp {
     $stamp = [ordered]@{}
     $package = try { Get-AgentPackage } catch { $null }
     if ($package) { $stamp['Program Files\GpuVM Agent\gpuvm-agent.exe'] = $package.Hash }
     foreach ($file in @(try { Get-SunshineForkFiles } catch { })) { $stamp["Program Files\Sunshine\$($file.Key)"] = $file.Hash }
-    # With the agent, winget for its user (lab 060): the stamp file Install-GuestWinget writes, by its text's hash.
     if ($package) {
         $winget = try { Get-WingetStampHash } catch { $null }
         if ($winget) { $stamp[$script:WingetStampKey] = $winget }
@@ -118,7 +98,6 @@ function Get-BundledComponentStamp {
     $stamp
 }
 
-# The same files' hashes inside a mounted Windows (a template's disk): $null for one that isn't there.
 function Get-GuestComponentStamp {
     param([Parameter(Mandatory)][string]$WindowsRoot, [Parameter(Mandatory)][string[]]$Keys)
     $stamp = [ordered]@{}
@@ -130,8 +109,6 @@ function Get-GuestComponentStamp {
     $stamp
 }
 
-# What a template must carry from this build: GpuVM's Sunshine when its machines stream, and the agent too when it
-# makes agent machines. A subset of the bundled stamp.
 function Get-TemplateComponentKeys {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Template, [Parameter(Mandatory)][System.Collections.IDictionary]$Bundled)
     $agent = [string]$Template['use'] -eq 'agent'
@@ -139,9 +116,6 @@ function Get-TemplateComponentKeys {
     @($Bundled.Keys | Where-Object { ($agent -and ($_ -like '*\gpuvm-agent.exe' -or $_ -eq $script:WingetStampKey)) -or ($streams -and $_ -like 'Program Files\Sunshine\*') })
 }
 
-# A template whose Sunshine (or agent, for an agent template) differs from this build's: every copy would install
-# them again (for an agent copy a full install and a power cycle, ~5 min instead of under one; lab 053 part 6). A
-# template from before stamps is stale.
 function Test-GpuVMTemplateStale {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Template, [System.Collections.IDictionary]$Bundled)
     if (-not $Bundled) { $Bundled = Get-BundledComponentStamp }
@@ -150,13 +124,10 @@ function Test-GpuVMTemplateStale {
     $have = $Template['components']
     if (-not ($have -is [System.Collections.IDictionary])) { return $true }
     foreach ($key in $keys) { if ([string]$have[$key] -ne [string]$Bundled[$key]) { return $true } }
-    # A template that streams also carries the controllers' driver, so its copies don't install it on their first open.
     if (@($keys | Where-Object { $_ -like 'Program Files\Sunshine\*' }).Count -and -not $Template['gamepad']) { return $true }
     $false
 }
 
-# The update marker: <template>\updating.json with the process and when it started. One older than an hour, or whose
-# process is gone, is left over from a run that died.
 function Get-TemplateUpdateMarker { param([Parameter(Mandatory)][System.Collections.IDictionary]$Template) Join-Path $Template['dir'] 'updating.json' }
 
 function Test-TemplateUpdating {

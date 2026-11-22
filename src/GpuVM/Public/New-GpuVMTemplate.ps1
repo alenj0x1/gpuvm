@@ -24,8 +24,6 @@ function New-GpuVMTemplate {
     $dir = Get-TemplateDirectory -Name $Name
     if (Test-Path -LiteralPath $dir) { throw "There's already a template called '$Name'." }
     $sourceVhd = Get-VHD -Path $source
-    # A dynamic copy only takes the space Windows uses; it needs at most that much free on the PC. A VM built on a
-    # template is merged with its parents, so the whole chain counts.
     $chainBytes = 0
     $link = $sourceVhd
     for ($i = 0; $link -and $i -lt 16; $i++) {
@@ -48,18 +46,13 @@ function New-GpuVMTemplate {
     $target = Join-Path $dir "$Name.vhdx"
     try {
         Write-Step "Copying the disk of $VMName (it may take a few minutes)"
-        # Convert-VHD copies into a new dynamic disk; a disk that is itself a copy of a template is merged into one.
         Convert-VHD -Path $source -DestinationPath $target -VHDType Dynamic -ErrorAction Stop
-        # A template never carries the VM's agent secret (every copy would share it): removed from the copy, before
-        # its unused space is given back.
-        # What agent and Sunshine it carries, so GpuVM can tell when a newer build makes it stale (Update-GpuVMTemplate).
         $stampKeys = @((Get-BundledComponentStamp).Keys)
         $components = Invoke-WithMountedWindows -Path $target -ScriptBlock {
             param($root)
             Remove-GuestAgentSecret -WindowsRoot $root
             if ($stampKeys) { Get-GuestComponentStamp -WindowsRoot $root -Keys $stampKeys }
         }
-        # Only what Windows uses now: the space of deleted files is given back (lab 045).
         Compress-GpuVMDiskCopy -Path $target | Out-Null
         (Get-Item -LiteralPath $target).IsReadOnly = $true
 
@@ -78,12 +71,8 @@ function New-GpuVMTemplate {
                 gpu       = $state['gpu']
                 streaming = $streaming
                 guest     = $state['guest']
-                # Apps chosen for the VM but not installed yet (it was never opened): its copies install them.
                 pendingApps = @(if ($state.Contains('pendingApps')) { $state['pendingApps'] })
-                # Apps already in its Windows: its copies show them as installed before their first check.
                 installedApps = @(if ($state.Contains('installedApps')) { $state['installedApps'] })
-                # A template of an agent machine makes agent machines: isolated, Sunshine as a service, its agent
-                # installed (with its own secret) the first time each copy is opened or claimed.
                 use           = (Get-TemplateAgentUse -State $state)['use']
                 agentSignInAs = (Get-TemplateAgentUse -State $state)['agentSignInAs']
                 layers        = @("$Name.vhdx")
@@ -105,7 +94,6 @@ function New-GpuVMTemplate {
     Get-GpuVMTemplate | Where-Object { $_['name'] -eq $Name }
 }
 
-# What a template records about its source's use: an agent machine's template makes agent machines.
 function Get-TemplateAgentUse {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$State)
     if ([string]$State['use'] -ne 'agent') { return @{ use = $null; agentSignInAs = $null } }

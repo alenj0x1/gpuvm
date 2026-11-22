@@ -6,7 +6,6 @@
   --hover: #e9e7e1;
   --selected: #ffffff;
   --text: #23252a;
-  /* Secondary and faint text keep a readable contrast on white (about 6.5:1 and 4:1). */
   --muted: #5a5d64;
   --faint: #7b7e85;
   --line: #e4e2db;
@@ -18,15 +17,11 @@
   --chart-cpu: #2f5bd3;
   --chart-gpu: #e5483f;
   --chart-grid: #eeece6;
-  /* Actions, selection, focus and usage bars use one accent the person picks (Preferencias); a machine's own color is
-     only its icon. Red is kept for what deletes or fails. Each accent has a deep tone for light and a brighter pastel
-     for dark; buttons and selections are mixed from it. */
   --accent: var(--accent-light);
   --tint-bg: color-mix(in srgb, var(--accent) 15%, #ffffff);
   --tint-bg-hover: color-mix(in srgb, var(--accent) 23%, #ffffff);
   --tint-fg: color-mix(in srgb, var(--accent) 72%, #000000);
   --sel: color-mix(in srgb, var(--accent) 14%, var(--surface));
-  /* The main button is a flat dark gray: the accent is kept for selection, values and focus. */
   --btn-bg: #2c2c31;
   --btn-bg-hover: #38383e;
   --btn-bg-press: #25252a;
@@ -48,9 +43,7 @@
   background: var(--bg);
 }
 
-/* Dark theme: applied through data-theme (follows the system or the user's choice in Preferencias) */
 :root[data-theme="dark"] {
-  /* Neutral graphite: pure grays with no blue tint, never black, never lighter than the fields for backgrounds. */
   --bg: #161616;
   --side: #1a1a1a;
   --surface: #1c1c1c;
@@ -87,7 +80,6 @@
   color-scheme: dark;
 }
 
-/* Accent colors to pick from: deep for light, brighter pastel for dark. */
 :root, :root[data-accent="blue"] { --accent-light: #2f5bd3; --accent-dark: #7d9cf0; }
 :root[data-accent="violet"] { --accent-light: #6a4fd2; --accent-dark: #a796f2; }
 :root[data-accent="teal"] { --accent-light: #1d7f7c; --accent-dark: #6ccfca; }
@@ -96,8 +88,6 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); }
-/* Like a desktop app: dragging over cards, cubes, sliders or handles never selects their text. What is typed stays
-   selectable, and so do errors, to copy them. */
 body { user-select: none; -webkit-user-select: none; }
 input, textarea, [contenteditable="true"], .error-text, .selectable { user-select: text; -webkit-user-select: text; }
 button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; }
@@ -107,7 +97,6 @@ input { font: inherit; color: inherit; }
 .app { position: relative; display: grid; grid-template-columns: var(--side-w, 248px) minmax(0, 1fr); grid-template-rows: var(--titlebar) minmax(0, 1fr); height: 100vh; overflow: hidden; }
 .app.single { grid-template-columns: 1fr; }
 
-/* Title bar and window border (no Windows frame) */
 :root { --titlebar: 40px; }
 .titlebar { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; height: var(--titlebar); position: relative; z-index: 45; }
 .titlebar-side { background: var(--side); }
@@ -123,7 +112,6 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
 .content { display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
 .content > .error-notice { margin: 16px 28px 0; }
 
-/* Sidebar */
 .side { background: var(--side); display: flex; flex-direction: column; padding: 4px 12px 16px; gap: 4px; min-width: 0; }
 .side-head { display: flex; align-items: center; gap: 10px; padding: 0 4px 16px; }
 .side-head strong { font-weight: 600; font-size: 15px; }
@@ -154,14 +142,12 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
 .dot.Paused, .dot.Saved { background: var(--warn); }
 .dot.Off { background: transparent; box-shadow: inset 0 0 0 1.5px var(--faint); }
 
-/* Content */
 .main { overflow-y: auto; padding: 24px 28px 32px; display: flex; flex-direction: column; gap: 16px; mask-image: linear-gradient(#000 calc(100% - 24px), transparent); }
 .card { background: var(--surface); border-radius: var(--r-lg); padding: 16px; }
 .head { display: flex; align-items: center; gap: 16px; }
 .head h1 { font-size: 20px; font-weight: 600; margin: 0; }
 .head .meta { color: var(--muted); font-size: 13px; margin-top: 2px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .head .actions { margin-left: auto; display: flex; align-items: center; gap: 4px; position: relative; }
-/* A narrow window: the actions drop below the name instead of squeezing it into a column. */
 @media (max-width: 960px) { .card.scene-head { grid-template-columns: minmax(0, 1fr); } .card.scene-head .actions { justify-content: flex-end; padding-top: 0; } }
 .state-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
 
@@ -193,7 +179,6 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
 
 .chart-card { display: flex; flex-direction: column; gap: 8px; }
 .chart-head { display: flex; align-items: center; gap: 16px; font-size: 12px; color: var(--muted); }
-/* A VM's disk on its drive: this machine (used, then the rest of its size), other machines' reserved room, free. */
 .disk-room { margin-top: 10px; display: grid; gap: 8px; }
 .disk-bar { display: flex; height: 6px; border-radius: 3px; background: var(--chart-grid); overflow: hidden; }
 .disk-bar .seg { height: 100%; transition: width 0.25s ease; }
@@ -207,7 +192,6 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
 .legend { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 10px; height: 3px; border-radius: 2px; display: inline-block; }
 
-/* Notices sit on the card surface like everything else; only their icon carries the warning color. */
 .notice { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--r-lg); background: var(--surface); color: var(--text); }
 .notice > svg:first-child, .notice-icon { flex: none; width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
 .notice > svg:first-child { padding: 7px; box-sizing: border-box; }
@@ -223,7 +207,6 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
 .field-top strong { font-weight: 600; }
 .options-foot { display: flex; align-items: center; gap: 12px; justify-content: flex-end; margin-top: 16px; font-size: 13px; color: var(--muted); }
 
-/* Custom controls */
 .slider { position: relative; height: 40px; cursor: pointer; touch-action: none; outline: none; }
 .slider .track, .slider .fill { position: absolute; top: 9px; height: 6px; border-radius: 6px; }
 .slider .track { left: 0; right: 0; background: var(--chart-grid); }
@@ -251,7 +234,6 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
 .menu button.danger { color: var(--danger); }
 .menu hr { border: 0; height: 1px; background: var(--line); margin: 4px 6px; }
 
-/* Dialog */
 .overlay { position: fixed; inset: var(--titlebar) 0 0; background: var(--scrim); display: grid; place-items: center; z-index: 40; padding: 24px; }
 .dialog { width: min(640px, 100%); max-height: calc(100vh - var(--titlebar) - 48px); overflow: hidden; background: var(--surface); border-radius: 18px; padding: 24px; display: flex; flex-direction: column; gap: 18px; }
 .dialog h2 { margin: 0; font-size: 18px; font-weight: 600; }
@@ -276,7 +258,6 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
 .log .now { color: var(--text); }
 .dialog-foot { display: flex; justify-content: flex-end; gap: 8px; }
 
-/* Empty states */
 .empty { margin: auto; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px; max-width: 420px; padding: 24px; }
 .empty h2 { margin: 8px 0 0; font-size: 20px; font-weight: 600; }
 .empty p { margin: 0; color: var(--muted); line-height: 1.5; }
@@ -295,7 +276,6 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
   .options { grid-template-columns: 1fr; }
 }
 
-/* UX review tweaks */
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .text-input:focus-visible { outline: none; }
 .chart-title { color: var(--text); font-weight: 600; font-size: 14px; }
@@ -317,19 +297,15 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
 .pref-slider > .slider { flex: 1; }
 .pref-state { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
 .segment-row { display: flex; gap: 8px; flex-wrap: wrap; }
-/* Segmented controls in a row grow to fill it, so stacked rows line up on both edges. */
 .segment-row > .segmented { flex: 0 1 auto; }
 .segment-row > .segmented button { justify-content: center; }
-/* A field that takes the whole row of a two-column grid (Moonlight: resolution, FPS and mode side by side). */
 .field.wide { grid-column: 1 / -1; }
 .saved { display: inline-flex; align-items: center; gap: 6px; color: var(--ok); font-weight: 500; }
 .dialog.narrow { width: min(460px, 100%); }
 .dialog-text { margin: 0; color: var(--muted); line-height: 1.5; }
 .dialog-form { display: flex; flex-direction: column; gap: 18px; flex: 1 1 auto; min-height: 0; }
-/* Header and footer stay put; only the content between them scrolls, fading at the edge where more is hidden. */
 .dialog-body { display: flex; flex-direction: column; gap: 18px; flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: none; margin: 0 -24px; padding: 0 24px; }
 .dialog-body::-webkit-scrollbar { display: none; }
-/* A thin line under the header / above the footer only while content is hidden behind it. */
 .dialog-body { border-top: 1px solid transparent; border-bottom: 1px solid transparent; }
 .dialog-body.fade-start { border-top-color: var(--line); }
 .dialog-body.fade-end { border-bottom-color: var(--line); }
@@ -342,7 +318,6 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
 .field-top .hint { color: var(--faint); font-size: 12px; }
 .choice.top { align-items: flex-start; }
 .choice.top .check { margin-top: 2px; }
-/* Icons beside text: a block box centered on the text line, never sitting on the baseline. */
 .choice-icon { color: var(--muted); flex: none; display: grid; place-items: center; }
 .choice-icon svg, svg.choice-icon { display: block; }
 .check.plain { box-shadow: none; color: var(--muted); }
@@ -351,7 +326,6 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
 .btn:disabled, .primary:disabled { opacity: 0.4; cursor: default; }
 /* A button showing a job's progress is disabled too, but its text must stay readable. */
 .btn:disabled:has(.spin), .primary:disabled:has(.spin) { opacity: 0.7; }
-/* Library (profiles, disks, ISOs) and app pickers */
 .library-head { display: flex; align-items: center; }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .card-head .section-title { margin: 0; }
@@ -377,13 +351,11 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
 .search-clear { position: absolute; right: 6px; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); }
 .search-clear:hover { background: var(--hover); color: var(--text); }
 .search-clear svg { display: block; }
-/* Category tabs stay on one line and scroll sideways when the dialog is narrow. */
 .app-tabs { flex: 0 1 auto; margin-left: auto; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
 .app-tabs::-webkit-scrollbar { display: none; }
 .app-tabs.fade-end { mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }
 .app-tabs.fade-start { mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent); }
 .app-tabs.fade-start.fade-end { mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent); }
-/* Four rows at most; the rest scrolls inside, fading out at the bottom edge. */
 .app-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 6px; align-content: start; }
 .app-grid.capped { max-height: 170px; overflow-y: auto; scrollbar-width: none; }
 .app-grid::-webkit-scrollbar { display: none; }
@@ -398,11 +370,9 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
 .cleanup-items li.keep svg { color: var(--warn); }
 .cleanup-items li.drop svg { color: var(--ok); }
 .app-logo { display: block; width: 20px; height: 20px; object-fit: contain; }
-/* Home */
 .home-continue .actions { gap: 8px; }
 .home-continue { flex-wrap: wrap; }
 .home-continue > .grow { flex: 1 1 200px; min-width: 0; }
-/* When the window is narrow the actions drop below the name instead of being cut off. */
 @media (max-width: 960px) { .home-continue .actions { width: 100%; justify-content: flex-end; } }
 .home-memory { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
 .home-memory .hint { color: var(--faint); font-size: 13px; }
@@ -444,26 +414,21 @@ html:not(.maximized) body::after { content: ""; position: fixed; inset: 0; box-s
 .row-skeleton .skeleton { border-radius: 6px; }
 .row-skeleton .skeleton.icon { width: 36px; height: 36px; border-radius: 10px; flex: none; }
 .row-skeleton .row-text { gap: 8px; }
-/* Sidebar loading rows: same box as a machine row (pattern + name + state), so nothing jumps when they load. */
 .side-skeleton { pointer-events: none; }
 .side-skeleton .skeleton { display: block; background: var(--hover); border-radius: 6px; }
 .side-skeleton .skeleton.icon { width: 28px; height: 28px; border-radius: 8px; flex: none; }
 .side-skeleton .name { display: flex; flex-direction: column; gap: 6px; }
 .side-skeleton .line { height: 12px; width: 70%; }
 .side-skeleton .line.short { height: 10px; width: 45%; }
-/* "Avanzado" in a card: a quiet text button whose chevron turns when open. */
 .disclosure { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; height: 28px; color: var(--muted); font-size: 13px; }
 .disclosure:hover { color: var(--text); }
 .disclosure svg { transition: transform 0.15s ease; }
 .disclosure[aria-expanded="true"] svg { transform: rotate(90deg); }
 .segment-row.disabled { opacity: 0.4; pointer-events: none; }
-/* A choice group never wraps inside its pill: when the card is narrow, one option per row, as a list. */
 @media (max-width: 600px) {
   .segment-row > .segmented { flex-direction: column; flex-wrap: nowrap; width: 100%; }
   .segment-row > .segmented button { justify-content: flex-start; }
 }
-/* Drop area over the viewer's picture (DropZone, window "viewer-drop"): the picture dims and the target shows in the
-   middle; files over it brighten the card's icon. */
 html.drop-window, html.drop-window body, html.drop-window #root { background: transparent; min-height: 0; height: 100%; overflow: hidden; }
 .drop-veil { box-sizing: border-box; height: 100%; display: grid; place-items: center; background: rgba(18, 19, 22, 0.55); }
 .drop-card { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 20px 28px; border-radius: var(--r-lg);
@@ -476,7 +441,6 @@ html.drop-window, html.drop-window body, html.drop-window #root { background: tr
 .drop-progress { box-sizing: border-box; height: 100%; display: flex; align-items: center; padding: 0 4px; border-radius: var(--r-lg);
   background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
 .drop-progress ul { list-style: none; margin: 0; padding: 0; flex: 1; min-width: 0; }
-/* Administrator-prompt card (PromptCard): its own transparent window over Moonlight. */
 html.prompt-window, html.prompt-window body, html.prompt-window #root { background: transparent; min-height: 0; height: 100%; overflow: hidden; }
 .prompt-card { box-sizing: border-box; height: 100%; display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: var(--r-lg);
   background: var(--surface); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
@@ -491,16 +455,10 @@ html.prompt-window, html.prompt-window body, html.prompt-window #root { backgrou
 .prompt-app .skeleton-line { display: block; height: 12px; width: 70%; margin: 2px 0; border-radius: 6px; background: var(--hover); animation: pulse 1.4s ease-in-out infinite; }
 .prompt-app .skeleton-line.short { width: 40%; }
 .prompt-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: auto; }
-/* Administrator-prompt dock (PromptDock): a transparent window the size of a machine's picture. The picture darkens
-   like Windows' secure desktop and the prompt drops from the top center, attached to the edge. Always graphite: it is
-   part of the picture, whatever the app's theme. */
 html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #root { background: transparent; min-height: 0; height: 100%; overflow: hidden; }
 .dock-stage { position: relative; height: 100%; --dk-bg: #1c1c1c; --dk-fg: #ebe8e1; --dk-muted: #a8a59e; --dk-line: #2f2f2f; --dk-chip: #262626; }
 .dock-veil { position: absolute; inset: 0; background: #161616; opacity: 0; transition: opacity 320ms ease-out; }
 .dock-veil.on { opacity: 0.45; }
-/* Anywhere over the picture (Settings › Appearance; prefs.ts sets these): --dock-x and --dock-y from 0 to 1 of the
-   room it has, so 0 and 1 touch the edges; square on the edges it touches. It slides in from an edge it touches, or
-   fades in where it floats. */
 .dock { position: absolute; left: calc(var(--dock-x, .5) * 100%); top: calc(var(--dock-y, 0) * 100%); translate: calc(var(--dock-x, .5) * -100%) calc(var(--dock-y, 0) * -100%);
   box-sizing: border-box; width: min(460px, calc(100% - 32px)); display: flex; align-items: center; gap: 12px;
   padding: 12px 14px; border-radius: var(--dock-radius, 0 0 16px 16px); background: var(--dk-bg); color: var(--dk-fg); font-size: 13px;
@@ -530,8 +488,6 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .pref-stack { flex-direction: column; align-items: flex-end; gap: 6px; }
 .pref-stack .segment-row { justify-content: flex-end; }
 .pref-stack > .hint { color: var(--faint); font-size: 13px; }
-/* Narrow window: each preference stacks its text above its choices, which take the whole width; on a phone the
-   choices become a list, one per line, so none is cut. */
 @media (max-width: 720px) {
   .pref-row { flex-direction: column; align-items: stretch; gap: 12px; }
   .pref-side { flex: auto; justify-content: space-between; }
@@ -543,11 +499,8 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
   .pref-row .segmented { flex-direction: column; }
   .pref-row .segmented button { flex: none; justify-content: flex-start; }
 }
-/* The machine's main button shows each step while it works: wide enough for them, the same width idle and busy. */
 .card.head .actions .primary { width: 260px; }
 
-/* Escenario: each machine's header is its scene (flowing lines), with name, state and actions on cards over it */
-/* On white the scenes' faint cells need a darker ink to show at the same opacity as in dark. */
 :root { --scene-ink: #2c2e33; }
 :root[data-theme="dark"] { --scene-ink: #a3a3a3; }
 .card.scene-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: 0; gap: 0; }
@@ -558,11 +511,8 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .scene-head .head-info { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 14px 16px 16px; }
 .scene-head .actions { padding: 14px 16px 16px; }
 .scene-head .head-text { min-width: 0; }
-/* The machine's name: one line at every width, an ellipsis (and its tooltip) when it doesn't fit. */
 .scene-head .head-text h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .scene-head .specs { display: contents; }
-/* A narrow header (small window, or the cube's panel open): icon, name and state on the left, the buttons on the
-   same row, and what the machine is in a row of its own underneath, at full width. */
 .main:has(> .scene-head) { container: vmmain / inline-size; }
 @container vmmain (max-width: 820px) {
   .card.scene-head { grid-template-columns: 76px minmax(0, 1fr) auto; grid-template-areas: "scene scene scene" "icon name actions" "icon state actions" "specs specs specs" "warn warn warn"; column-gap: 0; align-items: center; }
@@ -574,12 +524,10 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
   .scene-head .actions { grid-area: actions; padding: 14px 16px 0 12px; }
   .scene-head .specs { grid-area: specs; display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 16px 16px; }
   .scene-head .warn-text { grid-area: warn; margin: -8px 16px 16px; }
-  /* The name keeps one line (an ellipsis when long) and the buttons their place: the main button only takes what its
-     label needs here (its 260 px for the job's steps left the name 0 px wide at 620 px, under the buttons). */
+  /* Not the 260 px job width here: at 620 px it left the name 0 px wide. */
   .scene-head .actions { display: flex; align-items: center; min-width: 0; max-width: 100%; }
   .card.head.scene-head .actions .primary { width: auto; min-width: 0; max-width: 220px; flex: 0 1 auto; }
 }
-/* Narrower still: the main button goes to its icon alone, so the row never breaks and the name keeps room. */
 @container vmmain (max-width: 480px) {
   .card.head.scene-head .actions .primary:not(.busy) { width: var(--control); padding: 0; justify-content: center; }
   .card.head.scene-head .actions .primary:not(.busy) > span { display: none; }
@@ -588,17 +536,14 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .tab-body { display: flex; flex-direction: column; gap: 16px; }
 .tab-body .section-title:only-child, .tab-body .card > .section-title { display: none; }
 .empty-logo { display: block; border-radius: 24px; }
-/* The usage strip goes without lines: its columns and its charts are told apart by their own space. */
 .stat + .stat { border-left: 0; }
 .spark-room { height: 32px; margin-top: 8px; }
 .sparkline { display: block; width: 100%; height: 32px; }
 :root { --chart-mem: #2f9e6a; }
 :root[data-theme="dark"] { --chart-mem: #52c08b; }
 
-/* Options as rows: icon, name with its value, a line that explains it, and the control at the right */
 .opt-rows { display: flex; flex-direction: column; }
 .opt-row { display: grid; grid-template-columns: 32px minmax(0, 1fr) minmax(0, 360px); column-gap: 14px; row-gap: 10px; align-items: start; padding: 14px 0; }
-/* Options are separated by their own space, without lines between them. */
 .opt-row + .opt-row, .opt-disclosure + .opt-row { border-top: 0; }
 .opt-row:first-child { padding-top: 2px; }
 .opt-icon { width: 32px; height: 32px; border-radius: 8px; background: var(--tint-bg); color: var(--tint-fg); display: grid; place-items: center; align-self: start; }
@@ -608,12 +553,10 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .opt-desc { font-size: 13px; color: var(--muted); line-height: 1.45; }
 .opt-ctl { display: flex; justify-content: flex-end; min-width: 0; }
 .opt-ctl > .slider { flex: 1; }
-/* What goes under an option (lists, tiles, a bar) uses the row's whole width, from the icon's edge. */
 .opt-row.wide .opt-ctl, .opt-below { grid-column: 1 / -1; justify-content: flex-start; }
 .opt-disclosure { margin: 6px 0; align-self: flex-start; }
 @media (max-width: 900px) { .opt-row { grid-template-columns: 32px minmax(0, 1fr); } .opt-ctl { grid-column: 2 / -1; justify-content: flex-start; } }
 
-/* The app's own drop-down list */
 .dropdown { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 6px 10px; border-radius: var(--r); background: var(--control-bg); box-shadow: inset 0 0 0 1px var(--control-line); text-align: left; }
 .dropdown:hover, .dropdown.open { background: var(--control-bg-hover); }
 .dropdown-icon { display: grid; place-items: center; color: var(--muted); flex: none; width: 18px; }
@@ -621,8 +564,6 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .dropdown-label { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dropdown-detail { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dropdown-chevron { color: var(--muted); flex: none; }
-/* A list next to text fields in the same row (Create machine's name and space): same height, background and line
-   as them, on one line with its detail after the name. The pair takes half the row each, so neither is cut. */
 .create-account.pair { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .create-account .field > .dropdown { min-height: 0; height: var(--control); padding: 0 10px 0 12px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); }
 .create-account .field > .dropdown .dropdown-text { flex-direction: row; align-items: baseline; gap: 8px; }
@@ -644,14 +585,12 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .dropdown-icon.tone-ok { color: var(--ok); }
 .dropdown-icon.tone-warn { color: var(--warn); }
 
-/* Accent swatches: each one half light, half dark */
 .swatches { display: flex; gap: 8px; }
 .swatch { position: relative; width: 32px; height: 32px; border-radius: 50%; overflow: hidden; display: grid; place-items: center; }
 .swatch svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .swatch:hover { filter: brightness(1.08); }
 .swatch.on { outline: 1.5px solid var(--muted); outline-offset: 2px; }
 
-/* Shared disks, in the same rows as the options: icon, name with its state, size and how much it takes on the PC */
 .disk-row .machine-icon { align-self: start; }
 .disk-state { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--muted); }
 .disk-state i { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
@@ -663,22 +602,16 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .disk-use-bar span { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
 .disk-row .opt-ctl { align-self: center; }
 .side-meta { flex: none; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
-/* Tipo de uso heads its group: the rows it changes sit under it, indented, without lines between them. */
 .opt-row.section { padding-bottom: 8px; }
-/* The rows a group head changes sit together in one soft panel that starts where the head's icon does, instead of
-   an indent that left an empty column beside them. */
 .opt-row.sub { padding: 8px 12px; border-top: 0 !important; background: color-mix(in srgb, var(--text) 2%, transparent); }
 .opt-row.section + .opt-row.sub { border-radius: var(--r) var(--r) 0 0; padding-top: 12px; }
 .opt-row.sub:has(+ .opt-row:not(.sub)), .opt-row.sub:last-child { border-radius: 0 0 var(--r) var(--r); padding-bottom: 12px; margin-bottom: 8px; }
 .opt-row.sub .opt-icon { width: 20px; height: 28px; background: transparent; color: var(--muted); }
-/* The sub-options' box keeps 12 px on both sides, and its narrower icon column (20 + 12 = 32) puts their titles on
-   the same line as the option above them. */
 .opt-row.sub { grid-template-columns: 20px minmax(0, 1fr) minmax(0, 360px); }
 @media (max-width: 900px) { .opt-row.sub { grid-template-columns: 20px minmax(0, 1fr); } }
 .opt-row.section { grid-template-columns: 32px minmax(0, 1fr) auto; }
 
 
-/* All of a machine's sections on one page: a bar that stays on top while scrolling marks the one in view. */
 .section-nav { position: sticky; top: -24px; z-index: 5; display: flex; gap: 22px; margin: -8px 0 0; padding: 18px 0 0; background: var(--bg); }
 .section-nav button { position: relative; padding: 0 0 11px; font-size: 13px; color: var(--muted); }
 .section-nav button:hover { color: var(--text); }
@@ -686,7 +619,6 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .section-nav button.on::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; border-radius: 2px; background: var(--text); }
 .vm-section { display: flex; flex-direction: column; gap: 16px; scroll-margin-top: 44px; }
 
-/* The sidebar and the title bar are one surface; the content sits on it as a panel with a rounded top-left corner. */
 .app { background: var(--side); }
 .app:not(.single) > .content { border-top-left-radius: 14px; background: var(--bg); overflow: hidden; }
 .win-controls .app-action.labeled { width: auto; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; font-size: 12px; }
@@ -694,7 +626,6 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .side-foot { margin-top: 8px; flex: none; }
 .side-list { flex: 1 1 auto; min-height: 0; }
 
-/* Folding the sidebar slides it: the column narrows, the icons stay where they are and the names fade out. */
 .app { transition: grid-template-columns 0.24s cubic-bezier(0.3, 0.8, 0.3, 1); }
 .side { overflow: hidden; }
 .side-item, .side-head { white-space: nowrap; }
@@ -702,21 +633,17 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .app.collapsed .side-item .name, .app.collapsed .side-head strong, .app.collapsed .side-label, .app.collapsed .side-meta { opacity: 0; pointer-events: none; }
 .app.resizing, .app.resizing .side-edge { transition: none; cursor: col-resize; user-select: none; }
 .app.single .side-edge { display: none; }
-/* The sidebar's edge: a thin strip to drag, with a small tab that shows on hover and folds or unfolds it. */
 .side-edge { position: absolute; z-index: 30; top: var(--titlebar); bottom: 0; left: calc(var(--side-w, 248px) - 4px); width: 8px; cursor: col-resize;
   transition: left 0.24s cubic-bezier(0.3, 0.8, 0.3, 1); }
-/* A thin line on the edge that grows into a small pill when the pointer is over the sidebar: drag it to resize, click to fold. */
 .side-handle { position: absolute; top: 50%; left: 50%; width: 4px; height: 36px; transform: translate(-50%, -50%); border-radius: 4px;
   display: block; padding: 0; background: var(--handle); cursor: col-resize;
   transition: height 0.18s; }
 .side:hover ~ .side-edge .side-handle, .side-edge:hover .side-handle { height: 56px; background: var(--handle-open); }
 .side-edge .side-handle:hover { background: var(--handle-hover); }
-/* While the sidebar is being resized, the line takes the accent color. */
 .app.resizing .side-handle { height: 56px; background: var(--accent); }
 :root { --handle: #d9d7d0; --handle-open: #c9c7c0; --handle-hover: #a9a7a0; }
 :root[data-theme="dark"] { --handle: #2f2f2f; --handle-open: #3a3a3a; --handle-hover: #5a5a5a; }
 
-/* Windows cleanup: the levels as cards, what the chosen one does, and what is never touched */
 .levels { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 4px 0 0 46px; }
 .level { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 12px; border-radius: var(--r); text-align: left;
   box-shadow: inset 0 0 0 1px var(--control-line); }
@@ -729,14 +656,12 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .level-name { font-weight: 600; }
 .level-tagline { font-size: 12px; color: var(--muted); line-height: 1.4; }
 .level-applied { position: absolute; top: 10px; right: 10px; display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--ok); }
-/* Under a card's head its content starts at the card's edge, like the head: an indent left an empty column. */
 .card > .cleanup-items, .levels-none, .levels-safe { margin-left: 0; }
 .card > .cleanup-items { margin-top: 14px; }
 .levels-none { color: var(--faint); font-size: 13px; margin-top: 14px; margin-bottom: 0; }
 .levels-safe { display: flex; align-items: center; gap: 6px; color: var(--faint); font-size: 12px; margin-top: 12px; margin-bottom: 2px; }
 @media (max-width: 900px) { .levels { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-left: 0; } .card > .cleanup-items, .levels-none, .levels-safe { margin-left: 0; } }
 
-/* Apps: installed chips, a bar with search and categories, and the catalog as tiles or a list */
 .apps-card > :not(.opt-rows) { margin-left: 0; }
 .apps-installed { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 .app-chip { display: inline-flex; align-items: center; gap: 8px; padding: 4px 4px 4px 8px; border-radius: var(--r); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--control-line); font-size: 13px; font-weight: 500; }
@@ -744,7 +669,6 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .apps-bar { display: flex; align-items: center; gap: 10px; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; }
 .app-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 8px; }
 .app-tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 8px 12px; border-radius: var(--r); background: color-mix(in srgb, var(--text) 2.5%, transparent); text-align: center; }
-/* Tiles are told apart by a soft fill, without a gray border. */
 .app-tile:hover:not(:disabled) { background: color-mix(in srgb, var(--text) 5%, transparent); }
 .app-tile.on { background: var(--sel); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
 .app-tile-logo .app-logo { width: 30px; height: 30px; }
@@ -761,7 +685,6 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .apps-selection { position: sticky; bottom: 0; display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 8px 8px 8px 14px; border-radius: var(--r); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--control-line); }
 .apps-selection > span { flex: 1; font-size: 13px; }
 @media (max-width: 900px) { .apps-card > :not(.opt-rows) { margin-left: 0; } }
-/* Folded, every row is a 40 px square with its icon exactly in the middle (the names and the GPU use go to 0 width). */
 .side-item { overflow: hidden; transition: padding 0.24s cubic-bezier(0.3, 0.8, 0.3, 1), gap 0.24s; }
 .app.collapsed .side-item { padding: 6px; gap: 0; }
 .app.collapsed .side-item .name, .app.collapsed .side-meta { width: 0; flex: 0 0 0; }
@@ -770,7 +693,6 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .app-scroll.fade-start { mask-image: linear-gradient(to top, #000 calc(100% - 28px), transparent); }
 .app-scroll.fade-start.fade-end { mask-image: linear-gradient(transparent, #000 28px, #000 calc(100% - 28px), transparent); }
 
-/* Windows cleanup (C1): levels as a compact list, a drawing of Windows that loses what the level removes, and the list */
 .cleanup-body { display: grid; grid-template-columns: 200px minmax(300px, 1.1fr) minmax(0, 1.3fr); gap: 16px; margin: 4px 0 0; align-items: start; }
 .level-list { display: flex; flex-direction: column; gap: 2px; }
 .level-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--r); text-align: left; color: var(--muted); }
@@ -791,7 +713,6 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 
 .cleanup-body .cleanup-items li.keep { color: var(--faint); }
 
-/* Apps: catalog on the left, the search and this machine's apps on the right */
 .apps-layout { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 20px; align-items: start; }
 .apps-catalog { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .apps-catalog > .segmented { align-self: flex-start; }
@@ -813,7 +734,6 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .cleanup-items li.drop .ci-name { color: var(--text); }
 .cleanup-items .ci-line { display: block; font-size: 11px; color: var(--muted); line-height: 1.35; }
 
-/* Home (I1): the machine in use up front, every machine below, and on the side memory, Library and what needs attention */
 .home-grid { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; align-items: start; }
 .home-main, .home-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .home-hero { display: grid; grid-template-columns: minmax(220px, 0.9fr) minmax(0, 1.1fr); gap: 18px; align-items: center; padding: 14px; }
@@ -852,16 +772,13 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .home-attention-row { display: flex; gap: 12px; }
 .home-attention-row .btn { align-self: flex-start; margin-top: 8px; }
 @media (max-width: 1100px) { .home-grid { grid-template-columns: 1fr; } .home-hero { grid-template-columns: 1fr; } }
-/* A machine card: icon and name on one line, its action under them across the card, so long names never get cut. */
 .home-machine-row { flex-wrap: wrap; }
 .home-machine-row > :last-child:not(.home-machine-text) { flex: 1 0 100%; justify-content: center; }
 .home-machine-row > .home-short { text-align: center; }
-/* A small empty state inside a section: an icon in a soft square and its title, no extra text. */
 .empty-small { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 18px 8px; color: var(--muted); }
 .empty-small-icon { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--tint-bg); color: var(--tint-fg); }
 .empty-small strong { font-size: 13px; font-weight: 500; color: var(--text); }
 
-/* Resource pieces: every resource has its own fixed color, the same in charts, profiles and new machines. */
 :root { --res-cpu: #2f5bd3; --res-mem: #2f9e6a; --res-gpu: #d0473c; --res-disk: #b07612; }
 :root[data-theme="dark"] { --res-cpu: #7d9cf0; --res-mem: #7dd19c; --res-gpu: #f08a7f; --res-disk: #e7b45e; }
 .res-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
@@ -870,13 +787,11 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .res-cpu, .res-chip.res-cpu { color: var(--res-cpu); } .res-mem, .res-chip.res-mem { color: var(--res-mem); } .res-gpu, .res-chip.res-gpu { color: var(--res-gpu); } .res-disk, .res-chip.res-disk { color: var(--res-disk); }
 .res-chip.res-cpu, .res-chip.res-mem, .res-chip.res-gpu, .res-chip.res-disk { background: color-mix(in srgb, currentColor 10%, var(--surface)); box-shadow: none; }
 
-/* Library on one page */
 .lib-section { scroll-margin-top: 56px; }
 .lib-section-head { display: flex; align-items: flex-start; gap: 14px; min-width: 0; flex: 1; }
 .lib-section .library-head { align-items: flex-start; }
 .row-text .res-chips { display: flex; }
 
-/* Create machine (C1): sections on the left, everything in the middle, the summary always in view on the right */
 .dialog.create-dialog { width: min(1120px, 100%); height: min(760px, calc(100vh - var(--titlebar) - 48px)); max-height: none; padding: 20px 20px 16px; }
 .create-form { display: grid; grid-template-columns: 180px minmax(0, 1fr) 290px; grid-template-rows: minmax(0, 1fr) auto auto; gap: 0 18px; min-height: 0; flex: 1; }
 .create-nav { display: flex; flex-direction: column; gap: 2px; }
@@ -912,24 +827,18 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .create-foot { grid-column: 1 / -1; margin-top: 12px; }
 @media (max-width: 1000px) { .create-form { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto auto auto; } .create-nav { flex-direction: row; overflow-x: auto; } .create-summary { display: none; } .create-account, .create-resources { grid-template-columns: 1fr; } }
 .create-resources .field-top span.res-cpu { color: var(--res-cpu); } .create-resources .field-top span.res-mem { color: var(--res-mem); } .create-resources .field-top span.res-gpu { color: var(--res-gpu); } .create-resources .field-top span.res-disk { color: var(--res-disk); }
-/* The summary never lets a long text out of its box: lines wrap, a file name is cut with an ellipsis. */
 .create-summary { min-width: 0; overflow: hidden; }
 .create-summary-line > span { min-width: 0; overflow-wrap: anywhere; }
 .create-summary-line.cut > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* What is chosen among cards (profiles, apps) is marked in neutral gray, never with the accent. */
-/* In light, what is picked or hovered in lists is a barely gray white, never a beige that reads as dirty. */
 :root { --pick-bg: #f3f3f1; --pick-line: #e3e2de; }
 :root[data-theme="dark"] { --pick-bg: #262626; --pick-line: #343434; }
 .create-profile.on, .app-tile.on, .dropdown-list button.on { background: var(--pick-bg); box-shadow: inset 0 0 0 1px var(--pick-line); }
 .app-tile-check { background: var(--text); color: var(--surface); }
-/* What dims the app behind a dialog: a neutral shade, no blue. */
 :root { --scrim: rgba(28, 26, 22, 0.28); }
 :root[data-theme="dark"] { --scrim: rgba(8, 8, 8, 0.55); }
-/* Library sections breathe: more room between sections than inside one. */
 .lib-section + .lib-section { margin-top: 12px; }
 .section-nav + .lib-section { margin-top: 16px; }
 .lib-section { gap: 14px; }
-/* In the app picker too, the categories go left and the search right. */
 .app-picker-bar { flex-direction: row-reverse; }
 @media (max-width: 1000px) { .create-levels { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .create-cleanup { display: grid; grid-template-columns: minmax(240px, 0.9fr) minmax(0, 1.4fr); gap: 16px; align-items: start; margin-top: 6px; }
@@ -937,7 +846,6 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .create-cleanup .cleanup-items li.drop .ci-name { color: var(--text); }
 .create-levels .level-row { align-items: center; }
 @media (max-width: 1000px) { .create-cleanup { grid-template-columns: 1fr; } }
-/* Crear máquina breathes more: the cleanup scene across the whole width, its list underneath, more room everywhere. */
 .create-body { gap: 30px; padding-right: 10px; }
 .create-section { gap: 14px; }
 .create-cleanup { grid-template-columns: 1fr; gap: 18px; margin-top: 8px; }
@@ -950,10 +858,8 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .create-resources { gap: 20px 32px; }
 .create-account { gap: 16px; }
 
-/* The machine's page: its header and usage strip read as one panel. */
 .card.scene-head:has(+ .stats.joined) { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .card.stats.joined { margin-top: calc(-1 * var(--main-gap, 16px)); border-top-left-radius: 0; border-top-right-radius: 0; box-shadow: none; }
-/* Options beside the machine's cube, which stays in view below the section bar. */
 .vm-body { display: grid; grid-template-columns: minmax(0, 1fr) var(--cube-w, 380px); gap: 16px; align-items: start; }
 .vm-body.resizing { user-select: none; cursor: col-resize; }
 .vm-cube-split { position: absolute; left: 0; top: 0; bottom: 0; width: 12px; z-index: 3; cursor: col-resize; touch-action: none; display: grid; place-items: center; }
@@ -961,20 +867,15 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .vm-cube-split:hover span { background: var(--handle-open); height: 56px; }
 .vm-body.resizing .vm-cube-split span { background: var(--accent); height: 56px; }
 .vm-sections { display: flex; flex-direction: column; gap: 16px; min-width: 0; container-type: inline-size; }
-/* Beside the cube the options column is narrower than the window: its sections follow its own width. */
 @container (max-width: 1000px) { .cleanup-body { grid-template-columns: 210px minmax(0, 1fr); } .cleanup-body .cleanup-items, .cleanup-body .levels-none { grid-column: 1 / -1; } }
 @container (max-width: 860px) { .apps-layout { grid-template-columns: 1fr; } .apps-mine { order: -1; } }
 @container (max-width: 620px) { .cleanup-body { grid-template-columns: 1fr; margin-left: 0; } .apps-card > :not(.opt-rows) { margin-left: 0; } }
-/* Below the section bar: once the page scrolls it sits flush under the bar and reaches the bottom of the window,
-   so the column never shows empty space above or below it. */
 .vm-cube { position: sticky; top: 21px; height: max(340px, calc(100vh - 109px)); border-radius: var(--r-lg); background: var(--surface); overflow: hidden; }
-/* While the machine is renamed, its cube stays above the dialog's scrim so the plate is seen taking the new name.
-   The page drops its fade meanwhile: a mask makes it a layer of its own, which would keep the cube under the scrim. */
+/* The page drops its mask meanwhile: a mask makes a layer that would keep the cube under the scrim. */
 .main.renaming { mask-image: none; }
 .vm-cube.lifted { z-index: 41; }
 @media (max-width: 1100px) { .vm-body { grid-template-columns: minmax(0, 1fr); } .vm-cube { display: none; } }
 
-/* Settings: sections on the left, options in the middle, a live preview of the theme and accent on the right. */
 .main.prefs { display: grid; grid-template-columns: 180px minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
 .pref-nav { position: sticky; top: 0; display: flex; flex-direction: column; gap: 2px; }
 .pref-nav-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--r); color: var(--muted); text-align: left; }
@@ -996,7 +897,6 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 @media (max-width: 800px) { .main.prefs { grid-template-columns: minmax(0, 1fr); } .pref-nav { display: none; } }
 .pref-preview-bars .bar { margin: 0; }
 
-/* Home: the space of machines with the one in front and its panel, then a row with the others and the rest. */
 .main.home { display: flex; flex-direction: column; gap: 16px; }
 .home-stage { display: grid; grid-template-columns: minmax(0, 1fr) 0 var(--panel-w, 320px); padding: 0; flex: 1 1 auto; min-height: 260px; overflow: hidden; }
 .home-space { position: relative; min-height: 0; }
@@ -1016,7 +916,6 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .btn.compact { padding: 4px 10px; min-height: 0; height: 28px; font-size: 12px; }
 @media (max-width: 1000px) { .home-stage { grid-template-columns: minmax(0, 1fr); } .home-space { height: 320px; } .home-panel { border-left: 0; border-top: 1px solid var(--line); } }
 
-/* Library: where the space goes, and profiles as cards with their cube. */
 .storage { display: flex; flex-direction: column; gap: 10px; }
 .storage-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .storage-title { font-size: 13px; color: var(--muted); }
@@ -1044,7 +943,6 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .profile-new-text .btn { margin-top: 6px; }
 .profile-skeleton { height: 250px; }
 
-/* Home fits the window: the stage takes what the row below leaves, so the page doesn't scroll. */
 .main.home { overflow: hidden; height: 100%; min-height: 0; box-sizing: border-box; }
 .home-attention { display: flex; flex-direction: column; gap: 10px; }
 .home-attention-row { display: flex; align-items: center; gap: 12px; }
@@ -1052,7 +950,6 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .home-attention-text strong { font-weight: 600; font-size: 13px; }
 .home-attention-text span { font-size: 12px; color: var(--muted); }
 .home-attention-row .btn { flex: none; }
-/* The row under the stage: the other machines, the Library and what needs attention, side by side. */
 .home-row { grid-template-columns: minmax(0, 1fr) 280px; align-items: stretch; }
 .home-row.with-attention { grid-template-columns: minmax(0, 1fr) 280px 360px; }
 .home-others { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(300px, calc((100% - (var(--count) - 1) * 16px) / var(--count))); gap: 16px; overflow-x: auto; scrollbar-width: none; }
@@ -1067,12 +964,10 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 @media (max-width: 1300px) { .home-row.with-attention { grid-template-columns: minmax(0, 1fr) 280px; } .home-row.with-attention .home-attention { grid-column: 1 / -1; } }
 @media (max-width: 1100px) { .main.home { overflow-y: auto; } .home-row, .home-row.with-attention { grid-template-columns: minmax(0, 1fr); } }
 
-/* Profile editor: the form and, beside it, the cube of the machine it makes. */
 .profile-editor { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; flex: 1 1 auto; min-height: 0; }
 .profile-editor .dialog-body { margin-right: 0; padding-right: 4px; }
 .profile-editor-cube { border-radius: var(--r-lg); background: var(--surface-2); overflow: hidden; min-height: 0; }
 @media (max-width: 900px) { .profile-editor { grid-template-columns: minmax(0, 1fr); } .profile-editor-cube { display: none; } }
-/* Switching sections: the card stays put (no flash of the container), only what is inside it comes in. */
 .pref-section > * { animation: pref-in 0.2s cubic-bezier(0.3, 0.8, 0.3, 1) both; }
 @keyframes pref-in { from { opacity: 0; transform: translateY(4px); } }
 @media (prefers-reduced-motion: reduce) { .pref-section > * { animation: none; } }
@@ -1081,12 +976,10 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .profile-name-cut { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block !important; }
 .profile-card.missing .profile-text { opacity: 0.55; }
 
-/* Home's sizes: the row under the stage has the height you leave it, the stage takes the rest. */
 .main.home { gap: 0; }
 .home-row { height: var(--row-h, 220px); flex: none; min-height: 0; }
 .home-row > * { min-height: 0; overflow: hidden; }
 .home-row .home-attention { overflow-y: auto; scrollbar-width: none; }
-/* The lines that resize: like the sidebar's edge, a thin bar that shows on hover and takes the accent while dragged. */
 .home-split { position: relative; flex: none; display: grid; place-items: center; touch-action: none; z-index: 2; }
 .home-split span { display: block; border-radius: 4px; background: transparent; transition: background 0.15s, width 0.15s, height 0.15s; }
 .home-split-row { height: 16px; cursor: row-resize; }
@@ -1103,13 +996,11 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .main.home.dragging-row { cursor: row-resize; }
 .main.home.dragging-panel { cursor: col-resize; }
 @media (max-width: 1100px) { .home-split { display: none; } .home-row { height: auto; } .home-stage { grid-template-columns: minmax(0, 1fr); } }
-/* In the row under the stage the Library's counts go on one line each, so the card fits a short row. */
 .home-row .home-library-grid { gap: 4px; grid-template-columns: minmax(0, 1fr); }
 .home-row .home-library-item { flex-direction: row; align-items: center; gap: 8px; padding: 8px 10px; }
 .home-row .home-library-item strong { font-size: 15px; }
 .home-row .home-library-item > span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 
-/* Home with no machines: the stage alone, full height, with the invitation in its panel. */
 .home-empty { flex: 1 1 auto; }
 .home-empty-panel { justify-content: center; }
 .home-empty-text h1 { font-size: 20px; font-weight: 600; margin: 0 0 6px; }
@@ -1119,8 +1010,6 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .home-empty-ready .home-library-item strong { font-size: 15px; }
 .home-empty-panel .home-panel-actions { margin-top: 4px; }
 
-/* The row's columns: machines take what is left; the Library and the notices have the width you leave them. The
-   16 px between them is the line that resizes. */
 .home-row { gap: 0; grid-template-columns: minmax(0, 1fr) 16px var(--lib-w, 280px); }
 .home-row.with-attention { grid-template-columns: minmax(0, 1fr) 16px var(--lib-w, 280px) 16px var(--att-w, 360px); }
 .home-split-col { cursor: col-resize; height: 100%; }
@@ -1130,7 +1019,6 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .home-split-col:active span { height: 56px; background: var(--accent); }
 @media (max-width: 1300px) { .home-row.with-attention { grid-template-columns: minmax(0, 1fr) 16px var(--lib-w, 280px); } .home-row.with-attention > .home-split-col:nth-last-of-type(1) { display: none; } }
 
-/* Narrow notices: the button goes under its text, lined up with it, instead of squeezing the text into a column. */
 .home-attention { container-type: inline-size; }
 @container (max-width: 360px) {
   .home-attention-row { flex-wrap: wrap; row-gap: 6px; align-items: flex-start; }
@@ -1138,7 +1026,7 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
   .home-attention-row .btn { margin-left: 44px; }
 }
 .triple-spark { display: block; }
-/* Narrow windows: Home stacks and scrolls; the resizing lines go away (after the rules above, so it wins). */
+/* After the rules above, so it wins. */
 @media (max-width: 1100px) {
   .main.home { overflow-y: auto; gap: 16px; }
   .home-stage { grid-template-columns: minmax(0, 1fr); flex: none; }
@@ -1150,11 +1038,9 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
   .home-others { grid-auto-columns: minmax(280px, 1fr); }
 }
 
-/* The machine's specs in its header: small labeled pieces, not a run of words after dots. */
 .spec-chip { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 6px; background: var(--surface-2); color: var(--muted); font-size: 12px; white-space: nowrap; }
 .spec-chip svg { flex: none; }
 
-/* Personalizar: decoration of the machine's cube */
 .machine-cube.grab { cursor: move; }
 .machine-cube.holding { cursor: grabbing; }
 .machine-cube.turning { cursor: ew-resize; }
@@ -1181,12 +1067,10 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .decor-tile-custom { position: relative; display: grid; }
 .decor-tile-x { position: absolute; top: 4px; right: 0; opacity: 0; }
 .decor-tile-custom:hover .decor-tile-x, .decor-tile-x:focus-visible { opacity: 1; }
-/* Inside Crear máquina the column is narrower: each control goes under its text. */
 .create-section .customize .opt-row { grid-template-columns: 32px minmax(0, 1fr); }
 .create-section .customize .opt-ctl { grid-column: 2 / -1; justify-content: flex-start; }
 .create-section .customize .opt-row.sub { grid-template-columns: 20px minmax(0, 1fr); }
 
-/* Games in the space of machines */
 .space-games { position: absolute; top: 12px; right: 12px; z-index: 2; opacity: 0; transition: opacity 0.15s; }
 .home-space:hover .space-games, .space-games:focus-within { opacity: 1; }
 .space-games-menu { top: calc(100% + 6px); right: 0; min-width: 220px; }
@@ -1218,7 +1102,6 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .game-pick-item:hover { background: var(--control-bg-hover); }
 .game-pick-item.on { background: var(--pick-bg); box-shadow: inset 0 0 0 1px var(--pick-line); }
 
-/* Spaces: a bar over the stage to switch spaces, edit this one or make another */
 .space-bar { position: absolute; top: 12px; left: 12px; z-index: 2; display: flex; align-items: center; gap: 2px; max-width: calc(100% - 140px);
   padding: 3px; border-radius: calc(var(--r) + 3px); background: var(--surface); box-shadow: 0 0 0 1px var(--line); }
 .space-bar .segmented { box-shadow: none; padding: 0; min-width: 0; overflow-x: auto; scrollbar-width: none; }
@@ -1229,7 +1112,6 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .home-space-more .home-machine-text span { display: block; }
 .home-others.drag-scrolling, .home-others.drag-scrolling * { cursor: grabbing; user-select: none; }
 
-/* Creating or editing a space: form on the left, the space itself on the right */
 .dialog.space-dialog { width: min(1040px, 100%); height: min(700px, calc(100vh - var(--titlebar) - 48px)); max-height: none; }
 .space-dialog-icon { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; flex: none; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface-2)); }
 .space-editor { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 20px; flex: 1 1 auto; min-height: 0; }
@@ -1252,7 +1134,6 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .space-delete-confirm { display: inline-flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
 @media (max-width: 860px) { .space-editor { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 220px; } .space-editor .dialog-body { min-height: 0; } }
 
-/* The sidebar grouped by space: each space heads its machines and opens it in Home */
 .side-group { display: flex; flex-direction: column; gap: 2px; }
 .side-space { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; border-radius: var(--r-sm); min-width: 0; }
 .side-space svg { flex: none; }
@@ -1266,7 +1147,6 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .machine-cube.panning { cursor: move; }
 .space-look { display: flex; flex-wrap: wrap; gap: 16px 20px; }
 .space-look .field { min-width: 0; }
-/* Machines from other spaces, offered in an empty one, and the card to create one there */
 .home-bring .home-machine-text span { display: block; }
 .home-create-card { text-align: left; width: 100%; color: var(--text); }
 .home-create-art { flex: 1 1 auto; min-height: 64px; display: grid; place-items: center; color: var(--muted); background: var(--surface-2);
@@ -1274,37 +1154,30 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .home-create-card:hover .home-create-art { color: var(--text); }
 .home-create-card:hover { background: var(--hover); }
 
-/* Selected text takes the accent the person picked, in every screen */
 ::selection { background: color-mix(in srgb, var(--accent) 40%, transparent); color: inherit; }
-/* An empty space's panel: the main action on top, the other under it, both whole whatever the panel's width */
 .home-empty-panel .home-panel-actions { flex-direction: column-reverse; align-items: stretch; }
 .home-empty-panel .home-panel-actions > * { width: 100%; justify-content: center; }
 /* In a column, flex: 1 would squash the main button to its text: both keep the full control height. */
 .home-empty-panel .home-panel-actions > * { flex: none; height: var(--control); }
 .home-empty-text h1, .home-empty-text p { overflow-wrap: anywhere; }
 
-/* Fixed views of the cube while decorating, over its top right corner */
 .cube-views { position: absolute; top: 10px; right: 10px; z-index: 3; display: flex; flex-direction: column; gap: 2px; padding: 4px; border-radius: var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--line); }
 .cube-views button { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 10px 0 8px; border-radius: var(--r-sm); color: var(--muted); font-size: 12px; text-align: left; }
 .cube-views button:hover { color: var(--text); background: var(--hover); }
 .cube-views button.on { color: var(--seg-on-fg); background: var(--seg-pill); }
 .cube-views svg { flex: none; display: block; }
 
-/* Dragging a machine to another space: the spaces it can land on light up */
 .side-item[draggable="true"] { cursor: pointer; }
 .side-group { border-radius: var(--r); transition: background 0.12s; }
 .space-bar[data-over="0"] .segmented button:nth-of-type(1), .space-bar[data-over="1"] .segmented button:nth-of-type(2), .space-bar[data-over="2"] .segmented button:nth-of-type(3),
 .space-bar[data-over="3"] .segmented button:nth-of-type(4), .space-bar[data-over="4"] .segmented button:nth-of-type(5), .space-bar[data-over="5"] .segmented button:nth-of-type(6),
 .space-bar[data-over="6"] .segmented button:nth-of-type(7), .space-bar[data-over="7"] .segmented button:nth-of-type(8) { background: var(--sel); color: var(--text); }
-/* A group of options measures what its options do, never the whole width of its field */
 .field > .segmented { align-self: flex-start; max-width: 100%; }
-/* Folding the sidebar closes the room of the group names too, so the machines slide up together */
 .side-label { max-height: 40px; overflow: hidden; transition: opacity 0.16s, max-height 0.24s cubic-bezier(0.3, 0.8, 0.3, 1), padding 0.24s cubic-bezier(0.3, 0.8, 0.3, 1); }
 .app.collapsed .side-label { max-height: 0; padding-top: 0; padding-bottom: 0; }
 .app.collapsed .side-group + .side-group { margin-top: 0; }
 .side-group + .side-group { transition: margin 0.24s cubic-bezier(0.3, 0.8, 0.3, 1); }
 
-/* The games gallery, over the space: a card per game with its own art and its record */
 .game-gallery { position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: var(--r-lg); background: var(--surface); box-shadow: 0 0 0 1px var(--line); overflow: auto; }
 .game-gallery-head { display: flex; align-items: center; gap: 8px; }
 .game-gallery-head .icon-btn { margin-left: auto; }
@@ -1316,22 +1189,18 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .game-tile-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .game-tile-text strong { font-weight: 600; }
 .game-tile-text span { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }
-/* The ability on the right button, in the game's bar: its name and its charge */
 .game-ability { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); padding: 3px 8px; border-radius: 999px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
 .game-ability-bar { width: 54px; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
 .game-ability-bar span { display: block; height: 100%; background: color-mix(in srgb, var(--accent) 70%, transparent); transition: width 0.12s linear; }
 .game-ability.ready { color: var(--text); }
 .game-ability.ready .game-ability-bar span { background: var(--accent); }
 .game-ability.on .game-ability-bar span { background: var(--accent); }
-/* Folded, the list keeps one even step between every row: empty spaces take no room and the hidden names none either */
 .app.collapsed .side-group:not(:has(.side-item)) { display: none; }
 .app.collapsed .side-label { margin-bottom: -2px; }
 .app.collapsed .side-add { margin-top: 0; }
 .home-space:has(.game-stage) .space-bar, .home-space:has(.game-gallery) .space-bar { display: none; }
 .game-tile-art canvas { cursor: pointer; pointer-events: none; }
 
-/* The screen before a game: the game playing on its own at the left, the picks and the controls at the right.
-   It fills the stage as the stage itself (no frame of its own, so no edges show over the card's). */
 .game-start { position: absolute; inset: 0; z-index: 3; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(280px, 1fr); gap: 16px; padding: 16px; background: var(--surface); }
 .game-start-preview { position: relative; border-radius: var(--r); overflow: hidden; background: var(--surface-2); min-height: 0; }
 .game-start-preview canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
@@ -1369,42 +1238,30 @@ html.prompt-dock-window, html.prompt-dock-window body, html.prompt-dock-window #
 .game-start-actions { display: flex; gap: 8px; margin-top: auto; padding-top: 4px; }
 .game-start-actions .primary { flex: 1; justify-content: center; }
 @media (max-width: 900px) { .game-start { grid-template-columns: minmax(0, 1fr); grid-template-rows: 180px minmax(0, 1fr); } }
-/* The gallery fills the stage too, without a frame of its own */
 .game-gallery { inset: 0; border-radius: 0; box-shadow: none; padding: 16px; }
-/* The actions stay in view at the foot of the column however long the picks get */
 .game-start-actions { position: sticky; bottom: 0; background: var(--surface); padding: 10px 0 0; box-shadow: 0 -1px 0 var(--line); }
 .game-start-side { padding-bottom: 0; }
 .side-item[data-vm] { position: relative; }
-/* While a machine or a space is dragged, its row stays in the list where it would land, faded; the others make room. */
 .side-item.dragged, .side-space.dragged { opacity: 0.35; }
 .side-space[draggable="true"] { cursor: grab; }
-/* The gallery's cards fill the stage at any height: the game in each one takes what is left, and its name, record
-   and Play stay in view however short the stage is dragged. */
 .game-gallery-grid { flex: 1; min-height: 0; grid-auto-rows: minmax(0, 1fr); }
 .game-tile { min-height: 0; }
 .game-tile-art { aspect-ratio: auto; flex: 1; min-height: 0; }
 .game-tile-row { flex: none; }
-/* A narrow options column (the cube's panel dragged wide): each option keeps its text at full width and its control
-   goes under it, using the whole row, instead of squeezing the text into a strip. */
 @container (max-width: 640px) {
   .opt-row, .opt-row.section { grid-template-columns: 32px minmax(0, 1fr); }
   .opt-row.sub { grid-template-columns: 20px minmax(0, 1fr); }
   .opt-row > .opt-ctl { grid-column: 1 / -1; justify-content: flex-start; max-width: none; }
-  /* A slider or a list uses the row; a segmented group stays as wide as its options (stretched, it left an empty
-     strip inside its pill). */
   .opt-row > .opt-ctl > .dropdown, .opt-row > .opt-ctl > .slider { width: 100%; max-width: none; }
   .opt-row > .opt-ctl > .segmented { width: auto; max-width: 100%; }
 }
-/* The cube's column folded into a rail at the right edge (its handle stays to open it again), or taking the whole
-   width with the options folded away. */
 .vm-body.cube-folded .vm-cube { background: transparent; }
 .vm-body.cube-folded .vm-cube > :not(.vm-cube-split) { visibility: hidden; }
 .vm-body.options-folded { grid-template-columns: 0 minmax(0, 1fr); column-gap: 0; }
 .vm-body.options-folded .vm-sections { visibility: hidden; height: 0; overflow: hidden; }
 .vm-body.options-folded .vm-cube { width: 100%; }
 
-/* GpuVM viewer's side panel (ViewerPanel.tsx): its own window over the right edge of the viewer. It slides in while
-   the viewer moves the picture aside with the same duration and curve (overlay.rs, SLIDE_MS). */
+/* Same duration and curve as the viewer's slide (overlay.rs, SLIDE_MS). */
 html.viewer-panel-window, html.viewer-panel-window body { background: transparent; overflow: hidden; }
 html.viewer-panel-window body::after, html.status-notch-window body::after, html.agent-dock-window body::after, html.agent-live-window body::after,
 html.prompt-dock-window body::after, html.prompt-window body::after, html.drop-window body::after { display: none; }
@@ -1416,8 +1273,6 @@ html.prompt-dock-window body::after, html.prompt-window body::after, html.drop-w
 .viewer-game { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .viewer-panel .game-stage { border-radius: var(--r-lg); }
 
-/* The panel's board of widgets (ViewerWidgets.tsx): placed by the board, sliding to their new place when another moves
-   or changes size. The one being dragged follows the pointer and its place waits in a soft tone. */
 .vp-board { position: relative; flex: none; }
 .vp-widget { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; background: var(--surface); border-radius: var(--r-lg);
   box-shadow: inset 0 0 0 1px var(--line); overflow: hidden; user-select: none; }
@@ -1435,14 +1290,12 @@ html.prompt-dock-window body::after, html.prompt-window body::after, html.drop-w
 .vp-grip:hover::after, .vp-widget.sizing .vp-grip::after { border-color: var(--accent); }
 .vp-widget:hover .vp-grip, .vp-widget.sizing .vp-grip, .vp-board.edit .vp-grip { opacity: 1; }
 .vp-board.dragging .vp-grip { opacity: 0; }
-/* While editing, the widgets are pieces to arrange: their content rests (dimmed, not clickable) under the remove button. */
 .vp-board.edit .vp-widget > :first-child { pointer-events: none; opacity: .5; transition: opacity .2s; }
 .vp-remove { position: absolute; top: 6px; right: 6px; z-index: 3; width: 22px; height: 22px; padding: 0; display: grid; place-items: center; border-radius: 50%;
   background: var(--hover); color: var(--muted); }
 .vp-remove:hover { color: var(--text); }
 .vp-remove svg { display: block; }
 
-/* Controls shared by the widgets. */
 .vp-edit { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: var(--r); color: var(--muted); font-size: 13px; font-weight: 500; flex: none; }
 .vp-edit:hover { background: var(--hover); color: var(--text); }
 .vp-edit.on { background: var(--sel); color: var(--text); }
@@ -1451,8 +1304,6 @@ html.prompt-dock-window body::after, html.prompt-window body::after, html.drop-w
 .vp-chip:hover:not(:disabled) { background: var(--hover); }
 .vp-chip:disabled { opacity: .4; cursor: default; }
 .vp-chip.on { background: var(--sel); }
-/* Archivos and Portapapeles (FilesWidgets.tsx): rows like the games' list, the action at the right; the percent goes
-   before the name so a long name never hides it. */
 .vp-files, .vp-clip { display: flex; flex-direction: column; min-height: 0; height: 100%; }
 .vp-files-empty { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 8px 14px; text-align: center; }
 .vp-files-empty strong { font-size: 13px; font-weight: 500; }
@@ -1500,7 +1351,6 @@ html.prompt-dock-window body::after, html.prompt-window body::after, html.drop-w
 .vp-board-empty > span:not(.vp-empty-icon) { color: var(--muted); font-size: 13px; line-height: 1.5; max-width: 240px; margin-bottom: 6px; }
 .vp-board-empty .vp-empty-icon { width: 40px; height: 40px; }
 
-/* Machines: cubes alone in one column, cube with name and action when wider. The one on screen is marked by tone. */
 .vp-cubes { display: grid; grid-template-columns: repeat(auto-fill, minmax(54px, 1fr)); grid-auto-rows: 54px; gap: 4px; padding: 8px; align-content: start; }
 .vp-cubes button { display: grid; place-items: center; padding: 4px; border-radius: var(--r); }
 .vp-cubes button:hover:not(:disabled) { background: var(--hover); }
@@ -1519,7 +1369,6 @@ html.prompt-dock-window body::after, html.prompt-window body::after, html.drop-w
 .vp-machine-text .sub, .vp-game-text .sub { display: block; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .vp-game-text .sub svg { display: inline-block; vertical-align: -1px; margin-right: 4px; }
 
-/* Actions: a square of icon buttons, or buttons with their names when there is room. */
 .vp-actions { display: grid; grid-auto-rows: minmax(0, 1fr); gap: 6px; padding: 8px; }
 .vp-actions button { display: grid; place-items: center; padding: 0; min-width: 0; border-radius: var(--r); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); }
 .vp-actions button:hover { background: var(--hover); color: var(--text); }
@@ -1530,7 +1379,6 @@ html.prompt-dock-window body::after, html.prompt-window body::after, html.drop-w
 .vp-actions.labels span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vp-actions.labels.under button { flex-direction: column; justify-content: center; gap: 6px; padding: 0 6px; font-size: 12px; text-align: center; }
 .vp-actions.labels.under span { white-space: normal; line-height: 1.2; }
-/* Capture: three buttons like Acciones; taller, the newest file below them. */
 .vp-capture { display: flex; flex-direction: column; gap: 6px; padding: 8px; }
 .vp-capture-buttons { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .vp-capture.tall .vp-capture-buttons { flex: none; height: var(--control); }
@@ -1557,7 +1405,6 @@ html.prompt-dock-window body::after, html.prompt-window body::after, html.drop-w
 .vp-capture-thumb svg { display: block; }
 .pref-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* The picture's numbers. */
 .vp-stats { display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 10px 14px; }
 .vp-stats.tall { justify-content: space-between; gap: 8px; padding: 12px 14px; }
 .vp-big { display: flex; align-items: baseline; gap: 6px; }
@@ -1573,7 +1420,6 @@ html.prompt-dock-window body::after, html.prompt-window body::after, html.drop-w
 
 .vp-clock { display: flex; flex-direction: column; justify-content: center; padding: 0 14px; min-width: 0; }
 .vp-clock.tall { gap: 4px; }
-/* The time shrinks to fit a one-column widget: four digits plus a. m./p. m. ("10:01 AM") went past its edge. */
 .vp-clock { container-type: inline-size; }
 .vp-time { white-space: nowrap; }
 .vp-clock.tall strong { font-size: min(46px, calc((100cqi - 30px) / 2.9)); letter-spacing: -.03em; }
@@ -1584,12 +1430,10 @@ html.prompt-dock-window body::after, html.prompt-window body::after, html.drop-w
 .vp-clock small { font-size: 12px; font-weight: 500; color: var(--muted); }
 .vp-clock > span:last-child { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* The shelf: the machines' figures standing on thin boards. */
 .vp-shelf { display: grid; padding: 2px 10px 10px; }
 .vp-board-row { display: flex; align-items: flex-end; justify-content: space-around; min-height: 0; border-bottom: 3px solid var(--line); border-radius: 0; }
 .vp-figure { width: 56px; height: 56px; flex: none; display: block; }
 
-/* Games with room: covers (a still frame of each game's demo; it plays under the pointer). */
 .vp-covers { display: grid; gap: 8px; padding: 6px; }
 .vp-cover { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 0; border-radius: var(--r); overflow: hidden; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); text-align: left; }
 .vp-cover:hover { background: var(--hover); }
@@ -1602,7 +1446,6 @@ html.prompt-dock-window body::after, html.prompt-window body::after, html.drop-w
 .vp-games li { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 6px 0 10px; border-radius: var(--r); min-width: 0; }
 .vp-games li:hover { background: var(--hover); }
 
-/* Weather: off until turned on with a city. */
 .vp-weather { display: flex; align-items: center; gap: 10px; width: 100%; padding: 0 14px; text-align: left; min-width: 0; }
 .vp-weather-icon { color: var(--accent); flex: none; }
 .vp-weather-off { color: var(--muted); flex: none; }
@@ -1617,8 +1460,6 @@ html.prompt-dock-window body::after, html.prompt-window body::after, html.drop-w
 .vp-weather-ask input { flex: 1; min-width: 0; height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: transparent; outline: none; font-size: 13px; }
 .vp-error { width: 100%; font-size: 12px; color: var(--danger); }
 
-/* A machine opening or shown inside the app (ViewerStage.tsx): no sidebar; the cube comes from the right to the
-   center with the steps; once live, GpuVM's viewer covers everything below the title bar. */
 .app.viewing { grid-template-columns: auto minmax(0, 1fr); background: var(--bg); }
 .app.viewing .titlebar-side, .app.viewing .titlebar-main { background: var(--bg); }
 .app.viewing .viewer-stage { grid-column: 1 / -1; }
@@ -1638,8 +1479,6 @@ html.prompt-dock-window body::after, html.prompt-window body::after, html.drop-w
 .viewer-stage-bar i { display: block; width: 40%; height: 100%; border-radius: 2px; background: var(--accent); animation: viewer-bar 1.4s ease-in-out infinite; }
 @keyframes viewer-bar { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
 .viewer-stage.live { background: #161616; }
-/* Between 1100 and 1300 px the pending items go under the row: Home scrolls (as below 1100 px) instead of squeezing
-   the machine cards or the stage until their texts are cut. */
 @media (min-width: 1101px) and (max-width: 1300px) {
   .main.home:has(.home-row.with-attention) { overflow-y: auto; scrollbar-width: none; }
   .main.home:has(.home-row.with-attention) > * { flex-shrink: 0; }
@@ -1647,7 +1486,6 @@ html.prompt-dock-window body::after, html.prompt-window body::after, html.drop-w
   .home-row.with-attention > .home-split-col:has(+ .home-attention) { display: none; }
 }
 
-/* Into and out of the machine: the cube zooms in until it fills the view (the picture takes its place), and back. */
 .viewer-stage.entering .viewer-stage-cube { animation: viewer-zoom-in 560ms cubic-bezier(.6, 0, .2, 1) both; }
 .viewer-stage.entering .viewer-stage-steps { animation: viewer-steps-out 200ms ease-in both; }
 .viewer-stage.entering::after, .viewer-stage.leaving::after { content: ""; position: absolute; inset: 0; background: #161616; pointer-events: none; }
@@ -1659,7 +1497,6 @@ html.prompt-dock-window body::after, html.prompt-window body::after, html.drop-w
 @keyframes viewer-dim-in { 0%, 45% { opacity: 0; } to { opacity: 1; } }
 @keyframes viewer-steps-out { to { opacity: 0; transform: translateY(8px); } }
 
-/* The panel's top row (Home always at hand, also in full screen) and its draggable left edge. */
 .viewer-panel-top { display: flex; align-items: center; gap: 8px; padding: 10px 10px 2px 8px; }
 .viewer-panel-machine { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 8px; padding-left: 4px; color: var(--text); font-size: 13px; font-weight: 500; }
 .viewer-panel-machine > span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
@@ -1668,7 +1505,6 @@ html.prompt-dock-window body::after, html.prompt-window body::after, html.drop-w
 .viewer-panel-edge:hover::after { opacity: 1; height: 56px; }
 .viewer-panel-edge:active::after { opacity: 1; height: 56px; background: var(--accent); }
 
-/* Home's loading constellation (HomeLoading.tsx): the machines' own cubes on an orbit around the first one. */
 .home-loading { display: grid; place-items: center; overflow: hidden; width: 100%; height: 100%; min-height: 0; }
 .home-loading-field { position: relative; width: min(100%, 1000px); height: min(100%, 640px); min-height: 360px; }
 .home-loading-core { position: absolute; left: 50%; top: 50%; width: min(34vh, 300px); aspect-ratio: 1; transform: translate(-50%, -50%);
@@ -1680,7 +1516,6 @@ html.prompt-dock-window body::after, html.prompt-window body::after, html.drop-w
 @keyframes home-loading-float { 50% { translate: 0 -8px; } }
 @media (prefers-reduced-motion: reduce) { .home-loading-core, .home-loading-machine { animation: none; } }
 
-/* Tips for the waits (Tips.tsx): one line, fading from one to the next. */
 .tips { display: inline-flex; align-items: center; gap: 8px; margin: 0; color: var(--muted); font-size: 13px; max-width: min(90%, 620px); }
 .tips svg { flex: none; color: var(--accent); }
 .tips span { animation: tips-in 500ms ease-out both; }
@@ -1688,7 +1523,6 @@ html.prompt-dock-window body::after, html.prompt-window body::after, html.drop-w
 .home-loading { grid-template-rows: minmax(0, 1fr) auto; padding-bottom: 20px; }
 .home-loading-tips { justify-self: center; }
 .viewer-stage-tips { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); animation: viewer-steps-in 400ms 600ms ease-out both; }
-/* The lines from the center machine to the others, with light traveling along them (instead of a plain ring). */
 .home-loading-links { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .home-loading-links g { animation: home-loading-in 600ms ease-out both; }
 .home-loading-links .rail { stroke: var(--muted); stroke-opacity: .18; stroke-width: 1; vector-effect: non-scaling-stroke; }
@@ -1696,12 +1530,10 @@ html.prompt-dock-window body::after, html.prompt-window body::after, html.drop-w
   stroke-dasharray: 3 97; animation: home-loading-flow 2.4s linear infinite; }
 @keyframes home-loading-flow { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
 
-/* Template cards: with three actions in a narrow card, the disposable one keeps only its icon (named by aria-label and title). */
 .profile-card { container-type: inline-size; }
 @container (max-width: 460px) { .profile-actions .fold-label > span { display: none; } }
 
 
-/* Agents (Agents.tsx): the Agents page, an agent's live state, its requests and its deliveries. */
 .ag-page { gap: 24px; }
 .ag-section { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .ag-head { flex: none; align-items: center; }
@@ -1729,7 +1561,6 @@ html.prompt-dock-window body::after, html.prompt-window body::after, html.drop-w
 .ag-state.on .ag-dot { background: var(--accent); animation: ag-pulse 1.6s ease-in-out infinite; }
 .ag-state.on { color: var(--text); }
 .ag-state.warn { color: var(--warn); }
-/* The machine's agent sees no screen: on the card's surface, only the icon in its warning square (taste: no yellow). */
 .ag-nodisplay { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0 2px; }
 .ag-nodisplay-icon { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; flex: none; background: var(--warn-bg); color: var(--warn); }
 .ag-nodisplay-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -1763,7 +1594,6 @@ html.prompt-dock-window body::after, html.prompt-window body::after, html.drop-w
 .ag-request-text, .ag-offer-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
 .ag-request-text strong, .ag-offer-text strong { font-weight: 500; white-space: nowrap; }
 .ag-request-text span, .ag-offer-text > span { font-size: 12px; color: var(--muted); white-space: nowrap; }
-/* The paths of a copy from the PC: one line each, cut in the middle when long, whole on hover, in the text color. */
 .ag-request-text span.ag-request-path { font-family: "DM Mono", ui-monospace, monospace; font-size: 11.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ag-request-size { margin-left: 8px; font-weight: 400; color: var(--muted); font-size: 12px; }
 .ag-request-left, .ag-request-wait { font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; flex: none; }
@@ -1800,11 +1630,8 @@ html.prompt-dock-window body::after, html.prompt-window body::after, html.drop-w
   .ag-request-actions { width: 100%; justify-content: flex-end; }
   .ag-head { flex-wrap: wrap; }
 }
-/* Just the number in the warning tone, no pill behind it (2026-11-21: "se ve mal"). */
 .side-count { min-width: 18px; height: 18px; display: inline-grid; place-items: center; font-size: 12px; font-weight: 600; font-variant-numeric: proportional-nums; font-family: inherit; color: var(--warn); }
 .side-working { display: block; background: var(--accent); animation: ag-pulse 1.6s ease-in-out infinite; }
-/* Collapsed sidebar: the names and counts hide, but "an agent needs you" can't (lab 054 on the installed app, with the
-   notification banner held by Windows): the count stays as a small badge on the icon's corner, the working dot too. */
 .side-item:has(> .side-count), .side-item:has(.side-working) { position: relative; }
 .app.collapsed .side-item .side-meta.side-count,
 .app.collapsed .side-item .side-meta:has(.side-working) {
@@ -1819,15 +1646,12 @@ html.prompt-dock-window body::after, html.prompt-window body::after, html.drop-w
 .ag-widget-empty { height: 100%; justify-content: center; padding: 8px; }
 .ag-request-actions .btn { min-width: 92px; justify-content: center; }
 .ag-tiny-btn { flex: none; width: 30px; height: 30px; padding: 0; display: grid; place-items: center; }
-/* The agent's windows over the picture (AgentDock.tsx): the dock reuses dock B; the notch rises from the bottom edge. */
 .dock-icon.ag-dock-warn { color: #e7b45e; }
 .dock-icon.ag-dock-risky { color: #ef7a66; }
 .ag-dock-left { flex: none; font-size: 12px; color: #a8a59e; font-variant-numeric: tabular-nums; }
 .dock.ag-dock { width: min(540px, calc(100% - 32px)); }
-/* A copy from the PC: wider, and who/where never cut (the machine's name is part of what is allowed). */
 .dock.ag-dock.ag-dock-send { width: min(680px, calc(100% - 32px)); }
 .ag-dock-send .dock-text strong { white-space: normal; overflow-wrap: anywhere; }
-/* The paths of a copy from the PC: one line each, cut in the middle when long (drive and name stay), whole on hover. */
 .dock-text span.ag-dock-path { font-family: "DM Mono", ui-monospace, monospace; font-size: 11.5px; color: #ebe8e1;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dock.ag-dock-human { width: min(520px, calc(100% - 16px)); }
@@ -1841,17 +1665,12 @@ html.agent-dock-window, html.agent-dock-window body, html.agent-dock-window #roo
   .ag-live .btn.ghost .ag-btn-label { display: none; }
   .ag-live .btn.ghost { padding: 0 9px; }
 }
-/* The status notch (StatusNotch.tsx, status.rs): one notch for every status notice over the picture. Its window is
-   exactly its size; the notch is always drawn dark, like the docks, since it sits on the picture. */
 html.status-notch-window, html.status-notch-window body, html.status-notch-window #root { background: transparent; min-height: 0; height: 100%; overflow: hidden; }
-/* max-content: the notch takes the width of its longest row, not the window's (the window follows the notch, so a
-   notch fitted to its window never grew: a new row came out cut, "You took control · cl", without its button). */
+/* max-content: the window follows the notch, so a notch fitted to its window could never grow. */
 .sn-stage { position: fixed; left: 0; top: 0; width: max-content; }
 .sn-stage .sn { width: max-content; }
 .sn { --dk-bg: #1c1c1c; --dk-fg: #ebe8e1; --dk-line: #2f2f2f; --dk-chip: #262626; display: inline-flex; flex-direction: column; gap: 2px; padding: 6px; background: #1c1c1c; color: #ebe8e1; font-size: 13px; white-space: nowrap;
   transition: transform 320ms cubic-bezier(.2, .8, .2, 1), opacity 200ms ease-out; }
-/* Its corners come from where it is (cornersFor): square on an edge it is attached to. It slides in from that edge,
-   or fades in when it floats. */
 .sn { border-radius: var(--sn-radius, 14px); }
 .sn-stage.attached.sn-v-bottom .sn { transform: translateY(110%); }
 .sn-stage.attached.sn-v-top .sn { transform: translateY(-110%); }
@@ -1870,7 +1689,6 @@ html.status-notch-window, html.status-notch-window body, html.status-notch-windo
 .sn-btn.sn-ghost { background: transparent; color: #d8d5ce; box-shadow: inset 0 0 0 1px #3a3a3a; }
 .sn-btn.sn-ghost:hover { background: #2a2a2a; }
 
-/* The agent's live overlay (LiveOverlay.tsx): click-through, over the whole picture. */
 html.agent-live-window, html.agent-live-window body, html.agent-live-window #root { background: transparent; min-height: 0; height: 100%; overflow: hidden; }
 .lv-root { position: fixed; inset: 0; pointer-events: none; }
 .lv-strokes { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
@@ -1880,13 +1698,11 @@ html.agent-live-window, html.agent-live-window body, html.agent-live-window #roo
 .lv-cursor { position: absolute; left: 0; top: 0; transition-property: transform; transition-timing-function: cubic-bezier(.2, .8, .2, 1); will-change: transform; }
 .lv-cursor svg { display: block; margin: -5px 0 0 -5px; overflow: visible; }
 .lv-cursor svg path { fill: var(--accent-light); stroke: #fff; stroke-width: 2; stroke-linejoin: round; }
-/* The agent's name, and beside it in a lighter part of the same pill what it is doing for a moment (keys, typing). */
 .lv-name { position: absolute; left: 22px; top: 24px; display: inline-flex; align-items: center; gap: 0; padding: 4px 4px 4px 11px; border-radius: 999px;
   background: var(--accent-light); color: #fff; font-family: "Plus Jakarta Sans", system-ui, sans-serif; font-size: 12.5px; font-weight: 600; letter-spacing: -0.005em; white-space: nowrap; }
 .lv-name:not(:has(.lv-act)) { padding-right: 11px; }
 .lv-act { display: inline-block; overflow: hidden; margin-left: 8px; padding: 2px 9px; border-radius: 999px; background: #fff; color: color-mix(in srgb, var(--accent-light) 80%, #000); font-weight: 600;
   transform-origin: left center; animation: lv-act 1.5s cubic-bezier(.3, 1.5, .5, 1) forwards; }
-/* It unfolds out of the name with a small bounce, holds, then folds back in. */
 @keyframes lv-act {
   0% { opacity: 0; max-width: 0; padding-inline: 0; margin-left: 0; transform: scale(.6); }
   16% { opacity: 1; max-width: 160px; padding-inline: 9px; margin-left: 8px; transform: scale(1.08); }
@@ -1898,13 +1714,11 @@ html.agent-live-window, html.agent-live-window body, html.agent-live-window #roo
 .lv-mark.double { animation: lv-ring .6s ease-out 2 forwards; }
 .lv-mark.scroll { border-radius: 8px; height: 26px; margin-top: -13px; animation: lv-ring .7s ease-out forwards; }
 @keyframes lv-ring { from { transform: scale(.6); opacity: 1; } to { transform: scale(2.8); opacity: 0; } }
-/* In the side panel (placement "panel"): the same rows on the panel's own surface. */
 .vp-status { --dk-bg: var(--surface); --dk-fg: var(--text); display: flex; flex-direction: column; gap: 2px; margin: 0 0 8px; padding: 6px; border-radius: var(--r-lg); background: var(--surface); color: var(--text); font-size: 13px; }
 .vp-status .sn-icon, .vp-status .sn-time { color: var(--muted); }
 .vp-status .sn-icon.ok { color: var(--ok); }
 .vp-status .sn-icon.accent { color: var(--accent); }
 .vp-status .sn-btn { background: var(--btn-bg); color: var(--btn-fg); }
-/* In the open list the descriptions are read whole (up to two lines); the closed button keeps one. */
 .dropdown-list .dropdown-detail { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.35; }
 .ag-recordings { display: flex; flex-direction: column; gap: 4px; container-type: inline-size; }
 .ag-history { display: flex; flex-direction: column; gap: 2px; max-height: 460px; overflow-y: auto; scrollbar-width: none; container-type: inline-size; }
@@ -1919,16 +1733,13 @@ html.agent-live-window, html.agent-live-window body, html.agent-live-window #roo
 .ag-ended.limit { background: var(--warn-bg); color: var(--warn); }
 .ag-history.skeleton-lines { min-height: 120px; }
 
-/* The name beside the mark, as the logo writes it: lowercase, tight, the app's font at its heaviest. */
 .wordmark { font-weight: 800; letter-spacing: -0.045em; }
 
-/* Settings › Appearance › Requests and notices (PlacementEditor.tsx): a picture to drag them on. */
 .pref-row.pref-row-block { flex-direction: column; align-items: stretch; gap: 14px; }
 .pref-row-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .pl { display: grid; gap: 14px; }
 .pl-stage { position: relative; aspect-ratio: 16 / 10; width: 100%; border-radius: var(--r); overflow: hidden; background: #2d3b33; user-select: none; touch-action: none; }
 .pl-stage > .pixel-scene { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; }
-/* A real Windows desktop under the pieces (MachineDesktop): its icons and taskbar, not to be clicked here. */
 .pl-desk { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
 .pl-piece { position: absolute; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 10px; box-sizing: border-box; background: #1c1c1c; color: #ebe8e1;
   font-size: 11.5px; white-space: nowrap; cursor: grab; transition: left 220ms cubic-bezier(.2, .8, .2, 1), top 220ms cubic-bezier(.2, .8, .2, 1), border-radius 160ms ease; z-index: 2; }
@@ -1938,7 +1749,6 @@ html.agent-live-window, html.agent-live-window body, html.agent-live-window #roo
 .pl-icon svg { display: block; }
 .pl-btn { flex: none; padding: 3px 8px; border-radius: 6px; background: #ebe8e1; color: #1c1c1c; font-weight: 600; font-size: 11px; }
 .pl-rec { width: 7px; height: 7px; border-radius: 50%; background: #ef5a4c; flex: none; }
-/* While dragging: a line where it snaps (an edge, the middle). */
 .pl-guide { position: absolute; z-index: 1; pointer-events: none; background: color-mix(in srgb, var(--accent-dark) 85%, #fff); }
 .pl-guide.v { top: 0; bottom: 0; width: 1.5px; margin-left: -0.75px; } .pl-guide.h { left: 0; right: 0; height: 1.5px; margin-top: -0.75px; }
 .pl-foot { display: flex; justify-content: flex-end; }

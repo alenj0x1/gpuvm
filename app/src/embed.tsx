@@ -1,9 +1,3 @@
-// The app's real components for the website, running on the same sample data used to design the app (mock.ts): the
-// machine's cube (the hero, the machine's options, Customize), the games, Home, the Windows cleanup, the stream
-// options, the administrator card and the whole app in a window. Each one mounts in a Shadow DOM with the app's own
-// styles, so neither the site's CSS nor the app's leak into each other. They all follow the page's language, light or
-// dark mode, accent and world (configure()), and the app's own Settings change the page back ("gpuvm-embed-prefs").
-// Built by vite.embed.config.ts into site/assets/embed.js.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { api, onJob, startJob as runJob } from "./api";
@@ -38,15 +32,12 @@ type Theme = "light" | "dark";
 interface Site { lang: Lang; theme: Theme; accent: AccentPref; world: AmbientId; time: AmbientTime; dice: number }
 interface RunningJob extends JobInfo { vm: string; after?: () => void }
 
-/* ---------- What the page decides: language, mode, accent and world ---------- */
-
 let site: Site = { lang: "es", theme: "light", accent: "blue", world: "blocks", time: "day", dice: 0 };
 const siteSubs = new Set<() => void>();
 const useSite = () => useSyncExternalStore((l) => { siteSubs.add(l); return () => { siteSubs.delete(l); }; }, () => site);
 const hosts = new Set<HTMLElement>();
 const paintHosts = () => hosts.forEach((el) => { el.dataset.theme = site.theme; el.dataset.accent = site.accent; });
 
-// Sample decorations and spaces, the same the screenshots use, so Home and the app show decorated machines in worlds.
 const SEED = "gpuvm.site.seed";
 const DECOR: Record<string, Decor> = {
   win10: { color: "violet", led: { text: "PLAYER ONE", color: "amber", live: false, y: 0.35 },
@@ -67,18 +58,16 @@ function seed() {
       { id: "lab", name: LAB_NAME[site.lang], ambient: "board", machines: ["estudio"] },
     ]));
     localStorage.setItem("gpuvm.space.shown", "main");
-  } catch { /* no storage: the demos still run, undecorated */ }
+  } catch {}
 }
-// The sample space keeps a name in the page's language (until someone renames it in the app).
 function renameLab(lang: Lang) {
   try {
     const list = JSON.parse(localStorage.getItem("gpuvm.spaces") ?? "[]");
     const lab = Array.isArray(list) && list.find((s: { id: string; name: string }) => s.id === "lab" && Object.values(LAB_NAME).includes(s.name));
     if (lab) { lab.name = LAB_NAME[lang]; localStorage.setItem("gpuvm.spaces", JSON.stringify(list)); window.dispatchEvent(new Event("gpuvm-spaces")); }
-  } catch { /* no storage */ }
+  } catch {}
 }
 
-/** The page changed something: every demo follows (the app's preferences too, so its own Settings show it). */
 function configure(change: Partial<Omit<Site, "dice">>) {
   const next = { ...site, ...change };
   const langChanged = next.lang !== site.lang;
@@ -90,10 +79,8 @@ function configure(change: Partial<Omit<Site, "dice">>) {
   document.documentElement.dataset.theme = site.theme;
   siteSubs.forEach((l) => l());
 }
-/** "Decorate at random" on the hero's cube. */
 function randomize() { site = { ...site, dice: site.dice + 1 }; siteSubs.forEach((l) => l()); }
 
-// The app's own Settings (in the window demo) changed the theme, accent or language: the page follows.
 window.addEventListener("gpuvm-prefs", () => {
   const p = readPrefs();
   const theme = resolvedTheme(p.theme), lang = p.lang === "system" ? site.lang : p.lang;
@@ -101,8 +88,6 @@ window.addEventListener("gpuvm-prefs", () => {
   configure({ theme, accent: p.accent, lang });
   window.dispatchEvent(new CustomEvent("gpuvm-embed-prefs", { detail: { theme, accent: p.accent, lang } }));
 });
-
-/* ---------- Jobs shared by every demo, like the app's ---------- */
 
 let jobs: Record<string, RunningJob> = {};
 const listeners = new Set<() => void>();
@@ -126,8 +111,6 @@ function start(vm: string, cmd: string, args: Record<string, unknown>, after?: (
   runJob(id, cmd, args);
 }
 
-/* ---------- Pieces of the machine's page, as the app draws them ---------- */
-
 function OptionRow({ icon, title, value, desc, section, sub, children }: {
   icon: ReactNode; title: string; value?: string; desc: string; section?: boolean; sub?: boolean; children?: ReactNode;
 }) {
@@ -145,7 +128,6 @@ function OptionRow({ icon, title, value, desc, section, sub, children }: {
 
 const MONITOR: HostMonitor = { id: "demo", name: "KG241Y S", primary: true, x: 0, y: 0, width: 1920, height: 1080, hz: 180 } as HostMonitor;
 
-// How the machine streams: its use heads the group and sets the rows under it, as in the machine's options.
 function Stream({ vm }: { vm: VmOverview }) {
   const [draft, setDraft] = useState({ fps: vm.client?.fps ?? MONITOR_FPS, vsync: vm.client?.vsync ?? true, framePacing: vm.client?.framePacing ?? false,
     mouse: (vm.client?.mouse ?? "capture") as MouseMode });
@@ -196,7 +178,6 @@ function Stream({ vm }: { vm: VmOverview }) {
   );
 }
 
-// The card over Moonlight with a sample prompt. Answering it shows the next one, as another program would ask.
 function Prompt() {
   const [round, setRound] = useState(0);
   return (
@@ -208,7 +189,6 @@ function Prompt() {
   );
 }
 
-/** The sample machines, refreshed whenever a job ends. */
 function useVms() {
   const [vms, setVms] = useState<VmOverview[]>([]);
   const [, tick] = useState(0);
@@ -235,10 +215,7 @@ function Demo({ view, vmName }: { view: View; vmName: string }) {
   return <SharedDisks {...props} />;
 }
 
-/* ---------- The cube ---------- */
-
 const NEIGHBORS = ["win11-pruebas", "estudio"];
-/** Usage that wanders like a machine at work, so the lightning comes and goes. */
 function useLiveUsage(base: CubeMachine["usage"], still: boolean) {
   const [usage, setUsage] = useState(base);
   useEffect(() => {
@@ -262,7 +239,6 @@ function useNeighbors(vms: VmOverview[]) {
   return useMemo(() => vms.filter((v) => NEIGHBORS.includes(v.name)).map((v) => ({ name: v.name, machine: cubeOf(v) })), [vms]);
 }
 
-/** The hero: a machine decorated at random, in the world the page picked; "Decorate at random" redecorates it. */
 function HeroCube() {
   const s = useSite();
   const vms = useVms();
@@ -275,7 +251,6 @@ function HeroCube() {
   return <MachineCube machine={machine} name="win10" decorShown={decor} spin={s.dice} ambient={s.world} time={s.time} spaceName={t("My machines")} others={others} />;
 }
 
-/** The machine's options beside its cube: the camera closes in on the piece that changes. */
 function MachineDemo() {
   const s = useSite();
   const vms = useVms();
@@ -302,7 +277,6 @@ function MachineDemo() {
   );
 }
 
-/** Customize, as on a machine's page: the panel beside the cube, decorated by dragging on it. */
 function CustomizeDemo() {
   const s = useSite();
   const [source] = useState(() => draftSource("win10", randomDecor()));
@@ -322,7 +296,6 @@ function CustomizeDemo() {
     </div>
   );
 }
-/** The games over a machine's space: Jugar opens the gallery, where each game plays by itself and can be played. */
 function GamesDemo() {
   const s = useSite();
   const vms = useVms();
@@ -337,16 +310,11 @@ function GamesDemo() {
   );
 }
 
-/** GpuVM's viewer with its side panel: the machine's picture and, beside it, the same board of widgets as in the
- *  app (Edit moves, resizes, adds and removes them; switching machines and the games work). */
-// Each sample machine shows its own landscape, so switching machines in the panel changes the picture.
 const VIEWER_SCENES = new Set(["win10", "win11-pruebas", "estudio"]);
-// In the demo every sample machine is on and streaming, so the panel can switch between them.
 const allOn = (vms: VmOverview[]) => vms.map((v) => (VIEWER_SCENES.has(v.name) ? { ...v, state: "Running", streaming: true } : v));
 
 function ViewerDemo() {
   const [vm, setVm] = useState("win10");
-  // Dragged from the panel's edge as in the app (300-560 px), within what the demo leaves for the picture.
   const [width, setWidth] = useState(340);
   return (
     <div className="site-viewer" style={{ gridTemplateColumns: `minmax(0, 1fr) ${width}px` }}>
@@ -356,14 +324,6 @@ function ViewerDemo() {
   );
 }
 
-/* ---------- The agents chapter ---------- */
-
-// An agent working on its machine with the app's own overlay (cursor, rings, strokes, keys) and its line in the status
-// notch, in three scenes that take turns: a drawing in Paint, an app installed with winget, a video found and played in
-// the browser. Each scene is a script of steps laid out with MachineDesktop's own layout helpers, so the cursor lands
-// where the windows are; each step also tells the desktop what changes and when (a window opens, a letter is typed,
-// the bucket fills), so the windows do what the agent does.
-
 type Shape = NonNullable<LiveEvent["shapes"]>[number];
 type Fn = (s: Stage) => Stage;
 type Pt = [number, number];
@@ -371,10 +331,8 @@ interface Beat extends LiveEvent { then?: [number, Fn][] }
 interface Act { s: Shape; then?: Fn; during?: [number, Fn][] }
 interface SceneCtx { W: number; H: number; es: boolean; pin(id: string): Pt }
 interface Plan { beats: Beat[]; key?: string }
-/** The overlay's glide to each click (LiveOverlay's GLIDE_MS), to time what the desktop does after it. */
 const GLIDE = 240;
 const EMPTY: Stage = { windows: [] };
-/** A window's place, made shorter when needed so the status notch floating over the taskbar never covers it. */
 const clear = (at: Frac, H: number): Frac => [at[0], at[1], at[2], Math.min(at[3], (H - 62) / H - at[1])];
 
 function beat(step: number, intent: string, screen: { w: number; h: number }, acts: Act[], method = "input.act"): Beat {
@@ -397,16 +355,12 @@ const key = (keys: string, then?: Fn): Act => ({ s: { type: "key", keys }, then 
 const typing = (chars: number): Act => ({ s: { type: "type", chars } });
 const withWin = (kind: Kind, f: (w: StageWindow) => StageWindow): Fn => (s) => ({ ...s, windows: s.windows.map((w) => (w.kind === kind ? f(w) : w)) });
 const openWin = (w: StageWindow): Fn => (s) => ({ ...s, windows: [...s.windows.filter((x) => x.kind !== w.kind), w] });
-/** One letter at a time, `ms` apart: what `text(i)` shows after the i-th letter. */
 const letters = (n: number, ms: number, f: (i: number) => Fn): [number, Fn][] => Array.from({ length: n }, (_, i) => [(i + 1) * ms, f(i + 1)] as [number, Fn]);
 
-/** a) A night landscape in Paint: the sky filled, a crescent moon, stars, two mountain ridges with snow, the lake and a
- *  house with its window lit, each outlined with the pencil and filled with the bucket, as one paints in Paint. */
 function paintScene({ W, H, es, pin }: SceneCtx): Plan {
   const screen = { w: W, h: H };
   const at = clear([0.07, 0.03, 0.86, 0.77], H);
   const L = paintLayout(stageBox(at, W, H)), cv = L.canvas, A = cv.w / cv.h;
-  /** Canvas fractions → desktop pixels. Round shapes are measured in canvas heights (`ring`) so they stay round. */
   const C = (p: Pt): Pt => [cv.x + p[0] * cv.w, cv.y + p[1] * cv.h];
   const ring = (cx: number, cy: number, r: number, a: number): Pt => [cx + (r * Math.cos(a)) / A, cy + r * Math.sin(a)];
   const pen = Math.max(1.6, cv.h / 100);
@@ -417,7 +371,6 @@ function paintScene({ W, H, es, pin }: SceneCtx): Plan {
   const draw = (strokes: Pt[][], ms: number, c: number, width = pen): Act => ({ s: { type: "drag", strokes: strokes.map((st) => st.map(C)), ms, color: PAINT_COLORS[c], width } });
   const bucket = (p: Pt, pts: Pt[], c: number) => click(C(p), fill(pts, c));
 
-  // The moon: a circle with another, slightly smaller and shifted to the upper right, taken out of it.
   const mo = { x: 0.15, y: 0.27, r: 0.15 }, d = 0.42, r2 = 0.92, tilt = -0.6;
   const x0 = (d * d + 1 - r2 * r2) / (2 * d), y0 = Math.sqrt(1 - x0 * x0);
   const th = Math.atan2(y0, x0), be = Math.atan2(y0, x0 - d);
@@ -427,11 +380,9 @@ function paintScene({ W, H, es, pin }: SceneCtx): Plan {
     ...Array.from({ length: 20 }, (_, i): Pt => { const a = 2 * Math.PI - be - (i / 19) * (2 * Math.PI - 2 * be); return [d + r2 * Math.cos(a), r2 * Math.sin(a)]; }),
   ].map(turn);
   const moonIn = turn([-(1 + r2 - d) / 2, 0]);
-  // Five-point stars and a few small ones.
   const star = (cx: number, cy: number, r: number): Pt[] => Array.from({ length: 11 }, (_, i) => ring(cx, cy, i % 2 ? r * 0.42 : r, -Math.PI / 2 + (i * Math.PI) / 5));
   const STARS: [number, number, number][] = [[0.34, 0.14, 0.05], [0.47, 0.3, 0.034], [0.58, 0.1, 0.043], [0.72, 0.24, 0.054], [0.86, 0.11, 0.04], [0.95, 0.31, 0.032]];
   const DOTS: Pt[] = [[0.05, 0.08], [0.27, 0.06], [0.41, 0.05], [0.53, 0.21], [0.8, 0.05], [0.91, 0.21], [0.39, 0.34], [0.64, 0.3]];
-  // The ridges, the lake and the house.
   const LAKE = 0.8;
   const BACK: Pt[] = [[0.003, 0.56], [0.07, 0.49], [0.15, 0.55], [0.27, 0.4], [0.36, 0.5], [0.45, 0.44], [0.55, 0.57], [0.66, 0.37], [0.76, 0.5], [0.86, 0.42], [0.94, 0.51], [0.997, 0.47]];
   const FRONT: Pt[] = [[0.003, 0.66], [0.1, 0.6], [0.2, 0.68], [0.31, 0.62], [0.42, 0.72], [0.53, 0.65], [0.62, 0.71], [0.69, 0.69], [0.83, 0.69], [0.9, 0.62], [0.997, 0.7]];
@@ -475,7 +426,6 @@ function paintScene({ W, H, es, pin }: SceneCtx): Plan {
   ] };
 }
 
-/** b) An app installed with winget in PowerShell: the command typed, the download filling its bar, VLC on the desktop. */
 function installScene({ W, H, es, pin }: SceneCtx): Plan {
   const screen = { w: W, h: H };
   const at = clear([0.1, 0.04, 0.8, 0.74], H);
@@ -507,12 +457,10 @@ function installScene({ W, H, es, pin }: SceneCtx): Plan {
     ])]),
     b(4, ["Instalando VLC", "Installing VLC"], [wait(2000, [[100, add(tx.hash)], [450, add(tx.start)]],
       (s) => ({ ...term((t) => ({ lines: [...t.lines, tx.ok, ""], input: prompt }))(s), icons: [[GLYPHS.vlc, "vlc"]], pinned: [GLYPHS.vlc] }))]),
-    // A new app on a centered taskbar: everything moves half a button left and VLC comes after the terminal.
     b(5, ["VLC quedó instalado", "VLC is installed"], [move([terminal[0] + 17, terminal[1]]), wait(2400)]),
   ] };
 }
 
-/** c) The browser: the address typed, a video picked on the site and played. */
 function browseScene({ W, H, es, pin }: SceneCtx): Plan {
   const screen = { w: W, h: H };
   const at = clear([0.07, 0.03, 0.86, 0.77], H);
@@ -539,7 +487,6 @@ function AgentsDemo() {
   const [stage, setStage] = useState<Stage>(EMPTY);
   const [step, setStep] = useState<LiveEvent | null>(null);
   const timers = useRef<number[]>([]);
-  /** The scene playing now: steps and timers of one that ended never reach the desktop. */
   const current = useRef<Plan | null>(null);
   useSite();
   const lang = getLang();
@@ -552,7 +499,6 @@ function AgentsDemo() {
     ro.observe(el);
     return () => { ro.disconnect(); timers.current.forEach(clearTimeout); };
   }, []);
-  // A new scene, size or language starts the scene over on a clear desktop...
   const sceneKey = size ? `${scene}|${size.w}x${size.h}|${lang}` : "";
   useLayoutEffect(() => {
     timers.current.forEach(clearTimeout);
@@ -560,7 +506,6 @@ function AgentsDemo() {
     current.current = null;
     setPlan(null); setStage(EMPTY); setStep(null);
   }, [sceneKey]);
-  // ...where its script is laid out, with the taskbar's buttons found where they are drawn.
   useLayoutEffect(() => {
     const root = box.current;
     if (plan || stage !== EMPTY || !size || !root) return;
@@ -595,20 +540,13 @@ function AgentsDemo() {
   );
 }
 
-/* ---------- Mounting ---------- */
-
-/** Everything inside a demo is drawn again when the language changes, as the app does (without starting it over). */
 function Root({ children }: { children: () => ReactNode }) {
   useSite();
   return <div className="demo-lang">{children()}</div>;
 }
 
-// The size the whole app is drawn at before it is scaled to the page: a desktop window, or on a phone a narrow
-// one with the sidebar collapsed, so its text stays readable once scaled.
 const appSize = (width: number) => (width < 700 ? { w: 560, h: 860 } : { w: 1200, h: 750 });
 
-// The app's stylesheet, scoped to the shadow root: its :root tokens (theme, accent) become the host's, and the fonts
-// come from the page (the same family), so nothing is downloaded twice.
 const scopedCss = appCss
   .replace(/@import[^;]+;/g, "")
   .replace(/:root\[([^\]]+)\]/g, ":host([$1])")
@@ -671,8 +609,6 @@ const scopedCss = appCss
   .demo-root.full .dialog { max-height: calc(100% - var(--titlebar) - 48px); }
   .demo-root.full .overlay { inset: var(--titlebar) 0 0; }`;
 
-// On the website the cubes are decoration beside the text, several at once: 30 frames a second is plenty and
-// halves their cost.
 (window as { __gpuvmFps?: number }).__gpuvmFps = 30;
 
 function mount(el: HTMLElement, options: { view: View; vm?: string }) {
@@ -685,13 +621,10 @@ function mount(el: HTMLElement, options: { view: View; vm?: string }) {
   shadow.replaceChildren(style, host);
   hosts.add(el);
   paintHosts();
-  // The wheel scrolls the page over a demo until the demo is clicked: from then on, while the pointer stays on it, the
-  // wheel zooms the cube (and scrolls the app's own rows) as in the app.
   let engaged = false;
   el.addEventListener("pointerdown", () => { engaged = true; }, true);
   el.addEventListener("pointerleave", () => { engaged = false; });
   el.addEventListener("wheel", (e) => { if (!engaged && !e.ctrlKey) e.stopPropagation(); }, true);
-  // Menus and lists open inside the demo that was touched, where its styles are.
   if (options.view !== "app") el.addEventListener("pointerdown", () => setPortalRoot(host), true);
   const root = createRoot(host);
   const render = (make: () => ReactNode) => root.render(<Root>{make}</Root>);
@@ -701,7 +634,7 @@ function mount(el: HTMLElement, options: { view: View; vm?: string }) {
     setPortalRoot(host);
     el.addEventListener("pointerdown", () => setPortalRoot(host), true);
     const size = appSize(el.clientWidth);
-    if (size.w < 700) { try { localStorage.setItem("gpuvm.collapsed", "1"); } catch { /* no storage */ } }
+    if (size.w < 700) { try { localStorage.setItem("gpuvm.collapsed", "1"); } catch {} }
     host.style.width = `${size.w}px`;
     host.style.height = `${size.h}px`;
     const fit = () => {

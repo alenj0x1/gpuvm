@@ -23,7 +23,6 @@ function Get-GpuVMTemplate {
             usedBy    = @(Get-TemplateChildVM -VhdPath $meta['layerPaths'])
             layers    = $meta['layerPaths'].Count
             updatedAt = $meta['updatedAt']
-            # An agent template older than this GpuVM's agent or Sunshine: the service updates it (Update-GpuVMTemplate).
             stale     = [bool](Test-GpuVMTemplateStale -Template $meta)
             updating  = [bool](Test-TemplateUpdating -Template $meta)
         }

@@ -1,7 +1,4 @@
-# End-to-end latency meter: key press → the VM reacts → Sunshine captures and encodes → Moonlight decodes and shows it.
-# For each variant it opens Moonlight, presses Scroll Lock (forwarded to the VM) and times how long the center
-# square of the latency target (target.ps1, running in the VM) takes to change between black and white on this screen.
-# What the monitor itself adds afterwards is not included. Run as administrator, same session as Moonlight.
+# Run as administrator, same session as Moonlight.
 param(
     [Parameter(Mandatory)][string]$Name,
     [Parameter(Mandatory)][string]$OutFile,
@@ -31,7 +28,6 @@ $results = foreach ($variant in Get-LatencyVariants | Where-Object { -not $Only 
     $session = Start-LatencyStream -VM $vm -Variant $variant -App $App
     $visibleSec = Wait-LatencyStreamVisible -Since $started
     Start-Sleep -Seconds 5
-    # Keyboard input goes to the foreground window: make it Moonlight, and close anything open in the VM (Esc).
     $session.Process.Refresh()
     [void][GpuVMLatency]::SetForegroundWindow($session.Process.MainWindowHandle)
     Start-Sleep -Milliseconds 300

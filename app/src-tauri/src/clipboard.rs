@@ -1,9 +1,4 @@
-//! What was copied on this PC, ready to paste into a machine (the panel's Portapapeles widget).
-//!
-//! Only from the PC to the machines: nothing is ever read from a machine's clipboard. The recent copies (text, an
-//! image or files) live in this process's memory only, never on disk, and only while a machine is open in GpuVM's
-//! viewer. Copies that password managers and other programs mark as private (Windows' clipboard-history flags) are
-//! skipped, as Windows' own clipboard history does.
+// Only from the PC to the machines, kept in memory only while a machine is open; copies marked private are skipped.
 
 use base64::Engine;
 use serde_json::{json, Value};
@@ -23,12 +18,9 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     WNDCLASSW,
 };
 
-/// Copies kept.
 const KEEP: usize = 8;
-/// Larger copies are not kept (a text of a million characters, a 30 MB image).
 const MAX_TEXT: usize = 1 << 20;
 const MAX_IMAGE: usize = 30 << 20;
-/// Images up to this size are shown in the widget as they are; larger ones by their size only.
 const MAX_THUMB: usize = 1 << 20;
 
 enum Payload {
@@ -40,13 +32,11 @@ enum Payload {
 struct Item {
     id: u64,
     payload: Payload,
-    /// What the widget shows.
     view: Value,
 }
 
 static ITEMS: Mutex<Vec<Item>> = Mutex::new(Vec::new());
 static NEXT: AtomicU64 = AtomicU64::new(1);
-/// Machine every new text or image goes to on its own ("On copy"), if any. Off by default.
 static AUTO: Mutex<Option<String>> = Mutex::new(None);
 static APP: Mutex<Option<AppHandle>> = Mutex::new(None);
 
@@ -54,7 +44,6 @@ fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(Some(0)).collect()
 }
 
-/// Starts listening to the clipboard (once).
 pub fn start(app: &AppHandle) {
     {
         let mut slot = APP.lock().unwrap_or_else(|e| e.into_inner());
@@ -64,8 +53,7 @@ pub fn start(app: &AppHandle) {
         *slot = Some(app.clone());
     }
     std::thread::spawn(|| {
-        // SAFETY: a message-only window of this thread that receives WM_CLIPBOARDUPDATE; the loop runs for the life
-        // of the process.
+        // SAFETY: a message-only window of this thread receiving WM_CLIPBOARDUPDATE; the loop runs for the process's life.
         unsafe {
             let class = wide("GpuVMClipboard");
             let wc = WNDCLASSW { lpfnWndProc: Some(proc_), lpszClassName: class.as_ptr(), ..std::mem::zeroed() };
@@ -84,7 +72,6 @@ pub fn start(app: &AppHandle) {
 
 unsafe extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if msg == WM_CLIPBOARDUPDATE {
-        // Only while a machine is open: the rest of the time nothing of what is copied is looked at.
         if crate::viewer::any_open() {
             if let Some(payload) = read(hwnd) {
                 add(payload);
@@ -95,7 +82,6 @@ unsafe extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LP
     DefWindowProcW(hwnd, msg, wparam, lparam)
 }
 
-/// Marked private by the program that copied it (password managers): skipped, as Windows' clipboard history does.
 unsafe fn private() -> bool {
     for name in ["ExcludeClipboardContentFromMonitorProcessing", "Clipboard Viewer Ignore"] {
         if IsClipboardFormatAvailable(RegisterClipboardFormatW(wide(name).as_ptr())) != 0 {
@@ -128,7 +114,6 @@ unsafe fn global_bytes(h: HANDLE) -> Option<Vec<u8>> {
 }
 
 unsafe fn read(hwnd: HWND) -> Option<Payload> {
-    // Another program may hold the clipboard for a moment.
     let mut opened = false;
     for _ in 0..10 {
         if OpenClipboard(hwnd) != 0 {
@@ -181,7 +166,6 @@ unsafe fn read(hwnd: HWND) -> Option<Payload> {
     payload
 }
 
-/// A device-independent bitmap (what Print Screen and most programs copy) as a PNG: 24 or 32 bits per pixel.
 fn dib_to_png(dib: &[u8]) -> Option<Vec<u8>> {
     let u32_at = |o: usize| dib.get(o..o + 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
     let header = u32_at(0)? as usize;
@@ -262,7 +246,6 @@ fn add(payload: Payload) {
     let auto_send = auto.is_some() && !matches!(payload, Payload::Files(_));
     {
         let mut items = ITEMS.lock().unwrap_or_else(|e| e.into_inner());
-        // Copying the same thing again moves it to the top instead of repeating it.
         items.retain(|i| !same(&i.payload, &payload));
         items.insert(0, Item { id, payload, view });
         items.truncate(KEEP);
@@ -283,7 +266,6 @@ fn list() -> Vec<Value> {
     ITEMS.lock().unwrap_or_else(|e| e.into_inner()).iter().map(|i| i.view.clone()).collect()
 }
 
-/// Forgets every copy (the widget's Borrar, and when the last machine closes).
 pub fn clear() {
     ITEMS.lock().unwrap_or_else(|e| e.into_inner()).clear();
     *AUTO.lock().unwrap_or_else(|e| e.into_inner()) = None;
@@ -302,7 +284,6 @@ async fn send(vm: String, id: u64, folder: String) -> Result<Value, String> {
             Payload::Files(files) => json!({ "Name": vm, "Files": files, "Folder": if folder.is_empty() { "Received".to_string() } else { folder } }),
         }
     };
-    // Files may take a while: their own connection, without the 180 s limit of quick requests.
     let request = json!({ "id": format!("clip{id}"), "cmd": "Send-GpuVMClipboard", "args": args });
     let result = tauri::async_runtime::spawn_blocking(move || {
         let mut conn = crate::backend::connect()?;
@@ -318,13 +299,11 @@ pub fn clipboard_items() -> Vec<Value> {
     list()
 }
 
-/// Puts one of the recent copies into a machine's clipboard.
 #[tauri::command]
 pub async fn clipboard_send(vm: String, id: u64, folder: String) -> Result<Value, String> {
     send(vm, id, folder).await
 }
 
-/// "On copy": every new text or image goes to `vm` on its own; None turns it off.
 #[tauri::command]
 pub fn clipboard_auto(vm: Option<String>) {
     *AUTO.lock().unwrap_or_else(|e| e.into_inner()) = vm.filter(|v| !v.is_empty());

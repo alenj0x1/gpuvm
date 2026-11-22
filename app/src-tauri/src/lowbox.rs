@@ -1,9 +1,4 @@
-//! Starts the viewer at Low integrity. The viewer parses what a machine's streaming host sends (video, audio,
-//! control), and that host runs inside a VM GpuVM treats as untrusted: if a bug there were exploited, a Low process
-//! can't write the user's files or registry, can't open this app's process and can't send messages to its windows
-//! (Windows' integrity levels and UIPI), so it can't climb to this app and from there to the GpuVM service.
-//! The viewer keeps its settings and pairing under LocalLow (the one place a Low process may write), and its
-//! temporary files too.
+// The viewer parses what an untrusted VM sends: at Low integrity an exploit can't write the user's files or reach this app (UIPI).
 
 use std::path::{Path, PathBuf};
 use windows_sys::Win32::Foundation::{CloseHandle, LocalFree, HANDLE, WAIT_TIMEOUT};
@@ -28,17 +23,12 @@ use windows_sys::Win32::System::Threading::{
 };
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-/// BUILTIN\Administrators: deny-only in the viewer's token.
 const ADMINISTRATORS: &str = "S-1-5-32-544";
-/// SE_GROUP_INTEGRITY (winnt.h).
 const SE_GROUP_INTEGRITY: u32 = 0x20;
-/// Low mandatory level.
 const LOW: &str = "S-1-16-4096";
 
-/// PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY (winbase.h).
 const MITIGATION_POLICY_ATTRIBUTE: usize = 0x0002_0007;
-/// winnt.h PROCESS_CREATION_MITIGATION_POLICY_*. Not dynamic code or Microsoft-only binaries (Qt's QML engine and
-/// the bundled DLLs need them), nor win32k lockdown (it draws a window).
+// Not dynamic code or Microsoft-only binaries (Qt's QML engine and bundled DLLs need them), nor win32k lockdown (it draws a window).
 const VIEWER_MITIGATIONS: u64 = (1 << 8)  // FORCE_RELOCATE_IMAGES_ALWAYS_ON
     | (1 << 12) // HEAP_TERMINATE_ALWAYS_ON
     | (1 << 16) // BOTTOM_UP_ASLR_ALWAYS_ON
@@ -83,8 +73,7 @@ fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(Some(0)).collect()
 }
 
-/// The viewer's own folder under LocalLow (settings, pairing, temporary files), created if missing. Folders made
-/// there inherit LocalLow's Low label, so the viewer can write them.
+// Folders made under LocalLow inherit its Low label, so the viewer can write them.
 pub fn viewer_data() -> Option<PathBuf> {
     let profile = std::env::var_os("USERPROFILE")?;
     let dir = Path::new(&profile).join("AppData").join("LocalLow").join("GpuVM").join("Viewer");
@@ -92,7 +81,6 @@ pub fn viewer_data() -> Option<PathBuf> {
     Some(dir)
 }
 
-/// One argument quoted the way the C runtime splits a command line.
 fn quote(arg: &str) -> String {
     if !arg.is_empty() && !arg.contains([' ', '\t', '\n', '"']) {
         return arg.to_string();
@@ -132,8 +120,7 @@ impl Drop for Handle {
     }
 }
 
-/// A viewer started by spawn_low. Held for as long as the app tracks it: the process handle names this process
-/// for good (a process id can be reused once it exits), and closing the job ends the viewer with the app.
+// The process handle names this process for good (a pid can be reused once it exits).
 pub struct LowChild {
     pub pid: u32,
     process: Handle,
@@ -152,7 +139,6 @@ impl LowChild {
     pub fn handle(&self) -> HANDLE {
         self.process.0
     }
-    /// How it ended (its exit code), or None while it runs.
     pub fn exit_code(&self) -> Option<u32> {
         use windows_sys::Win32::System::Threading::GetExitCodeProcess;
         if self.running() {
@@ -164,9 +150,6 @@ impl LowChild {
     }
 }
 
-/// The job the viewer runs in: one process (it can't start others), gone when the app lets go of it, and kept away
-/// from what a streaming window never needs (other desktops, logging off or shutting down, system settings and
-/// display modes, writing the clipboard).
 unsafe fn viewer_job() -> Option<Handle> {
     let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
     if job.is_null() {
@@ -188,11 +171,6 @@ unsafe fn viewer_job() -> Option<Handle> {
     Some(job)
 }
 
-/// Starts `exe` with `args` at Low integrity, with `env` added to this process's environment (and TEMP/TMP in
-/// LocalLow). Fails rather than starting it with more rights.
-///
-/// Its token is this app's with every privilege but change-notify removed and the Administrators group made
-/// deny-only, then labelled Low: even when the app runs as administrator, the viewer has no admin rights.
 pub fn spawn_low(exe: &Path, args: &[String], env: &[(&str, &str)]) -> Result<LowChild, String> {
     let fail = || "Couldn't open the viewer with reduced rights.".to_string();
     let temp = viewer_data().ok_or_else(fail)?.join("Temp");
@@ -226,7 +204,6 @@ pub fn spawn_low(exe: &Path, args: &[String], env: &[(&str, &str)]) -> Result<Lo
             return Err(fail());
         }
 
-        // Environment: this process's, minus TEMP/TMP and the added names, then the added values.
         let replaced: Vec<String> = env.iter().map(|(k, _)| k.to_ascii_uppercase()).chain(["TEMP".into(), "TMP".into()]).collect();
         let mut block: Vec<u16> = Vec::new();
         for (k, v) in std::env::vars_os() {
@@ -279,7 +256,6 @@ mod tests {
         std::path::PathBuf::from(std::env::var("SystemRoot").unwrap()).join("System32").join(exe)
     }
 
-    /// The child's token: Low label, Administrators deny-only, no privilege but change-notify.
     #[test]
     fn child_token_is_low_and_restricted() {
         use windows_sys::Win32::Security::*;
@@ -310,7 +286,7 @@ mod tests {
             windows_sys::Win32::Foundation::CloseHandle(token);
         }
         assert!(child.running());
-        drop(child); // closing the job ends it
+        drop(child);
     }
 
     #[test]
@@ -328,7 +304,6 @@ mod tests {
         }
     }
 
-    /// The child runs inside its job, limited to one process, and the job ends it when let go.
     #[test]
     fn child_is_held_by_its_job() {
         use windows_sys::Win32::System::JobObjects::{IsProcessInJob, QueryInformationJobObject, JobObjectExtendedLimitInformation, JOBOBJECT_EXTENDED_LIMIT_INFORMATION};
@@ -342,7 +317,6 @@ mod tests {
             assert!(QueryInformationJobObject(child._job.0, JobObjectExtendedLimitInformation, (&mut limits as *mut JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(), std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32, std::ptr::null_mut()) != 0);
             assert_eq!(limits.BasicLimitInformation.ActiveProcessLimit, 1);
         }
-        // Closing the job ends the child: a duplicate of its handle sees it exit.
         let mut copy = std::ptr::null_mut();
         // SAFETY: duplicating our own handle into this process.
         unsafe {
@@ -354,15 +328,12 @@ mod tests {
             windows_sys::Win32::Foundation::CloseHandle(copy);
         }
     }
-    /// The installed viewer starts at Low inside its job and stays up (it waits for a pipe that never answers here).
-    /// A viewer that dies as it starts at Low (a DLL, the console, a second process the job refuses) fails this.
-    /// Run by hand: `cargo test viewer_starts_at_low -- --ignored --nocapture` (GPUVM_VIEWER overrides the exe).
+    // Run by hand: `cargo test viewer_starts_at_low -- --ignored --nocapture` (GPUVM_VIEWER overrides the exe).
     #[test]
     #[ignore]
     fn viewer_starts_at_low() {
         let exe = std::env::var("GPUVM_VIEWER").map(std::path::PathBuf::from)
             .unwrap_or_else(|_| std::path::PathBuf::from(r"C:\Program Files\GpuVM\gpuvm\viewer\GpuVMViewer.exe"));
-        // The pipe the app gives it (the Low label lets a Low process open it), and a thread that waits for it.
         // The app's shapes: gpuvm-viewer-<32 hex> and a token of 32+ characters (bridge.cpp refuses anything else).
         let name = format!(r"\\.\pipe\gpuvm-viewer-{:032x}", std::process::id() as u128 * 0x9e37_79b9_7f4a_7c15 + 0x1234);
         let connected = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));

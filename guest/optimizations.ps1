@@ -1,6 +1,4 @@
-﻿# Catalog of guest optimizations. Each profile picks which ones to apply in guest.optimizations.
-# To add one: a new entry with a description and an idempotent block; then test it in a lab.
-# Runs on Windows PowerShell 5.1 inside the VM.
+﻿# Each entry's block must be idempotent.
 
 $GpuVMOptimizations = [ordered]@{
     'power-plan-high'            = @{

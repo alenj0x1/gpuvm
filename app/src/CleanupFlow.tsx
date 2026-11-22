@@ -6,8 +6,6 @@ import {
 } from "@tabler/icons-react";
 import { t, translateModule } from "./i18n";
 
-/** How each cleanup item looks: an icon and a color, a short name and one line that says what it is. Several pieces
- *  can stand for one item (the preinstalled apps). Items the UI doesn't know yet get a neutral piece. */
 export const CLEANUP_LOOK: Record<string, { pieces: { icon: Icon; color: string }[]; readonly name: string; readonly line: string; readonly done: string }> = {
   "telemetry-minimum": { pieces: [{ icon: IconActivity, color: "#c2410c" }], get name() { return t("Diagnostic data"); }, get line() { return t("Windows sends usage data to Microsoft"); }, get done() { return t("Windows sends the minimum to Microsoft"); } },
   advertising: { pieces: [{ icon: IconAd, color: "#b45309" }], get name() { return t("Advertising ID"); }, get line() { return t("Ads built from your data"); }, get done() { return t("No ads built from your data"); } },
@@ -27,7 +25,6 @@ export const CLEANUP_LOOK: Record<string, { pieces: { icon: Icon; color: string 
 };
 const UNKNOWN = { icon: IconPuzzle, color: "#525252" };
 
-/** Each cleanup level's icon and what it is about, in a few words. */
 export const LEVEL_LOOK: Record<string, { icon: React.ReactNode; readonly tagline: string }> = {
   none: { icon: <IconBrandWindows size={18} />, get tagline() { return t("As it comes"); } },
   privacy: { icon: <IconEyeOff size={18} />, get tagline() { return t("Less data to Microsoft"); } },
@@ -37,9 +34,6 @@ export const LEVEL_LOOK: Record<string, { icon: React.ReactNode; readonly taglin
 
 interface Piece { item: string; color: string; image: HTMLImageElement }
 
-/** The cleanup as a scene of chips, in the style of the machine banners: every piece is something Windows comes with
- *  (an app, a tracker, a service), flowing from the four sides toward Windows in the middle. What the chosen level
- *  removes fades out halfway and never arrives. `items` are all the cleanup items; `removed` the ids this level drops. */
 export function CleanupFlow({ items, removed }: { items: string[]; removed: Set<string> }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const gone = useRef(removed);
@@ -49,7 +43,6 @@ export function CleanupFlow({ items, removed }: { items: string[]; removed: Set<
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
-    // Each piece's icon, drawn once into an image the canvas can paint.
     const pieces: Piece[] = items.flatMap((id) => (CLEANUP_LOOK[id]?.pieces ?? [UNKNOWN]).map((p) => {
       const image = new Image();
       image.src = `data:image/svg+xml;utf8,${encodeURIComponent(renderToStaticMarkup(<p.icon size={48} color="#ffffff" stroke={2} />))}`;
@@ -57,7 +50,6 @@ export function CleanupFlow({ items, removed }: { items: string[]; removed: Set<
     }));
     if (!pieces.length) return;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    // Each icon recolored once per color (the accent can change while the dialog is open).
     const tintCache = new Map<string, HTMLCanvasElement>();
     const tinted = (piece: Piece, color: string) => {
       if (!piece.image.complete || !piece.image.naturalWidth) return null;
@@ -78,7 +70,6 @@ export function CleanupFlow({ items, removed }: { items: string[]; removed: Set<
     const noise = (a: number, b: number) => Math.abs(Math.sin(a * 12.9898 + b * 78.233) * 43758.5453) % 1;
     let frame = 0;
     const start = performance.now();
-    // How much each piece is faded: it eases toward its target, so a level change never jumps.
     const fade = new Map<string, number>();
 
     const draw = (now: number) => {
@@ -92,18 +83,14 @@ export function CleanupFlow({ items, removed }: { items: string[]; removed: Set<
         const css = getComputedStyle(canvas);
         const ink = css.getPropertyValue("--text").trim() || "#ebe8e1";
         const surface = css.getPropertyValue("--surface-2").trim() || "#1f1f1f";
-        // Only the app's own colors: pieces in its dark gray, their icons in the accent.
         const accent = css.getPropertyValue("--accent").trim() || "#7d9cf0";
         const pieceBg = css.getPropertyValue("--pick-bg").trim() || "#262626";
-        // Three lanes per side, each lined up with a row or column of Windows in the middle, so no lane crosses another.
         const cx = w / 2, cy = h / 2, s = 22, gap = 3, core = 3 * s + 2 * gap;
         const lanes: [string, number][] = [];
         for (let i = -1; i <= 1; i++) for (const side of ["L", "R", "T", "B"]) lanes.push([side, (side === "L" || side === "R" ? cy : cx) + i * (s + gap) - s / 2]);
         lanes.forEach(([side, pos], li) => {
           const len = (side === "L" || side === "R" ? cx : cy) - core / 2 - gap;
           const speed = 16 + (li % 4) * 4;
-          // As many pieces as fit the lane, evenly spaced around one loop: a short lane (top and bottom) never
-          // wraps two pieces onto the same spot.
           const count = Math.max(1, Math.floor((len + s) / (s + gap)));
           const loop = count * (s + gap);
           for (let k = 0; k < count; k++) {
@@ -118,7 +105,6 @@ export function CleanupFlow({ items, removed }: { items: string[]; removed: Set<
             g.beginPath();
             g.roundRect(x, y, s, s, 5);
             if (!piece) { g.globalAlpha = 0.06; g.fillStyle = ink; g.fill(); continue; }
-            // A removed piece fades between a third and half of the way: it never reaches Windows.
             const target = gone.current.has(piece.item) ? 1 : 0;
             const f = fade.get(piece.item) ?? target;
             const eased = f + (target - f) * 0.08;
@@ -132,7 +118,6 @@ export function CleanupFlow({ items, removed }: { items: string[]; removed: Set<
             if (icon) g.drawImage(icon, x + 4, y + 4, s - 8, s - 8);
           }
         });
-        // Windows in the middle: the four squares of its logo.
         g.globalAlpha = 1;
         g.beginPath();
         g.roundRect(cx - core / 2, cy - core / 2, core, core, 14);
@@ -156,9 +141,6 @@ export function CleanupFlow({ items, removed }: { items: string[]; removed: Set<
   return <canvas ref={ref} className="cleanup-flow" aria-hidden="true" />;
 }
 
-/** Everything Windows comes with that a cleanup level can take away, the same list wherever a level is chosen.
- *  What stays is marked in amber and says what it does now; what the level removes is marked in green and says how
- *  Windows ends up without it. */
 export function CleanupItems({ items, removed }: { items: { id: string; description: string }[]; removed: Set<string> }) {
   return (
     <ul className="cleanup-items">

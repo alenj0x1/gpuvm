@@ -1,7 +1,3 @@
-//! An in-memory GpuVM for tests and for `gpuvm.exe --mcp --fake`: machines, a 1920x1080 desktop drawn as a
-//! grid, input that is recorded instead of injected, files, offers, pause and the kill switch. It follows the
-//! broker contract in broker.rs and the guest protocol (docs/agents/protocol.md).
-
 use super::broker::{Broker, BrokerError, Reply, Result};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -15,13 +11,10 @@ pub struct Machine {
     pub screen: (u32, u32),
     pub taken_by: Option<String>,
     pub paused: bool,
-    /// Pause reason: "control" (the person took over), "human" (request_human) or "person".
     pub paused_by: String,
     pub off: bool,
     pub drop_sends: bool,
-    /// The agent's pending request_human (None once answered, withdrawn or replaced by the person's take-control).
     pub human_request: Option<String>,
-    /// When the guest last said its screen changed size (broker ms), as Get-GpuVMAgent/Invoke report it.
     pub screen_changed_at: Option<u64>,
     pub stale_snapshot: bool,
     pub no_display: bool,
@@ -29,7 +22,6 @@ pub struct Machine {
     pub secure_desktop: bool,
     pub files: HashMap<String, Vec<u8>>,
     pub restore_points: Vec<String>,
-    /// Every input action, in desktop pixels.
     pub actions: Vec<Value>,
 }
 
@@ -41,21 +33,14 @@ pub struct State {
     pub elicitation: bool,
     pub max_steps: u64,
     pub offers: HashMap<String, (String, String)>,
-    /// Answer the fake person gives to approval requests ("allowed", "denied" or "pending").
     pub approval_answer: String,
     pub approvals: HashMap<String, (String, String)>,
     pub calls: Vec<String>,
-    /// The step notes the app would show (agent.invoke's `note`).
     pub notes: Vec<String>,
-    /// The arguments of the last approval request.
     pub last_approval: Value,
-    /// The broker wait (timeoutSec) of every agent.invoke.
     pub timeouts: Vec<Option<u64>>,
-    /// The next approval.get answers "pending" once (the answer arrives right at the deadline).
     pub answer_late: bool,
-    /// The sent path changed after the person allowed it (the service re-measures and says needs_approval).
     pub send_changed: bool,
-    /// Copies made while set come up signed in but with no display (state "no-display").
     pub next_no_display: bool,
     next: u32,
 }
@@ -116,8 +101,6 @@ fn s<'a>(args: &'a Value, key: &str) -> &'a str {
 
 impl Broker for FakeBroker {
     fn call(&self, op: &str, args: Value) -> Result<Reply> {
-        // The program "wait" with args [ms]: a command that takes that long, without holding the fake's state (a real
-        // machine runs it next to screenshots and input).
         if op == "agent.invoke" && args["method"] == "exec.run" && args["params"]["file"] == "wait" {
             let ms = args["params"]["args"][0].as_str().and_then(|v| v.parse().ok()).unwrap_or(0);
             std::thread::sleep(std::time::Duration::from_millis(ms));
@@ -130,7 +113,6 @@ impl Broker for FakeBroker {
         if op == "agent.invoke" {
             st.timeouts.push(args["timeoutSec"].as_u64());
         }
-        // An answer that lands just as the agent stops waiting: the first get still says pending.
         if op == "approval.get" && st.answer_late {
             st.answer_late = false;
             let id = s(&args, "requestId").to_string();
@@ -162,8 +144,6 @@ impl Broker for FakeBroker {
                 let list: Vec<Value> = st.machines.iter().map(|m| json!({
                     "name": m.name, "state": if m.off { "off" } else if m.no_display { "no-display" } else { "ready" }, "disposable": m.disposable, "template": m.template,
                     "lastError": if m.no_display { json!("The agent is signed in but has seen no display for 21 s: no monitor in the session.") } else { Value::Null },
-                    // stale_snapshot: like the real broker in lab 053, the snapshot from connect time says nobody is
-                    // signed in and has no screen; a later signed_in event says who signed in.
                     "agent": if m.off { Value::Null } else if m.stale_snapshot { json!({ "version": "fake", "screen": null, "signedIn": false }) }
                         else { json!({ "version": "fake", "home": r"C:\Users\agent", "screen": { "w": m.screen.0, "h": m.screen.1 }, "signedIn": true }) },
                     "connectedSince": 100,
@@ -210,7 +190,6 @@ impl Broker for FakeBroker {
             }
             _ => {}
         }
-        // Everything else acts on one machine.
         let name = s(&args, "name").to_string();
         let idx = st.machines.iter().position(|m| m.name == name)
             .ok_or_else(|| err("not_found", &format!("There is no machine named {name}.")))?;
@@ -228,7 +207,6 @@ impl Broker for FakeBroker {
         }
         if op == "request.revoke" {
             let id = s(&args, "requestId").to_string();
-            // A pending approval: withdrawn; an answered one: refused, as the broker does.
             if let Some((_, state)) = st.approvals.get_mut(&id) {
                 if state != "pending" {
                     return Err(err("bad_request", "Already answered."));
@@ -275,7 +253,6 @@ impl Broker for FakeBroker {
                 if steps > max_steps {
                     return Err(err("budget", "Step budget used up."));
                 }
-                // The broker sends `blob` after the request; the fake hands it to the guest with the params.
                 let mut params = args["params"].clone();
                 if let Some(b) = args.get("blob") {
                     params["blob"] = b.clone();
@@ -283,7 +260,6 @@ impl Broker for FakeBroker {
                 guest(m, s(&args, "method"), &params)
             }
             "file.send" => {
-                // Like the service: only with the person's allowed `send` request.
                 match st_approvals.get(s(&args, "approval")) {
                     Some((kind, state)) if kind == "send" && state == "allowed" && !send_changed => {}
                     _ => return Err(err("needs_approval", "Sending files needs the person's approval.")),
@@ -297,7 +273,6 @@ impl Broker for FakeBroker {
                     n += 1;
                 }
                 let path = format!(r"C:\Users\agent\Desktop\Received\{saved}");
-                // The real file's size when it exists; `drop_sends` loses it like lab 053's transfer did.
                 let size = std::fs::metadata(host).map(|m| m.len() as usize).unwrap_or(9);
                 if !m.drop_sends {
                     m.files.insert(path.clone(), vec![b'x'; size]);
@@ -349,7 +324,6 @@ impl Broker for FakeBroker {
     }
 }
 
-/// A guest path: relative ones are inside the agent's home.
 fn resolve(path: &str) -> String {
     if path.contains(':') { path.to_string() } else { format!(r"C:\Users\agent\{path}") }
 }
@@ -446,8 +420,6 @@ fn guest(m: &mut Machine, method: &str, p: &Value) -> Result<Reply> {
     }
 }
 
-/// A picture of the desktop region: a light background with a line every 100 desktop pixels (so a zoom shows
-/// where it is) and a dark block at the region's top-left corner.
 fn draw(region: [u32; 4], sent: (u32, u32)) -> Vec<u8> {
     let (w, h) = sent;
     let mut rgb = vec![0u8; (w * h * 3) as usize];

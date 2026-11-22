@@ -1,10 +1,7 @@
-// Spanish for the cube, its decoration (Customize, stickers, figures, colors, LED sign) and the games.
 export default {
-  // The cube (drawn on canvas)
   "{cores} THREADS · {ram} GB · GPU {gpu} % · {disk} GB": "{cores} HILOS · {ram} GB · GPU {gpu} % · {disk} GB",
   "OFF": "APAGADA",
 
-  // Customize
   "Turn left": "Girar a la izquierda",
   "Turn right": "Girar a la derecha",
   "Bigger": "Más grande",
@@ -55,7 +52,6 @@ export default {
   "{n} picked|stickers": "{n} elegidos",
   "Drag any of them to move them together, or use the arrows to move one cell at a time. Ctrl+C and Ctrl+V copy them to this or another machine.": "Se mueven juntos arrastrando cualquiera de ellos, o con las flechas de a una celda. Ctrl+C y Ctrl+V los copian a esta u otra máquina.",
 
-  // Figures
   "Lucky cat": "Gato de la suerte",
   "Plant": "Planta",
   "Duckling": "Patito",
@@ -77,7 +73,6 @@ export default {
   "Fawn": "Cervatillo",
   "Bonsai": "Bonsái",
 
-  // Stickers
   "Star": "Estrella",
   "Bolt": "Rayo",
   "Heart": "Corazón",
@@ -89,7 +84,6 @@ export default {
   "The image is larger than 8 MB.": "La imagen pesa más de 8 MB.",
   "The image couldn't be read.": "No se pudo leer la imagen.",
 
-  // Colors
   "Blue": "Azul",
   "Violet": "Violeta",
   "Pink": "Rosa",
@@ -100,11 +94,9 @@ export default {
   "Teal": "Turquesa",
   "White": "Blanco",
 
-  // Random LED signs (the LED font has A-Z, 0-9 and some symbols)
   "GAME MODE": "MODO JUEGO",
   "HELLO WORLD": "HOLA MUNDO",
 
-  // Game stage
   "Frenzy": "Frenesí",
   "Right click or E to use it": "Clic derecho o E para usarla",
   "Charges as you shoot and take things down": "Se carga al disparar y derribar",
@@ -137,7 +129,6 @@ export default {
   "{n} point": "{n} punto",
   "{n} points": "{n} puntos",
 
-  // Games: Bit a bit
   "Bit by bit": "Bit a bit",
   "Hop your machine between the columns without touching them. Every gap scores, bits count double.": "Haz saltar tu máquina entre las columnas sin tocarlas. Cada hueco suma, los bits valen doble.",
   "Studio": "Estudio",
@@ -152,7 +143,6 @@ export default {
   "Bits in the gaps count double": "Los bits de los huecos valen doble",
   "The gaps narrow as your score grows": "Los huecos se angostan con el puntaje",
 
-  // Games: Overclock
   "Life": "Vida",
   "Shield": "Escudo",
   "Rapid fire": "Disparo rápido",

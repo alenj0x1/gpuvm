@@ -11,12 +11,6 @@ import { CheckMark, humanError, portalRoot } from "./ui";
 import { locale, t, tn, translateModule } from "./i18n";
 import type { AgentAction, AgentClient, AgentHistoryEntry, AgentOffer, AgentRecording, AgentRequest, AgentRequestKind, AgentState } from "./types";
 
-// Everything the app shows of agents: the Agents page, an agent's live state (machine page and the viewer's widget),
-// its requests and the files it offers from the machine's Outbox. The broker decides; this only shows and answers.
-
-/* ---------- small pieces ---------- */
-
-/** "4 s", "3 min", "2 h": how long ago, short. */
 export function since(iso: string, now = Date.now()) {
   const s = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1000));
   if (s < 60) return t("{n} s", { n: s });
@@ -25,7 +19,6 @@ export function since(iso: string, now = Date.now()) {
   return new Date(iso).toLocaleDateString(locale());
 }
 
-/** Re-renders every second while mounted (times that count). */
 function useTick(on = true) {
   const [, set] = useState(0);
   useEffect(() => { if (!on) return; const id = setInterval(() => set((n) => n + 1), 1000); return () => clearInterval(id); }, [on]);
@@ -34,10 +27,8 @@ function useTick(on = true) {
 export const stateLabel = (s: AgentState) => ({
   working: t("Working"), paused: t("Paused|agent"), control: t("You have control"), waiting: t("Waiting for you"), human: t("Needs you"), idle: t("Connected"),
 })[s];
-/** The dot's tone: working is the accent, anything waiting on the person is the warning tone. */
 const stateTone = (s: AgentState) => (s === "working" ? "on" : s === "waiting" || s === "human" ? "warn" : "idle");
 
-/** A client's own icon: a terminal for command-line clients (Claude Code), a robot for the rest. */
 function ClientIcon({ client, size = 18 }: { client: Pick<AgentClient, "name">; size?: number }) {
   const I = /code|cli|terminal/i.test(client.name) ? IconTerminal2 : IconRobot;
   return <span className="ag-client-icon"><I size={size} /></span>;
@@ -48,15 +39,12 @@ export function StatePill({ state, noDisplay }: { state: AgentState; noDisplay?:
   return <span className={`ag-state ${stateTone(state)}`}><span className="ag-dot" />{stateLabel(state)}</span>;
 }
 
-/** The machine's agent is signed in but sees no screen (Get-GpuVMAgent "no-display"): it can't take screenshots or
- *  use the mouse and keyboard, so nothing that needs its screen is offered. */
 export function useNoDisplay(machine: string | null | undefined) {
   const snap = useAgents();
   const m = machine ? snap.machineAgents[machine] : undefined;
   return m?.state === "no-display" ? m : null;
 }
 
-/** The notice for a machine whose agent sees no screen: on the card's surface, the icon in its warning square. */
 export function NoDisplayNotice({ machine }: { machine: string | null | undefined }) {
   const nd = useNoDisplay(machine);
   if (!nd) return null;
@@ -71,8 +59,6 @@ export function NoDisplayNotice({ machine }: { machine: string | null | undefine
   );
 }
 
-/** What the session did so far: actions and minutes, and how far into the person's limit when they set one
- *  (Settings › Agents; none by default). */
 function Budget({ c }: { c: AgentClient }) {
   const used = <>{tn(c.steps, "{n} action", "{n} actions")}<span className="ag-sep">·</span>{t("{n} min", { n: c.minutes })}</>;
   if (!c.maxSteps && !c.maxMinutes) {
@@ -90,7 +76,6 @@ function Budget({ c }: { c: AgentClient }) {
   );
 }
 
-/** One action of the agent: its screenshot (when the broker kept one), what it did and when. */
 function ActionRow({ a, now, client }: { a: AgentAction; now: number; client: string }) {
   const [thumb, setThumb] = useState<string | null>(a.thumb ?? null);
   useEffect(() => {
@@ -108,12 +93,8 @@ function ActionRow({ a, now, client }: { a: AgentAction; now: number; client: st
   );
 }
 
-/* ---------- live state ---------- */
-
 type LiveSize = "full" | "compact" | "tiny";
 
-/** An agent working on a machine: what it does, how far into its budget, its last actions, and the person's controls.
- *  `size`: full (machine page), compact (widget with room for actions), tiny (widget one row high). */
 export function AgentLive({ client, size = "full", actions = 3, onTakeControl }: { client: AgentClient; size?: LiveSize; actions?: number; onTakeControl?: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -127,7 +108,6 @@ export function AgentLive({ client, size = "full", actions = 3, onTakeControl }:
   const paused = client.state === "paused" || client.state === "control";
   const spin = (key: string, I: Icon) => (busy === key ? <IconLoader2 size={15} className="spin" /> : <I size={15} />);
   const last = client.actions[0];
-  // Without a screen the agent can't act: only Stop is offered (pausing or taking control has nothing to stop).
   const noDisplay = !!useNoDisplay(client.machine);
   const controls = noDisplay ? (
     <div className="ag-controls">
@@ -150,7 +130,6 @@ export function AgentLive({ client, size = "full", actions = 3, onTakeControl }:
     </div>
   );
   if (size === "tiny") {
-    // One line: who, what it did last, its state and the one control that fits (pause, resume or give it back).
     const [label, I, run] = client.state === "control" ? [t("Return to agent"), IconRobot, () => agents.resume(client.id, client.machine ?? "")] as const
       : paused ? [t("Resume"), IconPlayerPlay, () => agents.resume(client.id, client.machine ?? "")] as const
       : [t("Pause|agent"), IconPlayerPause, () => agents.pause(client.id)] as const;
@@ -192,16 +171,10 @@ export function AgentLive({ client, size = "full", actions = 3, onTakeControl }:
   );
 }
 
-/* ---------- requests ---------- */
-
 const REQUEST_ICON: Record<AgentRequestKind, Icon> = { deliver: IconFileDownload, admin: IconShieldLock, network: IconWorld, revert: IconHistory, delete: IconTrash, send: IconFileUpload, take: IconDeviceDesktop, other: IconRobot };
 
-/** Seconds left before a request is refused by itself. */
 const left = (r: AgentRequest, now: number) => Math.max(0, Math.round((new Date(r.expiresAt).getTime() - now) / 1000));
 
-/** A request waiting for the person, answered here (a GpuVM window). Allow is once; the right click also offers
- *  Allow for this task. Human-only requests have no buttons: the person acts in the machine. */
-/** `onView`: opens the request's machine picture (what only the person can do is done there). */
 export function RequestRow({ r, showMachine = true, onView }: { r: AgentRequest; showMachine?: boolean; onView?: (machine: string) => void }) {
   const [busy, setBusy] = useState<"allow" | "deny" | "task" | null>(null);
   const [error, setError] = useState("");
@@ -214,7 +187,6 @@ export function RequestRow({ r, showMachine = true, onView }: { r: AgentRequest;
     try { await agents.answer(r.id, kind !== "deny", kind === "task"); await refreshAgents(); } catch (e) { setError(humanError(e)); setBusy(null); }
   };
   const sec = left(r, now);
-  // A copy from this PC: who and where to, then the exact path whole, its size and files. Allowed one at a time.
   const send = r.kind === "send" ? r.send ?? null : null;
   const canAllow = r.kind !== "send" || !!send;
   return (
@@ -232,7 +204,6 @@ export function RequestRow({ r, showMachine = true, onView }: { r: AgentRequest;
         {error && <span className="error-text">{error}</span>}
       </div>
       {r.human
-        // Only the person can do it, in the machine: View opens its picture; once done, the agent goes on.
         ? <div className="ag-request-actions">
             {onView && <button type="button" className="btn ghost compact" onClick={() => onView(r.machine)}><IconDeviceDesktop size={15} />{t("View")}</button>}
             <button type="button" className="btn compact" disabled={!!busy}
@@ -257,7 +228,6 @@ export function RequestRow({ r, showMachine = true, onView }: { r: AgentRequest;
   );
 }
 
-/** A small right-click menu, closed by any press outside it. */
 function Menu({ at, items, onClose }: { at: { x: number; y: number }; items: { icon: Icon; label: string; run: () => void }[]; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -273,8 +243,6 @@ function Menu({ at, items, onClose }: { at: { x: number; y: number }; items: { i
     </div>, portalRoot());
 }
 
-/* ---------- Outbox ---------- */
-
 const fileIcon = (name: string): Icon => {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
   if (["png", "jpg", "jpeg", "webp", "gif", "bmp"].includes(ext)) return IconPhoto;
@@ -283,8 +251,6 @@ const fileIcon = (name: string): Icon => {
   return IconFile;
 };
 
-/** A file an agent left in the machine's Outbox: only what the broker read about it (name, size, the agent's note),
- *  never its contents. Accepted, it goes to Downloads\GpuVM\<machine>. */
 function OfferRow({ o, showMachine }: { o: AgentOffer; showMachine: boolean }) {
   const [busy, setBusy] = useState<"accept" | "refuse" | null>(null);
   const [error, setError] = useState("");
@@ -316,7 +282,6 @@ function OfferRow({ o, showMachine }: { o: AgentOffer; showMachine: boolean }) {
   );
 }
 
-/** The Outbox review: the files waiting first, then what was decided (newest first). */
 export function OutboxList({ offers, showMachine = true, limit }: { offers: AgentOffer[]; showMachine?: boolean; limit?: number }) {
   const sorted = [...offers].sort((a, b) => (a.state === "pending" ? 0 : 1) - (b.state === "pending" ? 0 : 1) || b.createdAt.localeCompare(a.createdAt));
   const shown = limit ? sorted.slice(0, limit) : sorted;
@@ -331,11 +296,8 @@ export function OutboxList({ offers, showMachine = true, limit }: { offers: Agen
   return <div className="ag-offers">{shown.map((o) => <OfferRow key={o.id} o={o} showMachine={showMachine} />)}</div>;
 }
 
-/* ---------- recordings ---------- */
-
 const duration = (ms: number) => { const s = Math.round(ms / 1000); return s < 60 ? t("{n} s", { n: s }) : t("{n} min", { n: Math.round(s / 60) }); };
 
-/** Recordings of an agent's work (one per time it took the machine), each opened in the person's own player. */
 export function RecordingList({ list, showMachine }: { list: AgentRecording[]; showMachine?: boolean }) {
   const [error, setError] = useState("");
   if (!list.length) return null;
@@ -356,11 +318,8 @@ export function RecordingList({ list, showMachine }: { list: AgentRecording[]; s
   );
 }
 
-/* ---------- history ---------- */
-
 const ENDED: Record<AgentHistoryEntry["ended"], () => string> = { done: () => t("Finished"), stopped: () => t("You stopped it"), limit: () => t("Reached the limit") };
 
-/** Finished sessions from the service (Get-GpuVMAgentHistory), refreshed when an agent comes or goes. */
 function useHistory(): AgentHistoryEntry[] | null {
   const [list, setList] = useState<AgentHistoryEntry[] | null>(null);
   const snap = useAgents();
@@ -381,12 +340,11 @@ function useHistory(): AgentHistoryEntry[] | null {
   return list;
 }
 
-/** One finished session: what it worked on, where, when and for how long; opened, what it did and its recording. */
 function HistoryRow({ h, recordings, showMachine }: { h: AgentHistoryEntry; recordings: AgentRecording[]; showMachine: boolean }) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const minutes = Math.max(1, Math.round((h.end - h.start) / 60000));
-  // "3 h ago" within a day, then the date (since() gives a date past a day: "ago" would be wrong).
+  // since() switches to a date past a day, where "ago" would be wrong.
   const when = Date.now() - h.end < 86_400_000 ? t("{time} ago", { time: since(new Date(h.end).toISOString()) }) : new Date(h.end).toLocaleDateString(locale(), { day: "numeric", month: "short" });
   const recording = recordings.find((r) => r.client === h.id);
   const facts = [
@@ -420,7 +378,6 @@ function HistoryRow({ h, recordings, showMachine }: { h: AgentHistoryEntry; reco
   );
 }
 
-/** The sessions that used the person's machines, newest first: on the Agents page all of them, on a machine its own. */
 export function HistoryList({ machine }: { machine?: string }) {
   const list = useHistory();
   const snap = useAgents();
@@ -437,9 +394,6 @@ export function HistoryList({ machine }: { machine?: string }) {
   return <div className="ag-history">{shown.map((h) => <HistoryRow key={h.id} h={h} recordings={snap.recordings} showMachine={!machine} />)}</div>;
 }
 
-/* ---------- connecting a client ---------- */
-
-/** The command that adds GpuVM to Claude Code, with this PC's own path to gpuvm.exe. */
 function useMcpCommand() {
   const [path, setPath] = useState("gpuvm.exe");
   useEffect(() => {
@@ -453,7 +407,7 @@ function CopyCommand() {
   const cmd = useMcpCommand();
   const [copied, setCopied] = useState(false);
   const copy = async () => {
-    try { await navigator.clipboard.writeText(cmd); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { /* no clipboard */ }
+    try { await navigator.clipboard.writeText(cmd); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch {}
   };
   return (
     <div className="ag-command">
@@ -465,9 +419,6 @@ function CopyCommand() {
 
 type ClaudeState = { cli: boolean; added: boolean; current: boolean; allowed: boolean };
 
-/** Claude Code in one click: GpuVM added for this user and its tools allowed, so Claude Code stops asking for every
- *  script (GpuVM keeps asking for what matters, in its own dock). Without Claude Code on this PC, the command for
- *  another client. */
 function ClaudeConnect() {
   const [state, setState] = useState<ClaudeState | null>(inTauri ? null : { cli: true, added: false, current: false, allowed: false });
   const [busy, setBusy] = useState(false);
@@ -509,9 +460,6 @@ function ClaudeConnect() {
   );
 }
 
-/* ---------- the Agents page ---------- */
-
-/** One connected client: who it is, the machine it uses, its state and budget, and the person's controls. */
 function ClientCard({ c, onOpenVm, recordings }: { c: AgentClient; onOpenVm: (name: string) => void; recordings: AgentRecording[] }) {
   const [approvals, setApprovals] = useState(c.clientApprovals);
   const [error, setError] = useState("");
@@ -545,8 +493,6 @@ function ClientCard({ c, onOpenVm, recordings }: { c: AgentClient; onOpenVm: (na
   );
 }
 
-/** The Agents page: what is waiting for the person first, then the connected clients, the deliveries, and how to
- *  connect a client. */
 export function AgentsView({ onOpenVm, onViewMachine }: { onOpenVm: (name: string) => void; onViewMachine?: (name: string) => void }) {
   const snap = useAgents();
   const [stopping, setStopping] = useState(false);
@@ -554,7 +500,7 @@ export function AgentsView({ onOpenVm, onViewMachine }: { onOpenVm: (name: strin
   const active = snap.clients.filter((c) => c.state !== "idle");
   const stopAll = async () => {
     setStopping(true);
-    try { await agents.stop("*"); await refreshAgents(); } catch { /* shown by the next poll */ }
+    try { await agents.stop("*"); await refreshAgents(); } catch {}
     setStopping(false); setConfirm(false);
   };
   const head = (icon: React.ReactNode, title: string, desc: string, side?: React.ReactNode) => (
@@ -570,7 +516,6 @@ export function AgentsView({ onOpenVm, onViewMachine }: { onOpenVm: (name: strin
   return (
     <div className="main ag-page">
       {snap.broker && !snap.broker.listening && (
-        // Another program holds the channel's name (lab 050): no agent can reach its machine until it's freed.
         <div className="notice error-notice">
           <IconPlugConnectedX size={20} />
           <div className="grow">{t("Agents can't reach their machines: {error}", { error: snap.broker.error ? translateModule(snap.broker.error) : t("the channel isn't open") })}</div>
@@ -617,15 +562,10 @@ export function AgentsView({ onOpenVm, onViewMachine }: { onOpenVm: (name: strin
   );
 }
 
-/* ---------- the viewer's widget ---------- */
-
-/** The agent on the machine shown in the viewer, sized by its cells: one row is who and what it did last; two add
- *  its budget and controls; each row more shows more of its actions. */
 export function AgentWidget({ machine, size }: { machine: string; size: { w: number; h: number } }) {
   const snap = useAgents();
   const client = clientOn(snap, machine);
   const requests = snap.requests.filter((r) => r.machine === machine);
-  // Nothing until the first answer: "no agent" for a moment would be wrong.
   if (!snap.loaded) return <div className="ag-widget" aria-busy="true" />;
   if (!client) {
     return (
@@ -645,9 +585,6 @@ export function AgentWidget({ machine, size }: { machine: string; size: { w: num
   );
 }
 
-/* ---------- on a machine's page ---------- */
-
-/** A machine's Agent section: the agent working on it (or none), its requests and its deliveries. */
 export function MachineAgent({ machine }: { machine: string }) {
   const snap = useAgents();
   const client = clientOn(snap, machine);
@@ -658,7 +595,6 @@ export function MachineAgent({ machine }: { machine: string }) {
     <>
       <div className="card ag-machine-live">
         {client ? <AgentLive client={client} actions={5} /> : (
-          // No session, but the machine's own agent may already be blind: said here before an agent tries.
           <>
             <div className="empty-small">
               <span className="empty-small-icon"><IconRobot size={18} /></span>

@@ -1,20 +1,4 @@
-﻿# Windows administrator prompts while Sunshine captures with WGC (labs 025, 026 and 042). WGC can't stream the secure
-# desktop where Windows draws those prompts, so GpuVM shows them on the host and answers them on the person's order.
-# Installed by GpuVM in C:\Program Files\GpuVM\AdminPrompt (only administrators can change it). Windows PowerShell 5.1.
-#   -Mode watch    runs as SYSTEM from boot (task GpuVM-AdminPrompt). When a prompt opens it publishes it at once to the
-#                  host through Hyper-V's data exchange (KVP, key GpuVMAdminPrompt) with a random one-time code, starts a
-#                  helper on the secure desktop that reads its program and publisher (published when read) and then
-#                  waits there for the answer. The host answers by writing GpuVMAdminPromptAnswer as a host item, which
-#                  Windows keeps under HKLM\...\Virtual Machine\External: only SYSTEM, administrators and the data
-#                  exchange service can write that key, so a guest program without elevation can't forge an answer.
-#                  The answer is obeyed only if it carries the open prompt's id and code (an old or replayed one never
-#                  answers a new prompt); the result goes back under GpuVMAdminPromptAnswered.
-#   -Mode answer   (host, through PowerShell Direct as administrator; the path before lab 042, kept for hosts that
-#                  don't send the KVP answer) presses Yes or No, only if the prompt open is still -PromptId.
-#   -Mode secure   started by the two above as SYSTEM on the secure desktop of the console session: reads the prompt
-#                  with UI Automation and presses the button it was told to (-Action serve: reads, then waits for the
-#                  watcher's order).
-param(
+﻿param(
     [ValidateSet('watch', 'answer', 'secure')][string]$Mode = 'watch',
     [ValidateSet('read', 'yes', 'no', 'serve')][string]$Action = 'read',
     [int]$PromptId = 0,
@@ -23,6 +7,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $kvpKey = 'HKLM:\SOFTWARE\Microsoft\Virtual Machine\Guest'
+# Only SYSTEM, administrators and the KVP service can write this key: an unelevated guest program can't forge an answer.
 $hostKey = 'HKLM:\SOFTWARE\Microsoft\Virtual Machine\External'
 
 function Add-SecureDesktopType {
@@ -50,8 +35,6 @@ public static class GpuVMSecureDesktop {
     [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     static extern bool CreateProcessAsUser(IntPtr t, string app, string cmd, IntPtr pa, IntPtr ta, bool inherit, uint flags, IntPtr env, string dir, ref STARTUPINFO si, out PROCESS_INFORMATION pi);
 
-    // Starts `cmd` as SYSTEM (this process's own token, moved to the console session) on winsta0\winlogon; waits up to
-    // timeoutMs (0: doesn't wait). Returns the process id.
     public static int Run(string cmd, uint timeoutMs) {
         IntPtr token, dup;
         if (!OpenProcessToken(GetCurrentProcess(), 0x000F01FF, out token)) throw new Exception("OpenProcessToken " + Marshal.GetLastWin32Error());
@@ -94,7 +77,6 @@ function Publish([string]$Name, [hashtable]$Value) {
     Set-ItemProperty -Path $kvpKey -Name $Name -Value ($Value | ConvertTo-Json -Compress) -Type String
 }
 
-# Writes a small JSON file whole (a reader never sees half of it).
 function Write-Json([string]$Path, $Value) {
     $tmp = "$Path.tmp"
     $Value | ConvertTo-Json -Compress | Set-Content -LiteralPath $tmp -Encoding UTF8
@@ -106,7 +88,6 @@ function Read-Json([string]$Path) {
     try { Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json } catch { $null }
 }
 
-# The answer the host wrote for this machine, if any: { id, nonce, answer } (raw text, to tell a new one apart).
 function Read-HostAnswer {
     $raw = (Get-ItemProperty -Path $hostKey -Name GpuVMAdminPromptAnswer -ErrorAction SilentlyContinue).GpuVMAdminPromptAnswer
     if (-not $raw -or $raw.Length -gt 512) { return $null }
@@ -133,7 +114,7 @@ switch ($Mode) {
             $T = [System.Windows.Automation.TreeScope]
             $button = New-Object System.Windows.Automation.PropertyCondition($A::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
             $text = New-Object System.Windows.Automation.PropertyCondition($A::ControlTypeProperty, [System.Windows.Automation.ControlType]::Text)
-            # consent.exe starts a moment before its window: a server started on its start looks for up to 5 s.
+            # consent.exe starts a moment before its window appears.
             $deadline = [DateTime]::UtcNow.AddSeconds($(if ($Action -eq 'serve') { 5 } else { 0 }))
             do {
                 $prompt = $A::RootElement.FindAll($T::Children, [System.Windows.Automation.Condition]::TrueCondition) |
@@ -141,13 +122,12 @@ switch ($Mode) {
                 if (-not $prompt) { Start-Sleep -Milliseconds 50 }
             } while (-not $prompt -and [DateTime]::UtcNow -lt $deadline)
             if (-not $prompt) { throw 'No prompt on the secure desktop.' }
-            # Texts in order: title, question, program, publisher line ("Editor comprobado: ..." / "Editor: Desconocido"), details.
+            # Texts in order: title, question, program, publisher line, details.
             $texts = @($prompt.FindAll($T::Descendants, $text) | ForEach-Object { $_.Current.Name } | Where-Object { $_ })
             if ($texts.Count -ge 4) { $result.app = $texts[2]; $result.publisher = ($texts[3] -split ':\s*', 2)[-1] }
             $press = $Action
             if ($Action -eq 'serve') {
-                # Reads now, then waits on the secure desktop for the watcher's order (only administrators can write
-                # in this folder) while the prompt is open, so an answer is one click away instead of a new process.
+                # Only administrators can write in this folder.
                 if ($Out) { Write-Json $Out $result }
                 $order = Join-Path $here "order-$PromptId.json"
                 $press = $null
@@ -160,7 +140,6 @@ switch ($Mode) {
                         if ([int]$o.id -eq $PromptId -and $o.action -in 'yes', 'no') { $press = $o.action }
                         continue
                     }
-                    # Every ~0.5 s: still open? (Windows or the person may have answered it in the VM.)
                     if ((++$n % 16) -eq 0 -and -not (Get-Process -Id $PromptId -ErrorAction SilentlyContinue)) { break }
                     Start-Sleep -Milliseconds 30
                 }
@@ -180,7 +159,6 @@ switch ($Mode) {
         if ($Out) { Write-Json $Out $result }
     }
     'answer' {
-        # Only the prompt the person saw: another one opened in between is never answered by this order.
         $open = @(Get-Process consent -ErrorAction SilentlyContinue)
         if (-not ($open | Where-Object Id -eq $PromptId)) { return 'changed' }
         $r = Invoke-Secure $(if ($Action -eq 'yes') { 'yes' } else { 'no' })
@@ -201,7 +179,6 @@ switch ($Mode) {
                 $shown = $id
                 $info = $null
                 if ($id) {
-                    # Published at once (the host can show it is coming); program and publisher follow when read.
                     $nonce = New-Nonce
                     Publish GpuVMAdminPrompt @{ open = $true; id = $id; nonce = $nonce; reading = $true }
                     try { Start-OnSecureDesktop "-Action serve -PromptId $id -Out `"$(Join-Path $here "read-$id.json")`"" 0 | Out-Null } catch { }
@@ -226,12 +203,10 @@ switch ($Mode) {
                     $r = $null
                     for ($i = 0; $i -lt 150 -and -not $r; $i++) { Start-Sleep -Milliseconds 20; $r = Read-Json $resultFile }
                     if (-not $r) {
-                        # The waiting helper is gone (closed or failed): press with a new one.
                         Remove-Item -LiteralPath (Join-Path $here "order-$id.json") -ErrorAction SilentlyContinue
                         $r = Invoke-Secure $answer.answer
                     }
                     $result = if ($r -and $r.pressed) { 'done' } else { "error: $(if ($r) { $r.error } else { 'no answer' })" }
-                    # Used once: the code of an answered prompt never answers again.
                     $nonce = $null
                 }
                 Publish GpuVMAdminPromptAnswered @{ nonce = $answer.nonce; result = $result }

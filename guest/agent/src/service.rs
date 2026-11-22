@@ -1,7 +1,4 @@
-//! The `GpuVMAgent` Windows service (SYSTEM): dials the host over Hyper-V sockets, proves itself with the per-VM
-//! secret, keeps the heartbeat, enforces sizes and times, and relays requests to the session helper it supervises.
-//! The service itself never touches the desktop: everything the agent does on screen happens in the helper, with the
-//! signed-in user's medium token.
+//! The service never touches the desktop: on-screen work happens in the helper, with the user's medium token.
 use crate::hv::*;
 use crate::proto::*;
 use crate::session;
@@ -19,7 +16,6 @@ pub static STOP: AtomicBool = AtomicBool::new(false);
 static WAKE_M: Mutex<bool> = Mutex::new(false);
 static WAKE_C: Condvar = Condvar::new();
 
-/// Wakes the supervisor (session change, helper exit, stop).
 pub fn wake() {
     *WAKE_M.lock().unwrap() = true;
     WAKE_C.notify_all();
@@ -51,9 +47,8 @@ struct HostLink {
 }
 
 struct HelperLink {
-    /// frames for the helper, written by its own writer thread (never under a lock: security review M1)
+    /// frames for the helper, written by its own writer thread (never under a lock)
     tx: std::sync::mpsc::SyncSender<Vec<u8>>,
-    /// set while the writer thread is inside a write; the ticker kills a helper that stops reading
     busy: Arc<Mutex<Option<Instant>>>,
     process: Arc<crate::token::Owned>,
     pid: u32,
@@ -61,7 +56,6 @@ struct HelperLink {
 }
 
 impl HelperLink {
-    /// Queues frames (JSON + optional blob) for the helper; false when the queue is full or the helper is gone.
     fn send(&self, v: &Value, blob: Option<&[u8]>) -> bool {
         let mut buf = Vec::new();
         if write_frame(&mut buf, KIND_JSON, &serde_json::to_vec(v).unwrap()).is_err() {
@@ -88,9 +82,7 @@ fn helper_writer(mut f: File, rx: std::sync::mpsc::Receiver<Vec<u8>>, busy: Arc<
     }
 }
 
-/// A request in the helper's hands. The map is keyed by a helper id unique for the service's life: the host numbers
-/// its requests from 1 on every connection, so a late answer to an old connection's request must never reach a new
-/// request with the same number (code review: an exec.run result answered an input.act).
+/// Keyed by a service-unique id: the host numbers requests from 1 on every connection, so a late answer must never reach a new request.
 struct Pending {
     host_id: u64,
     deadline: Instant,
@@ -113,9 +105,7 @@ fn err_res(id: u64, code: &str, msg: &str) -> Value {
     json!({"t": "res", "id": id, "ok": false, "error": {"code": code, "message": msg}})
 }
 
-/// The VmId the host sees in accept(): the KVP parameter `VirtualMachineId` that Hyper-V writes into the guest
-/// (public, not a secret). getsockname's local VmId is NOT it (lab 051: the handshake failed with it), so it is only
-/// a fallback when KVP is off.
+/// getsockname's local VmId is NOT the one the host sees: only a fallback when KVP is off.
 fn vm_id(s: &HvStream) -> Option<(String, &'static str)> {
     if let Some(g) = reg_hklm(r"SOFTWARE\Microsoft\Virtual Machine\Guest\Parameters", "VirtualMachineId").and_then(|r| parse_guid(&r)) {
         return Some((fmt_guid(&g), "kvp"));
@@ -128,11 +118,9 @@ fn vm_id(s: &HvStream) -> Option<(String, &'static str)> {
 fn method_deadline(method: &str, params: &Value) -> Duration {
     match method {
         "exec.run" => Duration::from_millis(params["timeoutMs"].as_u64().unwrap_or(60_000).min(600_000) + 10_000),
-        // as long as its own waits need (+0.5 s per action and 30 s), or the host's timeoutMs; at most 10 min
         "input.act" => {
             let acts = params["actions"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
             let waits: u64 = acts.iter().filter(|a| a["type"] == "wait").map(|a| a["ms"].as_u64().unwrap_or(0).min(5000)).sum();
-            // a drag along strokes takes its `ms` (default: its length at DRAG_SPEED, capped the same way)
             let drags: u64 = acts.iter().filter(|a| a["type"] == "drag" && !a["strokes"].is_null())
                 .map(|a| a["ms"].as_u64().unwrap_or(crate::input::MAX_DRAG_MS).min(crate::input::MAX_DRAG_MS)).sum();
             let waits = waits + drags;
@@ -158,7 +146,6 @@ impl Agent {
         })
     }
 
-    /// Seals and sends one JSON frame (plus its blob) to the host. False when not connected or the send failed.
     fn send_host(&self, mut v: Value, blob: Option<&[u8]>) -> bool {
         let mut g = self.host.lock().unwrap();
         let Some(link) = g.as_mut() else { return false };
@@ -169,8 +156,7 @@ impl Agent {
         }
         let id = v["id"].as_u64().unwrap_or(0);
         let Some(frame) = link.sealer.try_seal(v, MAX_JSON) else {
-            // a result too big for one JSON frame: tell the host instead of dropping the connection (and without
-            // a gap in seq: security review M3)
+            // too big for one JSON frame: tell the host instead of dropping the connection, without a gap in seq
             let f = link.sealer.seal(err_res(id, "too_large", "the result is over 64 KiB"));
             let mut s = &*link.stream;
             return write_frame(&mut s, KIND_JSON, &f).is_ok();
@@ -187,8 +173,6 @@ impl Agent {
         let (os, lang) = os_info();
         json!({"version": VERSION, "os": os, "lang": lang, "user": null, "session": session::active_session(), "screen": null, "signedIn": false})
     }
-
-    // ---- host side ----
 
     fn handshake(&self, s: &HvStream, k: &[u8; 32], vm: &str) -> Result<[u8; 32], String> {
         let ng = hex(&random::<16>());
@@ -269,7 +253,6 @@ impl Agent {
             let why = self.read_loop(&stream, Opener::new(key));
             stream.shutdown();
             *self.host.lock().unwrap() = None;
-            // the old connection's work: dropped here and stopped in the helper (no late answer can reach anyone)
             let old: Vec<u64> = {
                 let mut p = self.pending.lock().unwrap();
                 let hids: Vec<u64> = p.iter().filter(|(_, x)| x.conn == conn).map(|(h, _)| *h).collect();
@@ -387,7 +370,6 @@ impl Agent {
         Ok(())
     }
 
-    /// Host cancel: answer `cancelled` now, drop the helper's late answer, and ask the helper to stop the work.
     fn cancel(&self, id: u64) {
         let conn = self.conn.load(Ordering::SeqCst);
         let hid = {
@@ -402,13 +384,11 @@ impl Agent {
         self.send_host(err_res(id, "cancelled", "cancelled by the host"), None);
     }
 
-    /// Heartbeat every 2 s and request deadlines.
     pub fn ticker(self: Arc<Self>) {
         let mut last_ping = Instant::now();
         while !STOP.load(Ordering::SeqCst) {
             std::thread::sleep(Duration::from_millis(100));
-            // a helper that stopped reading for 10 s (hung, or suspended by another process of its user) is ended;
-            // the supervisor starts a new one (security review M1)
+            // a helper that stopped reading for 10 s (hung, or suspended by another process of its user) is ended
             if let Some(h) = self.helper.lock().unwrap().as_ref() {
                 if h.busy.lock().unwrap().is_some_and(|t| t.elapsed() > Duration::from_secs(10)) {
                     logf!("session helper {} stopped reading for 10 s: ending it", h.pid);
@@ -442,8 +422,6 @@ impl Agent {
         }
     }
 
-    // ---- helper side ----
-
     /// `user` is the token the service launched the helper with: what the host is told, whatever the helper says.
     fn helper_reader(self: Arc<Self>, mut from: File, pid: u32, user: String) {
         let mut said_hello = false;
@@ -469,7 +447,7 @@ impl Agent {
                     let p = self.pending.lock().unwrap().remove(&hid);
                     let cur = self.conn.load(Ordering::SeqCst);
                     let Some(p) = p.filter(|p| p.conn == cur && p.helper == pid) else {
-                        continue; // timed out, cancelled, or from an old connection
+                        continue;
                     };
                     let mut out = json!({"t": "res", "id": p.host_id, "ok": v["ok"] == true});
                     if v["ok"] == true {
@@ -488,7 +466,6 @@ impl Agent {
                 }
                 Some("hello") if !said_hello => {
                     said_hello = true; // once per helper: nothing else may announce a user (security review H1)
-                    // the helper's own claim is only logged; the host gets the user of the token the service used
                     let claimed: String = v["user"].as_str().unwrap_or("?").chars().take(64).collect();
                     let user = user.clone();
                     logf!("session helper {pid} is up as {user} (it says {claimed})");
@@ -528,7 +505,6 @@ impl Agent {
         wake();
     }
 
-    /// At most 20 events per second reach the host, whatever the helper sends.
     fn event_budget(&self) -> bool {
         let mut e = self.events.lock().unwrap();
         if e.0.elapsed() >= Duration::from_secs(1) {
@@ -538,8 +514,6 @@ impl Agent {
         e.1 <= 20
     }
 
-    /// Keeps one helper in the active console session: starts it on sign-in, replaces it on a session change,
-    /// restarts it if it dies (backing off when it keeps dying).
     pub fn supervise(self: Arc<Self>) {
         let mut current: Option<(session::Helper, Instant)> = None;
         let mut backoff = 200u64;
@@ -608,10 +582,8 @@ impl Agent {
     }
 }
 
-/// Runs the agent until STOP: host connection, heartbeat, helper supervision.
 pub fn run() {
-    // a log file only inside a folder that passed the secret's ACL check and isn't a link: a SYSTEM service
-    // writing through a junction a user planted would be an arbitrary file write (security review H2)
+    // a log file only in a folder that passed the ACL check: a SYSTEM service writing through a planted junction is an arbitrary file write
     let logs = std::path::Path::new(secret::DIR).join("logs");
     let link = std::fs::symlink_metadata(&logs).map(|m| {
         use std::os::windows::fs::MetadataExt;
@@ -633,8 +605,6 @@ pub fn run() {
     let _ = t2.join();
     logf!("GpuVM agent stopped");
 }
-
-// ---- Service Control Manager glue ----
 
 mod scm {
     use super::*;

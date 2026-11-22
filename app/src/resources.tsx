@@ -2,7 +2,6 @@ import { IconApps, IconBolt, IconCpu, IconDatabase, IconSparkles, IconTopologySt
 import type { AppInfo, ProfileSettings } from "./types";
 import { t, tn } from "./i18n";
 
-/** Each resource is a piece with its own fixed color, the same everywhere: processor, memory, GPU and disk. */
 export const RESOURCES = {
   cpu: { icon: IconCpu, cls: "res-cpu" },
   mem: { icon: IconTopologyStar3, cls: "res-mem" },
@@ -12,7 +11,6 @@ export const RESOURCES = {
 
 const cleanupName = (id: string) => ({ privacy: t("Privacy"), apps: t("No extra apps"), minimal: t("Minimal") } as Record<string, string>)[id] ?? "";
 
-/** A machine or profile as its pieces: one small chip per resource, then its apps and cleanup when it has them. */
 export function ResourceChips({ s, apps = [] }: { s: ProfileSettings; apps?: AppInfo[] }) {
   const chosen = (s.apps ?? []).map((id) => apps.find((a) => a.id === id)?.name ?? id);
   return (

@@ -4,9 +4,7 @@ export const MAX_SAMPLES = 150;
 const WIDTH = 300;
 const HEIGHT = 32;
 
-/** One value's last 5 minutes (one sample every 2 s) as a small line under its number. 0-100. */
 export function Sparkline({ values, color }: { values: number[]; color: string }) {
-  // The line grows from the right as samples arrive, but the first minute already spans a good part of the width.
   const span = Math.min(MAX_SAMPLES, Math.max(values.length, 30));
   const step = WIDTH / (span - 1);
   const offset = span - values.length;
@@ -20,8 +18,6 @@ export function Sparkline({ values, color }: { values: number[]; color: string }
 
 export const series = (samples: Sample[], pick: (s: Sample) => number) => samples.map(pick);
 
-/** A tiny chart of the last minute for the sidebar: processor, memory and GPU as three lines in their resource
- *  colors, so a running machine shows what it is doing at a glance. `memGB` turns memory samples into a share. */
 export function TripleSpark({ samples, memGB }: { samples: Sample[]; memGB: number }) {
   const W = 44, H = 18, last = samples.slice(-24);
   const line = (pick: (s: Sample) => number) => {

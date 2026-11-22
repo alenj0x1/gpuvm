@@ -1,5 +1,3 @@
-# Shared helpers for the latency tools: VM access through the GpuVM module, the variants under test,
-# starting and stopping Moonlight, and screen capture.
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 Import-Module (Join-Path $PSScriptRoot '..\..\src\GpuVM\GpuVM.psd1') -Force -DisableNameChecking
 
@@ -18,7 +16,6 @@ function Get-LatencyVM {
     }
 }
 
-# baseline = what GpuVM uses today (60 FPS, Moonlight's default V-Sync on); candidates change one thing each.
 function Get-LatencyVariants {
     @(
         [pscustomobject]@{ Name = 'baseline-60-vsync'; Fps = 60; VSync = $true }
@@ -47,8 +44,7 @@ function Start-LatencyStream {
     [pscustomobject]@{ Process = $process; Display = $applied }
 }
 
-# Killing Moonlight leaves the session open in Sunshine; changing the display's refresh rate under an open session
-# leaves the next stream black, so the session is closed in Sunshine too before the next variant.
+# Changing the refresh rate under a session still open in Sunshine leaves the next stream black: close it there too.
 function Stop-LatencyStream {
     param([Parameter(Mandatory)]$Session, $VM)
     Stop-Process -Id $Session.Process.Id -Force -ErrorAction SilentlyContinue
@@ -72,7 +68,6 @@ function Save-ScreenRegion {
     $bmp.Dispose()
 }
 
-# Screen pixel reads and key presses used by the end-to-end meter.
 if (-not ('GpuVMLatency' -as [type])) {
     Add-Type -TypeDefinition @'
 using System;
@@ -83,7 +78,6 @@ public static class GpuVMLatency {
     [DllImport("user32.dll")] static extern int ReleaseDC(IntPtr hwnd, IntPtr dc);
     [DllImport("gdi32.dll")] static extern uint GetPixel(IntPtr dc, int x, int y);
 
-    // Brightness 0-255 of one screen pixel.
     public static int Brightness(int x, int y) {
         IntPtr dc = GetDC(IntPtr.Zero);
         uint c = GetPixel(dc, x, y);
@@ -99,8 +93,6 @@ public static class GpuVMLatency {
         keybd_event(vk, 0, 2, UIntPtr.Zero);
     }
 
-    // Presses Scroll Lock (sent to the VM by Moonlight) and returns the milliseconds until the pixel crosses
-    // mid-gray in the expected direction; -1 on timeout.
     public static double Measure(int px, int py, bool expectLit, int timeoutMs) {
         var watch = Stopwatch.StartNew();
         Key(0x91);
@@ -114,11 +106,8 @@ public static class GpuVMLatency {
 '@
 }
 
-# Waits until Moonlight shows the stream (its log says "Video stream is"), instead of a fixed warmup: at 120/144 FPS
-# the first frame takes up to ~30 s, at 60 FPS a few seconds. Returns the seconds it took, or -1 on timeout.
 function Wait-LatencyStreamVisible {
     param([Parameter(Mandatory)][datetime]$Since, [int]$TimeoutSec = 90,
-        # Where the viewer writes its log: Moonlight in TEMP, GpuVM's viewer under LocalLow (Get-LatencyViewerLogDir).
         [string]$LogDir = $env:TEMP)
     $watch = [Diagnostics.Stopwatch]::StartNew()
     while ($watch.Elapsed.TotalSeconds -lt $TimeoutSec) {
@@ -130,11 +119,6 @@ function Wait-LatencyStreamVisible {
     -1
 }
 
-# The viewers a lab can compare with the same arguments:
-#   moonlight  the installed Moonlight (Program Files\Moonlight Game Streaming)
-#   gpuvm      GpuVM's viewer as the app starts it: private pipe, one-time token in the environment, GpuVM mode (it
-#              lowers itself to Low integrity and keeps its data under LocalLow). Not embedded: it opens its own window
-#              with the display mode in the arguments, the panel closed. Unlike the app, it is not put in a job.
 function Get-LatencyViewerLogDir([string]$Viewer) {
     if ($Viewer -eq 'gpuvm') { Join-Path $env:USERPROFILE 'AppData\LocalLow\GpuVM\Viewer\logs' } else { $env:TEMP }
 }
@@ -147,20 +131,16 @@ using System;
 using System.IO;
 using System.IO.Pipes;
 using System.Threading;
-// Plays the app's side of the viewer's pipe: checks the hello, then keeps reading (the viewer's queue never fills)
-// and notes when the first picture was reported.
+// Keeps reading so the viewer's queue never fills.
 public class GpuVMLatencyBridge : IDisposable {
     readonly NamedPipeServerStream server;
     readonly string token;
     public volatile bool Hello;
     public long FirstFrameTicks = -1;
-    // The viewer's last "stats" line (received/rendered FPS, decode, host and network latency), and all of them.
     public volatile string LastStats;
     public readonly System.Collections.Concurrent.ConcurrentQueue<string> Stats = new System.Collections.Concurrent.ConcurrentQueue<string>();
-    // Every other message (capture, recording, capture-error...), for labs that drive the viewer (lab 044).
     public readonly System.Collections.Concurrent.ConcurrentQueue<string> Events = new System.Collections.Concurrent.ConcurrentQueue<string>();
     readonly object writeLock = new object();
-    // Sends one command to the viewer, as the app does (one JSON line).
     public bool Send(string json) {
         try { lock (writeLock) { var b = System.Text.Encoding.UTF8.GetBytes(json + "\n"); server.Write(b, 0, b.Length); server.Flush(); } return true; }
         catch { return false; }
@@ -172,8 +152,7 @@ public class GpuVMLatencyBridge : IDisposable {
     static extern Microsoft.Win32.SafeHandles.SafePipeHandle CreateNamedPipeW(string name, uint open, uint mode, uint max, uint outSize, uint inSize, uint timeout, ref SECURITY_ATTRIBUTES sa);
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
     struct SECURITY_ATTRIBUTES { public int nLength; public IntPtr lpSecurityDescriptor; public int bInheritHandle; }
-    // Like the app's pipe (viewer.rs): this user only, first instance, local clients, labelled Low so the viewer
-    // (which lowers itself to Low in GpuVM mode) can open it.
+    // Labelled Low so the viewer (which lowers itself to Low in GpuVM mode) can open it.
     public GpuVMLatencyBridge(string name, string token) {
         this.token = token;
         string user = System.Security.Principal.WindowsIdentity.GetCurrent().User.Value;
@@ -205,9 +184,8 @@ public class GpuVMLatencyBridge : IDisposable {
 "@
 }
 
-# Starts one of the viewers with the stream arguments; returns { Process, Viewer, Bridge }.
 function Start-LatencyViewer {
-    # -Quiet: GpuVM's viewer started from a console logs every decoder line into it; drained to nowhere instead (lab 063).
+    # -Quiet: GpuVM's viewer started from a console logs every decoder line into it.
     param([Parameter(Mandatory)][ValidateSet('moonlight', 'gpuvm')][string]$Viewer, [Parameter(Mandatory)][string[]]$Arguments, [switch]$Quiet)
     Stop-LatencyViewers
     if ($Viewer -eq 'moonlight') {
@@ -233,8 +211,6 @@ function Start-LatencyViewer {
     [pscustomobject]@{ Process = $process; Viewer = $Viewer; Bridge = $bridge }
 }
 
-# Seconds until the viewer's first picture: GpuVM's viewer says it on its pipe; Moonlight writes it in its log (GpuVM's
-# viewer logs to the lab's console instead of a file when started from one). -1 on timeout.
 function Wait-LatencyViewerFrame {
     param([Parameter(Mandatory)]$Session, [Parameter(Mandatory)][datetime]$Since, [int]$TimeoutSec = 90)
     if (-not $Session.Bridge) { return Wait-LatencyStreamVisible -Since $Since -TimeoutSec $TimeoutSec -LogDir (Get-LatencyViewerLogDir $Session.Viewer) }
@@ -246,9 +222,6 @@ function Wait-LatencyViewerFrame {
     -1
 }
 
-# Preflight: the VM shares the host's GPU (GPU-P), so anything else drawing on it (a browser tab, a video, a remote
-# desktop session) takes time from the VM's compositor and encoder. Waits up to -WaitSec for the GPU to be below
-# -MaxPct, then stops the lab, saying what uses it. -Force measures anyway (the result notes the load).
 function Assert-LatencyGpuIdle {
     param([int]$MaxPct = 10, [int]$WaitSec = 30, [switch]$Force)
     $smi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
@@ -267,8 +240,6 @@ function Assert-LatencyGpuIdle {
     throw $message
 }
 
-# The viewer's own numbers averaged since -Since (GpuVM's viewer only; $null for Moonlight): received and rendered FPS,
-# network drop %, decode, render, host and network latency (ms), as it reports them once a second.
 function Get-LatencyViewerStats {
     param([Parameter(Mandatory)]$Session, [int]$LastSeconds = 15)
     if (-not $Session.Bridge) { return $null }

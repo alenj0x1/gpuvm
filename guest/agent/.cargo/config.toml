@@ -1,4 +1,4 @@
-# Builds and tests go outside guest\ (the installer ships guest\ as is), to the same folder build.ps1 uses.
+# Outside guest\: the installer ships guest\ as is.
 [build]
 target-dir = "../../app/guest-agent-target"
 

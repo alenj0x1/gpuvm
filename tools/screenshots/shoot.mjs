@@ -1,9 +1,5 @@
-// Screenshots of the app for the README, the docs and the landing, taken from the dev server with its sample data.
-//
 //   npm --prefix app run dev -- --port 1430          (in another terminal)
 //   node tools/screenshots/shoot.mjs [--url http://localhost:1430] [--out tools/screenshots/out] [--only home,machine]
-//
-// Every shot is taken in Spanish and English, light and dark: <out>/<name>-<lang>-<mode>.png at 2x.
 // Needs Playwright: PLAYWRIGHT_PKG points to a package.json whose node_modules has it (or it is resolved from here).
 import { createRequire } from "node:module";
 import { mkdirSync } from "node:fs";
@@ -19,7 +15,6 @@ const require = createRequire(process.env.PLAYWRIGHT_PKG || path.resolve("packag
 const { chromium } = require("playwright");
 mkdirSync(OUT, { recursive: true });
 
-// A decoration for each sample machine, the same in every shot (Decorate at random would change every time).
 const DECOR = {
   win10: { color: "violet", led: { text: "PLAYER ONE", color: "amber", live: false, y: 0.35 },
     stickers: [{ id: "s1", sticker: "logo", face: "front", u: -0.45, v: 0.35, rot: -8, size: 0.62 }, { id: "s2", sticker: "bolt", face: "right", u: 0.3, v: 0.1, rot: 12, size: 0.6 }],
@@ -30,7 +25,6 @@ const DECOR = {
 };
 const SPACES = [{ id: "main", name: "Mis máquinas", ambient: "blocks", time: "day", machines: ["win10", "win11-pruebas"] }, { id: "lab", name: "Laboratorio", ambient: "board", machines: ["estudio"] }];
 
-/** name, URL query, hash route, and what to do before the shot. */
 const SHOTS = [
   { name: "home", hash: ":inicio" },
   { name: "home-board", hash: ":inicio", shown: "lab" },

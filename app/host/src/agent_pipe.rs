@@ -1,7 +1,4 @@
-//! `\\.\pipe\gpuvm-agent`: the broker's commands for the GpuVM PowerShell module (Get-GpuVMAgent,
-//! Invoke-GpuVMAgent, ... run in an elevated PowerShell or in the app's bridge). Only SYSTEM and elevated
-//! administrators may open it; an administrator can already drive any VM through Hyper-V, so it grants nothing new.
-//! Same lines as the service pipe: `{"id","cmd","args"}` in, one `{"id","type":"result",...}` out.
+// Only SYSTEM and elevated administrators may open it: they can already drive any VM through Hyper-V, so it grants nothing new.
 
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -20,7 +17,6 @@ use crate::server::log;
 use crate::win::{last_error, wide, Handle};
 
 pub const PIPE: &str = r"\\.\pipe\gpuvm-agent";
-/// A request line can carry a 16 MiB blob in base64.
 const MAX_LINE: u64 = 24 << 20;
 
 fn handle(pipe: HANDLE) {
@@ -68,7 +64,6 @@ pub fn serve() {
                 PIPE_UNLIMITED_INSTANCES, 65536, 65536, 0, &sa)
         };
         if pipe == INVALID_HANDLE_VALUE {
-            // Someone else holds the name: the module's commands won't work, everything else does.
             log(&last_error("CreateNamedPipeW gpuvm-agent"));
             std::thread::sleep(Duration::from_secs(if first { 5 } else { 1 }));
             continue;

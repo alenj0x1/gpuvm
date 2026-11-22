@@ -1,13 +1,11 @@
-# A backend is a way of giving the GPU to the VM (GPU-P on Hyper-V today; VFIO on KVM later).
-# Each one implements these operations as scriptblocks; public commands only talk to this interface.
 $script:BackendOperations = @(
-    'Test'        # param($Config) → check objects (Name, Status, Detail)
-    'New'         # param($Context) → creates the VM from scratch
-    'Clone'       # param($Context) → creates the VM on top of a template's disk (Context.Template)
-    'Apply'       # param($Name, $Config) → applies CPU, memory, GPU, etc. to a stopped VM
-    'SyncDriver'  # param($Name, $State) → copies the host driver again; returns the copied version
-    'Rename'      # param($Name, $NewName, $State) → renames a stopped VM with its files; returns the new state
-    'Remove'      # param($Name, $State, $DeleteDisk)
+    'Test'
+    'New'
+    'Clone'
+    'Apply'
+    'SyncDriver'
+    'Rename'
+    'Remove'
 )
 
 function Register-GpuVMBackend {

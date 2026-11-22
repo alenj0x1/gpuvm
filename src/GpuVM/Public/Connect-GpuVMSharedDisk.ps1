@@ -29,7 +29,6 @@ function Connect-GpuVMSharedDisk {
     }
     $letter = $null
     $guest = Get-GpuVMGuestCredential -State $state
-    # With the VM off, the drive letter and Steam library are set the next time it is opened (Connect-GpuVM).
     if ((Get-VM -Name $VMName).State -eq 'Running' -and $guest) {
         $letter = Initialize-GuestSharedDisk -VMName $VMName -Credential $guest -Disk $disk
     }

@@ -11,13 +11,10 @@ import { locale, t, tn } from "./i18n";
 type Phase = "ready" | "playing" | "paused" | "over";
 const fmt = (n: number) => n.toLocaleString(locale());
 
-/** A machine as the games draw it: its color and the figures it carries. */
 function asPlayer(name: string, decor: Decor, light: boolean, accent: string): GameMachine {
   return { name, color: colorOfDecor(decor, light) ?? accent, figures: decor.figures.map((f) => f.figure) };
 }
 
-/** A game running in the space: the canvas, its score and lives, and the start, pause and game-over cards. On the
- *  start card the player picks the machine to play with and, if the game has them, a mode. */
 export function GameStage({ game, machines, first, fallback, world, onClose }: {
   game: GameDef; machines: string[]; first?: string; fallback: Decor; world?: string; onClose: () => void;
 }) {
@@ -26,7 +23,6 @@ export function GameStage({ game, machines, first, fallback, world, onClose }: {
   const [phase, setPhase] = useState<Phase>("ready");
   const [hud, setHud] = useState<GameHud>({ score: 0, lives: 3 });
   const [player, setPlayer] = useState(() => first ?? machines[0] ?? "");
-  // A game whose modes are worlds starts in the space's own world.
   const [mode, setMode] = useState(game.modes?.find((m) => m.id === world)?.id ?? game.modes?.[0]?.id ?? "");
   const modeInfo = game.modes?.find((m) => m.id === mode);
   const recordKey = mode ? `${game.id}.${mode}` : game.id;
@@ -48,14 +44,12 @@ export function GameStage({ game, machines, first, fallback, world, onClose }: {
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [phase, onClose]);
-  // Leaving the window pauses the game; coming back waits for the player.
   useEffect(() => {
     const hide = () => { if (document.hidden && phase === "playing") { inst.current?.pause(); setPhase("paused"); } };
     document.addEventListener("visibilitychange", hide);
     return () => document.removeEventListener("visibilitychange", hide);
   }, [phase]);
 
-  // Each round starts a fresh game with the chosen machine (and, in a team mode, the others beside it).
   const play = () => {
     const cv = ref.current;
     if (!cv) return;
@@ -102,7 +96,6 @@ export function GameStage({ game, machines, first, fallback, world, onClose }: {
       )}
       {phase === "ready" && (
         <div className="game-start">
-          {/* The game itself, playing on its own with the machine and the mode picked beside it. */}
           <div className="game-start-preview">
             <GameDemo game={game} player={player} fallback={fallback} world={world} mode={mode}
               team={modeInfo?.team ? machines.filter((n) => n !== player).slice(0, 3) : []} />
@@ -183,15 +176,10 @@ export function GameStage({ game, machines, first, fallback, world, onClose }: {
   );
 }
 
-/** The space of machines with its games: a Jugar button over it (on hover), and the game in its place while played.
- *  The cube stops drawing while a game runs. */
 export function SpaceWithGames({ decor: shown, decorOf, machines = [], world, children }: {
-  /** The decoration to play with when there are no machines (Home's showcase). */
   decor?: Decor;
-  /** The machine in front, picked first on the start card. */
   decorOf?: string;
   machines?: string[];
-  /** The space's world: games start in it. */
   world?: string;
   children: React.ReactNode;
 }) {
@@ -200,8 +188,6 @@ export function SpaceWithGames({ decor: shown, decorOf, machines = [], world, ch
   const [game, setGame] = useState<GameDef | null>(null);
   const [gallery, setGallery] = useState(false);
   if (game) return <GameStage game={game} machines={machines} first={decorOf} fallback={fallback} world={world} onClose={() => { setGame(null); setGallery(true); }} />;
-  // The gallery takes the place of the space while it is open: the cube stops drawing, so the games on the cards run
-  // smoothly.
   if (gallery) return <GameGallery player={decorOf} fallback={fallback} world={world} onPick={(gd) => { setGallery(false); setGame(gd); }} onClose={() => setGallery(false)} />;
   return (
     <>
@@ -213,7 +199,6 @@ export function SpaceWithGames({ decor: shown, decorOf, machines = [], world, ch
   );
 }
 
-/** One game playing by itself on its card: the real game, in a demo, with the machine in front. */
 export function GameDemo({ game, player, fallback, world, mode: pickedMode, team = [] }: { game: GameDef; player?: string; fallback: Decor; world?: string; mode?: string; team?: string[] }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const inst = useRef<GameInstance | null>(null);
@@ -226,7 +211,6 @@ export function GameDemo({ game, player, fallback, world, mode: pickedMode, team
     const mode = pickedMode ?? game.modes?.find((m) => m.id === world)?.id ?? (game.modes?.some((m) => m.team) ? "solo" : game.modes?.[0]?.id ?? "");
     return { me, mates: team.map((n) => asPlayer(n, readDecor(n), light, accent)), mode, light };
   };
-  // Another machine or mode: the running demo changes who plays, with the ones leaving flying off (no restart).
   const castKey = `${player}|${pickedMode}|${team.join("|")}`;
   useEffect(() => {
     const c = cast();
@@ -248,7 +232,6 @@ export function GameDemo({ game, player, fallback, world, mode: pickedMode, team
   return <canvas ref={ref} />;
 }
 
-/** The games, each on a card showing the game itself playing, with its best score. */
 export function GameGallery({ player, fallback, world, onPick, onClose }: { player?: string; fallback: Decor; world?: string; onPick: (g: GameDef) => void; onClose: () => void }) {
   useEffect(() => {
     const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -284,9 +267,7 @@ export function GameGallery({ player, fallback, world, onPick, onClose }: { play
   );
 }
 
-/** A key as it looks on the keyboard. */
 const Key = ({ k }: { k: string }) => <kbd className={`keycap${k.length > 2 ? " wide" : ""}`}>{k}</kbd>;
-/** The mouse with the button that does the action in the accent (or its middle marked, to aim). */
 function Mouse({ part }: { part: "left" | "right" | "move" }) {
   return (
     <svg className="mouse-glyph" width="22" height="28" viewBox="0 0 22 28" aria-hidden="true">
@@ -298,7 +279,6 @@ function Mouse({ part }: { part: "left" | "right" | "move" }) {
     </svg>
   );
 }
-/** One control: what does it (keys, a mouse button, or both) and what it is for. */
 function ControlRow({ c }: { c: Control }) {
   const wasd = c.keys?.join("") === "WASD";
   return (

@@ -1,12 +1,3 @@
-//! The agent channel's wire format and handshake (docs/agents/protocol.md), independent of the transport so it can
-//! be tested over any stream. Also compiled into lab 052's stub guest agent (`#[path]`), which uses the guest side.
-//!
-//! Frames: `u32 length (LE, payload bytes only) | u8 kind | payload`. kind 1 = JSON (max 64 KiB), kind 2 = blob
-//! (max 16 MiB) belonging to the JSON frame right before it. After the handshake every JSON frame carries `seq`
-//! (exactly last + 1, from 1, per direction) and `m`: the first 16 bytes of HMAC(S, "<seq>|" + P) in hex, where P is
-//! the frame's compact JSON without `m`; `m` is always the last member: the frame is P with its final `}` replaced by
-//! `,"m":"<32 hex>"}`.
-
 #![allow(dead_code)]
 
 use std::io::{Read, Write};
@@ -18,9 +9,8 @@ pub const KIND_JSON: u8 = 1;
 pub const KIND_BLOB: u8 = 2;
 pub const MAX_JSON: usize = 64 * 1024;
 pub const MAX_BLOB: usize = 16 * 1024 * 1024;
-/// Before the handshake ends a peer only gets small frames.
 pub const MAX_HELLO: usize = 1024;
-const MAC_SUFFIX: usize = 40; // ,"m":" + 32 hex + "}
+const MAC_SUFFIX: usize = 40;
 
 pub fn hmac(key: &[u8], data: &[u8]) -> [u8; 32] {
     let mut out = [0u8; 32];
@@ -39,14 +29,12 @@ pub fn sha256(data: &[u8]) -> [u8; 32] {
     out
 }
 
-/// What the signed frame before a blob says about it (protocol: "blob", "blobLen", "blobSha256").
 pub fn describe_blob(obj: &mut Map<String, Value>, blob: &[u8]) {
     obj.insert("blob".into(), json!(true));
     obj.insert("blobLen".into(), json!(blob.len()));
     obj.insert("blobSha256".into(), json!(hex(&sha256(blob))));
 }
 
-/// The blob must be exactly what its signed frame announced.
 pub fn check_blob(obj: &Map<String, Value>, blob: &[u8]) -> Result<(), String> {
     if obj.get("blobLen").and_then(Value::as_u64) != Some(blob.len() as u64) {
         return Err("blob length differs from its frame".into());
@@ -73,7 +61,7 @@ pub fn is_hex(s: &str, len: usize) -> bool {
     s.len() == len && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
-/// Constant-time comparison (the time doesn't tell how many leading bytes matched).
+// Constant-time comparison (the time doesn't tell how many leading bytes matched).
 pub fn ct_eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
@@ -84,13 +72,11 @@ pub enum Frame {
     Blob(Vec<u8>),
 }
 
-/// Reads one frame. Anything unknown or over the limit is an error: the caller closes the connection.
 pub fn read_frame(r: &mut impl Read, max_json: usize) -> Result<Frame, String> {
     read_frame_of(r, max_json, true)
 }
 
-/// `blobs`: false before the peer is authenticated, so a blob frame is refused from its header, before anything is
-/// allocated for it (review 2, #9).
+// Before authentication a blob frame is refused from its header, before anything is allocated for it.
 fn read_frame_of(r: &mut impl Read, max_json: usize, blobs: bool) -> Result<Frame, String> {
     let mut head = [0u8; 5];
     r.read_exact(&mut head).map_err(|e| format!("read: {e}"))?;
@@ -144,7 +130,6 @@ fn frame_mac(key: &[u8; 32], seq: u64, plain: &[u8]) -> String {
     hex(&hmac(key, &input)[..16])
 }
 
-/// Outgoing side of a session: numbers and signs each JSON frame.
 pub struct Sealer {
     key: [u8; 32],
     seq: u64,
@@ -161,13 +146,12 @@ impl Sealer {
         obj.insert("seq".into(), json!(self.seq));
         let mut plain = Value::Object(obj).to_string().into_bytes();
         let mac = frame_mac(&self.key, self.seq, &plain);
-        plain.pop(); // the final '}'
+        plain.pop();
         plain.extend_from_slice(format!(",\"m\":\"{mac}\"}}").as_bytes());
         plain
     }
 }
 
-/// Incoming side of a session: checks each JSON frame's signature and number.
 pub struct Opener {
     key: [u8; 32],
     seq: u64,
@@ -208,7 +192,6 @@ impl Opener {
 pub struct Session {
     pub sealer: Sealer,
     pub opener: Opener,
-    /// The version the guest announced (checked: short, printable).
     pub agent: String,
 }
 
@@ -220,8 +203,6 @@ pub fn printable(s: &str, max: usize) -> bool {
     !s.is_empty() && s.len() <= max && s.bytes().all(|b| (0x20..0x7f).contains(&b))
 }
 
-/// Host side: hello → challenge (proves the host knows K) → proof (the guest proves it knows K, for this VmId and
-/// this connection's nonces, so a recorded proof is useless).
 pub fn host_handshake<S: Read + Write>(s: &mut S, k: &[u8; 32], vm_id: &str) -> Result<Session, String> {
     let hello = read_plain(s)?;
     let ng = hello["ng"].as_str().unwrap_or("");
@@ -243,7 +224,6 @@ pub fn host_handshake<S: Read + Write>(s: &mut S, k: &[u8; 32], vm_id: &str) -> 
     Ok(Session { sealer: Sealer::new(key), opener: Opener::new(key), agent: agent.to_string() })
 }
 
-/// Guest side (lab stub and tests). `ng` can be forced to replay a recorded handshake.
 pub fn guest_handshake<S: Read + Write>(s: &mut S, k: &[u8; 32], vm_id: &str, agent: &str, ng: Option<String>) -> Result<Session, String> {
     let ng = ng.unwrap_or_else(|| hex(&random::<16>()));
     write_plain(s, &json!({ "t": "hello", "v": 1, "agent": agent, "ng": ng })).map_err(|e| format!("write: {e}"))?;
@@ -258,8 +238,6 @@ pub fn guest_handshake<S: Read + Write>(s: &mut S, k: &[u8; 32], vm_id: &str, ag
     let key = session_key(k, &ng, &nh);
     Ok(Session { sealer: Sealer::new(key), opener: Opener::new(key), agent: agent.to_string() })
 }
-
-// ---------------------------------------------------------------- base64 (blobs on the app's pipe)
 
 const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -323,7 +301,6 @@ mod tests {
 
     #[test]
     fn handshake_refuses_blob_frames_before_allocating() {
-        // A header announcing a 16 MiB blob and no body: refused from the header alone.
         let mut head = (MAX_BLOB as u32).to_le_bytes().to_vec();
         head.push(KIND_BLOB);
         let e = read_plain(&mut head.as_slice()).unwrap_err();
@@ -342,7 +319,6 @@ mod tests {
 
     #[test]
     fn hmac_known_vector() {
-        // RFC 4231 test case 2.
         assert_eq!(hex(&hmac(b"Jefe", b"what do ya want for nothing?")), "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843");
     }
 
@@ -399,14 +375,12 @@ mod tests {
     #[test]
     fn wrong_secret_fails_both_ways() {
         let (host, guest) = handshake([8u8; 32], VM, None);
-        // The guest refuses the host's challenge (wrong key): the host never gets a proof.
         assert!(guest.is_err());
         assert!(host.is_err());
     }
 
     #[test]
     fn wrong_vm_binding_fails() {
-        // A guest with the right secret but claiming (or bound to) another VmId.
         let (host, guest) = handshake([7u8; 32], "11111111-2222-3333-4444-555555555555", None);
         assert!(guest.is_err());
         assert!(host.is_err());
@@ -414,14 +388,12 @@ mod tests {
 
     #[test]
     fn replayed_proof_fails() {
-        // Record a good handshake, then replay its hello and proof on a new connection.
         let (mut g, mut h) = pair();
         let host = std::thread::spawn(move || host_handshake(&mut h, &[7u8; 32], VM).map(|_| ()));
         let ng = hex(&random::<16>());
         guest_handshake(&mut g, &[7u8; 32], VM, "1.0.0", Some(ng.clone())).unwrap();
         host.join().unwrap().unwrap();
         let old_proof = {
-            // Same ng, but the host picks a new nh: the old proof (for the old nh) must fail.
             let (mut g2, mut h2) = pair();
             let host2 = std::thread::spawn(move || host_handshake(&mut h2, &[7u8; 32], VM).map(|_| ()));
             write_plain(&mut g2, &json!({"t":"hello","v":1,"agent":"x","ng":ng})).unwrap();
@@ -437,18 +409,15 @@ mod tests {
     #[test]
     fn oversized_and_malformed_frames() {
         let (mut g, mut h) = pair();
-        // Over 64 KiB of JSON.
         g.write_all(&(MAX_JSON as u32 + 1).to_le_bytes()).unwrap();
         g.write_all(&[KIND_JSON]).unwrap();
         assert!(read_frame(&mut h, MAX_JSON).unwrap_err().contains("over the limit"));
         let (mut g, mut h) = pair();
         g.write_all(&[3, 0, 0, 0, 9, 1, 2, 3]).unwrap();
         assert!(read_frame(&mut h, MAX_JSON).unwrap_err().contains("kind"));
-        // A big hello is refused before reading it.
         let (mut g, mut h) = pair();
         write_frame(&mut g, KIND_JSON, &vec![b' '; 5000]).unwrap();
         assert!(host_handshake(&mut h, &[7u8; 32], VM).is_err());
-        // Malformed JSON hello.
         let (mut g, mut h) = pair();
         write_frame(&mut g, KIND_JSON, b"{not json").unwrap();
         assert!(host_handshake(&mut h, &[7u8; 32], VM).is_err());
@@ -460,22 +429,17 @@ mod tests {
         let mut sealer = Sealer::new(key);
         let a = sealer.seal(json!({"t":"evt","event":"x"}).as_object().unwrap().clone());
         let b = sealer.seal(json!({"t":"ping"}).as_object().unwrap().clone());
-        // Out of order.
         assert!(Opener::new(key).open(&b).is_err());
-        // Replayed.
         let mut o = Opener::new(key);
         o.open(&a).unwrap();
         assert!(o.open(&a).is_err());
         o.open(&b).unwrap();
-        // Tampered body.
         let mut t = a.clone();
         let i = t.iter().position(|&c| c == b'x').unwrap();
         t[i] = b'y';
         assert!(Opener::new(key).open(&t).is_err());
-        // No signature, or another key.
         assert!(Opener::new(key).open(br#"{"t":"ping","seq":1}"#).is_err());
         assert!(Opener::new([1u8; 32]).open(&a).is_err());
-        // A second "m" earlier in the frame doesn't confuse the check.
         let mut s2 = Sealer::new(key);
         let c = s2.seal(json!({"t":"evt","data":{"m":"0123456789abcdef0123456789abcdef"}}).as_object().unwrap().clone());
         assert!(Opener::new(key).open(&c).is_ok());

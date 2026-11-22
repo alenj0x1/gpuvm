@@ -1,16 +1,8 @@
-# winget in agent machines (lab 060): App Installer from Microsoft's own release (pinned with SHA-256 in
-# streaming/components.json, Microsoft's signature checked on this PC and again in the guest), provisioned for every
-# user with its license, without Microsoft Store. The agent's standard user `agent` then runs winget as itself (user
-# scope; anything that wants administrator rights hits UAC, which only the person answers). Policies lock what a user
-# could otherwise turn on (hash override, local manifests...) and drop the Microsoft Store source, whose agreement
-# prompt would leave a `winget` run without --accept-source-agreements waiting for an answer nobody types.
+# Policies drop the Microsoft Store source: its agreement prompt would leave a winget run waiting for an answer.
 
-# The three components that make one App Installer release.
 $script:WingetComponents = 'winget', 'winget-dependencies', 'winget-license'
 
-# App Installer's machine policies (HKLM\SOFTWARE\Policies\Microsoft\Windows\AppInstaller, names from the release's
-# DesktopAppInstallerPolicies.zip). 0 = off and locked; bump WingetPolicyVersion when this list changes, so templates
-# and machines get it again.
+# Bump WingetPolicyVersion when this list changes, so templates and machines get it again.
 $script:WingetPolicies = [ordered]@{
     EnableMicrosoftStoreSource                     = 0
     EnableMSAppInstallerProtocol                   = 0
@@ -22,18 +14,15 @@ $script:WingetPolicies = [ordered]@{
 }
 $script:WingetPolicyVersion = 1
 
-# Where a machine says which release (and policies) it has: in the agent's data folder, which only SYSTEM and
-# Administrators can write (guest\agent\install.ps1), so `agent` can't fake it. Also the template stamp's key.
+# Only SYSTEM and Administrators can write there, so `agent` can't fake it.
 $script:WingetStampKey = 'ProgramData\GpuVM\Agent\winget'
 
-# The stamp's text for this build's pinned release: what Install-GuestWinget writes into the machine.
 function Get-WingetStampText {
     param([System.Collections.IDictionary]$Manifest = (Get-ComponentManifest))
     foreach ($name in $script:WingetComponents) { if (-not $Manifest.Contains($name)) { return $null } }
     (@($script:WingetComponents | ForEach-Object { "$_=$($Manifest[$_]['sha256'])" }) + "policy=$script:WingetPolicyVersion") -join ';'
 }
 
-# The stamp file's SHA-256 (what Get-GuestComponentStamp reads from a template's disk), without downloading anything.
 function Get-WingetStampHash {
     param([System.Collections.IDictionary]$Manifest = (Get-ComponentManifest))
     $text = Get-WingetStampText -Manifest $Manifest
@@ -49,8 +38,6 @@ function Test-MicrosoftSignature {
     $signature.SignerCertificate.Subject -eq 'CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US'
 }
 
-# The release's files on this PC, downloaded once and verified: the bundle, the license and the x64 frameworks taken
-# out of the dependencies zip. Returns {Files = @({Path, Name, Sha256, Role})}, Stamp}.
 function Get-WingetPackage {
     $manifest = Get-ComponentManifest
     $versions = @($script:WingetComponents | ForEach-Object {
@@ -89,9 +76,6 @@ function Get-WingetPackage {
     [pscustomobject]@{ Files = $files; Stamp = Get-WingetStampText -Manifest $manifest; Version = $versions[0] }
 }
 
-# Gives a running agent machine this build's winget, in an open PowerShell Direct session with its administrator
-# account. 'current' when the machine already has it (a copy of a current template: one small read), else
-# 'installed'. The `agent` user gets it at its next sign-in (a new user at its first one).
 function Install-GuestWinget {
     param([Parameter(Mandatory)]$Session)
     $want = Get-WingetStampText
@@ -104,7 +88,6 @@ function Install-GuestWinget {
 
     $package = Get-WingetPackage
     Write-Step "Installing winget $($package.Version) in the machine"
-    # A folder only Administrators and SYSTEM can open, as for the agent's own files.
     $dir = Invoke-InAgentSession $Session -ScriptBlock {
         $dir = Join-Path $env:SystemRoot "Temp\GpuVMWinget-$([guid]::NewGuid().ToString('n'))"
         New-Item -ItemType Directory -Path $dir | Out-Null
@@ -132,7 +115,6 @@ function Install-GuestWinget {
                 }
                 $byRole[$f.role] += $path
             }
-            # For every user, existing and new, without Microsoft Store.
             Add-AppxProvisionedPackage -Online -PackagePath $byRole['bundle'][0] -DependencyPackagePath $byRole['dependency'] -LicensePath $byRole['license'][0] | Out-Null
             $key = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\AppInstaller'
             if (-not (Test-Path $key)) { New-Item -Path $key -Force | Out-Null }

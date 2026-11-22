@@ -1,10 +1,3 @@
-//! Wire format of docs/agents/protocol.md: frames, HMAC-SHA256, the handshake values and the sealed (seq + MAC)
-//! JSON frames. Shared by the guest agent and the host-side lab harness, so both sides use the same bytes.
-//!
-//! Byte-exact sealing (the protocol's `"m":HMAC(S, seq|payload-without-m)`):
-//! the sender serializes the object with `"seq"` and without `"m"` -> P (ends with `}`), computes
-//! `HMAC(S, ascii(seq) + "|" + P)[..16]` as lowercase hex and sends `P[..len-1] + ,"m":"<32 hex>"}`. The receiver
-//! requires that exact 40-byte tail, rebuilds P by cutting it and appending `}`, and checks MAC and `seq == last + 1`.
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::io::{self, Read, Write};
@@ -50,7 +43,6 @@ impl From<io::Error> for FrameError {
     }
 }
 
-/// Reads one frame: `u32 length (LE, payload only) | u8 kind | payload`. Checks the limit before allocating.
 pub fn read_frame<R: Read>(r: &mut R) -> Result<Frame, FrameError> {
     let mut h = [0u8; 5];
     r.read_exact(&mut h)?;
@@ -69,7 +61,6 @@ pub fn read_frame<R: Read>(r: &mut R) -> Result<Frame, FrameError> {
     Ok(if kind == KIND_JSON { Frame::Json(buf) } else { Frame::Blob(buf) })
 }
 
-/// Writes one frame in a single write (header + payload), refusing sizes over the limit.
 pub fn write_frame<W: Write>(w: &mut W, kind: u8, payload: &[u8]) -> io::Result<()> {
     let max = if kind == KIND_JSON { MAX_JSON } else { MAX_BLOB };
     if payload.len() > max {
@@ -87,7 +78,6 @@ pub fn sha256(data: &[u8]) -> [u8; 32] {
     Sha256::digest(data).into()
 }
 
-/// HMAC-SHA256 (RFC 2104) over the concatenation of `parts`.
 pub fn hmac(key: &[u8], parts: &[&[u8]]) -> [u8; 32] {
     let mut k = [0u8; 64];
     if key.len() > 64 {
@@ -132,7 +122,6 @@ pub fn unhex(s: &str) -> Option<Vec<u8>> {
     (0..s.len()).step_by(2).map(|i| u8::from_str_radix(s.get(i..i + 2)?, 16).ok()).collect()
 }
 
-/// Constant-time comparison.
 pub fn ct_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
@@ -140,7 +129,6 @@ pub fn ct_eq(a: &[u8], b: &[u8]) -> bool {
     a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
-/// True for exactly 32 hex characters (a nonce; used verbatim in the MACs).
 pub fn is_nonce(s: &str) -> bool {
     s.len() == 32 && s.bytes().all(|c| c.is_ascii_hexdigit())
 }
@@ -161,7 +149,6 @@ pub fn hello(agent_version: &str, ng: &str) -> Vec<u8> {
     serde_json::to_vec(&json!({"t": "hello", "v": PROTOCOL_VERSION, "agent": agent_version, "ng": ng})).unwrap()
 }
 
-/// Seals outgoing JSON objects: adds `seq` (1, 2, 3...) and the MAC tail.
 pub struct Sealer {
     key: [u8; 32],
     seq: u64,
@@ -189,7 +176,7 @@ impl Sealer {
         }
         let mut p = serde_json::to_vec(&obj).unwrap();
         let mac = hmac(&self.key, &[self.seq.to_string().as_bytes(), b"|", &p]);
-        p.pop(); // the closing brace
+        p.pop();
         p.extend_from_slice(b",\"m\":\"");
         p.extend_from_slice(hex(&mac[..16]).as_bytes());
         p.extend_from_slice(b"\"}");
@@ -197,7 +184,6 @@ impl Sealer {
     }
 }
 
-/// Checks incoming sealed frames: exact tail, MAC, strictly increasing seq (last + 1).
 pub struct Opener {
     key: [u8; 32],
     last: u64,
@@ -256,13 +242,10 @@ mod tests {
         let b = s.seal(json!({"t":"res","id":1,"ok":true,"result":{"x":"é\"}"}}));
         assert_eq!(o.open(&a).unwrap()["t"], "ping");
         assert_eq!(o.open(&b).unwrap()["result"]["x"], "é\"}");
-        // replay
         assert!(o.open(&b).is_err());
-        // tamper
         let mut c = s.seal(json!({"t":"ping"}));
         c[3] ^= 1;
         assert!(o.open(&c).is_err());
-        // wrong key
         let mut s2 = Sealer::new([8u8; 32]);
         let mut o2 = Opener::new(k);
         assert!(o2.open(&s2.seal(json!({"t":"ping"}))).is_err());

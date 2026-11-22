@@ -10,15 +10,12 @@ import { getLang, t, tn, translateModule } from "./i18n";
 
 export const RESOLUTIONS = ["1280x720", "1920x1080", "2560x1440", "3840x2160"];
 export const FPS = [30, 60, 120, 144];
-/** 0 = the host monitor's refresh rate, read each time the VM opens (lab 022). */
 export const MONITOR_FPS = 0;
-// Labels read through getters, so lists made once at import still come out in the current language.
+// Getters, so labels follow the current language.
 export const FPS_OPTIONS = [...FPS.map((f) => ({ value: f, label: `${f} FPS` })), { value: MONITOR_FPS, get label() { return t("Monitor"); } }];
 export const fpsLabel = (fps: number | null | undefined) => (fps === MONITOR_FPS ? t("at the monitor's rate") : `${fps ?? 60} FPS`);
 export const CODECS = [{ value: "auto", get label() { return t("Automatic|codec"); } }, { value: "H.264", label: "H.264" }, { value: "HEVC", label: "HEVC" }, { value: "AV1", label: "AV1" }];
 
-/** What a VM is used for: each use sets the stream settings measured for it (labs 020-022). At the monitor's own
- * refresh rate V-Sync costs no latency and halves the stutters, so no use has to trade one for the other. */
 export type StreamUse = "games" | "video" | "work";
 export interface StreamUseInfo {
   id: StreamUse;
@@ -27,7 +24,7 @@ export interface StreamUseInfo {
   description: string;
   client: { fps: number; vsync: boolean; framePacing: boolean; mouse: MouseMode };
 }
-// label and description are getters: read where they are shown, they come out in the current language.
+// Getters, so texts follow the current language.
 export const USES: StreamUseInfo[] = [
   { id: "games", get label() { return t("Games"); }, icon: IconDeviceGamepad2,
     get description() { return t("At your monitor's rate, with the fastest response and the picture always whole."); },
@@ -40,8 +37,6 @@ export const USES: StreamUseInfo[] = [
     client: { fps: MONITOR_FPS, vsync: true, framePacing: false, mouse: "absolute" } },
 ];
 
-/** The use for AI agents: more than the picture. The machine gets the guest agent, its picture is the size agents see
- *  best (1280x800), recording runs while an agent works and the network stays isolated. Not a profile's use. */
 export const AGENT_USE = {
   id: "agent" as const, get label() { return t("Agent"); }, icon: IconRobot,
   get description() { return t("For AI agents. 1280x800, recorded while they work, on an isolated network."); },
@@ -49,15 +44,12 @@ export const AGENT_USE = {
   client: { fps: 60, vsync: true, framePacing: false, mouse: "absolute" as MouseMode },
 };
 
-/** The use whose settings match exactly, or null when they were changed by hand. */
 export function streamUseOf(c: { fps: number; vsync: boolean; framePacing: boolean; mouse: MouseMode }) {
   return USES.find((u) => u.client.fps === c.fps && u.client.vsync === c.vsync && u.client.framePacing === c.framePacing && u.client.mouse === c.mouse)?.id ?? null;
 }
 
-/** A built-in profile's name in the current language; a person's own profile keeps its name. */
 export const profileLabel = (name: string) => name === "balanced" ? t("Balanced") : name === "max-performance" ? t("Maximum performance") : name;
 
-// Each app's own icon, in color (tools/app-icons/extract.ps1 takes them from the official installers).
 const APP_ICONS = import.meta.glob<string>("./assets/apps/*.{png,svg}", { eager: true, query: "?url", import: "default" });
 
 export function AppLogo({ id }: { id: string }) {
@@ -66,7 +58,6 @@ export function AppLogo({ id }: { id: string }) {
   return <img className="app-logo" src={src} alt="" width={20} height={20} draggable={false} />;
 }
 
-/** hardwareOnly: for a VM built on a template, whose Windows, apps and cleanup come from the template. */
 export function profileSummary(s: ProfileSettings, apps: AppInfo[] = [], hardwareOnly = false) {
   const parts = [
     tn(s.cpu, "{n} thread", "{n} threads"), `${s.memoryGB} GB`, `GPU ${s.gpuPercent} %`,
@@ -86,21 +77,16 @@ export function profileSummary(s: ProfileSettings, apps: AppInfo[] = [], hardwar
 
 export const fileName = (path: string) => path.split("\\").pop() ?? path;
 
-// Accents and case do not matter when searching ("comunicacion" finds "Chat").
 const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 
-/** Apps from the catalog as toggles: a search box, category tabs and a grid that scrolls within a fixed height. */
-/** scroll: false inside dialogs, where the dialog is the one that scrolls (never a scroll inside another). */
 interface AppPickerProps {
   apps: AppInfo[];
   value: string[];
   onChange: (v: string[]) => void;
   scroll?: boolean;
-  /** Apps already in the VM: shown as installed, with their actions in a menu instead of a checkbox. */
   installed?: string[];
   onReinstall?: (app: AppInfo) => void;
   onUninstall?: (app: AppInfo) => void;
-  /** An app job is running: the installed apps' actions wait for it. */
   locked?: boolean;
 }
 
@@ -128,19 +114,16 @@ export function AppPicker({ apps, value, onChange, scroll = true, installed = []
     const width = 200;
     const x = Math.min(point?.x ?? box.right - width, window.innerWidth - width - 8);
     const below = (point?.y ?? box.bottom) + 6;
-    // Opens upward when it would leave the window.
     const y = below + 96 > window.innerHeight ? Math.max(8, (point?.y ?? box.top) - 96 - 6) : below;
     setMenu({ app, x: Math.max(8, x), y });
   };
   const [category, setCategory] = useState<string | null>(null);
   const categories = useMemo(() => {
     const seen = new Map<string, string>();
-    // The module names categories in English; they show in the app's language.
     for (const a of apps) if (a.category && !seen.has(a.category)) seen.set(a.category, translateModule(a.categoryName ?? a.category));
     return [...seen];
   }, [apps, getLang()]);
   const q = fold(query.trim());
-  // A search looks through every category, so a result is never hidden by the tab that happens to be open.
   const shown = apps.filter((a) => q
     ? fold(`${a.name} ${a.categoryName ?? ""} ${translateModule(a.categoryName ?? "")}`).includes(q)
     : !category || a.category === category);
@@ -204,7 +187,6 @@ export function AppPicker({ apps, value, onChange, scroll = true, installed = []
   );
 }
 
-// The levels never change while the app runs; loaded once and shared by every picker.
 let cleanupCache: CleanupLevel[] | null = null;
 export function useCleanupLevels() {
   const [levels, setLevels] = useState<CleanupLevel[]>(cleanupCache ?? []);
@@ -214,7 +196,6 @@ export function useCleanupLevels() {
   return levels;
 }
 
-/** Windows cleanup level as tabs, with everything the chosen level does (each level includes the ones before it). */
 export function CleanupPicker({ levels, value, onChange }: { levels: CleanupLevel[]; value: CleanupLevelId; onChange: (v: CleanupLevelId) => void }) {
   const rank = Math.max(0, levels.findIndex((l) => l.id === value));
   const items = levels.slice(0, rank + 1).flatMap((l) => l.items);
@@ -233,7 +214,6 @@ export function CleanupPicker({ levels, value, onChange }: { levels: CleanupLeve
   );
 }
 
-/** Windows ISOs: the library first (with the machines that used each one), then the ones found on disk. */
 export function IsoPicker({ isos, value, onChange, onBrowse, allowNone }: {
   isos: IsoFile[] | null; value: string | null; onChange: (v: string | null) => void; onBrowse: () => void; allowNone?: boolean;
 }) {
@@ -274,7 +254,6 @@ export function isoDetail(f: IsoFile) {
   return parts.join(" · ");
 }
 
-// Monitors only change when one is plugged in or out: read once per screen that shows them.
 export function useMonitors() {
   const [monitors, setMonitors] = useState<HostMonitor[]>([]);
   useEffect(() => { api.monitors().then(setMonitors).catch(() => {}); }, []);
@@ -282,10 +261,8 @@ export function useMonitors() {
 }
 
 
-/** Where Moonlight opens: the primary monitor (follows Windows), a given one, or (per VM) what Preferences say. */
 export function MonitorPicker({ monitors, value, onChange, inherited }: {
   monitors: HostMonitor[]; value: string; onChange: (v: string) => void;
-  /** Per VM: the monitor Preferences choose, offered as "Default". */
   inherited?: string;
 }) {
   const primary = monitors.find((m) => m.primary) ?? monitors[0];
@@ -296,13 +273,11 @@ export function MonitorPicker({ monitors, value, onChange, inherited }: {
     ...(inherited !== undefined ? [{ value: "default", label: t("Default"), detail: inheritedName ? t("As in Settings, {name}", { name: inheritedName }) : t("As in Settings"), icon: <IconAdjustments size={17} /> }] : []),
     { value: "primary", label: t("Main"), detail: primary ? t("Windows' main one, now {name}", { name: primary.name }) : t("Windows' main one"), icon: <IconDeviceDesktopStar size={17} /> },
     ...monitors.map((m) => ({ value: m.id, label: m.name, detail: detail(m), icon: <IconDeviceDesktop size={17} /> })),
-    // A saved monitor that is unplugged stays chosen until another is picked.
     ...(known ? [] : [{ value, label: t("Disconnected"), detail: t("Opens on the main one"), icon: <IconDeviceDesktopOff size={17} /> }]),
   ];
   return <Dropdown label={t("Monitor")} value={value} options={options} onChange={onChange} />;
 }
 
-/** The monitor a VM opens on: its own choice, or Preferences' when it says "default", or Windows' main one. */
 export function resolveMonitor(monitors: HostMonitor[], value: string, inherited: string): HostMonitor | undefined {
   const id = value === "default" ? inherited : value;
   return monitors.find((m) => m.id === id) ?? monitors.find((m) => m.primary) ?? monitors[0];
@@ -310,8 +285,6 @@ export function resolveMonitor(monitors: HostMonitor[], value: string, inherited
 
 const COMMON_FPS = [240, 165, 144, 120, 90, 60, 30];
 
-/** Frames per second offered for the monitor the VM opens on: its own rate, the usual ones below it (each saying
- *  whether it stays even on that monitor) and a custom value. */
 export function FpsPicker({ value, monitor, onChange }: { value: number; monitor: HostMonitor | undefined; onChange: (fps: number) => void }) {
   const hz = monitor?.hz ?? 60;
   const listed = COMMON_FPS.filter((f) => f < hz);
@@ -327,13 +300,11 @@ export function FpsPicker({ value, monitor, onChange }: { value: number; monitor
     if (!inList) setText(String(value));
   }, [inList, value]);
   const emit = (fps: number) => { sent.current = fps; onChange(fps); };
-  // The field takes the focus only when the person picks Personalizado, never when a page opens with a custom rate
-  // (focusing it scrolled the machine's page down to it).
+  // Focus only on picking Personalizado: focusing on open scrolled the page down to it.
   const [picked, setPicked] = useState(false);
 
   const options: DropdownOption<string>[] = [
     { value: "monitor", label: t("{hz} FPS, like the monitor", { hz }), detail: monitor ? t("Smoothest on {name}", { name: monitor.name }) : t("Smoothest on your monitor"), icon: <IconDeviceDesktop size={17} />, tone: "accent" as const },
-    // Rates that divide the monitor's show every frame for the same time and come first; the others can't, and say so.
     ...[...listed.filter((f) => hz % f === 0), ...listed.filter((f) => hz % f !== 0)].map((f) => hz % f === 0
       ? { value: String(f), label: `${f} FPS`, detail: f === 60 ? t("Even, for movies and video") : f <= 30 ? t("Even, the lightest load on the GPU") : t("Even, less load on the GPU"),
         icon: f === 60 ? <IconMovie size={17} /> : <IconWaveSine size={17} />, tone: "ok" as const }
@@ -348,7 +319,6 @@ export function FpsPicker({ value, monitor, onChange }: { value: number; monitor
     <div className="fps-picker">
       <Dropdown label={t("Frames per second")} value={chosen} options={options} onChange={(v) => {
         if (v === "custom") {
-          // Starts from the rate in use, already saved as a fixed value, so the row never says one thing and shows another.
           const start = value === MONITOR_FPS ? hz : value;
           setCustom(true); setPicked(true); setText(String(start)); emit(start); return;
         }

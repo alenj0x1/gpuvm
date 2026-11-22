@@ -26,14 +26,11 @@ interface Props {
   host: HostInfo | null;
   job: { message: string; log: string[] } | null;
   error: string | null;
-  /** Opens with this template chosen (from the library). */
   template?: string | null;
-  /** The space it goes into at first (the one Home shows). */
   space?: string | null;
   onCreate: (args: {
     name: string; iso: string | null; template: string | null; file: string | null; disposable: boolean; profile: string; user: string; password: string;
     apps: string[]; cleanup: CleanupLevelId; resources: Resources | null; space: string;
-    /** Made for AI agents (usage type Agent), and the Windows user agents work as. */
     agents: { user: "agent" | "own" } | null;
   }) => void;
   onClose: () => void;
@@ -41,17 +38,13 @@ interface Props {
 
 const MIN_PASSWORD = 6;
 const NEW_SPACE = "__new__";
-// Windows local account names: up to 20 characters, none of these, and not one Windows keeps for itself.
 const RESERVED_USERS = ["administrator", "administrador", "guest", "invitado", "defaultaccount", "wdagutilityaccount", "system"];
 type Section = "name" | "start" | "resources" | "windows" | "apps" | "cleanup" | "custom";
 
-/** Create a machine in one dialog: sections on the left, everything in the middle, and on the right a summary that is
- *  always in view. A profile fills it all in; anything changed afterwards can be saved as a new profile. */
 export function CreateDialog({ existing, host, job, error, template: initialTemplate, space: initialSpace, onCreate, onClose }: Props) {
   const spaces = useSpaces();
   const [spaceId, setSpaceId] = useState(() => (spaces.some((x) => x.id === initialSpace) ? initialSpace! : spaces[0].id));
   const space = spaces.find((x) => x.id === spaceId) ?? spaces[0];
-  // A new space is made in its own dialog over this one, so nothing set here is lost.
   const [creatingSpace, setCreatingSpace] = useState(false);
   const creatingSpaceRef = useRef(false);
   creatingSpaceRef.current = creatingSpace;
@@ -70,13 +63,10 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
   const [user, setUser] = useState("gpuvm");
   const [password, setPassword] = useState("");
   const [repeat, setRepeat] = useState("");
-  // From a template: Windows, its apps, cleanup and account come from it, so only name, profile and resources are asked.
   const [templates, setTemplates] = useState<TemplateInfo[]>([]);
   const [source, setSource] = useState<"iso" | "template" | "file">(initialTemplate ? "template" : "iso");
   const [template, setTemplate] = useState<string | null>(initialTemplate ?? null);
-  // From a file exported with GpuVM: Windows, apps and account come from it; only its password is asked.
   const [file, setFile] = useState<ImportInfo | null>(null);
-  // A copy of the template that is deleted with its disk once it is turned off.
   const [disposable, setDisposable] = useState(false);
   const [forAgents, setForAgents] = useState(false);
   const [agentUser, setAgentUser] = useState<"agent" | "own">("agent");
@@ -135,7 +125,6 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
     ]),
     { id: "custom", label: t("Customize"), icon: <IconPalette size={16} /> },
   ];
-  // The section in view is marked on the left as the body scrolls; a click there scrolls to it.
   useEffect(() => {
     const body = bodyRef.current;
     if (!body) return;
@@ -148,7 +137,6 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
     };
     spy();
     body.addEventListener("scroll", spy, { passive: true });
-    // Profiles, apps and levels arrive after opening: the content grows, so look again.
     const grow = new ResizeObserver(spy);
     if (body.firstElementChild) Array.from(body.children).forEach((c) => grow.observe(c));
     return () => { body.removeEventListener("scroll", spy); grow.disconnect(); };
@@ -166,7 +154,6 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
   const [blurred, setBlurred] = useState<Record<string, boolean>>({});
   const blur = (field: string) => setBlurred((b) => ({ ...b, [field]: true }));
 
-  // Checked as you type; "Create machine" stays disabled until everything is valid.
   const nameError = !name ? "" : vmNameError(name, existing);
   const userError = !user ? t("Enter a user name") : !/^[A-Za-z0-9._-]{1,20}$/.test(user) || user.endsWith(".") ? t("Up to 20 letters, numbers, dots or hyphens")
     : RESERVED_USERS.includes(user.toLowerCase()) ? t("Windows reserves that name") : "";
@@ -207,7 +194,6 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
     } catch (err) { setSaving({ ...saving, busy: false, error: humanError(err) }); }
   };
 
-  // The file is read (its manifest only) when it is picked: a file that isn't a machine says so right there.
   const pickFile = async () => {
     const path = await pickMachineFile();
     if (!path) return;
@@ -246,7 +232,6 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
   );
 
   return (
-    // Clicking outside only closes when nothing was typed; Esc always closes.
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && (busy || !dirty) && onClose()}>
       <div className={`dialog ${busy ? "" : "create-dialog"}`} role="dialog" aria-modal="true" aria-label={t("Create machine")}>
         <div className="dialog-head">
@@ -445,8 +430,6 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
                     </button>
                   ))}
                 </div>
-                {/* The same scene as on a machine, and beside it everything Windows comes with: what this level removes
-                    has a check, what stays a dot. */}
                 <div className="create-cleanup">
                   <CleanupFlow items={allItems.map((i) => i.id)} removed={dropped} />
                   <CleanupItems items={allItems} removed={dropped} />
@@ -461,7 +444,6 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
             </div>
 
             <aside className="create-summary">
-              {/* The machine being put together: every change to its resources, apps and cleanup shows here. */}
               {res && (
                 <div className="create-cube">
                   <DraftCube draft={draft} ambient={space.ambient} spaceName={space.name} time={space.time} machine={{
@@ -528,7 +510,6 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
   );
 }
 
-/** The cube with the draft decoration: only it follows each change, not the whole dialog. */
 function DraftCube({ draft, ...props }: { draft: DecorSource } & Omit<React.ComponentProps<typeof MachineCube>, "decorShown">) {
   const decor = useSource(draft);
   return <MachineCube {...props} decorShown={decor} />;

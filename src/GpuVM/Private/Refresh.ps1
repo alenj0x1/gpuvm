@@ -1,9 +1,4 @@
-﻿# "fps = 0" means "the host monitor's refresh rate". When the VM's virtual display runs at the same rate as the monitor
-# that shows Moonlight, every streamed frame lands on one refresh: half the stutters and the same or lower input
-# latency with V-Sync on, so the picture never tears (lab 022). The rate is read when the VM is opened, so it follows
-# the monitor in use.
-
-if (-not ('GpuVMHostDisplay' -as [type])) {
+﻿if (-not ('GpuVMHostDisplay' -as [type])) {
     Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -48,8 +43,6 @@ public static class GpuVMHostDisplay {
 '@
 }
 
-# The frame rate to stream with: the client's, or the host monitor's when it is 0 (between 30 and 240; 60 if unknown).
-# -Hz is the rate of the monitor the VM opens on; without it, the primary monitor's.
 function Resolve-GpuVMStreamFps {
     param($Fps, [double]$Hz)
     if ([int]$Fps -gt 0) { return [int]$Fps }
@@ -58,9 +51,7 @@ function Resolve-GpuVMStreamFps {
     [int][math]::Min(240, $hz)
 }
 
-# Makes sure the VM's virtual display offers this refresh rate: adds it to the Virtual Display Driver's settings and
-# restarts the device when it was missing (the driver reads them when it starts). Runs as administrator in the guest.
-# Returns $true when it added the rate.
+# The driver reads its settings when it starts: the device is restarted when the rate was missing.
 function Add-GuestRefreshRate {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -89,11 +80,7 @@ function Add-GuestRefreshRate {
     [bool](@($added)[-1] -eq $true)
 }
 
-# Makes a mode the virtual display's preferred one: the Virtual Display Driver starts in the FIRST <resolution> of its
-# settings (800x600@30 out of the box), so with the viewer's mode there the display boots in it, before Sunshine
-# starts, and nothing changes the mode afterwards (lab 052, 2026-11-20: a mode set later made Sunshine test its
-# encoders again on the first session, which then streamed black). The driver reads it when it starts: no restart
-# here (the caller's power cycle follows). Returns $true when it changed the file.
+# The Virtual Display Driver starts in the FIRST <resolution> of its settings; read when it starts, so no restart here.
 function Set-GuestVddPreferredMode {
     param(
         [Parameter(Mandatory)][string]$Name,

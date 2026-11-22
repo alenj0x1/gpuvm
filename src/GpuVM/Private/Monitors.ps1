@@ -1,6 +1,4 @@
-﻿# The host's monitors, to choose the one a VM opens on (GpuVM's viewer opens there; the app places it).
-# A monitor is saved by its device path, which stays the same across restarts and when other monitors change;
-# "primary" (or nothing) follows whatever monitor Windows has as the primary one.
+﻿# Saved by device path, which survives restarts and other monitors changing; "primary" follows Windows' primary.
 
 if (-not ('GpuVMMonitors' -as [type])) {
     Add-Type -TypeDefinition @'
@@ -98,7 +96,6 @@ public static class GpuVMMonitors {
 '@
 }
 
-# The host's active monitors, left to right, with a readable name (the monitor's own, or "Monitor N").
 function Get-HostMonitor {
     $all = @([GpuVMMonitors]::List())
     $i = 0
@@ -114,8 +111,6 @@ function Get-HostMonitor {
     }
 }
 
-# The monitor to open on: the chosen one if it is connected, otherwise the primary one. $null when none can be read
-# (no desktop session).
 function Resolve-HostMonitor {
     param([string]$Monitor)
     $all = @(Get-HostMonitor)

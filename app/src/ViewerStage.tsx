@@ -5,18 +5,13 @@ import type { VmOverview } from "./types";
 import { t, translateModule } from "./i18n";
 
 export type ViewerPhase = "opening" | "entering" | "live" | "leaving";
-/** How long the zoom into (and out of) the machine lasts; the same as .viewer-stage.entering / .leaving. */
+/** Must match .viewer-stage.entering / .leaving in styles.css. */
 export const ZOOM_MS = 560;
 
-/** What the app shows while a machine opens inside it: the machine's cube moves from its place on the right to the
- *  center, with the steps under it and a tip; with the first picture it zooms in, into the machine, and the picture
- *  takes the area (live). Leaving, the cube zooms back out on the way to Home. */
 export function ViewerStage({ vm, phase, step }: { vm: VmOverview | null; phase: ViewerPhase; step?: string }) {
-  // The cube is frozen as it was when the machine started opening: the hologram zooms to any piece that changes, and
-  // the machine changing state (on, its usage) right before the zoom made it move twice.
+  // Frozen at the start of opening: a state change right before the zoom made the hologram move twice.
   const frozen = useRef<{ name: string; machine: CubeMachine } | null>(null);
   if (vm && frozen.current?.name !== vm.name) frozen.current = { name: vm.name, machine: cubeOf(vm) };
-  // The last step stays when the job ends (it went back to "Preparing" for a moment, right before the zoom).
   const lastStep = useRef<string>("");
   if (step) lastStep.current = step;
   const shown = step ?? lastStep.current;

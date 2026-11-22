@@ -8,10 +8,8 @@ function Get-GpuVMOverview {
     param()
     Assert-Admin
     $vms = @(Get-VM)
-    # Whether each stopped VM fits in memory now, so the app says so before the click (cheap: one CIM read).
     $freeGB = (Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1MB
     $anyRunning = [bool]($vms | Where-Object State -eq 'Running')
-    # GPU counters and VM processes only if any VM is running: it is the most expensive part of the query.
     $gpuByPid = if ($anyRunning) { Get-GpuUsageByProcess } else { @{} }
     $workers = @{}
     $hostGpus = @{}
@@ -60,12 +58,10 @@ function Get-GpuVMOverview {
             paired         = [bool]($state -and $state['streaming'] -and $state['streaming']['pairedClient'])
             guestCredential = [bool]($state -and $state['guest'])
             disposable     = Test-GpuVMDisposable -State $state
-            # agent: the machine is for GpuVM's agent (Set-GpuVMUse); agentUser: who Windows signs in as there.
             use            = if ($state -and $state.Contains('use')) { $state['use'] } else { $null }
             agentUser      = if ($state -and $state['agent'] -and $state['agent']['signInAs']) { $state['agent']['signInAs'] } else { $null }
             restorePoints  = if ($state -and $state.Contains('restorePoints')) { @($state['restorePoints']).Count } else { 0 }
             address        = $address
-            # A Windows administrator prompt open in the VM (WGC can't stream it; the app offers Allow / Deny).
             adminPrompt    = if ($state -and $state['streaming'] -and $vm.State -eq 'Running') {
                 try { Get-GuestAdminPrompt -Name $vm.Name } catch { $null }
             } else { $null }
@@ -78,7 +74,6 @@ function Get-GpuVMOverview {
                     diskGB     = $state['config']['vm']['disk']['sizeGB']
                     diskType   = $state['config']['vm']['disk']['type']
                     diskFreeGB = Get-DriveFreeGB $state['config']['vm']['root']
-                    # The real room for this VM's disk: free space minus what the other VMs' disks can still grow.
                     diskBudget = $(try { Get-GpuVMDiskBudget -Root $state['config']['vm']['root'] -VMName $vm.Name } catch { $null })
                     networkIsolation = Get-GpuVMNetworkIsolation -State $state
                     cleanup    = if ($state['config']['guest'].Contains('cleanup') -and $state['config']['guest']['cleanup']) { $state['config']['guest']['cleanup'] } else { 'none' }

@@ -1,15 +1,9 @@
-# Export and import: a whole VM in one .gpuvm file, to keep it safe or take it to another PC.
-# The file is a zip with two entries: disk.vhdx (the VM's Windows merged into one dynamic disk, its parents and
-# restore points included, with the space of deleted files given back) and manifest.json (name, edition, apps, user
-# name, the disk's SHA-256). Nothing protected with this PC's DPAPI goes in it: no Windows password, no Sunshine
-# credentials, no pairing. Import asks for the Windows password, gives the copy its own streaming identity and web
-# credentials, and the viewer pairs again.
+# Nothing protected with this PC's DPAPI goes into a .gpuvm file.
 
 Add-Type -AssemblyName System.IO.Compression
 $script:TransferFormat = 1
 $script:TransferExtension = '.gpuvm'
 
-# Copies $Source into $Destination while hashing it, reporting progress as "<Label> N %".
 function Copy-StreamWithHash {
     param(
         [Parameter(Mandatory)][IO.Stream]$Source,
@@ -40,7 +34,6 @@ function Copy-StreamWithHash {
     finally { $sha.Dispose() }
 }
 
-# Every disk in a chain (the VM's, its restore points', its template's) adds up to at most what Convert-VHD writes.
 function Get-VhdChainBytes {
     param([Parameter(Mandatory)][string]$Path)
     $bytes = [int64]0
@@ -52,7 +45,6 @@ function Get-VhdChainBytes {
     $bytes
 }
 
-# What GpuVM keeps about the VM in the file: only plain facts about its Windows, never secrets or paths.
 function New-TransferManifest {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$State, [Parameter(Mandatory)][int64]$SizeBytes)
     [ordered]@{
@@ -73,7 +65,7 @@ function New-TransferManifest {
     }
 }
 
-# A manifest comes from a file of unknown origin: each value is checked and only known fields are kept.
+# From a file of unknown origin: each value is checked and only known fields are kept.
 function Read-TransferManifest {
     param([Parameter(Mandatory)][string]$Text)
     if ($Text.Length -gt 64KB) { throw 'The file isn''t a GpuVM machine.' }
@@ -108,8 +100,7 @@ function Read-TransferManifest {
 
 function Open-TransferArchive {
     param([Parameter(Mandatory)][string]$Path)
-    # Opened once, checked to be the very file asked for (no folder of the path swapped for a link since the service
-    # checked it as the user), and read only through this handle.
+    # Opened once and checked by its handle (no folder of the path swapped for a link), then read only through it.
     $stream = Open-GpuVMSafeFile -Path ([IO.Path]::GetFullPath($Path))
     try { $zip = [IO.Compression.ZipArchive]::new($stream, [IO.Compression.ZipArchiveMode]::Read, $false) }
     catch { $stream.Dispose(); throw 'The file isn''t a GpuVM machine.' }
@@ -125,8 +116,7 @@ function Open-TransferArchive {
     [pscustomobject]@{ Zip = $zip; Manifest = $manifest; DiskEntry = $diskEntry; Length = $stream.Length }
 }
 
-# GpuVM writes the file as administrator: never inside Windows, the programs' folders, ProgramData or GpuVM's own
-# folders, never through a link, and never over an existing file (the caller opens it with CreateNew).
+# Written as administrator: never inside Windows, program folders, ProgramData or GpuVM's own, nor through a link.
 function Assert-GpuVMExportPath {
     param([Parameter(Mandatory)][string]$Path)
     $full = [IO.Path]::GetFullPath($Path)
@@ -146,7 +136,6 @@ function Assert-GpuVMExportPath {
     $full
 }
 
-# The first name of "<base>", "<base>-2", "<base>-3"… free in Hyper-V and in GpuVM's folder.
 function Get-FreeGpuVMName {
     param([Parameter(Mandatory)][string]$Base)
     $root = Get-GpuVMDefaultRoot
@@ -157,10 +146,6 @@ function Get-FreeGpuVMName {
     throw "There's no free name for '$Base'."
 }
 
-# An imported machine gets its own streaming identity and Sunshine web login inside the VM, over PowerShell Direct,
-# the first time it is opened: the disk came from a file of unknown origin and is never mounted on this PC. Sunshine
-# is stopped, its identity and certificate are removed (it makes new ones when it starts), and the web login is set
-# with sunshine.exe --creds, as GpuVM's guest setup does. Windows restarts afterwards so Sunshine starts as usual.
 function Reset-GuestStreamingIdentity {
     param(
         [Parameter(Mandatory)][string]$Name,

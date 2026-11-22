@@ -21,7 +21,7 @@ function Connect-GpuVM {
         [ValidateLength(0, 300)][string]$Monitor,
         # Opens with this much memory when it doesn't fit as configured (saved, like changing it in Options).
         [ValidateRange(4, 256)][int]$MemoryGB,
-        # Accepted for the app's calls; the viewer is the only way a machine opens (external Moonlight was removed).
+        # Accepted for the app's calls; machines open only in GpuVM's viewer.
         [switch]$Viewer
     )
     Assert-Admin
@@ -33,7 +33,7 @@ function Connect-GpuVM {
 
     $vm = Get-VM -Name $Name
     if ($vm.State -eq 'Off') {
-        # While the VM is off is the time to copy the driver if the host's changed (avoids a black screen or code 43).
+        # While the VM is off: a stale driver means a black screen or code 43.
         $hostGpu = Get-HostGpu -Match $state['config']['gpu']['match'] | Select-Object -First 1
         if ($hostGpu -and $hostGpu.DriverVersion -ne $state['gpu']['driverVersion']) {
             Write-Step 'Updating the GPU driver'
@@ -50,23 +50,19 @@ function Connect-GpuVM {
         Start-VM -Name $Name
     }
     else {
-        # Started from somewhere else (Hyper-V Manager) or before this version: it gets isolated now too.
         Update-GpuVMNetworkIsolation -Name $Name -State $state
         if ($vm.State -eq 'Paused') { Resume-VM -Name $Name }
     }
 
     $guest = Get-GpuVMGuestCredential -State $state
     if ($guest) {
-        # Updates found when GpuVM shut the VM down finish installing while Windows starts.
         $bootMessage = if ($state.Contains('updatesPending') -and $state['updatesPending']) { 'Finishing updates' } else { 'Waiting for Windows' }
         Wait-GuestReady -Name $Name -Credential $guest -BootMessage $bootMessage
         Open-GuestSession -Name $Name -Credential $guest
-        # A copy of an agent template with its agent still pending has no automatic sign-in until the agent is
-        # installed (below), so the sign-in wait would only run out its 15 minutes first (lab 055, 2026-11-20).
+        # A copy of an agent template with its agent pending has no automatic sign-in until the agent is installed.
         $agentPending = [string]$state['use'] -eq 'agent' -and $state['agent'] -is [System.Collections.IDictionary] -and $state['agent']['pending']
         if (-not $agentPending) { $null = Wait-GuestSignIn -Name $Name -Credential $guest }
-        # An imported machine still has the streaming identity it was exported with: it gets its own, inside the VM,
-        # before Sunshine is used for anything (Import-GpuVM never mounts the file's disk on this PC).
+        # An imported disk is never mounted on this PC: its streaming identity is reset inside the VM.
         if ($state.Contains('pendingIdentityReset') -and $state['pendingIdentityReset']) {
             Write-Step 'Giving the machine its own streaming identity'
             Reset-GuestStreamingIdentity -Name $Name -Credential $guest -WebCredential (Get-SunshineCredential -State $state)
@@ -85,7 +81,6 @@ function Connect-GpuVM {
             $state['updatesPending'] = $false
             Save-GpuVMState $state
         }
-        # An agent removal that couldn't finish (the machine was off, or `agent` was still signed in) finishes now.
         if ($state.Contains('agentRemovalPending') -and $state['agentRemovalPending']) {
             if (Complete-GuestAgentRemoval -Name $Name -Credential $guest) {
                 $state = Get-GpuVMState -Name $Name
@@ -93,8 +88,6 @@ function Connect-GpuVM {
                 Save-GpuVMState $state
             }
         }
-        # An agent machine whose agent is pending or older than this build's gets it now (copies of older templates).
-        # An agent machine keeps its Hyper-V display (the console's only one until a viewer connects).
         if ([string]$state['use'] -eq 'agent') {
             try { $null = Enable-GuestHyperVVideo -Name $Name -Credential $guest }
             catch { Write-Warning "Couldn't turn the machine's Hyper-V display on: $($_.Exception.Message)" }
@@ -109,18 +102,14 @@ function Connect-GpuVM {
     $audioCheck = $null
     $audioLater = $false
     try {
-        # Work that lasts until the guest restarts is done once per boot (lab 019: repeating it was most of a 25 s open).
         $boot = if ($guest) { try { Get-GuestBootTime -Name $Name -Credential $guest } catch { '' } } else { '' }
         $done = if ($boot -and $state.Contains('guestPrepared') -and $state['guestPrepared'] -and [string]$state['guestPrepared']['boot'] -eq $boot) { $state['guestPrepared'] } else { @{} }
         $prepared = @{ boot = $boot }
-        # First open since boot: the speaker is checked in the background while the rest is prepared.
         if ($guest -and -not $done.Count -and (Test-GpuVMAudio $state['config']['streaming'])) {
             $audioCheck = Start-GuestAudioCheck -Name $Name -Credential $guest
         }
 
-        # Display first: a display change after Sunshine tested its encoders makes it test them all again when Moonlight
-        # connects (10-15 s of black screen, lab 008). When the mode does change here, Sunshine is restarted right away
-        # and tests them while the rest of the work runs.
+        # Display first: a display change after Sunshine tested its encoders makes it test them all again (10-15 s of black).
         $override = @{}
         if ($Resolution) { $override['resolution'] = $Resolution }
         if ($Fps) { $override['fps'] = $Fps }
@@ -128,7 +117,6 @@ function Connect-GpuVM {
         if ($Codec) { $override['codec'] = $Codec }
         if ($App) { $override['app'] = $App }
         $client = Merge-Hashtable -Base $state['config']['streaming']['client'] -Override $override
-        # Moonlight goes on this monitor, and "the monitor's rate" (fps 0) is this one's.
         $chosenMonitor = if ($Monitor) { $Monitor } elseif ($client.Contains('monitor')) { [string]$client['monitor'] } else { '' }
         $target = try { Resolve-HostMonitor -Monitor $chosenMonitor } catch { $null }
         if ([int]$client['fps'] -le 0) { $client['fps'] = Resolve-GpuVMStreamFps 0 -Hz $(if ($target) { $target['hz'] } else { 0 }) }
@@ -143,13 +131,9 @@ function Connect-GpuVM {
             catch { Write-Warning "Couldn't check the session inside the VM: $($_.Exception.Message)" }
         }
         if ($guest -and $state['config']['streaming']['virtualDisplay']) {
-            # The monitor's rate (fps 0) is resolved now: opening on another monitor sets the display again.
             $mode = "$($client['resolution'])@$(Resolve-GpuVMStreamFps $client['fps'])"
-            # An agent machine's agent sets this mode from boot; told again when it changes (another monitor, other
-            # settings), so the next boot's first stream needs no mode change either.
             if ([string]$state['use'] -eq 'agent') {
                 try {
-                    # A new mode also becomes the virtual display's boot mode (read at its next start).
                     if ((Sync-GuestAgentDisplayMode -Name $Name -Credential $guest -Mode $mode) -and $mode -match '^(\d+)x(\d+)@(\d+)$') {
                         $null = Set-GuestVddPreferredMode -Name $Name -Credential $guest -Width $Matches[1] -Height $Matches[2] -Hz $Matches[3]
                     }
@@ -173,8 +157,6 @@ function Connect-GpuVM {
                 catch { Write-Warning "Couldn't set the VM's resolution: $($_.Exception.Message)" }
             }
         }
-        # Gamepads (ViGEmBus): installed once; Sunshine only sees the driver after a restart.
-        # Remembered per VM, not per boot: checking for the driver right after boot took ~6 s.
         if ($guest -and -not ($state.Contains('gamepad') -and $state['gamepad'])) {
             try {
                 if (Install-GuestGamepad -Name $Name -Credential $guest) { $restartSunshine = $true }
@@ -184,7 +166,6 @@ function Connect-GpuVM {
             }
             catch { Write-Warning "Couldn't set up controller support in the VM: $($_.Exception.Message)" }
         }
-        # GpuVM's Sunshine fork on every machine: one made before it (or before this build's fork) gets it now, once.
         if ($guest) {
             try { if ((Sync-GuestSunshineFork -Name $Name -Credential $guest) -eq 'installed') { $done.Remove('capture') } }
             catch { Write-Warning "Couldn't install GpuVM's Sunshine in the VM: $($_.Exception.Message)" }
@@ -199,8 +180,6 @@ function Connect-GpuVM {
             }
             catch { Write-Warning "Couldn't set Sunshine's capture: $($_.Exception.Message)" }
         }
-        # Administrator prompts (which the capture can't stream) are shown and answered from the app: the guest
-        # watcher, once per boot.
         if ($guest) {
             if ($done['adminPrompt']) { $prepared['adminPrompt'] = $true }
             else {
@@ -216,12 +195,9 @@ function Connect-GpuVM {
         $diskBytes = try { [string](Get-VHD -Path $systemDisk.Path).Size } catch { '' }
         if ($guest) { Invoke-GuestPendingWork -Name $Name -Credential $guest -DiskBytes $diskBytes }
 
-        # The VM's IP is only trusted if it is on the host's network with the VM (see Get-GpuVMEndpoint).
         $endpoint = Get-GpuVMEndpoint -Name $Name
         $address = $endpoint.Address
         $credential = Get-SunshineCredential -State $state
-        # Without the guest password GpuVM can't tell whether Windows is still setting itself up; a VM that has been on
-        # for a while is past that, so the first-boot message only shows when it can still be the case.
         $firstBoot = -not $guest -and (Get-VM -Name $Name).Uptime.TotalMinutes -lt 15
         $waiting = if ($firstBoot) { 'Waiting for Sunshine (the first start installs Windows and streaming; it can take several minutes)' } else { 'Waiting for Sunshine' }
         Wait-SunshineReady -Address $address -Credential $credential -Message $waiting
@@ -238,28 +214,22 @@ function Connect-GpuVM {
             Save-GpuVMState $state
         }
         elseif (-not $state['streaming']['pairedClient']) {
-            # Already paired in Sunshine without GpuVM pairing it here: a copy of a template keeps the template's
-            # pairing (New-GpuVMTemplate leaves pairedClient out). Home said "Moonlight isn't paired" while it streamed.
             $state = Get-GpuVMState -Name $Name
             $state['streaming']['pairedClient'] = $clientName
             $state['streaming']['pairedAt'] = (Get-Date).ToString('o')
             Save-GpuVMState $state
         }
 
-        # The speaker comes back ~60 s after Windows starts (usbip-win2 reattaches it), well after Sunshine answers
-        # (lab 019). If it is still on its way, the viewer opens now and the audio is ready the next time.
         $audioLater = [bool]($audioCheck -and $audioCheck.Job.State -eq 'Running')
         if ((Test-GpuVMAudio $state['config']['streaming']) -and -not $audioLater) {
             if ($guest) {
                 try {
-                    # Always checked: it also attaches the speaker again if Windows lost it.
                     Stop-GuestAudioCheck $audioCheck
                     $audioCheck = $null
                     $installed = Install-GuestAudio -Name $Name -Credential $guest
                     if ($installed) {
                         Wait-SunshineReady -Address $address -Credential $credential -TimeoutSec 120 -Message 'Sunshine is restarting with the new audio'
                     }
-                    # VMs from before 0.3 had VB-CABLE; from now on they have the speaker.
                     if ($state['config']['streaming']['audio'] -ne 'usb') {
                         $state = Get-GpuVMState -Name $Name
                         $state['config']['streaming']['audio'] = 'usb'
@@ -292,7 +262,6 @@ function Connect-GpuVM {
     Save-GpuVMState $state
     if (-not $audioLater) { Stop-GuestAudioCheck $audioCheck -TimeoutSec 0 }
     else { Write-Warning 'The VM''s audio will be ready in a few seconds or the next time you open it.'; Stop-GuestAudioCheck $audioCheck -TimeoutSec 0 }
-    # The app waits for the viewer's first picture before the button goes back to "Abrir".
     Write-Step 'Connecting the picture'
     return [pscustomobject]@{
         viewerLaunch = [pscustomobject]@{

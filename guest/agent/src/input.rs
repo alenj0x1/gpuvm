@@ -1,6 +1,4 @@
-//! input.act: SendInput from the medium-integrity helper (lab 049). Before every action: the input desktop is
-//! `Default`, there is a foreground window, and neither it nor the window under the pointer runs above our integrity.
-//! Nothing is injected when a check fails (UIPI would drop it silently and the agent would believe it worked).
+//! Nothing is injected when a check fails: UIPI would drop it silently and the agent would believe it worked.
 use crate::capture::{output_rect, CallResult};
 use crate::state::*;
 use serde_json::{json, Value};
@@ -12,16 +10,11 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 const MAX_ACTIONS: usize = 100;
 const MAX_TEXT: usize = 10_000;
 const MAX_WAIT_TOTAL_MS: u64 = 300_000;
-/// A drag along strokes: at most this many points in one request (the request's JSON frame is 64 KiB), this many
-/// strokes, and this long.
 pub const MAX_PATH_POINTS: usize = 4000;
 const MAX_STROKES: usize = 200;
 pub const MAX_DRAG_MS: u64 = 60_000;
-/// Speed of a drag along strokes when the request gives no `ms`, in desktop pixels per second.
 pub const DRAG_SPEED: f64 = 1500.0;
-/// Interpolated pointer moves are at most this many desktop pixels apart, so fast strokes don't skip.
 const DRAG_STEP: f64 = 3.0;
-/// How often a stroke in progress checks for a cancel (the person took control) and the secure desktop.
 const DRAG_CHECK: Duration = Duration::from_millis(40);
 
 type Fail = (&'static str, String);
@@ -42,7 +35,6 @@ fn send(inputs: &[INPUT]) -> Result<(), Fail> {
     Ok(())
 }
 
-/// Protocol pixel (relative to the captured display) -> desktop pixel -> SendInput absolute units.
 struct Mapper {
     ox: i32,
     oy: i32,
@@ -78,8 +70,7 @@ impl Mapper {
         }
         Ok(POINT { x: self.ox + x.round() as i32, y: self.oy + y.round() as i32 })
     }
-    /// Pixel -> 0..65535 at the CENTER of the pixel: Windows maps back with abs * size / 65536 (floor), so a
-    /// truncated value can land one pixel short (lab 053: 1 px off at y=1).
+    /// At the CENTER of the pixel: Windows maps back with abs * size / 65536 (floor), so a truncated value can land one pixel short.
     fn abs(&self, p: POINT) -> (i32, i32) {
         let f = |v: i32, size: i32| (((2 * v as i64 + 1) * 32768) / size.max(1) as i64).clamp(0, 65535) as i32;
         (f(p.x - self.vx, self.vw), f(p.y - self.vy, self.vh))
@@ -90,7 +81,6 @@ impl Mapper {
     }
 }
 
-/// The checks before an action; `points` are the desktop points the pointer will touch.
 fn precheck(points: &[POINT]) -> Result<(), Fail> {
     let f = foreground(Duration::from_millis(500));
     if let Some(code) = f.blocked {
@@ -147,7 +137,6 @@ fn vk_of(name: &str) -> Result<u16, Fail> {
         }
         s if s.len() == 1 && s.as_bytes()[0].is_ascii_alphanumeric() => VIRTUAL_KEY(s.to_ascii_uppercase().as_bytes()[0] as u16),
         s if s.chars().count() == 1 => {
-            // punctuation: the key that types it on the current layout
             let c = s.encode_utf16().next().unwrap();
             let r = unsafe { VkKeyScanW(c) };
             if r == -1 {
@@ -216,7 +205,6 @@ fn buttons(a: &Value) -> Result<(MOUSE_EVENT_FLAGS, MOUSE_EVENT_FLAGS), Fail> {
     })
 }
 
-/// A drag's `strokes`: lists of flat [x0, y0, x1, y1, ...] in display pixels, checked against the w x h display.
 pub fn parse_strokes(v: &Value, w: i32, h: i32) -> Result<Vec<Vec<(i32, i32)>>, Fail> {
     let bad = |m: String| ("bad_request", m);
     let list = v.as_array().ok_or_else(|| bad("strokes is a list of point lists".into()))?;
@@ -244,7 +232,6 @@ pub fn parse_strokes(v: &Value, w: i32, h: i32) -> Result<Vec<Vec<(i32, i32)>>, 
     Ok(out)
 }
 
-/// A stroke's points with moves added in between, at most `step` pixels apart; each with its distance along the stroke.
 pub fn densify(points: &[(i32, i32)], step: f64) -> Vec<((i32, i32), f64)> {
     let mut out = vec![(points[0], 0.0)];
     let mut dist = 0.0;
@@ -268,7 +255,6 @@ pub fn densify(points: &[(i32, i32)], step: f64) -> Vec<((i32, i32), f64)> {
     out
 }
 
-/// Milliseconds each stroke takes: `ms` in all (default: the length at DRAG_SPEED), shared by length so the speed is even.
 pub fn stroke_times(lengths: &[f64], ms: Option<u64>) -> Vec<f64> {
     let total: f64 = lengths.iter().sum();
     let all = match ms {
@@ -278,8 +264,6 @@ pub fn stroke_times(lengths: &[f64], ms: Option<u64>) -> Vec<f64> {
     lengths.iter().map(|l| if total > 0.0 { all * l / total } else { 0.0 }).collect()
 }
 
-/// Moves along one stroke with the button down, each point at its time; checks for a cancel and the secure desktop
-/// as it goes. Returns where the pointer stopped (the caller releases the button there, whatever happened).
 fn trace(pts: &[((i32, i32), f64)], dur_ms: f64, m: &Mapper, id: u64) -> (POINT, Result<(), Fail>) {
     let desk = |p: (i32, i32)| POINT { x: m.ox + p.0, y: m.oy + p.1 };
     let len = pts[pts.len() - 1].1;
@@ -304,7 +288,6 @@ fn trace(pts: &[((i32, i32), f64)], dur_ms: f64, m: &Mapper, id: u64) -> (POINT,
             std::thread::sleep((due(i) - at).min(DRAG_CHECK));
             continue;
         }
-        // every point already due goes out at once (a late wake-up doesn't slow the rest of the stroke)
         let mut batch = Vec::new();
         while i < pts.len() && due(i) <= at {
             last = desk(pts[i].0);
@@ -318,7 +301,6 @@ fn trace(pts: &[((i32, i32), f64)], dur_ms: f64, m: &Mapper, id: u64) -> (POINT,
     (last, Ok(()))
 }
 
-/// drag with `strokes`: each stroke is pressed, traced at an even speed and released; the next one follows.
 fn drag_strokes(a: &Value, m: &Mapper, id: u64) -> Result<(), Fail> {
     let strokes = parse_strokes(&a["strokes"], m.w, m.h)?;
     let (down, up) = buttons(a)?;
@@ -329,7 +311,6 @@ fn drag_strokes(a: &Value, m: &Mapper, id: u64) -> Result<(), Fail> {
         if crate::helper::is_cancelled(id) {
             return Err(("cancelled", format!("cancelled by the host before stroke {s}")));
         }
-        // the windows under the stroke (a sample of its points) and the foreground, like any other action
         let every = (pts.len() / 64).max(1);
         let sample: Vec<POINT> = pts.iter().step_by(every).chain(pts.last()).map(|(p, _)| POINT { x: m.ox + p.0, y: m.oy + p.1 }).collect();
         precheck(&sample).map_err(|(c, msg)| (c, format!("stroke {s}: {msg}")))?;
@@ -514,7 +495,6 @@ mod tests {
 
     #[test]
     fn absolute_coordinates_land_on_the_same_pixel() {
-        // Windows maps an absolute coordinate back to a pixel as abs * size / 65536 (floor)
         for size in [600, 768, 800, 1080, 1366, 1920, 3840] {
             let m = super::Mapper { ox: 0, oy: 0, w: size, h: size, vx: 0, vy: 0, vw: size, vh: size };
             for p in 0..size {

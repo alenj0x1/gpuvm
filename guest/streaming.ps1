@@ -1,6 +1,3 @@
-# Installs streaming inside the VM: virtual display (VDD), Sunshine and audio. Windows PowerShell 5.1.
-# Called by setup.ps1 if C:\GpuVM\streaming\streaming-config.json exists.
-
 function Install-GpuVMVirtualDisplay {
     param([Parameter(Mandatory)][string]$Dir)
     $work = Join-Path $Dir 'vdd'
@@ -36,7 +33,6 @@ function Install-GpuVMVirtualDisplay {
     "error: nefcon ended with code $($p.ExitCode) and the virtual display doesn't show up"
 }
 
-# Replaces or appends "key = value" in sunshine.conf.
 function Set-SunshineConfig {
     param(
         [Parameter(Mandatory)][string]$Path,
@@ -69,8 +65,6 @@ function Install-GpuVMSunshine {
     $install = Join-Path $env:ProgramFiles 'Sunshine'
     $exe = Join-Path $install 'sunshine.exe'
     if (-not (Test-Path $exe)) { return "error: $exe wasn't found" }
-    # GpuVM's Sunshine fork over the official install (same version, plus the WGC helper that captures as the
-    # signed-in user while Sunshine stays the service). Every machine runs it.
     $fork = Join-Path $Dir 'fork'
     if (-not (Test-Path (Join-Path $fork 'sunshine.exe')) -or -not (Test-Path (Join-Path $fork 'tools\sunshine_wgc_capture.exe'))) { return 'error: GpuVM''s Sunshine is missing' }
     Get-Service | Where-Object { $_.Name -like 'Sunshine*' -or $_.DisplayName -like '*Sunshine*' } | Stop-Service -Force -ErrorAction SilentlyContinue -WarningAction SilentlyContinue
@@ -78,11 +72,10 @@ function Install-GpuVMSunshine {
     New-Item -ItemType Directory -Force (Join-Path $install 'tools') | Out-Null
     Copy-Item -LiteralPath (Join-Path $fork 'sunshine.exe') -Destination $exe -Force
     Copy-Item -LiteralPath (Join-Path $fork 'tools\sunshine_wgc_capture.exe') -Destination (Join-Path $install 'tools\sunshine_wgc_capture.exe') -Force
-    # Only administrators and SYSTEM read Sunshine's settings and keys (the signed-in user doesn't need them).
     $configDir = Join-Path $install 'config'
     & icacls.exe $configDir /inheritance:d /Q | Out-Null
     if ($LASTEXITCODE -ne 0) { return "error: couldn't change the permissions of $configDir" }
-    # Users, and the sandboxed Store apps (ALL APPLICATION PACKAGES and the restricted ones), which also read it.
+    # Users, ALL APPLICATION PACKAGES and ALL RESTRICTED APPLICATION PACKAGES.
     & icacls.exe $configDir /remove:g '*S-1-5-32-545' '*S-1-15-2-1' '*S-1-15-2-2' /T /Q | Out-Null
     if ($LASTEXITCODE -ne 0) { return "error: couldn't take Users' access off $configDir" }
     Push-Location $install
@@ -92,7 +85,7 @@ function Install-GpuVMSunshine {
     $gpu = Get-CimInstance Win32_VideoController | Where-Object { $_.Name -like "*$($Config.gpuMatch)*" } | Select-Object -First 1
     if ($gpu) {
         $settings['adapter_name'] = $gpu.Name
-        # NVENC without the quarter-resolution first pass: ~1.1 ms less from capture to packet (lab 041).
+        # Without NVENC's quarter-resolution first pass: ~1.1 ms less from capture to packet.
         if ($gpu.Name -match 'NVIDIA') { $settings['encoder'] = 'nvenc'; $settings['nvenc_twopass'] = 'disabled' }
     }
     if ($Config.sunshine) {
@@ -112,14 +105,11 @@ function Disable-GpuVMHyperVVideo {
     'disabled'
 }
 
-# Restarts Sunshine: always the service (guest\capture-mode.ps1).
 function Restart-GpuVMSunshine {
     Get-Service | Where-Object { $_.Name -like 'Sunshine*' -or $_.DisplayName -like '*Sunshine*' } | Restart-Service -Force -ErrorAction SilentlyContinue -WarningAction SilentlyContinue
 }
 
-# Audio is GpuVM's own USB speaker (audio\UsbAudioServer.cs, proven in lab 012): a USB/IP server inside the VM that
-# usbip-win2 attaches, so Windows drives it with its built-in usbaudio.sys and Sunshine captures it like any output.
-# Nothing leaves the VM: the server listens on 127.0.0.1 only and runs as LOCAL SERVICE from Program Files (admins only).
+# The server listens on 127.0.0.1 only and runs as LOCAL SERVICE.
 $script:AudioTask = 'GpuVM-Audio'
 $script:AudioPort = 3240
 $script:AudioProgramDir = Join-Path $env:ProgramFiles 'GpuVM\Audio'
@@ -146,7 +136,6 @@ function Wait-GpuVMAudioEndpoint {
     } while ((Get-Date) -lt $deadline)
 }
 
-# Attaches the speaker if usbip-win2 does not have it, once the server is listening.
 function Connect-GpuVMAudioDevice {
     param([Parameter(Mandatory)][string]$Usbip)
     $deadline = (Get-Date).AddSeconds(30)
@@ -156,8 +145,6 @@ function Connect-GpuVMAudioDevice {
     }
 }
 
-# Installs usbip-win2 (client only), checks its drivers, builds the server and starts it, attaches the speaker and
-# points Sunshine at it. $Dir has the usbip-win2 installer; $Root has audio\UsbAudioServer.cs. Needs no restart.
 function Install-GpuVMAudio {
     param(
         [Parameter(Mandatory)][string]$Dir,
@@ -167,7 +154,6 @@ function Install-GpuVMAudio {
     if (-not $usbip) {
         $installer = Get-ChildItem $Dir -Filter 'USBip-*.exe' | Select-Object -First 1
         if (-not $installer) { return 'error: the usbip-win2 installer is missing' }
-        # Only the client: the UDE and filter drivers and usbip.exe, plus the VC++ runtime usbip.exe needs.
         $p = Start-Process $installer.FullName -Wait -PassThru -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',
             '/COMPONENTS=main,client', '/TASKS=vcredist', "/LOG=`"$(Join-Path $Root 'usbip-install.log')`""
         $usbip = Get-GpuVMUsbipPath
@@ -188,7 +174,6 @@ function Install-GpuVMAudio {
         return 'error: the usbip-win2 drivers aren''t signed by Microsoft; it was uninstalled'
     }
 
-    # The server is compiled here from its source and kept where only administrators can change it.
     Stop-ScheduledTask -TaskName $script:AudioTask -ErrorAction SilentlyContinue
     Get-Process GpuVMAudio -ErrorAction SilentlyContinue | Stop-Process -Force
     New-Item -ItemType Directory -Force $script:AudioProgramDir, $script:AudioDataDir | Out-Null
@@ -198,7 +183,6 @@ function Install-GpuVMAudio {
     Remove-Item $exe -Force -ErrorAction SilentlyContinue
     Add-Type -Path $source -OutputAssembly $exe -OutputType ConsoleApplication
     if (-not (Test-Path $exe)) { return 'error: the audio server couldn''t be built' }
-    # LOCAL SERVICE only writes its log and status.
     icacls.exe $script:AudioDataDir /grant '*S-1-5-19:(OI)(CI)M' | Out-Null
 
     $log = Join-Path $script:AudioDataDir 'server.log'
@@ -210,24 +194,20 @@ function Install-GpuVMAudio {
         -StartWhenAvailable -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)
     # Above normal (tasks default to below normal): the server is the speaker's clock.
     $settings.Priority = 2
-    # Replaces the VB-CABLE logon task of older VMs, which had the same name.
     Register-ScheduledTask -TaskName $script:AudioTask -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
     Start-ScheduledTask -TaskName $script:AudioTask
 
     Connect-GpuVMAudioDevice -Usbip $usbip
-    # Persistent: usbip-win2 attaches it again every time its driver loads, so it is back after each restart.
+    # --stash: usbip-win2 attaches it again every time its driver loads.
     & $usbip port --stash 2>&1 | Out-Null
     $endpoint = Wait-GpuVMAudioEndpoint
     if (-not $endpoint) { return 'error: Windows didn''t show the GpuVM Audio output' }
 
-    # virtual_sink makes Sunshine switch the default output to the speaker while streaming.
     Set-SunshineConfig -Path (Join-Path $env:ProgramFiles 'Sunshine\config\sunshine.conf') -Settings ([ordered]@{ virtual_sink = $endpoint })
     Restart-GpuVMSunshine
     'ok'
 }
 
-# Run on every open (from the host, through PowerShell Direct): 'install' if the speaker is missing or its server is
-# older than $SourceHash; otherwise makes sure it is running and attached. Returns 'ok', 'install' or 'error: …'.
 function Repair-GpuVMAudio {
     param([Parameter(Mandatory)][string]$SourceHash)
     $usbip = Get-GpuVMUsbipPath

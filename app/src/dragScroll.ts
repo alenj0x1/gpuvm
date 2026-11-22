@@ -1,7 +1,5 @@
 import { useCallback, useRef } from "react";
 
-/** A row that scrolls sideways also moves by dragging it with the mouse, with a little glide when let go. A drag
- *  never counts as a click on what is under it; a press that doesn't move still clicks as usual. */
 export function useDragScroll<T extends HTMLElement>() {
   const cleanup = useRef<(() => void) | null>(null);
   return useCallback((el: T | null) => {
@@ -11,7 +9,6 @@ export function useDragScroll<T extends HTMLElement>() {
     let start: { x: number; left: number; id: number } | null = null, moved = false, vx = 0, lastX = 0, lastT = 0, glide = 0;
     const down = (e: PointerEvent) => {
       if (e.button !== 0 || e.pointerType === "touch" || el.scrollWidth <= el.clientWidth) return;
-      // Sliders and other controls inside keep their own drag.
       if ((e.target as HTMLElement).closest("input, textarea, [role=slider], .home-split")) return;
       cancelAnimationFrame(glide);
       start = { x: e.clientX, left: el.scrollLeft, id: e.pointerId };

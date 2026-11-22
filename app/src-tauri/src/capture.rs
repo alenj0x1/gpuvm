@@ -1,15 +1,4 @@
-//! Screenshots and recordings from the viewer's side panel (the viewer's side: gpuvm-viewer app/gpuvm/capture.h).
-//!
-//! The viewer runs at Low integrity and can only write under its LocalLow folder. When it finishes a file it says so
-//! ("capture"), and this app moves it to the person's Pictures or Videos folder (GpuVM\<machine>). The viewer is
-//! untrusted (it talks to a server the guest controls), so the move never lets it reach anything else:
-//! - only a bare file name of a fixed shape is accepted, looked up in the viewer's own Captures folder;
-//! - the file is opened without following links, refused if it is a reparse point or has more than one name, and
-//!   its real path (from the open handle) must be inside that folder: a junction swapped in for the folder can't
-//!   point this app at the person's other files;
-//! - it must start like a PNG or an MP4 and stay under a size cap; it is copied into a new file this app names
-//!   (never replacing one) and the viewer's copy is deleted through the same handle;
-//! - the panel can only open or show files this app moved during this run.
+// The viewer is untrusted: only a bare, fixed-shape file name from its own Captures folder is moved, never following links.
 
 use serde_json::{json, Value};
 use std::io::{Read, Write};
@@ -24,10 +13,8 @@ use windows_sys::Win32::Storage::FileSystem::{
     FILE_ATTRIBUTE_REPARSE_POINT, FILE_DISPOSITION_INFO, FILE_FLAG_OPEN_REPARSE_POINT, FILE_NAME_NORMALIZED, FILE_SHARE_READ,
 };
 
-/// The largest file taken from the viewer: a 4K PNG is ~25 MB; a recording can be long.
 const MAX_SHOT: u64 = 256 << 20;
 const MAX_VIDEO: u64 = 512 << 30;
-/// Files the panel may open or show (the newest ones moved in this run).
 const RECENT_MAX: usize = 64;
 
 #[derive(Clone, Default)]
@@ -41,8 +28,6 @@ struct Prefs {
 static PREFS: Mutex<Option<Prefs>> = Mutex::new(None);
 static RECENT: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 
-/// Per machine: its newest saved file and whether it is recording (since when, ms since 1970). The panel is created
-/// the first time it opens and may be closed meanwhile, so it asks for this when it shows a machine.
 #[derive(Default)]
 struct MachineState {
     last: Option<Value>,
@@ -59,17 +44,14 @@ fn now_ms() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
-/// The viewer started or stopped recording, or closed.
 pub fn on_recording(vm: &str, on: bool) {
     with_state(vm, |s| s.recording_since = if on { s.recording_since.or(Some(now_ms())) } else { None });
 }
 
-/// Whether the machine's viewer said it is recording (agent.rs asks again until it does).
 pub fn is_recording(vm: &str) -> bool {
     with_state(vm, |s| s.recording_since.is_some())
 }
 
-/// What the panel shows for a machine: the newest file and the recording's start.
 #[tauri::command]
 pub fn capture_state(vm: String) -> Value {
     with_state(&vm, |s| json!({ "last": s.last.clone(), "recordingSince": s.recording_since }))
@@ -83,7 +65,6 @@ fn wide(s: &std::ffi::OsStr) -> Vec<u16> {
     s.encode_wide().chain(Some(0)).collect()
 }
 
-/// A known folder (Pictures, Videos) where Windows keeps it, OneDrive or a moved folder included.
 fn known_folder(id: &windows_sys::core::GUID) -> Option<PathBuf> {
     use windows_sys::Win32::System::Com::CoTaskMemFree;
     use windows_sys::Win32::UI::Shell::SHGetKnownFolderPath;
@@ -106,22 +87,18 @@ fn default_folder(video: bool) -> Option<PathBuf> {
     Some(base.join("GpuVM"))
 }
 
-/// Where screenshots (or videos) go: the folder chosen in Settings, or Pictures\GpuVM (Videos\GpuVM).
 fn folder(video: bool) -> Option<PathBuf> {
     let p = prefs();
     let chosen = if video { p.videos } else { p.shots };
     chosen.or_else(|| default_folder(video))
 }
 
-/// A machine's name as a folder name: Windows' forbidden characters out, never empty or a dot name.
 fn safe_name(vm: &str) -> String {
     let cleaned: String = vm.chars().filter(|c| !c.is_control() && !"<>:\"/\\|?*".contains(*c)).take(64).collect();
     let cleaned = cleaned.trim().trim_end_matches('.').to_string();
     if cleaned.is_empty() || cleaned.chars().all(|c| c == '.') { "GpuVM".into() } else { cleaned }
 }
 
-/// The viewer's names: (shot|clip|replay)-YYYYMMDD-HHMMSS-N.(png|mp4). Returns the kind, the date as shown in the
-/// final name ("2026-11-18 21.04.13") and the extension.
 fn parse_name(name: &str) -> Option<(&'static str, String, &'static str)> {
     let (stem, ext) = name.rsplit_once('.')?;
     let ext = match ext { "png" => "png", "mp4" => "mp4", _ => return None };
@@ -138,7 +115,6 @@ fn parse_name(name: &str) -> Option<(&'static str, String, &'static str)> {
     Some((kind, shown, ext))
 }
 
-/// The real path of an open handle (\\?\C:\...), lowercased for comparison.
 fn final_path(file: &std::fs::File) -> Option<String> {
     let mut buf = vec![0u16; 1024];
     // SAFETY: valid handle and buffer of the given length.
@@ -149,8 +125,6 @@ fn final_path(file: &std::fs::File) -> Option<String> {
     Some(String::from_utf16_lossy(&buf[..n]).to_lowercase())
 }
 
-/// Opens the file itself (a link is opened as the link, never followed), to read and later delete it; nobody else
-/// may write or delete it meanwhile.
 fn open_no_follow(path: &Path) -> std::io::Result<std::fs::File> {
     const DELETE: u32 = 0x0001_0000;
     const GENERIC_READ: u32 = 0x8000_0000;
@@ -162,13 +136,11 @@ fn open_no_follow(path: &Path) -> std::io::Result<std::fs::File> {
         .open(path)
 }
 
-/// Takes the viewer's finished file into the person's folder; returns its new path.
 fn take(vm: &str, name: &str) -> Result<(PathBuf, &'static str), String> {
     let (kind, shown, ext) = parse_name(name).ok_or("name")?;
     let captures = crate::lowbox::viewer_data().ok_or("folder")?.join("Captures");
     let source = captures.join(name);
-    // The file's real path must be exactly this one: a junction anywhere on the way (the viewer can replace its own
-    // folders) would show up as another path.
+    // A junction anywhere on the way (the viewer can replace its own folders) would show up as another path.
     let expected = format!("\\\\?\\{}", source.to_string_lossy()).to_lowercase();
     let mut file = open_no_follow(&source).map_err(|_| "open")?;
     let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
@@ -178,7 +150,7 @@ fn take(vm: &str, name: &str) -> Result<(PathBuf, &'static str), String> {
     }
     let size = ((info.nFileSizeHigh as u64) << 32) | info.nFileSizeLow as u64;
     let real = final_path(&file).ok_or("open")?;
-    if info.dwFileAttributes & (FILE_ATTRIBUTE_REPARSE_POINT | 0x10 /* directory */) != 0 || info.nNumberOfLinks != 1 || real != expected {
+    if info.dwFileAttributes & (FILE_ATTRIBUTE_REPARSE_POINT | 0x10) != 0 || info.nNumberOfLinks != 1 || real != expected {
         return Err("link".into());
     }
     if size == 0 || size > if ext == "png" { MAX_SHOT } else { MAX_VIDEO } {
@@ -223,8 +195,7 @@ fn take(vm: &str, name: &str) -> Result<(PathBuf, &'static str), String> {
         let _ = std::fs::remove_file(&target);
         return Err("copy".into());
     }
-    // Made of what the machine sent (the viewer writes it; a recording's video comes from the guest as it is): marked
-    // as from the internet, like a delivery, so Windows treats it with the same care (security review 2026-11-21).
+    // Made of what the guest sent: marked as from the internet, like a delivery.
     let mut zone = target.clone().into_os_string();
     zone.push(":Zone.Identifier");
     let _ = std::fs::write(&zone, "[ZoneTransfer]\r\nZoneId=3\r\n");
@@ -241,7 +212,6 @@ fn take(vm: &str, name: &str) -> Result<(PathBuf, &'static str), String> {
     Ok((target, kind))
 }
 
-/// A thumbnail the viewer sent, kept only if it is a small JPEG data URL.
 fn clean_thumb(v: &Value) -> Value {
     let Some(s) = v.as_str() else { return Value::Null };
     let Some(data) = s.strip_prefix("data:image/jpeg;base64,") else { return Value::Null };
@@ -251,11 +221,7 @@ fn clean_thumb(v: &Value) -> Value {
     Value::String(s.to_string())
 }
 
-/// The viewer finished a file ("capture"): moved on a worker thread (a long recording takes a moment), then the
-/// panel hears "capture-saved" (or "capture-error").
 pub fn on_file(app: &AppHandle, vm: &str, msg: &Value) {
-    // The viewer is untrusted: a few files are taken at a time, and a flood of messages is dropped instead of
-    // starting a thread for each.
     static BUSY: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     use std::sync::atomic::Ordering::SeqCst;
     if BUSY.fetch_add(1, SeqCst) >= 4 {
@@ -292,7 +258,6 @@ pub fn on_file(app: &AppHandle, vm: &str, msg: &Value) {
     });
 }
 
-/// What the viewer needs to know (sent when it connects and whenever Settings change).
 pub fn setup_message() -> Value {
     let p = prefs();
     json!({ "type": "capture-setup", "replay": p.replay, "seconds": 30, "lang": if p.lang == "en" { "en" } else { "es" } })
@@ -308,7 +273,6 @@ fn check_dir(dir: Option<String>) -> Result<Option<PathBuf>, String> {
     }
 }
 
-/// Settings › Captures: the last 30 s on or off, and the folders (empty = Pictures\GpuVM, Videos\GpuVM).
 #[tauri::command]
 pub fn set_capture_prefs(replay: bool, shots_dir: Option<String>, videos_dir: Option<String>, lang: String) -> Result<(), String> {
     let next = Prefs { replay, shots: check_dir(shots_dir)?, videos: check_dir(videos_dir)?, lang };
@@ -317,8 +281,6 @@ pub fn set_capture_prefs(replay: bool, shots_dir: Option<String>, videos_dir: Op
     Ok(())
 }
 
-/// Whether Windows itself has a decoder for a video format (what its own players use; HEVC and AV1 come as Store
-/// extensions).
 pub fn windows_decodes(fourcc: &[u8; 4]) -> bool {
     use windows_sys::core::GUID;
     use windows_sys::Win32::System::Com::CoTaskMemFree;
@@ -355,7 +317,6 @@ pub fn windows_decodes(fourcc: &[u8; 4]) -> bool {
     count > 0
 }
 
-/// The folders in use, as shown in Settings, and which recorded formats Windows' own players can open.
 #[tauri::command]
 pub fn capture_folders() -> Value {
     json!({
@@ -366,7 +327,6 @@ pub fn capture_folders() -> Value {
     })
 }
 
-/// Opens Microsoft Store's page of the HEVC video extension (a fixed address, nothing from the pages).
 #[tauri::command]
 pub fn capture_get_hevc() -> Result<(), String> {
     shell_open(Path::new("ms-windows-store://pdp/?ProductId=9NMZLZ57R3T7"))
@@ -390,13 +350,11 @@ fn recent(path: &str) -> Result<PathBuf, String> {
     }
 }
 
-/// Opens a capture this app saved, with the person's usual app for it.
 #[tauri::command]
 pub fn capture_open(path: String) -> Result<(), String> {
     shell_open(&recent(&path)?)
 }
 
-/// Shows a capture this app saved in the Explorer, selected.
 #[tauri::command]
 pub fn capture_reveal(path: String) -> Result<(), String> {
     let p = recent(&path)?;
@@ -406,7 +364,6 @@ pub fn capture_reveal(path: String) -> Result<(), String> {
     std::process::Command::new(explorer).arg(arg).spawn().map(|_| ()).map_err(|_| "Couldn't open File Explorer.".into())
 }
 
-/// Opens the screenshots or videos folder (created if it doesn't exist yet).
 #[tauri::command]
 pub fn capture_open_folder(video: bool) -> Result<(), String> {
     let dir = folder(video).ok_or("The folder wasn't found.")?;
@@ -440,7 +397,6 @@ mod tests {
 
     #[test]
     fn decoders() {
-        // Every Windows has H.264; HEVC and AV1 depend on Store extensions (whatever this PC has, no crash).
         assert!(windows_decodes(b"H264"));
         let _ = windows_decodes(b"HEVC");
         assert!(!windows_decodes(b"ZZZZ"));

@@ -1,4 +1,3 @@
-//! Tokens: integrity, user, elevation of this process or another one.
 use crate::util::wstr;
 use windows::core::{PCWSTR, PWSTR};
 use windows::Win32::Foundation::*;
@@ -20,7 +19,6 @@ pub fn il_name(il: u32) -> &'static str {
     }
 }
 
-/// Owned handle closed on drop.
 pub struct Owned(pub HANDLE);
 impl Drop for Owned {
     fn drop(&mut self) {
@@ -58,7 +56,6 @@ pub fn token_elevated(tok: HANDLE) -> bool {
     }
 }
 
-/// "DOMAIN\name" and the bare name of the token's user.
 pub fn token_user(tok: HANDLE) -> (String, String) {
     unsafe {
         let mut len = 0u32;
@@ -80,7 +77,6 @@ pub fn token_user(tok: HANDLE) -> (String, String) {
     }
 }
 
-/// The token user's SID as text (S-1-5-21-...).
 pub fn token_sid(tok: HANDLE) -> Option<String> {
     unsafe {
         let mut len = 0u32;
@@ -106,7 +102,6 @@ pub fn token_elevation_type(tok: HANDLE) -> u32 {
     }
 }
 
-/// Whether the token has UIAccess (it can drive windows above its integrity: osk.exe, narrators).
 pub fn token_uiaccess(tok: HANDLE) -> bool {
     unsafe {
         let mut v = 0u32;
@@ -115,14 +110,12 @@ pub fn token_uiaccess(tok: HANDLE) -> bool {
     }
 }
 
-/// The agent user's SID and the sign-in mode the installer recorded (HKLM, administrators only can write).
 pub fn agent_mode() -> (Option<String>, String) {
     const K: &str = r"SOFTWARE\GpuVM\Agent";
     (crate::util::reg_hklm(K, "AgentSid"), crate::util::reg_hklm(K, "SignInAs").unwrap_or_else(|| "agent".into()))
 }
 
-/// Who may have a session helper (security review): in Agent mode only the agent user (by SID); when the machine
-/// signs in as the person, never an administrator's filtered token (UAC would be one consent away: fodhelper...).
+/// Never an administrator's filtered token when the machine signs in as the person: UAC would be one consent away.
 pub fn helper_allowed(agent_sid: Option<&str>, mode: &str, user_sid: &str, elevation_type: u32) -> Result<(), String> {
     let Some(agent) = agent_sid else { return Err("the agent isn't installed (no agent user recorded)".into()) };
     if user_sid.eq_ignore_ascii_case(agent) {
@@ -184,7 +177,6 @@ pub struct ProcInfo {
     pub uiaccess: bool,
 }
 
-/// Integrity (None when the token can't be opened: elevated or protected) and image name of a process.
 pub fn process_info(pid: u32) -> ProcInfo {
     unsafe {
         let p = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {

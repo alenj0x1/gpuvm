@@ -44,7 +44,6 @@ function Save-GpuVMProfile {
     if ($guest.Count) { $data['guest'] = $guest }
     if ($s['iso']) { $data['iso'] = [IO.Path]::GetFullPath([string]$s['iso']) }
 
-    # Validate the result as it will be used, against this computer's hardware.
     $config = Merge-Hashtable -Base (Resolve-GpuVMProfile -Name $Extends) -Override $data
     $cs = Get-CimInstance Win32_ComputerSystem
     $logical = [int](Get-CimInstance Win32_Processor | Select-Object -First 1).NumberOfLogicalProcessors

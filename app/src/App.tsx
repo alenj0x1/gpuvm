@@ -4,7 +4,6 @@ import { IconAlertTriangle, IconHome, IconLoader2, IconPlugConnected, IconPlus, 
 import { Preferences } from "./Preferences";
 import { Library, type LibraryTab } from "./Library";
 import { EmptyHome, Home, HomeSkeleton } from "./Home";
-// The app's own icon (the installer and the window use it), never a machine figure.
 import { Logo } from "./Logo";
 import { TripleSpark } from "./Chart";
 import type { HostInfo, JobEvent, Sample, VmOverview } from "./types";
@@ -31,14 +30,11 @@ const NEW_VM = "__new__";
 // Route of the preferences screen in the URL hash, shaped so it doesn't look like a VM name.
 const PREFS = ":settings";
 const LIBRARY = ":library";
-// The home screen, where the app opens.
 const HOME = ":home";
 const AGENTS = ":agents";
 
-/** Agents in the sidebar: a dot while one works, the warning tone while one waits for the person. */
 function AgentsNavItem({ active, onClick }: { active: boolean; onClick: () => void }) {
   const snap = useAgents();
-  // Everything waiting for the person: requests to answer, what only they can do, files to accept.
   const waiting = snap.requests.length + snap.offers.filter((o) => o.state === "pending").length;
   const working = snap.clients.some((c) => c.state === "working");
   const needs = waiting > 0;
@@ -63,28 +59,20 @@ interface RunningJob extends JobInfo {
   failed?: () => void;
 }
 
-/** `embedded`: the app runs inside another page (the website), so its route stays in memory and off the page's URL. */
 export function App({ embedded = false }: { embedded?: boolean } = {}) {
-  // The machine list fades only where it keeps going: never over "Create machine" when everything fits.
   const [sideRef, sideFade] = useScrollFade<HTMLElement>();
   const [vms, setVms] = useState<VmOverview[] | null>(null);
   const [host, setHost] = useState<HostInfo | null>(null);
-  // "stopped": the GpuVM service is stopped and set to start by hand; "missing": it isn't installed (installed app);
-  // "admin": development build without administrator.
   const [blocked, setBlocked] = useState<"stopped" | "missing" | "admin" | null>(null);
   const [repair, setRepair] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
   const [readError, setReadError] = useState<string | null>(null);
   const [selected, setSelected] = useState(() => embedded ? HOME : decodeURIComponent(location.hash.slice(1)));
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem("gpuvm.collapsed") === "1"; } catch { return false; } });
   const [creating, setCreating] = useState(false);
-  // Template preselected when "Create machine" is opened from a template in the library.
   const [createTemplate, setCreateTemplate] = useState<string | null>(null);
-  // The space a new machine goes into (the one Home shows, or the one it was created from).
   const [createSpace, setCreateSpace] = useState<string | null>(null);
   const spaces = useSpaces();
   const shownSpaceId = useShownSpace();
-  // While a machine or a space is dragged in the sidebar, the others make room for it as it passes: the order shown is
-  // a preview, kept until the drop (which saves it) or the drag is cancelled (which glides everything back).
   const [preview, setPreview] = useState<{ name: string; space: string; before: string | null } | null>(null);
   const [spaceOrder, setSpaceOrder] = useState<string[] | null>(null);
   const previewRef = useRef(preview); previewRef.current = preview;
@@ -94,10 +82,8 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
   }), []);
   const [createError, setCreateError] = useState<string | null>(null);
   const [jobs, setJobs] = useState<Record<string, RunningJob>>({});
-  // Short actions (start, shut down, save…) in progress per VM, to show their state instantly.
   const [pending, setPending] = useState<Record<string, string>>({});
   const history = useRef<Record<string, Sample[]>>({});
-  // The machine just renamed, until the refreshed list shows it under its new name.
   const renamed = useRef<{ from: string; to: string } | null>(null);
   const lastJson = useRef("");
   const { toasts, push, dismiss } = useToasts();
@@ -132,8 +118,6 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     }
   }, []);
 
-  // Chained polling: the next query goes out when the previous one finished; slower with no running VMs
-  // or with the window hidden.
   const vmsRef = useRef(vms);
   vmsRef.current = vms;
   useEffect(() => {
@@ -151,8 +135,6 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     return () => { alive = false; clearTimeout(timer); document.removeEventListener("visibilitychange", wake); };
   }, [refresh]);
 
-  // Disposable machines are deleted once they ran and are off: when one turns off here, and at start for the ones
-  // that turned off while the app was closed (the module decides which, and never touches a running one).
   const disposableOff = (vms ?? []).filter((v) => v.disposable && v.state === "Off").map((v) => v.name).join("|");
   useEffect(() => {
     api.sweepDisposable().then((gone) => {
@@ -162,8 +144,6 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     }).catch(() => {});
   }, [disposableOff]);
 
-  // A running disposable machine only reserves a fixed part of the drive: every 30 s the module checks the drive and
-  // shuts it down if it got down to the host's margin.
   const disposableOn = (vms ?? []).some((v) => v.disposable && v.state === "Running");
   useEffect(() => {
     if (!disposableOn) return;
@@ -171,9 +151,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     return () => clearInterval(id);
   }, [disposableOn]);
 
-  // Templates older than this GpuVM's Sunshine (or agent) get a new layer in the background (Update-GpuVMTemplate,
-  // a few minutes once per release), so their copies don't install them one by one (lab 053 part 7). From the
-  // app, not the service: the temporary copy needs the person's saved passwords (DPAPI). At start, then every hour.
+  // From the app, not the service: the temporary copy needs the person's DPAPI-protected passwords.
   useEffect(() => {
     const check = () => api.templates()
       .then((list) => { if (list.some((t) => t.stale && !t.updating)) return runJob("template-update", "Update-GpuVMTemplate", { Stale: true, Confirm: false }); })
@@ -191,13 +169,11 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, [embedded]);
-  useEffect(() => { try { localStorage.setItem("gpuvm.collapsed", collapsed ? "1" : "0"); } catch { /* no storage */ } }, [collapsed]);
-  // The sidebar's width: dragged from its edge between 200 and 360 px; dragging it narrower than 150 px folds it.
+  useEffect(() => { try { localStorage.setItem("gpuvm.collapsed", collapsed ? "1" : "0"); } catch {} }, [collapsed]);
   const [sideWidth, setSideWidth] = useState(() => { try { return Math.min(360, Math.max(200, Number(localStorage.getItem("gpuvm.sideWidth")) || 248)); } catch { return 248; } });
   const [resizing, setResizing] = useState(false);
-  // Where a press on the edge started: a press that doesn't move is a click on the line (fold or unfold).
   const press = useRef<{ x: number; moved: boolean; onLine: boolean } | null>(null);
-  useEffect(() => { try { localStorage.setItem("gpuvm.sideWidth", String(sideWidth)); } catch { /* no storage */ } }, [sideWidth]);
+  useEffect(() => { try { localStorage.setItem("gpuvm.sideWidth", String(sideWidth)); } catch {} }, [sideWidth]);
   const startResize = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -213,16 +189,11 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     else { setCollapsed(false); setSideWidth(Math.round(Math.min(360, Math.max(200, x)))); }
   };
   useEffect(() => {
-    // A machine just renamed keeps its page until the list brings it under the new name.
     if (renamed.current && vms?.some((v) => v.name === renamed.current!.to)) renamed.current = null;
     if (renamed.current?.to === selected) return;
     if (selected !== PREFS && selected !== HOME && selected !== AGENTS && !libraryTab(selected) && vms && vms.length && !vms.some((v) => v.name === selected)) setSelected(HOME);
   }, [vms, selected]);
 
-  // `gpuvm.exe --view <name>` (an agent's open_viewer), released by agent.rs only when a live agent session holds that
-  // machine: its page and its picture, like its Open button, but only on a machine that is already running (this path
-  // never starts or resumes a machine) and not busy with a job. Not running or not listed yet (an agent just created
-  // it): it waits for up to 3 minutes. GpuVM doesn't come forward for it (agent.rs flashes the taskbar).
   const waitingView = useRef<{ name: string; until: number } | null>(null);
   const openForAgent = (name: string) => {
     const vm = vmsRef.current?.find((v) => v.name.toLowerCase() === name.toLowerCase());
@@ -235,7 +206,6 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     setSelected(vm.name);
     startJobRef.current?.(vm.name, "Connect-GpuVM", { Name: vm.name });
   };
-  // A notification's View (the person's own click, agent.rs): that machine's picture, as its Open button.
   const openFromNotification = (name: string) => {
     const vm = vmsRef.current?.find((v) => v.name === name);
     if (!vm) return;
@@ -249,32 +219,27 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     if (Date.now() > w.until) { waitingView.current = null; return; }
     openForAgent(w.name);
   }, [vms]); // eslint-disable-line react-hooks/exhaustive-deps
-  // GpuVM started by that command: it opens once the machines are known and agent.rs released it.
   const loaded = vms !== null;
   useEffect(() => {
     if (!inTauri || !loaded) return;
     import("@tauri-apps/api/core").then(({ invoke }) => invoke<string | null>("pending_agent_view")).then((name) => { if (name) openForAgent(name); }).catch(() => {});
   }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // A Windows notification of an agent's request opens Agents (agent.rs); answers there are read again at once.
   useEffect(() => {
     if (!inTauri) return;
     const offs: Promise<() => void>[] = [];
     import("@tauri-apps/api/event").then(({ listen }) => {
       offs.push(listen<string>("open-route", (e) => { if (e.payload === AGENTS) setSelected(AGENTS); }));
       offs.push(listen("agents-changed", () => { refreshAgents(); }));
-      // An agent's `--view`, once agent.rs checked a live session holds that machine.
       offs.push(listen<string>("agent-view", (e) => {
         import("@tauri-apps/api/core").then(({ invoke }) => invoke("agent_view_taken")).catch(() => {});
         openForAgent(e.payload);
       }));
-      // A notification's View (the person clicked it).
       offs.push(listen<string>("open-viewer", (e) => openFromNotification(e.payload)));
     });
     return () => { offs.forEach((p) => p.then((off) => off())); };
   }, []);
 
-  // "Another pattern" is reflected instantly in the sidebar too.
   const [, repaint] = useState(0);
   useEffect(() => {
     const onPattern = () => repaint((n) => n + 1);
@@ -282,7 +247,6 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     return () => window.removeEventListener("gpuvm-pattern", onPattern);
   }, []);
 
-  // Long job progress: the button that started the job shows the latest step.
   useEffect(() => {
     let off: (() => void) | undefined;
     let cancelled = false;
@@ -300,7 +264,6 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       if (e.ok) job.after?.();
       else if (job.vm === NEW_VM) {
         setCreateError(humanError(e.error));
-        // If the dialog was closed, reopen it to show what failed.
         if (!creatingRef.current) { push("error", t("Couldn't create {name}.", { name: job.name })); setCreating(true); }
       } else push("error", humanError(e.error));
       refresh();
@@ -308,16 +271,10 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     return () => { cancelled = true; off?.(); };
   }, [push, refresh]);
 
-  // A machine opening or shown inside the app: the sidebar steps aside, the machine's cube moves to the center with
-  // the steps, and the viewer covers the content area once the first picture is there.
-  // Phases: opening (the cube comes to the center with the steps), entering (it zooms in, into the machine), live
-  // (the picture covers the area), leaving (the picture hides and the cube zooms back out on the way to Home).
   const [viewing, setViewing] = useState<{ vm: string; phase: ViewerPhase } | null>(null);
   const viewingRef = useRef(viewing);
   viewingRef.current = viewing;
 
-  // Into the machine: the cube zooms in and then the picture comes out from behind the app.
-  // If the picture can't come out (the viewer closed meanwhile), the app shows itself again and `fallback` runs.
   const enterMachine = useCallback((vm: string, reveal: () => Promise<unknown>, fallback?: () => void) => {
     setViewing({ vm, phase: "entering" });
     window.setTimeout(() => {
@@ -326,14 +283,10 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
         .catch(() => { setViewing((v) => (v?.vm === vm ? null : v)); fallback?.(); });
     }, ZOOM_MS);
   }, []);
-  // Machines whose connected viewer turned out to be gone: the next "Open" opens them from scratch.
   const staleViewer = useRef(new Set<string>());
 
   const startJob = useCallback((vm: string, cmd: string, args: Record<string, unknown>, after?: () => void, failed?: () => void) => {
     if (cmd === "Connect-GpuVM") {
-      // Still connected from before (the person went to Home): straight into its picture. The viewer itself is asked
-      // (not a list kept here), so the zoom only plays when the picture is really there; otherwise it opens from the
-      // start, with its steps before the zoom.
       const fresh = staleViewer.current.delete(vm);
       if (inTauri && !args.Pair && !fresh) {
         const reopen = () => {
@@ -358,7 +311,6 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
       };
       failed = () => { setViewing((v) => (v?.vm === vm ? null : v)); fail?.(); };
     }
-    // A VM without a monitor of its own opens on the one chosen in Preferences.
     if (cmd === "Connect-GpuVM" && !args.Monitor && !vmsRef.current?.find((v) => v.name === vm)?.client?.monitor) {
       args = { ...args, Monitor: readPrefs().monitor };
     }
@@ -378,16 +330,12 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
   const startJobRef = useRef(startJob);
   startJobRef.current = startJob;
 
-  // The viewer's panel asked to switch machines: the new one opens as usual (its button shows the progress) and the
-  // viewer of the old one closes once the new picture is up.
   useEffect(() => {
     if (!inTauri) return;
     let off: (() => void) | undefined;
     let cancelled = false;
     import("@tauri-apps/api/event").then(({ listen }) => listen<{ from: string; to: string }>("viewer-switch", (e) => {
       const { from, to } = e.payload;
-      // Out of this machine (its picture steps aside and its cube zooms out), then the other one comes to the center
-      // with its steps; the old one closes once the new picture is up.
       import("@tauri-apps/api/core").then(({ invoke }) => invoke("viewer_send", { vm: from, msg: { type: "hide" } }).catch(() => {}));
       setViewing({ vm: from, phase: "leaving" });
       window.setTimeout(() => startJob(to, "Connect-GpuVM", { Name: to }, () => {
@@ -397,11 +345,8 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     return () => { cancelled = true; off?.(); };
   }, [startJob]);
 
-  // Home from the viewer (the title bar's button or the panel): the picture hides and the machine stays connected,
-  // or disconnects, as chosen in Settings.
   const leaveToHome = useCallback(async (vm: string) => {
     setSelected(HOME);
-    // Out of the machine: the cube zooms back out (starting while the picture hides), then Home.
     setViewing({ vm, phase: "leaving" });
     leaveViewer(vm, readPrefs().viewerHome !== "disconnect");
     window.setTimeout(() => setViewing((v) => (v?.vm === vm && v.phase === "leaving" ? null : v)), ZOOM_MS);
@@ -411,7 +356,6 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
     const offs: Promise<() => void>[] = [];
     import("@tauri-apps/api/event").then(({ listen }) => {
       offs.push(listen<{ vm: string }>("viewer-home", (e) => leaveToHome(e.payload.vm)));
-      // The viewer closed (disconnected, or the machine went off): the app shows itself again.
       offs.push(listen<{ vm: string; msg: { type: string } }>("viewer", (e) => {
         if (e.payload.msg.type === "closed" && viewingRef.current?.vm === e.payload.vm && viewingRef.current.phase === "live") setViewing(null);
         if (e.payload.msg.type === "home" && viewingRef.current?.vm === e.payload.vm && viewingRef.current.phase === "live") leaveToHome(e.payload.vm);
@@ -507,15 +451,13 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
           <span className="side-logo"><Logo size={28} /></span>
           <strong className="wordmark">gpuvm</strong>
         </div>
-        {/* The whole list takes a dragged machine or space, gaps between groups included (or the cursor flickers to
-            "not allowed" as it crosses them); the drop keeps the order shown. */}
+        {/* Gaps between groups take the drop too, or the cursor flickers to "not allowed" while crossing them. */}
         <nav ref={sideRef} className={`side-list ${sideFade}`}
           onDragOver={(e) => { if (carriesMachine(e) || carriesSpace(e)) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; } }}
           onDrop={(e) => {
             if (!carriesMachine(e) && !carriesSpace(e)) return;
             e.preventDefault();
             const order = spaceOrderRef.current, p = previewRef.current;
-            // Saved as shown: nothing moves on the drop, the preview just stays.
             flushSync(() => {
               if (order && carriesSpace(e)) reorderSpaces(order);
               if (p && carriesMachine(e)) {
@@ -536,10 +478,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
             <span className="add-icon"><IconStack2 size={16} /></span><span className="name">{t("Library")}</span>
           </button>
           <AgentsNavItem active={selected === AGENTS} onClick={() => setSelected(AGENTS)} />
-          {/* With one space the list is just "Machines"; with several, each space heads its own machines and opens it in Home. */}
           {(() => {
-            // The groups as shown: the spaces in their (previewed) order, each with its machines, and the dragged
-            // machine where it would land.
             const order = spaceOrder ? [...spaces].sort((a, b) => spaceOrder.indexOf(a.id) - spaceOrder.indexOf(b.id)) : spaces;
             const groups = (spaces.length > 1 && vms ? order : [null]).map((sp) => {
               const space = sp ?? spaces[0];
@@ -561,7 +500,6 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
               <div key={sp?.id ?? "all"} className="side-group" data-space={spaceId}
                 onDragOver={(e) => {
                   if (carriesSpace(e) && sp && dragging.space) {
-                    // A space passes over another: it goes before it or after it, by which half the pointer is on.
                     e.preventDefault(); e.dataTransfer.dropEffect = "move";
                     if (dragging.space === sp.id) return;
                     const r = e.currentTarget.getBoundingClientRect();
@@ -574,8 +512,6 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
                   const name = dragging.machine;
                   if (!carriesMachine(e) || !name) return;
                   e.preventDefault(); e.dataTransfer.dropEffect = "move";
-                  // Over another machine: it takes that machine's place (before it from below, after it from above),
-                  // and the others make room. Over the space's name or its empty room: at the end of the space.
                   const row = (e.target as HTMLElement).closest<HTMLElement>("[data-vm]");
                   if (row?.dataset.vm === name) return;
                   let before: string | null;
@@ -608,7 +544,6 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
                 {list?.map((vm) => {
                   const busy = busyFor(vm.name);
                   return (
-                    // The dot already says on or off: the row only adds what it can't, the GPU in use or a job in progress.
                     <button key={vm.id} data-vm={vm.name} draggable onDragStart={(e) => dragMachine(e, vm.name)}
                       className={`side-item ${vm.name === selected ? "active" : ""}${preview?.name === vm.name ? " dragged" : ""}`} onClick={() => setSelected(vm.name)}
                       title={`${vm.name}, ${busy?.message ? translateModule(busy.message) : stateText(vm.state)}`}>
@@ -634,17 +569,14 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
             <span className="add-icon"><IconPlus size={16} /></span><span className="name">{t("Create machine")}</span>
           </button>
         </nav>
-        {/* Ajustes stays at the foot of the sidebar, however long the list of machines gets. */}
         <button className={`side-item side-home side-foot ${selected === PREFS ? "active" : ""}`} onClick={() => setSelected(PREFS)} title={t("Settings")}>
           <span className="add-icon"><IconSettings size={16} /></span><span className="name">{t("Settings")}</span>
         </button>
       </aside>
-      {/* The sidebar's edge: drag it to resize (or fold) the sidebar; its tab, shown on hover, folds and unfolds it. */}
       <div className="side-edge" role="separator" aria-orientation="vertical" aria-label={t("Sidebar width")}
         onPointerDown={startResize} onPointerMove={resize}
         onPointerUp={() => { const p = press.current; press.current = null; setResizing(false); if (p && !p.moved && p.onLine) setCollapsed((c) => !c); }}
         onPointerCancel={() => { press.current = null; setResizing(false); }}>
-        {/* The line itself: drag it to resize, click it to fold or unfold. */}
         <button type="button" className="side-handle" aria-label={collapsed ? t("Expand sidebar") : t("Collapse sidebar")} title={collapsed ? t("Expand sidebar") : t("Collapse sidebar")}
           onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setCollapsed((c) => !c); } }} />
       </div>
@@ -658,7 +590,6 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
           </div>
         )}
         {vms === null ? (
-          // While the machines load: the shape of Home, where the app opens.
           <HomeSkeleton />
         ) : selected === HOME && vms.length > 0 ? (
           <Home vms={vms} busyFor={busyFor} startJob={startJob} onOpenVm={setSelected} onRoute={setSelected} onCreate={(space) => { setCreateError(null); setCreateSpace(space ?? null); setCreating(true); }} />
@@ -686,21 +617,17 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
           onClose={() => { setCreating(false); setCreateTemplate(null); }}
           onCreate={({ name, iso, template, file, disposable, profile, user, password, apps, cleanup, resources, space, agents }) => {
             setCreateError(null);
-            // The new machine goes into the space picked for it, even before it exists in the list.
             if (space) moveToSpace(name, space);
-            // Resources changed in the dialog go as an override of the chosen profile, like Options does.
             const hw = resources ? { vm: { cpu: { count: resources.cpu }, memoryGB: resources.memoryGB, disk: { sizeGB: resources.diskGB } }, gpu: { allocationPercent: resources.gpuPercent } } : {};
             const args = file
               ? { Path: file, Name: name, Profile: profile, ...(resources ? { Override: hw } : {}), Credential: { user, password }, Start: true }
               : template
               ? { Name: name, Template: template, Profile: profile, ...(resources ? { Override: hw } : {}), Start: true, ...(disposable ? { Disposable: true } : {}) }
               : { Name: name, IsoPath: iso, Profile: profile, Override: { ...hw, guest: { apps, cleanup } }, Credential: { user, password }, Start: true };
-            // Made for agents: the module sets the use (1280x800, isolated network, recording) and installs the agent.
             const withAgents = agents ? { ...args, Use: "agent", AgentUser: agents.user } : args;
             startJob(NEW_VM, file ? "Import-GpuVM" : "New-GpuVM", withAgents, () => {
               setCreating(false);
               setCreateTemplate(null);
-              // Open the new machine once the list has it; before that, the route would fall back to Home.
               refresh().then(() => setSelected(name));
               push("ok", template || file ? t("{name} is ready.", { name }) : t("{name} is ready. Windows finishes setting itself up in a few minutes.", { name }));
             });

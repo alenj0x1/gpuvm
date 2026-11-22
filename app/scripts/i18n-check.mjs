@@ -1,9 +1,3 @@
-// Checks the Spanish catalog against the code: every t()/tn() key (the English text) has its Spanish, both carry the
-// same {values}, no Spanish is left unused, and Spanish text left in the code is pointed out (lines with accents or
-// ¿¡ outside comments, as a hint: the code's text is English and its Spanish lives in src/i18n/es/).
-//
-//   node scripts/i18n-check.mjs            report
-//   node scripts/i18n-check.mjs --strict   exit 1 when a key is missing or its values differ (CI)
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
@@ -17,8 +11,6 @@ const files = [];
   }
 })(root);
 
-// The catalog: one `"English": "Spanish",` per line in src/i18n/es/*.ts (module*.ts: their fixed messages, before
-// `patterns`).
 const catalog = new Map();
 const esDir = join(root, "i18n", "es");
 for (const name of readdirSync(esDir)) {
@@ -31,7 +23,6 @@ for (const name of readdirSync(esDir)) {
   }
 }
 
-// {values} must be the same on both sides; the context after "|" is not shown.
 const values = (s) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(",");
 const mismatched = [...catalog].filter(([k, v]) => values(k.split("|")[0]) !== values(v.value)).map(([k, v]) => `${v.file}: ${JSON.stringify(k)} -> ${JSON.stringify(v.value)}`);
 

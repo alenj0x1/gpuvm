@@ -1,6 +1,4 @@
-﻿# Sets the virtual display (VDD) resolution and refresh rate to the ones Moonlight uses.
-# Runs inside the VM, in the user's session (launched by a scheduled task from GpuVM). Windows PowerShell 5.1.
-param(
+﻿param(
     [Parameter(Mandatory)][int]$Width,
     [Parameter(Mandatory)][int]$Height,
     [int]$Refresh = 60,
@@ -15,7 +13,6 @@ using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 
 public static class GpuVMDisplay {
-    /// Whether this run changed anything (mode, position or other displays): Sunshine notices and re-tests its encoders.
     public static bool Changed;
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     struct DISPLAY_DEVICE {
@@ -47,7 +44,6 @@ public static class GpuVMDisplay {
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     static extern int ChangeDisplaySettingsEx(string device, ref DEVMODE mode, IntPtr hwnd, uint flags, IntPtr param);
 
-    /// Name (\\.\DISPLAYn) of the first adapter whose description matches the pattern, or null.
     public static string FindDevice(string pattern) {
         for (uint i = 0; i < 32; i++) {
             var d = new DISPLAY_DEVICE();
@@ -81,8 +77,6 @@ public static class GpuVMDisplay {
         return list.ToArray();
     }
 
-    /// Applies the mode of that size with the highest refresh rate not above 'hz'.
-    /// Returns the ChangeDisplaySettingsEx code (0 = success) or -100 if there is no mode of that size.
     public static int SetMode(string device, int width, int height, int hz, out string applied) {
         applied = null;
         DEVMODE best = new DEVMODE();
@@ -109,10 +103,7 @@ public static class GpuVMDisplay {
     [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "ChangeDisplaySettingsEx")]
     static extern int ApplyDisplaySettings(string device, IntPtr mode, IntPtr hwnd, uint flags, IntPtr param);
 
-    /// Makes 'device' the primary display at (0,0) and turns every other display of the desktop off, saved in the
-    /// registry so it stays that way. GPU-P guests get an extra 1024x768 output that would otherwise be the primary
-    /// one, so new windows (Steam, installers) would open where the stream doesn't show them.
-    /// Returns the names of the displays turned off, or null if Windows refused the change.
+    /// GPU-P guests get an extra 1024x768 output that would otherwise be the primary one.
     public static string[] MakeOnlyDisplay(string device) {
         const uint UPDATEREGISTRY = 0x1, SET_PRIMARY = 0x10, NORESET = 0x10000000;
         const int POSITION = 0x20, WIDTH = 0x80000, HEIGHT = 0x100000;
@@ -120,7 +111,6 @@ public static class GpuVMDisplay {
         var primary = new DEVMODE();
         primary.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE));
         if (!EnumDisplaySettings(device, -1, ref primary)) return null;   // ENUM_CURRENT_SETTINGS
-        // Nothing to do if it is already alone at 0,0: any change would make Sunshine re-test its encoders.
         bool alone = primary.dmPositionX == 0 && primary.dmPositionY == 0;
         for (uint i = 0; alone && i < 32; i++) {
             var d = new DISPLAY_DEVICE();
@@ -163,7 +153,6 @@ try {
         Write-Result @{ ok = $false; error = "the virtual display doesn't offer ${Width}x${Height}."; available = ([GpuVMDisplay]::Modes($device) -join ', ') }
         return
     }
-    # Sunshine no longer rearranges displays per session (that costs ~20 s), so GpuVM leaves the virtual one alone.
     $off = [GpuVMDisplay]::MakeOnlyDisplay($device)
     $result = @{ ok = ($code -eq 0 -and $null -ne $off); code = $code; device = $device; applied = $applied; turnedOff = (@($off) -join ', '); changed = [GpuVMDisplay]::Changed }
     if ($null -eq $off) { $result.error = 'Windows didn''t let the VM''s other displays be turned off.' }

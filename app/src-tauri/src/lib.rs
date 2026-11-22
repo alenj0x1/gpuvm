@@ -1,10 +1,3 @@
-//! Connects the UI to the GpuVM module (PowerShell 7). The app runs without administrator: installed, the
-//! GpuVM service does the elevated work (backend.rs).
-//! - Quick queries go through one persistent connection, one at a time.
-//! - Long jobs (create VM, start and open) use a connection each and emit "job" events with their progress,
-//!   so they don't block the stats.
-//! - Deleting machines or disks asks for a UAC confirmation first (the service requires it).
-
 mod backend;
 mod notices;
 mod capture;
@@ -39,8 +32,7 @@ pub(crate) fn wide_to_path(wide: &[u16]) -> PathBuf {
     PathBuf::from(std::ffi::OsString::from_wide(wide))
 }
 
-// System folders come from Windows itself, never from environment variables, which any program of the user can
-// change to point at its own files.
+// System folders come from Windows, never from environment variables any program of the user can change.
 fn system_directory() -> PathBuf {
     let mut buffer = [0u16; 260];
     // SAFETY: the buffer holds 260 UTF-16 units and Windows writes at most that many.
@@ -48,7 +40,6 @@ fn system_directory() -> PathBuf {
     if len == 0 || len >= buffer.len() { PathBuf::from(r"C:\Windows\System32") } else { wide_to_path(&buffer[..len]) }
 }
 
-/// Windows tools by absolute path in System32, never a copy found earlier in the PATH.
 pub(crate) fn system32(exe: &str) -> PathBuf {
     system_directory().join(exe)
 }
@@ -59,7 +50,6 @@ pub(crate) struct AppState {
     counter: std::sync::atomic::AtomicU64,
     close_to_tray: AtomicBool,
     stop_vms_on_quit: AtomicBool,
-    /// "GpuVM service" preference is "with GpuVM": the service stops when the app quits.
     stop_service_on_quit: AtomicBool,
 }
 
@@ -67,7 +57,6 @@ pub(crate) fn next_id(state: &AppState) -> String {
     format!("q{}", state.counter.fetch_add(1, Ordering::Relaxed) + 1)
 }
 
-/// One request on the persistent connection (opened again if it was lost). Gives up after 180 s.
 pub(crate) async fn query(state: &AppState, request: Value) -> Result<Value, String> {
     let conn = state.conn.clone();
     let aborter: Arc<std::sync::Mutex<Option<backend::Aborter>>> = Arc::default();
@@ -80,8 +69,7 @@ pub(crate) async fn query(state: &AppState, request: Value) -> Result<Value, Str
             }
             let c = guard.as_mut().unwrap();
             if c.send(&request).is_err() {
-                // The connection was lost while idle: open it again once. Once the request is sent it is not
-                // retried: it may already have been applied (shutdown, delete…).
+                // Lost while idle: reopen once. Once sent it is never retried: it may already have been applied.
                 *guard = None;
                 if attempt == 0 { continue; }
                 break;
@@ -125,17 +113,13 @@ pub(crate) fn into_data(result: Value) -> Result<Value, String> {
     }
 }
 
-/// What the viewer's side panel may run through `ps` (it sits over the picture of a machine an agent may drive): what it
-/// shows (the machine, the Explorer selection to send, the agent's state and screenshots) and the agent's three
-/// controls. Nothing that creates, deletes, changes a machine or answers a request (security review, 2026-11-19).
+// The side panel sits over a machine an agent may drive: nothing that creates, deletes, changes a machine or answers a request.
 const PANEL_PS: &[&str] = &[
     "Get-GpuVMOverview", "Get-GpuVMExplorerSelection",
     "Get-GpuVMAgentClient", "Get-GpuVMAgentRequest", "Get-GpuVMAgentOffer", "Get-GpuVMAgentSettings", "Get-GpuVMAgentBroker",
     "Get-GpuVMAgentCapture", "Suspend-GpuVMAgent", "Resume-GpuVMAgent", "Stop-GpuVMAgentClient",
 ];
 
-/// Which window may run which module function: the main window everything (it is the app), the side panel its list,
-/// any other window nothing (their capabilities don't grant `ps`; this holds even if one did by mistake).
 fn ps_allowed(window: &str, cmd: &str) -> bool {
     match window {
         "main" => true,
@@ -144,7 +128,6 @@ fn ps_allowed(window: &str, cmd: &str) -> bool {
     }
 }
 
-/// Runs a module function and returns its result (list of objects).
 #[tauri::command]
 async fn ps(webview: tauri::WebviewWindow, state: State<'_, AppState>, cmd: String, args: Option<Value>) -> Result<Value, String> {
     if !ps_allowed(webview.label(), &cmd) {
@@ -153,8 +136,6 @@ async fn ps(webview: tauri::WebviewWindow, state: State<'_, AppState>, cmd: Stri
     let args = args.unwrap_or(json!({}));
     let result = query(&state, json!({ "id": next_id(&state), "cmd": cmd, "args": args })).await?;
     let Some(code) = result["consent"].as_str().map(str::to_string) else { return into_data(result) };
-    // The service asks for a UAC confirmation (deleting machines or disks): the elevated copy of this program
-    // confirms it, and the same request goes again with the code.
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let parameters = format!("--consent {code}");
     let exit = tauri::async_runtime::spawn_blocking(move || {
@@ -168,11 +149,9 @@ async fn ps(webview: tauri::WebviewWindow, state: State<'_, AppState>, cmd: Stri
     into_data(query(&state, json!({ "id": next_id(&state), "cmd": cmd, "args": args, "consent": code })).await?)
 }
 
-/// Starts a long job; progress arrives as "job" events with the same jobId.
 #[tauri::command]
 async fn job(app: AppHandle, job_id: String, cmd: String, args: Option<Value>) -> Result<(), String> {
     let mut args = args.unwrap_or(json!({}));
-    // With GpuVM's viewer installed, the module gets the machine ready and this app opens the viewer itself.
     let with_viewer = cmd == "Connect-GpuVM" && viewer::viewer_path().is_some();
     if with_viewer {
         args["Viewer"] = json!(true);
@@ -185,8 +164,6 @@ async fn job(app: AppHandle, job_id: String, cmd: String, args: Option<Value>) -
             event["jobId"] = json!(job_id);
             let _ = app.emit("job", event);
         };
-        // One opening of a machine at a time (viewer::opening_lock): after the agent's recording opened it, its viewer is
-        // there already and only comes out (no second Connect changing the display while it streams).
         let lock = with_viewer.then(|| viewer::opening_lock(&vm_name));
         let _opening = lock.as_ref().map(|l| l.lock().unwrap_or_else(|e| e.into_inner()));
         if with_viewer && request["args"]["Pair"] != true && viewer::viewer_is_open(vm_name.clone()) {
@@ -197,8 +174,6 @@ async fn job(app: AppHandle, job_id: String, cmd: String, args: Option<Value>) -
             viewer::publish_state(&vm_name, "preparing");
         }
         let mut outcome = conn.call(&request, |event| emit(event.clone()));
-        // A job that destroys data (going back to a restore point, deleting one) waits for a UAC confirmation, as
-        // ps does; the same request goes again with the code.
         if let Some(code) = outcome.as_ref().ok().and_then(|r| r["consent"].as_str()).map(str::to_string) {
             let confirmed = std::env::current_exe().map_err(|e| e.to_string()).and_then(|exe| {
                 backend::run_elevated(&exe, &format!("--consent {code}"), "You canceled the administrator permission; nothing was deleted.")
@@ -239,7 +214,6 @@ async fn job(app: AppHandle, job_id: String, cmd: String, args: Option<Value>) -
     Ok(())
 }
 
-/// Opens the VM's Hyper-V console.
 #[tauri::command]
 fn open_console(name: String) -> Result<(), String> {
     std::process::Command::new(system32("vmconnect.exe"))
@@ -249,7 +223,6 @@ fn open_console(name: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-/// Installs the GpuVM service again and starts it (UAC prompt): the fix when it was removed or stopped.
 #[tauri::command]
 async fn repair_service() -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
@@ -263,7 +236,6 @@ async fn repair_service() -> Result<(), String> {
     if exit == 0 { Ok(()) } else { Err("Couldn't repair the GpuVM service. Install GpuVM again.".into()) }
 }
 
-/// State of the GpuVM service: `{ state, withWindows }` (state: running, starting, stopping, stopped, missing).
 #[tauri::command]
 fn service_status() -> Value {
     let s = service::status();
@@ -277,20 +249,16 @@ async fn start_service() -> Result<(), String> {
 
 #[tauri::command]
 async fn stop_service(state: State<'_, AppState>) -> Result<(), String> {
-    // Close the app's own idle connection, so nothing of GpuVM keeps the service busy.
     *state.conn.lock().unwrap_or_else(|e| e.into_inner()) = None;
     tauri::async_runtime::spawn_blocking(service::stop).await.map_err(|e| e.to_string())?
 }
 
-/// "GpuVM service" preference: `app` (starts with GpuVM, stops when it quits), `windows` (starts with
-/// Windows) or `manual` (only from Preferences).
 #[tauri::command]
 fn set_service_mode(state: State<'_, AppState>, mode: String) {
     backend::AUTO_START.store(mode != "manual", Ordering::Relaxed);
     state.stop_service_on_quit.store(mode == "app", Ordering::Relaxed);
 }
 
-/// Makes the service start with Windows, or only on demand (UAC prompt: it changes the service's settings).
 #[tauri::command]
 async fn set_service_startup(with_windows: bool) -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
@@ -302,7 +270,6 @@ async fn set_service_startup(with_windows: bool) -> Result<(), String> {
     if exit == 0 { Ok(()) } else { Err("Couldn't change how the GpuVM service starts.".into()) }
 }
 
-/// Development only: relaunches the app as administrator (it starts the bridge itself) and closes this instance.
 #[tauri::command]
 fn relaunch_as_admin(app: AppHandle) -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
@@ -312,9 +279,7 @@ fn relaunch_as_admin(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Brings the main window back (from the tray, minimized or behind other windows).
-/// Every window's WebView2 options must match the main window's (tauri.conf.json), or WebView2 refuses to create it.
-/// wry's defaults plus no occlusion tracking, which stops drawing small windows over a full-screen picture.
+// Must match the main window's WebView2 options or WebView2 refuses the window; no occlusion tracking, which stops drawing over a full-screen picture.
 pub(crate) const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion --autoplay-policy=no-user-gesture-required";
 
 pub(crate) fn show_main(app: &AppHandle) {
@@ -327,8 +292,7 @@ pub(crate) fn show_main(app: &AppHandle) {
     }
 }
 
-/// For an agent's open_viewer: Windows won't give a background program the foreground, so the window is raised
-/// without it.
+// Windows won't give a background program the foreground: raised without it.
 pub(crate) fn raise_main_quietly(app: &AppHandle) {
     use tauri::Manager;
     let Some(window) = app.get_webview_window("main") else { return };
@@ -336,18 +300,15 @@ pub(crate) fn raise_main_quietly(app: &AppHandle) {
     viewer::raise_without_focus(hwnd.0 as isize, !window.is_visible().unwrap_or(true) || window.is_minimized().unwrap_or(false));
 }
 
-/// `--view <name>`: open that machine's picture, as its Open button does. Only a valid machine name passes; the page
-/// checks it is one of the machines and does nothing else with it.
+// Only a valid machine name passes; the page checks it is one of the machines.
 fn view_arg(args: &[String]) -> Option<String> {
     let i = args.iter().position(|a| a == "--view")?;
     let name = args.get(i + 1)?;
     (!name.is_empty() && name.len() <= 40 && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')).then(|| name.clone())
 }
 
-/// The app's language for the few texts drawn by Rust (the tray menu): false Spanish, true English.
 pub(crate) static ENGLISH: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// The app's language changed: the tray menu follows it.
 #[tauri::command]
 fn set_language(app: AppHandle, lang: String) -> Result<(), String> {
     ENGLISH.store(lang == "en", Ordering::Relaxed);
@@ -358,8 +319,6 @@ fn set_language(app: AppHandle, lang: String) -> Result<(), String> {
     Ok(())
 }
 
-/// The tray icon the app needs now: the notices-only one, the usual one when "When closing the window" keeps GpuVM in
-/// the tray, or none.
 pub(crate) fn refresh_tray(app: &AppHandle) {
     use tauri::Manager;
     let wanted = if notices::active() { Some(true) } else if app.state::<AppState>().close_to_tray.load(Ordering::Relaxed) { Some(false) } else { None };
@@ -376,11 +335,8 @@ pub(crate) fn refresh_tray(app: &AppHandle) {
     }
 }
 
-/// Which tray icon is up: Some(true) the notices-only one, Some(false) the usual one.
 static TRAY_KIND: std::sync::Mutex<Option<bool>> = std::sync::Mutex::new(None);
 
-/// Tray icon with "Open GpuVM" and "Quit" (or their Spanish); a left click opens the window. In notices-only mode
-/// its tooltip says GpuVM is watching administrator prompts, and Quit ends GpuVM for good.
 fn ensure_tray(app: &AppHandle, notices: bool) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -423,7 +379,6 @@ fn ensure_tray(app: &AppHandle, notices: bool) -> tauri::Result<()> {
     Ok(())
 }
 
-/// How many agents' requests wait for the person (agent.rs): the tray icon carries a dot and says how many.
 static TRAY_WAITING: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
 pub(crate) fn set_tray_waiting(app: &AppHandle, count: u32) {
@@ -453,7 +408,6 @@ fn apply_tray_mark(app: &AppHandle) {
     let _ = tray.set_tooltip(Some(text));
 }
 
-/// The icon with a round amber dot in its bottom-right corner, ringed in dark so it reads on any taskbar.
 fn with_dot(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
     let mut out = rgba.to_vec();
     let size = width.min(height) as f32;
@@ -480,7 +434,6 @@ fn with_dot(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
 
 const TRAY_ID: &str = "main";
 
-/// "When closing the window" preference: true keeps GpuVM in the tray, false quits completely.
 #[tauri::command]
 fn set_close_to_tray(app: AppHandle, state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
     state.close_to_tray.store(enabled, Ordering::Relaxed);
@@ -488,15 +441,11 @@ fn set_close_to_tray(app: AppHandle, state: State<'_, AppState>, enabled: bool) 
     Ok(())
 }
 
-/// "When quitting GpuVM" preference: true shuts the GpuVM machines down when the app quits.
 #[tauri::command]
 fn set_stop_vms_on_quit(state: State<'_, AppState>, enabled: bool) {
     state.stop_vms_on_quit.store(enabled, Ordering::Relaxed);
 }
 
-
-/// Shuts the running GpuVM machines down: the request is sent and the app quits at once; the service finishes it
-/// (each VM still gets a clean Windows shutdown).
 fn stop_vms_in_background() {
     let Ok(mut conn) = backend::connect() else { return };
     if conn.send(&json!({ "id": "quit", "cmd": "Stop-GpuVMAll", "args": {} })).is_ok() {
@@ -504,8 +453,6 @@ fn stop_vms_in_background() {
     }
 }
 
-/// Asks the service to stop once GpuVM's last connection closes: requests still running (shutting the machines
-/// down, a VM being created) finish first.
 fn stop_service_when_idle() {
     let Some(mut conn) = backend::connect_existing() else { return };
     if conn.send(&json!({ "control": "stop-when-idle" })).is_ok() {
@@ -515,17 +462,14 @@ fn stop_service_when_idle() {
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// `gpuvm.exe --consent <code>` (elevated, after a UAC "Yes"): confirms a deletion to the service and exits.
 pub fn consent(code: &str) -> i32 {
     backend::consent(code)
 }
 
-/// `gpuvm.exe --mcp`: the MCP server for agent clients (mcp/), until stdin closes.
 pub fn mcp(fake: bool) -> i32 {
     mcp::run(fake)
 }
 
-/// The installed app has no console: stderr goes to %LOCALAPPDATA%\GpuVM\app.log (started over past 2 MB).
 fn log_to_file() {
     use std::os::windows::io::IntoRawHandle;
     let Some(dir) = std::env::var_os("LOCALAPPDATA").map(|d| std::path::PathBuf::from(d).join("GpuVM")) else { return };
@@ -550,22 +494,16 @@ pub fn run() {
     #[cfg(not(debug_assertions))]
     log_to_file();
     tauri::Builder::default()
-        // A second launch (e.g. from the Start menu while GpuVM is in the tray) shows the open window instead.
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-            // `gpuvm.exe --view <name>` (the MCP server's open_viewer) while GpuVM runs: that machine's picture, only
-            // if a live agent session holds it, and without taking the focus (agent.rs request_view). Any other second
-            // launch shows the window.
             match view_arg(&args) {
                 Some(name) => agent::request_view(app, &name),
                 None => show_main(app),
             }
         }))
         .plugin(tauri_plugin_dialog::init())
-        // Until the page sends its preferences: the default "with GpuVM" (stop the service when the app quits).
         .manage(AppState { stop_service_on_quit: AtomicBool::new(true), ..Default::default() })
         .on_window_event(|window, event| {
             use tauri::Manager;
-            // The viewer shown inside the app's window follows it.
             if window.label() == "main" && matches!(event, tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_)) {
                 viewer::follow_main(window.app_handle());
             }
@@ -576,7 +514,6 @@ pub fn run() {
                     if window.state::<AppState>().close_to_tray.load(Ordering::Relaxed) {
                         let _ = window.hide();
                     } else {
-                        // Quitting: GpuVM exits, or stays watching admin prompts (notices.rs).
                         notices::request_quit(window.app_handle());
                     }
                 }
@@ -586,7 +523,6 @@ pub fn run() {
             prompt::start(app.handle().clone());
             agent::start(app.handle().clone());
             status::start(app.handle());
-            // The installed app only: in development each connection starts a bridge of its own.
             #[cfg(not(debug_assertions))]
             live::start(app.handle());
             if let Some(name) = view_arg(&std::env::args().collect::<Vec<_>>()) {
@@ -606,7 +542,6 @@ pub fn run() {
                     api.prevent_exit();
                 }
             }
-            // Quitting from the window or the tray; hiding to the tray does not get here.
             if let tauri::RunEvent::Exit = event {
                 let state = app.state::<AppState>();
                 if state.stop_vms_on_quit.load(Ordering::Relaxed) {
@@ -630,10 +565,9 @@ mod tray_tests {
         let icon = vec![10u8; (w * h * 4) as usize];
         let out = with_dot(&icon, w, h);
         let px = |x: u32, y: u32| { let i = ((y * w + x) * 4) as usize; [out[i], out[i + 1], out[i + 2], out[i + 3]] };
-        assert_eq!(px(0, 0), [10, 10, 10, 10]); // top-left untouched
-        assert_eq!(px(w - 8, h - 8), [0xE7, 0xB4, 0x5E, 0xFF]); // inside the dot
+        assert_eq!(px(0, 0), [10, 10, 10, 10]);
+        assert_eq!(px(w - 8, h - 8), [0xE7, 0xB4, 0x5E, 0xFF]);
         assert_eq!(out.len(), icon.len());
-        // A short buffer never panics.
         assert_eq!(with_dot(&[0u8; 8], 32, 32).len(), 8);
     }
 }
@@ -646,7 +580,6 @@ mod ps_tests {
     fn each_window_runs_only_its_commands() {
         assert!(ps_allowed("main", "Remove-GpuVM"));
         assert!(ps_allowed("main", "Resolve-GpuVMAgentRequest"));
-        // The side panel: what it shows and the agent's three controls.
         assert!(ps_allowed("viewer-panel", "Get-GpuVMOverview"));
         assert!(ps_allowed("viewer-panel", "Suspend-GpuVMAgent"));
         assert!(ps_allowed("viewer-panel", "Resume-GpuVMAgent"));
@@ -657,7 +590,6 @@ mod ps_tests {
         assert!(!ps_allowed("viewer-panel", "Resolve-GpuVMAgentOffer"));
         assert!(!ps_allowed("viewer-panel", "Invoke-GpuVMAgent"));
         assert!(!ps_allowed("viewer-panel", "get-gpuvmoverview "));
-        // Any other window: nothing.
         for w in ["agent-dock", "status-notch", "prompt-dock", "drop-zone", ""] {
             assert!(!ps_allowed(w, "Get-GpuVMOverview"), "{w}");
         }

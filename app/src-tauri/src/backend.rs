@@ -1,9 +1,3 @@
-//! The connection to the GpuVM module.
-//! - Installed: the GpuVM service (gpuvm-host.exe, elevated) through the `\\.\pipe\gpuvm` pipe. The app itself
-//!   runs without administrator, so other programs (Console UI, for example) can drive its window.
-//! - Development: bridge.ps1 started directly (direct.rs), with the app run as administrator.
-//! Either way the protocol is bridge.ps1's: one JSON request per line, events back until the result.
-
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::sync::atomic::AtomicBool;
@@ -17,13 +11,11 @@ pub const SERVICE_MISSING: &str = "The GpuVM service isn't installed.";
 #[cfg_attr(debug_assertions, allow(dead_code))]
 pub const SERVICE_STOPPED: &str = "The GpuVM service is stopped.";
 
-/// Whether connecting may start a stopped service (preference: with GpuVM or with Windows; not when manual).
 pub static AUTO_START: AtomicBool = AtomicBool::new(true);
 
 pub struct Conn {
     reader: BufReader<Box<dyn Read + Send>>,
     writer: Box<dyn Write + Send>,
-    /// Lets another thread unblock a read that takes too long (the pipe handle, or the bridge process).
     abort: Aborter,
     child: Option<std::process::Child>,
 }
@@ -57,7 +49,6 @@ impl Conn {
         writeln!(self.writer, "{request}").and_then(|_| self.writer.flush()).map_err(|_| "GpuVM stopped responding.".to_string())
     }
 
-    /// The next event; None when the other end closed.
     pub fn next_event(&mut self) -> Option<Value> {
         let mut line = String::new();
         loop {
@@ -75,13 +66,10 @@ impl Conn {
         self.abort
     }
 
-    /// Lets the last request finish after the app quits ("When quitting GpuVM": Shut them down).
     pub fn detach(mut self) {
-        // The service finishes a request whose client left; in development the bridge must just not be killed.
         std::mem::forget(self.child.take());
     }
 
-    /// Sends a request and waits for its result, handing every other event (progress, warnings) to `on_event`.
     pub fn call(&mut self, request: &Value, mut on_event: impl FnMut(&Value)) -> Result<Value, String> {
         self.send(request)?;
         loop {
@@ -104,7 +92,6 @@ pub fn connect() -> Result<Conn, String> {
     Ok(Conn { reader: BufReader::new(Box::new(stdout)), writer: Box::new(stdin), abort, child: Some(child) })
 }
 
-/// Opens a connection; if the service is stopped, starts it first unless the user chose to start it by hand.
 #[cfg(not(debug_assertions))]
 pub fn connect() -> Result<Conn, String> {
     if let Some(conn) = open_pipe() {
@@ -116,7 +103,6 @@ pub fn connect() -> Result<Conn, String> {
         "stopped" => crate::service::start()?,
         _ => {}
     }
-    // It takes a moment to start (or to finish stopping first, if it was letting a request end).
     for _ in 0..150 {
         std::thread::sleep(std::time::Duration::from_millis(200));
         if let Some(conn) = open_pipe() {
@@ -129,7 +115,6 @@ pub fn connect() -> Result<Conn, String> {
     Err(SERVICE_STOPPED.into())
 }
 
-/// A connection only if the service is already running (never starts it).
 #[cfg(not(debug_assertions))]
 pub fn connect_existing() -> Option<Conn> {
     open_pipe()
@@ -149,8 +134,7 @@ fn open_pipe() -> Option<Conn> {
     let name: Vec<u16> = r"\\.\pipe\gpuvm".encode_utf16().chain(Some(0)).collect();
     let mut handle = INVALID_HANDLE_VALUE;
     for _ in 0..3 {
-        // Exactly read, write and synchronize: what the pipe grants users. Impersonation lets the service open
-        // the files a request names as this user, unelevated, before it touches them.
+        // Exactly what the pipe grants users; impersonation lets the service open request paths as this user, unelevated.
         handle = unsafe {
             CreateFileW(name.as_ptr(), 0x0010_0083, 0, std::ptr::null(), OPEN_EXISTING,
                 SECURITY_SQOS_PRESENT | SECURITY_IMPERSONATION, std::ptr::null_mut())
@@ -164,8 +148,7 @@ fn open_pipe() -> Option<Conn> {
         return None;
     }
     let file = unsafe { std::fs::File::from_raw_handle(handle) };
-    // The other end must be the service itself (its PID comes from Windows' service manager), not a program
-    // that took the pipe's name while it was stopped.
+    // The other end must be the service itself (PID from the service manager), not a program that took the pipe's name.
     let mut server = 0;
     unsafe { GetNamedPipeServerProcessId(handle, &mut server) };
     if server == 0 || server != crate::service::status().pid {
@@ -176,8 +159,6 @@ fn open_pipe() -> Option<Conn> {
     Some(Conn { reader: BufReader::new(Box::new(file)), writer: Box::new(writer), abort, child: None })
 }
 
-/// Runs `file` with `parameters` as administrator (UAC prompt) and waits for it. Ok(exit code), or the error
-/// to show (the user said no, or it could not start).
 pub fn run_elevated(file: &std::path::Path, parameters: &str, cancelled: &str) -> Result<u32, String> {
     use windows_sys::Win32::System::Threading::{GetExitCodeProcess, WaitForSingleObject, INFINITE};
     use windows_sys::Win32::UI::Shell::*;
@@ -203,8 +184,6 @@ pub fn run_elevated(file: &std::path::Path, parameters: &str, cancelled: &str) -
     Ok(code)
 }
 
-/// `gpuvm.exe --consent <code>`, run elevated after the user accepted the UAC prompt: tells the service that
-/// the deletion waiting with that code may go ahead. Exit code 0 when the service took it.
 pub fn consent(code: &str) -> i32 {
     let Ok(mut conn) = connect() else { return 1 };
     if conn.send(&json!({ "consent": code })).is_err() {

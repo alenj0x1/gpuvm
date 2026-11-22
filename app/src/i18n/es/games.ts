@@ -1,4 +1,3 @@
-// Spanish for the games Stack and Cache (their names are the same in every language).
 export default {
   "Drop each block right on the one below. What hangs over falls off and the tower narrows.": "Suelta cada bloque justo sobre el anterior. Lo que sobresale se cae y la torre se angosta.",
   "Starts among colorful toy bricks.": "Empieza entre bloques de juguete de colores.",

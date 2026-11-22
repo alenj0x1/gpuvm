@@ -1,7 +1,4 @@
-// Spanish for the guest scripts (guest/), the GpuVM service (app/host) and the desktop app's Rust side (src-tauri)
-// messages (see module.ts for how patterns work).
 export default {
-  // Windows cleanup items (guest/cleanup.ps1)
   "Diagnostic data at the lowest level the edition allows (on Pro, “Required”; on Enterprise and Education, off).": "Datos de diagnóstico al mínimo que permite la edición (en Pro, «Requerido»; en Enterprise y Education, apagados).",
   "No advertising ID or tailored experiences from your diagnostic data.": "Sin identificador de publicidad ni experiencias personalizadas con tus datos de diagnóstico.",
   "No activity history and no activity sent to Microsoft.": "Sin historial de actividad ni envío de actividad a Microsoft.",
@@ -14,12 +11,10 @@ export default {
   "Turns off the services that send telemetry and error reports to Microsoft.": "Apaga los servicios que envían telemetría y el informe de errores a Microsoft.",
   "Turns off services a VM doesn't use: maps, location, fax, demo mode and Windows Media sharing.": "Apaga servicios que una VM no usa: mapas, ubicación, fax, modo demo y uso compartido de Windows Media.",
   "Microsoft Store apps don't run in the background.": "Las apps de Microsoft Store no corren en segundo plano.",
-  // GpuVM service (app/host)
   "The GpuVM service is stopping.": "El servicio de GpuVM se está deteniendo.",
   "This needs your confirmation as administrator.": "Hace falta confirmarlo como administrador.",
   "The Windows session belongs to another user.": "La sesión de Windows pertenece a otro usuario.",
   "GpuVM needs an administrator account on this PC.": "GpuVM necesita una cuenta de administrador de este equipo.",
-  // Desktop app (src-tauri)
   "The prompt already closed.": "El aviso ya se cerró.",
   "The prompt is still being read.": "Todavía se está leyendo el aviso.",
   "The prompt just appeared.": "El aviso acaba de aparecer.",

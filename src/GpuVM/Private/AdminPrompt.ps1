@@ -1,10 +1,5 @@
-# Windows administrator prompts in a VM captured with WGC (guest\admin-prompt.ps1, labs 025 and 026): the guest
-# publishes the open prompt through Hyper-V's data exchange, the app shows it on the host, and the person's answer is
-# carried back through PowerShell Direct. Only the host can give that order; nothing in the guest can answer for itself.
-
 $script:AdminPromptDir = 'C:\Program Files\GpuVM\AdminPrompt'
 
-# Installs or updates the watcher in the guest when its code changed (by hash). Returns $true when it (re)installed.
 function Install-GuestAdminPrompt {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -36,8 +31,7 @@ function Install-GuestAdminPrompt {
     (ConvertTo-GuestString (@($answer)[-1])) -eq 'installed'
 }
 
-# A value the guest published through Hyper-V's data exchange (~100 ms, no PowerShell Direct), parsed from JSON, or
-# $null. Everything comes from the guest: callers rebuild what they use from short, checked strings.
+# Guest-controlled: callers rebuild what they use from short, checked strings.
 function Get-GuestKvpJson {
     param([Parameter(Mandatory)]$VM, [Parameter(Mandatory)][string]$Key)
     $kvp = Get-CimInstance -Namespace root\virtualization\v2 -ClassName Msvm_KvpExchangeComponent -Filter "SystemName='$($VM.Id.Guid.ToUpper())'" -ErrorAction SilentlyContinue
@@ -52,16 +46,12 @@ function Get-GuestKvpJson {
     $null
 }
 
-# The administrator prompt open in the guest: $null when none, else { id, app, publisher, reading, nonce }. reading:
-# the guest is still reading its program and publisher. nonce: the prompt's one-time code for an answer through the
-# data exchange ($null with a watcher from before lab 042); it never leaves the module.
 function Get-GuestAdminPromptState {
     param([Parameter(Mandatory)][string]$Name)
     $vm = Get-VM -Name $Name -ErrorAction Stop
     if ($vm.State -ne 'Running') { return $null }
     $data = Get-GuestKvpJson -VM $vm -Key 'GpuVMAdminPrompt'
     if ($data -isnot [pscustomobject]) { return $null }
-    # Fields a watcher may not send (older ones have no nonce or reading): read without failing under strict mode.
     $field = @{}
     foreach ($p in $data.PSObject.Properties) { $field[$p.Name] = $p.Value }
     if ($field['open'] -ne $true) { return $null }
@@ -76,7 +66,6 @@ function Get-GuestAdminPromptState {
     }
 }
 
-# The open prompt as the app sees it: { id, app, publisher, reading }, or $null.
 function Get-GuestAdminPrompt {
     param([Parameter(Mandatory)][string]$Name)
     $state = Get-GuestAdminPromptState -Name $Name
@@ -84,8 +73,7 @@ function Get-GuestAdminPrompt {
     [pscustomobject]@{ id = $state.id; app = $state.app; publisher = $state.publisher; reading = $state.reading }
 }
 
-# A host item of Hyper-V's data exchange for a VM (Msvm_KvpExchangeDataItem, source 0): the guest sees it under
-# HKLM\SOFTWARE\Microsoft\Virtual Machine\External, a key only SYSTEM and administrators can write there.
+# Host KVP items appear in the guest under HKLM\SOFTWARE\Microsoft\Virtual Machine\External, writable only by SYSTEM and administrators.
 function ConvertTo-KvpItemText {
     param([Parameter(Mandatory)][string]$Key, [AllowEmptyString()][string]$Value)
     $k = [Security.SecurityElement]::Escape($Key)
@@ -112,14 +100,10 @@ function Invoke-HostKvpMethod {
 
 function Set-HostKvpItem {
     param([Parameter(Mandatory)]$VM, [Parameter(Mandatory)][string]$Key, [Parameter(Mandatory)][string]$Value)
-    # Modify when it exists (a previous answer), else add.
     try { Invoke-HostKvpMethod -VM $VM -Method ModifyKvpItems -Key $Key -Value $Value }
     catch { Invoke-HostKvpMethod -VM $VM -Method AddKvpItems -Key $Key -Value $Value }
 }
 
-# Answers through the data exchange (lab 042, ~1 s instead of ~5 s): the guest's watcher presses the button only if
-# the prompt open is still -PromptId with the same one-time code. Returns done, changed or error: ..., or $null when
-# the guest never acknowledged it (the caller may fall back to PowerShell Direct).
 function Send-GuestAdminPromptAnswer {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -148,8 +132,7 @@ function Send-GuestAdminPromptAnswer {
     }
 }
 
-# Presses Yes or No on the guest's prompt if it is still the one with -PromptId. Runs as SYSTEM in the guest (a
-# one-time task): reaching the secure desktop needs it. Returns done, changed (another prompt, or none) or error: ...
+# Runs as SYSTEM in the guest: reaching the secure desktop needs it.
 function Invoke-GuestAdminPromptAnswer {
     param(
         [Parameter(Mandatory)][string]$Name,

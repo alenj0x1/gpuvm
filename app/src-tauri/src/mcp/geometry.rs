@@ -1,18 +1,9 @@
-//! Screenshot sizes and the coordinate round trip.
-//!
-//! The model sees a scaled picture and answers in that picture's pixels. Every screenshot keeps its own mapping
-//! (`Shot`) so a click is converted with the scale of the picture the model actually looked at, never with a
-//! newer one. Mapping a screenshot pixel back lands on the centre of its footprint on the real desktop, so the
-//! round trip full → screenshot → full stays inside the same screenshot pixel at every scale.
+// Each screenshot keeps its own mapping, so a click converts with the scale of the picture the model looked at.
 
-/// Anthropic's image limits for one picture: long edge and total pixels.
 pub const MAX_EDGE: u32 = 2576;
 pub const MAX_PIXELS: u64 = 3_750_000;
-/// Default picture size (fits WXGA; a 1920x1080 desktop becomes 1280x720).
 pub const DEFAULT_MAX: (u32, u32) = (1280, 800);
 
-/// The size a `w`×`h` desktop (or region) is sent at inside a `max_w`×`max_h` box, keeping its aspect ratio,
-/// never enlarged, and within Anthropic's limits whatever box was asked for.
 pub fn fit(w: u32, h: u32, max_w: u32, max_h: u32) -> (u32, u32) {
     if w == 0 || h == 0 {
         return (0, 0);
@@ -35,23 +26,18 @@ pub fn fit(w: u32, h: u32, max_w: u32, max_h: u32) -> (u32, u32) {
     (sw, sh)
 }
 
-/// One picture the model saw: which part of the desktop it shows and at what size.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Shot {
     pub id: u32,
     pub machine: String,
-    /// Full desktop size at capture time.
     pub screen: (u32, u32),
-    /// Top-left of the part shown (0,0 unless zoomed) and its size, in desktop pixels.
     pub origin: (u32, u32),
     pub region: (u32, u32),
-    /// Picture size as sent.
     pub sent: (u32, u32),
     pub zoom: bool,
 }
 
 impl Shot {
-    /// A screenshot pixel (fractions allowed) → the desktop pixel at the centre of its footprint.
     pub fn to_full(&self, x: f64, y: f64) -> Result<(i32, i32), String> {
         if !x.is_finite() || !y.is_finite() {
             return Err("Coordinates must be numbers.".into());
@@ -66,7 +52,6 @@ impl Shot {
         Ok((axis(x, self.origin.0, self.region.0, sw), axis(y, self.origin.1, self.region.1, sh)))
     }
 
-    /// A rectangle in this picture's pixels → the desktop pixels it covers, [x, y, w, h] (for zooming in).
     pub fn rect_to_full(&self, x: f64, y: f64, w: f64, h: f64) -> Result<[u32; 4], String> {
         if ![x, y, w, h].iter().all(|v| v.is_finite()) || w < 1.0 || h < 1.0 {
             return Err("The zoom must be [x, y, width, height] with a width and height of at least 1.".into());
@@ -85,7 +70,6 @@ impl Shot {
         Ok([self.origin.0 + fx0, self.origin.1 + fy0, fx1 - fx0, fy1 - fy0])
     }
 
-    /// A desktop pixel → the screenshot pixel that shows it (None when outside a zoomed region).
     pub fn to_shot(&self, fx: i64, fy: i64) -> Option<(u32, u32)> {
         let rx = fx - self.origin.0 as i64;
         let ry = fy - self.origin.1 as i64;
@@ -98,7 +82,6 @@ impl Shot {
         ))
     }
 
-    /// A desktop rectangle → [x, y, w, h] in this picture (clipped; None when not visible).
     pub fn rect_to_shot(&self, r: [i64; 4]) -> Option<[u32; 4]> {
         let x0 = r[0].max(self.origin.0 as i64);
         let y0 = r[1].max(self.origin.1 as i64);
@@ -113,21 +96,17 @@ impl Shot {
     }
 }
 
-/// A drag along strokes: at most this many points in all (the guest's request frame is 64 KiB) and strokes.
+// Bounded by the guest's 64 KiB request frame.
 pub const MAX_PATH_POINTS: usize = 4000;
 pub const MAX_STROKES: usize = 200;
-/// Longest drag, and the default speed in desktop pixels per second (the same as the guest agent's).
 pub const MAX_DRAG_MS: i64 = 60_000;
 pub const DRAG_SPEED: f64 = 1500.0;
 
-/// How long a drag of `length` desktop pixels takes at the default speed (at least 1 ms a stroke).
 pub fn drag_ms(length: f64, strokes: usize) -> u64 {
     ((length / DRAG_SPEED * 1000.0).round() as u64).max(strokes as u64).min(MAX_DRAG_MS as u64)
 }
 
 impl Shot {
-    /// A drag's strokes, each a list of [x, y] in this picture's pixels → flat [x0, y0, x1, y1, ...] lists of
-    /// desktop pixels, plus their total length on the desktop.
     pub fn strokes_to_full(&self, strokes: &[serde_json::Value]) -> Result<(Vec<Vec<i32>>, f64), String> {
         if strokes.is_empty() || strokes.len() > MAX_STROKES {
             return Err(format!("Give 1 to {MAX_STROKES} strokes."));
@@ -158,8 +137,7 @@ impl Shot {
 
 fn axis(v: f64, origin: u32, region: u32, sent: u32) -> i32 {
     let (p, r, s) = (v.floor() as u64, region as u64, sent as u64);
-    // Centre of the footprint, (p + 0.5) * r / s, kept inside the desktop pixels that p shows: from
-    // ceil(p * r / s) to ceil((p + 1) * r / s) - 1 (at least one, since pictures are never enlarged).
+    // Centre of the footprint, kept within ceil(p*r/s)..=ceil((p+1)*r/s)-1 (at least one pixel: pictures are never enlarged).
     let centre = ((2 * p + 1) * r) / (2 * s);
     let first = (p * r).div_ceil(s);
     let last = ((p + 1) * r).div_ceil(s).saturating_sub(1).max(first);
@@ -178,19 +156,17 @@ mod tests {
     fn fit_respects_limits_and_aspect() {
         assert_eq!(fit(1920, 1080, 1280, 800), (1280, 720));
         assert_eq!(fit(1280, 720, 1280, 800), (1280, 720));
-        assert_eq!(fit(800, 600, 1280, 800), (800, 600)); // never enlarged
+        assert_eq!(fit(800, 600, 1280, 800), (800, 600));
         assert_eq!(fit(2560, 1600, 1280, 800), (1280, 800));
         for &(w, h) in &[(3840u32, 2160u32), (7680, 4320), (5120, 1440), (1080, 1920), (2560, 1600), (100, 9000)] {
             let (sw, sh) = fit(w, h, 99999, 99999);
             assert!(sw <= MAX_EDGE && sh <= MAX_EDGE, "{w}x{h} -> {sw}x{sh}");
             assert!((sw as u64) * (sh as u64) <= MAX_PIXELS, "{w}x{h} -> {sw}x{sh}");
-            // Same aspect ratio, give or take the rounding of one side.
             assert!((sw as f64 - w as f64 * sh as f64 / h as f64).abs() <= 1.0 || (sh as f64 - h as f64 * sw as f64 / w as f64).abs() <= 1.0, "{w}x{h} -> {sw}x{sh}");
         }
         assert_eq!(fit(0, 10, 100, 100), (0, 0));
     }
 
-    /// Every desktop pixel → screenshot pixel → desktop pixel stays inside the same screenshot pixel.
     #[test]
     fn round_trip_every_pixel_at_several_scales() {
         let screens = [(1920u32, 1080u32), (2560, 1440), (1366, 768), (3840, 2160), (1280, 720)];
@@ -247,7 +223,6 @@ mod tests {
         let (dx, dy) = s.to_full(100.0, 50.0).unwrap();
         assert_eq!(flat, vec![vec![0, 0, 960, 540, 1919, 1079], vec![dx, dy]]);
         assert!((len - 2.0 * (960f64).hypot(540.0)).abs() < 2.0, "{len}");
-        // a zoomed picture maps through its region
         let z = shot((1920, 1080), (100, 100), (200, 100), (200, 100));
         assert_eq!(z.strokes_to_full(&[json!([[0, 0], [199, 99]])]).unwrap().0, vec![vec![100, 100, 299, 199]]);
         for bad in [json!([]), json!([[1]]), json!([[1, "a"]]), json!([[1280, 0]]), json!([[-1, 0]]), json!(5), json!([[0, 0, 0]])] {

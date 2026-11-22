@@ -1,6 +1,4 @@
-//! screen.capture: Windows.Graphics.Capture of the display the person sees (lab 048: DXGI duplication loses access on
-//! GpuVM's virtual display; WGC works), downscaled on the CPU and encoded lossless (WebP by default, PNG on request).
-//! The capture session stays open between screenshots (opening costs ~250 ms) and is closed after 30 s unused.
+//! WGC, not DXGI duplication: duplication loses access on GpuVM's virtual display.
 use crate::util::wstr;
 use serde_json::{json, Value};
 use std::sync::Mutex;
@@ -30,7 +28,6 @@ pub struct Output {
 
 unsafe impl Send for Output {}
 
-/// One display attached to the desktop, as GDI sees it (physical pixels, independent of DPI awareness).
 #[derive(Clone, Debug)]
 pub struct Display {
     pub device: String,
@@ -73,9 +70,7 @@ pub fn displays() -> Vec<Display> {
     v
 }
 
-/// The display the agent works on: the one GpuVM streams (its virtual display driver), else the primary one.
-/// With the agent's session a Hyper-V video display (1024x768) can be the primary while the person sees the
-/// virtual display (broker finding, Nov 18).
+/// A Hyper-V video display (1024x768) can be the primary while the person sees the virtual display.
 pub fn target_display() -> Option<Display> {
     let all = displays();
     let vdd = |d: &&Display| {
@@ -94,7 +89,6 @@ pub fn displays_json() -> Value {
         .collect::<Vec<_>>())
 }
 
-/// The DXGI output of the target display (for the capture device); the old primary/hardware heuristic as fallback.
 pub fn primary_output() -> Option<Output> {
     let target = target_display();
     let mut best: Option<(u8, Output)> = None;
@@ -125,28 +119,20 @@ pub fn primary_output() -> Option<Output> {
     best.map(|(_, o)| o)
 }
 
-/// How long after its request a screenshot takes the newest frame (`settleMs` changes it, ≤ MAX_SETTLE; lab 062):
-/// an action that just answered "done" reaches the screen a few ms later (a drag's stroke, then the app redrawing the
-/// finished stroke). Frames can't tell a change from a still screen: on GpuVM's display Windows delivers ~180 a
-/// second either way, and dirty regions need Windows 11 24H2.
+/// Frames can't tell a change from a still screen: Windows delivers ~180 a second either way.
 pub const SETTLE: Duration = Duration::from_millis(SETTLE_MS);
 pub const SETTLE_MS: u64 = 30;
 pub const MAX_SETTLE_MS: u64 = 1000;
-/// How long a screenshot waits for the first frame of a session (a session opened right after a display change takes
-/// longer for its first frame, lab 051).
+/// A session opened right after a display change takes longer for its first frame.
 const FIRST_WAIT: Duration = Duration::from_secs(3);
 
 #[derive(Debug, PartialEq)]
 enum Step {
     Take,
-    /// wait for a newer frame, at most this long, then ask again
     Wait(Duration),
     Fail,
 }
 
-/// What a screenshot does with the newest frame it has (`at` = when it arrived), `start` = when it was asked for:
-/// it takes the newest once `settle` passed since the request, never a frame from before that point while newer ones
-/// may come; with no frame at all (a session just opened) it waits up to FIRST_WAIT, then fails.
 fn step(at: Option<Instant>, start: Instant, now: Instant, settle: Duration) -> Step {
     match at {
         None if now >= start + FIRST_WAIT => Step::Fail,
@@ -156,22 +142,15 @@ fn step(at: Option<Instant>, start: Instant, now: Instant, settle: Duration) -> 
     }
 }
 
-/// Mip level read back to check a frame: one texel per 32x32 block.
 const CHECK_MIP: u32 = 5;
-/// How long a frame Windows hasn't finished drawing is copied again before it's taken as it is.
 const CHECK_BUDGET: Duration = Duration::from_millis(25);
 
-/// Blocks (one alpha per block) that came out transparent where the reference frame was opaque: places Windows hadn't
-/// drawn yet. Without a reference (a session's first frame) every transparent block counts.
 fn unfinished_blocks(alpha: &[u8], reference: &[u8]) -> usize {
     let have = reference.len() == alpha.len();
     alpha.iter().enumerate().filter(|(i, a)| **a < 250 && (!have || reference[*i] >= 250)).count()
 }
 
-/// The check of each frame for parts Windows hadn't finished drawing (lab 063): on a GPU-P display WGC can hand over a
-/// frame whose composition is still running on the GPU, and what changed is still transparent black (a screenshot
-/// with black bands, or a black screen). A finished desktop frame is opaque, so the frame also goes into a texture
-/// with mips and its last mip (~2 KB) is read back.
+/// On a GPU-P display WGC can hand over a frame still being composed: what changed is transparent black.
 struct FrameCheck {
     tex: ID3D11Texture2D,
     srv: ID3D11ShaderResourceView,
@@ -215,8 +194,6 @@ impl FrameCheck {
         Ok(FrameCheck { tex: tex.unwrap(), srv: srv.unwrap(), stage: stage.unwrap(), size: (w, h), alpha: Vec::new(), reference: Vec::new() })
     }
 
-    /// Copies `src` into `dst` and checks it in the same submission; waits for both (the read-back). Returns the
-    /// blocks still unfinished.
     fn copy(&mut self, ctx: &ID3D11DeviceContext, dst: &ID3D11Texture2D, src: &ID3D11Texture2D) -> windows::core::Result<usize> {
         let (mw, mh) = (((self.size.0 >> CHECK_MIP).max(1)) as usize, ((self.size.1 >> CHECK_MIP).max(1)) as usize);
         unsafe {
@@ -238,25 +215,19 @@ impl FrameCheck {
         Ok(unfinished_blocks(&self.alpha, &self.reference))
     }
 
-    /// The frame just taken becomes the reference.
     fn accept(&mut self) {
         std::mem::swap(&mut self.alpha, &mut self.reference);
     }
 }
 
-/// What the check did since the capture opened (reported with each screenshot).
 #[derive(Default, Clone, Copy)]
 struct CheckStats {
-    /// frames that came unfinished and were finished by copying again
     finished: u64,
-    /// frames still unfinished after CHECK_BUDGET, taken as they were
     as_is: u64,
-    /// frames that came unfinished while the check is switched off (kept as they came)
     seen_off: u64,
     max_wait_us: u64,
 }
 
-/// Waits (at most 50 ms) for the work queued on `ctx` to finish on the GPU.
 unsafe fn wait_gpu(dev: &ID3D11Device, ctx: &ID3D11DeviceContext) {
     let mut q = None;
     if dev.CreateQuery(&D3D11_QUERY_DESC { Query: D3D11_QUERY_EVENT, MiscFlags: 0 }, Some(&mut q)).is_err() {
@@ -273,12 +244,10 @@ unsafe fn wait_gpu(dev: &ID3D11Device, ctx: &ID3D11DeviceContext) {
     }
 }
 
-/// `C:\Program Files\GpuVM Agent\frame-check-off.txt` turns the waiting off (the check still counts), for labs.
 fn check_waits() -> bool {
     !std::path::Path::new(r"C:\Program Files\GpuVM Agent\frame-check-off.txt").exists()
 }
 
-/// The pool's side of a capture, used only by its FrameArrived handler.
 struct Pool {
     dev: ID3D11Device,
     ctx: ID3D11DeviceContext,
@@ -292,9 +261,7 @@ struct Pool {
 unsafe impl Send for Pool {}
 
 impl Pool {
-    /// Takes every frame waiting in the pool and returns a copy of the newest (`resized` when the display changed
-    /// size). Run on each FrameArrived, so the pool's two buffers never stay full: with both full, Windows drops new
-    /// frames, and a screenshot taken after a drag got the frame from before it (lab 062, 0/10 fresh with 0.4.8).
+    /// Run on each FrameArrived: with both pool buffers full, Windows drops new frames.
     fn drain(&mut self, pool: &Direct3D11CaptureFramePool, resized: &mut bool) -> windows::core::Result<Option<ID3D11Texture2D>> {
         let mut newest: Option<windows::Graphics::Capture::Direct3D11CaptureFrame> = None;
         while let Ok(frame) = pool.TryGetNextFrame() {
@@ -309,7 +276,6 @@ impl Pool {
                 }
                 continue;
             }
-            // only the newest is copied
             if let Some(old) = newest.replace(frame) {
                 let _ = old.Close();
             }
@@ -325,8 +291,7 @@ impl Pool {
             self.dev.CreateTexture2D(&od, None, Some(&mut own))?;
             own.unwrap()
         };
-        // Only a frame Windows has finished drawing (lab 063); the copy is also waited for, so the frame goes back to
-        // the pool only once it's read (lab 057).
+        // The copy is waited for, so the frame goes back to the pool only once it's read.
         if self.check.as_ref().map(|c| c.size) != Some((desc.Width, desc.Height)) {
             self.check = FrameCheck::new(&self.dev, desc.Width, desc.Height).ok();
         }
@@ -356,7 +321,6 @@ impl Pool {
                 check.accept();
             }
             None => unsafe {
-                // no check textures: copy, and wait for it on the GPU before the frame goes back
                 self.ctx.CopyResource(&own, &tex);
                 wait_gpu(&self.dev, &self.ctx);
             },
@@ -366,13 +330,10 @@ impl Pool {
     }
 }
 
-/// What a screenshot reads: the newest frame's copy and when it arrived. Its lock is never held across a call into
-/// Direct3D or the pool: the FrameArrived handler holds the device while it waits for this lock, and a screenshot
-/// that copied the frame under it hung (lab 062).
+/// Never held across a call into Direct3D or the pool: the FrameArrived handler holds the device while it waits for this lock.
 #[derive(Default)]
 struct Latest {
     frame: Option<(ID3D11Texture2D, Instant)>,
-    /// frames delivered since the session opened
     count: u64,
     resized: bool,
     error: Option<String>,
@@ -393,9 +354,7 @@ pub struct Wgc {
     pub output: Output,
     pub last_used: Instant,
     pub opened_ms: f64,
-    /// frames that arrived while the last screenshot waited for the screen to settle
     pub settle_frames: u64,
-    /// what the unfinished-frame check did since the capture opened, as of the last screenshot
     check_stats: CheckStats,
 }
 
@@ -437,8 +396,7 @@ impl Wgc {
         let latest: Shared = std::sync::Arc::new((Mutex::new(Latest::default()), std::sync::Condvar::new()));
         let shared = latest.clone();
         let own = Mutex::new(Pool { dev: dev.clone(), ctx: ctx.clone(), d3d, size, check: None, waits: check_waits(), stats: CheckStats::default() });
-        // The handler gets the pool as its sender (holding the pool here would keep it alive through its own handler)
-        // and returns at once when raised again on its own thread while draining (that loop takes the frame).
+        // The handler gets the pool as its sender: holding it here would keep it alive through its own handler.
         let arrived = pool.FrameArrived(&windows::Foundation::TypedEventHandler::new(move |sender: windows::core::Ref<Direct3D11CaptureFramePool>, _| {
             thread_local!(static DRAINING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) });
             if DRAINING.with(|d| d.replace(true)) {
@@ -477,8 +435,6 @@ impl Wgc {
         Ok(Wgc { dev, ctx, pool, session, latest, arrived, output: o, last_used: Instant::now(), opened_ms: t.elapsed().as_secs_f64() * 1e3, settle_frames: 0, check_stats: CheckStats::default() })
     }
 
-    /// The screen as tightly packed BGRA, never older than the request when the screen changed: a frame that arrives
-    /// after the request started is taken at once; with none, the newest after FRESH_WAIT (see `step`).
     pub fn grab(&mut self, settle: Duration) -> Result<(u32, u32, Vec<u8>), String> {
         self.last_used = Instant::now();
         let start = Instant::now();
@@ -502,7 +458,6 @@ impl Wgc {
         let resized = std::mem::take(&mut l.resized);
         drop(l);
         if resized {
-            // the display mode changed: its rect on the desktop (used to place input) too
             if let Some(o) = primary_output().filter(|o| o.monitor == self.output.monitor) {
                 self.output.rect = o.rect;
             }
@@ -540,10 +495,8 @@ impl Wgc {
     }
 }
 
-/// The open capture, shared by the request loop and the idle timer.
 pub static CAPTURE: Mutex<Option<Wgc>> = Mutex::new(None);
 
-/// Closes the capture when unused for 30 s (called by the events thread).
 pub fn close_if_idle() {
     let mut g = CAPTURE.lock().unwrap();
     if g.as_ref().is_some_and(|w| w.last_used.elapsed() > Duration::from_secs(30)) {
@@ -551,7 +504,6 @@ pub fn close_if_idle() {
     }
 }
 
-/// [x,y,w,h] (non-negative integers) fully inside fw x fh, with no overflow on the way (security review 7).
 pub fn region_inside(v: &[u64], fw: u32, fh: u32) -> Option<(u32, u32, u32, u32)> {
     if v.len() != 4 || v[2] == 0 || v[3] == 0 {
         return None;
@@ -570,14 +522,10 @@ mod tests {
 
     #[test]
     fn a_frame_is_unfinished_where_it_turned_transparent() {
-        // finished desktop frames are opaque
         assert_eq!(unfinished_blocks(&[255, 255, 255, 255], &[255, 255, 255, 255]), 0);
-        // blocks Windows hadn't drawn yet come out transparent (and partly drawn ones, partly)
         assert_eq!(unfinished_blocks(&[255, 0, 120, 255], &[255, 255, 255, 255]), 2);
-        // content that really is transparent, already in the reference, doesn't hold every frame up
         assert_eq!(unfinished_blocks(&[0, 0, 255, 255], &[0, 0, 255, 255]), 0);
         assert_eq!(unfinished_blocks(&[0, 0, 0, 255], &[0, 0, 255, 255]), 1);
-        // no reference yet (a capture's first frame, or a new size): every transparent block counts
         assert_eq!(unfinished_blocks(&[0, 255, 249, 250], &[]), 2);
     }
 
@@ -586,15 +534,11 @@ mod tests {
         let start = Instant::now() + Duration::from_secs(10);
         let ms = |n: u64| start + Duration::from_millis(n);
         let before = Some(start - Duration::from_millis(5));
-        // a frame from before the request, or one right after it: not yet (the action's frames may be on their way)
         assert_eq!(step(before, start, start, SETTLE), Step::Wait(SETTLE));
         assert_eq!(step(Some(ms(3)), start, ms(3), SETTLE), Step::Wait(SETTLE - Duration::from_millis(3)));
-        // the newest, once SETTLE passed
         assert_eq!(step(before, start, start + SETTLE, SETTLE), Step::Take);
         assert_eq!(step(Some(ms(29)), start, start + SETTLE, SETTLE), Step::Take);
-        // settleMs 0: whatever is newest, at once
         assert_eq!(step(before, start, start, Duration::ZERO), Step::Take);
-        // no frame yet (a session just opened): up to FIRST_WAIT, then fail
         assert_eq!(step(None, start, ms(500), SETTLE), Step::Wait(FIRST_WAIT - Duration::from_millis(500)));
         assert_eq!(step(None, start, start + FIRST_WAIT, SETTLE), Step::Fail);
     }
@@ -610,7 +554,6 @@ mod tests {
     }
 }
 
-/// Crop of a BGRA frame.
 fn crop(bgra: &[u8], w: u32, x: u32, y: u32, cw: u32, ch: u32) -> Vec<u8> {
     let mut out = Vec::with_capacity((cw * ch * 4) as usize);
     for row in y..y + ch {
@@ -620,7 +563,6 @@ fn crop(bgra: &[u8], w: u32, x: u32, y: u32, cw: u32, ch: u32) -> Vec<u8> {
     out
 }
 
-/// BGRA -> RGB with an area-average downscale to fit max_w x max_h (no upscaling), in one pass.
 pub fn to_rgb_fit(bgra: &[u8], w: u32, h: u32, max_w: u32, max_h: u32) -> (u32, u32, Vec<u8>) {
     let k = f64::min(max_w as f64 / w as f64, max_h as f64 / h as f64).min(1.0);
     let nw = ((w as f64 * k).round() as u32).max(1);
@@ -686,8 +628,7 @@ pub fn encode_webp(rgb: &[u8], w: u32, h: u32) -> Vec<u8> {
     buf
 }
 
-/// The captured display's rect on the virtual desktop (where protocol coordinates start), read fresh every time
-/// (the mode can change under us, e.g. when the viewer connects): the primary monitor, as primary_output() picks.
+/// Read fresh every time: the mode can change under us.
 pub fn output_rect() -> Option<RECT> {
     target_display().map(|d| d.rect).or_else(|| primary_output().map(|o| o.rect))
 }
@@ -709,7 +650,6 @@ pub fn screen_capture(p: &Value) -> CallResult {
     }
     let mut g = CAPTURE.lock().unwrap();
     let mut open_ms = 0.0;
-    // the target display changed (topology change, viewer connected): capture the new one
     let target = target_display().map(|d| d.monitor);
     if g.as_ref().is_some_and(|w| Some(w.output.monitor) != target) {
         *g = None;
@@ -726,7 +666,7 @@ pub fn screen_capture(p: &Value) -> CallResult {
     let (fw, fh, bgra) = match grabbed {
         Ok(x) => x,
         Err(e) => {
-            *g = None; // reopen next time
+            *g = None;
             return Err(("internal", e));
         }
     };
@@ -756,8 +696,6 @@ pub fn screen_capture(p: &Value) -> CallResult {
         "ms": {"open": (open_ms * 10.0).round() / 10.0, "grab": (grab_ms * 10.0).round() / 10.0, "scale": (scale_ms * 10.0).round() / 10.0,
                "encode": (encode_ms * 10.0).round() / 10.0, "total": (t0.elapsed().as_secs_f64() * 1e4).round() / 10.0},
         "settleFrames": settle_frames,
-        // frames Windows handed over unfinished since the capture opened: finished by copying again, or taken as they
-        // were after 25 ms (lab 063)
         "unfinishedFrames": {"finished": cs.finished, "asIs": cs.as_is, "seenUnchecked": cs.seen_off, "maxWaitUs": cs.max_wait_us},
     });
     if let Some(r) = region {

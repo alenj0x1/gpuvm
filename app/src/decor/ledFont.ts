@@ -1,5 +1,3 @@
-// A 5×7 dot font for the LED sign, like the ones on street signs: each glyph is seven rows of five dots.
-
 const G: Record<string, string> = {
   A: "01110 10001 10001 11111 10001 10001 10001", B: "11110 10001 10001 11110 10001 10001 11110",
   C: "01110 10001 10000 10000 10000 10001 01110", D: "11110 10001 10001 10001 10001 10001 11110",
@@ -32,8 +30,6 @@ const G: Record<string, string> = {
 };
 const GLYPHS = new Map(Object.entries(G).map(([k, v]) => [k, v.split(" ").map((r) => [...r].map((c) => c === "1"))]));
 
-/** The text as columns of seven dots (one blank column between letters), ready to scroll. Accents are dropped
- *  (Á is drawn as A), Ñ keeps its tilde and anything the font lacks becomes a space. */
 export function ledColumns(text: string): boolean[][] {
   const cols: boolean[][] = [];
   for (const ch of text.toUpperCase()) {

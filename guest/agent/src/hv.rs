@@ -1,5 +1,3 @@
-//! Hyper-V sockets (AF_HYPERV, lab 047): a blocking stream with Read/Write, dial (guest) and listen/accept (host
-//! harness), plus GUID helpers.
 use std::io::{self, Read, Write};
 use std::sync::Once;
 use windows::core::GUID;
@@ -22,7 +20,6 @@ pub fn guid_u128(g: &GUID) -> u128 {
     ((g.data1 as u128) << 96) | ((g.data2 as u128) << 80) | ((g.data3 as u128) << 64) | u64::from_be_bytes(g.data4) as u128
 }
 
-/// Lowercase, no braces (the protocol's vmId form).
 pub fn fmt_guid(g: &GUID) -> String {
     let h = format!("{:032x}", guid_u128(g));
     format!("{}-{}-{}-{}-{}", &h[0..8], &h[8..12], &h[12..16], &h[16..20], &h[20..32])
@@ -62,7 +59,6 @@ impl Drop for HvStream {
 }
 
 impl HvStream {
-    /// Sets SO_RCVTIMEO (a recv that waits longer fails with WSAETIMEDOUT) and SO_SNDTIMEO.
     pub fn set_timeouts(&self, recv_ms: u32, send_ms: u32) {
         unsafe {
             setsockopt(self.0, SOL_SOCKET, SO_RCVTIMEO, Some(&recv_ms.to_le_bytes()));
@@ -116,7 +112,6 @@ fn new_socket() -> io::Result<SOCKET> {
     unsafe { socket(AF_HYPERV as i32, SOCK_STREAM, HV_PROTOCOL_RAW).map_err(|_| last()) }
 }
 
-/// Dials `vm:service` (the guest dials HV_GUID_PARENT), with a connect timeout.
 pub fn dial(vm: u128, service: u128, timeout_ms: u32) -> io::Result<HvStream> {
     let s = HvStream(new_socket()?);
     unsafe {
@@ -155,7 +150,6 @@ impl HvListener {
         Ok(s)
     }
 
-    /// Waits up to `ms` for a connection; Ok(None) on timeout.
     pub fn accept_timeout(&self, ms: i32) -> io::Result<Option<(HvStream, GUID)>> {
         let mut fd = WSAPOLLFD { fd: self.0, events: POLLRDNORM, revents: WSAPOLL_EVENT_FLAGS(0) };
         let n = unsafe { WSAPoll(&mut fd, 1, ms) };
@@ -168,7 +162,6 @@ impl HvListener {
         self.accept().map(Some)
     }
 
-    /// Accepts one connection and returns it with the peer's VmId (what identifies the VM, lab 047).
     pub fn accept(&self) -> io::Result<(HvStream, GUID)> {
         let mut a = SockaddrHv::default();
         let mut n = std::mem::size_of::<SockaddrHv>() as i32;

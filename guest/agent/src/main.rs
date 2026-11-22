@@ -37,7 +37,6 @@ fn main() {
             println!("active console session: {:?}", session::active_session());
         }
         Some("diag") => {
-            // what the helper would see in this session: displays, the target one, a real WGC capture's size
             console();
             unsafe {
                 let _ = windows::Win32::UI::HiDpi::SetProcessDpiAwarenessContext(windows::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);

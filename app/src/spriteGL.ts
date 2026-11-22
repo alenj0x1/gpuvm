@@ -1,7 +1,3 @@
-// Many copies of one small image stamped on the GPU: the studs of the blocks world's baseplate. Stamped one by one
-// with the 2D canvas they were ~2,600 drawImage calls per frame with the camera low (the frame went from 5 to 28 ms
-// while turning); here they are one instanced draw into a shared WebGL canvas that the scene copies in once.
-
 const VS = `#version 300 es
 in vec2 aCorner; in vec3 aInst;
 uniform vec2 uSize; uniform vec2 uView; uniform float uUp;
@@ -46,23 +42,18 @@ function setup(): GL | null {
 
 let buf = new Float32Array(3 * 4096);
 let count = 0;
-/** Starts a batch: then add() each copy and draw() them all. */
 export function begin() { count = 0; }
-/** One copy, its anchor at (x, y) in CSS pixels, with this opacity. */
 export function add(x: number, y: number, alpha: number) {
   if ((count + 1) * 3 > buf.length) { const b = new Float32Array(buf.length * 2); b.set(buf); buf = b; }
   buf[count * 3] = x; buf[count * 3 + 1] = y; buf[count * 3 + 2] = alpha; count++;
 }
 
-/** Draws the batch onto `g` (whose transform scales CSS pixels by dpr): each copy is `image` at w × h, its top `up`
- *  pixels above the anchor. Returns false when WebGL is not available, so the caller stamps them itself. */
 export function draw(g: CanvasRenderingContext2D, image: HTMLCanvasElement, w: number, h: number, up: number, W: number, H: number, dpr: number): boolean {
   if (ctx === undefined) ctx = setup();
   if (!ctx) return false;
   if (!count) return true;
   const { c, gl, u } = ctx;
-  // Several scenes share this canvas (the website shows a few cubes at once): it only grows, each draws in its
-  // top-left corner, and each sprite keeps its own texture, so nothing is reallocated or uploaded again per call.
+  // Shared by several scenes: it only grows, each draws in its top-left corner, each sprite keeps its texture.
   const pw = Math.round(W * dpr), ph = Math.round(H * dpr);
   if (c.width < pw || c.height < ph) { c.width = Math.max(c.width, pw); c.height = Math.max(c.height, ph); }
   gl.viewport(0, c.height - ph, pw, ph);
@@ -70,7 +61,6 @@ export function draw(g: CanvasRenderingContext2D, image: HTMLCanvasElement, w: n
   gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
   let tex = ctx.texs.get(image);
   if (!tex) {
-    // A handful are kept (one per tilt step and color); the oldest goes when there are more.
     if (ctx.texs.size >= 12) { const [old, t] = ctx.texs.entries().next().value!; gl.deleteTexture(t); ctx.texs.delete(old); }
     tex = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D, tex);

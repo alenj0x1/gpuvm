@@ -1,9 +1,7 @@
-// Spanish for the public commands' and bridge messages of the module (see module.ts for how patterns work).
 export default {
 } as Record<string, string>;
 
 export const patterns: [RegExp, string][] = [
-  // One failed host check as the reason a machine can't be created ("This PC doesn't pass the check: <Name>: <Detail>").
   [/^Disk: A disposable machine needs (\d+) GB free on (.+) besides what is reserved for the other machines; there are (\d+) GB\.$/, "Disco: Una máquina desechable necesita $1 GB libres en $2 además de lo reservado para las otras máquinas; hay $3 GB."],
   [/^GPU: There's no GPU matching '(.+?)'\.$/, "GPU: No hay una GPU que coincida con '$1'."],
   [/^Space: (.+?) GB free on (.+?); about (.+?) GB are needed$/, "Espacio: $1 GB libres en $2; se necesitan ~$3 GB"],

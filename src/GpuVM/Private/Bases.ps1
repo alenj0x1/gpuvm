@@ -1,12 +1,5 @@
-# Windows bases: an ISO's edition applied once to a small read-only disk that has never booted (Windows is still
-# generalized, as it comes in the ISO). Every new VM from that edition starts as a copy of it instead of applying the
-# image again: the slow part (DISM unpacking ~20,000 files) happens once per ISO and edition. Copies don't depend on
-# the base, so a base can be deleted any time. Bases live in <root>\.bases\<key>\, readable only by Administrators
-# and SYSTEM; the key identifies the image itself (name, version, size, dates), not where the ISO is.
-
 # Bumped when the base's layout changes, so old bases are no longer used.
 $script:BaseFormat = 1
-# A base is small and grows to the VM's size when copied (profiles ask for at least 64 GB).
 $script:BaseDiskGB = 32
 
 function Get-BaseRoot { Join-Path (Get-GpuVMDefaultRoot) '.bases' }
@@ -23,7 +16,6 @@ function Get-WindowsImageKey {
     [Convert]::ToHexString($hash, 0, 8).ToLowerInvariant()
 }
 
-# The base's metadata (base.json) with its paths taken from where it really is.
 function Read-WindowsBase {
     param([Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{16}$')][string]$Key)
     $dir = Join-Path (Get-BaseRoot) $Key
@@ -37,7 +29,6 @@ function Read-WindowsBase {
     $meta
 }
 
-# The base disk for an ISO's edition, made now if there is none yet.
 function Get-WindowsBaseDisk {
     param(
         [Parameter(Mandatory)][string]$ImageFile,
@@ -58,10 +49,9 @@ function Get-WindowsBaseDisk {
     Protect-GpuVMSharedFolder -Path $root
     $dir = Join-Path $root $key
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
-    # The base takes about what Windows uses (~10-15 GB), and the VM's copy as much again.
     $freeGB = Get-DriveFreeGB $root
     if ($freeGB -lt 40) { throw "There's no room to prepare Windows: about 40 GB free are needed and there are $freeGB GB." }
-    # A build cut short (GpuVM closed, PC off) leaves its file behind; one still mounted is another build in progress.
+    # One still mounted is another build in progress.
     foreach ($old in Get-ChildItem -LiteralPath $dir -Filter 'building-*.vhdx' -File -ErrorAction SilentlyContinue) {
         if (-not (Get-VHD -Path $old.FullName -ErrorAction SilentlyContinue).Attached) { Remove-Item -LiteralPath $old.FullName -Force }
     }
@@ -77,7 +67,7 @@ function Get-WindowsBaseDisk {
                 imageFile = $ImageFile
                 createdAt = (Get-Date).ToString('o')
             })
-        # Another creation may have finished the same base meanwhile: its copy is used and this one dropped.
+        # Another creation may have finished the same base meanwhile.
         if (Test-Path -LiteralPath $vhdPath) { throw [System.OperationCanceledException]::new() }
         Move-Item -LiteralPath $building -Destination $vhdPath
     }

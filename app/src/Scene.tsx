@@ -2,42 +2,37 @@ import { useEffect, useRef } from "react";
 import { animFps, onAnimBudget, animDpr, paceFrame } from "./animBudget";
 import { hash, machineColor, patternVariant, random } from "./machineIcon";
 
-/** The three banner designs, all made of the logo's four-cell chip. */
 export type SceneStyle = "wafer" | "partition" | "mosaic";
 export const SCENE_STYLES: SceneStyle[] = ["wafer", "partition", "mosaic"];
 
 const STYLE_KEY = "gpuvm.banner.";
-/** The banner a machine shows: picked by hand ("Another banner") or, until then, by its name. */
 export function sceneStyle(name: string): SceneStyle {
   try {
     const saved = localStorage.getItem(STYLE_KEY + name) as SceneStyle | null;
     if (saved && SCENE_STYLES.includes(saved)) return saved;
-  } catch { /* no storage */ }
+  } catch {}
   return SCENE_STYLES[hash(`${name}#banner`) % SCENE_STYLES.length];
 }
 export function nextSceneStyle(name: string): SceneStyle {
   const next = SCENE_STYLES[(SCENE_STYLES.indexOf(sceneStyle(name)) + 1) % SCENE_STYLES.length];
-  try { localStorage.setItem(STYLE_KEY + name, next); } catch { /* no storage */ }
+  try { localStorage.setItem(STYLE_KEY + name, next); } catch {}
   window.dispatchEvent(new Event("gpuvm-pattern"));
   return next;
 }
 
-/** A renamed machine keeps the banner picked for it. */
 export function renameSceneStyle(from: string, to: string) {
   try {
     const saved = localStorage.getItem(STYLE_KEY + from);
     if (saved) { localStorage.setItem(STYLE_KEY + to, saved); localStorage.removeItem(STYLE_KEY + from); }
-  } catch { /* no storage */ }
+  } catch {}
 }
 
-/** What the machine is doing, 0-100 each. */
 export interface SceneActivity { cpu: number; gpu: number; mem: number }
 
 interface Props {
   name: string;
   variant?: number;
   style: SceneStyle;
-  /** Hyper-V state: Running moves with the activity, Off is drawn once and still, the rest (starting, saving…) sweep. */
   state: string;
   activity: SceneActivity;
 }
@@ -49,9 +44,6 @@ function round(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: 
   g.roundRect(x, y, w, h, r);
 }
 
-/** A machine's banner, drawn on a canvas from its name (always the same for that machine) and alive with what it
- *  does: the GPU sets the pace, the processor how much flickers and the memory how much is filled. Off, it rests;
- *  while it starts or stops a sweep crosses it. It pauses while the window is hidden. */
 export function Scene({ name, variant, style, state, activity }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
   const target = useRef(activity);
@@ -66,7 +58,6 @@ export function Scene({ name, variant, style, state, activity }: Props) {
     const seed = hash(`${name}#${v}#${style}`);
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const moving = phase === "on" || phase === "sweep";
-    // Smoothed activity: numbers arrive every 2 s, the drawing eases toward them.
     const now = { ...target.current };
     let t = 0;
     let last = performance.now(), drawnAt = 0;
@@ -107,8 +98,6 @@ export function Scene({ name, variant, style, state, activity }: Props) {
     }
 
     const draw = (stamp: number) => {
-      // The shared budget (animBudget.ts): nothing while a machine's picture covers the app, fewer frames without
-      // the focus.
       const cap = animFps();
       if (cap === 0) { frame = 0; stale = true; return; }
       const due = paceFrame(stamp, drawnAt, cap);
@@ -137,13 +126,11 @@ export function Scene({ name, variant, style, state, activity }: Props) {
         g.clearRect(0, 0, w, h);
         const ink = getComputedStyle(canvas).getPropertyValue("--scene-ink").trim() || "#888";
         const rest = phase === "off" ? 0.6 : 1;
-        // While starting or stopping, a band crosses from left to right and lights what it passes.
         const sweepX = phase === "sweep" ? ((t * 0.35) % 1.3 - 0.15) * w : -1e9;
         const swept = (x: number) => Math.max(0, 1 - Math.abs(x - sweepX) / 60);
         const L = layout!;
 
         if (L.kind === "wafer") {
-          // The wafer slides with the GPU; dies flicker with the processor and fill with the memory.
           const step = L.D + L.G;
           const ox = -((t * 18) % step) - step;
           const oy = (h - L.rows * step + L.G) / 2;
@@ -162,7 +149,6 @@ export function Scene({ name, variant, style, state, activity }: Props) {
               g.fill();
             });
           }
-          // This machine's own die stays still in front, its part beating with the GPU.
           const mx = L.mine.x, my = oy + L.mine.j * step;
           round(g, mx - 3, my - 3, L.D + 6, L.D + 6, 7);
           g.fillStyle = getComputedStyle(canvas).getPropertyValue("--surface").trim() || "#1c1c1c"; g.globalAlpha = 1; g.fill();
@@ -176,7 +162,6 @@ export function Scene({ name, variant, style, state, activity }: Props) {
             g.fill();
           });
         } else if (L.kind === "partition") {
-          // Cells in the machine's color are the GPU in use, the pale ones the memory; the processor makes them shimmer.
           const lit = gpu * L.n, used = Math.min(L.n, lit + mem * L.n * 0.6);
           L.order.forEach((idx, k) => {
             const i = idx % L.cols, j = Math.floor(idx / L.cols);
@@ -194,8 +179,6 @@ export function Scene({ name, variant, style, state, activity }: Props) {
             g.fill();
           });
         } else {
-          // Tiles of every size: more of them warm up with the processor, they beat with the GPU, and the memory
-          // raises how visible the rest are.
           for (const tile of L.tiles) {
             const x = tile.i * L.U + 1, y = tile.j * L.U + 1, S = tile.s * L.U - 2, q = (S - 3) / 2;
             const hot = tile.rank < 0.06 + cpu * 0.3;
@@ -218,8 +201,6 @@ export function Scene({ name, variant, style, state, activity }: Props) {
       }
       if (moving && !reduced && seen) frame = requestAnimationFrame(draw);
     };
-    // Only a scene on screen keeps moving: with many machines, the ones scrolled out of view cost nothing.
-    // Out of view it isn't drawn at all, not even once on a resize; it catches up when it comes into view.
     let seen = true, stale = false;
     const restart = () => {
       cancelAnimationFrame(frame);
@@ -233,7 +214,6 @@ export function Scene({ name, variant, style, state, activity }: Props) {
     resize.observe(canvas);
     const visibility = () => { if (document.hidden) cancelAnimationFrame(frame); else restart(); };
     document.addEventListener("visibilitychange", visibility);
-    // Theme and palette changes repaint the still ones too.
     const theme = new MutationObserver(restart);
     theme.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     window.addEventListener("gpuvm-palette", restart);

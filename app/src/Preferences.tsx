@@ -9,7 +9,7 @@ import { Segmented, Slider, humanError } from "./ui";
 import { t, type LangPref } from "./i18n";
 import { MonitorPicker, useMonitors } from "./pickers";
 
-// Functions, so each text is read in the language of the moment.
+// Functions, so texts follow the current language.
 const serviceText = (): Record<ServicePref, string> => ({
   app: t("Starts when GpuVM opens and stops when you quit, once it finishes what it was doing."),
   windows: t("Starts with Windows and is ready before GpuVM opens."),
@@ -26,7 +26,6 @@ const stateText = (): Record<ServiceStatus["state"], string> => ({
 
 const DOT: Record<ServiceStatus["state"], string> = { running: "Running", starting: "Paused", stopping: "Paused", stopped: "Off", missing: "Off" };
 
-/** "GpuVM service": when the service runs, and (manual) starting or stopping it. */
 function ServicePrefs() {
   const prefs = usePrefs();
   const [status, setStatus] = useState<ServiceStatus | null>(null);
@@ -41,7 +40,6 @@ function ServicePrefs() {
     return () => { alive = false; clearInterval(timer); };
   }, []);
 
-  // Windows is the reference for "with Windows": the preference follows it if it was changed elsewhere.
   useEffect(() => {
     if (!status || status.state === "missing") return;
     if (status.withWindows && prefs.service !== "windows") savePrefs({ service: "windows" });
@@ -50,7 +48,6 @@ function ServicePrefs() {
 
   const choose = async (mode: ServicePref) => {
     setError(null);
-    // Starting with Windows or not changes the service's settings: Windows asks for administrator once.
     if ((mode === "windows") !== (prefs.service === "windows")) {
       setBusy(true);
       try { await service.setStartup(mode === "windows"); }
@@ -97,26 +94,19 @@ function ServicePrefs() {
   );
 }
 
-/** The limits offered for the animations' frames a second, from lightest to none (0: as many as the monitor shows). */
 const ANIM_FPS = [15, 30, 60, 120, 0];
-/** The option a stored limit is shown at: its own, or the nearest one (no limit stays last). */
 const animFpsIndex = (fps: number) => (fps > 0 ? ANIM_FPS.slice(0, -1).reduce((best, f, i) => (Math.abs(f - fps) < Math.abs(ANIM_FPS[best] - fps) ? i : best), 0) : ANIM_FPS.length - 1);
 
-/** How long an agent's request waits for an answer before it is refused by itself, in seconds: 1 to 30 minutes, 10 by
- *  default (the service's own range and default; a copy from this PC waits 10 minutes at most). */
 const APPROVAL_TIMEOUTS = [60, 120, 300, 600, 900, 1800];
 const APPROVAL_DEFAULT = 600;
 const SEND_MAX = 600;
 const timeoutIndex = (s: number) => APPROVAL_TIMEOUTS.reduce((best, v, i) => (Math.abs(v - s) < Math.abs(APPROVAL_TIMEOUTS[best] - s) ? i : best), 0);
 const timeoutLabel = (s: number) => (s < 60 ? t("{n} s", { n: s }) : t("{n} min", { n: s / 60 }));
 
-/** The person's limit per agent session, in minutes (0 = none, the default: last, like animations' Max). */
 const SESSION_LIMITS = [30, 60, 120, 0];
 const limitIndex = (m: number) => (m > 0 ? SESSION_LIMITS.slice(0, -1).reduce((best, v, i) => (Math.abs(v - m) < Math.abs(SESSION_LIMITS[best] - m) ? i : best), 0) : SESSION_LIMITS.length - 1);
 const limitLabel = (m: number) => (m === 0 ? t("No limit") : m < 60 ? t("{n} min", { n: m }) : t("{n} h", { n: m / 60 }));
 
-/** "Agents": how the person takes control from an agent, and how long its requests wait for an answer. The time to
- *  answer is the service's setting (Get-GpuVMAgentSettings): shown as it is there, written only when moved here. */
 function AgentPrefs() {
   const prefs = usePrefs();
   const snap = useAgents();
@@ -138,7 +128,6 @@ function AgentPrefs() {
   };
   const changeTimeout = (seconds: number) => {
     setTimeoutValue(seconds); setTimeoutError("");
-    // Once the slider rests: one write, not one per step.
     window.clearTimeout(writeTimer.current);
     writeTimer.current = window.setTimeout(() => {
       agents.setApprovalTimeout(seconds).then(() => refreshAgents()).then(() => setTimeoutValue(null))
@@ -201,7 +190,6 @@ const prefSections = (): { id: PrefSection; label: string; icon: React.ReactNode
   { id: "service", label: t("Service"), icon: <IconServer size={17} /> },
 ];
 
-/** "Captures": the last 30 s kept in memory (off by default), and where screenshots and videos go. */
 function CapturePrefs() {
   const prefs = usePrefs();
   const [folders, setFolders] = useState<{ shots: string | null; videos: string | null; hevc?: boolean }>({ shots: null, videos: null });
@@ -280,17 +268,13 @@ function CapturePrefs() {
   );
 }
 
-/** A machine to show the theme and accent on, the same cube as every machine's page. */
 const PREVIEW: CubeMachine = { power: "on", cores: 8, memoryGB: 16, gpuPercent: 60, diskGB: 256, usage: { cpu: 35, gpu: 55, mem: 45, disk: 10 }, apps: ["steam", "discord", "chrome"], removed: 0 };
 
-/** Settings: the sections on the left, their options in the middle and, beside them, a live preview of how the app
- *  looks with the chosen theme and accent. */
 export function Preferences() {
   const prefs = usePrefs();
   const monitors = useMonitors();
   const all = prefSections();
   const sections = all.filter((x) => x.id !== "machines" || monitors.length > 1);
-  // The list on the left switches which section is shown: everything fits on screen, so scrolling to it did nothing.
   const [active, setActive] = useState<PrefSection>("look");
   const shown = sections.some((x) => x.id === active) ? active : sections[0].id;
   const section = (id: PrefSection, children: React.ReactNode) => {
@@ -324,7 +308,6 @@ export function Preferences() {
             </div>
             <div className="pref-row">
               <div className="pref-text"><strong>{t("Language")}</strong><span>{t("Follows Windows or stays fixed.")}</span></div>
-              {/* Each language is named in itself, so it can be found whatever language the app is in. */}
               <Segmented<LangPref> value={prefs.lang} onChange={(lang) => savePrefs({ lang })} options={[
                 { value: "system", label: <><IconDeviceDesktop size={15} />Windows</> },
                 { value: "es", label: "Español" }, // i18n-ignore: each language is named in itself
@@ -337,7 +320,6 @@ export function Preferences() {
                 {ACCENTS.map((a) => (
                   <button type="button" key={a.id} role="radio" aria-checked={prefs.accent === a.id} title={a.name} aria-label={a.name}
                     className={`swatch${prefs.accent === a.id ? " on" : ""}`} onClick={() => savePrefs({ accent: a.id })}>
-                    {/* Half as it looks in light, half in dark, split by a wavy diagonal. */}
                     <svg viewBox="0 0 32 32" aria-hidden="true">
                       <rect width="32" height="32" fill={a.dark} />
                       <path d="M0 0H32C28 4 25 3 22 7S16 12 12 15 6 21 3 25 0 30 0 32Z" fill={a.light} />
@@ -420,7 +402,6 @@ export function Preferences() {
         {section("captures", <CapturePrefs />)}
         {section("service", <ServicePrefs />)}
       </div>
-      {/* Always in view: the theme and accent applied to a machine and to the app's own controls. */}
       <aside className="card pref-preview" aria-label={t("Preview")}>
         <div className="pref-preview-cube"><MachineCube machine={PREVIEW} name={t("preview")} /></div>
         <div className="pref-preview-ui">

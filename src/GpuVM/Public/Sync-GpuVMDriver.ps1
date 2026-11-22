@@ -29,7 +29,6 @@ function Sync-GpuVMDriver {
         Save-GpuVMState $state
     }
     finally {
-        # Even if the copy fails, the VM returns to the state it was in.
         if ($wasRunning -and $ShutdownIfRunning) {
             Write-Step 'Starting'
             Start-VM -Name $Name

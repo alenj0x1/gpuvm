@@ -1,16 +1,10 @@
-﻿# External components (Sunshine, virtual display, nefcon) with version and SHA-256 pinned in streaming/components.json.
-# They are downloaded once on the host, verified and copied to the VM disk; the guest downloads nothing.
-
-# If components were updated in an installation, the editable copy lives in the data folder; otherwise, the code one.
-function Get-ComponentManifestPath {
+﻿function Get-ComponentManifestPath {
     param([switch]$ForWrite)
     $data = Join-Path $script:DataRoot 'streaming\components.json'
     if ($ForWrite -or (Test-Path -LiteralPath $data)) { return $data }
     Get-RepoPath 'streaming\components.json'
 }
 
-# A manifest in the data folder (written by Update-GpuVMComponent) wins, but components added in later versions of
-# GpuVM are taken from the one it ships with, so an older copy doesn't make them "unknown".
 function Get-ComponentManifest {
     $manifest = Read-JsonFile (Get-ComponentManifestPath)
     $shipped = Get-RepoPath 'streaming\components.json'
@@ -32,7 +26,6 @@ function Get-FileSha256 {
     (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
 }
 
-# Returns the local path of the component; downloads it if not cached. Never uses a file whose hash does not match.
 function Save-GpuVMComponent {
     param(
         [Parameter(Mandatory)][string]$Name,

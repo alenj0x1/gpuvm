@@ -3,9 +3,7 @@ import catalog from "../../apps/catalog.json";
 import { agentCommand, agentMachines } from "./mockAgents";
 export { agentHistory, agentRecordings } from "./mockAgents";
 
-// Sample data for designing in the browser (there is no Hyper-V outside the app).
 const params = new URLSearchParams(location.search);
-// ?vms=0 is the same as ?mock=empty: no machines and an empty Library.
 const scenario = params.get("vms") === "0" ? "empty" : params.get("mock") ?? "default";
 
 const vms: VmOverview[] = [
@@ -26,7 +24,6 @@ const vms: VmOverview[] = [
     options: { cpu: 8, memoryGB: 8, gpuPercent: 100, diskGB: 200, diskType: "Fixed", diskFreeGB: 232, networkIsolation: true, cleanup: "none", diskBudget: { drive: "C:", freeGB: 232, promisedGB: 86, marginGB: 20, availableGB: 126, sizeGB: 200, usedGB: 61, maxGB: 326, others: [{ vm: "estudio", promisedGB: 86 }] } },
   },
   {
-    // GpuVM's demo machines are all Windows: it only creates Windows 10 and 11 VMs.
     id: "99ff0011", name: "estudio", state: "Off", managed: true, profile: "balanced", edition: "Windows 11 Pro", generation: 2,
     processorCount: 6, cpuPercent: 0, memoryStartupGB: 6, memoryAssignedGB: 0, memoryDemandGB: 0, uptimeSeconds: 0,
     hasGpu: true, gpuName: "NVIDIA GeForce RTX 4060", gpuPercent: 0, driverInSync: true, fits: true, fitGB: 6, missingGB: 0, streaming: true, paired: true,
@@ -42,7 +39,6 @@ const vms: VmOverview[] = [
   },
 ];
 
-// The machines agents work on (mockAgents.ts): made for agents, 1280x800, isolated, disposable, with the agent installed.
 for (const name of agentMachines) {
   vms.push({ ...vms[3], id: `agent-${name}`, name, edition: "Windows 11 Pro", disposable: name === "win-agent", forAgents: true, use: "agent", agentUser: "agent", uptimeSeconds: 380,
     agent: { installed: true, connected: true, version: "0.1.0", user: "agent" },
@@ -59,17 +55,13 @@ const restorePoints: Record<string, RestorePointList> = {
   },
 };
 
-// Many machines, to see how every screen holds up: open http://localhost:1420/?vms=30 for thirty in all.
 for (let i = vms.length; i < Number(params.get("vms") ?? 0); i++) {
   const from = vms[i % 3];
-  // About a third on, a few starting or paused, the rest off.
   const on = i % 3 === 0;
   vms.push({ ...from, id: `extra${i}`, name: `lab-${String(i - 2).padStart(2, "0")}`, state: on ? "Running" : i % 13 === 0 ? "Starting" : i % 17 === 0 ? "Paused" : "Off", cpuPercent: on ? 20 + (i * 7) % 60 : 0,
     gpuPercent: on ? 10 + (i * 11) % 70 : 0, memoryAssignedGB: on ? 6 : 0, memoryDemandGB: on ? 3.5 : 0, uptimeSeconds: on ? 600 : 0, driverInSync: true, fits: true, missingGB: 0 });
 }
 
-// The card over Moonlight (PromptCard): open http://localhost:1420/?prompt to see it with a sample prompt.
-// The website's demo of the card turns it on with showSamplePrompt().
 let samplePrompt = params.has("prompt") || params.has("prompt-dock");
 export const showSamplePrompt = () => { samplePrompt = true; };
 export const adminPrompts = async () =>
@@ -103,7 +95,6 @@ let disks: DiskInfo[] = [
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// Catalog apps already in each sample machine's Windows.
 const installed: Record<string, string[]> = { win10: ["steam", "discord", "chrome", "7zip"], "win11-pruebas": ["steam"] };
 
 export async function ps(cmd: string, args: Record<string, unknown>): Promise<unknown[]> {
@@ -111,7 +102,6 @@ export async function ps(cmd: string, args: Record<string, unknown>): Promise<un
   if (scenario === "noadmin") throw new Error("This command needs PowerShell 7 opened as administrator.");
   if (scenario === "noservice") throw new Error("The GpuVM service isn't installed.");
   if (scenario === "servicestopped") throw new Error("The GpuVM service is stopped.");
-  // ?mock=loading keeps every screen in its loading state, to design the skeletons.
   if (scenario === "loading") return new Promise(() => {});
   switch (cmd) {
     case "Get-GpuVMOverview":
@@ -149,7 +139,6 @@ export async function ps(cmd: string, args: Record<string, unknown>): Promise<un
       profiles = profiles.filter((p) => p.Name !== args.Name);
       return [];
     case "Get-GpuVMApp":
-      // The real catalog, so the mock shows every app and category the app ships with.
       return Object.entries(catalog.apps).map(([id, a]: [string, { name: string; signer?: string; category: string; uninstall?: { match: string; interactive?: boolean } }]) => (
         { id, name: a.name, signer: a.signer ?? null, category: a.category, categoryName: (catalog.categories as Record<string, string>)[a.category],
           interactiveUninstall: !!a.uninstall?.interactive }));
@@ -185,7 +174,6 @@ export async function ps(cmd: string, args: Record<string, unknown>): Promise<un
       return [];
     case "Get-GpuVMCleanup":
       return CLEANUP_LEVELS;
-    // ?mock=empty: no machines and an empty Library (only the profiles GpuVM ships with).
     case "Get-GpuVMDisk":
       return scenario === "empty" ? [] : disks;
     case "Get-GpuVMBase":
@@ -267,7 +255,6 @@ export function onJob(handler: (e: JobEvent) => void) {
 
 let lastOpened = "win10";
 
-// What Rename-GpuVM keeps under the new name: the machine, its apps, shared disks, templates and last opened.
 function renameVm(from: string, to: string) {
   const vm = vms.find((v) => v.name === from);
   if (!vm) throw new Error(`The VM '${from}' doesn't exist.`);
@@ -294,7 +281,6 @@ let shared: SharedDiskInfo[] = [
   { name: "juegos", purpose: "games", sizeGB: 500, fileGB: 132.6, vm: "win10", vmRunning: true, createdAt: "2026-10-28T20:00:00Z" },
 ];
 
-// Same levels and texts as guest/cleanup.ps1 (Get-GpuVMCleanup), shortened to what the UI needs.
 const CLEANUP_LEVELS = [
   { id: "none", name: "Normal", items: [] },
   { id: "privacy", name: "Privacy", items: [
@@ -366,7 +352,6 @@ export async function job(jobId: string, cmd: string, args: Record<string, unkno
     const ids = (args.App as string[] | undefined) ?? [];
     if (vm && cmd === "Install-GpuVMApp") installed[vm.name] = [...new Set([...(installed[vm.name] ?? []), ...ids])];
     if (vm && cmd === "Uninstall-GpuVMApp") installed[vm.name] = (installed[vm.name] ?? []).filter((id) => !ids.includes(id));
-    // What was fixed leaves the home screen's list.
     attention = attention.filter((a) => !(a.vm === args.Name && a.cmd === cmd));
   }
   emit({ type: "result", ok: true, data: [] });

@@ -1,4 +1,3 @@
-// Spanish for screenshots, recordings and the last 30 s (the panel's Captura widget and Ajustes › Capturas).
 export default {
   "Capture": "Captura",
   "Captures": "Capturas",

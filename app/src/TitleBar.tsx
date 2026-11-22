@@ -3,10 +3,7 @@ import { IconCopy, IconMinus, IconSquare, IconX } from "@tabler/icons-react";
 import { inTauri } from "./api";
 import { t } from "./i18n";
 
-// Custom title bar: the Windows 10 one takes the system accent color instead of the app theme's.
-// It spans the same columns as the sidebar and the content, so each part keeps its own color.
-/** Only the window's own controls: Biblioteca and Ajustes live in the sidebar, the theme in Ajustes. */
-/** The app's own title bar. `children` go on the left (the viewer's Home button and machine name). */
+// Custom title bar: Windows 10's takes the system accent color instead of the app theme's.
 export function TitleBar({ children }: { children?: React.ReactNode } = {}) {
   const [maximized, setMaximized] = useState(false);
 

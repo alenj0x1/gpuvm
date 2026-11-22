@@ -3,12 +3,6 @@ import { settledResize } from "./types";
 import { drawFigureThumb } from "../decor/figureGL";
 import { t } from "../i18n";
 
-// "Bit by bit": your machine keeps going forward and falls unless you make it jump; it has to get through the gaps
-// between columns. The world is picked on the start card: the studio (pillars of hologram on the app's gray), a
-// motherboard (towers of capacitors and chips) or a world of blocks (brick towers on a baseplate). Bits of data float
-// in some gaps and count double. The gaps narrow and the columns come faster as the score grows. In a demo (the
-// gallery's card) the machine plays by itself.
-
 export type World = "studio" | "board" | "blocks";
 interface Column { x: number; gapY: number; gap: number; passed: boolean; bit: boolean; seed: number }
 interface Spark { x: number; y: number; vx: number; vy: number; life: number; color: string; size: number }
@@ -16,7 +10,6 @@ interface Spark { x: number; y: number; vx: number; vy: number; life: number; co
 const rgba = (hex: string, a: number) => { const h = hex.replace("#", ""); return `rgba(${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)},${a})`; };
 const BRICK_COLORS = ["#cc4f43", "#d9a03a", "#3f6fb5", "#4f9c45", "#e9e3d6"];
 
-/** The machine as a small glass cube with its color, seen from a corner, tilted by how it moves. */
 export function cube(g: CanvasRenderingContext2D, x: number, y: number, s: number, color: string, tilt: number) {
   g.save(); g.translate(x, y); g.rotate(tilt);
   g.fillStyle = rgba(color, 0.18); g.fillRect(-s, -s, s * 2, s * 2);
@@ -26,7 +19,6 @@ export function cube(g: CanvasRenderingContext2D, x: number, y: number, s: numbe
   g.restore();
 }
 
-/** The world behind: the board's traces, the blocks' sky and baseplate, or the stars. */
 export function background(g: CanvasRenderingContext2D, w: number, h: number, world: World, scroll: number, light: boolean, t: number) {
   if (world === "board") {
     g.fillStyle = light ? "#e4ebe6" : "#121814"; g.fillRect(0, 0, w, h);
@@ -46,12 +38,10 @@ export function background(g: CanvasRenderingContext2D, w: number, h: number, wo
     g.fillStyle = light ? "#ffffff" : "#e3e9ec";
     for (let k = 0; k < 5; k++) { const x = ((k * 260 - scroll * 0.2) % (w + 260) + w + 260) % (w + 260) - 130, y = 30 + (k * 47) % (h * 0.4), u = 14; g.fillRect(x, y, u * 6, u); g.fillRect(x + u, y - u, u * 3, u); }
     g.fillStyle = light ? "#9fc6a4" : "#5f8a6c";
-    // Each hill keeps its height by its place in the world (its index), never by where it is on screen: deriving it
-    // from the screen position made a hill switch heights from one frame to the next as it scrolled.
+    // Height from the hill's index in the world, not its screen position, or it flickers while scrolling.
     const hs = scroll * 0.35, first = Math.floor(hs / 60);
     for (let k = 0; (k - 1) * 60 < w; k++) { const i = first + k, x = i * 60 - hs; g.fillRect(Math.round(x), h - 70 - (((i * 37) % 3) + 3) % 3 * 14, 61, 80); }
   } else {
-    // The studio: the app's own gray with a faint grid going by.
     g.fillStyle = light ? "#f2f1ee" : "#161616"; g.fillRect(0, 0, w, h);
     g.strokeStyle = light ? "rgba(28,27,24,.06)" : "rgba(235,232,225,.05)"; g.lineWidth = 1;
     const off = (scroll * 0.3) % 48;
@@ -63,11 +53,9 @@ export function background(g: CanvasRenderingContext2D, w: number, h: number, wo
   }
 }
 
-/** A column from `y0` to `y1` (one half of a pair), drawn as the world's own kind of tower, with its cap at `capAt`. */
 function column(g: CanvasRenderingContext2D, x: number, cw: number, y0: number, y1: number, capAt: number, world: World, light: boolean, seed: number) {
   if (y1 <= y0) return;
   if (world === "board") {
-    // A stack of capacitors and chips: dark cans with silver tops, a chip at the end.
     g.fillStyle = light ? "#2f3438" : "#262c31"; g.fillRect(x, y0, cw, y1 - y0);
     g.fillStyle = light ? "#4a535a" : "#3a434a"; g.fillRect(x + cw * 0.62, y0, cw * 0.14, y1 - y0);
     for (let y = y0 + 34; y < y1; y += 34) { g.fillStyle = light ? "#6a747a" : "#59646b"; g.fillRect(x - 2, y - 3, cw + 4, 4); }
@@ -76,7 +64,6 @@ function column(g: CanvasRenderingContext2D, x: number, cw: number, y0: number, 
     g.fillStyle = light ? "#9aa1a3" : "#a7aeb0";
     for (let k = 0; k < 7; k++) { g.fillRect(x - 6 + k * ((cw + 12) / 7), cy - 3, 3, 3); g.fillRect(x - 6 + k * ((cw + 12) / 7), cy + chip, 3, 3); }
   } else if (world === "blocks") {
-    // A tower of bricks in alternating colors, with studs on the brick that faces the gap.
     const bh = 22;
     for (let y = y0, k = 0; y < y1; y += bh, k++) {
       const c = BRICK_COLORS[(seed + k) % BRICK_COLORS.length];
@@ -86,7 +73,6 @@ function column(g: CanvasRenderingContext2D, x: number, cw: number, y0: number, 
     }
     if (capAt >= y1) for (let k = 0; k < 3; k++) { g.fillStyle = BRICK_COLORS[seed % BRICK_COLORS.length]; g.fillRect(x + 6 + k * ((cw - 12) / 3), y1, (cw - 12) / 3 - 6, 6); }
   } else {
-    // A pillar of hologram: outlined in the app's ink, with scan lines and corner marks at the gap.
     const ink = light ? "28,27,24" : "235,232,225";
     g.fillStyle = `rgba(${ink},.05)`; g.fillRect(x, y0, cw, y1 - y0);
     g.strokeStyle = `rgba(${ink},.18)`; g.lineWidth = 1; g.beginPath();
@@ -102,16 +88,13 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
   const g = canvas.getContext("2d")!;
   let world = (["studio", "board", "blocks"].includes(host.mode) ? host.mode : "studio") as World;
   const demo = !!host.demo;
-  // A change of world fades the new one in over the last; a change of machine sends the old one up and away.
   let prevWorld: World | null = null, fade = 1;
   let leaving: { x: number; y: number; vx: number; vy: number; color: string }[] = [];
   let W = 0, H = 0, dpr = 1;
   const resize = () => { dpr = Math.min(2, window.devicePixelRatio || 1); W = canvas.clientWidth; H = canvas.clientHeight; canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); };
   resize();
-  // Refit once the size settles, and draw again right away if nothing is running to do it.
   const ro = settledResize(() => { resize(); if (!running) draw(0); });
   ro.observe(canvas);
-  // The machine's first figure rides on it.
   const sprite = document.createElement("canvas");
   const paint = () => { sprite.width = sprite.height = 64 * dpr; drawFigureThumb(sprite.getContext("2d")!, host.player.figures[0] ?? "duck", 64, 0.7, host.player.color, dpr); };
   paint();
@@ -133,7 +116,6 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
   const step = (dt: number) => {
     t += dt;
     const speed = Math.min(320, 170 + score * 3.5) * unit(), cw = 64 * unit();
-    // In a demo it jumps by itself, whenever it sinks below the middle of the next gap.
     if (demo) {
       if (waiting) flap();
       const next = cols.find((c) => c.x + 64 * unit() > me.x - 10);
@@ -153,7 +135,6 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
       c.x -= speed * dt;
       if (!c.passed && c.x + cw < me.x) { c.passed = true; score += 1; }
       if (c.bit && Math.hypot(me.x - (c.x + cw / 2), me.y - c.gapY) < 26 * unit()) { c.bit = false; score += 1; for (let i = 0; i < 12; i++) sparks.push({ x: me.x, y: me.y, vx: (Math.random() - 0.5) * 260, vy: (Math.random() - 0.5) * 260, life: 0.5, color: host.player.color, size: 3 }); }
-      // Hitting a column: the cube's box against the column outside the gap.
       const r = 15 * unit();
       if (me.x + r > c.x && me.x - r < c.x + cw && (me.y - r < c.gapY - c.gap / 2 || me.y + r > c.gapY + c.gap / 2)) { crash(); return; }
     }
@@ -215,7 +196,7 @@ function create(canvas: HTMLCanvasElement, host: GameHost): GameInstance {
 
 export const BIT_HOP: GameDef = {
   id: "bit-hop",
-  // Getters: the texts come out in the language in use.
+  // Getters, so texts follow the current language.
   get name() { return t("Bit by bit"); },
   get description() { return t("Hop your machine between the columns without touching them. Every gap scores, bits count double."); },
   get modes() {

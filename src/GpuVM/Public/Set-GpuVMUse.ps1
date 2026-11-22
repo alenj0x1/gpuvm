@@ -28,7 +28,6 @@ function Set-GpuVMUse {
     }
 
     $state['use'] = 'agent'
-    # Isolation on: an explicit false (the person turned it off) goes back to the default, which is on.
     $network = $state['config']['vm']['network']
     if ($network -and $network.Contains('isolation') -and $network['isolation'] -eq $false) { $network['isolation'] = $true }
     $user = if ($state['agent'] -and $state['agent']['signInAs']) { $state['agent']['signInAs'] } else { 'agent' }
@@ -45,8 +44,6 @@ function Set-GpuVMUse {
         Write-Warning "'$Name' is off: the agent is installed the next time this runs with the machine on."
         return [ordered]@{ name = $Name; use = 'agent'; pending = $true }
     }
-    # The display is the agent's own business (0.3.3: the virtual display alone, 1280x800 at least, and never over a
-    # viewer's), so nothing is set from here.
     $installed = Install-GpuVMAgent -Name $Name -User $user
     [ordered]@{ name = $Name; use = 'agent'; agent = $installed }
 }

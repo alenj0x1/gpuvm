@@ -1,7 +1,3 @@
-//! Development only: the app starts `bridge.ps1` itself from the repository, as GpuVM did before it had a
-//! service. It needs the app to run as administrator (the window offers to relaunch it that way). Installed
-//! builds never use this: they talk to the GpuVM service (backend.rs).
-
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
@@ -45,8 +41,7 @@ pub fn repo_root() -> PathBuf {
 
 static PWSH: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 
-/// PowerShell 7: the MSI install, else the Store package's real folder (its alias does not start from an elevated
-/// process), else whatever pwsh.exe is in the PATH.
+// The Store package's alias does not start from an elevated process: use its real folder.
 fn pwsh_path() -> PathBuf {
     PWSH.get_or_init(|| {
         let msi = program_files().join("PowerShell").join("7").join("pwsh.exe");

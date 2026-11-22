@@ -4,26 +4,15 @@ import { t } from "./i18n";
 import * as stamps from "./spriteGL";
 import { animDpr } from "./animBudget";
 
-// Ambients: the place where a space's machines are. Each one is a world drawn behind the cube with the cube's own
-// camera, so turning or zooming the cube turns and zooms the world around it. The ground covers everything in view and
-// fades into the horizon (never a disc with an edge); what is far (sky, skyline, hills) sits on a panorama that turns
-// with it. Each world has a light: its pieces are shaded by where they face, and they (and the machines) cast shadows.
-//
-// - Placa base: the machines on their own circuit board, with chips, capacitors and connectors, traces where data
-//   runs, and the silkscreen printed on it (part names, the space's name, the machine's name by its socket).
-// - Bloques: a world of bricks on a green baseplate, with paths, trees, houses and the brick figures of the app.
-
 export type AmbientId = "studio" | "board" | "blocks";
 
-/** The time of day of the world of blocks; "auto" follows the clock. */
 export type AmbientTime = "day" | "evening" | "night" | "auto";
 type Tod = Exclude<AmbientTime, "auto">;
-// Names are getters so they are read in the language shown.
+// Getters, so names follow the current language.
 export const AMBIENT_TIMES: { id: AmbientTime; readonly name: string }[] = [
   { id: "day", get name() { return t("Day"); } }, { id: "evening", get name() { return t("Evening"); } },
   { id: "night", get name() { return t("Night"); } }, { id: "auto", get name() { return t("By the clock"); } },
 ];
-/** The time of day for "auto": day from 6:30, evening from 17:00, night from 19:30. */
 export function resolveTime(t: AmbientTime = "day"): Tod {
   if (t !== "auto") return t;
   const d = new Date(), h = d.getHours() + d.getMinutes() / 60;
@@ -37,7 +26,6 @@ export const AMBIENTS: AmbientInfo[] = [
   { id: "studio", get name() { return t("Studio"); }, get desc() { return t("The app's gray background, no scenery."); }, icon: IconCube },
 ];
 export const ambientInfo = (id: string) => AMBIENTS.find((a) => a.id === normalizeAmbient(id)) ?? AMBIENTS[2];
-/** Ambients from earlier versions become the closest one that exists now. */
 export function normalizeAmbient(id: string | undefined): AmbientId {
   if (id === "board" || id === "blocks" || id === "studio") return id;
   if (id === "ocean" || id === "garden") return "blocks";
@@ -45,30 +33,21 @@ export function normalizeAmbient(id: string | undefined): AmbientId {
   return "studio";
 }
 
-/** What the cube's camera is doing this frame, and what the world can print or show. */
 export interface AmbientView {
   g: CanvasRenderingContext2D;
   W: number; H: number; T: number; dt: number;
   yaw: number; pitch: number;
-  /** Pixels per world unit (with the zoom), and where the cube's center (y = 1) is on screen. */
   Sz: number; CX: number; CY: number;
   light: boolean; accent: string; reduced: boolean;
-  /** The space's name and the machine in front (printed on the board). */
   space?: string; machine?: string;
-  /** The time of day (the world of blocks). */
   time?: AmbientTime;
 }
 
-/** Moving parts of an ambient, one per canvas. */
 export type AmbientState = Record<string, unknown>;
 
-/** The ground under the machines (the cube's bottom is at 0). */
 export const FLOOR = -0.9;
-/** How far the horizon is, in cube units. */
 const DH = 4.2;
-/** Where the light starts to fall off, and where the world is no longer drawn (depth along the view, cube units). */
 const NEAR = 3.5, FAR = 13;
-/** Where the camera looks at first (behind the cube from the starting angle), to place each scene's best part there. */
 const FRONT = -Math.PI / 2 - (Math.PI / 4 + 0.15);
 const TAU = Math.PI * 2;
 const wrap = (a: number) => a - TAU * Math.floor((a + Math.PI) / TAU);
@@ -79,54 +58,41 @@ type V3 = [number, number, number];
 const norm = (v: V3): V3 => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
 const sunDir = (az: number, el: number): V3 => [Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el)];
 
-/** Each world's light: where it comes from (toward the light), and the shadows it casts. */
 const LIGHTS: Record<Exclude<AmbientId, "studio">, { dir: V3; shadow: string; alpha: number; darkAlpha: number }> = {
   blocks: { dir: norm(sunDir(FRONT + 1.05, 0.82)), shadow: "#1d3a19", alpha: 0.2, darkAlpha: 0.3 },
   board: { dir: norm(sunDir(FRONT + 0.55, 1.12)), shadow: "#000000", alpha: 0.22, darkAlpha: 0.4 },
 };
-/** The world of blocks through the day: the sun high at noon, low and warm in the evening, the moon at night. */
 const BLOCK_LIGHTS: Record<Tod, { dir: V3; alpha: number; darkAlpha: number }> = {
   day: { dir: norm(sunDir(FRONT + 1.05, 0.82)), alpha: 0.2, darkAlpha: 0.3 },
   evening: { dir: norm(sunDir(FRONT + 0.35, 0.36)), alpha: 0.24, darkAlpha: 0.32 },
   night: { dir: norm(sunDir(FRONT - 0.8, 0.95)), alpha: 0.14, darkAlpha: 0.2 },
 };
-/** The light of an ambient, for the machines' own shadows; null for none. */
 export function ambientLight(id: AmbientId, light: boolean, time?: AmbientTime): { dir: V3; color: string; alpha: number } | null {
   if (id === "studio") return null;
   const l = id === "blocks" ? { ...LIGHTS.blocks, ...BLOCK_LIGHTS[resolveTime(time)] } : LIGHTS[id];
   return { dir: l.dir, color: l.shadow, alpha: light ? l.alpha : l.darkAlpha };
 }
-/** How the time of day colors everything in the world (multiplied over it, the machine included); null at noon. */
 export function ambientTint(id: AmbientId, time?: AmbientTime): string | null {
   if (id !== "blocks") return null;
   const t = resolveTime(time);
   return t === "evening" ? "#ffc89a" : t === "night" ? "#4f5f92" : null;
 }
 
-// ---------------------------------------------------------------------------------------------------------------
-// The camera and drawing helpers.
-
 interface F extends AmbientView { tod: Tod; fog?: string; yNear: number; yFar: number; p: number; cy: number; sy: number; cp: number; sp: number; K: number; Kv: number; hz: number; a: number; st: AmbientState; dpr: number }
 
 function frame(v: AmbientView, alpha: number, st: AmbientState): F {
-  // From below, the world keeps a low angle instead of flipping the ground over the sky.
   const p = clamp(Math.atan2(Math.sin(v.pitch), Math.cos(v.pitch)), 0.06, 1.45);
   const cp = Math.cos(p), sp = Math.sin(p), K = DH * v.Sz;
-  // No horizon: the ground goes on under the whole view (as an orthographic plane does). Its details fade out as the
-  // light falls off with distance, between NEAR and FAR (depths along the view), and nothing is drawn past FAR.
   const yAt = (z1: number) => v.CY - ((FLOOR - 1) * cp - z1 * sp) * v.Sz;
   return { ...v, p, cy: Math.cos(v.yaw), sy: Math.sin(v.yaw), cp, sp, K, Kv: K * 0.75, hz: Math.max(-80, yAt(-FAR)), yNear: yAt(-NEAR), yFar: yAt(-FAR), a: alpha, st, dpr: animDpr(), tod: resolveTime(v.time) };
 }
-/** A world point on screen: x, y and its depth (bigger is nearer). */
 function proj(f: F, x: number, y: number, z: number): V3 {
   const x1 = x * f.cy - z * f.sy, z1 = x * f.sy + z * f.cy, yy = y - 1;
   return [f.CX + x1 * f.Sz, f.CY - (yy * f.cp - z1 * f.sp) * f.Sz, yy * f.sp + z1 * f.cp];
 }
-/** Where the camera looks (azimuth): turning toward the light puts the world against the light. */
 const viewAz = (f: F) => -Math.PI / 2 - f.yaw;
 const alphaOf = (f: F, a: number) => { f.g.globalAlpha = clamp(f.a * a, 0, 1); };
 
-/** The ground in view, in world units: the box around what the screen shows from its bottom edge to the horizon. */
 function groundBox(f: F) {
   const yb = f.H + 40, yt = Math.max(f.hz + 1, -40);
   const un = (sx: number, sy: number): [number, number] => {
@@ -136,10 +102,8 @@ function groundBox(f: F) {
   const c = [un(-40, yb), un(f.W + 40, yb), un(-40, yt), un(f.W + 40, yt)];
   return { x0: Math.min(...c.map((p) => p[0])), x1: Math.max(...c.map((p) => p[0])), z0: Math.min(...c.map((p) => p[1])), z1: Math.max(...c.map((p) => p[1])) };
 }
-/** How clear things on the ground are at a screen height: full near the viewer, lost in the haze at the horizon. */
 const clear = (f: F, y: number) => clamp((y - f.yFar) / Math.max(1, f.yNear - f.yFar), 0, 1) ** 0.8;
 
-/** Draws on the ground plane as if it were paper lying there: x along the world's x, y along its z. */
 function onPlane(f: F, x: number, z: number, rot: number, fn: () => void, y = FLOOR) {
   const o = proj(f, x, y, z), c = Math.cos(rot), s = Math.sin(rot);
   const ex = proj(f, x + c, y, z + s), ez = proj(f, x - s, y, z + c);
@@ -157,7 +121,6 @@ const rgbOf = (c: string) => {
   return v;
 };
 const shadeCache = new Map<string, string>();
-/** A color lit by `k` (0 dark, 1 its own color, above 1 brighter), cached. */
 function shade(c: string, k: number) {
   const q = Math.round(k * 40) / 40, key = c + q;
   let s = shadeCache.get(key);
@@ -175,7 +138,6 @@ const mix = (a: string, b: string, t: number) => {
   return "#" + x.map((c, i) => Math.round(c + (y[i] - c) * t).toString(16).padStart(2, "0")).join("");
 };
 
-/** A solid box lit by the world's light: each face as bright as it faces the light. */
 interface Box { x: number; y: number; z: number; w: number; h: number; d: number; color: string; studs?: boolean; rot?: number; round?: boolean; glow?: boolean }
 const FACES: [V3, number[]][] = [[[0, 1, 0], [4, 5, 6, 7]], [[1, 0, 0], [1, 2, 6, 5]], [[-1, 0, 0], [0, 3, 7, 4]], [[0, 0, 1], [3, 2, 6, 7]], [[0, 0, -1], [0, 1, 5, 4]]];
 function corners(b: Box): V3[] {
@@ -186,22 +148,18 @@ function corners(b: Box): V3[] {
 }
 function drawBox(f: F, b: Box, L: V3, fade: number, edge?: string) {
   const g = f.g, c = corners(b), P = c.map((p) => proj(f, ...p)), r = b.rot ?? 0, co = Math.cos(r), si = Math.sin(r);
-  // The view direction in world space (from the scene toward the camera).
   const vx = -f.sy * f.cp, vz = f.cy * f.cp, vy = f.sp;
   for (const [n0, idx] of FACES) {
     const n: V3 = n0[1] ? n0 : [n0[0] * co - n0[2] * si, 0, n0[0] * si + n0[2] * co];
     if (n[0] * vx + n[1] * vy + n[2] * vz <= 0) continue;
     const lit = 0.58 + 0.5 * Math.max(0, n[0] * L[0] + n[1] * L[1] + n[2] * L[2]);
     g.beginPath(); idx.forEach((i, k) => (k ? g.lineTo(P[i][0], P[i][1]) : g.moveTo(P[i][0], P[i][1]))); g.closePath();
-    // Windows that light up at dusk: their faces are kept to be drawn lit over the evening and night colors.
     if (b.glow && f.tod !== "day") ((f.st._glow ??= []) as number[][]).push(idx.flatMap((i) => [P[i][0], P[i][1]]), [fade]);
-    // Far away it melts into the haze by its color, staying solid (never see-through).
     const c = shade(b.color, lit);
     alphaOf(f, f.fog ? 1 : fade); g.fillStyle = f.fog && fade < 0.98 ? mix(c, f.fog, (1 - fade) * 0.9) : c; g.fill();
     if (edge) { alphaOf(f, fade * 0.5); g.strokeStyle = edge; g.lineWidth = 1; g.stroke(); }
   }
 }
-/** The shadow a set of boxes casts on the ground, away from the light. */
 function castShadow(f: F, boxes: Box[], L: V3, color: string, alpha: number, ground = FLOOR) {
   const pts: [number, number][] = [];
   for (const b of boxes) for (const p of corners(b)) {
@@ -224,14 +182,12 @@ function hull(pts: [number, number][]) {
   return lo.slice(0, -1).concat(up.slice(0, -1));
 }
 
-/** The ground under the whole view: its own color where the machines are, the light falling off with distance. */
 function plane(f: F, near: string, far: string) {
   const g = f.g, gr = g.createLinearGradient(0, Math.min(f.yFar, f.yNear - 1), 0, f.yNear);
   gr.addColorStop(0, far); gr.addColorStop(1, near);
   alphaOf(f, 1); g.fillStyle = gr; g.fillRect(0, 0, f.W, f.H);
 }
 
-/** Figures of the app standing in the world, drawn on the GPU like the ones on the cube. */
 function figures(f: F, list: { id: string; x: number; z: number; rot: number; size: number; y?: number }[], color: string) {
   if (!list.length) return;
   const V = viewRot(f.yaw, f.p);
@@ -245,14 +201,9 @@ function figures(f: F, list: { id: string; x: number; z: number; rot: number; si
   f.g.globalAlpha = 1;
 }
 
-// ---------------------------------------------------------------------------------------------------------------
-// Bloques
-
 const STUD = 0.25;
-/** A stud seen from above at this zoom and tilt: drawn once, then stamped all over the baseplate. */
 function studSprite(f: F, base: string, top: string, rim: string) {
-  // Drawn once at a fixed size for the camera's tilt (in coarse steps) and scaled to the zoom when stamped: a sprite
-  // rebuilt at every small change of zoom or tilt made the baseplate flicker while the camera moved.
+  // Fixed size per coarse tilt step, scaled when stamped: rebuilding it per zoom/tilt change flickered.
   const R0 = 24, tilt = Math.round(f.sp * 16) / 16, ct = Math.sqrt(Math.max(0, 1 - tilt * tilt));
   const key = `${tilt}|${base}|${f.dpr}`, r = STUD * 0.29 * f.Sz, k = r / R0;
   const st = f.st as { stud?: { key: string; c: HTMLCanvasElement; pad: number; cw: number; ch: number } };
@@ -262,28 +213,23 @@ function studSprite(f: F, base: string, top: string, rim: string) {
     const x = c.getContext("2d")!;
     x.scale(f.dpr, f.dpr);
     const cx = R0 + pad, cyT = pad + R0 * tilt, cyB = cyT + h;
-    // Side of the stud, then its top, then a small shine toward the light.
     x.fillStyle = base; x.beginPath(); x.ellipse(cx, cyB, R0, R0 * tilt, 0, 0, TAU); x.fill(); x.fillRect(cx - R0, cyT, R0 * 2, h);
     x.fillStyle = top; x.beginPath(); x.ellipse(cx, cyT, R0, R0 * tilt, 0, 0, TAU); x.fill();
     x.strokeStyle = rim; x.lineWidth = R0 * 0.12; x.beginPath(); x.ellipse(cx, cyT, R0 * 0.98, R0 * tilt * 0.98, 0, Math.PI * 1.05, Math.PI * 1.75); x.stroke();
     st.stud = { key, c, pad, cw, ch };
   }
   const sd = st.stud!;
-  // Where to stamp it: its size at this zoom, and how far above the stud's center its top-left corner is.
   return { key, c: sd.c, r, w: sd.cw * k, h: sd.ch * k, up: (sd.pad + R0 * tilt) * k };
 }
 
-/** The paths of smooth tiles: a ring around the machines and roads that leave it. */
 const onPath = (x: number, z: number) => {
   const r = Math.hypot(x, z);
   return Math.abs(r - 2.05) < 0.3 || (Math.abs(x + z * 0.2) < 0.3 && z > 2.0 && z < 40) || (Math.abs(z - x * 0.15) < 0.3 && x < -2.0 && x > -40);
 };
-/** A pond of blue plates. */
 const onWater = (x: number, z: number) => Math.hypot(x - 3.6, z + 2.6) < 1.05 || Math.hypot(x - 4.4, z + 1.9) < 0.75;
 
 type Thing = { boxes: Box[]; depth: number; fig?: { id: string; x: number; z: number; rot: number; size: number } };
 
-/** What stands on a cell of the world: trees, houses, flowers, rocks or nothing, always the same for that cell. */
 function thingAt(i: number, j: number, cell: number): Box[] | null {
   const h = hash(i * 3.7 + 1, j * 5.3 + 2);
   const x = (i + 0.5) * cell + (hash(i, j) - 0.5) * cell * 0.4, z = (j + 0.5) * cell + (hash(j, i) - 0.5) * cell * 0.4;
@@ -292,7 +238,6 @@ function thingAt(i: number, j: number, cell: number): Box[] | null {
   if (Math.hypot(X, Z) < 2.7 || onPath(X, Z) || onWater(X, Z) || onPath(X + 0.5, Z) || onPath(X - 0.5, Z) || onPath(X, Z + 0.5) || onPath(X, Z - 0.5)) return null;
   const B = 0.12, y = FLOOR;
   if (h < 0.3) {
-    // A round tree: a trunk and a crown of green bricks, smaller as it goes up.
     const s = 0.8 + hash(i, j * 2) * 0.5, green = ["#5fae4e", "#4f9c45", "#6cb85a"][Math.floor(hash(i * 2, j) * 3)];
     return [
       { x: X, y, z: Z, w: 0.25, h: B * 4 * s, d: 0.25, color: "#8a5a34" },
@@ -302,7 +247,6 @@ function thingAt(i: number, j: number, cell: number): Box[] | null {
     ];
   }
   if (h < 0.42) {
-    // A pine: stepped dark green layers.
     const s = 0.9 + hash(j, i * 3) * 0.5;
     return [
       { x: X, y, z: Z, w: 0.25, h: B * 2, d: 0.25, color: "#7a4e2c" },
@@ -312,7 +256,6 @@ function thingAt(i: number, j: number, cell: number): Box[] | null {
     ];
   }
   if (h < 0.5) {
-    // A small house: walls, a window band and a two-step roof.
     const wall = ["#efe8da", "#e8d9b8", "#dfe6ea"][Math.floor(hash(i, j * 7) * 3)], roof = ["#cc4f43", "#3f6fb5", "#d9a03a"][Math.floor(hash(i * 5, j) * 3)], r = hash(i * 9, j) < 0.5 ? 0 : Math.PI / 2;
     return [
       { x: X, y, z: Z, w: 1.25, h: B * 5, d: 1.0, color: wall, rot: r },
@@ -322,7 +265,6 @@ function thingAt(i: number, j: number, cell: number): Box[] | null {
     ];
   }
   if (h < 0.62) {
-    // Flowers: round plates on stems in a small patch.
     const out: Box[] = [], cols = ["#f2c14e", "#ee8fbd", "#f6f2ea", "#a796f2", "#f08a84"];
     for (let k = 0; k < 4; k++) {
       const fx = X + (hash(i + k, j) - 0.5) * 0.8, fz = Z + (hash(i, j + k) - 0.5) * 0.8;
@@ -332,14 +274,12 @@ function thingAt(i: number, j: number, cell: number): Box[] | null {
     return out;
   }
   if (h < 0.68) {
-    // Rocks: gray bricks stacked off center.
     return [
       { x: X, y, z: Z, w: 0.75, h: B * 2, d: 0.5, color: "#9aa0a6", studs: true },
       { x: X + 0.12, y: y + B * 2, z: Z - 0.06, w: 0.5, h: B * 1.5, d: 0.25, color: "#aeb4b9", studs: true },
     ];
   }
   if (h < 0.72) {
-    // A fence: posts and a rail.
     const out: Box[] = [];
     for (let k = -2; k <= 2; k++) out.push({ x: X + k * 0.25, y, z: Z, w: 0.08, h: B * 3, d: 0.08, color: "#b07a48" });
     out.push({ x: X, y: y + B * 2, z: Z, w: 1.1, h: B * 0.6, d: 0.08, color: "#c08a55" });
@@ -348,7 +288,6 @@ function thingAt(i: number, j: number, cell: number): Box[] | null {
   return null;
 }
 
-/** Figures of the app living in the world: some standing by the path, one walking around it. */
 const WORLD_FIGURES = [
   { id: "lucky-cat", x: -1.2, z: -2.9, rot: 0.6, size: 0.94 },
   { id: "robot", x: 2.9, z: 1.4, rot: -2.2, size: 0.88 },
@@ -363,8 +302,6 @@ function drawBlocks(f: F) {
   f.st._glow = [];
   plane(f, Lt ? "#5b9a4e" : "#4a8340", Lt ? "#3f7a36" : "#24451f");
   const box = groundBox(f);
-  // Paths of smooth tan tiles  const box = groundBox(f);
-  // Paths of smooth tan tiles and a pond of blue plates, under everything else.
   const tile = 0.5, i0 = Math.floor(box.x0 / tile), i1 = Math.ceil(box.x1 / tile), j0 = Math.floor(box.z0 / tile), j1 = Math.ceil(box.z1 / tile);
   if ((i1 - i0) * (j1 - j0) < 60000) for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
     const x = (i + 0.5) * tile, z = (j + 0.5) * tile, path = onPath(x, z), water = !path && onWater(x, z);
@@ -376,17 +313,13 @@ function drawBlocks(f: F) {
     const col = path ? (hash(i, j) < 0.15 ? "#c9b07e" : "#d8c08d") : (hash(i, j) < 0.2 ? "#5aa0d0" : "#4f93c4");
     alphaOf(f, k); g.fillStyle = col; g.fill();
     alphaOf(f, k * 0.35); g.strokeStyle = path ? "#a88f5e" : "#3d7aa6"; g.lineWidth = 1; g.stroke();
-    // Water glints that move.
     if (water && Math.sin(f.T * 2 + i * 1.3 + j * 0.7) > 0.85) { const m = proj(f, x, FLOOR, z); alphaOf(f, k * 0.8); g.fillStyle = "#e6f3fb"; g.fillRect(m[0] - 3, m[1], 6, 1.5); }
   }
-  // The baseplate's studs, everywhere in view, fading into the haze; seams every eight studs.
   const sp = studSprite(f, Lt ? "#4b8a40" : "#3d7535", Lt ? "#6aae5b" : "#5a9a4c", "rgba(255,255,255,.45)");
   if (sp.r >= 1.2) {
     const s0 = Math.floor(box.x0 / STUD), s1 = Math.ceil(box.x1 / STUD), t0 = Math.floor(box.z0 / STUD), t1 = Math.ceil(box.z1 / STUD);
     if ((s1 - s0) * (t1 - t0) < 90000) {
       const w = sp.w, h = sp.h;
-      // Stamped on the GPU in one draw (thousands of them with the camera low); one by one only without WebGL.
-      // Drawn far to near, so a nearer stud covers the one behind it as before.
       const studs: [number, number, number][] = [];
       for (let i = s0; i <= s1; i++) for (let j = t0; j <= t1; j++) {
         const x = (i + 0.5) * STUD, z = (j + 0.5) * STUD;
@@ -404,9 +337,7 @@ function drawBlocks(f: F) {
       }
     }
   }
-  // Far away things lose the light, like the ground under them.
   f.fog = Lt ? "#3f7a36" : "#24451f";
-  // The shadows of clouds passing over the world.
   if (!f.reduced) for (let k = 0; k < 4; k++) {
     const span = 26, cx = ((hash(k, 21) * span + f.T * 0.25) % span) - span / 2, cz = (hash(k, 22) - 0.5) * span * 0.6;
     const r = 1.6 + hash(k, 23) * 1.4;
@@ -416,7 +347,6 @@ function drawBlocks(f: F) {
       g.globalAlpha = f.a; g.fillStyle = gr; g.scale(1.6, 1); g.fillRect(-r, -r, r * 2, r * 2);
     }, FLOOR + 0.001);
   }
-  // Things standing in the world, each with its shadow; nearest drawn last.
   const things: Thing[] = [], cell = 1.25;
   const ci0 = Math.floor(box.x0 / cell) - 1, ci1 = Math.ceil(box.x1 / cell) + 1, cj0 = Math.floor(box.z0 / cell) - 1, cj1 = Math.ceil(box.z1 / cell) + 1;
   if ((ci1 - ci0) * (cj1 - cj0) < 6000) for (let i = ci0; i <= ci1; i++) for (let j = cj0; j <= cj1; j++) {
@@ -426,7 +356,6 @@ function drawBlocks(f: F) {
     if (c[1] < f.hz - 4 || c[0] < -200 || c[0] > f.W + 200 || c[1] > f.H + 250) continue;
     things.push({ boxes, depth: c[2] });
   }
-  // A duck walks around the path.
   const walk = f.reduced ? 0.3 : f.T * 0.12;
   const figs = WORLD_FIGURES.concat([{ id: "duck", x: Math.cos(walk) * 2.05, z: Math.sin(walk) * 2.05, rot: -walk + Math.PI, size: 0.7 }]);
   for (const fg of figs) { const c = proj(f, fg.x, FLOOR, fg.z); if (c[1] > f.hz) things.push({ boxes: [], depth: c[2], fig: fg }); }
@@ -449,7 +378,6 @@ function drawBlocks(f: F) {
       g.drawImage(studTint(b.color), p[0] - (w * sc) / 2, p[1] - sp.up * sc, w * sc, h * sc);
     }
   };
-  // Studs on top of a brick take its color.
   const tints = (f.st._tints ??= new Map<string, HTMLCanvasElement>()) as Map<string, HTMLCanvasElement>;
   if ((f.st._tintKey as string) !== sp.key) { tints.clear(); f.st._tintKey = sp.key; }
   const studTint = (color: string) => {
@@ -473,19 +401,12 @@ function drawBlocks(f: F) {
   figures(f, figDraws, Lt ? "#2f5bd3" : "#7d9cf0");
 }
 
-// ---------------------------------------------------------------------------------------------------------------
-// Placa base
-
 const BOARD = {
   dark: { top: "#0d100f", horizon: "#1a201d", near: "#151b18", far: "#1a201d", farDark: "#0c0f0e", trace: "#2c4a3d", traceLit: "#4d7f69", pad: "#9aa59e", silk: "#d9dfd8", chip: "#1c2123", pin: "#a7aeb0", cap: "#2a3036", capTop: "#59646b", gold: "#b89a5a", glow: "rgba(125,156,240,.18)" },
   light: { top: "#dfe5e1", horizon: "#eef2ef", near: "#e6ede8", far: "#eef2ef", farDark: "#c9d2cc", trace: "#c3d4c9", traceLit: "#a9c2b2", pad: "#c7b27a", silk: "#2a2f2c", chip: "#26292b", pin: "#9aa1a3", cap: "#2f3438", capTop: "#6a747a", gold: "#c2a25a", glow: "rgba(47,91,211,.12)" },
 };
 type BoardPal = typeof BOARD.dark;
 
-/** One part on a cell of the board, always the same for that cell: a chip, a capacitor, a row of small parts, a
- *  crystal or a connector, with its name printed beside it. */
-// A chip is bigger than its cell: next to another chip (or to any part) they piled up on each other. A cell keeps its
-// chip only if it wins over every chip around it, and the parts beside a chip give it room.
 const isChipCell = (i: number, j: number) => hash(i * 2.3 + 7, j * 4.1 + 3) < 0.22 && Math.hypot((i + 0.5) * 1.1, (j + 0.5) * 1.1) >= 2.4;
 const chipRank = (i: number, j: number) => hash(i * 13.7 + 1, j * 17.3 + 5);
 const keepsChip = (i: number, j: number) => {
@@ -525,10 +446,7 @@ function drawBoard(f: F) {
   const g = f.g, Lt = f.light, P = Lt ? BOARD.light : BOARD.dark, L = LIGHTS.board.dir, lightAz = Math.atan2(L[2], L[0]);
   plane(f, P.near, P.farDark);
   const box = groundBox(f);
-  // The board's sheen  const box = groundBox(f);
-  // The board's sheen: looking toward the light the copper shines more.
   const toward = 0.5 + 0.5 * Math.cos(wrap(lightAz - viewAz(f)));
-  // Traces: buses of parallel lines that run along the board and turn at 45°, ending on vias.
   const lane = 0.11, run = 3.2, tw = Math.max(1, f.Sz * 0.012);
   const traces: { a: V3; b: V3; c: V3; k: number; len: number; id: number }[] = [];
   const addRuns = (along: "x" | "z") => {
@@ -555,7 +473,6 @@ function drawBoard(f: F) {
     alphaOf(f, k); g.strokeStyle = traceCol; g.lineWidth = tw; g.stroke();
     for (const q of [a, c]) { g.beginPath(); g.ellipse(q[0], q[1], tw * 1.6, tw * 1.6 * f.sp, 0, 0, TAU); alphaOf(f, k); g.fillStyle = P.pad; g.fill(); }
   }
-  // Data running along the traces in the accent color, as on the cube's board.
   if (!f.reduced) for (const t of traces) {
     if (hash(t.id, 5) > 0.35) continue;
     const u = ((f.T * (0.35 + hash(t.id, 6) * 0.5)) / Math.max(0.5, t.len) + hash(t.id, 7)) % 1;
@@ -565,7 +482,6 @@ function drawBoard(f: F) {
     alphaOf(f, k * 0.35); g.fillStyle = f.accent; g.beginPath(); g.ellipse(p[0], p[1], tw * 4, tw * 4 * f.sp, 0, 0, TAU); g.fill();
     alphaOf(f, k); g.beginPath(); g.ellipse(p[0], p[1], tw * 1.4, tw * 1.4 * f.sp, 0, 0, TAU); g.fill();
   }
-  // The socket the machine sits on, with its name printed beside it, and the space's name on the board.
   const silk = (text: string, x: number, z: number, size: number, rot: number, al = 0.6, align: CanvasTextAlign = "center") => {
     const p = proj(f, x, FLOOR, z);
     if (p[1] < f.hz) return;
@@ -581,14 +497,12 @@ function drawBoard(f: F) {
     g.strokeRect(-1.35, -1.35, 2.7, 2.7);
     for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { g.beginPath(); g.moveTo(sx * 1.5, sz * 1.2); g.lineTo(sx * 1.5, sz * 1.5); g.lineTo(sx * 1.2, sz * 1.5); g.lineWidth = 0.04; g.stroke(); }
     g.beginPath(); g.arc(-1.2, -1.2, 0.05, 0, TAU); g.fillStyle = P.silk; g.fill();
-    // Fine pins of the socket all around.
     g.lineWidth = 0.012;
     for (let k = -10; k <= 10; k++) { const v = k * 0.12; for (const [x0, z0, x1, z1] of [[v, -1.42, v, -1.52], [v, 1.42, v, 1.52], [-1.42, v, -1.52, v], [1.42, v, 1.52, v]]) { g.beginPath(); g.moveTo(x0, z0); g.lineTo(x1, z1); g.stroke(); } }
   });
   if (f.machine) silk(f.machine.toUpperCase(), 0, 1.75, 0.2, 0, 0.75);
   silk(`${(f.space ?? "GpuVM").toUpperCase()} · REV 1.0`, -1.45, -1.78, 0.13, 0, 0.55, "left");
   f.fog = P.farDark;
-  // The parts, each with its shadow and its name; nearest drawn last.
   const parts: (NonNullable<ReturnType<typeof partAt>> & { depth: number })[] = [], cell = 1.1;
   const ci0 = Math.floor(box.x0 / cell) - 1, ci1 = Math.ceil(box.x1 / cell) + 1, cj0 = Math.floor(box.z0 / cell) - 1, cj1 = Math.ceil(box.z1 / cell) + 1;
   if ((ci1 - ci0) * (cj1 - cj0) < 8000) for (let i = ci0; i <= ci1; i++) for (let j = cj0; j <= cj1; j++) {
@@ -608,7 +522,6 @@ function drawBoard(f: F) {
   for (const pt of parts) {
     const k = clear(f, proj(f, pt.x, FLOOR, pt.z)[1]), co = Math.cos(pt.r), si = Math.sin(pt.r);
     if (pt.kind === "chip") {
-      // Pins on every side, the body, its pin-1 dot and its printed name.
       onPlane(f, pt.x, pt.z, pt.r, () => {
         g.strokeStyle = P.pin; g.lineWidth = 0.025; alphaOf(f, k);
         const n = Math.max(4, Math.round(pt.s / 0.07)), half = pt.s / 2;
@@ -622,7 +535,6 @@ function drawBoard(f: F) {
       }, FLOOR + 0.061);
       silk(pt.label, pt.x + (pt.s / 2 + 0.22) * co, pt.z + (pt.s / 2 + 0.22) * si, 0.12, pt.r);
     } else if (pt.kind === "cap") {
-      // An electrolytic capacitor: a can with its stripe and the cross on top.
       const hgt = pt.s * 2.4, top = proj(f, pt.x, FLOOR + hgt, pt.z), bot = proj(f, pt.x, FLOOR, pt.z), rx = pt.s * f.Sz, ry = rx * f.sp;
       if (bot[1] < f.hz) continue;
       const side = shade(P.cap, 0.75 + 0.35 * toward);
@@ -649,7 +561,6 @@ function drawBoard(f: F) {
 
 const DRAW: Record<Exclude<AmbientId, "studio">, (f: F) => void> = { board: drawBoard, blocks: drawBlocks };
 
-/** Draws an ambient behind the cube, at `alpha` (to fade from one to another). Returns false for none (Estudio). */
 export function drawAmbient(id: AmbientId, v: AmbientView, state: AmbientState, alpha = 1): boolean {
   if (id === "studio") return false;
   const draw = DRAW[id];
@@ -662,7 +573,6 @@ export function drawAmbient(id: AmbientId, v: AmbientView, state: AmbientState, 
   g.globalAlpha = 1;
   return true;
 }
-/** What shines by itself after the time of day has colored the world: lit windows, and fireflies at night. */
 export function drawAmbientGlow(id: AmbientId, v: AmbientView, state: AmbientState, alpha = 1) {
   if (id !== "blocks") return;
   const t = resolveTime(v.time);
@@ -686,10 +596,8 @@ export function drawAmbientGlow(id: AmbientId, v: AmbientView, state: AmbientSta
   g.restore();
 }
 
-/** Whether the ambient paints its own world (everything but Estudio). */
 export const hasScene = (id: AmbientId) => id !== "studio";
 
-/** The floor point under a world point, along the light (for shadows drawn by the cube). */
 export function shadowPoint(p: V3, L: V3): V3 {
   const t = (p[1] - FLOOR) / L[1];
   return [p[0] - L[0] * t, FLOOR, p[2] - L[2] * t];

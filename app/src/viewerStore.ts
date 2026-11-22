@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import { inTauri } from "./api";
 
-/** A machine whose viewer is open (connected): inside the app's window (embed) or full screen, shown or waiting in
- *  the background while the person is in Home. */
 export interface OpenViewer { vm: string; embed: boolean; visible: boolean }
 
 let open: OpenViewer[] = [];
@@ -43,8 +41,6 @@ export function useOpenViewers(): OpenViewer[] {
   return list;
 }
 
-/** Viewers of machines that no longer exist (deleted, a disposable destroyed) close at once, connected or still
- *  connecting, instead of showing a black picture for minutes. `names`: the machines just read from the module. */
 export async function closeGoneViewers(names: string[]) {
   if (!inTauri) return;
   const list = await invoke<OpenViewer[]>("viewer_list").catch(() => [] as OpenViewer[]);
@@ -54,13 +50,11 @@ export async function closeGoneViewers(names: string[]) {
   if (gone.length) await refresh();
 }
 
-/** Back to a connected machine's picture. */
 export async function showViewer(vm: string) {
   await invoke("viewer_show", { vm });
   await refresh();
 }
 
-/** Leaves the picture for Home: hidden and still connected, or disconnected. */
 export async function leaveViewer(vm: string, keep: boolean) {
   await invoke("viewer_home", { vm, keep }).catch(() => {});
   await refresh();

@@ -1,6 +1,3 @@
-/** The gpuvm mark drawn inline, so its small square follows the accent color the person chose: a machine inside
- *  another (2026-11-21, chosen by the person over the old chip with pins). Same drawing as assets/logo.svg (the source
- *  for the app and installer icons). The name beside it is written in lowercase, "gpuvm" (`.wordmark`). */
 export function Logo({ size, className }: { size: number; className?: string }) {
   return (
     <svg className={className} width={size} height={size} viewBox="0 0 64 64" aria-hidden="true">

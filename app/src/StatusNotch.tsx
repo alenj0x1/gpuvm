@@ -5,19 +5,10 @@ import { cornersAt, edgesOf, usePrefs } from "./prefs";
 import { humanError } from "./ui";
 import { t, translateModule } from "./i18n";
 
-// The status notch (status.rs): the one place over a machine's picture for what only says how things are (recording,
-// saved, you took control, an agent paused). Requests drop from the top as docks; status lives here, at the bottom
-// center unless the person put it elsewhere (Settings › Appearance). Several notices stack in the same notch.
-
 export type StatusPlacement = "picture" | "panel";
-/** "copy": a file an agent delivered, being copied to this PC after the person accepted it (agent.rs): `state`
- *  copying, then accepted or failed for a few seconds, with `name` (the file) and `error`. */
-/** "live": what an agent is doing now on the machine (live.rs): the step's `intent` in its own words, or a plain text
- *  from its `method` and first input `shape`; `thinking` between steps. */
 export interface StatusItem { id: string; kind: "recording" | "notice" | "control" | "paused" | "copy" | "live"; key?: string; since?: number; client?: string; clientName?: string;
   name?: string; state?: "copying" | "accepted" | "failed"; error?: string | null; method?: string | null; intent?: string | null; shape?: string | null; thinking?: boolean }
 
-/** What an agent's step does, in plain words, when it didn't say. */
 export function liveText(item: StatusItem): string {
   if (item.thinking) return t("Thinking…");
   if (item.intent) return item.intent;
@@ -40,7 +31,7 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
   return core.invoke<T>(cmd, args);
 }
 
-/** The texts of what the viewer names (a fixed key; the viewer never sends text). */
+/** A fixed key per text: the viewer never sends text. */
 const NOTICE: Record<string, { text: () => string; icon: Icon; warn?: boolean }> = {
   shot: { text: () => t("Screenshot saved"), icon: IconCamera },
   recording: { text: () => t("Recording saved"), icon: IconVideo },
@@ -56,8 +47,6 @@ const clock = (ms: number) => {
   return s >= 3600 ? `${Math.floor(s / 3600)}:${two(Math.floor(s / 60) % 60)}:${two(s % 60)}` : `${two(Math.floor(s / 60))}:${two(s % 60)}`;
 };
 
-/** One notice, the same in the notch and in the side panel. */
-/** `short`: the side panel's narrow column says it in fewer words. */
 export function StatusRow({ item, onAction, short }: { item: StatusItem; onAction?: (id: string) => Promise<void>; short?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -121,7 +110,6 @@ export function StatusRow({ item, onAction, short }: { item: StatusItem; onActio
   );
 }
 
-/** Samples for the browser (?status-notch&placement=top&dock): recording, a saved notice and take control. */
 function sample(): StatusState {
   const q = new URLSearchParams(location.search);
   const items: StatusItem[] = [
@@ -136,7 +124,6 @@ function sample(): StatusState {
   return { vm: "win-agent", items: items.slice(0, Number(q.get("n") ?? 3)), placement: (q.get("placement") as StatusPlacement) ?? "picture" };
 }
 
-/** The notch's window: exactly the size of what it shows (status.rs sizes and places it). */
 export function StatusNotch() {
   const prefs = usePrefs();
   const [state, setState] = useState<StatusState | null>(null);
@@ -160,7 +147,6 @@ export function StatusNotch() {
     return () => offs.forEach((f) => f());
   }, []);
 
-  // The window follows the notch's size (it never covers more of the picture than the notch itself).
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -174,12 +160,10 @@ export function StatusNotch() {
 
   if (!state) return null;
   const action = async (id: string) => { if (inTauri) await invoke("status_action", { id }); };
-  // Under a dock it floats (rounded all round); otherwise square on the edges it touches.
   const pos = under ? { x: 0.5, y: 0.5 } : prefs.notchPos;
   const edges = edgesOf(pos);
   const bottom = prefs.notchPos.y > 0.5;
   const attached = edges.top || edges.bottom;
-  // Bottom: the agent's notice nearest the edge, moment notices above it; at the top, the other way around.
   const order = (i: StatusItem) => (i.kind === "control" || i.kind === "paused" ? 0 : i.kind === "recording" ? 1 : 2);
   const items = [...state.items].sort((a, b) => order(a) - order(b));
   return (
@@ -192,7 +176,6 @@ export function StatusNotch() {
   );
 }
 
-/** In the side panel, when the person put status notices there: the same rows at the top of the panel. */
 export function PanelStatus({ vm }: { vm: string }) {
   const [state, setState] = useState<StatusState | null>(null);
   useEffect(() => {

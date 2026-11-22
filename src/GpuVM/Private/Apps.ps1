@@ -1,12 +1,7 @@
-﻿# Apps installed inside the guest (Steam, Epic, Discord...). The catalog lives in apps/catalog.json; the guest
-# downloads each installer from its publisher and runs it only if Windows says it is signed by the expected company.
-
-function Get-AppCatalog { (Read-JsonFile (Get-RepoPath 'apps\catalog.json'))['apps'] }
+﻿function Get-AppCatalog { (Read-JsonFile (Get-RepoPath 'apps\catalog.json'))['apps'] }
 function Get-AppCategory { (Read-JsonFile (Get-RepoPath 'apps\catalog.json'))['categories'] }
 
-# Runs a program as the user signed in to the guest, unelevated, through a one-shot scheduled task (installers that
-# refuse administrator rights, and uninstallers of per-user apps). It goes to the guest as text: a script block
-# can't be passed to Invoke-Command as data.
+# Sent as text: a script block can't be passed to Invoke-Command as data.
 $script:GuestRunAsUser = @'
 param([string]$File, [string[]]$Arguments)
 $user = (Get-CimInstance Win32_ComputerSystem).UserName
@@ -29,7 +24,6 @@ finally { Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction 
 @{ finished = $code -notin 0x41301, 0x41303; code = $code }
 '@
 
-# The places that say an app is installed ("installed" in the catalog, with ${VARIABLE}s), by app id.
 function Get-AppInstalledPlace {
     $places = [ordered]@{}
     $catalog = Get-AppCatalog
@@ -37,7 +31,6 @@ function Get-AppInstalledPlace {
     $places
 }
 
-# Which catalog apps are installed in the running guest: the ids whose "installed" path exists.
 function Get-GuestInstalledApp {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -55,13 +48,11 @@ function Get-GuestInstalledApp {
     @($found | ForEach-Object { [string]$_ } | Where-Object { $places.Contains($_) })
 }
 
-# Remembers in the VM's state what is installed, so the app knows it while the VM is off.
 function Update-InstalledAppState {
     param(
         [Parameter(Mandatory)][string]$Name,
         [string[]]$Installed = @(),
         [string[]]$Removed = @(),
-        # The whole list, from a check of the guest.
         [switch]$Replace
     )
     $state = Get-GpuVMState -Name $Name
@@ -71,7 +62,6 @@ function Update-InstalledAppState {
     Save-GpuVMState $state
 }
 
-# Powers the VM on if needed and waits for Windows, for installing or uninstalling apps. Returns the guest credential.
 function Start-GuestForApp {
     param([Parameter(Mandatory)][string]$Name)
     $state = Get-GpuVMState -Name $Name
@@ -87,7 +77,6 @@ function Start-GuestForApp {
     $guest
 }
 
-# Installs the apps that are missing, from inside the running guest. Returns one result per app.
 function Install-GuestApp {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -104,7 +93,6 @@ function Install-GuestApp {
             param($entry, $runAsUser)
             $ErrorActionPreference = 'Stop'
             $expand = { param($path) [regex]::Replace($path, '\$\{([^}]+)\}', { param($m) [Environment]::GetEnvironmentVariable($m.Groups[1].Value) }) }
-            # "installed" may list several places (some installers go per-machine or per-user depending on context).
             $places = @($entry['installed'] | ForEach-Object { & $expand $_ })
             $isInstalled = { [bool]($places | Where-Object { Test-Path -LiteralPath $_ }) }
             if (& $isInstalled) { return @{ status = 'present' } }
@@ -112,11 +100,9 @@ function Install-GuestApp {
             New-Item -ItemType Directory -Force $dir | Out-Null
             $file = Join-Path $dir $entry['file']
             Invoke-WebRequest -Uri $entry['url'] -OutFile $file -UseBasicParsing
-            # The user's own unelevated programs can write to TEMP: the file stays open (others can only read it) from the
-            # checks until the installer has run, so it can't be swapped in between.
+            # Kept open (others can only read it) from the checks until the installer has run, so it can't be swapped.
             $lock = [IO.File]::Open($file, 'Open', 'Read', 'Read')
             try {
-                # A pinned version also carries its hash: the file must be exactly that release.
                 if ($entry['sha256'] -and (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $entry['sha256']) {
                     return @{ status = 'unsigned'; detail = 'the file doesn''t match the verified version' }
                 }
@@ -131,7 +117,6 @@ function Install-GuestApp {
                     }
                 }
                 if ($entry['asUser']) {
-                    # Installers that refuse administrator rights (Spotify) run as the signed-in user, unelevated.
                     $run = & ([scriptblock]::Create($runAsUser)) $file @($entry['args'])
                     if ($run['error']) { return @{ status = 'failed'; detail = $run['error'] } }
                     $finished = $run['finished']
@@ -142,13 +127,11 @@ function Install-GuestApp {
                         Start-Process msiexec.exe -ArgumentList (@('/i', "`"$file`"") + $entry['args']) -PassThru
                     }
                     else { Start-Process -FilePath $file -ArgumentList $entry['args'] -PassThru }
-                    # Only the installer itself is waited for (-Wait would also wait for what it leaves running, such as
-                    # Discord or Chrome's updater, and never return), with a limit.
+                    # Only the installer itself: -Wait would also wait for what it leaves running (Discord, Chrome's updater).
                     $finished = $process.WaitForExit(600000)
                     $exitCode = $process.ExitCode
                 }
                 if (-not $finished) { return @{ status = 'failed'; detail = 'the installer didn''t finish in 10 minutes' } }
-                # Some installers (Discord, Chrome) hand off to a background process; give them a moment.
                 for ($i = 0; $i -lt 60 -and -not (& $isInstalled); $i++) { Start-Sleep -Seconds 2 }
                 @{ status = if (& $isInstalled) { 'installed' } else { 'failed' }; detail = "code $exitCode" }
             }
@@ -172,8 +155,6 @@ function Install-GuestApp {
     }
 }
 
-# Uninstalls apps from inside the running guest with the uninstaller the app registered in Windows (Apps &
-# features). Returns one result per app: uninstalled, absent or failed.
 function Uninstall-GuestApp {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -194,8 +175,6 @@ function Uninstall-GuestApp {
             $isInstalled = { [bool]($places | Where-Object { Test-Path -LiteralPath $_ }) }
             if (-not (& $isInstalled)) { return @{ status = 'absent' } }
 
-            # The app's entry in Windows' list of programs: per machine (64 and 32 bit) or per user (the session's
-            # and those of users with a loaded profile, such as the one signed in).
             $match = $entry['uninstall']['match']
             $keys = @(
                 @{ path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*'; machine = $true }
@@ -213,7 +192,6 @@ function Uninstall-GuestApp {
             if (-not $pick) { return @{ status = 'failed'; detail = 'Windows has no uninstaller registered for it' } }
             $item = $pick.item
 
-            # Splits a command line into the program and its arguments.
             $split = {
                 param([string]$line)
                 $line = $line.Trim()
@@ -224,7 +202,6 @@ function Uninstall-GuestApp {
             $quiet = [string]$item.QuietUninstallString
             $line = [string]$item.UninstallString
             if ($quiet) {
-                # The publisher's own silent uninstall.
                 $file, $arguments = & $split $quiet
             }
             elseif ($line -match '(?i)msiexec' -and ($line + ' ' + $item.PSChildName) -match '(\{[0-9A-Fa-f-]{36}\})') {
@@ -237,8 +214,7 @@ function Uninstall-GuestApp {
             }
             if (-not (Test-Path -LiteralPath $file)) { return @{ status = 'failed'; detail = "its uninstaller isn't there ($file)" } }
 
-            # A per-user entry can be written by the user's own programs: it runs as that user, never elevated. An
-            # uninstaller without a silent mode opens on the signed-in user's desktop, to finish it there.
+            # A per-user entry can be written by the user's own programs: it runs as that user, never elevated.
             if ($entry['asUser'] -or -not $pick.machine -or $entry['uninstall']['interactive']) {
                 $run = & ([scriptblock]::Create($runAsUser)) $file @($arguments)
                 if ($run['error']) { return @{ status = 'failed'; detail = $run['error'] } }
@@ -268,17 +244,12 @@ function Uninstall-GuestApp {
     }
 }
 
-# What GpuVM leaves pending for the next time the guest is up: growing C: after a disk resize and apps
-# chosen when creating the VM. Errors only warn; they must not stop the VM from opening.
 function Invoke-GuestPendingWork {
     param(
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][pscredential]$Credential,
-        # Size of the system disk now: C: is only grown when it differs from the last time it was (lab 019: checking
-        # it took ~10 s of every open).
         [string]$DiskBytes
     )
-    # C:\GpuVM of machines made before it was created restricted: once, then remembered (security review 2026-11-21).
     try { Protect-GuestGpuVMRoot -Name $Name -Credential $Credential }
     catch { Write-Warning "Couldn't restrict C:\GpuVM in the VM: $($_.Exception.Message)" }
     $state = Get-GpuVMState -Name $Name
@@ -294,7 +265,6 @@ function Invoke-GuestPendingWork {
         catch { Write-Warning "Couldn't enlarge the VM's C: drive: $($_.Exception.Message)" }
     }
 
-    # A copy of a template still has the template's computer name; it takes its own from the next restart.
     if ($state.Contains('pendingRename') -and $state['pendingRename']) {
         try {
             $computerName = ConvertTo-ComputerName $Name
@@ -311,12 +281,10 @@ function Invoke-GuestPendingWork {
         }
         catch { Write-Warning "Couldn't change the VM's computer name: $($_.Exception.Message)" }
     }
-    # Shared disks attached while the VM was off get their drive letter (and Steam library) now.
     foreach ($disk in @(Get-GpuVMSharedDisk | Where-Object { $_['vm'] -eq $Name })) {
         try { Initialize-GuestSharedDisk -VMName $Name -Credential $Credential -Disk (Read-SharedDisk -Name $disk['name']) | Out-Null }
         catch { Write-Warning "Couldn't prepare the disk '$($disk['name'])' in the VM: $($_.Exception.Message)" }
     }
-    # Apps no longer in the catalog (it changed between versions) are dropped instead of failing every time.
     $known = @((Get-AppCatalog).Keys)
     $pending = @($(if ($state.Contains('pendingApps')) { $state['pendingApps'] }) | Where-Object { $_ -and $_ -in $known })
     if (-not $pending) { return }

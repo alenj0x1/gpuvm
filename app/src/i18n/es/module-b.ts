@@ -1,4 +1,3 @@
-// Spanish for file transfer, restore point, GPU driver and Windows image messages of the module (see module.ts for how patterns work).
 export default {
   "Couldn't read the process's token.": "No se pudo leer el token del proceso.",
   "The Administrators SID isn't valid.": "SID de Administradores no válido.",
@@ -8,7 +7,6 @@ export default {
 } as Record<string, string>;
 
 export const patterns: [RegExp, string][] = [
-  // What the guest's tar said when a save failed, at the end of "The machine couldn't save the files. …".
   [/^tar still running: (.*)$/s, "tar sigue abierto: $1"],
   [/^That restore point isn't valid: (.+)$/, "Punto de restauración no válido: $1"],
   [/^The disk (.+) isn't connected to the machine '(.+)'\.$/, "El disco $1 no está conectado a la máquina '$2'."],

@@ -26,7 +26,6 @@ function Get-GpuVMHome {
                 memoryGB = [math]::Round($vm.MemoryStartup / 1GB, 1)
                 needGB   = $needGB
                 fits     = $vm.State -ne 'Off' -or $freeGB -ge $needGB
-                # What it can open with instead (0: not even the minimum fits).
                 fitGB    = Get-FittingMemoryGB -FreeGB $freeGB
             })
         if (-not $state) { continue }
@@ -45,8 +44,6 @@ function Get-GpuVMHome {
         if (-not $state['guest']) {
             & $issue 'password' 'Its Windows password is missing, so things inside it can''t be fixed' 'Save password' $null $null
         }
-        # Machines for agents and disposable copies: GpuVM pairs them itself the first time it opens them (the agent's
-        # viewer, quietly), so "not paired" before that was a false alarm on copies that then streamed (lab 054).
         elseif ($state['streaming'] -and -not $state['streaming']['pairedClient'] -and
             -not ($state.Contains('use') -and $state['use'] -eq 'agent') -and -not (Test-GpuVMDisposable -State $state)) {
             & $issue 'pairing' 'The viewer isn''t paired with it yet' 'Pair' 'Connect-GpuVM' @{ Name = $vm.Name; Pair = $true }
@@ -61,8 +58,6 @@ function Get-GpuVMHome {
         $attention.Add([ordered]@{ vm = $null; kind = 'disk'; text = "$diskFreeGB GB left on the machines' disk"; label = 'See disks'; cmd = $null; args = $null })
     }
 
-    # What uses the most memory, so a machine that doesn't fit says what to close. VM worker processes are left
-    # out (they are the machines themselves), and so are Windows' own.
     $skip = 'vmmem', 'vmwp', 'Memory Compression', 'System', 'Registry', 'Idle', 'MsMpEng', 'dwm', 'csrss', 'svchost', 'lsass', 'explorer'
     $top = @(Get-Process | Where-Object { $_.ProcessName -notin $skip } | Group-Object ProcessName |
             ForEach-Object { [ordered]@{ name = $_.Name; gb = [math]::Round(($_.Group | Measure-Object WorkingSet64 -Sum).Sum / 1GB, 1) } } |

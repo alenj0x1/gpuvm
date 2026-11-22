@@ -1,12 +1,4 @@
-//! The agent broker: the host end of the channel to GpuVM's guest agents (docs/agents/protocol.md, labs 047-052).
-//!
-//! - Listens on Hyper-V sockets at HV_GUID_CHILDREN:{SERVICE_ID}; Hyper-V tells which VM dialed (the VmId from
-//!   accept), the guest never does. The VM must have an agent installed by GpuVM (a registration in
-//!   ProgramData\GpuVM\agents\<vmid>, administrators only) and prove it knows that VM's secret.
-//! - Everything from a guest is hostile: frames are bounded, signed and numbered; events are rate-limited and only
-//!   stored; replies only answer requests the host sent. Nothing a guest sends makes the host do anything.
-//! - Requests come from the app and `gpuvm.exe --mcp` on the service pipe (commands answered here, see `command`) and
-//!   from the module on an administrators-only pipe. Each one is logged in the VM's folder (agent.log).
+// Everything from a guest is hostile: frames are bounded, signed and numbered; nothing a guest sends makes the host act.
 
 use std::collections::{HashMap, VecDeque};
 use std::io::Write;
@@ -26,31 +18,25 @@ use crate::server::log;
 use crate::win::wide;
 use crate::wire::{self, Frame, Opener, Sealer};
 
-/// The agent channel's Hyper-V socket service id (protocol.md).
 pub const SERVICE_ID: u128 = 0x94aca5ef_a5b6_45a9_8c15_c7724a63f3da;
 const SERVICE_KEY: &str = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization\GuestCommunicationServices\94aca5ef-a5b6-45a9-8c15-c7724a63f3da";
 const LEGACY_SERVICE_KEY: &str = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization\GuestCommunicationServices\{94aca5ef-a5b6-45a9-8c15-c7724a63f3da}";
-/// Mixed into the DPAPI encryption of each VM's secret (Install-GpuVMAgent uses the same).
 const SECRET_ENTROPY: &[u8] = b"GpuVM agent secret v1";
 
 const PING_EVERY: Duration = Duration::from_secs(2);
 const DEAD_AFTER_MS: u32 = 6000;
 const HANDSHAKE_MS: u32 = 5000;
-/// Connections still in their handshake, across all VMs and per VM.
 const MAX_PRE_AUTH: usize = 16;
 const MAX_PRE_AUTH_PER_VM: usize = 4;
-/// More frames than this in one second closes the connection (a flood, not an agent).
 const MAX_FRAMES_PER_SEC: u32 = 2000;
 const MAX_EVENTS_PER_SEC: f64 = 10.0;
 const MAX_IN_FLIGHT: usize = 32;
 const MAX_TIMEOUT_SEC: u64 = 600;
 const MAX_OFFER_BYTES: u64 = 2 << 30;
 const READ_CHUNK: u64 = 8 << 20;
-/// The agent's Outbox, relative to its home (files.* take paths relative to the agent's home).
 const OUTBOX: &str = r"Desktop\Outbox\";
 const DEFAULT_HOME: &str = r"C:\Users\agent";
 
-/// The guest methods of protocol.md; anything else is refused before it reaches a guest.
 const METHODS: &[&str] = &["agent.info", "screen.capture", "screen.state", "screen.refresh", "input.act", "ui.tree", "ui.invoke", "exec.run",
     "files.list", "files.read", "files.write"];
 const EVENTS: &[&str] = &["screen", "secure_desktop", "signed_in", "foreground", "error_box"];
@@ -59,17 +45,15 @@ fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
-/// Text a guest sent, made safe to show and log: no control characters, bounded length.
 fn clean(s: &str, max: usize) -> String {
     s.chars().filter(|&c| !hidden_char(c)).take(max).collect()
 }
 
-/// Control characters and the invisible ones that reorder or hide text (a name that reads backwards).
+// Includes invisible characters that reorder or hide text (a name that reads backwards).
 pub fn hidden_char(c: char) -> bool {
     c.is_control() || matches!(c, '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' | '\u{feff}')
 }
 
-/// A copy of a guest's value small enough to keep and show: strings cut, lists and depth bounded.
 fn bounded(v: &Value, depth: usize) -> Value {
     match v {
         Value::String(s) => Value::String(clean(s, 300)),
@@ -79,8 +63,6 @@ fn bounded(v: &Value, depth: usize) -> Value {
         other => other.clone(),
     }
 }
-
-// ---------------------------------------------------------------- registrations and secrets
 
 pub fn agents_dir() -> PathBuf {
     #[cfg(test)]
@@ -97,8 +79,6 @@ struct Reg {
     folder: PathBuf,
 }
 
-/// The VMs with an agent installed by GpuVM. Written by Install-GpuVMAgent into a folder only administrators can
-/// change; a registration whose folder name isn't its VmId is ignored.
 fn registrations() -> Vec<Reg> {
     let mut out = Vec::new();
     let Ok(dir) = std::fs::read_dir(agents_dir()) else { return out };
@@ -121,15 +101,11 @@ fn reg_by_id(vm_id: &str) -> Option<Reg> {
     registrations().into_iter().find(|r| r.vm_id == vm_id)
 }
 
-/// Machine names are compared like Hyper-V does: without regard to case.
 fn reg_by_name(name: &str) -> Option<Reg> {
     registrations().into_iter().find(|r| r.name.eq_ignore_ascii_case(name) || r.name.to_lowercase() == name.to_lowercase())
 }
 
-/// The VM's 32-byte secret: DPAPI (machine scope, GpuVM's entropy) in a file only SYSTEM can read.
-/// Stores a VM's new secret (Install-GpuVMAgent, through the module's administrators-only pipe). Done here, as
-/// SYSTEM: the file is created with its final SYSTEM-only ACL and filled in one go, then renamed over the old one, so
-/// it is never readable by anyone else and an elevated user (the app's bridge) never has to handle a file it can't open.
+// Written as SYSTEM with its final SYSTEM-only ACL, then renamed over the old one: never readable by anyone else.
 fn store_secret(vm_id: &str, secret: &[u8]) -> Result<(), String> {
     use windows_sys::Win32::Security::Authorization::*;
     use windows_sys::Win32::Storage::FileSystem::*;
@@ -194,9 +170,8 @@ fn load_secret(vm_id: &str) -> Result<[u8; 32], String> {
     plain.try_into().map_err(|_| "secret: not 32 bytes".to_string())
 }
 
-/// Registers the channel's service id with Hyper-V, so guests may dial it (the installer and the service at start).
 pub fn register_service_id() -> Result<(), String> {
-    // The first builds wrote the name with braces; Hyper-V's own entries (and its docs) have none.
+    // Older builds registered the name with braces; Hyper-V's own entries have none.
     unsafe { RegDeleteKeyW(HKEY_LOCAL_MACHINE, wide(LEGACY_SERVICE_KEY).as_ptr()) };
     let mut key: HKEY = std::ptr::null_mut();
     let status = unsafe {
@@ -219,10 +194,6 @@ pub fn unregister_service_id() {
     }
 }
 
-// ---------------------------------------------------------------- the per-VM request log
-
-/// Appends one line to the VM's agent.log (method, params without blobs, result code, duration). Kept at two files of
-/// 20 MB at most.
 fn vm_log(reg: &Reg, entry: Value) {
     static LOCK: Mutex<()> = Mutex::new(());
     let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -240,22 +211,17 @@ fn vm_log(reg: &Reg, entry: Value) {
     }
 }
 
-// ---------------------------------------------------------------- connected agents
-
 type Reply = Result<(Value, Option<Vec<u8>>), (String, String)>;
 
 struct Pending {
     tx: SyncSender<Reply>,
-    /// The MCP connection that asked (pausing or stopping it cancels its requests).
     client: Option<String>,
 }
 
 struct Conn {
     serial: u64,
-    /// The machine this connection serves (to see its pause right before a session's request goes out).
     vm_id: String,
-    /// Held while a session's request is checked and sent, and while a pause cancels requests: a pause never slips
-    /// between the two (review 3, #4).
+    // Held while a session's request is checked and sent, and while a pause cancels requests: a pause never slips between.
     dispatch: Mutex<()>,
     sock: Sock,
     out: Mutex<Sealer>,
@@ -266,16 +232,12 @@ struct Conn {
     dead: AtomicBool,
     info: Mutex<Value>,
     events: Mutex<Map<String, Value>>,
-    /// When the agent last said its screen changed size (ms since 1970; 0 = not since it connected).
     screen_changed: AtomicU64,
-    /// An agent.info refresh is on its way (one at a time, whatever the events).
     refreshing: AtomicBool,
-    /// Since when (ms) someone is signed in and the agent sees no display (0 = not so).
     blank_since: AtomicU64,
 }
 
 impl Conn {
-    /// Sends one signed JSON frame, and its blob right after it (under the same lock, so nothing comes between).
     fn send(&self, obj: Value, blob: Option<&[u8]>) -> Result<(), String> {
         let Value::Object(mut obj) = obj else { return Err("not an object".into()) };
         if let Some(b) = blob {
@@ -300,7 +262,6 @@ impl Conn {
         }
     }
 
-    /// Ends the requests that match (paused, stopped): they get `code` now and the guest is told to stop them.
     fn cancel_where(&self, code: &str, message: &str, matches: impl Fn(&Pending) -> bool) {
         let _dispatch = self.dispatch.lock().unwrap_or_else(|e| e.into_inner());
         let ids: Vec<(u64, Pending)> = {
@@ -321,7 +282,6 @@ impl Conn {
         let id = self.next_req.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = sync_channel(1);
         {
-            // A session's request goes out only if the machine isn't paused at that very moment.
             let _dispatch = self.dispatch.lock().unwrap_or_else(|e| e.into_inner());
             if client.is_some() && lock(&broker().machines).get(&self.vm_id).is_some_and(|m| m.paused.is_some()) {
                 return Err(("paused".into(), "The person took control of this machine.".into()));
@@ -349,7 +309,6 @@ impl Conn {
                     let _ = self.send(json!({ "t": "cancel", "id": id }), None);
                     return Err(("timeout".into(), format!("No answer in {} s.", timeout.as_secs())));
                 }
-                // Answered (or cancelled) at the same moment.
                 rx.recv_timeout(Duration::from_millis(100)).unwrap_or(Err(("timeout".into(), "No answer.".into())))
             }
             Err(RecvTimeoutError::Disconnected) => Err(("off".into(), "The agent disconnected.".into())),
@@ -364,9 +323,7 @@ struct Machine {
     pre_auth: usize,
     failures: VecDeque<Instant>,
     last_error: Option<String>,
-    /// When the person last gave control back (the agent should look at the screen again).
     resumed_at: Option<u64>,
-    /// The one automatic power cycle for a machine whose agent sees no display: 0 none yet, 1 running, 2 done.
     display_repair: u8,
 }
 
@@ -380,21 +337,16 @@ struct Client {
     killed: bool,
     max_steps: u64,
     max_minutes: u64,
-    /// What the session works on (Lock-GpuVMAgent -Task), shown in the app.
     task: Option<String>,
-    /// Last requests, newest last (the app shows them newest first), and the images of the last captures.
     actions: VecDeque<Value>,
     captures: VecDeque<(u64, String, Vec<u8>)>,
     last_activity: Instant,
-    /// For its line in the history (agent_log.rs): the machines it took, scripts run, approvals asked, files offered,
-    /// times the person took control, and how it ended when not by itself ("stopped", "limit").
     machines: Vec<String>,
     runs: u64,
     approvals: u64,
     offers: u64,
     controls: u64,
     ended: Option<&'static str>,
-    /// The person's machines this session may take (an allowed "take" request, once per machine and session).
     takes: Vec<String>,
 }
 
@@ -426,8 +378,6 @@ impl Offer {
     }
 }
 
-/// Something an agent session asks the person for (approval level "with approval"): network, an administrator's
-/// step, going back to a restore point, deleting a machine...
 #[derive(Clone)]
 struct Request {
     id: String,
@@ -443,14 +393,11 @@ struct Request {
     state: String,
     for_task: bool,
     used: bool,
-    /// Held by a command that is running with it (spent if that command succeeds).
     reserved: bool,
     resolved: Option<u64>,
-    /// Kind "send": the exact paths of this PC, and what they held when the session asked (files, bytes).
     send: Option<SendSet>,
 }
 
-/// What a "send" request lets one Send-GpuVMFile copy: these paths, as big as they were when the person saw them.
 #[derive(Clone, PartialEq, Debug)]
 struct SendSet {
     paths: Vec<String>,
@@ -475,10 +422,7 @@ struct Broker {
     offers: Mutex<Vec<Offer>>,
     requests: Mutex<Vec<Request>>,
     claims: Mutex<HashMap<String, String>>,
-    /// Disposable copies each agent session made (lowercase name → connection): only it may delete one at once.
     made: Mutex<HashMap<String, String>>,
-    /// The VM id of each machine a session made (by name, lowercase): `claims` and `made` are keyed by VM id, so a
-    /// later machine with the same name is never that session's (review 2, #7).
     names: Mutex<HashMap<String, String>>,
     listener: Mutex<Value>,
     pre_auth: AtomicUsize,
@@ -510,21 +454,13 @@ fn conn_of(vm_id: &str) -> Option<Arc<Conn>> {
     lock(&broker().conns).get(vm_id).cloned()
 }
 
-// ---------------------------------------------------------------- listening
-
-/// Starts the listener (and retries while the name is taken) and the module's pipe. Called once by the service.
 pub fn start() {
     std::thread::spawn(listen_loop);
     std::thread::spawn(crate::agent_pipe::serve);
 }
 
-// ---------------------------------------------------------------- sweeping registrations of deleted VMs
-
-/// Registrations (and so per-VM secrets) younger than this are left alone: an install may be writing one.
 const SWEEP_MIN_AGE: Duration = Duration::from_secs(600);
 
-/// The VmIds Hyper-V knows now, from Get-VM in GpuVM's own PowerShell (administrators-only folder). None when that
-/// can't be told for sure: then nothing is deleted.
 fn hyperv_vm_ids() -> Option<Vec<String>> {
     let local = crate::server::install_dir().join("pwsh").join("pwsh.exe");
     let installed = PathBuf::from(std::env::var("ProgramFiles").unwrap_or(r"C:\Program Files".into())).join("GpuVM").join("pwsh").join("pwsh.exe");
@@ -541,9 +477,7 @@ fn hyperv_vm_ids() -> Option<Vec<String>> {
     parse_vm_ids(&String::from_utf8_lossy(&output.stdout))
 }
 
-/// The VM id Hyper-V has now for a machine name: `Some(None)` when there is no such machine, `None` when it can't be
-/// told (then nothing is assumed). The name is a plain machine name (no wildcards) and reaches PowerShell as an
-/// environment variable, never as code.
+// The name reaches PowerShell as an environment variable, never as code.
 fn hyperv_id_of(name: &str) -> Option<Option<String>> {
     if name.is_empty() || name.len() > 40 || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
         return Some(None);
@@ -572,8 +506,6 @@ fn hyperv_id_of(name: &str) -> Option<Option<String>> {
     }
 }
 
-/// Deletes a VM's registration folder (agent.json and its SYSTEM-only secret) and forgets the machine. `Ok(false)`
-/// when there was none. The id is a canonical VM id (checked by the caller), so the path stays inside agents\.
 fn remove_registration(vm_id: &str) -> Result<bool, String> {
     let dir = agents_dir().join(vm_id);
     lock(&broker().machines).remove(vm_id);
@@ -585,7 +517,6 @@ fn remove_registration(vm_id: &str) -> Result<bool, String> {
     Ok(true)
 }
 
-/// `OK:<id>,<id>` (the last line); anything else means the list isn't known.
 fn parse_vm_ids(text: &str) -> Option<Vec<String>> {
     let line = text.lines().rev().find(|l| !l.trim().is_empty())?.trim();
     let list = line.strip_prefix("OK:")?;
@@ -596,7 +527,6 @@ fn parse_vm_ids(text: &str) -> Option<Vec<String>> {
     Some(ids)
 }
 
-/// The registration folders to delete: named after a VmId Hyper-V doesn't have, and older than the minimum age.
 fn orphans(folders: &[(String, Duration)], existing: &[String]) -> Vec<String> {
     folders.iter()
         .filter(|(name, age)| hv::parse_guid(name).is_some() && *age >= SWEEP_MIN_AGE && !existing.contains(&name.to_lowercase()))
@@ -604,8 +534,6 @@ fn orphans(folders: &[(String, Duration)], existing: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// Deletes the registrations (agent.json and the DPAPI secret) of VMs that no longer exist: a secret never outlives
-/// its machine. At the service's start and every hour; logged.
 pub fn sweep_registrations() -> Vec<String> {
     let Some(existing) = hyperv_vm_ids() else {
         log("agent: sweep skipped (Hyper-V's machines couldn't be listed)");
@@ -653,8 +581,7 @@ fn listen_loop() {
                 accept_loop(&listener);
             }
             Err(code) => {
-                // 10048: another program holds the name (lab 050: even an unelevated one can). Agents won't trust it
-                // (it can't answer the handshake), but they can't reach GpuVM either until it lets go.
+                // 10048: another program (even unelevated) holds the name; agents won't trust it but can't reach GpuVM until it lets go.
                 let error = if code == 10048 {
                     "Another program on this PC holds the agent channel's name; agents can't connect to GpuVM.".to_string()
                 } else {
@@ -688,9 +615,7 @@ fn accept_loop(listener: &Sock) {
             }
         };
         let vm_id = hv::fmt_guid(peer);
-        // Handshakes in progress: at most 4 per VM and 16 in all; more are closed at once. A count of connections
-        // at the same time, not a rate: a rate a flood keeps full would also lock out the real agent's redials (lab
-        // 052 saw that). A guest can still keep its own 4 slots busy, which only hurts that VM's channel.
+        // A count of concurrent handshakes, not a rate: a rate a flood keeps full would also lock out the real agent's redials.
         let admitted = {
             let mut machines = lock(&broker().machines);
             let m = machines.entry(vm_id.clone()).or_default();
@@ -731,7 +656,6 @@ fn set_last_error(vm_id: &str, error: Option<String>) {
 fn serve_agent(sock: Sock, vm_id: String) {
     let mut pre = PreAuth(Some(vm_id.clone()));
     let started = Instant::now();
-    // Unknown VMs (no agent installed by GpuVM) are closed without a word.
     let Some(reg) = reg_by_id(&vm_id) else { return };
     let reg_ms = started.elapsed().as_secs_f64() * 1000.0;
     sock.set_timeouts(HANDSHAKE_MS, 10_000);
@@ -747,7 +671,6 @@ fn serve_agent(sock: Sock, vm_id: String) {
     let session = match wire::host_handshake(&mut stream, &secret, &vm_id) {
         Ok(s) => s,
         Err(reason) => {
-            // At most 5 failures logged per VM every 10 s: a guest could otherwise fill the disk.
             let quiet = {
                 let mut machines = lock(&broker().machines);
                 let m = machines.entry(vm_id.clone()).or_default();
@@ -783,7 +706,6 @@ fn serve_agent(sock: Sock, vm_id: String) {
         refreshing: AtomicBool::new(false),
         blank_since: AtomicU64::new(0),
     });
-    // A new connection from the same VM replaces the old one (the agent restarted).
     if let Some(old) = lock(&broker().conns).insert(vm_id.clone(), conn.clone()) {
         old.close();
     }
@@ -821,8 +743,6 @@ fn serve_agent(sock: Sock, vm_id: String) {
     vm_log(&reg, json!({ "event": "disconnected", "reason": reason }));
 }
 
-/// The agent's screen changed size (`screen{w,h}` event): the agent info follows it and clients learn to recapture.
-/// Sizes out of range (a hostile guest) are ignored.
 fn note_screen(info: &Mutex<Value>, changed: &AtomicU64, data: &Value) -> bool {
     let size = |k: &str| data[k].as_u64().filter(|v| (1..=16384).contains(v));
     let (Some(w), Some(h)) = (size("w"), size("h")) else { return false };
@@ -835,13 +755,11 @@ fn note_screen(info: &Mutex<Value>, changed: &AtomicU64, data: &Value) -> bool {
     true
 }
 
-/// Someone signed in (`signed_in` event): the agent info says so at once, before its next refresh.
 fn note_signed_in(info: &Mutex<Value>, data: &Value) {
     let mut info = lock(info);
     if !info.is_object() {
         *info = json!({});
     }
-    // `user: null` is the agent saying nobody is signed in any more.
     match data["user"].as_str().filter(|u| !u.is_empty()) {
         Some(user) => {
             info["signedIn"] = json!(true);
@@ -854,8 +772,6 @@ fn note_signed_in(info: &Mutex<Value>, data: &Value) {
     }
 }
 
-/// How long a signed-in agent has seen no display at all (agent.info `displays: []`), in ms; `None` when it sees
-/// one or nobody is signed in. Starts counting the first time it is asked.
 fn blank_for(info: &Value, since: &AtomicU64, now: u64) -> Option<u64> {
     let blank = info["signedIn"] == json!(true) && info["displays"].as_array().is_some_and(Vec::is_empty);
     if !blank {
@@ -869,12 +785,8 @@ fn blank_for(info: &Value, since: &AtomicU64, now: u64) -> Option<u64> {
     Some(now.saturating_sub(start))
 }
 
-/// A signed-in agent with no display for this long is "no-display", not "ready" (lab 052: 4 of 13 copies never get
-/// one; nothing the host can do brings it back).
 const NO_DISPLAY_AFTER_MS: u64 = 20_000;
 
-/// Turns the machine off and on (the module's Restart-GpuVMCold, which keeps a disposable copy from being swept while
-/// it is off), in the background; the repair is "done" when it returns, whatever happened.
 fn power_cycle(reg: Reg) {
     log(&format!("agent: {} sees no display; turning it off and on", reg.name));
     vm_log(&reg, json!({ "event": "display_repair" }));
@@ -899,20 +811,13 @@ fn power_cycle(reg: Reg) {
 
 #[derive(Debug, PartialEq)]
 enum Verdict {
-    /// Nothing to say about its display.
     Fine,
-    /// No display: turn it off and on now (the first time).
     Repair,
-    /// The power cycle is under way.
     Repairing,
-    /// Still none after the power cycle: say so (ms without a display).
     NoDisplay(u64),
-    /// A display again after a repair: a later loss may be repaired once more.
     Recovered,
 }
 
-/// What a machine's display situation means: `connected` (its agent is), `blank` (ms signed in with no display),
-/// `said` (the agent reported no display path), `repair` (0 none, 1 running, 2 done).
 fn display_verdict(connected: bool, blank: Option<u64>, said: bool, signed_in: bool, repair: u8) -> Verdict {
     if repair == 1 {
         return Verdict::Repairing;
@@ -925,7 +830,6 @@ fn display_verdict(connected: bool, blank: Option<u64>, said: bool, signed_in: b
     }
 }
 
-/// Asks the agent for agent.info again, in the background, one request at a time.
 fn refresh_info(conn: Arc<Conn>) {
     if conn.refreshing.swap(true, Ordering::SeqCst) {
         return;
@@ -938,7 +842,6 @@ fn refresh_info(conn: Arc<Conn>) {
     });
 }
 
-/// Reads the guest's frames until the connection ends; returns why it ended.
 fn read_loop(conn: &Arc<Conn>, opener: &mut Opener) -> String {
     let mut stream = &conn.sock;
     let mut window = Instant::now();
@@ -1019,9 +922,6 @@ fn read_loop(conn: &Arc<Conn>, opener: &mut Opener) -> String {
                     note_signed_in(&conn.info, &data);
                 }
                 lock(&conn.events).insert(name.to_string(), json!({ "data": data, "at": now_ms() }));
-                // What Get-GpuVMAgent shows follows the machine: someone signed in, or the screen changed, means its
-                // displays and sign-in are asked again (agent-mcp 2026-11-19: a stale signedIn:false made a new copy
-                // wait 600 s for "ready").
                 if name == "signed_in" || name == "screen" {
                     refresh_info(conn.clone());
                 }
@@ -1031,9 +931,6 @@ fn read_loop(conn: &Arc<Conn>, opener: &mut Opener) -> String {
     }
 }
 
-// ---------------------------------------------------------------- running VMs (Host Compute Service)
-
-/// VmIds of the compute systems running now, or None when HCS can't be asked. Cached for a second.
 fn running_vms() -> Option<Vec<String>> {
     use windows_sys::Win32::System::HostComputeSystem::*;
     static CACHE: Mutex<Option<(Instant, Option<Vec<String>>)>> = Mutex::new(None);
@@ -1069,24 +966,15 @@ fn running_vms() -> Option<Vec<String>> {
     result
 }
 
-// ---------------------------------------------------------------- commands
-
-/// Who sent a command: the pipe (to impersonate them), their process, and which pipe.
 pub struct Ctx {
     pub pipe: HANDLE,
     pub pid: u32,
-    /// The module's administrators-only pipe: blobs come back as files instead of base64.
     pub admin: bool,
-    /// MCP connections registered over this pipe connection: dropped when it closes.
     owned: Vec<String>,
-    /// This pipe connection said it acts for a model (Register-GpuVMAgentPipe): limited like an agent session for as
-    /// long as it is open, and never taken for the person.
     agent_pipe: bool,
 }
 
-/// Processes that ever registered as agents (a session or an agent pipe), with an open handle to each: while the
-/// handle is held Windows never gives the pid to another process, and the entry goes once the process ended.
-/// Ending a session or closing a pipe doesn't make the process the person again (review 2, #2b).
+// Holding each process handle keeps Windows from reusing its pid; ending a session doesn't make the process the person again.
 struct AgentProcess(HANDLE);
 unsafe impl Send for AgentProcess {}
 impl Drop for AgentProcess {
@@ -1103,19 +991,16 @@ fn agent_pids() -> std::sync::MutexGuard<'static, HashMap<u32, AgentProcess>> {
     lock(AGENT_PIDS.get_or_init(|| Mutex::new(HashMap::new())))
 }
 
-/// Marks a process as an agent's for as long as it lives.
 fn mark_agent_pid(pid: u32) {
     use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE};
     let mut map = agent_pids();
     if map.contains_key(&pid) {
         return;
     }
-    // In tests the pids are made up: remembered without a handle.
     let h = unsafe { OpenProcess(PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
     map.insert(pid, AgentProcess(h));
 }
 
-/// Whether `pid` belongs to a live process that registered as an agent.
 fn is_agent_pid(pid: u32) -> bool {
     use windows_sys::Win32::System::Threading::WaitForSingleObject;
     let mut map = agent_pids();
@@ -1123,8 +1008,7 @@ fn is_agent_pid(pid: u32) -> bool {
     if p.0.is_null() {
         return true;
     }
-    // Only a process seen to have ended (WAIT_OBJECT_0) stops being an agent's; anything else (still running, or the
-    // wait failing) keeps it one. Ended: its handle closes and the pid may be reused afterwards.
+    // Only a process seen to have ended (WAIT_OBJECT_0) stops being an agent's; a failed wait keeps it one.
     if unsafe { WaitForSingleObject(p.0, 0) } != 0 {
         return true;
     }
@@ -1137,12 +1021,10 @@ impl Ctx {
         Ctx { pipe, pid, admin, owned: Vec::new(), agent_pipe: false }
     }
 
-    /// Whether this pipe connection acts for a model (the gate limits its module commands too).
     pub fn is_agent_pipe(&self) -> bool {
         self.agent_pipe
     }
 
-    /// A process that registered as an agent client (the MCP server) acts for a model: it never approves anything.
     fn is_agent_side(&self) -> bool {
         self.agent_pipe || is_agent_pid(self.pid) || lock(&broker().clients).values().any(|c| c.pid == self.pid)
     }
@@ -1170,47 +1052,34 @@ fn err<T>(code: &str, message: impl Into<String>) -> Result<T, CmdError> {
     Err(CmdError { code: code.into(), message: message.into() })
 }
 
-/// The commands the broker answers itself, with their exact arguments (exact case, like the bridge).
 const COMMANDS: &[(&str, &[&str])] = &[
-    // Machines with an agent, and the channel itself.
     ("Get-GpuVMAgent", &["Name"]),
     ("Get-GpuVMAgentBroker", &[]),
-    // One request to a machine's agent.
     ("Invoke-GpuVMAgent", &["Name", "Method", "Params", "TimeoutSec", "Connection", "Blob", "Note", "Intent"]),
-    // Agent sessions (the MCP server registers one per client), what they do, and taking a machine.
     ("Connect-GpuVMAgentClient", &["Client"]),
-    // The MCP server's first line on every pipe connection it opens: from then on that connection is an agent's
-    // (deny by default), even before or without a session. It can't be undone on that connection.
     ("Register-GpuVMAgentPipe", &["Connection"]),
     ("Disconnect-GpuVMAgentClient", &["Connection"]),
     ("Get-GpuVMAgentClient", &["Connection"]),
     ("Get-GpuVMAgentCapture", &["Connection", "Action"]),
     ("Lock-GpuVMAgent", &["Name", "Connection", "Task", "Approval"]),
     ("Unlock-GpuVMAgent", &["Name", "Connection"]),
-    // Control: the person pauses, takes control, gives it back, stops a session; the agent asks for the person.
     ("Request-GpuVMHuman", &["Name", "Connection", "Message"]),
     ("Suspend-GpuVMAgent", &["Name", "Connection", "Reason", "Message"]),
     ("Resume-GpuVMAgent", &["Name", "Connection"]),
     ("Stop-GpuVMAgentClient", &["Connection", "All"]),
-    // Approvals ("with approval" actions) and files leaving a machine.
     ("New-GpuVMAgentRequest", &["Name", "Connection", "Kind", "Title", "Reason", "TimeoutSec", "Path", "SizeBytes", "Files"]),
     ("Get-GpuVMAgentRequest", &["Id"]),
     ("Resolve-GpuVMAgentRequest", &["Id", "Allow", "ForTask"]),
-    // A session withdraws its own pending request (an approval or a call for a human); never the person's pause.
     ("Revoke-GpuVMAgentRequest", &["Id", "Connection"]),
     ("New-GpuVMAgentOffer", &["Name", "Path", "Note", "Connection"]),
     ("Get-GpuVMAgentOffer", &["Id", "Name"]),
     ("Resolve-GpuVMAgentOffer", &["Id", "Accept"]),
-    // What sessions do, live (the viewer's overlay) and once finished (the Agents page's history): the person's only.
     ("Wait-GpuVMAgentActivity", &["After", "TimeoutMs"]),
     ("Get-GpuVMAgentHistory", &["Limit"]),
-    // The person's settings.
     ("Get-GpuVMAgentSettings", &[]),
     ("Set-GpuVMAgentSettings", &["MaxSteps", "MaxMinutes", "ApprovalTimeoutSec"]),
     ("Set-GpuVMAgentClient", &["Name", "ClientApprovals"]),
-    // The module's Install-GpuVMAgent only (administrators' pipe): the service keeps the new secret as SYSTEM.
     ("Set-GpuVMAgentSecret", &["VmId", "Secret"]),
-    // Remove-GpuVM and Uninstall-GpuVMAgent: the secret is SYSTEM-only, so only the service can delete it.
     ("Remove-GpuVMAgentRegistration", &["VmId"]),
 ];
 
@@ -1218,7 +1087,6 @@ pub fn is_command(cmd: &str) -> bool {
     COMMANDS.iter().any(|(c, _)| *c == cmd)
 }
 
-/// The result line, shaped like the bridge's: `data` is a list (a single object becomes a one-item list).
 pub fn result_line(id: &Value, result: Result<Value, CmdError>) -> Value {
     match result {
         Ok(Value::Array(list)) => json!({ "id": id, "type": "result", "ok": true, "data": list }),
@@ -1227,7 +1095,6 @@ pub fn result_line(id: &Value, result: Result<Value, CmdError>) -> Value {
     }
 }
 
-/// What an agent caller may read: only its own sessions (review 2, #8). `None` = the person or the module, who see all.
 fn own_scope(ctx: &Ctx) -> Option<Vec<String>> {
     if !ctx.is_agent_side() {
         return None;
@@ -1247,11 +1114,9 @@ fn find_reg(name: &str) -> Result<Reg, CmdError> {
     reg_by_name(name).ok_or_else(|| CmdError { code: "not_found".into(), message: format!("No agent on '{name}'.") })
 }
 
-/// The machines a Suspend/Resume names: one by Name, or those taken by a session (`Connection`, "*" = all).
 fn targets(name: Option<&str>, connection: Option<&str>) -> Result<Vec<Reg>, CmdError> {
     if let Some(n) = name {
         let reg = find_reg(n)?;
-        // Name and Connection: that machine, only if that session holds it.
         if let Some(c) = connection.filter(|c| *c != "*") {
             let holder = lock(&broker().machines).get(&reg.vm_id).and_then(|m| m.taken_by.clone());
             if holder.as_deref() != Some(c) {
@@ -1266,7 +1131,6 @@ fn targets(name: Option<&str>, connection: Option<&str>) -> Result<Vec<Reg>, Cmd
     Ok(registrations().into_iter().filter(|r| taken.contains(&r.vm_id)).collect())
 }
 
-/// Runs one broker command. The caller already knows it is one (`is_command`).
 pub fn command(cmd: &str, args: &Value, ctx: &mut Ctx) -> Result<Value, CmdError> {
     let allowed = COMMANDS.iter().find(|(c, _)| *c == cmd).map(|(_, a)| *a).unwrap_or(&[]);
     let empty = Map::new();
@@ -1290,7 +1154,6 @@ pub fn command(cmd: &str, args: &Value, ctx: &mut Ctx) -> Result<Value, CmdError
         }
         "Invoke-GpuVMAgent" => invoke(args, ctx),
         "Connect-GpuVMAgentClient" => {
-            // Registering a session also marks the connection for good: closing the session doesn't lift the limits.
             if !ctx.admin {
                 ctx.agent_pipe = true;
                 mark_agent_pid(ctx.pid);
@@ -1301,7 +1164,6 @@ pub fn command(cmd: &str, args: &Value, ctx: &mut Ctx) -> Result<Value, CmdError
             if ctx.admin {
                 return err("denied", "The module's pipe isn't an agent's.");
             }
-            // Marked first: even a wrong Connection leaves this connection (and process) an agent's.
             ctx.agent_pipe = true;
             mark_agent_pid(ctx.pid);
             if let Some(c) = s("Connection") {
@@ -1339,7 +1201,7 @@ pub fn command(cmd: &str, args: &Value, ctx: &mut Ctx) -> Result<Value, CmdError
         "Lock-GpuVMAgent" | "Unlock-GpuVMAgent" | "Request-GpuVMHuman" => {
             let (name, id) = (need(s("Name"), "Name")?, need(s("Connection"), "Connection")?);
             own_client(id, ctx)?;
-            // A stopped session takes nothing (checked before the machines' lock: clients are always locked first).
+            // Checked before the machines' lock: clients are always locked first.
             if cmd == "Lock-GpuVMAgent" && lock(&broker().clients).get(id).is_some_and(|c| c.killed) {
                 return err("killed", "The person stopped this agent session.");
             }
@@ -1349,13 +1211,9 @@ pub fn command(cmd: &str, args: &Value, ctx: &mut Ctx) -> Result<Value, CmdError
             let m = machines.entry(reg.vm_id.clone()).or_default();
             match cmd {
                 "Lock-GpuVMAgent" => {
-                    // An agent takes one of the person's machines (not a disposable copy it made) only once the person
-                    // allowed it, once per machine and session (security review 2026-11-21: a model steered by text
-                    // it read must not reach the person's other machines unasked). The module and the app aren't asked.
-                    // (Held by another session: that is the answer, before any approval.)
+                    // One of the person's machines is taken only once the person allowed it: text a model read must not reach their other machines.
                     let elsewhere = machines.get(&reg.vm_id).and_then(|m| m.taken_by.as_deref()).is_some_and(|h| h != id);
                     if ctx.is_agent_side() && !elsewhere {
-                        // Clients are always locked first: the machines' lock is let go while checking.
                         drop(machines);
                         let made_here = lock(&broker().made).get(&reg.vm_id).is_some_and(|c| c == id);
                         let allowed_before = lock(&broker().clients).get(id).is_some_and(|c| c.takes.contains(&reg.vm_id));
@@ -1421,8 +1279,7 @@ pub fn command(cmd: &str, args: &Value, ctx: &mut Ctx) -> Result<Value, CmdError
                 return err("bad_request", "Reason is person or control.");
             }
             let mut regs = targets(s("Name"), s("Connection"))?;
-            // By session alone, Resume never gives back a machine the person took (a pause by the person, either
-            // reason): that one is resumed by its Name. Only the session's own call for a human is lifted.
+            // By session alone, Resume never gives back a machine the person took; that one is resumed by its Name.
             if cmd == "Resume-GpuVMAgent" && s("Name").is_none() {
                 let machines = lock(&broker().machines);
                 regs.retain(|r| machines.get(&r.vm_id).and_then(|m| m.paused.as_ref()).is_none_or(|p| p["by"] != "person"));
@@ -1497,7 +1354,6 @@ pub fn command(cmd: &str, args: &Value, ctx: &mut Ctx) -> Result<Value, CmdError
                 return err("bad_request", format!("This request is already {}.", r.state));
             }
             r.state = if allow { "allowed" } else { "denied" }.into();
-            // A send is always for that one copy: never "for the whole task".
             r.for_task = allow && flag("ForTask") && r.kind != "send";
             r.resolved = Some(now_ms());
             let out = r.to_json();
@@ -1509,9 +1365,6 @@ pub fn command(cmd: &str, args: &Value, ctx: &mut Ctx) -> Result<Value, CmdError
             Ok(out)
         }
         "Revoke-GpuVMAgentRequest" => {
-            // A session withdraws only what it asked for and is still waiting: its approval request, or its call for
-            // a human (which then resumes the machine). Never the person's pause or take-control, nor another
-            // session's request.
             let (id, conn) = (need(s("Id"), "Id")?, need(s("Connection"), "Connection")?);
             own_client(conn, ctx)?;
             {
@@ -1587,7 +1440,6 @@ pub fn command(cmd: &str, args: &Value, ctx: &mut Ctx) -> Result<Value, CmdError
         }
         "Get-GpuVMAgentHistory" => {
             person_only(ctx, "read the agents' history")?;
-            // A bare list would come back one line per item: one object around it.
             Ok(json!({ "sessions": crate::agent_log::read(args.get("Limit").and_then(Value::as_u64).unwrap_or(200).clamp(1, 1000) as usize) }))
         }
         "Set-GpuVMAgentSecret" => {
@@ -1619,7 +1471,6 @@ pub fn command(cmd: &str, args: &Value, ctx: &mut Ctx) -> Result<Value, CmdError
                 data = json!({});
             }
             if cmd == "Set-GpuVMAgentSettings" {
-                // Steps and minutes: 0 = no limit.
                 for (key, field, min, max) in [("MaxSteps", "maxSteps", 0, 100_000u64), ("MaxMinutes", "maxMinutes", 0, 24 * 60), ("ApprovalTimeoutSec", "approvalTimeoutSec", 10, 24 * 3600)] {
                     if let Some(v) = args.get(key) {
                         let n = v.as_u64().filter(|n| (min..=max).contains(n)).ok_or_else(|| CmdError { code: "bad_request".into(), message: format!("{key} must be {min} to {max}.") })?;
@@ -1641,7 +1492,6 @@ pub fn command(cmd: &str, args: &Value, ctx: &mut Ctx) -> Result<Value, CmdError
     }
 }
 
-/// Pending requests past their time are expired (and an allowed one-off is good for 10 minutes).
 fn expire(list: &mut Vec<Request>) {
     let now = now_ms();
     for r in list.iter_mut() {
@@ -1672,7 +1522,6 @@ fn new_request(args: &Map<String, Value>, ctx: &Ctx) -> Result<Value, CmdError> 
         c.name.clone()
     };
     let holder = lock(&broker().machines).get(&reg.vm_id).and_then(|m| m.taken_by.clone());
-    // Asking to take one of the person's machines comes before taking it; any other request, on a machine it holds.
     let free_for_take = kind == "take" && holder.as_deref().is_none_or(|h| h == id);
     if holder.as_deref() != Some(id) && !free_for_take {
         return err(if kind == "take" { "taken" } else { "not_taken" }, if kind == "take" { format!("'{}' is in use by another agent session.", reg.name) } else { format!("Take '{}' first.", reg.name) });
@@ -1684,12 +1533,10 @@ fn new_request(args: &Map<String, Value>, ctx: &Ctx) -> Result<Value, CmdError> 
         return err("busy", "Too many requests are waiting for the person.");
     }
     let now = now_ms();
-    // Sending files of this PC into the machine: the person sees the exact paths and what they hold, measured as the
-    // session's own user (never as the service: a size must not reveal files that user can't read).
+    // Measured as the session's own user, never as the service: a size must not reveal files that user can't read.
     let send = if kind == "send" {
         let paths = send_paths(args.get("Path"))?;
         let (files, bytes) = measure_as_client(ctx.pipe, &paths).map_err(|e| CmdError { code: "bad_request".into(), message: e })?;
-        // What the session says it saw must be what is there.
         let said = |k: &str| args.get(k).filter(|v| !v.is_null()).map(|v| v.as_u64().ok_or(()));
         for (key, real) in [("SizeBytes", bytes), ("Files", files)] {
             match said(key) {
@@ -1717,7 +1564,6 @@ fn new_request(args: &Map<String, Value>, ctx: &Ctx) -> Result<Value, CmdError> 
             _ => "Approve a step",
         }), 120),
     };
-    // A send is answered within 10 minutes: what it covers may change, so it never waits longer.
     let timeout = if send.is_some() { timeout.min(600) } else { timeout };
     // Taking one of the person's machines: the title is GpuVM's own, naming the machine (never the session's words).
     let title = if kind == "take" { format!("Use the machine '{}'", reg.name) } else { title };
@@ -1734,7 +1580,6 @@ fn new_request(args: &Map<String, Value>, ctx: &Ctx) -> Result<Value, CmdError> 
     Ok(out)
 }
 
-/// Seconds as the MCP may send them: a whole number, a whole float (600.0) or digits in a text.
 fn seconds(v: &Value) -> Option<u64> {
     v.as_u64()
         .or_else(|| v.as_f64().filter(|f| f.is_finite() && *f >= 0.0 && f.fract() == 0.0).map(|f| f as u64))
@@ -1743,11 +1588,9 @@ fn seconds(v: &Value) -> Option<u64> {
 
 const REQUEST_KINDS: &[&str] = &["admin", "network", "revert", "delete", "send", "take", "other"];
 
-/// The most a "send" request can cover, so the person can still read the title and the service can measure it.
 const SEND_MAX_PATHS: usize = 20;
 const SEND_MAX_ENTRIES: u64 = 100_000;
 
-/// The paths of a send (a text or a list of texts): plain local paths of this PC, at most SEND_MAX_PATHS.
 fn send_paths(v: Option<&Value>) -> Result<Vec<String>, CmdError> {
     let list: Vec<&Value> = match v {
         Some(Value::Array(a)) => a.iter().collect(),
@@ -1768,7 +1611,6 @@ fn send_paths(v: Option<&Value>) -> Result<Vec<String>, CmdError> {
     Ok(paths)
 }
 
-/// The same set of paths, whatever the order or the case.
 fn same_paths(a: &[String], b: &[String]) -> bool {
     let norm = |l: &[String]| {
         let mut v: Vec<String> = l.iter().map(|p| p.trim_end_matches('\\').to_lowercase()).collect();
@@ -1779,8 +1621,7 @@ fn same_paths(a: &[String], b: &[String]) -> bool {
     norm(a) == norm(b)
 }
 
-/// Files and bytes under the paths, without following any link: a link (junction, symbolic link) anywhere is refused,
-/// so what was approved can't be pointed somewhere else later.
+// Any link (junction, symbolic link) is refused, so what was approved can't be pointed somewhere else later.
 fn measure(paths: &[String]) -> Result<(u64, u64), String> {
     use std::os::windows::fs::MetadataExt;
     const REPARSE: u32 = 0x400;
@@ -1807,7 +1648,6 @@ fn measure(paths: &[String]) -> Result<(u64, u64), String> {
     Ok((files, bytes))
 }
 
-/// `measure` as the user on the other end of the pipe (the session's), then back to the service's identity.
 fn measure_as_client(pipe: HANDLE, paths: &[String]) -> Result<(u64, u64), String> {
     #[cfg(test)]
     if pipe.is_null() {
@@ -1836,8 +1676,6 @@ fn size_text(bytes: u64) -> String {
     }
 }
 
-/// Module commands an agent session (a process that registered as an agent client) may run through the service,
-/// and the approval each needs. Everything else is refused for it; the person's own app is never limited here.
 const AGENT_COMMANDS: &[(&str, Option<&str>)] = &[
     ("Get-GpuVM", None), ("Get-GpuVMOverview", None), ("Get-GpuVMTemplate", None), ("Get-GpuVMProfile", None),
     ("Get-GpuVMRestorePoint", None), ("New-GpuVMRestorePoint", None), ("New-GpuVM", None), ("Install-GpuVMAgent", None),
@@ -1845,12 +1683,6 @@ const AGENT_COMMANDS: &[(&str, Option<&str>)] = &[
     ("Restore-GpuVMRestorePoint", Some("revert")), ("Remove-GpuVM", Some("delete")),
 ];
 
-/// Checks a module command from the service pipe before it reaches PowerShell. For an agent session: only the
-/// commands above, on machines it took (or a new disposable copy), with an allowed request of the right kind
-/// (`Approval: <request id>`) where one is needed. The `Approval` argument is removed before the bridge sees it.
-/// The arguments an agent session may pass to each module command, and their types: `s` text, `b` true/false,
-/// `i` whole number, `a` a text or a list of texts, `o` an object (checked further below). Anything else, or another
-/// type (a list where a name goes), is refused before PowerShell sees it (review 2, #4).
 const AGENT_ARGS: &[(&str, &[(&str, char)])] = &[
     ("Get-GpuVM", &[("Name", 's')]),
     ("Get-GpuVMOverview", &[]),
@@ -1893,9 +1725,8 @@ fn check_agent_args(cmd: &str, args: &Value) -> Result<(), CmdError> {
         }
     }
     match cmd {
-        // A copy for an agent keeps the agent's account: never the person's (review 2, #4).
         "Install-GpuVMAgent" if obj.get("User").is_some_and(|u| u != "agent") => return err("denied", "An agent session installs the agent with its own account only."),
-        // Only processors and memory may differ from the template (review 2, #3): no network, GPU, use or profile.
+        // Only processors and memory may differ from the template: no network, GPU or profile override.
         "New-GpuVM" => {
             if let Some(o) = obj.get("Override") {
                 let vm = o.as_object().filter(|m| m.len() == 1).and_then(|m| m.get("vm")).and_then(Value::as_object);
@@ -1914,13 +1745,10 @@ fn check_agent_args(cmd: &str, args: &Value) -> Result<(), CmdError> {
     Ok(())
 }
 
-/// What the gate let through, followed to its end by the service: an approval is spent only when the command
-/// succeeded (review 3, #17), and a new copy becomes its session's then. Dropped without success, the approval is free
-/// again.
+// An approval is spent only when the command succeeded; dropped without success, it is free again.
 pub struct Gated {
     claim: Option<Claim>,
     approval: Option<String>,
-    /// A machine this command removes or renames: what sessions made or claimed under that name is forgotten.
     forget: Option<String>,
 }
 
@@ -1929,7 +1757,6 @@ impl Gated {
         Gated { claim: None, approval: None, forget: None }
     }
 
-    /// The command succeeded; `data` is its result (New-GpuVM's says the copy's vmId).
     pub fn succeeded(mut self, data: &Value) {
         if let Some(c) = self.claim.take() {
             let first = data.as_array().and_then(|a| a.first()).unwrap_or(data);
@@ -1962,8 +1789,6 @@ impl Drop for Gated {
     }
 }
 
-/// A machine name that no longer means the machine a session made or claimed (deleted or renamed, by anyone): a later
-/// machine with the same name is never that session's (review 2, #7).
 pub fn forget_name(name: &str) {
     let key = name.to_lowercase();
     let mut ids: Vec<String> = lock(&broker().names).remove(&key).into_iter().collect();
@@ -1974,9 +1799,7 @@ pub fn forget_name(name: &str) {
     }
 }
 
-/// The VM id behind a machine name: its agent's registration, or the copy a session made under that name, but only
-/// while Hyper-V still has that very VM under that name. A machine deleted outside GpuVM (Hyper-V Manager) and made
-/// again with the same name has another id, and is nobody's.
+// Only while Hyper-V still has that very VM under that name: a machine re-created with the same name has another id and is nobody's.
 fn id_of_name(name: &str) -> Option<String> {
     if let Some(r) = reg_by_name(name) {
         return Some(r.vm_id);
@@ -1985,7 +1808,6 @@ fn id_of_name(name: &str) -> Option<String> {
     match hyperv_id_of(name) {
         Some(Some(now)) if now == made => Some(made),
         Some(_) => {
-            // Gone, or another VM now: forget it for good.
             forget_name(name);
             None
         }
@@ -1993,15 +1815,12 @@ fn id_of_name(name: &str) -> Option<String> {
     }
 }
 
-/// Forgets what sessions made or claimed for VMs Hyper-V no longer has (deleted outside GpuVM).
 fn prune_made(existing: &[String]) {
     lock(&broker().made).retain(|id, _| existing.contains(id));
     lock(&broker().claims).retain(|id, _| existing.contains(id));
     lock(&broker().names).retain(|_, id| existing.contains(id));
 }
 
-/// Counts one step of an agent session through the service, like a guest request: a stopped session or one past its
-/// budget does nothing more (review 3, #1).
 fn charge(id: &str) -> Result<(), CmdError> {
     let mut clients = lock(&broker().clients);
     let Some(c) = clients.get_mut(id) else { return err("not_found", "Unknown agent connection.") };
@@ -2028,9 +1847,7 @@ pub fn gate(request: &mut Value, pid: u32, agent_pipe: bool) -> Result<Gated, Cm
         gated.forget = request["args"]["Name"].as_str().filter(|n| !n.is_empty()).map(str::to_string);
     }
     let mine: Vec<String> = lock(&broker().clients).iter().filter(|(_, c)| c.pid == pid).map(|(id, _)| id.clone()).collect();
-    // The person's app (or the module) is never limited here. A process that ever registered as an agent stays one
-    // until it ends, and a pipe connection that said it acts for a model is one, even with no session registered
-    // (after a service restart, or a connection opened for a long job): the gate never fails open for them.
+    // The gate never fails open: a process that ever registered as an agent, or a pipe that said it acts for a model, stays limited.
     if mine.is_empty() && !agent_pipe && !is_agent_pid(pid) {
         return Ok(gated);
     }
@@ -2039,14 +1856,12 @@ pub fn gate(request: &mut Value, pid: u32, agent_pipe: bool) -> Result<Gated, Cm
     };
     check_agent_args(&cmd, &request["args"])?;
     if cmd == "New-GpuVM" {
-        // The module then copies only a template made for agents, and the copy is an agent machine (isolated).
         if let Some(a) = request["args"].as_object_mut() {
             a.insert("ForAgent".into(), json!(true));
         }
     }
     let args = &request["args"];
     let name = args["Name"].as_str().unwrap_or("");
-    // The session acting: the one named, or the process's only one.
     let acting = match connection.as_ref().and_then(Value::as_str) {
         Some(c) if mine.iter().any(|m| m == c) => Some(c.to_string()),
         Some(_) => return err("not_found", "Unknown agent connection."),
@@ -2057,12 +1872,10 @@ pub fn gate(request: &mut Value, pid: u32, agent_pipe: bool) -> Result<Gated, Cm
         if args["Disposable"] != json!(true) || args["Template"].as_str().is_none_or(str::is_empty) {
             return err("denied", "An agent session can only create disposable copies of a template.");
         }
-        // The new copy belongs to the session that makes it from the moment it exists (create + take at once).
         let Some(id) = acting.clone() else { return err("bad_request", "Connection is required.") };
         if name.is_empty() {
             return err("bad_request", "Name is required.");
         }
-        // A few at once: a looping session can't fill the disk or the memory with copies (security review 2026-11-21).
         let made = lock(&broker().made).values().filter(|c| **c == id).count();
         if made >= MAX_DISPOSABLES {
             return err("limit", format!("This session already has {made} disposable machines: destroy one before creating another."));
@@ -2072,8 +1885,7 @@ pub fn gate(request: &mut Value, pid: u32, agent_pipe: bool) -> Result<Gated, Cm
         return Ok(gated);
     }
     if cmd == "Remove-GpuVMDisposable" {
-        // Deleting one disposable machine at once (no grace, no approval, no UAC): only a copy this very session made
-        // (the module also checks it is disposable and off). The general sweep (no Name) stays allowed.
+        // Deleting at once (no grace, approval or UAC) only for a copy this very session made.
         if !name.is_empty() && !id_of_name(name).and_then(|id| lock(&broker().made).get(&id).cloned()).is_some_and(|c| mine.contains(&c)) {
             return err("denied", format!("An agent session can only delete the disposable machines it made, and '{name}' isn't one."));
         }
@@ -2087,7 +1899,6 @@ pub fn gate(request: &mut Value, pid: u32, agent_pipe: bool) -> Result<Gated, Cm
             None => return err("not_taken", format!("Take '{name}' first.")),
         }
     }
-    // A machine the person paused does nothing for the session, through the service either (review 3, #1).
     if !cmd.starts_with("Get-") && !name.is_empty() {
         if let Some(reg) = reg_by_name(name) {
             if lock(&broker().machines).get(&reg.vm_id).is_some_and(|m| m.paused.is_some()) {
@@ -2117,8 +1928,6 @@ pub fn gate(request: &mut Value, pid: u32, agent_pipe: bool) -> Result<Gated, Cm
             return err("needs_approval", format!("{cmd} needs the person's approval: ask with New-GpuVMAgentRequest -Kind {kind}."));
         };
         if kind == "send" {
-            // Exactly the approved paths, still holding what the person saw (a file added or swapped since, or a link
-            // put in place, needs a new approval).
             let Some(approved) = r.send.clone() else { return err("needs_approval", "This approval isn't for sending files.") };
             let asked = send_paths(Some(&args["Path"]))?;
             if !same_paths(&asked, &approved.paths) {
@@ -2136,7 +1945,6 @@ pub fn gate(request: &mut Value, pid: u32, agent_pipe: bool) -> Result<Gated, Cm
                 }
             }
         }
-        // Held for this command; spent only if it succeeds (a declined UAC or a module error leaves it usable).
         if !r.for_task {
             r.reserved = true;
         }
@@ -2145,13 +1953,11 @@ pub fn gate(request: &mut Value, pid: u32, agent_pipe: bool) -> Result<Gated, Cm
     Ok(gated)
 }
 
-/// A disposable copy an agent session is making: it is that session's from the moment New-GpuVM succeeds.
 pub struct Claim {
     name: String,
     connection: String,
 }
 
-/// Called by the service once New-GpuVM succeeded for an agent session (only then: a failed one leaves nothing).
 pub fn claim(c: Claim, vm_id: &str) {
     if lock(&broker().clients).contains_key(&c.connection) {
         lock(&broker().names).insert(c.name.to_lowercase(), vm_id.to_string());
@@ -2160,13 +1966,10 @@ pub fn claim(c: Claim, vm_id: &str) {
     }
 }
 
-/// Who holds a machine: the session that took it, or the one that created it while its agent isn't registered yet
-/// (the claim becomes the machine's taker as soon as it is).
 fn owner_of_name(name: &str) -> Option<String> {
     match reg_by_name(name) {
         Some(reg) => {
-            // The claim (by this VM's id) and whether its session still exists, before the machines' lock: clients
-            // are always locked first.
+            // Read before the machines' lock: clients are always locked first.
             let claim = lock(&broker().claims).remove(&reg.vm_id).filter(|c| lock(&broker().clients).contains_key(c));
             let mut machines = lock(&broker().machines);
             let m = machines.entry(reg.vm_id.clone()).or_default();
@@ -2179,7 +1982,6 @@ fn owner_of_name(name: &str) -> Option<String> {
             }
             let owner = m.taken_by.clone();
             drop(machines);
-            // A disposable copy the session made is one of its machines too (its history line).
             if let Some(c) = claimed {
                 if let Some(client) = lock(&broker().clients).get_mut(&c) {
                     if !client.machines.contains(&reg.name) {
@@ -2231,10 +2033,7 @@ fn get_agents(name: Option<&str>) -> Value {
             Some(c) => (lock(&c.info).clone(), Value::Object(lock(&c.events).clone())),
             None => (Value::Null, Value::Null),
         };
-        // Signed in but no display: asked again (the agent may just be starting). Past 20 s, or as soon as the agent
-        // says Windows gives it no display path (agent.info noDisplay, 0.4.5), the machine is turned off and on ONCE
-        // (only a power cycle clears that state, agent-guest lab 051); it is "starting" meanwhile, and "no-display"
-        // with the reason if it still has none afterwards.
+        // No display: only a power cycle clears it, so the machine is turned off and on once (past 20 s, or when the agent reports noDisplay).
         let mut state = state;
         let mut last_error = m.and_then(|m| m.last_error.clone());
         let repair = m.map(|m| m.display_repair).unwrap_or(0);
@@ -2285,7 +2084,6 @@ fn get_agents(name: Option<&str>) -> Value {
     Value::Array(list)
 }
 
-/// The person's settings, in ProgramData\GpuVM\agents\settings.json (administrators only).
 fn read_settings() -> Value {
     std::fs::read_to_string(agents_dir().join("settings.json")).ok()
         .and_then(|t| serde_json::from_str::<Value>(t.trim_start_matches('\u{feff}')).ok()).unwrap_or(Value::Null)
@@ -2299,8 +2097,6 @@ fn write_settings(data: &Value) -> Result<(), String> {
     std::fs::rename(&tmp, dir.join("settings.json")).map_err(|e| e.to_string())
 }
 
-/// A session past the limit the person set (0 = none, the default since 2026-11-21: a fixed 500 steps cut long tasks
-/// short and read like progress), and what to tell it.
 fn over_limit(c: &Client) -> Option<String> {
     let steps = c.max_steps > 0 && c.steps >= c.max_steps;
     let minutes = c.max_minutes > 0 && c.started.elapsed() >= Duration::from_secs(c.max_minutes * 60);
@@ -2311,7 +2107,6 @@ fn over_limit(c: &Client) -> Option<String> {
     })
 }
 
-/// (steps, minutes) per session, 0 = no limit, and how long a request or an offer waits for the person (s).
 fn settings() -> (u64, u64, u64) {
     let data = read_settings();
     (data["maxSteps"].as_u64().unwrap_or(0).min(100_000), data["maxMinutes"].as_u64().unwrap_or(0).min(24 * 60),
@@ -2324,8 +2119,6 @@ fn settings_json() -> Value {
     json!({ "maxSteps": steps, "maxMinutes": minutes, "approvalTimeoutSec": approval, "clients": if clients.is_object() { clients } else { json!({}) } })
 }
 
-/// The name the person sees for an MCP client: products by their name ("claude-code" is Claude Code), anything else
-/// with its dashes as spaces and a capital first letter. Also the key of its per-client settings.
 fn display_name(raw: &str) -> String {
     match raw.to_ascii_lowercase().as_str() {
         "claude-code" | "claude code" => "Claude Code".into(),
@@ -2347,7 +2140,6 @@ fn connect_client(client: &Value, ctx: &mut Ctx) -> Result<Value, CmdError> {
     let name = display_name(&clean(client["name"].as_str().unwrap_or("unknown"), 64));
     let version = clean(client["version"].as_str().unwrap_or(""), 32);
     let (max_steps, max_minutes, approval) = settings();
-    // MCP elicitation (approving low-risk steps in the client) only where the person turned it on for that client.
     let elicitation = read_settings()["clients"][&name]["clientApprovals"].as_bool().unwrap_or(false);
     let id = wire::hex(&wire::random::<16>());
     lock(&broker().clients).insert(id.clone(), Client {
@@ -2360,7 +2152,6 @@ fn connect_client(client: &Value, ctx: &mut Ctx) -> Result<Value, CmdError> {
     Ok(json!({ "connection": id, "settings": { "elicitation": elicitation, "maxSteps": max_steps, "maxMinutes": max_minutes, "approvalTimeoutSec": approval } }))
 }
 
-/// The agent sessions as the app shows them: who, which machine, doing what, how far into its budget, last steps.
 fn get_clients(only: Option<&str>) -> Value {
     let regs = registrations();
     let machines = lock(&broker().machines);
@@ -2394,7 +2185,6 @@ fn get_clients(only: Option<&str>) -> Value {
     Value::Array(list)
 }
 
-/// Keeps one step of a session for the app (and the image of a capture, the last 10).
 fn record_action(id: &str, method: &str, note: Option<&str>, ok: bool, code: &str, ms: f64, capture: Option<(&str, &[u8])>) {
     static NEXT: AtomicU64 = AtomicU64::new(1);
     let mut clients = lock(&broker().clients);
@@ -2414,7 +2204,6 @@ fn record_action(id: &str, method: &str, note: Option<&str>, ok: bool, code: &st
     }
 }
 
-/// A connection id is only usable from the process that registered it.
 fn own_client(id: &str, ctx: &Ctx) -> Result<(), CmdError> {
     match lock(&broker().clients).get(id) {
         Some(c) if c.pid == ctx.pid => Ok(()),
@@ -2429,7 +2218,6 @@ fn release_and_cancel(id: &str, code: &str, message: &str) {
         if m.taken_by.as_deref() == Some(id) {
             m.taken_by = None;
         }
-        // Its own call for a human goes with it (review 3, #2); a pause by the person stays.
         if m.paused.as_ref().is_some_and(|p| p["by"] == "agent" && p["connection"].as_str() == Some(id)) {
             m.paused = None;
         }
@@ -2443,7 +2231,6 @@ fn release_and_cancel(id: &str, code: &str, message: &str) {
 fn disconnect_client(id: &str) {
     if let Some(c) = lock(&broker().clients).remove(id) {
         log(&format!("agent: client {} disconnected", c.name));
-        // A session that never took a machine left nothing worth keeping.
         if !c.machines.is_empty() {
             crate::agent_log::append(&json!({ "id": id, "client": c.name, "version": c.version, "task": c.task, "machines": c.machines,
                 "start": c.started_ms, "end": now_ms(), "steps": c.steps, "runs": c.runs, "approvals": c.approvals, "offers": c.offers,
@@ -2453,8 +2240,6 @@ fn disconnect_client(id: &str) {
     release_and_cancel(id, "cancelled", "The agent session ended.");
 }
 
-/// What a request of an MCP connection may do now: its own, unstopped, within budget, on a machine it took and
-/// that isn't paused. Counts the step.
 fn admit(id: &str, vm_id: &str, name: &str, ctx: &Ctx) -> Result<(), CmdError> {
     {
         let mut clients = lock(&broker().clients);
@@ -2483,13 +2268,11 @@ fn admit(id: &str, vm_id: &str, name: &str, ctx: &Ctx) -> Result<(), CmdError> {
     Ok(())
 }
 
-/// Shape of params kept in the log: blobs out, strings cut.
 fn loggable(v: &Value) -> Value {
     bounded(&redacted(v), 4)
 }
 
-/// What a model types or runs never reaches the log, at any depth (input.act's actions[].text, a field's value, a
-/// command line, a file's data): only its length.
+// What a model types or runs never reaches the log, at any depth: only its length.
 fn redacted(v: &Value) -> Value {
     const SECRET: &[&str] = &["data", "blob", "stdin", "text", "value", "command", "args", "password"];
     match v {
@@ -2508,10 +2291,8 @@ fn redacted(v: &Value) -> Value {
     }
 }
 
-/// Disposable machines one agent session may have at once.
 const MAX_DISPOSABLES: usize = 3;
 
-/// Ids of steps in the live view (a start and its end share one).
 static NEXT_STEP: AtomicU64 = AtomicU64::new(1);
 
 fn invoke(args: &Map<String, Value>, ctx: &Ctx) -> Result<Value, CmdError> {
@@ -2542,11 +2323,9 @@ fn invoke(args: &Map<String, Value>, ctx: &Ctx) -> Result<Value, CmdError> {
     let client = s("Connection");
     match client {
         Some(id) => admit(id, &reg.vm_id, &reg.name, ctx)?,
-        // The MCP server always names its connection: unnamed requests are the person's (the app) or the module's.
         None if ctx.is_agent_side() => return err("not_taken", "Connection is required."),
         None => {}
     }
-    // The live view (agent_log.rs): this step starts, with its shape and the screen it is drawn on.
     let live = client.map(|id| {
         let name = lock(&broker().clients).get_mut(id).map(|c| {
             if method == "exec.run" {
@@ -2599,7 +2378,6 @@ fn invoke(args: &Map<String, Value>, ctx: &Ctx) -> Result<Value, CmdError> {
         Err((code, message)) => json!({ "ok": false, "error": { "code": code, "message": message } }),
     };
     out["ms"] = json!((ms * 100.0).round() / 100.0);
-    // Every answer says when the agent's screen last changed size, so a client recaptures before acting on old pixels.
     if let Some(c) = conn_of(&reg.vm_id) {
         let changed = c.screen_changed.load(Ordering::SeqCst);
         if changed > 0 {
@@ -2610,7 +2388,6 @@ fn invoke(args: &Map<String, Value>, ctx: &Ctx) -> Result<Value, CmdError> {
     Ok(out)
 }
 
-/// A blob for the module: a file in ProgramData\GpuVM\agents\blobs (administrators only), deleted after an hour.
 fn save_blob(data: &[u8], format: &str) -> Result<String, String> {
     let dir = agents_dir().join("blobs");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -2621,8 +2398,7 @@ fn save_blob(data: &[u8], format: &str) -> Result<String, String> {
             }
         }
     }
-    // The guest names the format: only image extensions it may choose, anything else is .bin (a guest-chosen .exe or
-    // .hta here would be one double-click away from running as an administrator; security review 2026-11-21).
+    // Only image extensions the guest may choose: a guest-chosen .exe or .hta here would be a double-click from running as administrator.
     let ext = match format.to_ascii_lowercase().as_str() {
         "png" => "png",
         "webp" => "webp",
@@ -2634,14 +2410,11 @@ fn save_blob(data: &[u8], format: &str) -> Result<String, String> {
     Ok(path.display().to_string())
 }
 
-// ---------------------------------------------------------------- Outbox offers
-
-/// A file name safe on this PC: no path, no reserved names or characters, no trailing dots or spaces.
 pub fn safe_file_name(name: &str) -> Option<String> {
     let cleaned: String = name.chars().filter(|&c| !hidden_char(c) && !r#"<>:"/\|?*"#.contains(c)).take(200).collect();
     let cleaned = cleaned.trim_end_matches(['.', ' ']).trim_start().to_string();
     let stem = cleaned.split('.').next().unwrap_or("").trim_end().to_uppercase();
-    // COM0-9 / LPT0-9, and the superscript ¹ ² ³ Windows also reserves (review 2, #10).
+    // COM0-9 / LPT0-9, and the superscript ¹ ² ³ Windows also reserves.
     let device_digit = |c: char| c.is_ascii_digit() || matches!(c, '\u{b9}' | '\u{b2}' | '\u{b3}');
     let chars: Vec<char> = stem.chars().collect();
     let reserved = ["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"].contains(&stem.as_str())
@@ -2649,18 +2422,13 @@ pub fn safe_file_name(name: &str) -> Option<String> {
     (!cleaned.is_empty() && !reserved && cleaned != "." && cleaned != "..").then_some(cleaned)
 }
 
-/// Files that act just by being looked at in Explorer (an icon or a target on a network path makes Windows send the
-/// person's NTLM hash to the guest's server): never offered (review 2, #10).
+// Files that act just by being shown in Explorer (an icon or target on a network path leaks the person's NTLM hash): never offered.
 pub fn offer_kind_allowed(file_name: &str) -> bool {
     let lower = file_name.to_lowercase();
     let blocked_ext = [".url", ".lnk", ".scf", ".library-ms", ".searchconnector-ms", ".website", ".appref-ms"];
     lower != "desktop.ini" && !blocked_ext.iter().any(|e| lower.ends_with(e))
 }
 
-/// Only a file directly inside the agent's Outbox: no subfolders, links are the guest's problem (it reads as
-/// `agent` and the host only receives bytes).
-/// `path` is relative to the agent's home (`Desktop\Outbox\x`) or absolute under it; `home` is what the agent
-/// reported (agent.info), `C:\Users\agent` when it hasn't yet. Returns the file's name.
 pub fn outbox_file(path: &str, home: Option<&str>) -> Option<String> {
     if path.contains('/') {
         return None;
@@ -2699,9 +2467,7 @@ fn new_offer(name: &str, path: &str, note: &str, client: Option<&str>, ctx: &Ctx
     if !offer_kind_allowed(&file_name) {
         return err("denied", "Shortcuts and folder settings files (.url, .lnk, .scf, .library-ms, .searchConnector-ms, desktop.ini) can't leave the machine.");
     }
-    // Kept relative to the agent's home: what the guest's files.read takes, whatever its profile folder is called.
     let path = &format!("{OUTBOX}{guest_name}");
-    // The size, as the guest reports it (shown to the person; the copy re-checks every byte count).
     let size = conn.request("files.list", &json!({ "path": OUTBOX.trim_end_matches('\\') }), None, Duration::from_secs(10), client).ok()
         .and_then(|(v, _)| {
             let list = v.get("entries").or(v.get("items")).cloned().unwrap_or(v);
@@ -2736,7 +2502,6 @@ fn new_offer(name: &str, path: &str, note: &str, client: Option<&str>, ctx: &Ctx
     Ok(json!({ "offerId": id }))
 }
 
-/// An approved offer being copied: where it comes from and how to read it from the guest.
 pub(crate) struct OfferJob {
     pub machine: String,
     pub file_name: String,
@@ -2745,7 +2510,6 @@ pub(crate) struct OfferJob {
 }
 
 impl OfferJob {
-    /// One piece of the file: (the file's total size as the guest says, the bytes from `offset`).
     pub fn read(&self, offset: u64, length: u64) -> Result<(Option<u64>, Vec<u8>), String> {
         let c = self.conn.as_ref().ok_or("The agent isn't connected.")?;
         let (v, blob) = c.request("files.read", &json!({ "path": self.path, "offset": offset, "length": length }), None, Duration::from_secs(120), None)
@@ -2754,7 +2518,6 @@ impl OfferJob {
     }
 }
 
-/// For offer.rs: takes a pending offer (marks it as being copied, so it is answered once) or declines it.
 pub(crate) fn take_offer(id: &str, approve: bool) -> Result<Option<OfferJob>, CmdError> {
     let (vm_id, path, file_name) = {
         let mut offers = lock(&broker().offers);
@@ -2799,9 +2562,7 @@ pub(crate) mod tests {
     use super::*;
 
     pub static TEST_AGENTS: OnceLock<PathBuf> = OnceLock::new();
-    /// Power cycles asked in tests (machine names).
     pub static TEST_CYCLES: Mutex<Vec<String>> = Mutex::new(Vec::new());
-    /// What "Hyper-V" has in tests: machine name (lowercase) → VM id.
     pub static TEST_HV: Mutex<std::collections::BTreeMap<String, String>> = Mutex::new(std::collections::BTreeMap::new());
 
     fn code(r: Result<Value, CmdError>) -> String {
@@ -2812,8 +2573,6 @@ pub(crate) mod tests {
         }
     }
 
-    /// The policy the MCP server can't bypass: one client per machine, pause, kill switch, budget, and only the
-    /// person approves. No agent is connected, so an admitted request ends in "off".
     #[test]
     fn agent_session_policy() {
         let dir = std::env::temp_dir().join(format!("gpuvm-agent-test-{}", std::process::id()));
@@ -2838,40 +2597,31 @@ pub(crate) mod tests {
         assert_eq!(c["settings"]["elicitation"], false);
         let id = c["connection"].as_str().unwrap().to_string();
         let id2 = command("Connect-GpuVMAgentClient", &json!({ "Client": { "name": "other" } }), &mut other).unwrap()["connection"].as_str().unwrap().to_string();
-        // Exact argument names; unknown ones are refused.
         assert_eq!(code(command("Invoke-GpuVMAgent", &json!({ "name": "Test1", "Method": "agent.info" }), &mut app)), "bad_request");
         assert_eq!(code(command("Invoke-GpuVMAgent", &json!({ "Name": "Test1", "Method": "rm" }), &mut app)), "bad_request");
-        // screen.refresh (agent 0.3.8) is a guest method: it reaches the machine (here "off": no agent connected).
         assert_eq!(code(command("Invoke-GpuVMAgent", &json!({ "Name": "Test1", "Method": "screen.refresh" }), &mut app)), "off");
         assert_eq!(code(command("Invoke-GpuVMAgent", &json!({ "Name": "Test1", "Method": "screen.repaint" }), &mut app)), "bad_request");
-        // The MCP side must name its connection and take the machine first.
         assert_eq!(invoke(&mut mcp, None), "not_taken");
-        assert_eq!(invoke(&mut mcp, Some(&id)), "not_taken"); // step 1
-        // A connection id only works from the process that registered it.
+        assert_eq!(invoke(&mut mcp, Some(&id)), "not_taken");
         assert_eq!(code(command("Lock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id }), &mut other)), "not_found");
-        // One of the person's machines: taken only once the person allows it, once per machine and session.
         assert_eq!(code(command("Lock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id }), &mut mcp)), "needs_approval");
         let take = command("New-GpuVMAgentRequest", &json!({ "Name": "Test1", "Connection": id, "Kind": "take", "Reason": "draw" }), &mut mcp).unwrap()["requestId"].as_str().unwrap().to_string();
-        assert_eq!(code(command("Lock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id, "Approval": take }), &mut mcp)), "needs_approval"); // pending
+        assert_eq!(code(command("Lock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id, "Approval": take }), &mut mcp)), "needs_approval");
         assert_eq!(code(command("Resolve-GpuVMAgentRequest", &json!({ "Id": take, "Allow": true }), &mut mcp)), "denied");
         command("Resolve-GpuVMAgentRequest", &json!({ "Id": take, "Allow": true }), &mut app).unwrap();
-        assert_eq!(code(command("Lock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id2, "Approval": take }), &mut other)), "needs_approval"); // not its approval
+        assert_eq!(code(command("Lock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id2, "Approval": take }), &mut other)), "needs_approval");
         assert_eq!(code(command("Lock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id, "Approval": take }), &mut mcp)), "ok");
         command("Unlock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id }), &mut mcp).unwrap();
-        assert_eq!(code(command("Lock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id }), &mut mcp)), "ok"); // once per session
+        assert_eq!(code(command("Lock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id }), &mut mcp)), "ok");
         assert_eq!(code(command("Lock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id2 }), &mut other)), "taken");
         assert_eq!(invoke(&mut other, Some(&id2)), "taken");
-        assert_eq!(invoke(&mut mcp, Some(&id)), "off"); // admitted (step 2), no agent connected
-        // The person (app) may use the machine without a connection.
+        assert_eq!(invoke(&mut mcp, Some(&id)), "off");
         assert_eq!(invoke(&mut app, None), "off");
-        // Only the person pauses, resumes, stops and approves.
         assert_eq!(code(command("Suspend-GpuVMAgent", &json!({ "Name": "Test1" }), &mut mcp)), "denied");
         assert_eq!(code(command("Resume-GpuVMAgent", &json!({ "Name": "Test1" }), &mut mcp)), "denied");
         assert_eq!(code(command("Stop-GpuVMAgentClient", &json!({ "All": true }), &mut mcp)), "denied");
         assert_eq!(code(command("Resolve-GpuVMAgentOffer", &json!({ "Id": "x", "Accept": true }), &mut mcp)), "denied");
         assert_eq!(code(command("Set-GpuVMAgentSettings", &json!({ "MaxSteps": 99999 }), &mut mcp)), "denied");
-        // What an agent session may run through the service: its machine only, deletions and reverts with approval.
-        // Each command counts as a step: a larger budget for this part, the step count put back afterwards.
         for c in lock(&broker().clients).values_mut() {
             c.max_steps = 10_000;
         }
@@ -2883,13 +2633,11 @@ pub(crate) mod tests {
             let mut r = json!({ "cmd": cmd, "args": args });
             match gate(&mut r, pid, true) { Ok(_) => "ok".to_string(), Err(e) => e.code }
         };
-        // A pipe connection that said it acts for a model is limited even with no session (pid 900 has none): the
-        // gate never fails open for it.
-        assert_eq!(pipe_code("Remove-GpuVM", json!({ "Name": "Test1" }), 900), "taken"); // held by another session
+        assert_eq!(pipe_code("Remove-GpuVM", json!({ "Name": "Test1" }), 900), "taken");
         assert_eq!(pipe_code("Remove-GpuVMDisk", json!({ "Name": "Test1" }), 900), "denied");
         assert_eq!(pipe_code("Send-GpuVMFile", json!({ "Name": "Test1", "Path": r"C:\Users" }), 900), "taken");
         assert_eq!(pipe_code("Get-GpuVM", json!({}), 900), "ok");
-        assert_eq!(gate_code("Remove-GpuVMDisk", json!({ "Name": "Test1" }), 900), "ok"); // the person's app
+        assert_eq!(gate_code("Remove-GpuVMDisk", json!({ "Name": "Test1" }), 900), "ok");
         let mut piped = Ctx::new(std::ptr::null_mut(), 900, false);
         assert_eq!(code(command("Register-GpuVMAgentPipe", &json!({}), &mut piped)), "ok");
         assert!(piped.is_agent_pipe());
@@ -2897,19 +2645,16 @@ pub(crate) mod tests {
         assert_eq!(code(command("Invoke-GpuVMAgent", &json!({ "Name": "Test1", "Method": "agent.info" }), &mut piped)), "not_taken");
         let mut module = Ctx::new(std::ptr::null_mut(), 901, true);
         assert_eq!(code(command("Register-GpuVMAgentPipe", &json!({}), &mut module)), "denied");
-        // A disposable copy an agent session makes is its own at once: only it may install the agent there and take it.
         let mut r = json!({ "cmd": "New-GpuVM", "args": { "Name": "Copy1", "Template": "t", "Disposable": true, "Connection": id } });
         let c = gate(&mut r, 100, false).unwrap();
         assert!(r["args"].get("Connection").is_none());
-        assert_eq!(r["args"]["ForAgent"], true); // the module copies only an agent template, as an agent machine
-        assert_eq!(gate_code("Install-GpuVMAgent", json!({ "Name": "Copy1" }), 100), "not_taken"); // New-GpuVM didn't finish yet
+        assert_eq!(r["args"]["ForAgent"], true);
+        assert_eq!(gate_code("Install-GpuVMAgent", json!({ "Name": "Copy1" }), 100), "not_taken");
         TEST_HV.lock().unwrap().insert("copy1".into(), "3a4b5c6d-7e8f-4a1b-9c2d-3e4f5a6b7c8d".into());
         c.succeeded(&json!([{ "name": "Copy1", "vmId": "3a4b5c6d-7e8f-4a1b-9c2d-3e4f5a6b7c8d" }]));
         assert_eq!(gate_code("Install-GpuVMAgent", json!({ "Name": "Copy1" }), 100), "ok");
         assert_eq!(gate_code("Install-GpuVMAgent", json!({ "Name": "Copy1" }), 200), "taken");
         assert_eq!(gate_code("Install-GpuVMAgent", json!({ "Name": "Test1" }), 200), "taken");
-        // Deleting a disposable at once: only the copy this session made; another session's copy, a machine it only
-        // took, or any other name is refused. The general sweep (no Name) stays allowed.
         assert_eq!(gate_code("Remove-GpuVMDisposable", json!({ "Name": "Copy1" }), 100), "ok");
         assert_eq!(gate_code("Remove-GpuVMDisposable", json!({ "Name": "copy1" }), 100), "ok");
         assert_eq!(gate_code("Remove-GpuVMDisposable", json!({ "Name": "Copy1" }), 200), "denied");
@@ -2922,25 +2667,24 @@ pub(crate) mod tests {
         assert_eq!(gate_code("New-GpuVM", json!({ "Name": "x", "Template": "t", "Disposable": true }), 100), "ok");
         assert_eq!(gate_code("Invoke-GpuVMPower", json!({ "Name": "Test1" }), 100), "ok");
         assert_eq!(gate_code("Invoke-GpuVMPower", json!({ "Name": "Test1" }), 200), "taken");
-        assert_eq!(gate_code("Remove-GpuVM", json!({ "Name": "Test1" }), 300), "ok"); // the person's app: not limited here
+        assert_eq!(gate_code("Remove-GpuVM", json!({ "Name": "Test1" }), 300), "ok");
         assert_eq!(gate_code("Restore-GpuVMRestorePoint", json!({ "Name": "Test1" }), 100), "needs_approval");
         let req = command("New-GpuVMAgentRequest", &json!({ "Name": "Test1", "Connection": id, "Kind": "revert", "Reason": "undo my test" }), &mut mcp).unwrap();
         let rid = req["requestId"].as_str().unwrap().to_string();
         assert_eq!(get_clients(Some(&id))[0]["state"], "waiting");
-        assert_eq!(gate_code("Restore-GpuVMRestorePoint", json!({ "Name": "Test1", "Approval": rid }), 100), "needs_approval"); // pending
+        assert_eq!(gate_code("Restore-GpuVMRestorePoint", json!({ "Name": "Test1", "Approval": rid }), 100), "needs_approval");
         assert_eq!(code(command("Resolve-GpuVMAgentRequest", &json!({ "Id": rid, "Allow": true }), &mut mcp)), "denied");
         assert_eq!(code(command("Resolve-GpuVMAgentRequest", &json!({ "Id": rid, "Allow": true }), &mut app)), "ok");
-        assert_eq!(gate_code("Remove-GpuVM", json!({ "Name": "Test1", "Approval": rid }), 100), "needs_approval"); // other kind
+        assert_eq!(gate_code("Remove-GpuVM", json!({ "Name": "Test1", "Approval": rid }), 100), "needs_approval");
         assert_eq!(gate_code("Restore-GpuVMRestorePoint", json!({ "Name": "Test1", "Approval": rid }), 200), "taken");
         let mut r = json!({ "cmd": "Restore-GpuVMRestorePoint", "args": { "Name": "Test1", "Approval": rid } });
-        // Held while the command runs: a failed run (a declined UAC, a module error) leaves it usable; a success spends it.
         drop(gate(&mut r, 100, false).unwrap());
         let mut r = json!({ "cmd": "Restore-GpuVMRestorePoint", "args": { "Name": "Test1", "Approval": rid } });
         let held = gate(&mut r, 100, false).unwrap();
-        assert_eq!(gate_code("Restore-GpuVMRestorePoint", json!({ "Name": "Test1", "Approval": rid }), 100), "needs_approval"); // in use
+        assert_eq!(gate_code("Restore-GpuVMRestorePoint", json!({ "Name": "Test1", "Approval": rid }), 100), "needs_approval");
         held.succeeded(&Value::Null);
-        assert!(r["args"].get("Approval").is_none()); // the bridge never sees it
-        assert_eq!(gate_code("Restore-GpuVMRestorePoint", json!({ "Name": "Test1", "Approval": rid }), 100), "needs_approval"); // used once
+        assert!(r["args"].get("Approval").is_none());
+        assert_eq!(gate_code("Restore-GpuVMRestorePoint", json!({ "Name": "Test1", "Approval": rid }), 100), "needs_approval");
         let src = dir.join("to-send");
         std::fs::create_dir_all(src.join("sub")).unwrap();
         std::fs::write(src.join("a.txt"), b"hello").unwrap();
@@ -2955,7 +2699,6 @@ pub(crate) mod tests {
             let r = command("New-GpuVMAgentRequest", &json!({ "Name": "Test1", "Connection": id, "Kind": "send", "Path": path, "Title": "harmless", "TimeoutSec": 86400 }), mcp).unwrap();
             r["requestId"].as_str().unwrap().to_string()
         };
-        // The TimeoutSec the MCP sends is kept (up to 10 minutes for a send), as a number, a float or a text.
         for t in [json!(300), json!(300.0), json!("300")] {
             let r = command("New-GpuVMAgentRequest", &json!({ "Name": "Test1", "Connection": id, "Kind": "send", "Path": path, "TimeoutSec": t }), &mut mcp).unwrap();
             let shown = command("Get-GpuVMAgentRequest", &json!({ "Id": r["requestId"] }), &mut app).unwrap()[0].clone();
@@ -2964,35 +2707,31 @@ pub(crate) mod tests {
         }
         let sid = ask(&mut mcp);
         let shown = command("Get-GpuVMAgentRequest", &json!({ "Id": sid }), &mut app).unwrap()[0].clone();
-        assert!(shown["title"].as_str().unwrap().contains(&path)); // GpuVM's words with the exact path, not the session's
+        assert!(shown["title"].as_str().unwrap().contains(&path));
         assert!(shown["title"].as_str().unwrap().contains("2 files"));
         assert_eq!(shown["files"], 2);
         assert_eq!(shown["bytes"], 11);
-        assert!(shown["expiresAt"].as_u64().unwrap() <= shown["createdAt"].as_u64().unwrap() + 600_000); // 10 minutes at most
-        assert_eq!(send(&sid, &path), "needs_approval"); // pending
+        assert!(shown["expiresAt"].as_u64().unwrap() <= shown["createdAt"].as_u64().unwrap() + 600_000);
+        assert_eq!(send(&sid, &path), "needs_approval");
         command("Resolve-GpuVMAgentRequest", &json!({ "Id": sid, "Allow": true, "ForTask": true }), &mut app).unwrap();
-        assert_eq!(send(&sid, &format!("{path}\\sub")), "needs_approval"); // other paths, and the approval is spent
+        assert_eq!(send(&sid, &format!("{path}\\sub")), "needs_approval");
         let sid = ask(&mut mcp);
         command("Resolve-GpuVMAgentRequest", &json!({ "Id": sid, "Allow": true, "ForTask": true }), &mut app).unwrap();
         assert_eq!(gate_code("Send-GpuVMFile", json!({ "Name": "Test1", "Path": [path], "Approval": sid }), 200), "taken");
         let mut r = json!({ "cmd": "Send-GpuVMFile", "args": { "Name": "Test1", "Path": [path.to_uppercase()], "Approval": sid } });
         gate(&mut r, 100, false).unwrap().succeeded(&Value::Null);
-        assert_eq!(send(&sid, &path), "needs_approval"); // once, even when asked "for the task"
+        assert_eq!(send(&sid, &path), "needs_approval");
         let sid = ask(&mut mcp);
         command("Resolve-GpuVMAgentRequest", &json!({ "Id": sid, "Allow": true }), &mut app).unwrap();
-        std::fs::write(src.join("sub").join("c.txt"), b"added later").unwrap(); // the folder changed after the approval
+        std::fs::write(src.join("sub").join("c.txt"), b"added later").unwrap();
         assert_eq!(send(&sid, &path), "needs_approval");
-        // Copying from a machine: only from one the session took, and that moves nothing off this PC.
         assert_eq!(gate_code("Send-GpuVMFile", json!({ "Name": "Test1", "Path": ["C:\\x"], "FromVM": "win-gpu" }), 100), "denied");
-        // A folder with a link inside (a junction to somewhere else) is never measured nor sent.
         let linked = dir.join("linked");
         std::fs::create_dir_all(&linked).unwrap();
         let made = std::process::Command::new("cmd").args(["/c", "mklink", "/J"]).arg(linked.join("j")).arg(&src).output().unwrap();
         assert!(made.status.success());
         let r = command("New-GpuVMAgentRequest", &json!({ "Name": "Test1", "Connection": id, "Kind": "send", "Path": linked.display().to_string() }), &mut mcp);
         assert_eq!(code(r), "bad_request");
-        // Arguments and their types: only those listed for each command (a list where a name goes is refused, and so
-        // are the person's account, copying from another machine, and a copy's network or GPU).
         assert_eq!(gate_code("Invoke-GpuVMPower", json!({ "Name": ["Test1"] }), 100), "bad_request");
         assert_eq!(gate_code("Invoke-GpuVMPower", json!({ "Name": "Test1", "Force": true }), 100), "denied");
         assert_eq!(gate_code("Install-GpuVMAgent", json!({ "Name": "Test1", "User": "own" }), 100), "denied");
@@ -3003,14 +2742,11 @@ pub(crate) mod tests {
         assert_eq!(gate_code("New-GpuVM", json!({ "Name": "x", "Template": "t", "Disposable": true, "Override": { "gpu": { "allocationPercent": 100 } } }), 100), "denied");
         assert_eq!(gate_code("New-GpuVM", json!({ "Name": "x", "Template": "t", "Disposable": true, "Use": "none" }), 100), "denied");
         assert_eq!(gate_code("New-GpuVM", json!({ "Name": "x", "Template": "t", "Disposable": true, "Profile": "max-performance" }), 100), "denied");
-        assert_eq!(gate_code("Invoke-GpuVMPower", json!({}), 100), "bad_request"); // a command on a machine names it
-        // A machine the person paused does nothing for the session through the service either.
+        assert_eq!(gate_code("Invoke-GpuVMPower", json!({}), 100), "bad_request");
         command("Suspend-GpuVMAgent", &json!({ "Name": "Test1" }), &mut app).unwrap();
         assert_eq!(gate_code("Invoke-GpuVMPower", json!({ "Name": "Test1" }), 100), "paused");
         assert_eq!(gate_code("Get-GpuVM", json!({ "Name": "Test1" }), 100), "ok");
         command("Resume-GpuVMAgent", &json!({ "Name": "Test1" }), &mut app).unwrap();
-        // A process that registered as an agent stays one: without its session it still isn't the person.
-        // (this test's own process: a live one, whose handle is held.)
         let me = std::process::id();
         mark_agent_pid(me);
         assert!(is_agent_pid(me));
@@ -3018,19 +2754,15 @@ pub(crate) mod tests {
         let mut was_agent = Ctx::new(std::ptr::null_mut(), me, false);
         assert_eq!(code(command("Set-GpuVMAgentSettings", &json!({ "MaxSteps": 5 }), &mut was_agent)), "denied");
         assert_eq!(code(command("Resolve-GpuVMAgentRequest", &json!({ "Id": "x", "Allow": true }), &mut was_agent)), "denied");
-        // A deleted (or renamed) machine's name is no longer what a session made.
-        // A copy made under another name with no vmId in the result is nobody's.
         let mut r = json!({ "cmd": "New-GpuVM", "args": { "Name": "Copy2", "Template": "t", "Disposable": true, "Connection": id } });
         gate(&mut r, 100, false).unwrap().succeeded(&json!([{ "name": "Copy2" }]));
         assert_eq!(gate_code("Remove-GpuVMDisposable", json!({ "Name": "Copy2" }), 100), "denied");
-        // What a session made is known by the VM's id: once the name is gone, a new machine with it isn't the session's.
         assert_eq!(gate_code("Remove-GpuVMDisposable", json!({ "Name": "copy1" }), 100), "ok");
-        // Deleted outside GpuVM and made again with the same name (another VM id): not the session's any more.
         TEST_HV.lock().unwrap().insert("copy1".into(), "99999999-7e8f-4a1b-9c2d-3e4f5a6b7c8d".into());
         assert_eq!(gate_code("Remove-GpuVMDisposable", json!({ "Name": "Copy1" }), 100), "denied");
         assert_eq!(gate_code("Install-GpuVMAgent", json!({ "Name": "Copy1" }), 100), "not_taken");
         TEST_HV.lock().unwrap().insert("copy1".into(), "3a4b5c6d-7e8f-4a1b-9c2d-3e4f5a6b7c8d".into());
-        assert_eq!(gate_code("Remove-GpuVMDisposable", json!({ "Name": "Copy1" }), 100), "denied"); // forgotten for good
+        assert_eq!(gate_code("Remove-GpuVMDisposable", json!({ "Name": "Copy1" }), 100), "denied");
         forget_name("Copy1");
         assert_eq!(gate_code("Remove-GpuVMDisposable", json!({ "Name": "Copy1" }), 100), "denied");
         for c in lock(&broker().clients).values_mut() {
@@ -3039,47 +2771,41 @@ pub(crate) mod tests {
         }
         assert_eq!(get_clients(Some(&id))[0]["machine"], "Test1");
         assert_eq!(code(command("Suspend-GpuVMAgent", &json!({ "Name": "Test1", "Message": "mine" }), &mut app)), "ok");
-        assert_eq!(invoke(&mut mcp, Some(&id)), "paused"); // step 3
+        assert_eq!(invoke(&mut mcp, Some(&id)), "paused");
         let agents = get_agents(Some("Test1"));
         assert_eq!(agents[0]["paused"]["by"], "person");
         assert_eq!(agents[0]["takenBy"]["connection"], json!(id));
         assert_eq!(code(command("Resume-GpuVMAgent", &json!({ "Name": "Test1" }), &mut app)), "ok");
-        // The agent asks for a human: paused until the person resumes.
         let r = command("Request-GpuVMHuman", &json!({ "Name": "Test1", "Connection": id, "Message": "Please sign in" }), &mut mcp).unwrap();
         assert!(r["requestId"].is_string());
         assert_eq!(get_agents(Some("Test1"))[0]["paused"]["by"], "agent");
-        assert_eq!(invoke(&mut mcp, Some(&id)), "paused"); // step 4
+        assert_eq!(invoke(&mut mcp, Some(&id)), "paused");
         command("Resume-GpuVMAgent", &json!({ "Name": "Test1" }), &mut app).unwrap();
-        // A session withdraws only its own waiting request; withdrawing a call for a human resumes the machine.
         let revoke = |ctx: &mut Ctx, rid: &str, conn: &str| code(command("Revoke-GpuVMAgentRequest", &json!({ "Id": rid, "Connection": conn }), ctx));
         let human = command("Request-GpuVMHuman", &json!({ "Name": "Test1", "Connection": id, "Message": "help" }), &mut mcp).unwrap()["requestId"].as_str().unwrap().to_string();
-        assert_eq!(revoke(&mut other, &human, &id2), "denied"); // another session's call
-        assert_eq!(revoke(&mut mcp, &human, &id2), "not_found"); // a connection that isn't the caller's
+        assert_eq!(revoke(&mut other, &human, &id2), "denied");
+        assert_eq!(revoke(&mut mcp, &human, &id2), "not_found");
         assert_eq!(revoke(&mut mcp, &human, &id), "ok");
         assert!(get_agents(Some("Test1"))[0]["paused"].is_null());
-        assert_eq!(revoke(&mut mcp, &human, &id), "not_found"); // already withdrawn
-        // The person's pause is never withdrawn, not even when it replaced the session's call for a human.
+        assert_eq!(revoke(&mut mcp, &human, &id), "not_found");
         let human = command("Request-GpuVMHuman", &json!({ "Name": "Test1", "Connection": id, "Message": "help" }), &mut mcp).unwrap()["requestId"].as_str().unwrap().to_string();
         command("Suspend-GpuVMAgent", &json!({ "Name": "Test1", "Reason": "control" }), &mut app).unwrap();
         assert_eq!(revoke(&mut mcp, &human, &id), "not_found");
         assert_eq!(get_agents(Some("Test1"))[0]["paused"]["by"], "person");
         command("Resume-GpuVMAgent", &json!({ "Name": "Test1" }), &mut app).unwrap();
-        // An approval request: only its session withdraws it, once, and the person can't answer it afterwards.
         let ask = command("New-GpuVMAgentRequest", &json!({ "Name": "Test1", "Connection": id, "Kind": "network" }), &mut mcp).unwrap()["requestId"].as_str().unwrap().to_string();
         assert_eq!(revoke(&mut other, &ask, &id2), "denied");
         assert_eq!(revoke(&mut mcp, &ask, &id), "ok");
         assert_eq!(revoke(&mut mcp, &ask, &id), "bad_request");
         assert_eq!(code(command("Resolve-GpuVMAgentRequest", &json!({ "Id": ask, "Allow": true }), &mut app)), "bad_request");
-        assert_eq!(invoke(&mut mcp, Some(&id)), "off"); // step 5
-        assert_eq!(invoke(&mut mcp, Some(&id)), "off"); // step 6
+        assert_eq!(invoke(&mut mcp, Some(&id)), "off");
+        assert_eq!(invoke(&mut mcp, Some(&id)), "off");
         assert_eq!(invoke(&mut mcp, Some(&id)), "budget");
-        // The app's view of the session: newest step first, the machine, the budget.
         let c = &get_clients(Some(&id))[0];
         assert_eq!(c["steps"], 6);
         assert_eq!(c["maxSteps"], 6);
         assert_eq!(c["actions"][0]["code"], "off");
         assert!(c["actions"][0]["id"].as_u64().unwrap() > c["actions"][1]["id"].as_u64().unwrap());
-        // Suspend by session, "*" = every session's machine.
         assert_eq!(command("Suspend-GpuVMAgent", &json!({ "Connection": "*", "Reason": "control" }), &mut app).unwrap()[0]["name"], "Test1");
         assert_eq!(get_clients(Some(&id))[0]["state"], "control");
         assert_eq!(command("Resume-GpuVMAgent", &json!({ "Connection": id }), &mut app).unwrap(), json!([]));
@@ -3087,25 +2813,20 @@ pub(crate) mod tests {
         assert_eq!(code(command("Resume-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id2 }), &mut app)), "not_found");
         assert_eq!(command("Resume-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id }), &mut app).unwrap()[0]["name"], "Test1");
         assert!(get_clients(Some(&id))[0]["resumedAt"].is_u64());
-        // A call for a human is the session's own pause: resuming the session lifts it.
         command("Request-GpuVMHuman", &json!({ "Name": "Test1", "Connection": id, "Message": "help" }), &mut mcp).unwrap();
         assert_eq!(command("Resume-GpuVMAgent", &json!({ "Connection": id }), &mut app).unwrap()[0]["name"], "Test1");
         assert!(get_agents(Some("Test1"))[0]["paused"].is_null());
-        // Outbox offers are checked before anything reaches the guest.
         assert_eq!(code(command("New-GpuVMAgentOffer", &json!({ "Name": "Test1", "Path": r"C:\Windows\win.ini" }), &mut app)), "denied");
-        // Kill switch: everything of that session stops and its machines are freed.
         let r = command("Stop-GpuVMAgentClient", &json!({ "Connection": id2 }), &mut app).unwrap();
         assert_eq!(r["stopped"][0], json!(id2));
         assert_eq!(invoke(&mut other, Some(&id2)), "killed");
         assert_eq!(code(command("Lock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id2 }), &mut other)), "killed");
-        // A session reads only its own: not another session's steps, screenshots or requests.
         assert_eq!(code(command("Get-GpuVMAgentClient", &json!({ "Connection": id }), &mut other)), "not_found");
         assert!(command("Get-GpuVMAgentClient", &json!({}), &mut other).unwrap().as_array().unwrap().iter().all(|c| c["id"] == json!(id2)));
         assert_eq!(code(command("Get-GpuVMAgentCapture", &json!({ "Connection": id, "Action": 1 }), &mut other)), "not_found");
         assert!(command("Get-GpuVMAgentRequest", &json!({}), &mut other).unwrap().as_array().unwrap().iter().all(|r| r["connection"] == json!(id2)));
         assert!(command("Get-GpuVMAgentRequest", &json!({}), &mut app).unwrap().as_array().unwrap().iter().any(|r| r["connection"] == json!(id)));
         assert!(command("Get-GpuVMAgentClient", &json!({}), &mut app).unwrap().as_array().unwrap().len() >= 2);
-        // A call for a human ends with its session: closing the MCP pipe connection frees the machine and its pause.
         command("Request-GpuVMHuman", &json!({ "Name": "Test1", "Connection": id, "Message": "help" }), &mut mcp).unwrap();
         assert_eq!(get_agents(Some("Test1"))[0]["paused"]["by"], "agent");
         drop(mcp);
@@ -3113,7 +2834,6 @@ pub(crate) mod tests {
         assert!(get_agents(Some("Test1"))[0]["paused"].is_null());
         assert_eq!(code(command("Lock-GpuVMAgent", &json!({ "Name": "Test1", "Connection": id }), &mut app)), "not_found");
         assert_eq!(get_agents(Some("Nope"))[0]["state"], "no-agent");
-        // A deleted machine's registration and SYSTEM-only secret go through the service, for the module only.
         let gone = "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f";
         std::fs::create_dir_all(dir.join(gone)).unwrap();
         std::fs::write(dir.join(gone).join("secret"), b"x").unwrap();
@@ -3145,7 +2865,6 @@ pub(crate) mod tests {
         assert!(o(r"C:\Users\agent\Desktop\Outboxx\a").is_none());
         assert!(o(r"C:\Windows\a.txt").is_none());
         assert!(o("C:/Users/agent/Desktop/Outbox/a.txt").is_none());
-        // The home the agent reports (a profile folder named otherwise).
         let home = Some(r"C:\Users\agent.AGENT051");
         assert_eq!(outbox_file(r"C:\Users\agent.AGENT051\Desktop\Outbox\r.txt", home).as_deref(), Some("r.txt"));
         assert!(outbox_file(r"C:\Users\agent\Desktop\Outbox\r.txt", home).is_none());
@@ -3173,7 +2892,6 @@ pub(crate) mod tests {
         assert_eq!(lock(&info)["screen"], json!({ "w": 1280, "h": 800 }));
         assert_eq!(lock(&info)["version"], "0.3.5");
         assert!(changed.load(Ordering::SeqCst) > 0);
-        // A hostile or broken size changes nothing.
         let before = changed.load(Ordering::SeqCst);
         assert!(!note_screen(&info, &changed, &json!({ "w": 0, "h": 800 })));
         assert!(!note_screen(&info, &changed, &json!({ "w": 99999, "h": 800 })));
@@ -3188,24 +2906,22 @@ pub(crate) mod tests {
         let b = "4e9fa79e-58b4-4638-a98b-c7a0e3e78256";
         assert_eq!(parse_vm_ids("WARNING: x\nOK:0B5D1F53-1E33-4B7E-9F0A-2C4D6E8F0A1B\n"), Some(vec![a.to_string()]));
         assert_eq!(parse_vm_ids("OK:"), Some(vec![]));
-        // Anything but a clean list means "don't know": nothing may be deleted then.
         assert_eq!(parse_vm_ids(""), None);
         assert_eq!(parse_vm_ids("Get-VM: access denied"), None);
         assert_eq!(parse_vm_ids("OK:not-a-guid"), None);
         let old = Duration::from_secs(3600);
         let folders = vec![(a.to_string(), old), (b.to_string(), old), (b.to_uppercase(), Duration::from_secs(5)), ("blobs".to_string(), old)];
-        // The VM that exists stays; a young folder stays (an install may be writing it); other folders stay.
         assert_eq!(orphans(&folders, &[a.to_string()]), vec![b.to_string()]);
     }
 
     #[test]
     fn a_machine_without_display_is_power_cycled_once() {
-        assert_eq!(display_verdict(true, Some(5_000), false, true, 0), Verdict::Fine); // may just be starting
+        assert_eq!(display_verdict(true, Some(5_000), false, true, 0), Verdict::Fine);
         assert_eq!(display_verdict(true, Some(21_000), false, true, 0), Verdict::Repair);
-        assert_eq!(display_verdict(true, Some(1_000), true, true, 0), Verdict::Repair); // the agent says so: at once
-        assert_eq!(display_verdict(false, None, false, false, 1), Verdict::Repairing); // off and on: no agent meanwhile
+        assert_eq!(display_verdict(true, Some(1_000), true, true, 0), Verdict::Repair);
+        assert_eq!(display_verdict(false, None, false, false, 1), Verdict::Repairing);
         assert_eq!(display_verdict(true, Some(21_000), true, true, 1), Verdict::Repairing);
-        assert_eq!(display_verdict(true, Some(25_000), true, true, 2), Verdict::NoDisplay(25_000)); // never twice
+        assert_eq!(display_verdict(true, Some(25_000), true, true, 2), Verdict::NoDisplay(25_000));
         assert_eq!(display_verdict(true, None, false, true, 2), Verdict::Recovered);
         assert_eq!(display_verdict(true, None, false, true, 0), Verdict::Fine);
     }
@@ -3217,7 +2933,6 @@ pub(crate) mod tests {
         assert_eq!(blank_for(&blank, &since, 1_000), Some(0));
         assert_eq!(blank_for(&blank, &since, 15_000), Some(14_000));
         assert!(blank_for(&blank, &since, 22_000).unwrap() > NO_DISPLAY_AFTER_MS);
-        // A display, or nobody signed in, isn't "no display": the count starts again.
         assert_eq!(blank_for(&json!({ "signedIn": true, "displays": [{ "device": "x" }] }), &since, 23_000), None);
         assert_eq!(blank_for(&blank, &since, 24_000), Some(0));
         assert_eq!(blank_for(&json!({ "signedIn": false, "displays": [] }), &since, 25_000), None);

@@ -27,7 +27,6 @@ function Set-GpuVM {
     Get-GpuVM -Name $Name
 }
 
-# Computes and validates the new configuration without touching the VM, so it can be validated before shutting it down.
 function Resolve-GpuVMSettings {
     param(
         [Parameter(Mandatory)][System.Collections.IDictionary]$State,
@@ -36,7 +35,6 @@ function Resolve-GpuVMSettings {
     )
     if ($Profile) {
         $config = Resolve-GpuVMProfile -Name $Profile -Override $Override
-        # What was decided when creating the VM, or by the user, does not change with the profile.
         $config['vm']['disk'] = $State['config']['vm']['disk']
         $config['vm']['root'] = $State['config']['vm']['root']
         if ($State['config']['streaming'] -and $config['streaming']) {

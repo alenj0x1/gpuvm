@@ -1,8 +1,3 @@
-//! The tools, in the four planes of Windows 365 for Agents: create (templates, disposable machines), get
-//! (machines to take and release), do (screen, input, UI Automation, commands, files, restore points) and
-//! see/take control (viewer, asking the person). Errors are tool results with `isError` and a plain English
-//! sentence the model can act on.
-
 use super::broker::{Broker, BrokerError, Reply};
 use super::geometry::{self, Shot};
 use super::server::Client;
@@ -12,19 +7,15 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-/// Text sent back in one result (Claude Code warns at 10k tokens and stops at 25k by default).
+// Claude Code warns at 10k tokens and stops at 25k by default.
 pub const MAX_TEXT: usize = 20_000;
 const MAX_TYPE: usize = 5_000;
 const MAX_WRITE: usize = 10 << 20;
-/// Bytes asked for by read_file (text beyond what a model can use is cut anyway).
 const READ_MAX: u64 = 4 << 20;
 const PROFILE: &str = r"C:\Users\agent\";
-/// The Outbox, relative to the agent's home (lowercase, for comparisons).
 const OUTBOX: &str = r"desktop\outbox\";
 const APPROVAL_TTL: Duration = Duration::from_secs(600);
-/// How long a `send` request stays open for the person (sent as its TimeoutSec) and how long send_file waits for it.
 const SEND_APPROVAL_SECS: u64 = 600;
-/// Tools that ask the person through the client first when the connection's "approvals" setting is on.
 const CONFIRM: &[&str] = &["run", "write_file"];
 
 #[derive(Clone, Debug)]
@@ -32,7 +23,6 @@ pub struct Settings {
     pub elicitation: bool,
     pub max_steps: u64,
     pub max_minutes: u64,
-    /// How long a request to the person (approval) stays open.
     pub approval_timeout: u64,
 }
 
@@ -48,7 +38,6 @@ struct Pending {
     created: Instant,
 }
 
-/// Everything one MCP connection remembers.
 pub struct Ctx {
     broker: Arc<dyn Broker>,
     connection: Mutex<Option<(String, Settings)>>,
@@ -59,47 +48,34 @@ pub struct Ctx {
     screens: Mutex<HashMap<String, (u32, u32)>>,
     uses: Mutex<HashMap<String, MachineUse>>,
     pending: Mutex<HashMap<String, Pending>>,
-    /// This connection's pending request_human per machine (lowercase name → request id), for cancel_request.
     human_requests: Mutex<HashMap<String, String>>,
-    /// Set when the client closed stdin: waits return at once so the process can end.
     pub shutting_down: std::sync::atomic::AtomicBool,
-    /// Per machine (lowercase): the latest `screenChangedAt` seen; per screenshot id: the value when it was taken.
     screen_changed: Mutex<HashMap<String, u64>>,
     shot_epoch: Mutex<HashMap<u32, u64>>,
-    /// Poll interval while waiting (machine ready, person, offers); short in tests.
     pub poll_ms: std::sync::atomic::AtomicU64,
-    /// Per machine (lowercase): its pause as this connection last saw it (None = not paused), so a tool result can say
-    /// "the person took control" or "handed it back" once, when it changes.
     control_seen: Mutex<HashMap<String, Option<String>>>,
-    /// Commands started with `run background: true`, until run_result gives their output.
     runs: Arc<Runs>,
-    /// Input calls take a ticket per machine as their request is read, and run in that order.
     pub input: InputQueue,
 }
 
-/// The input tools: one at a time per machine, in the order the client sent them.
 pub const INPUT_TOOLS: &[&str] = &["click", "type", "key", "scroll", "drag", "act"];
-/// The longest `delayMs`.
 const MAX_DELAY_MS: i64 = 10_000;
-/// Background runs one connection may have going at once, and how long an output nobody asked for is kept.
 const MAX_BACKGROUND_RUNS: usize = 4;
 const RUN_KEPT: Duration = Duration::from_secs(30 * 60);
 
-/// Per machine (lowercase name): the next ticket to give and the ticket whose turn it is.
 #[derive(Default)]
 pub struct InputQueue {
     state: Mutex<HashMap<String, (u64, u64)>>,
     turn: std::sync::Condvar,
 }
 
-/// An input call's turn on its machine; the next ticket's turn comes when it is dropped (also on a panic).
 pub struct Turn<'a> {
     queue: &'a InputQueue,
     machine: String,
 }
 
 impl InputQueue {
-    /// The ticket of an input call, taken when its request is read (before its thread starts, so order is kept).
+    // Taken before its thread starts, so order is kept.
     pub fn ticket(&self, machine: &str) -> u64 {
         let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let e = st.entry(machine.to_ascii_lowercase()).or_insert((0, 0));
@@ -107,7 +83,6 @@ impl InputQueue {
         e.0 - 1
     }
 
-    /// Waits until every input call with an earlier ticket on that machine has finished.
     pub fn wait_turn(&self, machine: &str, ticket: u64) -> Turn<'_> {
         let key = machine.to_ascii_lowercase();
         let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -128,14 +103,12 @@ impl Drop for Turn<'_> {
     }
 }
 
-/// The ticket for a tools/call request, when it is an input call on a machine.
 pub fn input_ticket(ctx: &Ctx, params: &Value) -> Option<(String, u64)> {
     let name = params["name"].as_str()?;
     let machine = params["arguments"]["machine"].as_str().filter(|m| !m.is_empty())?;
     INPUT_TOOLS.contains(&name).then(|| (machine.to_string(), ctx.input.ticket(machine)))
 }
 
-/// One command started in the background: its output once it ends (Ok: the text run returns; Err: why it failed).
 struct BgRun {
     machine: String,
     started: Instant,
@@ -172,7 +145,6 @@ impl Ctx {
         }
     }
 
-    /// Registers the client with GpuVM (shown in the app) the first time it is known.
     pub fn identify(&self, client: &Client) {
         let mut c = self.client.lock().unwrap();
         if c.is_none() {
@@ -225,7 +197,6 @@ impl Ctx {
         shot.id = self.next_shot.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut shots = self.shots.lock().unwrap();
         shots.push(shot.clone());
-        // Keep the last few per connection: older ids stop working, with a clear message.
         if shots.len() > 64 {
             shots.remove(0);
         }
@@ -239,14 +210,12 @@ impl Ctx {
     }
 }
 
-/// One tool call: arguments plus what the server can do for it.
 pub struct Call<'a> {
     pub client: &'a Client,
     pub args: &'a Value,
     pub input_responses: Option<&'a Value>,
     pub request_state: Option<&'a str>,
     pub cancelled: &'a dyn Fn() -> bool,
-    /// Legacy elicitation (asks the client); None when it can't.
     pub ask_legacy: &'a dyn Fn(&str) -> Option<bool>,
 }
 
@@ -260,7 +229,6 @@ fn tool_error(message: impl Into<String>) -> Value {
     json!({ "content": [{ "type": "text", "text": message.into() }], "isError": true })
 }
 
-/// Keeps the beginning and the end of a long text.
 pub fn cap(t: String) -> String {
     cap_to(t, MAX_TEXT)
 }
@@ -275,7 +243,6 @@ fn cap_to(t: String, max: usize) -> String {
     format!("{head}\n… [{} characters cut] …\n{tail}", total - head.chars().count() - tail.chars().count())
 }
 
-/// A broker or guest error as a sentence the model can act on.
 pub fn explain(machine: &str, e: &BrokerError) -> String {
     let m = if machine.is_empty() { "the machine".to_string() } else { machine.to_string() };
     match e.code.as_str() {
@@ -302,8 +269,6 @@ pub fn explain(machine: &str, e: &BrokerError) -> String {
         _ => if e.message.is_empty() { format!("GpuVM error ({}).", e.code) } else { e.message.clone() },
     }
 }
-
-// ---------------------------------------------------------------- definitions
 
 fn schema(props: Value, required: &[&str]) -> Value {
     json!({ "type": "object", "properties": props, "required": required, "additionalProperties": false })
@@ -333,7 +298,6 @@ fn delay_after() -> Value {
     json!({ "type": "integer", "minimum": 0, "maximum": MAX_DELAY_MS, "description": "Wait this many ms after acting before answering and before screenshotAfter (up to 10000), e.g. while a window opens." })
 }
 
-/// What the step is for, in the person's words of the task: shown live over the machine's picture while it runs.
 fn intent_prop() -> Value {
     json!({ "type": "string", "maxLength": 120, "description": "Optional. What this step does for the task, in a few words, e.g. 'Drawing the moon', 'Installing Blender', 'Saving the report'. Shown to the person over the machine while it runs; write it in the language the person writes to you." })
 }
@@ -351,20 +315,18 @@ fn tool(name: &str, description: &str, input: Value, annotations: Value) -> Valu
     json!({ "name": name, "description": description, "inputSchema": input, "annotations": annotations })
 }
 
-/// The tool list, in a fixed order (clients cache it).
+// Fixed order: clients cache it.
 pub fn definitions() -> Vec<Value> {
     let m = machine_prop;
     let action_item = json!({ "type": "object", "description": "One action: {type:'click',x,y,button?,count?,modifiers?} | {type:'move',x,y} | {type:'drag',x,y,toX,toY or path or strokes,button?,durationMs?} | {type:'scroll',x,y,dx?,dy?} | {type:'type',text} | {type:'key',keys,repeat?} | {type:'wait',ms}",
         "properties": { "type": { "type": "string", "enum": ["click", "move", "drag", "scroll", "type", "key", "wait"] } }, "required": ["type"] });
     vec![
-        // create
         tool("list_templates", "List the templates (ready Windows images with the GpuVM agent) and size profiles a disposable machine can be created from.",
             schema(json!({}), &[]), ann("List templates", true, false, true, false)),
         tool("create_disposable", "Create a disposable Windows machine from a template, start it and take it (it is deleted when it shuts down). Waits until the agent inside is ready. Takes a minute or two. Only processors and memory can be chosen (4 GB by default).",
             schema(json!({ "template": { "type": "string" }, "name": { "type": "string", "description": "Optional name (letters, digits, -)." },
                 "cpu": { "type": "integer", "minimum": 1, "maximum": 16 }, "memoryGB": { "type": "integer", "minimum": 2, "maximum": 64 }, "task": { "type": "string", "description": "What you are going to do with it, in a few words (shown to the person in GpuVM)." } }), &["template"]),
             ann("Create disposable machine", false, false, false, false)),
-        // get
         tool("list_machines", "List GpuVM machines with their state, whether an agent can use them, who has them and whether the person paused the agent.",
             schema(json!({}), &[]), ann("List machines", true, false, true, false)),
         tool("take_machine", "Take a machine for this connection (one connection per machine), starting it if needed, and wait until its agent is ready.",
@@ -372,14 +334,12 @@ pub fn definitions() -> Vec<Value> {
             ann("Take machine", false, false, true, false)),
         tool("release_machine", "Release a machine you took so the person or another agent can use it.",
             schema(json!({ "machine": m() }), &["machine"]), ann("Release machine", false, false, true, false)),
-        // do: screen
         tool("screenshot", "Capture the machine's screen as an image. Use the returned image's pixels for every action. `zoom` = [x, y, width, height] in the pixels of a previous screenshot shows that part at higher detail (zoom images are for looking; actions still use the latest full screenshot unless you pass its id).",
             schema(json!({ "machine": m(), "maxWidth": { "type": "integer", "minimum": 64, "maximum": 2576, "description": "Default 1280." },
                 "maxHeight": { "type": "integer", "minimum": 64, "maximum": 2576, "description": "Default 800." },
                 "zoom": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 },
                 "screenshot": shot_prop(), "format": { "type": "string", "enum": ["webp", "png"] }, "delayMs": delay_before() }), &["machine"]),
             ann("Screenshot", true, false, false, false)),
-        // do: input
         tool("click", "Click at (x, y) in screenshot pixels.",
             schema(json!({ "machine": m(), "intent": intent_prop(), "x": coord("X in screenshot pixels."), "y": coord("Y in screenshot pixels."),
                 "button": { "type": "string", "enum": ["left", "right", "middle"] }, "count": { "type": "integer", "minimum": 1, "maximum": 3 },
@@ -407,7 +367,6 @@ pub fn definitions() -> Vec<Value> {
             schema(json!({ "machine": m(), "intent": intent_prop(), "actions": { "type": "array", "items": action_item, "minItems": 1, "maxItems": 50 },
                 "screenshot": shot_prop(), "screenshotAfter": after_prop(), "delayMs": delay_after() }), &["machine", "actions"]),
             ann("Act", false, false, false, false)),
-        // do: UI Automation
         tool("ui_tree", "List the controls of the window in front (UI Automation): id, role, name, box and centre in the pixels of the latest screenshot. Faster and more exact than reading the picture for standard controls.",
             schema(json!({ "machine": m(), "maxNodes": { "type": "integer", "minimum": 1, "maximum": 1000, "description": "Default 150." },
                 "interactiveOnly": { "type": "boolean", "description": "Default true." } }), &["machine"]),
@@ -416,7 +375,6 @@ pub fn definitions() -> Vec<Value> {
             schema(json!({ "machine": m(), "intent": intent_prop(), "id": { "type": "string" }, "action": { "type": "string", "enum": ["invoke", "toggle", "select", "expand", "setValue"] },
                 "value": { "type": "string" } }), &["machine", "id", "action"]),
             ann("UI invoke", false, false, false, false)),
-        // do: commands and files
         tool("run", "Run a command in the machine as the standard user `agent` (never administrator) and return its exit code and output. By default `command` is a PowerShell command line; with shell 'none' it is a program and `args` its arguments. With background: true it answers at once with a run id, so you can take screenshots and act while it runs; get its output with run_result.",
             schema(json!({ "machine": m(), "intent": intent_prop(), "command": { "type": "string" }, "shell": { "type": "string", "enum": ["powershell", "cmd", "none"] },
                 "args": { "type": "array", "items": { "type": "string" } }, "cwd": { "type": "string" },
@@ -446,7 +404,6 @@ pub fn definitions() -> Vec<Value> {
         tool("offer_status", "Whether the person approved or declined an offered file, and where it is on this PC if approved.",
             schema(json!({ "machine": m(), "offerId": { "type": "string" } }), &["machine", "offerId"]),
             ann("Offer status", true, false, true, false)),
-        // do: restore points and lifetime
         tool("restore_point_create", "Save a restore point of a normal (not disposable) machine you took, to go back to later. The machine restarts for it.",
             schema(json!({ "machine": m(), "label": { "type": "string" } }), &["machine"]),
             ann("Create restore point", false, false, false, false)),
@@ -456,7 +413,6 @@ pub fn definitions() -> Vec<Value> {
         tool("destroy", "Shut down and delete a disposable machine you created; everything in it is lost. Other machines can't be destroyed by an agent.",
             schema(json!({ "machine": m(), "force": { "type": "boolean", "description": "Destroy even if an offered file is still waiting for the person (it is lost)." } }), &["machine"]),
             ann("Destroy disposable machine", false, true, true, false)),
-        // see / take control
         tool("open_viewer", "Open the machine in GpuVM's viewer on this PC so the person can watch and take over. Answers once the person sees the picture (or says why not); the first open of a new machine takes longer.",
             schema(json!({ "machine": m(), "waitSeconds": { "type": "integer", "minimum": 0, "maximum": 300, "description": "How long to wait for the picture. Default 120." } }), &["machine"]),
             ann("Open viewer", false, false, true, false)),
@@ -478,8 +434,6 @@ pub fn definitions() -> Vec<Value> {
             ann("Withdraw request to the person", false, false, true, false)),
     ]
 }
-
-// ---------------------------------------------------------------- calls
 
 fn arg_str<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
     match args.get(key) {
@@ -519,7 +473,6 @@ fn opt_bool(args: &Value, key: &str) -> Result<Option<bool>, String> {
     }
 }
 
-/// Runs one tool and always returns a CallToolResult (or an `input_required` result).
 pub fn call(ctx: &Ctx, name: &str, call: &Call) -> Value {
     if !call.args.is_object() {
         return tool_error("Arguments must be a JSON object.");
@@ -534,7 +487,6 @@ pub fn call(ctx: &Ctx, name: &str, call: &Call) -> Value {
         Ok(c) => c,
         Err(e) => return tool_error(e),
     };
-    // Approvals through the client, when the person turned them on for this connection.
     if settings.elicitation && CONFIRM.contains(&name) {
         match approve(ctx, name, call) {
             Approval::Go => {}
@@ -570,8 +522,6 @@ pub fn call(ctx: &Ctx, name: &str, call: &Call) -> Value {
         _ => Err(format!("There is no tool named {name}.")),
     };
     let mut out = result.unwrap_or_else(tool_error);
-    // What changed with the person since this connection's last call on the machine (took control / handed it back),
-    // said once in the result, so the model neither asks nor retries blindly.
     let machine = call.args["machine"].as_str().unwrap_or("");
     if !machine.is_empty() && !matches!(name, "destroy" | "wait_for_person" | "list_machines") {
         if let Ok(Some(m)) = t.find(machine) {
@@ -675,14 +625,10 @@ impl Tool<'_> {
         if e.code == "killed" {
             self.ctx.killed.store(true, std::sync::atomic::Ordering::Relaxed);
         }
-        // The service drops a client when its pipe closes: register again on the next call (machines must be
-        // taken again, which the error says).
         if e.code == "unavailable" {
             self.ctx.connection.lock().unwrap().take();
             self.ctx.shots.lock().unwrap().clear();
         }
-        // Paused because the agent itself asked the person (request_human), not because they took over (lab 053: the
-        // model was told "the person took control" while it was the one waiting for them).
         if e.code == "paused" && !machine.is_empty() {
             if let Ok(Some(m)) = self.find(machine) {
                 if paused_by(&m) == Some("human") {
@@ -697,12 +643,10 @@ impl Tool<'_> {
         arg_str(self.args, "machine")
     }
 
-    /// One step on a machine: counts against its budget first.
     fn step(&self, machine: &str) -> Result<(), String> {
         let mut uses = self.ctx.uses.lock().unwrap();
         let u = uses.entry(machine.to_string()).or_default();
         let since = *u.since.get_or_insert_with(Instant::now);
-        // 0 = no limit (the default).
         if self.settings.max_steps > 0 && u.steps >= self.settings.max_steps {
             return Err(explain(machine, &BrokerError::new("budget", "")) + &format!(" ({} steps)", self.settings.max_steps));
         }
@@ -717,7 +661,6 @@ impl Tool<'_> {
         self.invoke_with(machine, method, params, json!({}))
     }
 
-    /// `extra`: `timeoutSec` (the broker's wait, default 30 s) and `blob` (base64 sent after the request).
     fn invoke_with(&self, machine: &str, method: &str, params: Value, mut extra: Value) -> Result<Reply, String> {
         self.step(machine)?;
         extra["method"] = json!(method);
@@ -739,9 +682,7 @@ impl Tool<'_> {
         }
     }
 
-    /// A screenshot taken before the machine's screen last changed size can't be used for coordinates.
     fn fresh(&self, shot: &Shot) -> Result<(), String> {
-        // The broker's current view first (one in-process call), then what replies already told us.
         if let Ok(Some(m)) = self.find(&shot.machine) {
             self.saw_screen_change(&shot.machine, m["screenChangedAt"].as_u64());
         }
@@ -754,7 +695,6 @@ impl Tool<'_> {
         Ok(())
     }
 
-    /// What this step does, for the person's view of the session in GpuVM: the tool and its arguments.
     fn note(&self) -> String {
         let mut args = self.args.clone();
         if let Some(map) = args.as_object_mut() {
@@ -773,7 +713,6 @@ impl Tool<'_> {
         cap_to(text, 160)
     }
 
-    /// The machine as the broker lists it, which must be taken by this connection.
     fn mine(&self, machine: &str) -> Result<Value, String> {
         let m = self.find(machine)?.ok_or_else(|| format!("There is no machine named {machine}."))?;
         if taken_by(&m) != Some(self.connection) {
@@ -796,7 +735,6 @@ impl Tool<'_> {
         }
     }
 
-    /// `delayMs`: waits that long (in steps, so a cancel or the client leaving ends it at once).
     fn delay(&self) -> Result<(), String> {
         let Some(ms) = opt_int(self.args, "delayMs", 0, MAX_DELAY_MS)? else { return Ok(()) };
         let end = Instant::now() + Duration::from_millis(ms as u64);
@@ -822,8 +760,6 @@ impl Tool<'_> {
         Ok(self.machines()?.into_iter().find(|m| m["name"].as_str().is_some_and(|n| n.eq_ignore_ascii_case(machine))))
     }
 
-    // -------- create
-
     fn list_templates(&self) -> Out {
         let r = self.broker("templates.list", "", json!({}))?;
         let mut lines = vec!["Templates:".to_string()];
@@ -847,12 +783,10 @@ impl Tool<'_> {
         }
         let cpu = opt_int(self.args, "cpu", 1, 16)?;
         let mem = opt_int(self.args, "memoryGB", 2, 64)?;
-        // Only what the service allows an agent: the template, a name, and processors/memory (no profile, no other override).
         let r = self.broker("machine.create", "", json!({ "template": template, "name": name, "cpu": cpu, "memoryGB": mem, "task": self.task()? }))?;
         let created = r.data["name"].as_str().ok_or("GpuVM didn't say which machine it created.")?.to_string();
         let ready = match self.wait_ready(&created, 600) {
             Ok(r) => r,
-            // A copy that can't be used is deleted at once (it's this session's own), not left for the person.
             Err(e) => {
                 let deleted = match self.broker("machine.destroy", &created, json!({})) {
                     Ok(_) => "It was deleted again; try create_disposable once more.".to_string(),
@@ -864,8 +798,6 @@ impl Tool<'_> {
         };
         Ok(text(format!("Created disposable machine {created} from {template}; {ready}")))
     }
-
-    // -------- get
 
     fn list_machines(&self) -> Out {
         let list = self.machines()?;
@@ -902,7 +834,6 @@ impl Tool<'_> {
             if last["state"] == "no-agent" {
                 return Err(explain(machine, &BrokerError::new("no_agent", "")));
             }
-            // Signed in but no display for a while: waiting won't fix it (the host can't either).
             if last["state"] == "no-display" {
                 return Err(format!("{machine} can't be used: {}", last["lastError"].as_str().unwrap_or("its agent sees no display.")));
             }
@@ -931,8 +862,6 @@ impl Tool<'_> {
             return Err(explain(machine, &BrokerError::new("no_agent", "")));
         }
         let task = self.task()?;
-        // One of the person's machines (not a disposable copy this connection made) needs their approval in GpuVM,
-        // once per machine and session.
         let mut args = json!({ "connection": self.connection, "name": machine, "task": task });
         if let Err(e) = self.ctx.broker.call("machine.take", args.clone()) {
             if e.code != "needs_approval" {
@@ -956,8 +885,6 @@ impl Tool<'_> {
         self.ctx.forget_machine(machine);
         Ok(text(format!("Released {machine}.")))
     }
-
-    // -------- screen
 
     fn screen_size(&self, machine: &str) -> Result<(u32, u32), String> {
         if let Some(s) = self.ctx.screens.lock().unwrap().get(machine) {
@@ -993,7 +920,6 @@ impl Tool<'_> {
         Ok(json!({ "content": content }))
     }
 
-    /// Captures and registers a screenshot; returns its mapping and the MCP image content.
     fn capture(&self, machine: &str, max_w: Option<u32>, max_h: Option<u32>, zoom: Option<[f64; 4]>, reference: Option<u32>, format: &str) -> Result<(Shot, Value), String> {
         let screen = self.screen_size(machine)?;
         let (mut origin, mut region) = ((0u32, 0u32), screen);
@@ -1019,7 +945,6 @@ impl Tool<'_> {
         if w == 0 || h == 0 || w > geometry::MAX_EDGE || h > geometry::MAX_EDGE || (w as u64 * h as u64) > geometry::MAX_PIXELS {
             return Err(format!("The machine sent a picture of an unexpected size ({w}x{h})."));
         }
-        // The desktop may have changed size (resolution change): use what the capture reports.
         if let (Some(fw), Some(fh)) = (reply.data["screen"]["w"].as_u64(), reply.data["screen"]["h"].as_u64()) {
             let now = (fw as u32, fh as u32);
             if now != screen && zoom.is_none() {
@@ -1028,7 +953,6 @@ impl Tool<'_> {
             self.ctx.screens.lock().unwrap().insert(machine.to_string(), now);
         }
         let shot = self.ctx.add_shot(Shot { id: 0, machine: machine.into(), screen, origin, region, sent: (w, h), zoom: zoom.is_some() });
-        // The screen change this picture already includes.
         let epoch = reply.meta["screenChangedAt"].as_u64().unwrap_or(0)
             .max(self.ctx.screen_changed.lock().unwrap().get(&machine.to_ascii_lowercase()).copied().unwrap_or(0));
         self.ctx.shot_epoch.lock().unwrap().insert(shot.id, epoch);
@@ -1036,8 +960,6 @@ impl Tool<'_> {
         let image = json!({ "type": "image", "data": base64::engine::general_purpose::STANDARD.encode(&blob), "mimeType": mime });
         Ok((shot, image))
     }
-
-    // -------- input
 
     fn reference(&self, machine: &str) -> Result<Shot, String> {
         let id = opt_int(self.args, "screenshot", 0, u32::MAX as i64)?.map(|v| v as u32);
@@ -1053,7 +975,6 @@ impl Tool<'_> {
         shot.to_full(num(a, kx)?, num(a, ky)?)
     }
 
-    /// One action from the model → the guest's action, in desktop pixels.
     fn convert(&self, shot: Option<&Shot>, a: &Value, machine: &str) -> Result<Value, String> {
         let kind = a["type"].as_str().ok_or("Each action needs a `type`.")?;
         let need = || shot.ok_or_else(|| format!("Take a screenshot of {machine} first; coordinates are in its pixels."));
@@ -1141,7 +1062,7 @@ impl Tool<'_> {
             a["type"] = json!(name);
             vec![a]
         };
-        opt_int(self.args, "delayMs", 0, MAX_DELAY_MS)?; // checked before acting
+        opt_int(self.args, "delayMs", 0, MAX_DELAY_MS)?;
         let needs_shot = actions.iter().any(|a| matches!(a["type"].as_str(), Some("click" | "move" | "drag" | "scroll")));
         let shot = if needs_shot { Some(self.reference(machine)?) } else { None };
         let converted = actions.iter().enumerate()
@@ -1151,7 +1072,6 @@ impl Tool<'_> {
         if points > geometry::MAX_PATH_POINTS {
             return Err(format!("At most {} drag points in one call; split the drawing.", geometry::MAX_PATH_POINTS));
         }
-        // The broker's wait covers the actions: their own waits, typing (~1 ms a character) and 1 s each.
         let budget_ms: u64 = converted.iter().map(|a| 1000 + a["ms"].as_u64().unwrap_or(0) + a["text"].as_str().map_or(0, |t| t.chars().count() as u64)).sum();
         let reply = self.invoke_with(machine, "input.act", json!({ "actions": converted, "stopOnError": true }),
             json!({ "timeoutSec": (budget_ms / 1000 + 10).clamp(30, 600) }))?;
@@ -1170,8 +1090,6 @@ impl Tool<'_> {
         Ok(text(summary))
     }
 
-    // -------- UI Automation
-
     fn ui_tree(&self) -> Out {
         let machine = self.machine()?;
         let max = opt_int(self.args, "maxNodes", 1, 1000)?.unwrap_or(150);
@@ -1179,7 +1097,6 @@ impl Tool<'_> {
         let shot = match self.ctx.latest_shot(machine, None) {
             Some(s) => s,
             None => {
-                // No screenshot yet: use the space a default screenshot would have, so later ones match.
                 let screen = self.screen_size(machine)?;
                 let sent = geometry::fit(screen.0, screen.1, geometry::DEFAULT_MAX.0, geometry::DEFAULT_MAX.1);
                 self.ctx.add_shot(Shot { id: 0, machine: machine.into(), screen, origin: (0, 0), region: screen, sent, zoom: false })
@@ -1223,8 +1140,6 @@ impl Tool<'_> {
         Ok(text("Done."))
     }
 
-    // -------- commands and files
-
     fn run(&self) -> Out {
         let machine = self.machine()?;
         let command = arg_str(self.args, "command")?;
@@ -1255,9 +1170,6 @@ impl Tool<'_> {
         Ok(text(run_text(timeout, &reply)))
     }
 
-    /// `run background: true`: the same request on a thread of its own (the broker gives it its own pipe connection,
-    /// and the host and the guest run it next to screenshots and input); its output waits for run_result. The person's
-    /// pause, budgets and timeouts apply to it exactly as to a run that is waited for.
     fn run_background(&self, machine: &str, params: Value, mut extra: Value, timeout: i64) -> Out {
         let runs = Arc::clone(&self.ctx.runs);
         let id = {
@@ -1312,7 +1224,6 @@ impl Tool<'_> {
         }
     }
 
-    /// The agent's home in the machine (`agent.info` home; the default user's profile otherwise), ending in `\`.
     fn home(&self, machine: &str) -> String {
         let home = self.find(machine).ok().flatten()
             .and_then(|m| m["agent"]["home"].as_str().map(str::to_string))
@@ -1320,8 +1231,6 @@ impl Tool<'_> {
         format!("{}\\", home.trim_end_matches('\\'))
     }
 
-    /// A path for files.*: relative to the agent's home (passed as is; the guest resolves it) or a full path inside
-    /// it. Never `..`, `.`, another drive, a UNC path or a stream (`:`).
     fn home_path(&self, machine: &str, key: &str) -> Result<String, String> {
         let path = arg_str(self.args, key)?.replace('/', "\\");
         let bad = || Err("Use a path inside the agent's home folder, relative (like Desktop\\Outbox\\report.md) or full; no '..'.".to_string());
@@ -1399,25 +1308,20 @@ impl Tool<'_> {
             return Err("`hostPath` must be a full path on this PC.".into());
         }
         self.mine(machine)?;
-        // Data leaves this PC for an untrusted machine: the person allows it in GpuVM first. Only the path goes with
-        // the request: the service measures it as the person, writes the title the person sees, and re-measures
-        // when the copy uses the approval (once, exactly that path). The local measure only words the messages here.
+        // Data leaves this PC: the service measures the path as the person and writes the title; the local measure only words messages.
         let (bytes, files) = host_size(p)?;
         let what = if files == 1 && p.is_file() { human_size(bytes) } else { format!("{files} files, {}", human_size(bytes)) };
         let title = format!("Copy {} ({what}) from this PC into {machine}", p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| host.to_string()));
         let reason = opt_str(self.args, "reason")?.unwrap_or("The agent wants to use this file in the machine.");
-        // Its own 10 minutes, not the session's default (which the person may have set short).
         let approval = self.approval_with(machine, "send", &title, reason, SEND_APPROVAL_SECS, json!({ "path": host }))?;
         self.step(machine)?;
         let sent = match self.ctx.broker.call_long("file.send", json!({ "connection": self.connection, "name": machine, "hostPath": host, "approval": approval })) {
             Ok(r) => r,
-            // The path changed after the person allowed it (re-measured): their answer was for something else.
             Err(e) if e.code == "needs_approval" => return Err(format!(
                 "{} changed after the person allowed it, so it wasn't sent; call send_file again to ask them about it as it is now.", p.display())),
             Err(e) => return Err(self.fail(machine, e)),
         };
-        // Check it arrived instead of trusting the copy's "done" (lab 053: a 106 MB installer was reported copied
-        // and never reached the machine), at the name it got there (never overwriting: `name (2).ext`).
+        // Check it arrived instead of trusting the copy's "done" (never overwriting: `name (2).ext`).
         let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
         let inside = sent.data["path"].as_str().map(str::to_string).unwrap_or_else(|| format!("Desktop\\Received\\{name}"));
         let expected = std::fs::metadata(p).ok().filter(|m| m.is_file()).map(|m| m.len());
@@ -1442,7 +1346,6 @@ impl Tool<'_> {
     fn offer_file(&self) -> Out {
         let machine = self.machine()?;
         let path = self.home_path(machine, "path")?;
-        // Relative to the home: Desktop\Outbox\<file>, nothing deeper.
         let home = self.home(machine).to_ascii_lowercase();
         let lower = path.to_ascii_lowercase();
         let relative = lower.strip_prefix(&home).unwrap_or(&lower);
@@ -1473,20 +1376,15 @@ impl Tool<'_> {
         Ok(text(offer_text(id, &r.data)))
     }
 
-    // -------- restore points and lifetime
-
-    /// Asks the person in GpuVM (never through the client) and waits for their answer; the allowed request's id.
     fn approval(&self, machine: &str, kind: &str, title: &str, reason: &str, wait: u64) -> Result<String, String> {
         self.approval_with(machine, kind, title, reason, wait, json!({}))
     }
 
-    /// `extra`: what the request is about, checked by the service when the approval is used (send: path, sizeBytes, files).
     fn approval_with(&self, machine: &str, kind: &str, title: &str, reason: &str, wait: u64, extra: Value) -> Result<String, String> {
         let mut args = json!({ "kind": kind, "title": cap_to(title.to_string(), 120),
             "reason": cap_to(reason.to_string(), 500), "timeoutSec": wait.max(30) });
         if let (Some(a), Value::Object(e)) = (args.as_object_mut(), extra) {
             a.extend(e);
-            // For a send the service writes the title the person sees from its own measure.
             if kind == "send" {
                 a.remove("title");
             }
@@ -1502,11 +1400,8 @@ impl Tool<'_> {
             "allowed" => Ok(id),
             "denied" => Err(format!("The person said no in GpuVM to: {title}. Don't try again; ask them what to do instead.")),
             "pending" => {
-                // Withdrawn so the person isn't asked later about something nobody waits for; a request answered in
-                // the meantime keeps its answer (the broker refuses to withdraw it).
                 match self.broker("request.revoke", machine, json!({ "requestId": id })) {
                     Ok(_) => Err(format!("The person didn't answer in GpuVM in time, so the request ({id}) was withdrawn. Ask again later if you still need it, or tell the user.")),
-                    // Refused: answered in the meantime (just as the wait ended). Read the answer instead of guessing.
                     Err(_) => match self.broker("approval.get", machine, json!({ "requestId": id }))?.data["state"].as_str() {
                         Some("allowed") => Ok(id),
                         Some("denied") => Err(format!("The person said no in GpuVM to: {title}. Don't try again; ask them what to do instead.")),
@@ -1532,7 +1427,7 @@ impl Tool<'_> {
         Ok(text(format!("The person allowed it (request {id}).")))
     }
 
-    /// Restore points need the machine off for a moment, which deletes a disposable machine: refused for those.
+    // Restore points need the machine off for a moment, which deletes a disposable machine: refused for those.
     fn restorable(&self, machine: &str) -> Result<(), String> {
         if self.mine(machine)?["disposable"] == true {
             return Err(format!("{machine} is disposable: turning it off (which restore points need) deletes it. Use a normal machine the person gave you for restore points."));
@@ -1572,8 +1467,6 @@ impl Tool<'_> {
         if self.mine(machine)?["disposable"] != true {
             return Err(format!("{machine} isn't disposable; only the person can delete it. Use release_machine when you're done."));
         }
-        // A file offered to the person is still read from the machine when they accept it (lab 053: the report
-        // was lost because the machine was destroyed while its offer waited).
         if opt_bool(self.args, "force")? != Some(true) {
             let offers = self.broker("offers.list", machine, json!({}))?.data;
             let waiting: Vec<String> = offers.as_array().into_iter().flatten()
@@ -1588,15 +1481,10 @@ impl Tool<'_> {
         Ok(text(format!("{machine} is being shut down and deleted.")))
     }
 
-    // -------- see / take control
-
     fn open_viewer(&self) -> Out {
         let machine = self.machine()?;
-        // Only a machine this connection took: the viewer can start or resume a machine (lab 053 security review).
+        // Only a machine this connection took: the viewer can start or resume a machine.
         self.mine(machine)?;
-        // The app publishes what each viewer shows (viewer.rs, viewer-state.json): this answers once the picture is
-        // on the person's screen, or says why not, instead of as soon as it asked (2026-11-21: the agent acted while
-        // the person still saw "Preparing").
         let key = machine.to_lowercase();
         let state_of = || -> (String, u64) {
             let all = crate::viewer::read_viewer_states();
@@ -1627,8 +1515,6 @@ impl Tool<'_> {
         }))
     }
 
-    /// Waits until the person hands the machine back (after taking control, or a request_human), so the model
-    /// doesn't have to ask or keep retrying.
     fn wait_for_person(&self) -> Out {
         let machine = self.machine()?;
         self.mine(machine)?;
@@ -1647,7 +1533,6 @@ impl Tool<'_> {
         }
     }
 
-    /// Records the machine's pause as this connection last saw it; returns a line for the model when it changed.
     fn note_control(&self, machine: &str, now: Option<String>) -> Option<String> {
         let mut seen = self.ctx.control_seen.lock().unwrap();
         let before = seen.insert(machine.to_lowercase(), now.clone());
@@ -1679,8 +1564,6 @@ impl Tool<'_> {
         }
     }
 
-    /// Withdraws this connection's pending request_human on a machine: the pause it caused ends. Never a pause or
-    /// take-control by the person (the broker refuses those).
     fn cancel_request(&self) -> Out {
         let machine = self.machine()?;
         let key = machine.to_ascii_lowercase();
@@ -1703,9 +1586,7 @@ impl Tool<'_> {
                     self.ctx.human_requests.lock().unwrap().remove(&key);
                 }
                 Err(match e.code.as_str() {
-                    // Gone from the broker: the person answered it (handed the machine back) or replaced it with a
-                    // pause of their own. Which one is in the machine's state now (lab 053: an answered request came
-                    // back not_found and was reported as "took control").
+                    // Gone from the broker: answered (handed back) or replaced by the person's own pause; the machine's state says which.
                     "not_found" => match self.find(machine).ok().flatten().as_ref().and_then(paused_by) {
                         None => format!("The person already answered your request and handed {machine} back; take a fresh screenshot before acting."),
                         Some("human") => format!("{machine} is paused by another request to the person; wait for them."),
@@ -1719,8 +1600,7 @@ impl Tool<'_> {
     }
 }
 
-/// Text the model wrote (file contents, commands, typed text, values, stdin) never goes into the step notes the app
-/// shows and logs: only its length.
+// Text the model wrote never goes into the step notes the app shows and logs: only its length.
 fn redact(map: &mut serde_json::Map<String, Value>) {
     for key in ["content", "command", "text", "value", "stdin"] {
         if let Some(Value::String(c)) = map.get_mut(key) {
@@ -1729,8 +1609,6 @@ fn redact(map: &mut serde_json::Map<String, Value>) {
     }
 }
 
-/// What a host path holds: total bytes and number of files (folders walked without following links; capped so a
-/// huge tree can't stall the call).
 fn host_size(p: &std::path::Path) -> Result<(u64, u64), String> {
     let meta = std::fs::symlink_metadata(p).map_err(|_| format!("{} can't be read from this PC.", p.display()))?;
     if meta.is_file() {
@@ -1771,14 +1649,12 @@ fn human_size(bytes: u64) -> String {
     }
 }
 
-/// Fields of a machine as the broker lists it.
 fn screen(m: &Value) -> Option<(u32, u32)> {
     let s = &m["agent"]["screen"];
     Some((s["w"].as_u64()? as u32, s["h"].as_u64()? as u32))
 }
 
-/// Someone is signed in: the agent's snapshot says so, or a `signed_in` event with a user arrived after it connected
-/// (lab 053: the snapshot taken at connect said signedIn:false and stayed so after the user signed in 10 s later).
+// The connect-time snapshot can stay signedIn:false after a sign-in: a later `signed_in` event counts too.
 fn signed_in(m: &Value) -> bool {
     let event = &m["events"]["signed_in"];
     let by_event = event["data"]["user"].as_str().is_some_and(|u| !u.is_empty())
@@ -1786,7 +1662,6 @@ fn signed_in(m: &Value) -> bool {
     m["agent"]["signedIn"] != false || by_event
 }
 
-/// Why the machine is paused: "human" (request_human), "control" (the person took over) or "person".
 fn paused_by(m: &Value) -> Option<&str> {
     m["paused"].is_object().then(|| m["paused"]["reason"].as_str().unwrap_or("person"))
 }
@@ -1795,8 +1670,6 @@ fn taken_by(m: &Value) -> Option<&str> {
     m["takenBy"]["connection"].as_str()
 }
 
-/// exec.run's output: in the JSON, or (when it didn't fit a frame) in the blob, stdout then stderr.
-/// What run says about a finished exec.run: exit code (or timeout), then its output.
 fn run_text(timeout: i64, reply: &Reply) -> String {
     let d = &reply.data;
     let (out, err) = run_output(d, reply.blob.as_deref());

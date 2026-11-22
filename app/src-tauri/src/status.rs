@@ -1,15 +1,3 @@
-//! The status notch: one place over a machine's picture for everything that only tells the person how things are
-//! (recording and its time, "Screenshot saved", "You took control", "Claude Code paused"). Requests and approvals
-//! drop from the top as docks (dock.rs, agent.rs); status lives here, at the bottom center by default, or where the
-//! person put it (Settings › Appearance): top center, a top corner, or only in the side panel.
-//!
-//! - One window of this app, owned by the viewer, exactly the size of its notch: nothing around it takes the clicks
-//!   meant for the picture. Several notices stack inside it, newest nearest the edge.
-//! - At the top center it gives way to a dock: while one is down over the same picture it slides to sit just under it,
-//!   and slides back when the dock goes up.
-//! - The viewer only names what happened (a fixed key, "recording" on/off); the texts are the app's. A viewer that sends
-//!   anything else is ignored.
-
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -19,26 +7,19 @@ use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::UI::WindowsAndMessaging::{SetWindowLongPtrW, GWLP_HWNDPARENT};
 
 pub const LABEL: &str = "status-notch";
-/// What the viewer may name ("notice"): the app has the texts.
 const NOTICES: &[&str] = &["shot", "recording", "replay", "replay-off", "disk-full", "error"];
 const NOTICE_MS: u64 = 2500;
-/// A dock's size over the picture until its page reports the real one (dockSize.ts), in logical pixels.
 const DOCK_DEFAULT: (f64, f64) = (540.0, 60.0);
 
 struct State {
-    /// Per machine: its notices, by id ("recording", "control", "paused", "notice:<n>").
     items: HashMap<String, Vec<Value>>,
     placement: String,
-    /// Where it sits and where the docks drop, anywhere over the picture: 0..1 of the room each has (prefs.ts Pos).
     pos: (f64, f64),
     dock_pos: (f64, f64),
-    /// The notch's size as its page measured it (logical pixels).
     size: (f64, f64),
-    /// The machine the window shows now, and whether it sits under a dock.
     shown: Option<String>,
     under_dock: bool,
     next: u64,
-    /// The open dock's size as its page measured it.
     dock: (f64, f64),
 }
 
@@ -50,7 +31,6 @@ fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
     f(s)
 }
 
-/// Puts (or replaces) a lasting notice of a machine, or takes it away with None.
 pub fn set(app: &AppHandle, vm: &str, id: &str, item: Option<Value>) {
     crate::diag(&format!("notch set {vm} {id} {}", if item.is_some() { "on" } else { "off" }));
     with(|s| {
@@ -64,7 +44,6 @@ pub fn set(app: &AppHandle, vm: &str, id: &str, item: Option<Value>) {
     refresh(app);
 }
 
-/// A notice for a moment ("Screenshot saved").
 pub fn flash(app: &AppHandle, vm: &str, key: &str) {
     if !NOTICES.contains(&key) {
         return;
@@ -73,10 +52,8 @@ pub fn flash(app: &AppHandle, vm: &str, key: &str) {
         s.next += 1;
         let id = format!("notice:{}", s.next);
         let list = s.items.entry(vm.to_string()).or_default();
-        // The same notice again replaces the last one instead of piling up.
         list.retain(|i| i["key"] != key);
         list.push(json!({ "id": id, "kind": "notice", "key": key }));
-        // At most four at once: the oldest moment-notices go first.
         while list.len() > 4 {
             if let Some(k) = list.iter().position(|i| i["kind"] == "notice") { list.remove(k); } else { break; }
         }
@@ -92,7 +69,6 @@ pub fn flash(app: &AppHandle, vm: &str, key: &str) {
     });
 }
 
-/// What the viewer says about the picture's status.
 pub fn on_viewer(app: &AppHandle, vm: &str, msg: &Value) {
     match msg["type"].as_str().unwrap_or("") {
         "recording" => {
@@ -113,7 +89,6 @@ fn now_ms() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
-/// The machine whose picture is in view and has something to say, and what.
 fn current() -> Option<(String, Vec<Value>, String)> {
     with(|s| {
         s.items.iter().filter(|(_, l)| !l.is_empty())
@@ -122,9 +97,6 @@ fn current() -> Option<(String, Vec<Value>, String)> {
     })
 }
 
-/// The notch follows the pictures on screen, not only its notices: a notice set while its picture was hidden or still
-/// opening (a pause that came before the viewer showed) appears once the picture does (2026-11-21: "You took control"
-/// never showed and the agent couldn't be given back). Cheap: only acts when what should show differs from what does.
 pub fn ensure(app: &AppHandle) {
     let want = current().map(|(vm, _, placement)| (vm, placement == "panel"));
     let shown = with(|s| s.shown.clone());
@@ -136,7 +108,6 @@ pub fn ensure(app: &AppHandle) {
     }
 }
 
-/// Shows, updates or hides the notch, and tells the side panel (it shows them when placed there).
 pub fn refresh(app: &AppHandle) {
     let now = current();
     let payload = now.as_ref().map(|(vm, items, placement)| json!({ "vm": vm, "items": items, "placement": placement }));
@@ -183,8 +154,7 @@ pub fn refresh(app: &AppHandle) {
     place(app, &window, &vm, false);
 }
 
-/// On Windows 10 the see-through part of a transparent WebView2 window shows pale, so the window is cut to the notch's
-/// shape (prefs.ts cornersAt). Needs the frame off: a captioned window with a region gets a classic title bar.
+// On Windows 10 a transparent WebView2 window shows pale: cut to the notch's shape (needs the frame off, or it gets a title bar).
 fn shape(hwnd: HWND, w: i32, h: i32, radius: i32, (fx, fy): (f64, f64)) {
     use windows_sys::Win32::Graphics::Gdi::{CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, SetWindowRgn, RGN_OR};
     let (top, bottom, left, right) = (fy <= 0.001, fy >= 0.999, fx <= 0.001, fx >= 0.999);
@@ -205,23 +175,19 @@ fn shape(hwnd: HWND, w: i32, h: i32, radius: i32, (fx, fy): (f64, f64)) {
     }
 }
 
-/// Where the notch goes over the picture, for its placement and size; at the top center, under a dock that is down.
 fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str, slide: bool) {
     let Some(viewer) = crate::viewer::viewer_hwnd(vm) else { return };
     let Some((x, y, w, h, scale)) = crate::overlay::client_rect(viewer) else { return };
     let w = w - crate::overlay::open_width(app, vm).unwrap_or(0).min(w / 2);
     let (placement, (lw, lh)) = with(|s| (s.placement.clone(), s.size));
     if lw <= 0.0 || lh <= 0.0 {
-        // Not measured yet: the page asks to be sized as soon as it has drawn (status_resize).
         return;
     }
     let (nw, nh) = (((lw * scale) as i32).min(w), (lh * scale) as i32);
     let ((fx, fy), (dfx, dfy)) = with(|s| (s.pos, s.dock_pos));
     let docked = crate::dock::current_vm().as_deref() == Some(vm) || crate::agent::docked_vm().as_deref() == Some(vm);
-    // Anywhere: a fraction of the room the piece has, so 0 and 1 touch the picture's edges.
     let at = |fx: f64, fy: f64, bw: i32, bh: i32| -> (i32, i32) { (x + ((w - bw).max(0) as f64 * fx).round() as i32, y + ((h - bh).max(0) as f64 * fy).round() as i32) };
     let (px, mut py) = at(fx, fy, nw, nh);
-    // The dock has priority: a notch that would touch it moves out of its way, just past it (away from its edge).
     let (dw, dh) = with(|s| s.dock);
     let (dw, dh) = (((dw * scale) as i32).min(w), (dh * scale) as i32);
     let (dx, dy) = at(dfx, dfy, dw, dh);
@@ -241,7 +207,6 @@ fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str, slide: bool) 
         shape(own.0 as HWND, nw, nh, (14.0 * scale).round() as i32, corners);
     }
     if (slide || was_under != under) && window.is_visible().unwrap_or(false) {
-        // It slides to its new place (with the dock's own drop), instead of jumping.
         let from = window.outer_position().map(|p| (p.x, p.y)).unwrap_or((px, py));
         let w2 = window.clone();
         std::thread::spawn(move || {
@@ -262,14 +227,12 @@ fn place(app: &AppHandle, window: &tauri::WebviewWindow, vm: &str, slide: bool) 
     }
     crate::diag(&format!("notch place {vm} at {px},{py} {nw}x{nh} visible {}", window.is_visible().unwrap_or(false)));
     if !window.is_visible().unwrap_or(false) {
-        // Shown without taking the keyboard: the person keeps typing into the machine.
         let _ = window.show();
         crate::overlay::mark_taskbar(window, crate::viewer::viewer_full_screen(vm));
     }
     let _ = window.emit("status-place", json!({ "placement": placement, "under": under }));
 }
 
-/// The docks report their real size (dockSize.ts): a notch near one moves exactly out of its way.
 pub fn start(app: &AppHandle) {
     use tauri::Listener;
     let handle = app.clone();
@@ -286,7 +249,6 @@ pub fn start(app: &AppHandle) {
     });
 }
 
-/// A dock went down or up over a machine's picture: a notch near it gets out of its way (or back).
 pub fn dock_changed(app: &AppHandle) {
     let Some(vm) = with(|s| s.shown.clone()) else { return };
     if let Some(w) = app.get_webview_window(LABEL) {
@@ -294,7 +256,6 @@ pub fn dock_changed(app: &AppHandle) {
     }
 }
 
-/// The notch's page measured what it shows (logical pixels): the window takes exactly that.
 #[tauri::command]
 pub fn status_resize(app: AppHandle, width: f64, height: f64) {
     crate::diag(&format!("notch page measured {width}x{height}"));
@@ -305,16 +266,13 @@ pub fn status_resize(app: AppHandle, width: f64, height: f64) {
     }
 }
 
-/// What the notch shows, for its page (and the side panel's) when it loads.
 #[tauri::command]
 pub fn status_state() -> Value {
     current().map(|(vm, items, placement)| json!({ "vm": vm, "items": items, "placement": placement })).unwrap_or(Value::Null)
 }
 
-/// A notice's button: "Return to agent" (control) or "Resume" (paused). Only the ones this app put there.
 #[tauri::command]
 pub async fn status_action(app: AppHandle, id: String) -> Result<(), String> {
-    // The machine is the one the notice is on: only that machine goes back to its agent.
     // Ids repeat across machines ("live", "control"): the machine the notch is showing comes first.
     let (vm, item) = with(|s| {
         let find = |vm: &String| s.items.get(vm).and_then(|l| l.iter().find(|i| i["id"] == id.as_str())).map(|i| (vm.clone(), i.clone()));
@@ -327,13 +285,10 @@ pub async fn status_action(app: AppHandle, id: String) -> Result<(), String> {
     }
 }
 
-/// Where the docks drop (0..1 of the room they have): the strip dock (agent.rs) reads it.
 pub fn dock_placement() -> (f64, f64) {
     with(|s| s.dock_pos)
 }
 
-/// Settings › Appearance: status notices over the picture or only in the side panel, where the notch sits and where
-/// requests drop, anywhere (0..1 of the room each has).
 #[tauri::command]
 pub fn set_status_prefs(app: AppHandle, placement: String, x: Option<f64>, y: Option<f64>, dock_x: Option<f64>, dock_y: Option<f64>) {
     let placement = if placement == "panel" { placement } else { "picture".into() };
@@ -349,7 +304,6 @@ pub fn set_status_prefs(app: AppHandle, placement: String, x: Option<f64>, y: Op
         with(|s| s.shown = None);
         refresh(&app);
     } else {
-        // Same place, another distance (or the docks moved): placed again where it is.
         dock_changed(&app);
         if let (Some(vm), Some(w)) = (with(|s| s.shown.clone()), app.get_webview_window(LABEL)) {
             place(&app, &w, &vm, true);

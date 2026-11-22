@@ -18,7 +18,6 @@ function Get-GpuVMSharedDisk {
             sizeGB    = if ($vhd) { [math]::Round($vhd.Size / 1GB) } else { 0 }
             fileGB    = [math]::Round($file.Length / 1GB, 1)
             vm        = if ($attachment) { $attachment.VMName } else { $null }
-            # Moving it from another machine only works while that one is off.
             vmRunning = [bool]($attachment -and (Get-VM -Name $attachment.VMName).State -ne 'Off')
             createdAt = if ($disk.Contains('createdAt')) { $disk['createdAt'] } else { $file.CreationTime.ToString('o') }
         }

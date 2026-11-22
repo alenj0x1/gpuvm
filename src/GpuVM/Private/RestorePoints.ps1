@@ -1,17 +1,7 @@
-# Restore points: a stopped VM's disk frozen as it is, so the VM can go back to it later. Hyper-V refuses
-# checkpoints on a VM with a GPU partition (even Off, even Standard: lab 045), so GpuVM builds its own with
-# differencing disks. Creating a point moves the VM's disk to <vmDir>\Virtual Hard Disks\points\<id>.vhdx (read-only)
-# and puts an empty differencing disk on top of it at the VM's usual disk path; the VM keeps writing only there.
-# Going back throws that top disk away and starts a new empty one on the point. Deleting a point merges what sits on
-# it into it. The VM's disk path never changes, so nothing else in GpuVM needs to know points exist.
-# Only Windows' disk goes back: the VM's settings (processors, memory, GPU) stay as they are now. What GpuVM knows
-# about what is inside Windows (installed apps, password, Sunshine pairing, driver version) is saved with each point
-# and comes back with it.
+# Hyper-V refuses checkpoints on a VM with a GPU partition (even Off, even Standard): points are differencing disks.
 
 $script:MaxRestorePoints = 10
-# Free space a point asks for on top of the host's margin: what the VM writes after it lands in a new disk.
 $script:RestorePointFreeGB = 10
-# State that describes what is inside the guest's disk, so it goes back with the disk.
 $script:RestorePointStateKeys = 'guest', 'streaming', 'installedApps', 'pendingApps', 'pendingRename', 'gpu', 'cleanup', 'edition'
 
 function Get-RestorePointDirectory {
@@ -30,7 +20,6 @@ function Get-GpuVMRestorePointList {
     @(if ($State.Contains('restorePoints') -and $State['restorePoints']) { $State['restorePoints'] })
 }
 
-# The disks that sit directly on $Path: the VM's own disk and other points (a branch after going back).
 function Get-RestorePointChild {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$State, [Parameter(Mandatory)][string]$Path)
     $full = [IO.Path]::GetFullPath($Path)
@@ -42,8 +31,6 @@ function Get-RestorePointChild {
         })
 }
 
-# Points are taken and applied with the VM off. -ShutdownIfRunning shuts it down cleanly (the guest closes its apps)
-# and returns $true so the caller starts it again afterwards.
 function Stop-GpuVMForDisk {
     param([Parameter(Mandatory)][string]$Name, [switch]$ShutdownIfRunning, [Parameter(Mandatory)][string]$Action)
     $vm = Get-VM -Name $Name -ErrorAction Stop
@@ -54,10 +41,7 @@ function Stop-GpuVMForDisk {
     $true
 }
 
-# Hyper-V gives each VM its own read/write entry on its disk file (NT VIRTUAL MACHINE\<VM id>) when the disk is
-# attached. A file made again at the same path doesn't have it, and attaching the same path again doesn't add it
-# (lab 045: "Account does not have permission to open attachment"). So the new file gets the explicit entries the
-# VM's previous disk file had: that VM's own access, nothing more.
+# Hyper-V grants a VM access to its disk file only on first attach: a file made again at that path needs the old one's entries.
 function Copy-GpuVMDiskAccess {
     param([Parameter(Mandatory)][string]$From, [Parameter(Mandatory)][string]$To)
     $source = Get-Acl -LiteralPath $From
@@ -97,7 +81,6 @@ function New-RestorePointId {
     '{0}-{1}' -f (Get-Date -Format 'yyyyMMdd-HHmmss'), ([Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(2)).ToLowerInvariant())
 }
 
-# Takes a point of a stopped VM. Returns the point's record.
 function New-GpuVMRestorePointCore {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -123,7 +106,6 @@ function New-GpuVMRestorePointCore {
     Write-Step 'Saving the restore point'
     $moved = $false
     try {
-        # Same folder tree, same volume: a rename, nothing is copied.
         [IO.File]::Move($current, $pointPath)
         $moved = $true
         New-VHD -Path $current -ParentPath $pointPath -Differencing -ErrorAction Stop | Out-Null
@@ -155,7 +137,6 @@ function New-GpuVMRestorePointCore {
     $point
 }
 
-# Puts the VM's disk back as it was at $Id: the current top disk is thrown away and an empty one starts on the point.
 function Restore-GpuVMRestorePointCore {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -170,12 +151,10 @@ function Restore-GpuVMRestorePointCore {
     $current = $State['vhdPath']
     $top = Get-VHD -Path $current -ErrorAction Stop
     if ($top.VhdType -ne 'Differencing' -or -not $top.ParentPath) { throw "The disk of '$Name' isn't on a restore point." }
-    # The VM's disk is only ever a top disk on a point: never a point or a template (they are other disks).
     $fresh = Join-Path (Split-Path $current -Parent) ".restore-$Id.vhdx"
     Write-Step 'Going back to the restore point'
     New-VHD -Path $fresh -ParentPath $pointPath -Differencing -ErrorAction Stop | Out-Null
-    # The current top disk is set aside (not deleted) until the new one is in its place: if anything fails, it goes back
-    # and the VM is never left without a disk.
+    # Set aside, not deleted, until the new one is in place: the VM is never left without a disk.
     $aside = Join-Path (Split-Path $current -Parent) ".before-restore-$Id.vhdx"
     $setAside = $false
     try {
@@ -201,10 +180,7 @@ function Restore-GpuVMRestorePointCore {
     $point
 }
 
-# Deletes a point. What sits on it is merged into it (the VM keeps what it has now): a point nothing sits on is
-# just deleted; the VM's own disk is merged into it; another point is merged into it and that point's disks are
-# pointed at the result (same content, so Hyper-V's identity check is skipped on purpose). A point two others sit
-# on (after going back) can't be deleted until one of them is.
+# Reparenting onto the merged disk skips Hyper-V's identity check on purpose: the content is the same.
 function Remove-GpuVMRestorePointCore {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -235,7 +211,6 @@ function Remove-GpuVMRestorePointCore {
         Set-FileReadOnly -Path $pointPath -Value $false
         $childReadOnly = (Get-Item -LiteralPath $child).IsReadOnly
         Set-FileReadOnly -Path $child -Value $false
-        # The merged file takes the child's place: it gets the VM's access the child had.
         Copy-GpuVMDiskAccess -From $child -To $pointPath
         try { Merge-VHD -Path $child -DestinationPath $pointPath -ErrorAction Stop }
         catch {
@@ -244,7 +219,6 @@ function Remove-GpuVMRestorePointCore {
             Set-FileReadOnly -Path $pointPath -Value $true
             throw
         }
-        # The merged disk takes the child's place (its path is what the VM or the other disks know).
         [IO.File]::Move($pointPath, $child)
         if ($childReadOnly) { Set-FileReadOnly -Path $child -Value $true }
         foreach ($grandchild in $grandchildren) {
@@ -259,7 +233,6 @@ function Remove-GpuVMRestorePointCore {
     Save-GpuVMState $State
 }
 
-# After a VM's folder moved (rename), each disk of its chain is pointed at its parent's new path.
 function Repair-GpuVMDiskChain {
     param(
         [Parameter(Mandatory)][System.Collections.IDictionary]$State,
@@ -280,8 +253,6 @@ function Repair-GpuVMDiskChain {
     }
 }
 
-# What the app shows: each point with its date and what it takes on disk (its own layer; the oldest one is the
-# disk the VM had before the first point), plus what the VM wrote since the point it is on.
 function Get-GpuVMRestorePointView {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$State)
     $current = $State['vhdPath']

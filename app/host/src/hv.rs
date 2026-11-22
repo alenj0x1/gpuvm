@@ -1,5 +1,3 @@
-//! Hyper-V sockets (AF_HYPERV), the transport of the agent channel (lab 047).
-
 #![allow(dead_code)]
 
 use std::io::{Read, Write};
@@ -30,7 +28,6 @@ pub fn guid_to_u128(g: &GUID) -> u128 {
     ((g.data1 as u128) << 96) | ((g.data2 as u128) << 80) | ((g.data3 as u128) << 64) | u64::from_be_bytes(g.data4) as u128
 }
 
-/// Lowercase, no braces: the form the handshake signs.
 pub fn fmt_guid(v: u128) -> String {
     let h = format!("{v:032x}");
     format!("{}-{}-{}-{}-{}", &h[0..8], &h[8..12], &h[12..16], &h[16..20], &h[20..32])
@@ -70,7 +67,6 @@ impl Sock {
         if s == INVALID_SOCKET { Err(wsa_error()) } else { Ok(Sock(s)) }
     }
 
-    /// Listens on `vm:service` (the host: HV_GUID_CHILDREN).
     pub fn listen(vm: u128, service: u128) -> Result<Sock, i32> {
         let s = Sock::new()?;
         let a = addr(vm, service);
@@ -82,7 +78,7 @@ impl Sock {
         Ok(s)
     }
 
-    /// Accepts one connection and returns it with the peer's VmId, which Hyper-V fills in (never the guest).
+    // The peer's VmId is filled in by Hyper-V, never by the guest.
     pub fn accept(&self) -> Result<(Sock, u128), i32> {
         let mut peer: SockaddrHv = unsafe { std::mem::zeroed() };
         let mut len = std::mem::size_of::<SockaddrHv>() as i32;
@@ -114,7 +110,6 @@ impl Sock {
         }
     }
 
-    /// Wakes up a thread blocked reading it (the connection is closing).
     pub fn shutdown(&self) {
         unsafe { shutdown(self.0, SD_BOTH) };
     }

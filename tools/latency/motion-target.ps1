@@ -1,9 +1,4 @@
-﻿# Smoothness target (Windows PowerShell 5.1 or PowerShell 7). Runs inside the VM in the user's session.
-# A white bar the full height of the screen crosses a black background at a constant speed (one width every
-# -SweepSec seconds), redrawn as fast as the loop runs from a high-resolution clock, so any unevenness on the host
-# comes from the stream, not from the target. tools/latency/motion-meter.ps1 measures it. Closes after -Minutes.
-# -Windowed: a normal window over 70 % of the screen instead of a full-screen one (DDX capture treats full-screen
-# windows differently).
+﻿# -Windowed: DDX capture treats full-screen windows differently.
 param([int]$Minutes = 20, [double]$SweepSec = 2, [switch]$Windowed)
 
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
@@ -54,8 +49,7 @@ public class GpuVMMotionTarget : Form {
         int x = 0;
         string status = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "gpuvm-motion-target.txt");
         while (form.Visible && clock.ElapsedMilliseconds < deadline) {
-            // A display mode change (each stream can set one) leaves the window's drawing surface stale: drawing on it
-            // shows nothing. Take a new one, and the full size, twice a second.
+            // A display mode change leaves the window's drawing surface stale: take a new one twice a second.
             if (clock.ElapsedMilliseconds - lastRefresh >= 500) {
                 lastRefresh = clock.ElapsedMilliseconds;
                 if (form.ClientSize.Width != w || form.ClientSize.Height != h) { w = form.ClientSize.Width; h = form.ClientSize.Height; }
@@ -66,8 +60,7 @@ public class GpuVMMotionTarget : Form {
             }
             double t = clock.Elapsed.TotalSeconds;
             int nx = (int)((t % sweepSec) / sweepSec * (w - BarWidth));
-            // New bar first, then only the strip it left behind: erasing first would let a capture catch a frame
-            // with no bar at all.
+            // New bar first, then the strip it left: erasing first would let a capture catch a frame with no bar.
             if (nx != x) {
                 g.FillRectangle(Brushes.White, nx, 0, BarWidth, h);
                 if (nx > x && nx < x + BarWidth) g.FillRectangle(Brushes.Black, x, 0, nx - x, h);

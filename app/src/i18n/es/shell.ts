@@ -1,6 +1,4 @@
-// Spanish for the shell: sidebar, title bar, Settings, shared pickers and helpers.
 export default {
-  // Sidebar and blocked screens (App.tsx)
   "Home": "Inicio",
   "Library": "Biblioteca",
   "Profiles, disks and ISOs": "Perfiles, discos e ISOs",
@@ -34,13 +32,11 @@ export default {
   "Hyper-V only lets an administrator create and control machines.": "Hyper-V solo deja crear y controlar máquinas a un administrador.",
   "Open as administrator": "Abrir como administrador",
 
-  // Title bar
   "Minimize": "Minimizar",
   "Restore": "Restaurar",
   "Maximize": "Maximizar",
   "Close": "Cerrar",
 
-  // Administrator prompt card
   "{name} asks for administrator permission": "{name} pide permiso de administrador",
   "A program": "Un programa",
   "Unknown publisher": "Editor desconocido",
@@ -53,7 +49,6 @@ export default {
   "Deny": "Rechazar",
   "Allow": "Permitir",
 
-  // Settings
   "Appearance": "Apariencia",
   "Window": "Ventana",
   "Service": "Servicio",
@@ -108,7 +103,6 @@ export default {
   "View machine": "Ver máquina",
   "Open": "Abrir",
 
-  // Machine states (stateLabel in ui.tsx)
   "On": "Encendida",
   "Off": "Apagada",
   "Paused": "En pausa",
@@ -118,12 +112,10 @@ export default {
   "Pausing": "Pausando",
   "Resuming": "Reanudando",
 
-  // Uptime (ui.tsx)
   "{m} min": "{m} min",
   "{h} h {m} min": "{h} h {m} min",
   "{d} d {h} h": "{d} d {h} h",
 
-  // Resource chips and summaries
   "{n} thread": "{n} hilo",
   "{n} threads": "{n} hilos",
   "{gb} GB fixed": "{gb} GB fijo",
@@ -139,7 +131,6 @@ export default {
   "Balanced": "Equilibrado",
   "Maximum performance": "Máximo rendimiento",
 
-  // Stream settings (pickers.tsx, embed.tsx)
   "Monitor": "Monitor",
   "at the monitor's rate": "al ritmo del monitor",
   "Automatic|codec": "Automático",
@@ -177,7 +168,6 @@ export default {
   "Custom FPS": "FPS personalizados",
   "Enter a value from 10 to 480": "Escribe un valor de 10 a 480",
 
-  // App picker, cleanup and ISOs
   "Search": "Buscar",
   "Search apps": "Buscar apps",
   "Clear search": "Borrar búsqueda",
@@ -197,19 +187,16 @@ export default {
   "On the desktop": "En el escritorio",
   "In Downloads": "En descargas",
 
-  // Names and files (api.ts, machineIcon.tsx)
   "Enter a name": "Escribe un nombre",
   "Up to 40 characters": "Hasta 40 caracteres",
   "Use letters, numbers or hyphens, no spaces": "Usa letras, números o guiones, sin espacios",
   "There's already a machine with that name": "Ya hay una máquina con ese nombre",
   "Windows image": "Imagen de Windows",
   "Another icon": "Otro ícono",
-  // The viewer's side panel (ViewerPanel.tsx)
   "Picture": "Imagen",
   "Viewer panel": "Panel del visor",
   "Watching now": "Viendo ahora",
   "Switch": "Cambiar",
-  // Its widgets (ViewerWidgets.tsx)
   "No widgets": "Sin widgets",
   "Pick what you want at hand while you use the machine.": "Elige lo que quieres tener a mano mientras usas la máquina.",
   "Add": "Agregar",
@@ -245,7 +232,6 @@ export default {
   "Connected, you're back to its picture at once. Meanwhile it uses a little of this PC's GPU.": "Conectada, vuelves a su imagen al instante. Mientras tanto usa un poco de la GPU de este equipo.",
   "Keep it connected": "Mantenerla conectada",
   "Inside GpuVM": "Dentro de GpuVM",
-  // Tips for the waits (Tips.tsx)
   "Ctrl+Alt+Shift+A gives the machine back to the agent after you took control.": "Ctrl+Alt+Shift+A le devuelve la máquina al agente después de tomar el control.",
   "Ctrl+Alt+Shift+G opens the panel while you're on a machine.": "Ctrl+Alt+Shift+G abre el panel mientras ves una máquina.",
   "Ctrl+Alt+Shift+H takes you Home and the machine stays connected.": "Ctrl+Alt+Shift+H te lleva a Inicio y la máquina sigue conectada.",
