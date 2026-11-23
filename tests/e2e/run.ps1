@@ -69,11 +69,11 @@ try {
             Check "$($f.BaseName): the app logged no errors" (-not $errors.Count) ($errors -join ' || ')
             # Each suite starts where a person would: the machine with its agent and GpuVM at Home.
             try { Reset-E2EApp $ctx } catch { Write-Host "     reset: $($_.Exception.Message)" }
-            $all = Get-E2EResults
-            $failedHere = @($all | Select-Object -Skip $from | Where-Object { -not $_.Ok }).Count
+            $so = Get-E2EResults
+            $failedHere = @($so | Select-Object -Skip $from | Where-Object { -not $_.Ok }).Count
             if (-not $failedHere -or $attempt -eq 2) { break }
             $retried.Add($f.BaseName)
-            $all.RemoveRange($from, $all.Count - $from)
+            $so.RemoveRange($from, $so.Count - $from)
         }
     }
 }
