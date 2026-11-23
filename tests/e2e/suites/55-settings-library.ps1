@@ -626,7 +626,8 @@ function Test-SlSpaces([string]$Tag) {
     $name = "e2e-$Tag"
     $esc = [regex]::Escape($name)
     if (-not (Open-SlSide '^(Home|Inicio)$')) { Check 'Home opens' $false ''; return }
-    $plus = Wait-For { Find-SlOne (Get-MainElement) 'Button' '^(New space|Nuevo espacio)$' } 5
+    # The suite's first step: right after GpuVM starts, Home can still be loading its machines.
+    $plus = Wait-For { Find-SlOne (Get-MainElement) 'Button' '^(New space|Nuevo espacio)$' } 15
     Check 'Home has the New space button' ([bool]$plus) ''
     if (-not $plus) { return }
     $created = $false
