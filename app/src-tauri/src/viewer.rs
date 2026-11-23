@@ -97,10 +97,14 @@ pub fn follow_main(app: &AppHandle) {
 
 /// An owner set through GWLP_HWNDPARENT doesn't keep the viewer above the app when the app comes forward: a picture in
 /// the window is put back over it, with the pieces it owns over the picture.
+static MAIN_HWND: AtomicIsize = AtomicIsize::new(0);
+static GUARDING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 pub fn raise_embedded(app: &AppHandle) {
     use tauri::Manager;
     let list: Vec<(String, Arc<Viewer>)> = viewers().as_ref().map(|v| v.iter().map(|(k, x)| (k.clone(), x.clone())).collect()).unwrap_or_default();
     let Some(main) = app.get_webview_window("main").and_then(|w| w.hwnd().ok()) else { return };
+    MAIN_HWND.store(main.0 as isize, Ordering::Relaxed);
     for (vm, viewer) in list.into_iter().filter(|(_, v)| v.embed && v.visible.load(Ordering::Relaxed)) {
         let hwnd = viewer.hwnd.load(Ordering::Relaxed);
         if hwnd == 0 || !window_of(hwnd, viewer.child.pid) || viewer_full_screen(&vm) {
@@ -120,6 +124,49 @@ pub fn raise_embedded(app: &AppHandle) {
             }
         }
     }
+}
+
+// While a picture is inside the window, out of full screen: anything that brings the main window forward afterwards
+// (a click on it, the app showing a page) covers the picture again, and the viewer can't come back by itself.
+fn guard_embedded(app: AppHandle) {
+    if GUARDING.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(Duration::from_millis(500));
+            let main = MAIN_HWND.load(Ordering::Relaxed);
+            let shown: Vec<isize> = viewers().as_ref().map(|v| v.values()
+                .filter(|x| x.embed && x.visible.load(Ordering::Relaxed) && !x.full_now.load(Ordering::Relaxed))
+                .map(|x| x.hwnd.load(Ordering::Relaxed)).filter(|h| *h != 0).collect()).unwrap_or_default();
+            if shown.is_empty() {
+                break;
+            }
+            if main != 0 && shown.iter().any(|h| below(*h, main)) {
+                let a = app.clone();
+                let _ = app.run_on_main_thread(move || raise_embedded(&a));
+            }
+        }
+        GUARDING.store(false, Ordering::Release);
+    });
+}
+
+fn below(hwnd: isize, other: isize) -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindow, GW_HWNDPREV};
+    // SAFETY: reads the z-order only; a window that goes away ends the walk with null.
+    unsafe {
+        let mut h = GetWindow(hwnd as _, GW_HWNDPREV);
+        for _ in 0..1024 {
+            if h.is_null() {
+                return false;
+            }
+            if h as isize == other {
+                return true;
+            }
+            h = GetWindow(h, GW_HWNDPREV);
+        }
+    }
+    false
 }
 
 fn window_of(hwnd: isize, pid: u32) -> bool {
@@ -445,6 +492,7 @@ fn open_blocking(app: AppHandle, vm: String, exe: PathBuf, arguments: Vec<String
                         std::thread::sleep(std::time::Duration::from_millis(300));
                         let a = app.clone();
                         let _ = app.run_on_main_thread(move || raise_embedded(&a));
+                        guard_embedded(app);
                     });
                 }
                 if let Some(o) = msg.as_object_mut() {
