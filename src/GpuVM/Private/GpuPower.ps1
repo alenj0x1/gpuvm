@@ -69,7 +69,7 @@ function Start-VM {
     param([Parameter(Mandatory)][string]$Name)
     # An agent machine never starts with an adapter on a switch where it isn't isolated (Network.ps1).
     Assert-AgentMachineSwitch -Name $Name
-    Invoke-GpuPowerTransition -Name $Name -UntilUp -Do { Hyper-V\Start-VM -Name $Name }
+    Invoke-GpuPowerTransition -Name $Name -UntilUp -Do { Invoke-WithGpuChoice -Name $Name -Do { Hyper-V\Start-VM -Name $Name } }
 }
 
 function Stop-VM {

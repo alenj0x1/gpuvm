@@ -30,6 +30,53 @@ function Test-GpuInstancePathSupport {
     (Get-Command Add-VMGpuPartitionAdapter -ErrorAction SilentlyContinue).Parameters.ContainsKey('InstancePath')
 }
 
+# Windows 10 gives a starting GPU-P machine the partitionable GPU with the fewest running machines, a tie going to the
+# first one listed, and can't be told which (labs/001). Empty machines on for a moment even the count so the machine's
+# own GPU is the one it gets.
+function Get-GpuFillCount {
+    param([Parameter(Mandatory)][string]$Name)
+    if (Test-GpuInstancePathSupport) { return 0 }
+    $gpus = @(Get-PartitionableGpuList)
+    if ($gpus.Count -ne 2) { return 0 }
+    $match = try { [string](Get-GpuVMState -Name $Name)['config']['gpu']['match'] } catch { '' }
+    $target = Get-HostGpu -Match $(if ($match) { $match } else { 'NVIDIA' }) | Select-Object -First 1
+    if (-not $target -or -not ($gpus | Where-Object VendorId -eq $target.VendorId)) { return 0 }
+    $running = @(Hyper-V\Get-VM | Where-Object { $_.Name -ne $Name -and $_.State -in 'Running', 'Paused' -and (Test-GpuPartitioned -Name $_.Name) }).Count
+    if ($gpus[0].VendorId -eq $target.VendorId) { $running } else { $running + 1 }
+}
+
+function Invoke-WithGpuChoice {
+    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][scriptblock]$Do)
+    $count = try { Get-GpuFillCount -Name $Name } catch { 0 }
+    if (-not $count) { return & $Do }
+    $root = Join-Path $env:ProgramData 'GpuVM\gpu-fill'
+    $made = [Collections.Generic.List[string]]::new()
+    try {
+        for ($i = 1; $i -le $count; $i++) {
+            $fill = "GpuVM-gpu-fill-$i"
+            if (Hyper-V\Get-VM -Name $fill -ErrorAction SilentlyContinue) { Hyper-V\Stop-VM -Name $fill -TurnOff -Force -ErrorAction SilentlyContinue; Hyper-V\Remove-VM -Name $fill -Force }
+            $made.Add($fill)
+            Hyper-V\New-VM -Name $fill -Generation 2 -MemoryStartupBytes 64MB -NoVHD -Path $root | Out-Null
+            Hyper-V\Get-VMNetworkAdapter -VMName $fill | Hyper-V\Remove-VMNetworkAdapter
+            Hyper-V\Set-VM -Name $fill -AutomaticCheckpointsEnabled $false -AutomaticStartAction Nothing -AutomaticStopAction TurnOff
+            Hyper-V\Add-VMGpuPartitionAdapter -VMName $fill
+            Hyper-V\Start-VM -Name $fill
+        }
+        Write-PowerLog "$Name started with $count empty machine(s) on the other GPU"
+        & $Do
+        # Turned off once the machine is up: a GPU machine changing power during another's boot can hang it (GpuPower.ps1).
+        $deadline = (Get-Date).AddSeconds($script:GpuPowerUpSec)
+        while ((Get-Date) -lt $deadline -and (Hyper-V\Get-VM -Name $Name).State -eq 'Running' -and -not (Test-GuestHeartbeat -Name $Name)) { Start-Sleep -Seconds 1 }
+    }
+    finally {
+        foreach ($fill in $made) {
+            try { Hyper-V\Stop-VM -Name $fill -TurnOff -Force -ErrorAction Stop; Hyper-V\Remove-VM -Name $fill -Force -ErrorAction Stop }
+            catch { Write-PowerLog "couldn't remove $fill`: $($_.Exception.Message)" }
+        }
+        Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 # Win32_PnPSignedDriverCIMDataFile sometimes fails with "Shutting down": retried, then built from the .inf.
 function Get-GpuDriverFileSet {
     param(
