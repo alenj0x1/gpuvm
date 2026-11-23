@@ -33,6 +33,7 @@ public static class E2E {
 
   public static string Describe(IntPtr h) { uint pid; GetWindowThreadProcessId(h, out pid); var c = new StringBuilder(128); GetClassName(h, c, 128); string name = "?"; try { name = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName; } catch {} return name + "/" + c; }
   public static string ProcessNameAt(int x, int y) { var p = new POINT { X = x, Y = y }; IntPtr h = GetAncestor(WindowFromPoint(p), 2); uint pid; GetWindowThreadProcessId(h, out pid); try { return System.Diagnostics.Process.GetProcessById((int)pid).ProcessName; } catch { return "?"; } }
+  public static IntPtr RootAt(int x, int y) { var p = new POINT { X = x, Y = y }; return GetAncestor(WindowFromPoint(p), 2); }
   public static string At(int x, int y) { var p = new POINT { X = x, Y = y }; return Describe(WindowFromPoint(p)); }
   public static string Foreground() { return Describe(GetForegroundWindow()); }
   public static int[] Rect(IntPtr h) { RECT r; GetWindowRect(h, out r); return new[] { r.L, r.T, r.R - r.L, r.B - r.T }; }
@@ -173,6 +174,26 @@ function Get-AppWindows([switch]$Small) {
     }
 }
 
+# Clicks an element of one of GpuVM's small windows once it is there to click: its center on that very window (not on
+# the transparent overlay over the picture, also GpuVM's) and still for a moment, as after the window follows a change
+# of its content's size.
+function Click-InWindow($Element, [IntPtr]$Window, [double]$Seconds = 3) {
+    if (-not $Element) { return $false }
+    $deadline = (Get-Date).AddSeconds($Seconds); $last = $null; $x = 0; $y = 0
+    while ((Get-Date) -lt $deadline) {
+        $r = try { $Element.Current.BoundingRectangle } catch { $null }
+        if ($r -and $r.Width -gt 0 -and $r.Height -gt 0) {
+            $x = [int]($r.X + $r.Width / 2); $y = [int]($r.Y + $r.Height / 2)
+            $key = "$x,$y,$([int]$r.Width)"
+            if ($key -eq $last -and [E2E]::RootAt($x, $y) -eq $Window) { [E2E]::Click($x, $y); return $true }
+            $last = $key
+        }
+        Start-Sleep -Milliseconds 150
+    }
+    Write-Host "     click refused: $([E2E]::At($x, $y)) is over '$($Element.Current.Name)'"
+    $false
+}
+
 function Get-Element([IntPtr]$Handle) { try { [Windows.Automation.AutomationElement]::FromHandle($Handle) } catch { $null } }
 
 # A read that times out (WebView2 rebuilding its tree right after the window comes forward) finds nothing this time.
@@ -299,10 +320,16 @@ function Wait-Notch([string]$Pattern, [double]$Seconds = 15) {
 
 function Check-Drawn([string]$Name, $Notch) {
     if (-not $Notch -or $Notch.W -lt 20 -or $Notch.H -lt 10) { Check "$Name is drawn" $false 'not on screen'; return }
-    Start-Sleep -Milliseconds 400
-    $bmp = Grab ($Notch.X + 4) ($Notch.Y + 4) ($Notch.W - 8) ($Notch.H - 8)
-    $t = [E2E]::Tones((Bytes $bmp)); $bmp.Save((Join-Path $script:Out "$($Name -replace '\W','-').png")); $bmp.Dispose()
-    Check "$Name is drawn" ($t[0] -ge 0.45 -and $t[1] -le 0.25) ("dark {0:P0}, light {1:P0}" -f $t[0], $t[1])
+    # Measured again a moment later: the window follows a change of the notch's size a little after its content.
+    foreach ($wait in 400, 1100) {
+        Start-Sleep -Milliseconds $wait
+        $bmp = Grab ($Notch.X + 4) ($Notch.Y + 4) ($Notch.W - 8) ($Notch.H - 8)
+        $t = [E2E]::Tones((Bytes $bmp)); $bmp.Save((Join-Path $script:Out "$($Name -replace '\W','-').png")); $bmp.Dispose()
+        $drawn = $t[0] -ge 0.45 -and $t[1] -le 0.25
+        if ($drawn) { break }
+        Write-Host ("     INFO  {0}: not drawn yet after {1} ms (dark {2:P0})" -f $Name, $wait, $t[0])
+    }
+    Check "$Name is drawn" $drawn ("dark {0:P0}, light {1:P0}" -f $t[0], $t[1])
     $l = $Notch.X + 1; $t = $Notch.Y + 1; $r = $Notch.X + $Notch.W - 2; $b = $Notch.Y + $Notch.H - 2
     $corners = @(@($l, $t), @($r, $t), @($l, $b), @($r, $b))
     $pale = @($corners | Where-Object { [E2E]::Pale($_[0], $_[1]) }).Count
@@ -311,9 +338,11 @@ function Check-Drawn([string]$Name, $Notch) {
 
 # Films the screen at half size while $Action runs; fails on a short-lived white patch or a captioned GpuVM window.
 # -PictureChanges: the machine's own picture changes meanwhile, so only patches against the frames around them count.
-function Check-NoFlash([string]$Name, [scriptblock]$Action, [int]$Milliseconds = 2500, [switch]$PictureChanges) {
+# -TopShare: only that share of the screen from the top is filmed (where a dock drops in, away from the machine's own windows).
+function Check-NoFlash([string]$Name, [scriptblock]$Action, [int]$Milliseconds = 2500, [switch]$PictureChanges, [double]$TopShare = 1.0) {
     $s = Screen
-    $half = { $f = Grab $s.X $s.Y $s.Width $s.Height; $x = [Drawing.Bitmap]::new($f, [int]($s.Width / 2), [int]($s.Height / 2)); $f.Dispose(); $x }
+    $h = [int]($s.Height * $TopShare)
+    $half = { $f = Grab $s.X $s.Y $s.Width $h; $x = [Drawing.Bitmap]::new($f, [int]($s.Width / 2), [int]($h / 2)); $f.Dispose(); $x }
     $frames = [System.Collections.Generic.List[System.Drawing.Bitmap]]::new()
     $frames.Add((& $half))
     $app = Get-App

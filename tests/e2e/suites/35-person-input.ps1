@@ -78,7 +78,7 @@ function Find-PiNotchButton([string]$Pattern) {
         $bar = $root.FindFirst([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::StatusBar))
         if (-not $bar -or $bar.Current.ClassName -notmatch '^sn\b') { continue }
         $b = Find-Named $bar $Pattern ([Windows.Automation.ControlType]::Button)
-        if ($b -and $b.Current.IsEnabled) { return $b }
+        if ($b -and $b.Current.IsEnabled) { return [pscustomobject]@{ Element = $b; Window = $w.Handle } }
     }
     $null
 }
@@ -296,14 +296,14 @@ function Test-PiButtonOnly($Ctx, [string]$Vm) {
         $n = Get-Notch
         Check 'Button only: a click on the picture doesn''t pause the agent' ($clicked -and $n -and $n.Text -match $intent -and $n.Text -notmatch $script:PiControl) "text: $($n.Text)"
         $take = Find-PiNotchButton '^\W*(Take control|Tomar el control)\W*$'
-        $pressed = Click-Element $take
+        $pressed = $take -and (Click-InWindow $take.Element $take.Window)
         $n = Wait-Notch $script:PiControl 8
         Check 'Button only: the notch''s Take control button takes control' ($pressed -and $n -and $n.Text -match $script:PiControl) "text: $($n.Text)"
         $null = Receive-Mcp $Ctx.Mcp $pending
 
         $waiting = Start-Tool $Ctx.Mcp 'wait_for_person' @{ machine = $Vm; waitSeconds = 30 }
         $b = Wait-For { Find-PiNotchButton $script:PiBack } 5
-        $pressed = Click-Element $b
+        $pressed = $b -and (Click-InWindow $b.Element $b.Window)
         $answer = Text-Of (Receive-Mcp $Ctx.Mcp $waiting)
         Check 'Button only: the notch''s Return to agent hands the machine back' ($pressed -and $answer -match 'handed .* back') $answer
     }
@@ -352,7 +352,7 @@ function Find-PiAdminDock {
 function Test-PiAdminPrompt($Ctx, [string]$Vm) {
     $null = Use-Machine $Ctx
     $st = @{ Run = '' }
-    Check-NoFlash 'admin dock appearing' { $st.Run = Invoke-Tool $Ctx.Mcp 'run' @{ machine = $Vm; command = 'Start-Process cmd -Verb RunAs'; background = $true; intent = 'Asking for administrator rights' } } 7000 -PictureChanges
+    Check-NoFlash 'admin dock appearing' { $st.Run = Invoke-Tool $Ctx.Mcp 'run' @{ machine = $Vm; command = 'Start-Process cmd -Verb RunAs'; background = $true; intent = 'Asking for administrator rights' } } 7000 -PictureChanges -TopShare 0.15
     $dock = Wait-For { Find-PiAdminDock } 30
     if (-not $dock) {
         Shot 'person-input-no-admin-dock'
@@ -416,15 +416,25 @@ function Test-PiDrop($Ctx, [string]$Vm, [string]$Tag) {
         Check 'drop: the file and the picture are both visible' ([bool]$ready) $(if ($r -and $to) { "at the file: $([E2E]::ProcessNameAt($sx, $sy)); at the target: $([E2E]::At($to.X, $to.Y))" } else { 'file item or picture not found' })
         if (-not $ready) { return }
 
-        [PI35]::To($sx, $sy); Start-Sleep -Milliseconds 150
-        [PI35]::Down(); $down = $true; Start-Sleep -Milliseconds 150
-        for ($i = 1; $i -le 30; $i++) { [PI35]::To($sx + ($to.X - $sx) * $i / 30, $sy + ($to.Y - $sy) * $i / 30); Start-Sleep -Milliseconds 25 }
+        # A drag that didn't start (Explorer went behind as the button went down) is let go and tried once more, as a
+        # person would.
         $zone = $null
-        $deadline = (Get-Date).AddSeconds(5)
-        $k = 0
-        while (-not $zone -and (Get-Date) -lt $deadline) {
-            $k++; [PI35]::To($to.X + ($k % 2) * 4, $to.Y + ($k % 3)); Start-Sleep -Milliseconds 60
-            $zone = Find-PiDropZone
+        for ($attempt = 1; $attempt -le 2 -and -not $zone; $attempt++) {
+            if ($attempt -gt 1) {
+                [PI35]::To($sx, $sy); [PI35]::Up(); $down = $false; Start-Sleep -Milliseconds 500
+                [E2EFront]::To([IntPtr]$win.Handle); Start-Sleep -Milliseconds 600
+                if ([E2E]::ProcessNameAt($sx, $sy) -ne 'explorer') { Write-Host "     drop: on the second try $([E2E]::At($sx, $sy)) is over the file"; break }
+            }
+            [PI35]::To($sx, $sy); Start-Sleep -Milliseconds 150
+            [PI35]::Down(); $down = $true; Start-Sleep -Milliseconds 150
+            for ($i = 1; $i -le 30; $i++) { [PI35]::To($sx + ($to.X - $sx) * $i / 30, $sy + ($to.Y - $sy) * $i / 30); Start-Sleep -Milliseconds 25 }
+            $deadline = (Get-Date).AddSeconds(5)
+            $k = 0
+            while (-not $zone -and (Get-Date) -lt $deadline) {
+                $k++; [PI35]::To($to.X + ($k % 2) * 4, $to.Y + ($k % 3)); Start-Sleep -Milliseconds 60
+                $zone = Find-PiDropZone
+            }
+            if (-not $zone) { Shot "person-input-drop-try-$attempt" }
         }
         Shot 'person-input-drop'
         Check 'drop: during the drag GpuVM shows "Drop to send"' ([bool]$zone) ''
