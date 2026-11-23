@@ -152,13 +152,19 @@ pub fn hide(app: &AppHandle) {
 
 fn dropped(app: &AppHandle, paths: Vec<String>) {
     let vm = zone().vm.clone();
-    let (Some(vm), false) = (vm, paths.is_empty()) else { return hide(app) };
+    let (Some(vm), false) = (vm, paths.is_empty()) else {
+        crate::diag::log_error("drop", "nothing to send: no machine or no files in the drop");
+        return hide(app);
+    };
     let folder = "Received";
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         match start(&app, vm.clone(), paths, None, folder.to_string()).await {
             Ok(id) => show_card(&app, &vm, &id),
-            Err(_) => hide(&app),
+            Err(e) => {
+                crate::diag::log_error("drop", &e);
+                hide(&app)
+            }
         }
     });
 }
@@ -263,6 +269,7 @@ unsafe extern "system" fn drag_leave(_: *mut c_void) -> i32 {
 unsafe extern "system" fn drop(_: *mut c_void, data: *mut c_void, _: u32, _: POINTL, effect: *mut u32) -> i32 {
     // Checked again at the drop itself (not only at the enter): a source below Medium never names files here.
     if !SOURCE_OK.swap(false, Ordering::Relaxed) || !source_trusted() {
+        crate::diag::log_error("drop", "refused: the program the files came from isn't trusted");
         *effect = DROPEFFECT_NONE;
         if let Some(app) = APP.lock().unwrap_or_else(|e| e.into_inner()).clone() {
             hide(&app);
