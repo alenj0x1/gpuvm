@@ -259,8 +259,7 @@ function Test-Suite($Ctx) {
         $classes = @([E2ESys]::Classes([uint32]$app.Id))
         $hidden = @($classes | Where-Object { $_ -match '^dev\.alejandro\.gpuvm|Tao|tray' } | Select-Object -Unique)
         Check 'GpuVM''s hidden event/tray window exists' ($hidden.Count -gt 0) ($hidden -join ', ')
-        $area = foreach ($cls in 'Shell_TrayWnd', 'NotifyIconOverflowWindow') { $h = [E2ESys]::FindWindow($cls, $null); if ($h -ne [IntPtr]::Zero) { Get-Texts (Get-Element $h) } }
-        $icon = ($area -join ' | ') -match 'GpuVM'
+        $icon = Test-E2ETrayIcon
         if ($toTray) { Check 'the tray icon is in the notification area' $icon '' }
         else { Write-Host "INFO  tray icon in the notification area: $icon (close quits, so none is required)" }
 

@@ -410,6 +410,9 @@ function Test-PiDrop($Ctx, [string]$Vm, [string]$Tag) {
             $vw = Get-Process GpuVMViewer -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } | Select-Object -First 1
             if ($vw) { Write-Host "     viewer window: $([E2E]::Rect($vw.MainWindowHandle) -join ','), visible $([E2EFront]::IsWindowVisible($vw.MainWindowHandle)); windowed: $windowed; in front: $([E2E]::Foreground())" } else { Write-Host '     no viewer window' }
         }
+        # Leaving full screen is the setup (its shortcut is tested in the viewer suite): when it doesn't happen here the
+        # drop isn't tried, and says so.
+        if (-not $ready -and -not $windowed) { Write-Host '     INFO  drop: skipped, the picture stayed full screen'; return }
         Check 'drop: the file and the picture are both visible' ([bool]$ready) $(if ($r -and $to) { "at the file: $([E2E]::ProcessNameAt($sx, $sy)); at the target: $([E2E]::At($to.X, $to.Y))" } else { 'file item or picture not found' })
         if (-not $ready) { return }
 

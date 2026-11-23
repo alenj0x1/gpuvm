@@ -230,6 +230,33 @@ function Click-Element($Element, [string]$Process = 'gpuvm') {
 
 function Get-MainElement { $app = Get-App; if ($app) { Get-Element $app.MainWindowHandle } }
 
+# Whether the shell shows an icon of GpuVM's (by its hidden tray_icon_app window and id): UI Automation lists the tray's
+# buttons only as untyped panes here.
+if (-not ('E2ETray' -as [type])) {
+    Add-Type @'
+using System; using System.Runtime.InteropServices; using System.Collections.Generic;
+public static class E2ETray {
+  [StructLayout(LayoutKind.Sequential)] struct NII { public uint cbSize; public IntPtr hWnd; public uint uID; public Guid guidItem; }
+  [StructLayout(LayoutKind.Sequential)] struct RECT { public int L, T, R, B; }
+  [DllImport("shell32.dll")] static extern int Shell_NotifyIconGetRect(ref NII id, out RECT r);
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string name);
+  public static bool HasIcon(uint pid) {
+    foreach (var parent in new[] { IntPtr.Zero, new IntPtr(-3) }) {
+      IntPtr a = IntPtr.Zero;
+      for (int i = 0; i < 4096; i++) {
+        a = FindWindowEx(parent, a, "tray_icon_app", null); if (a == IntPtr.Zero) break;
+        uint p; GetWindowThreadProcessId(a, out p); if (p != pid) continue;
+        for (uint id = 0; id < 64; id++) { var n = new NII { cbSize = (uint)Marshal.SizeOf(typeof(NII)), hWnd = a, uID = id }; RECT r; if (Shell_NotifyIconGetRect(ref n, out r) == 0 && r.R > r.L) return true; }
+      }
+    }
+    return false;
+  }
+}
+'@
+}
+function Test-E2ETrayIcon { foreach ($p in @(Get-Process gpuvm -ErrorAction SilentlyContinue)) { if ([E2ETray]::HasIcon([uint32]$p.Id)) { return $true } }; $false }
+
 # GpuVM's window process only (not the suite's MCP server, also gpuvm.exe), started again the way a person would:
 # by the Task Scheduler, outside this elevated shell. The machines keep running.
 function Restart-E2EApp([string]$Exe = 'C:\Program Files\GpuVM\gpuvm.exe') {
@@ -406,10 +433,14 @@ function Use-Machine($Ctx) {
         if (-not $Ctx.Machine) { throw 'No machine to test on.' }
     }
     $opened = Invoke-Tool $Ctx.Mcp 'open_viewer' @{ machine = $Ctx.Machine; waitSeconds = 180 }
-    # After GpuVM quit and came back, the session may have to take its machine again.
+    # A service that restarted forgot which machine the session holds, and taking it again asks the person: the old
+    # disposable goes and the session makes a new one (making one asks nobody).
     if ($opened -match 'first with take_machine') {
-        $null = Invoke-Tool $Ctx.Mcp 'take_machine' @{ machine = $Ctx.Machine; task = 'End-to-end suite' }
-        $opened = Invoke-Tool $Ctx.Mcp 'open_viewer' @{ machine = $Ctx.Machine; waitSeconds = 180 }
+        $old = $Ctx.Machine
+        Stop-VM -Name $old -TurnOff -Force -ErrorAction SilentlyContinue
+        try { Remove-GpuVMDisposable -Name $old -Confirm:$false -ErrorAction SilentlyContinue 6>$null | Out-Null } catch { }
+        $Ctx.Machine = $null
+        return Use-Machine $Ctx
     }
     if ($opened -notmatch 'now sees|already shows') { Check 'agent opens the viewer' $false $opened; throw "The viewer didn't open: $opened" }
     $Ctx.Machine

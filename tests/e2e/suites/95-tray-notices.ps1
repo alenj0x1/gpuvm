@@ -432,7 +432,9 @@ function Test-TnNoticesOnly($Ctx) {
             $script:TnMain = [IntPtr]::Zero
             if ($app) { $script:TnPid = $app.Id; $script:TnMain = $app.MainWindowHandle; $null = Wait-For { Find-TnOne (Get-TnMainEl) 'Button' '^(Settings|Ajustes)$' '\bside-item\b' } 20 }
         }
-        if ((Get-App) -and (Open-TnSettings $windowTab)) {
+        # A GpuVM just started takes a moment before its page shows in UI Automation.
+        $null = Wait-For { Test-E2EPageReadable } 60
+        if ((Get-App) -and ((Open-TnSettings $windowTab) -or (Open-TnSettings $windowTab))) {
             $r = $true
             if ($origNotices) { $r = (Select-TnRadio $leaveRe) -and (Select-TnRadio $origNotices) }
             $r = $r -and (Select-TnRadio $origVms) -and (Select-TnRadio $origClose)
