@@ -6,7 +6,7 @@ All notable changes to GpuVM are documented here. The format follows [Keep a Cha
 
 Changes waiting for the next version sit under **Unreleased** at the top (this section only exists while there are some, and the docs site doesn't show it); `scripts/release.py` turns it into the new version.
 
-## [Unreleased]
+## [1.0.0] - 2026-11-23
 
 ### Added
 - **AI agents can use your machines.** GpuVM is an MCP server (`gpuvm.exe --mcp`): Claude Code, or any MCP client, creates a disposable Windows machine from an agent template or takes one of yours, and works in it with screenshots, clicks, keys, drags, UI Automation, commands and files while you watch. Agents work as a standard Windows user of their own (`agent`), never as administrator; what matters is asked of you in GpuVM, not in the chat: administrator rights, network, files entering the machine, going back to a restore point. UAC prompts, the lock screen, passwords and payments are always yours (`request_human`). Every agent session is recorded.
@@ -308,6 +308,7 @@ First version.
 - Third-party installers are pinned by SHA-256 and verified again right before copying them into the VM.
 - Streaming and guest credentials are encrypted with DPAPI.
 
+[1.0.0]: https://github.com/alenj0x1/gpuvm/compare/v0.9.0...v1.0.0
 [0.9.0]: https://github.com/alenj0x1/gpuvm/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/alenj0x1/gpuvm/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/alenj0x1/gpuvm/compare/v0.6.0...v0.7.0
