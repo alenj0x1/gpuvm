@@ -357,6 +357,9 @@ function Test-SlNotchPlacement($Ctx, [string]$Tag) {
     Check 'the notice placement is readable' ([bool]$orig) "selected: $orig"
     if (-not $orig) { return }
     $wasDefault = -not (Find-SlOne (Get-MainElement) 'Button' '^(Recommended places|Lugares recomendados)$')
+    # A place the person chose can't be put back exactly by dragging (each run left it a few pixels higher): the drag
+    # is only tried from the recommended places, which one click restores.
+    if (-not $wasDefault) { Write-Host '     INFO  notch placement: the notices are where the person put them; not moved'; return }
     $origOffset = $null; $moved = $false
     try {
         $null = Select-SlRadio $pictureRe
