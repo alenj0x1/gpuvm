@@ -47,3 +47,4 @@ app/guest-agent-target/
 labs/055-wgc-stream-user/ddxprobe/target/
 tests/e2e/.last-pass.json
 __pycache__/
+tests/e2e/.last-run.json

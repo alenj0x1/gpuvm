@@ -115,9 +115,10 @@ function Start-E2ERun([string]$Out) {
 }
 
 function Get-E2EResults { , $script:Results }
+function Set-E2ESuite([string]$Name) { $script:CurrentSuite = $Name }
 
 function Check([string]$Name, [bool]$Ok, [string]$Detail = '') {
-    $script:Results.Add([pscustomobject]@{ Check = $Name; Ok = $Ok; Detail = $Detail })
+    $script:Results.Add([pscustomobject]@{ Check = $Name; Ok = $Ok; Detail = $Detail; Suite = $script:CurrentSuite })
     Write-Host ("{0}  {1}{2}" -f $(if ($Ok) { 'PASS' } else { 'FAIL' }), $Name, $(if ($Detail) { " - $Detail" } else { '' }))
 }
 
