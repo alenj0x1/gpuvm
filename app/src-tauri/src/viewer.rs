@@ -909,13 +909,23 @@ pub async fn viewer_show(app: AppHandle, vm: String) -> Result<(), String> {
                 std::thread::sleep(Duration::from_millis(wait));
                 let h = v.hwnd.load(Ordering::Relaxed);
                 let main = MAIN_HWND.load(Ordering::Relaxed);
-                if !v.visible.load(Ordering::Relaxed) || !v.full_now.load(Ordering::Relaxed) || h == 0 || main == 0 || !below(h, main) {
+                // SAFETY: reads which window has the foreground.
+                let focused_main = unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow() } as isize == main;
+                if !v.visible.load(Ordering::Relaxed) || !v.full_now.load(Ordering::Relaxed) || h == 0 || main == 0 || !(below(h, main) || focused_main) {
                     continue;
                 }
-                let app = a.clone();
+                let (app, pid) = (a.clone(), v.child.pid);
                 let _ = a.run_on_main_thread(move || {
                     use tauri::Manager;
-                    raise_without_focus(h, false);
+                    use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+                    // The keyboard too, unless the person went to another program meanwhile.
+                    // SAFETY: reads which window has the foreground.
+                    if unsafe { GetForegroundWindow() } as isize == main {
+                        allow_foreground(pid);
+                        bring_forward(h, pid);
+                    } else {
+                        raise_without_focus(h, false);
+                    }
                     for label in [crate::status::LABEL, "agent-dock", "agent-live", crate::overlay::LABEL] {
                         if let Some(w) = app.get_webview_window(label).filter(|w| w.is_visible().unwrap_or(false)) {
                             crate::overlay::raise_over(&w, h);
