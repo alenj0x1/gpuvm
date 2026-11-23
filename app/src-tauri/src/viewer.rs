@@ -115,8 +115,11 @@ pub fn raise_embedded(app: &AppHandle) {
         // to the viewer's thread (ASYNCWINDOWPOS), so a busy viewer never holds this one.
         unsafe {
             let above = GetWindow(main.0 as _, GW_HWNDPREV);
-            let after = if above.is_null() || above as isize == hwnd { HWND_TOP } else { above };
-            SetWindowPos(hwnd as _, after, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
+            // Already right above the main window: left there, under whatever the person brought over both.
+            if above as isize != hwnd {
+                let after = if above.is_null() { HWND_TOP } else { above };
+                SetWindowPos(hwnd as _, after, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
+            }
         }
         for label in [crate::status::LABEL, "agent-dock", "agent-live", crate::overlay::LABEL] {
             if let Some(w) = app.get_webview_window(label).filter(|w| w.is_visible().unwrap_or(false)) {
