@@ -121,32 +121,53 @@ const SESSION_LIMITS = [30, 60, 120, 0];
 const limitIndex = (m: number) => (m > 0 ? SESSION_LIMITS.slice(0, -1).reduce((best, v, i) => (Math.abs(v - m) < Math.abs(SESSION_LIMITS[best] - m) ? i : best), 0) : SESSION_LIMITS.length - 1);
 const limitLabel = (m: number) => (m === 0 ? t("No limit") : m < 60 ? t("{n} min", { n: m }) : t("{n} h", { n: m / 60 }));
 
+// A slider's last value is saved 400 ms after it stops moving, or at once when the window loses the focus or hides:
+// WebView2 holds back the timers of a window that's covered, so a value set right before going to a machine stayed unsaved.
+function useSoonSave(delay = 400) {
+  const pending = useRef<(() => void) | null>(null);
+  const timer = useRef(0);
+  const flush = () => {
+    window.clearTimeout(timer.current);
+    const run = pending.current;
+    pending.current = null;
+    run?.();
+  };
+  useEffect(() => {
+    const hidden = () => { if (document.visibilityState === "hidden") flush(); };
+    window.addEventListener("blur", flush);
+    document.addEventListener("visibilitychange", hidden);
+    return () => { window.removeEventListener("blur", flush); document.removeEventListener("visibilitychange", hidden); flush(); };
+  }, []);
+  return (run: () => void) => {
+    pending.current = run;
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(flush, delay);
+  };
+}
+
 function AgentPrefs() {
   const prefs = usePrefs();
   const snap = useAgents();
   const [timeout, setTimeoutValue] = useState<number | null>(null);
   const [timeoutError, setTimeoutError] = useState("");
   const shown = timeout ?? snap.approvalTimeoutSec ?? APPROVAL_DEFAULT;
-  const writeTimer = useRef(0);
   const [limit, setLimit] = useState<number | null>(null);
   const [limitError, setLimitError] = useState("");
   const limitShown = limit ?? snap.maxMinutes;
-  const limitTimer = useRef(0);
+  const saveSoon = useSoonSave();
   const changeLimit = (minutes: number) => {
     setLimit(minutes); setLimitError("");
-    window.clearTimeout(limitTimer.current);
-    limitTimer.current = window.setTimeout(() => {
+    saveSoon(() => {
       agents.setSessionLimit(minutes).then(() => refreshAgents()).then(() => setLimit(null))
         .catch((e) => { setLimitError(humanError(e)); setLimit(null); });
-    }, 400);
+    });
   };
   const changeTimeout = (seconds: number) => {
     setTimeoutValue(seconds); setTimeoutError("");
-    window.clearTimeout(writeTimer.current);
-    writeTimer.current = window.setTimeout(() => {
+    saveSoon(() => {
       agents.setApprovalTimeout(seconds).then(() => refreshAgents()).then(() => setTimeoutValue(null))
         .catch((e) => { setTimeoutError(humanError(e)); setTimeoutValue(null); });
-    }, 400);
+    });
   };
   return (
     <>

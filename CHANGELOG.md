@@ -50,6 +50,7 @@ Changes waiting for the next version sit under **Unreleased** at the top (this s
 - The notch and the request at the top of the picture stay where they are when the side panel opens; only one the panel would cover moves aside.
 - While an agent works, and while you have control, the pointer moves freely over the picture, so the notch's **Take control** and **Return to agent** answer a click without Ctrl+Alt+Shift+Z first. Needs the updated viewer.
 - A single click on the picture takes control while an agent works (it took two), and the machine's own cursor no longer shows behind the agent's.
+- **Settings → Agents**: a Time to answer or a session limit changed right before going to a machine is saved at once; GpuVM held it back until its window came forward again, and agents kept getting the old value.
 - On Windows 10 PCs with two GPUs that can be shared (an integrated one and the graphics card), a machine started while another was on got the integrated GPU and showed no picture: Windows hands each new machine to the GPU with fewer machines. GpuVM now evens that count for a moment with empty machines, so every machine gets the graphics card.
 - Windows' banners (a device being set up, OneDrive's offers) no longer show in agent machines, where they took the focus and the agent's keys went to them (agent 0.4.13).
 - The picture stays in front of GpuVM when it leaves full screen inside the window (it ended up behind it, leaving the window black), and the notch, the request and the agent's cursor stay above the picture when it comes forward.
