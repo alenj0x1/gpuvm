@@ -31,8 +31,10 @@ $all = -not $Suite
 
 # Leftovers of an earlier run would hold the memory the suite's own machine needs.
 Import-Module (Join-Path $PSScriptRoot '..\..\src\GpuVM') -DisableNameChecking 3>$null
+$removedLeftovers = [System.Collections.Generic.List[string]]::new()
 foreach ($vm in @(Get-VM | Where-Object { $_.Name -match "^($Template-[0-9a-f]{6}|e2e-[0-9a-f]{6}(-r)?)$" })) {
     Write-Host "removing leftover $($vm.Name)"
+    $removedLeftovers.Add([regex]::Escape($vm.Name))
     if ($vm.State -ne 'Off') { Stop-VM -Name $vm.Name -TurnOff -Force -ErrorAction SilentlyContinue }
     if ($vm.Name -like "$Template-*") { Remove-GpuVMDisposable -Name $vm.Name -Confirm:$false -ErrorAction SilentlyContinue }
     else { Remove-GpuVM -Name $vm.Name -DeleteDisk -Confirm:$false -ErrorAction SilentlyContinue }
@@ -58,7 +60,8 @@ try {
                 $null = Wait-For { Test-E2EPageReadable } 40
             }
             $from = (Get-E2EResults).Count
-            $script:ExpectedErrors = @()
+            # GpuVM may still look for a leftover this run removed, a few seconds later.
+            $script:ExpectedErrors = @(if ($removedLeftovers.Count) { "unable to find a virtual machine with name `"($($removedLeftovers -join '|'))`"" })
             $logAt = if (Test-Path -LiteralPath $appLog) { (Get-Item -LiteralPath $appLog).Length } else { 0 }
             . $f.FullName
             try { & (Get-Item "function:Test-Suite").ScriptBlock $ctx }
