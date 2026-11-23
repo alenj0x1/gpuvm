@@ -465,6 +465,9 @@ function Test-SlTimeToAnswer($Ctx, [string]$Tag) {
         $null = Set-SlSliderMin (& $getSlider)
         $min = Wait-For { (Get-SlValue (& $getSlider)) -eq 0 } 3
         Check 'Time to answer goes to its minimum' ([bool]$min) "index $(Get-SlValue (& $getSlider))"
+        # The service has it a few seconds later (an agent connecting before then still gets the old time).
+        $saved = Wait-For { try { [int](Get-GpuVMAgentSettings).approvalTimeoutSec -eq 60 } catch { $false } } 20
+        Check 'Time to answer: the service has the minimum (60 s)' ([bool]$saved) "service: $(try { (Get-GpuVMAgentSettings).approvalTimeoutSec } catch { '?' }) s"
         Start-Sleep -Seconds 1
         # Requests show as a dock over the picture only while the picture is on screen.
         $vm = Use-Machine $Ctx
