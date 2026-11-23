@@ -55,7 +55,7 @@ function Click-PiPicture([double]$FX, [double]$FY) {
 
 function Test-PiPaused($Ctx, [string]$Vm) { (Invoke-Tool $Ctx.Mcp 'list_machines') -match "$([regex]::Escape($Vm))[^\n]*paused" }
 
-function Find-PiAppButton([string]$Pattern) {
+function Find-PiAppButton([string]$Pattern, [switch]$WithWindow) {
     $app = Get-App
     if (-not $app) { return $null }
     foreach ($w in Get-AppWindows) {
@@ -65,7 +65,7 @@ function Find-PiAppButton([string]$Pattern) {
             if (-not ($b -and $b.Current.IsEnabled -and $b.Current.BoundingRectangle.Width -gt 0)) { continue }
             # A full-screen picture covers the app's own window: only a button a person can reach counts.
             $r = $b.Current.BoundingRectangle
-            if ([E2E]::ProcessNameAt([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2)) -in 'gpuvm', 'msedgewebview2') { return $b }
+            if ([E2E]::ProcessNameAt([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2)) -in 'gpuvm', 'msedgewebview2') { if ($WithWindow) { return [pscustomobject]@{ Element = $b; Window = $w.Handle } } return $b }
         } catch { }
     }
     $null
@@ -86,8 +86,8 @@ function Find-PiNotchButton([string]$Pattern) {
 # Gives the machine back to the agent if the person has it, and answers what wait_for_person says.
 function Return-PiAgent($Ctx, [string]$Vm) {
     if (Test-PiPaused $Ctx $Vm) {
-        $b = Wait-For { Find-PiAppButton $script:PiBack } 5
-        if (-not ($b -and (Click-Element $b))) {
+        $b = Wait-For { Find-PiAppButton $script:PiBack -WithWindow } 5
+        if (-not ($b -and (Click-InWindow $b.Element $b.Window))) {
             if ([E2E]::Foreground() -notlike 'GpuVMViewer/*') { $null = Click-PiPicture 0.35 0.5; Start-Sleep -Milliseconds 400 }
             [E2E]::Combo([byte][char]'A')
         }
@@ -323,8 +323,8 @@ function Test-PiRequestHuman($Ctx, [string]$Vm) {
     $asked = Invoke-Tool $Ctx.Mcp 'request_human' @{ machine = $Vm; message = 'End-to-end check: press Return to agent.' }
     Check 'request_human asks the person' ($asked -match 'Asked the person') $asked
     $waiting = Start-Tool $Ctx.Mcp 'wait_for_person' @{ machine = $Vm; waitSeconds = 60 }
-    $b = Wait-For { Find-PiAppButton $script:PiBack } 15
-    $pressed = Click-Element $b
+    $b = Wait-For { Find-PiAppButton $script:PiBack -WithWindow } 15
+    $pressed = $b -and (Click-InWindow $b.Element $b.Window)
     $answer = Text-Of (Receive-Mcp $Ctx.Mcp $waiting)
     Check 'request_human: a real click on Return to agent hands the machine back' ($pressed -and $answer -match 'handed .* back') $answer
 }
@@ -343,7 +343,7 @@ function Find-PiAdminDock {
                 if ($e.Current.ClassName -match '(^|\s)dock(\s|$)') { $box = $e.Current.BoundingRectangle; break }
             }
             if (-not $box) { $box = $deny.Current.BoundingRectangle }
-            return [pscustomobject]@{ Root = $root; Deny = $deny; X = [int]$box.X; Y = [int]$box.Y; W = [int]$box.Width; H = [int]$box.Height }
+            return [pscustomobject]@{ Root = $root; Deny = $deny; Window = $w.Handle; X = [int]$box.X; Y = [int]$box.Y; W = [int]$box.Width; H = [int]$box.Height }
         } catch { }
     }
     $null
@@ -364,10 +364,12 @@ function Test-PiAdminPrompt($Ctx, [string]$Vm) {
     $v = Get-PiViewer
     Check 'admin prompt: the dock is over the picture' ($v -and $dock.X -ge $v.X - 2 -and $dock.X + $dock.W -le $v.X + $v.W + 2 -and $dock.Y -ge $v.Y - 2 -and $dock.Y + $dock.H -le $v.Y + $v.H + 2) "dock $($dock.X),$($dock.Y) $($dock.W)x$($dock.H)"
     Shot 'person-input-admin-dock'
-    $deny = Wait-For { $d = Find-PiAdminDock; if ($d -and $d.Deny.Current.IsEnabled) { $d.Deny } } 5
-    $pressed = Click-Element $deny
+    $d = Wait-For { $x = Find-PiAdminDock; if ($x -and $x.Deny.Current.IsEnabled) { $x } } 5
+    $pressed = $d -and (Click-InWindow $d.Deny $d.Window)
     $gone = Wait-For { -not (Find-PiAdminDock) } 10
     Check 'admin prompt: a real click on Deny closes the dock' ($pressed -and $gone) ''
+    # Left open, the prompt would hold the machine's secure screen for the rest of the suite.
+    if (-not $gone) { $left = Find-PiAdminDock; if ($left) { $null = Invoke-Element $left.Deny; $null = Wait-For { -not (Find-PiAdminDock) } 10 } }
     $count = Wait-For { $c = Invoke-Tool $Ctx.Mcp 'run' @{ machine = $Vm; command = '@(Get-Process consent -ErrorAction SilentlyContinue).Count' }; if ($c -match '(?m)^\s*0\s*$') { $c } } 15
     Check 'admin prompt: after Deny no consent.exe runs in the machine' ([bool]$count) $(if ($count) { $count } else { Invoke-Tool $Ctx.Mcp 'run' @{ machine = $Vm; command = 'Get-Process consent -ErrorAction SilentlyContinue | Format-Table -HideTableHeaders Id, SessionId | Out-String' } })
 }
