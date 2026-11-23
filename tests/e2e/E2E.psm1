@@ -281,6 +281,31 @@ function Test-E2ETrayIcon { foreach ($p in @(Get-Process gpuvm -ErrorAction Sile
 
 # GpuVM's window process only (not the suite's MCP server, also gpuvm.exe), started again the way a person would:
 # by the Task Scheduler, outside this elevated shell. The machines keep running.
+# Everything a run leaves on the PC, found by the names the suites give it; returns the machines it removed.
+function Clear-E2ELeftovers([string]$Template, [string[]]$Keep = @()) {
+    $pattern = "^($([regex]::Escape($Template))-[0-9a-f]{6}|e2e-[0-9a-f]{6}(-r)?)$"
+    $removed = [System.Collections.Generic.List[string]]::new()
+    foreach ($vm in @(Get-VM | Where-Object { $_.Name -match $pattern -and $Keep -notcontains $_.Name })) {
+        Write-Host "removing leftover $($vm.Name)"
+        $removed.Add($vm.Name)
+        if ($vm.State -ne 'Off') { Stop-VM -Name $vm.Name -TurnOff -Force -ErrorAction SilentlyContinue }
+        if ($vm.Name -like "$Template-*") { Remove-GpuVMDisposable -Name $vm.Name -Confirm:$false -ErrorAction SilentlyContinue 6>$null | Out-Null }
+        else { Remove-GpuVM -Name $vm.Name -DeleteDisk -Confirm:$false -ErrorAction SilentlyContinue 6>$null | Out-Null }
+    }
+    $root = & (Get-Module GpuVM) { Get-GpuVMDefaultRoot }
+    foreach ($dir in @(Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match $pattern -and $Keep -notcontains $_.Name })) {
+        if (Get-VM -Name $dir.Name -ErrorAction SilentlyContinue) { continue }
+        Write-Host "removing leftover folder $($dir.FullName)"
+        Remove-Item -LiteralPath $dir.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    foreach ($disk in @(Get-GpuVMSharedDisk -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^e2e-[0-9a-f]{6}$' })) {
+        Write-Host "removing shared disk $($disk.Name)"
+        Remove-GpuVMSharedDisk -Name $disk.Name -Confirm:$false -ErrorAction SilentlyContinue 6>$null | Out-Null
+    }
+    Get-ScheduledTask -TaskName 'GpuVM-e2e-run-*' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false -ErrorAction SilentlyContinue
+    $removed
+}
+
 function Restart-E2EApp([string]$Exe = 'C:\Program Files\GpuVM\gpuvm.exe') {
     $app = Get-Process gpuvm -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero -or $_.MainWindowTitle }
     $mcp = @(Get-CimInstance Win32_Process -Filter "Name = 'gpuvm.exe'" | Where-Object { $_.CommandLine -match '--mcp' } | ForEach-Object { $_.ProcessId })

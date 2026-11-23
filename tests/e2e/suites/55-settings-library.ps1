@@ -729,7 +729,7 @@ function Test-SlProfiles([string]$Tag) {
     }
 }
 
-# Deleting a shared disk needs administrator permission, so the disk is left for the operator.
+# Deleting it from the app asks for administrator permission, so the run's cleanup deletes it afterwards.
 function Test-SlSharedDisk([string]$Tag) {
     $name = "e2e-$Tag"
     $esc = [regex]::Escape($name)
@@ -752,7 +752,6 @@ function Test-SlSharedDisk([string]$Tag) {
     Check "the shared disk $name is listed" ([bool]$card) ''
     if ($card) {
         Shot 'library-shared-disk'
-        Check "shared disk $name left for the operator" $true "delete it by hand in Library > Shared disks ($gb GB maximum, dynamic): deleting asks for administrator permission"
     }
 }
 

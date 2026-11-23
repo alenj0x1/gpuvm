@@ -98,14 +98,7 @@ $all = -not $Suite
 
 # Leftovers of an earlier run would hold the memory the suite's own machine needs.
 Import-Module (Join-Path $PSScriptRoot '..\..\src\GpuVM') -DisableNameChecking 3>$null
-$removedLeftovers = [System.Collections.Generic.List[string]]::new()
-foreach ($vm in @(Get-VM | Where-Object { $_.Name -match "^($Template-[0-9a-f]{6}|e2e-[0-9a-f]{6}(-r)?)$" })) {
-    Write-Host "removing leftover $($vm.Name)"
-    $removedLeftovers.Add([regex]::Escape($vm.Name))
-    if ($vm.State -ne 'Off') { Stop-VM -Name $vm.Name -TurnOff -Force -ErrorAction SilentlyContinue }
-    if ($vm.Name -like "$Template-*") { Remove-GpuVMDisposable -Name $vm.Name -Confirm:$false -ErrorAction SilentlyContinue }
-    else { Remove-GpuVM -Name $vm.Name -DeleteDisk -Confirm:$false -ErrorAction SilentlyContinue }
-}
+$removedLeftovers = @(Clear-E2ELeftovers $Template | ForEach-Object { [regex]::Escape($_) })
 
 $ctx = [pscustomobject]@{ Exe = $Exe; Template = $Template; Out = $Out; Mcp = $null; Machine = $null }
 try {
@@ -154,6 +147,7 @@ try {
 finally {
     if ($ctx.Machine -and -not $KeepMachine) { try { $null = Invoke-Tool $ctx.Mcp 'destroy' @{ machine = $ctx.Machine; force = $true } } catch { } }
     if ($ctx.Mcp) { Stop-Mcp $ctx.Mcp }
+    try { $null = Clear-E2ELeftovers $Template -Keep @(if ($KeepMachine -and $ctx.Machine) { $ctx.Machine }) } catch { Write-Host "cleanup: $_" }
 }
 
 $results = Get-E2EResults
