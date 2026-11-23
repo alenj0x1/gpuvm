@@ -899,6 +899,31 @@ pub async fn viewer_show(app: AppHandle, vm: String) -> Result<(), String> {
     let hwnd = viewer.hwnd.load(Ordering::Relaxed);
     if viewer.full_now.load(Ordering::Relaxed) && hwnd != 0 && take_raise(&viewer) {
         bring_forward(hwnd, viewer.child.pid);
+        // The main window, raised to answer an agent's open_viewer, can come back over the picture a moment later.
+        if let Some(main) = { use tauri::Manager; app.get_webview_window("main").and_then(|w| w.hwnd().ok()) } {
+            MAIN_HWND.store(main.0 as isize, Ordering::Relaxed);
+        }
+        let (a, v) = (app.clone(), viewer.clone());
+        std::thread::spawn(move || {
+            for wait in [400, 800] {
+                std::thread::sleep(Duration::from_millis(wait));
+                let h = v.hwnd.load(Ordering::Relaxed);
+                let main = MAIN_HWND.load(Ordering::Relaxed);
+                if !v.visible.load(Ordering::Relaxed) || !v.full_now.load(Ordering::Relaxed) || h == 0 || main == 0 || !below(h, main) {
+                    continue;
+                }
+                let app = a.clone();
+                let _ = a.run_on_main_thread(move || {
+                    use tauri::Manager;
+                    raise_without_focus(h, false);
+                    for label in [crate::status::LABEL, "agent-dock", "agent-live", crate::overlay::LABEL] {
+                        if let Some(w) = app.get_webview_window(label).filter(|w| w.is_visible().unwrap_or(false)) {
+                            crate::overlay::raise_over(&w, h);
+                        }
+                    }
+                });
+            }
+        });
     }
     viewer.visible.store(true, Ordering::Relaxed);
     viewer.revealed.store(true, Ordering::Relaxed);
