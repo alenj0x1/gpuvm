@@ -157,15 +157,15 @@ finally {
 }
 
 $results = Get-E2EResults
-$failed = @($results | Where-Object { -not $_.Ok })
-Write-Host "`n$($results.Count - $failed.Count) of $($results.Count) passed. Screenshots: $Out"
+$failing = @($results | Where-Object { -not $_.Ok })
+Write-Host "`n$($results.Count - $failing.Count) of $($results.Count) passed. Screenshots: $Out"
 if ($retried -and $retried.Count) { Write-Host "Run again after a failure: $($retried -join ', ')" }
 if ($timings -and $timings.Count) { Write-Host "Time per suite: $($timings -join ' | ')" }
 if ($restarted -and $restarted.Count) { Write-Host "GpuVM started again (page unreadable) before: $($restarted -join ', ')" }
 $failedSuites = @($results | Where-Object { -not $_.Ok } | ForEach-Object { $_.Suite } | Where-Object { $_ } | Sort-Object -Unique)
 [ordered]@{ at = (Get-Date).ToUniversalTime().ToString('o'); suites = @($files | ForEach-Object BaseName); failed = $failedSuites } |
     ConvertTo-Json | Set-Content -Encoding utf8 $lastRunPath
-if (-not $failed.Count) {
+if (-not $failing.Count) {
     $commit = (git -C $repo rev-parse HEAD).Trim()
     $exeHash = (Get-FileHash -LiteralPath $Exe).Hash
     if (git -C $repo status --porcelain) { Write-Host 'Not recorded for the release: uncommitted changes.' }
@@ -189,4 +189,4 @@ if (-not $failed.Count) {
         }
     }
 }
-exit [int]($failed.Count -gt 0)
+exit [int]($failing.Count -gt 0)
