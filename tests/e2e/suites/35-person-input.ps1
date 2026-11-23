@@ -403,10 +403,14 @@ function Test-PiDrop($Ctx, [string]$Vm, [string]$Tag) {
         [PI35]::Place([IntPtr]$win.Handle, $s.X + 20, $s.Y + 120, [Math]::Min(560, [int]($s.Width / 2) - 120), [Math]::Min(520, $s.Height - 200))
         Start-Sleep -Seconds 1
         $item = Wait-For { Find-Named $win.Element "^$([regex]::Escape("e2e-drop-$Tag"))(\.txt)?$" ([Windows.Automation.ControlType]::ListItem) } 8
+        # A folder with many files leaves it out of view: UI Automation still gives a place for it, below the window.
+        $sp = $null
+        if ($item -and $item.TryGetCurrentPattern([Windows.Automation.ScrollItemPattern]::Pattern, [ref]$sp)) { try { $sp.ScrollIntoView(); Start-Sleep -Milliseconds 400 } catch { } }
         $r = if ($item) { $item.Current.BoundingRectangle } else { $null }
         $sx = if ($r) { [int]($r.X + [Math]::Min(40, $r.Width / 4)) } else { 0 }; $sy = if ($r) { [int]($r.Y + $r.Height / 2) } else { 0 }
         $to = Get-PiPoint 0.6 0.55
-        $ready = $r -and $to -and [E2E]::ProcessNameAt($sx, $sy) -eq 'explorer' -and [E2E]::ProcessNameAt($to.X, $to.Y) -eq 'GpuVMViewer'
+        # The file's own window, not just explorer.exe (the desktop is explorer.exe too).
+        $ready = $r -and $to -and [E2E]::RootAt($sx, $sy) -eq [IntPtr]$win.Handle -and [E2E]::ProcessNameAt($to.X, $to.Y) -eq 'GpuVMViewer'
         if (-not $ready) {
             Shot 'person-input-drop-not-ready'
             $vw = Get-Process GpuVMViewer -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } | Select-Object -First 1
@@ -425,7 +429,7 @@ function Test-PiDrop($Ctx, [string]$Vm, [string]$Tag) {
             if ($attempt -gt 1) {
                 [PI35]::To($sx, $sy); [PI35]::Up(); $down = $false; Start-Sleep -Milliseconds 500
                 [E2EFront]::To([IntPtr]$win.Handle); Start-Sleep -Milliseconds 600
-                if ([E2E]::ProcessNameAt($sx, $sy) -ne 'explorer') { Write-Host "     drop: on the second try $([E2E]::At($sx, $sy)) is over the file"; break }
+                if ([E2E]::RootAt($sx, $sy) -ne [IntPtr]$win.Handle) { Write-Host "     drop: on the second try $([E2E]::At($sx, $sy)) is over the file"; break }
             }
             [PI35]::To($sx, $sy); Start-Sleep -Milliseconds 150
             [PI35]::Down(); $down = $true; Start-Sleep -Milliseconds 150
