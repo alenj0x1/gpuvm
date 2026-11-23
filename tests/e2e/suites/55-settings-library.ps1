@@ -385,8 +385,10 @@ function Test-SlNotchPlacement($Ctx, [string]$Tag) {
             if ($wasDefault) { $null = Press-SlReal (Find-SlOne (Get-MainElement) 'Button' '^(Recommended places|Lugares recomendados)$'); Start-Sleep -Milliseconds 600 }
             else { $cur = Get-SlPieceOffset; if ($null -ne $cur) { $null = Move-SlPiece ($origOffset - $cur) } }
             $back = Get-SlPieceOffset
-            $moved = $null -eq $back -or [Math]::Abs($back - $origOffset) -gt 3
-            Check 'the status notices piece goes back to its place' (-not $moved) "offset $back px, was $origOffset px"
+            # Back at the recommended places when that button is gone again (the preview can still be settling when its
+            # first offset is read).
+            $moved = [bool](Wait-For { Find-SlOne (Get-MainElement) 'Button' '^(Recommended places|Lugares recomendados)$' } 1)
+            Check 'the status notices piece goes back to its place' (-not $moved) "offset $back px, was $origOffset px; recommended places: $(-not $moved)"
         }
 
         $panel = Select-SlRadio $panelRe
@@ -805,7 +807,10 @@ function Test-SlGame {
 
 # Settings > Service > Save report: a text file in Downloads with the app's and the service's logs, shown in Explorer.
 function Test-SlDiagnostics {
-    if (-not (Open-SlSettings '^(Service|Servicio)$')) { Check 'Settings > Service opens' $false ''; return }
+    # Right after the time-to-answer check the picture has just been in front: the page can take a moment to read again.
+    $open = Open-SlSettings '^(Service|Servicio)$'
+    if (-not $open) { Start-Sleep -Seconds 2; $open = Open-SlSettings '^(Service|Servicio)$' }
+    if (-not $open) { Check 'Settings > Service opens' $false ''; return }
     $downloads = (New-Object -ComObject Shell.Application).Namespace('shell:Downloads').Self.Path
     $before = @(Get-ChildItem -LiteralPath $downloads -Filter 'GpuVM-report-*.txt' -ErrorAction SilentlyContinue | ForEach-Object FullName)
     $explorers = @(Get-Process explorer -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
