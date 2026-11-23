@@ -70,8 +70,8 @@
   <section class="hero">
     <div class="wrap">
       <h1 class="hero-title">
-        <span data-l="es"><span class="line">Tu GPU, dentro de</span> <span class="line">una máquina para <span class="rotor" data-words="jugar|trabajar|ver películas|laboratorios|tus agentes">jugar</span></span></span>
-        <span data-l="en"><span class="line">Your GPU, inside</span> <span class="line">a machine for <span class="rotor" data-words="gaming|work|movies|labs|your agents">gaming</span></span></span>
+        <span data-l="es"><span class="line">Tu GPU, dentro de</span> <span class="line">una máquina para <span class="rotor" data-words="jugar|trabajar|ver películas|tus agentes">jugar</span></span></span>
+        <span data-l="en"><span class="line">Your GPU, inside</span> <span class="line">a machine for <span class="rotor" data-words="gaming|work|movies|your agents">gaming</span></span></span>
       </h1>
       <p class="hero-sub">
         <span data-l="es">Windows 10 u 11 con tu GPU de verdad, aislado de tu equipo y abierto en su propio visor con un clic.</span>
@@ -182,7 +182,7 @@
         </div>
         <ul class="points">
           <li><i data-ic="gauge"></i><span><span data-l="es">Transmite al ritmo de tu monitor: la sincronización vertical no agrega espera.</span><span data-l="en">Streams at your monitor's rate: V-Sync adds no delay.</span></span></li>
-          <li><i data-ic="layout"></i><span><span data-l="es">Un panel al costado de la imagen con tus máquinas, sus números, un reloj y tus juegos, acomodado a tu gusto.</span><span data-l="en">A panel beside the picture with your machines, their numbers, a clock and your games, arranged your way.</span></span></li>
+          <li><i data-ic="layout"></i><span><span data-l="es">Un panel al costado de la imagen con tus máquinas, sus números, archivos, portapapeles, capturas y tus juegos, acomodado a tu gusto.</span><span data-l="en">A panel beside the picture with your machines, their numbers, files, clipboard, captures and your games, arranged your way.</span></span></li>
           <li><i data-ic="gamepad"></i><span><span data-l="es">Teclado, mouse y control: tu control llega como uno de Xbox 360.</span><span data-l="en">Keyboard, mouse and gamepad: your pad arrives as an Xbox 360 controller.</span></span></li>
         </ul>
       </div>
@@ -197,7 +197,7 @@
     <div class="wrap">
       <div class="center">
         <h2 class="reveal"><span data-l="es">La máquina, <em>con todo a mano</em></span><span data-l="en">The machine, <em>with everything at hand</em></span></h2>
-        <p class="lead-p reveal"><span data-l="es">Ctrl+Alt+Shift+G abre un panel junto a la imagen: tus máquinas, sus números, un reloj, tus figuras y los juegos. En Editar los mueves, cambias su tamaño y eliges cuáles ver.</span><span data-l="en">Ctrl+Alt+Shift+G opens a panel beside the picture: your machines, their numbers, a clock, your figures and the games. In Edit you move them, resize them and choose which to show.</span></p>
+        <p class="lead-p reveal"><span data-l="es">Ctrl+Alt+Shift+G abre un panel junto a la imagen: tus máquinas, sus números, los archivos que sueltas, tus últimas copias, capturas y grabaciones de los últimos 30 segundos, un reloj, tus figuras y los juegos. En Editar los mueves, cambias su tamaño y eliges cuáles ver.</span><span data-l="en">Ctrl+Alt+Shift+G opens a panel beside the picture: your machines, their numbers, the files you drop, your last copies, screenshots and recordings of the last 30 seconds, a clock, your figures and the games. In Edit you move them, resize them and choose which to show.</span></p>
       </div>
       <div class="demo viewer-demo reveal" data-demo="viewer" aria-label="El visor de GpuVM con su panel lateral, la app real con datos de ejemplo"></div>
     </div>
@@ -269,6 +269,7 @@
         <ul class="points">
           <li><i data-ic="disk"></i><span><span data-l="es">Un disco compartido lleva tu biblioteca de Steam de una máquina a otra.</span><span data-l="en">A shared disk carries your Steam library from one machine to another.</span></span></li>
           <li><i data-ic="adjust"></i><span><span data-l="es">Perfiles con procesador, memoria, GPU, disco, apps y limpieza listos.</span><span data-l="en">Profiles with processor, memory, GPU, disk, apps and cleanup ready.</span></span></li>
+          <li><i data-ic="rotate"></i><span><span data-l="es">Puntos de restauración, máquinas desechables y exportar una máquina a un solo archivo para llevarla a otro equipo.</span><span data-l="en">Restore points, disposable machines, and a machine exported to one file to take to another PC.</span></span></li>
         </ul>
       </div>
       <div class="chapter-media reveal">
@@ -348,7 +349,7 @@
         <div class="card sec reveal"><span class="ic"><i data-ic="network"></i></span><h3><span data-l="es">Sin acceso a tu red</span><span data-l="en">No access to your network</span></h3><p><span data-l="es">Sale a internet, pero no llega a tu equipo ni a tu red local. Las reglas viven en el switch virtual, fuera de la máquina.</span><span data-l="en">It reaches the internet, but not your PC or your local network. The rules live on the virtual switch, outside the machine.</span></p></div>
         <div class="card sec reveal"><span class="ic"><i data-ic="signature"></i></span><h3><span data-l="es">Todo verificado</span><span data-l="en">Everything verified</span></h3><p><span data-l="es">Componentes fijados por SHA-256 y apps solo con la firma de su empresa.</span><span data-l="en">Components pinned by SHA-256 and apps only with their publisher's signature.</span></p></div>
         <div class="card sec reveal"><span class="ic"><i data-ic="key"></i></span><h3><span data-l="es">Sin permisos de más</span><span data-l="en">No extra rights</span></h3><p><span data-l="es">La app se abre sin administrador y su visor, además, aislado con integridad baja. Un servicio que solo atiende a GpuVM hace el trabajo de Hyper-V.</span><span data-l="en">The app runs without administrator rights and its viewer is also isolated at Low integrity. A service that only answers GpuVM does the Hyper-V work.</span></p></div>
-        <div class="card sec reveal"><span class="ic"><i data-ic="clipboard"></i></span><h3><span data-l="es">En un solo sentido</span><span data-l="en">One way only</span></h3><p><span data-l="es">El portapapeles y las copias van de tu equipo a la máquina, nunca al revés.</span><span data-l="en">The clipboard and copies go from your PC to the machine, never back.</span></p></div>
+        <div class="card sec reveal"><span class="ic"><i data-ic="clipboard"></i></span><h3><span data-l="es">Nada sale sin tu permiso</span><span data-l="en">Nothing leaves without you</span></h3><p><span data-l="es">El portapapeles y los archivos que sueltas van de tu equipo a la máquina. Un archivo solo sale de ella si un agente te lo ofrece y lo aceptas.</span><span data-l="en">The clipboard and the files you drop go from your PC to the machine. A file only leaves it when an agent offers it and you accept.</span></p></div>
       </div>
     </div>
   </section>
@@ -415,7 +416,7 @@
       <div class="faq">
         <details class="reveal"><summary><span data-l="es">¿Necesito Steam o una cuenta?</span><span data-l="en">Do I need Steam or an account?</span><i data-ic="chevron"></i></summary><p><span data-l="es">No. GpuVM usa Sunshine dentro de la máquina y su propio visor, basado en Moonlight, en tu equipo, y trae su propio altavoz virtual para el sonido.</span><span data-l="en">No. GpuVM uses Sunshine inside the machine and its own viewer, built on Moonlight, on your PC, and brings its own virtual speaker for sound.</span></p></details>
         <details class="reveal"><summary><span data-l="es">¿La máquina se lleva toda mi GPU?</span><span data-l="en">Does the machine take my whole GPU?</span><i data-ic="chevron"></i></summary><p><span data-l="es">No: la GPU se comparte. Tu equipo la sigue usando y tú decides qué parte recibe cada máquina.</span><span data-l="en">No: the GPU is shared. Your PC keeps using it and you decide each machine's share.</span></p></details>
-        <details class="reveal"><summary><span data-l="es">¿Qué pasa si una máquina se infecta?</span><span data-l="en">What if a machine gets infected?</span><i data-ic="chevron"></i></summary><p><span data-l="es">Sale a internet pero no llega a tu equipo ni a tu red, y nada copia archivos desde ella hacia tu equipo. Bórrala y crea otra desde tu plantilla en segundos.</span><span data-l="en">It reaches the internet but not your PC or your network, and nothing copies files from it to your PC. Delete it and create another from your template in seconds.</span></p></details>
+        <details class="reveal"><summary><span data-l="es">¿Qué pasa si una máquina se infecta?</span><span data-l="en">What if a machine gets infected?</span><i data-ic="chevron"></i></summary><p><span data-l="es">Sale a internet pero no llega a tu equipo ni a tu red, y ningún archivo pasa de ella a tu equipo sin que lo aceptes. Vuelve a un punto de restauración en un segundo, o bórrala y crea otra desde tu plantilla en segundos.</span><span data-l="en">It reaches the internet but not your PC or your network, and no file comes from it to your PC unless you accept it. Go back to a restore point in about a second, or delete it and create another from your template in seconds.</span></p></details>
         <details class="reveal"><summary><span data-l="es">¿Cuánto espacio necesito?</span><span data-l="en">How much space do I need?</span><i data-ic="chevron"></i></summary><p><span data-l="es">Unos 40 GB por máquina con disco dinámico. GpuVM cuenta el espacio prometido a las demás máquinas, así que nunca les das más de lo que cabe en el disco.</span><span data-l="en">About 40 GB per machine with a dynamic disk. GpuVM counts the room promised to the other machines, so you never give them more than the drive holds.</span></p></details>
         <details class="reveal"><summary><span data-l="es">¿Está en inglés?</span><span data-l="en">Is it in Spanish too?</span><i data-ic="chevron"></i></summary><p><span data-l="es">Sí, en español y en inglés. Sigue el idioma de Windows o eliges uno en Ajustes.</span><span data-l="en">Yes, in English and Spanish. It follows Windows' language, or you pick one in Settings.</span></p></details>
         <details class="reveal"><summary><span data-l="es">¿Puedo usarla desde la terminal?</span><span data-l="en">Can I use it from the terminal?</span><i data-ic="chevron"></i></summary><p><span data-l="es">Sí: todo lo que hace la app está en un módulo de PowerShell 7 con su CLI.</span><span data-l="en">Yes: everything the app does is in a PowerShell 7 module with its CLI.</span></p></details>
