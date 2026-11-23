@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/alenj0x1/gpuvm/releases"><img src="https://img.shields.io/github/v/release/alenj0x1/gpuvm?include_prereleases&label=versi%C3%B3n" alt="Versión"></a>
+  <a href="https://github.com/alenj0x1/gpuvm/releases"><img src="https://img.shields.io/github/v/release/alenj0x1/gpuvm?label=versi%C3%B3n" alt="Versión"></a>
   <a href="https://gpuvm.alenj.dev/"><img src="https://img.shields.io/badge/sitio-gpuvm.alenj.dev-2f5bd3" alt="Sitio web"></a>
   <a href="https://gpuvm.alenj.dev/docs/es/"><img src="https://img.shields.io/badge/docs-Espa%C3%B1ol%20%7C%20English-2f5bd3" alt="Documentación"></a>
   <a href="CHANGELOG.es.md"><img src="https://img.shields.io/badge/cambios-%C3%BAltima%20versi%C3%B3n-6b6e75" alt="Registro de cambios"></a>
@@ -44,14 +44,14 @@
 - **Crea máquinas sin pasar por el instalador.** Eliges un ISO oficial de Windows y un perfil: la imagen se aplica directo al disco y se configura sola.
 - **Estadísticas y opciones.** Uso en vivo de CPU, memoria y GPU; procesadores, memoria, parte de la GPU y calidad de la imagen de cada VM.
 - **Biblioteca.** Tus propios perfiles (procesadores, memoria, GPU, disco, ISO, apps, cómo se abre la imagen), los discos que quedaron de VMs eliminadas para volver a crearlas, y las ISOs que usaste.
-- **Plantillas y discos compartidos.** Guarda una VM como plantilla y crea otras encima en segundos; deja tu biblioteca de juegos en un disco compartido que pasa de una VM a otra, importada desde la biblioteca de Steam de tu equipo.
+- **Plantillas y discos compartidos.** Guarda una VM como plantilla y crea otras encima en segundos, que se mantienen al día en segundo plano; deja tu biblioteca de juegos en un disco compartido que pasa de una VM a otra, importada desde la biblioteca de Steam de tu equipo.
 - **Windows limpio.** Elige un nivel (privacidad, sin apps de más, mínimo) para quitar telemetría, publicidad, sugerencias, Copilot y apps preinstaladas, sin tocar Defender, Windows Update ni el firewall.
 - **Apps en un paso.** 16 apps (tiendas de juegos, navegadores, multimedia, Discord, 7-Zip, WinRAR, Proton VPN) con buscador y categorías, instaladas dentro de la VM solo si las firma su empresa o coinciden con un hash fijado.
 - **Avisos de administrador en GpuVM.** Los avisos de administrador de Windows en la VM bajan desde arriba de su imagen con Permitir y Rechazar, y solo se responden desde tu equipo. La imagen aparece unos segundos después de conectar, también la de los juegos en pantalla completa exclusiva.
 - **Archivos, portapapeles y capturas.** Suelta archivos sobre la imagen para copiarlos a la VM, ten tus últimas 8 copias listas para pegar, y toma capturas, graba o guarda los últimos 30 segundos con un atajo.
 - **Puntos de restauración, máquinas desechables, exportar.** Vuelve a un punto de restauración en cerca de un segundo, abre una copia desechable de una plantilla que se borra al apagarse y lleva una máquina a otro equipo como un solo archivo `.gpuvm`.
 - **Mantiene aparte al equipo.** La app corre sin permisos de administrador, y el visor corre aislado, con integridad baja y un token restringido; un servicio de Windows que solo la app de GpuVM puede usar hace el trabajo de Hyper-V, y borrar pide un aviso de administrador de Windows. El portapapeles solo va del PC a la VM, nunca al revés.
-- **Laboratorios.** Cada idea de rendimiento se mide (base contra candidata) antes de volverse un valor por defecto.
+- **Informe de diagnóstico.** **Ajustes → Servicio → Guardar informe** junta los registros de la app y del servicio en un archivo de texto, para adjuntarlo al reportar un problema.
 
 <p align="center">
   <img src=".github/assets/agents-es-dark.webp" alt="Agentes: el agente trabajando, sus controles, los archivos que entrega y el historial de sesiones">
@@ -87,13 +87,14 @@ Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All
 
 ## Instalación
 
-Descarga `GpuVM_x.y.z_x64-setup.exe` desde [Releases](https://github.com/alenj0x1/gpuvm/releases) y ejecútalo. GpuVM se instala para todos los usuarios en Program Files, con su propio PowerShell 7 y el servicio **GpuVM**, que hace el trabajo de Hyper-V. La app se abre sin permisos de administrador; borrar una máquina o un disco pide confirmarlo en un aviso de administrador de Windows. Los datos que cambian (laboratorios, descargas) van a `%ProgramData%\GpuVM`.
+Descarga `GpuVM_x.y.z_x64-setup.exe` desde [Releases](https://github.com/alenj0x1/gpuvm/releases) y ejecútalo. GpuVM se instala para todos los usuarios en Program Files, con su propio PowerShell 7 y el servicio **GpuVM**, que hace el trabajo de Hyper-V. La app se abre sin permisos de administrador; borrar una máquina o un disco pide confirmarlo en un aviso de administrador de Windows. Los datos que cambian (componentes descargados, datos de los agentes) van a `%ProgramData%\GpuVM`.
 
 ## Primeros pasos
 
 1. Abre GpuVM y elige **Crear máquina**: nombre, ISO de Windows, perfil, usuario y contraseña de Windows.
 2. Espera a que esté lista; Windows termina de configurarse solo en unos minutos.
 3. Presiona **Abrir**. La imagen de la máquina se abre dentro de GpuVM cuando está lista.
+4. Para que Claude Code use una máquina, presiona **Agentes → Conectar** y pídeselo con tus palabras, por ejemplo: *toma una máquina desechable de GpuVM y prueba ahí mi app*.
 
 GpuVM habla español e inglés: sigue el idioma de Windows, y **Ajustes → Apariencia → Idioma** fija uno.
 
@@ -106,8 +107,8 @@ Guía completa, referencia de la CLI, arquitectura y solución de problemas: **[
 | Parte | Qué hace |
 |---|---|
 | `app/` | App de escritorio (Tauri 2 + React), sin elevar. `app/host` es el servicio GpuVM (`gpuvm-host.exe`): ejecuta `src/bridge.ps1` para la app detrás de una tubería con nombre. |
-| `src/GpuVM/` | Módulo de PowerShell 7: creación, perfiles, sincronización del driver, streaming, laboratorios. Backends intercambiables (`Backends/`). |
-| `guest/` | Scripts que corren dentro de la VM: primer inicio, optimizaciones, streaming, resolución de la pantalla, avisos de administrador. |
+| `src/GpuVM/` | Módulo de PowerShell 7: creación, perfiles, sincronización del driver, streaming, máquinas de agentes. Backends intercambiables (`Backends/`). |
+| `guest/` | Scripts que corren dentro de la VM: primer inicio, optimizaciones, streaming, resolución de la pantalla, avisos de administrador, el agente de GpuVM. |
 | `profiles/` | Perfiles JSON con herencia (`balanced`, `max-performance`). |
 | `streaming/components.json` | Componentes de terceros fijados por versión y SHA-256. |
 | `viewer/` | El visor de GpuVM, compilado desde el repositorio aparte [gpuvm-viewer](https://github.com/alenj0x1/gpuvm-viewer) e incluido por el instalador. |
@@ -126,7 +127,7 @@ pwsh -File tests/e2e/run.ps1     # suite de punta a punta de la app instalada (o
 node scripts/site/changelog.mjs   # sitio web (site/): lo nuevo, desde los changelogs
 npm --prefix app run build:embed  # sitio web: los componentes en vivo de la app (site/assets/embed.js)
 npm --prefix docs run dev         # sitio de documentación
-python scripts/release.py 0.4.1   # versión nueva: changelog, versiones, commit y etiqueta (--dry-run, --next)
+python scripts/release.py 1.0.0   # versión nueva: changelog, versiones, commit y etiqueta (--dry-run, --next)
 ```
 
 Los cambios van en **Unreleased** de `CHANGELOG.md` y **Sin publicar** de `CHANGELOG.es.md` hasta que se publican.
@@ -139,7 +140,7 @@ El instalador trae [PowerShell 7](https://github.com/PowerShell/PowerShell) (MIT
 
 GpuVM descarga e instala dentro de la VM, verificados por SHA-256:
 
-- [Sunshine](https://github.com/LizardByte/Sunshine) (GPL-3.0): servidor de streaming.
+- [Sunshine](https://github.com/LizardByte/Sunshine) (GPL-3.0): servidor de streaming. La versión propia de GpuVM, [gpuvm-sunshine](https://github.com/alenj0x1/gpuvm-sunshine) (GPL-3.0, con un ayudante de Windows.Graphics.Capture), viene con el instalador y se instala encima.
 - [Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver): monitor virtual dibujado por la GPU.
 - [nefcon](https://github.com/nefarius/nefcon): instalador de drivers.
 - [usbip-win2](https://github.com/vadimgrn/usbip-win2) (BSD-2-Clause): cliente USB/IP con drivers firmados por Microsoft; conecta el altavoz USB propio de GpuVM dentro de la VM.
