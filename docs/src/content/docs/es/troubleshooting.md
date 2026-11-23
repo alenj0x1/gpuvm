@@ -13,7 +13,7 @@ Las causas habituales, en orden:
 
 Para ver la pantalla de la VM sin la GPU, abre la consola de Hyper-V (**Ver consola de Hyper-V** en el menú **⋯** de la máquina, o `vmconnect.exe localhost <vm>`). Mientras la pantalla virtual funciona, la de Hyper-V está desactivada; Escritorio remoto sigue disponible como respaldo.
 
-Problema abierto ([laboratorio 002](/docs/es/labs/#lo-que-encontraron-los-laboratorios-hasta-ahora)): Sunshine puede decir "Display device configuration API is temporarily unavailable" y no cambiar la resolución.
+Problema abierto: Sunshine puede decir "Display device configuration API is temporarily unavailable" y no cambiar la resolución.
 
 ## La imagen se traba o va lenta
 
@@ -72,11 +72,15 @@ Usa **Volver a emparejar el visor** en el menú **⋯**. Si falta el visor, la a
 
 La memoria fija de Hyper-V tiene que estar libre al encender la VM. Cierra programas o baja la memoria de la VM en su sección **Máquina**, o ábrela con **Abrir con N GB** cuando la app lo ofrece (o con `-Override @{ vm = @{ memoryGB = 6 } }`).
 
+## Reportar un problema
+
+**Ajustes → Servicio → Informe de diagnóstico → Guardar informe** guarda en Descargas un archivo de texto con los registros de la app y del servicio. Revísalo y adjúntalo al reporte. Cada error que GpuVM muestra, o que le devuelve el servicio, está ahí con su hora.
+
 ## Límites conocidos de GPU-P
 
 - **Pantalla:** la consola de Hyper-V no muestra la GPU; se ve con el streaming.
-- **Audio:** la VM no tiene tarjeta de sonido; el altavoz USB propio de GpuVM se la da, comprobado en una VM real a través de Moonlight ([laboratorio 012](/docs/es/labs/)).
+- **Audio:** la VM no tiene tarjeta de sonido; el altavoz USB propio de GpuVM se la da.
 - **Driver:** el invitado tiene que usar la misma versión que el host (ver arriba).
-- **Selección de GPU en Windows 10:** no se puede elegir cuál GPU recibe la VM. Si la integrada también es particionable, puede tocarle la equivocada. `check` lo advierte; desactiva la integrada en el Administrador de dispositivos antes de encender la VM ([laboratorio 001](/docs/es/labs/)).
+- **Selección de GPU en Windows 10:** a Windows 10 no se le puede indicar qué GPU recibe una VM: le da cada VM que enciende a la GPU particionable con menos VMs encendidas. Con dos GPU particionables (la integrada y la tarjeta gráfica), GpuVM enciende por un momento VMs vacías mientras arranca la máquina, así que siempre recibe la GPU que indica su perfil (`gpu.match`). `check` lo advierte siempre que hay más de una; con más de dos, desactiva en el Administrador de dispositivos las que no quieras antes de encender la VM.
 - **Sin puntos de control ni estado guardado:** la VM se apaga directamente. GpuVM tiene sus propios [puntos de restauración](/docs/es/using-the-app/#puntos-de-restauración).
 - **Anti-cheat:** algunos sistemas anti-cheat bloquean las máquinas virtuales.

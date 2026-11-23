@@ -10,7 +10,7 @@ import Shot from '../../../components/Shot.astro';
 
 ## La ventana
 
-- **Barra lateral:** arriba **Inicio** y **Biblioteca**, luego todas las VMs de Hyper-V del equipo (creadas o no con GpuVM) bajo el [espacio](#espacios) al que pertenecen, y al final **Crear máquina**. **Ajustes** queda al pie. Cada máquina muestra su estado con un punto en su ícono y, a la derecha, lo que el punto no dice: una gráfica pequeña de su último minuto (procesador, memoria y GPU en sus colores) mientras está encendida, o el paso de un trabajo en curso.
+- **Barra lateral:** arriba **Inicio**, **Biblioteca** y [**Agentes**](/docs/es/agents/), luego todas las VMs de Hyper-V del equipo (creadas o no con GpuVM) bajo el [espacio](#espacios) al que pertenecen, y al final **Crear máquina**. **Ajustes** queda al pie. Cada máquina muestra su estado con un punto en su ícono y, a la derecha, lo que el punto no dice: una gráfica pequeña de su último minuto (procesador, memoria y GPU en sus colores) mientras está encendida, o el paso de un trabajo en curso.
 - **Cambiar su ancho o contraerla:** arrastra la línea de su borde para cambiar el ancho; haz clic en la línea, o arrástrala hasta angostarla, para contraerla.
 - **Reordenar arrastrando:** arrastra una máquina a otro lugar, en su espacio o en otro. Las demás se apartan mientras pasa y se ve atenuada donde caería. Los espacios se reordenan igual, arrastrando su nombre.
 
@@ -367,5 +367,6 @@ La copia solo va de este equipo al disco. Antes de escribir, GpuVM revisa que el
   - **Con Windows:** se enciende con Windows.
   - **Manual:** solo se enciende y se apaga con los botones **Iniciar** y **Detener** de aquí.
   - Pasar a **Con Windows** o dejarlo pide confirmar en un aviso de UAC, porque cambia la configuración del servicio en Windows. Encenderlo y apagarlo no. **Estado** muestra cómo está.
+  - **Informe de diagnóstico → Guardar informe** guarda en Descargas un archivo de texto con los registros de la app y del servicio, para revisarlo y adjuntarlo al reportar un problema. Cada error que GpuVM muestra, o que le devuelve el servicio, queda en el registro de la app con su hora.
 
 GpuVM se abre una sola vez: si la vuelves a abrir (por ejemplo, desde el menú Inicio mientras está en la bandeja), muestra la ventana que ya estaba abierta.

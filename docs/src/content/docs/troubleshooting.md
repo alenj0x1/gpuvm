@@ -13,7 +13,7 @@ The usual causes, in order:
 
 To look at the VM's screen without the GPU, open the Hyper-V console (**View Hyper-V console** in the machine's **⋯** menu, or `vmconnect.exe localhost <vm>`). While the virtual display works, the Hyper-V display is turned off; Remote Desktop still works as a fallback.
 
-Known open issue ([lab 002](/docs/labs/#what-the-labs-found-so-far)): Sunshine can report "Display device configuration API is temporarily unavailable" and not change the resolution.
+Known open issue: Sunshine can report "Display device configuration API is temporarily unavailable" and not change the resolution.
 
 ## The picture stutters or slows down
 
@@ -72,11 +72,15 @@ Use **Pair the viewer again** in the **⋯** menu. If the viewer is missing, the
 
 Hyper-V's fixed memory must be free when the VM starts. Close programs, or lower the VM's memory in its **Machine** section, or open it with **Open with N GB** when the app offers it (or with `-Override @{ vm = @{ memoryGB = 6 } }`).
 
+## Reporting a problem
+
+**Settings → Service → Diagnostics report → Save report** saves a text file in Downloads with the app's and the service's logs. Look at it, then attach it to the report. Every error GpuVM shows, or gets back from the service, is in it with its time.
+
 ## Known limits of GPU-P
 
 - **Display:** the Hyper-V console doesn't show the GPU; streaming is the way to see it.
-- **Audio:** the VM has no sound card; GpuVM's own USB speaker gives it one, verified on a real VM through Moonlight ([lab 012](/docs/labs/)).
+- **Audio:** the VM has no sound card; GpuVM's own USB speaker gives it one.
 - **Driver:** the guest has to use the same version as the host (see above).
-- **GPU selection on Windows 10:** you can't choose which GPU the VM gets. If the integrated GPU is also partitionable, the VM may get the wrong one. `check` warns about it; disable the integrated GPU in Device Manager before starting the VM ([lab 001](/docs/labs/)).
+- **GPU selection on Windows 10:** Windows 10 can't be told which GPU a VM gets: it hands each starting VM to the partitionable GPU with the fewest VMs running. With two partitionable GPUs (an integrated one and the graphics card), GpuVM starts empty VMs for a moment while the machine starts, so it always gets the GPU its profile matches (`gpu.match`). `check` warns whenever there is more than one; with more than two, disable the ones you don't want in Device Manager before starting the VM.
 - **No checkpoints or saved state:** the VM shuts down instead. GpuVM has its own [restore points](/docs/using-the-app/#restore-points).
 - **Anti-cheat:** some anti-cheat systems block virtual machines.

@@ -11,7 +11,8 @@ La consola de Hyper-V solo muestra la pantalla básica de Hyper-V, no lo que dib
 
 | Componente | Dónde | Función | Versión fijada |
 |---|---|---|---|
-| [Sunshine](https://github.com/LizardByte/Sunshine) | VM | Captura la pantalla virtual y codifica con NVENC. | `v2026.914.233613` |
+| [Sunshine](https://github.com/LizardByte/Sunshine) | VM | La instalación oficial, sobre la que va el Sunshine propio de GpuVM. | `v2026.914.233613` |
+| [Sunshine de GpuVM](#captura) | VM | Captura la pantalla virtual y codifica con NVENC. | Incluido con GpuVM |
 | [Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver) | VM | Un monitor que dibuja la GPU. | `25.7.23` |
 | [nefcon](https://github.com/nefarius/nefcon) | VM | Instalador de drivers por línea de comandos; crea el dispositivo de la pantalla virtual. | `v1.14.0` |
 | [usbip-win2](https://github.com/vadimgrn/usbip-win2) | VM | Conecta el altavoz USB de GpuVM, que captura Sunshine. | `0.9.8.0` |
@@ -26,7 +27,7 @@ nefcon está fijado en v1.14.0, la versión que usa el script oficial de instala
 
 Sunshine corre dentro de la VM. Su usuario y contraseña se generan al crear la VM; en el host quedan cifrados con DPAPI. La contraseña viaja en texto plano al invitado solo para la instalación y después se borra.
 
-Cada vez que haces **Encender y abrir**, GpuVM lee la lista de pantallas de Sunshine por su API, pone `output_name` en la pantalla virtual y reinicia Sunshine si eso cambió, para que nunca capture por error la pantalla de Hyper-V. Si GpuVM ya apagó la pantalla de Hyper-V, además pone `dd_configuration_option` en `disabled`: si Sunshine cambia la pantalla en cada sesión, vuelve a probar todos sus codificadores y el primer cuadro tarda 22 a 27 s en vez de unos 2 s ([laboratorio 008](/docs/es/labs/#lo-que-encontraron-los-laboratorios-hasta-ahora)). Cambiar la resolución o los FPS todavía cuesta 10 a 15 s, porque Sunshine ve que la pantalla cambió; GpuVM ajusta la pantalla antes que el resto del trabajo y reinicia Sunshine en ese momento, así ese tiempo se superpone con lo demás. Si no, usa `ensure_only_display`.
+Cada vez que haces **Encender y abrir**, GpuVM lee la lista de pantallas de Sunshine por su API, pone `output_name` en la pantalla virtual y reinicia Sunshine si eso cambió, para que nunca capture por error la pantalla de Hyper-V. Si GpuVM ya apagó la pantalla de Hyper-V, además pone `dd_configuration_option` en `disabled`: si Sunshine cambia la pantalla en cada sesión, vuelve a probar todos sus codificadores y el primer cuadro tarda 22 a 27 s en vez de unos 2 s. Cambiar la resolución o los FPS todavía cuesta 10 a 15 s, porque Sunshine ve que la pantalla cambió; GpuVM ajusta la pantalla antes que el resto del trabajo y reinicia Sunshine en ese momento, así ese tiempo se superpone con lo demás. Si no, usa `ensure_only_display`.
 
 En GPUs NVIDIA, GpuVM además pone `nvenc_twopass` en `disabled`: NVENC codifica cada cuadro en una sola pasada, alrededor de 1 ms menos por cuadro. La latencia media de entrada baja de unos 13,4 a 11,4 ms. Las máquinas creadas antes lo reciben la próxima vez que se abren.
 
@@ -119,7 +120,7 @@ Las VMs de generación 2 de Hyper-V no tienen tarjeta de sonido. GpuVM le da a l
 - Nada sale de la VM: el servidor solo escucha en `127.0.0.1`, corre como `LOCAL SERVICE` y su programa vive en `C:\Program Files\GpuVM\Audio`, donde solo los administradores pueden escribir.
 - usbip-win2 instala solo su cliente, en silencio. Sus drivers están firmados por Microsoft: sin modo de prueba ni certificados propios. GpuVM comprueba ambas cosas y lo desinstala si alguna falla.
 - El altavoz es persistente: usbip-win2 lo vuelve a conectar cada vez que Windows arranca, sin reinicios ni inicio de sesión. **Encender y abrir** lo revisa en segundo plano la primera vez que se abre después de cada arranque, lo reconecta si se perdió y actualiza el servidor cuando GpuVM trae uno nuevo.
-- Las VMs creadas con VB-CABLE pasan al altavoz la próxima vez que se abren. Dentro de una VM, la salida de VB-CABLE le llega muda a Sunshine; el sonido de antes venía de Steam Streaming Speakers ([laboratorios 011 y 012](/docs/es/labs/)).
+- Las VMs creadas con VB-CABLE pasan al altavoz la próxima vez que se abren.
 
 ## Ajustes del perfil
 

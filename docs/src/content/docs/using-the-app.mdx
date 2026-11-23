@@ -10,7 +10,7 @@ import Shot from '../../components/Shot.astro';
 
 ## The window
 
-- **Sidebar:** **Home** and **Library** at the top, then every Hyper-V VM on the PC (created with GpuVM or not) under the [space](#spaces) it belongs to, and **Create machine** at the end. **Settings** sits at the foot. Each machine shows its state as a dot on its icon and, on the right, what the dot doesn't say: a tiny chart of its last minute (processor, memory and GPU in their colors) while it runs, or the step of a job in progress.
+- **Sidebar:** **Home**, **Library** and [**Agents**](/docs/agents/) at the top, then every Hyper-V VM on the PC (created with GpuVM or not) under the [space](#spaces) it belongs to, and **Create machine** at the end. **Settings** sits at the foot. Each machine shows its state as a dot on its icon and, on the right, what the dot doesn't say: a tiny chart of its last minute (processor, memory and GPU in their colors) while it runs, or the step of a job in progress.
 - **Resize or fold it:** drag the line on its edge to change its width; click the line, or drag it narrow, to fold it.
 - **Reorder by dragging:** drag a machine to another place, in its space or in another one. The others make room as it passes and it shows faded where it would land. Spaces are reordered the same way, by dragging their name.
 
@@ -367,5 +367,6 @@ The copy only goes from this PC to the disk. Before writing, GpuVM checks that t
   - **With Windows**: it starts with Windows.
   - **Manual**: it only starts and stops with the **Start** and **Stop** buttons here.
   - Switching to or from **With Windows** asks for a UAC confirmation, because it changes the service's settings in Windows. Starting and stopping it doesn't. **Status** shows its state.
+  - **Diagnostics report → Save report** saves a text file in Downloads with the app's and the service's logs, to look at and attach when reporting a problem. Every error GpuVM shows, or gets back from the service, is written to the app's log with its time.
 
 GpuVM runs as a single instance: opening it again (for example from the Start menu while it's in the tray) shows the window that is already open.

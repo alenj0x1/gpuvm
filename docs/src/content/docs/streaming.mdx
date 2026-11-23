@@ -11,7 +11,8 @@ The Hyper-V console only shows the basic Hyper-V display, not what the GPU draws
 
 | Component | Where | Role | Pinned version |
 |---|---|---|---|
-| [Sunshine](https://github.com/LizardByte/Sunshine) | VM | Captures the virtual display and encodes with NVENC. | `v2026.914.233613` |
+| [Sunshine](https://github.com/LizardByte/Sunshine) | VM | The official install, which GpuVM's own Sunshine goes over. | `v2026.914.233613` |
+| [GpuVM's Sunshine](#capture) | VM | Captures the virtual display and encodes with NVENC. | Bundled with GpuVM |
 | [Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver) | VM | A monitor drawn by the GPU. | `25.7.23` |
 | [nefcon](https://github.com/nefarius/nefcon) | VM | Command-line driver installer; creates the virtual display device. | `v1.14.0` |
 | [usbip-win2](https://github.com/vadimgrn/usbip-win2) | VM | Plugs in GpuVM's USB speaker, which Sunshine captures. | `0.9.8.0` |
@@ -26,7 +27,7 @@ nefcon is pinned to v1.14.0, the version the official VDD install script uses, e
 
 Sunshine runs inside the VM. Its username and password are generated when the VM is created; on the host they are stored encrypted with DPAPI. The password travels in plain text to the guest only for the install and is deleted afterwards.
 
-Each time you **start and open** a VM, GpuVM reads Sunshine's display list through its API, sets `output_name` to the virtual display and restarts Sunshine if that changed, so it never captures the Hyper-V display by mistake. When GpuVM has already turned the Hyper-V display off, it also sets `dd_configuration_option` to `disabled`: if Sunshine changes the display on every session, it re-tests all its encoders and the first frame takes 22 to 27 s instead of about 2 s ([lab 008](/docs/labs/#what-the-labs-found-so-far)). Changing the resolution or FPS still costs 10 to 15 s, because Sunshine sees the display change; GpuVM sets the display before the rest of the work and restarts Sunshine right away, so that time overlaps with it. Otherwise it uses `ensure_only_display`.
+Each time you **start and open** a VM, GpuVM reads Sunshine's display list through its API, sets `output_name` to the virtual display and restarts Sunshine if that changed, so it never captures the Hyper-V display by mistake. When GpuVM has already turned the Hyper-V display off, it also sets `dd_configuration_option` to `disabled`: if Sunshine changes the display on every session, it re-tests all its encoders and the first frame takes 22 to 27 s instead of about 2 s. Changing the resolution or FPS still costs 10 to 15 s, because Sunshine sees the display change; GpuVM sets the display before the rest of the work and restarts Sunshine right away, so that time overlaps with it. Otherwise it uses `ensure_only_display`.
 
 On NVIDIA GPUs, GpuVM also sets `nvenc_twopass` to `disabled`: NVENC encodes each frame in a single pass, about 1 ms less per frame. The mean input latency goes from about 13.4 to 11.4 ms. Machines created earlier get it the next time they are opened.
 
@@ -119,7 +120,7 @@ Hyper-V Generation 2 VMs have no sound card. GpuVM gives the VM **its own USB sp
 - Nothing leaves the VM: the server listens on `127.0.0.1` only, runs as `LOCAL SERVICE` and its program lives in `C:\Program Files\GpuVM\Audio`, where only administrators can write.
 - usbip-win2 installs only its client, silently. Its drivers are signed by Microsoft: no test mode, no certificate of its own. GpuVM checks both and uninstalls it if either fails.
 - The speaker is persistent: usbip-win2 plugs it in again every time Windows starts, so no restart or sign-in is needed. **Start and open** checks it in the background on the first open after each boot, plugs it in again if it was lost and updates the server when GpuVM brings a new one.
-- VMs created with VB-CABLE move to the speaker the next time they are opened. VB-CABLE's output is silent to Sunshine inside a VM, so the earlier sound came from Steam Streaming Speakers ([labs 011 and 012](/docs/labs/)).
+- VMs created with VB-CABLE move to the speaker the next time they are opened.
 
 ## Profile settings
 

@@ -51,6 +51,8 @@ Requests drop from the top of the machine's picture and also wait in **Agents �
 - **Going back to a restore point** (`restore_point_revert`); how the machine is now is kept as a new point first.
 - **Deliveries leaving the machine.** An agent leaves files in the machine's **Outbox** and offers them; they reach this PC (Downloads\GpuVM) only if you accept them, copied with your own permissions and marked as coming from the internet.
 
+Each request also shows as a Windows notification that stays on screen until you open or close it, and goes away once the request is answered or expires. **Allow for this task** lets the next requests of the same kind on the same machine through without asking again.
+
 A request with no answer is refused by itself after **Settings → Agents → Time to answer** (10 min by default, from 1 to 30 min). **Approve from** on a connected agent lets its client confirm low-risk steps; the rest are always answered in GpuVM.
 
 UAC prompts, the lock screen, passwords and payments are always yours. The agent asks with `request_human` and stays paused until you press **Return to agent**.

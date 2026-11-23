@@ -160,6 +160,11 @@ Besides the cmdlets above, the module exports these, used mainly by the app:
 | `New-GpuVMTemplate` / `Get-GpuVMTemplate` / `Remove-GpuVMTemplate` | Saves a stopped VM as a template / lists templates (with `stale`, `updating` and `layers`) / deletes one no VM is built on. |
 | `Update-GpuVMTemplate` | `-Name` or `-Stale` (every template that needs it), `-Force`. Brings a template up to this GpuVM's Sunshine (and agent, for an agent template) as a read-only layer on top of it: a temporary copy gets the install once, shuts down cleanly and its disk becomes the newest layer, so copies don't install them one by one. Copies made before keep their layer. The app runs `-Stale` when it starts and every hour. |
 | `New-GpuVMSharedDisk` / `Get-GpuVMSharedDisk` / `Connect-GpuVMSharedDisk` / `Disconnect-GpuVMSharedDisk` / `Import-GpuVMSharedDisk` / `Remove-GpuVMSharedDisk` | Shared disks: create, list, attach, detach, copy a folder of this PC into one, delete. |
+| `Get-GpuVMRestorePoint` / `New-GpuVMRestorePoint` / `Restore-GpuVMRestorePoint` / `Remove-GpuVMRestorePoint` | Restore points of a stopped VM: list, save, go back (`-SaveCurrent` keeps how it is now as a new point first), delete. |
+| `Export-GpuVM` / `Get-GpuVMImportInfo` / `Import-GpuVM` | Saves a stopped VM to one `.gpuvm` file, without its Windows password / reads what a file holds / creates a VM from it, with its own streaming identity. |
+| `Set-GpuVMDisposable` / `Remove-GpuVMDisposable` | Keeps a disposable machine as a regular one / deletes the disposable machines that are off. |
+| `Send-GpuVMFile` / `Get-GpuVMExplorerSelection` | Copies files and folders from this PC, or from another running VM, into a VM's `Desktop\Received` / what is selected in a VM's File Explorer. |
+| `Set-GpuVMUse` / `Install-GpuVMAgent` / `Uninstall-GpuVMAgent` | Makes a VM an agent machine or a person's again / installs or removes GpuVM's agent inside it. The other `*-GpuVMAgent*` cmdlets serve the [Agents](/docs/agents/) section and the MCP server. |
 
 Through the app, `Remove-GpuVM`, `Remove-GpuVMDisk`, `Remove-GpuVMBase`, `Remove-GpuVMSharedDisk` and `Remove-GpuVMTemplate` also need a UAC confirmation ([Architecture](/docs/architecture/#bridge-between-the-app-and-powershell)).
 

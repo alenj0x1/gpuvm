@@ -9,7 +9,7 @@ import { overview } from '../../../diagrams';
 import Shot from '../../../components/Shot.astro';
 import { Card, CardGrid, LinkCard, Steps } from '@astrojs/starlight/components';
 
-GpuVM crea máquinas virtuales Windows 10 y 11 que usan la GPU de tu PC, con el mayor rendimiento que permite cada backend, y un sistema de **laboratorios** para medir cada mejora antes de adoptarla.
+GpuVM crea máquinas virtuales Windows 10 y 11 que usan la GPU de tu PC, con el mayor rendimiento que permite cada backend, las muestra en su propio visor y deja que agentes de IA trabajen en ellas mientras miras.
 
 <Shot name="home" alt="Inicio de GpuVM: una máquina como holograma dentro de su cubo de vidrio sobre un mundo de bloques, con su uso al lado y las demás máquinas abajo" />
 
@@ -27,7 +27,7 @@ Una VM normal de Hyper-V solo tiene un adaptador de pantalla básico, así que l
 
 3. **Encender y abrir.** Un clic enciende la VM, sincroniza el driver de la GPU si el del host cambió, espera a Windows y a Sunshine, corrige la sesión y la pantalla, empareja solo el visor de GpuVM y abre la transmisión dentro de la app, por defecto a la frecuencia de tu monitor. Una VM ya encendida muestra su imagen en unos 7 a 10 segundos.
 
-4. **Usar y medir.** Usas la VM en el visor de GpuVM, dentro de la app o en pantalla completa, con la imagen que dibuja la GPU, tu teclado, mouse y mandos, unos 11 ms detrás de jugar en el equipo a 120 FPS o más. Los avisos de administrador de Windows en la VM se responden desde GpuVM, sobre la imagen. La app muestra el uso de CPU, memoria y GPU en vivo, y los [laboratorios](/docs/es/labs/) te permiten probar cambios con mediciones reales.
+4. **Usarla.** Usas la VM en el visor de GpuVM, dentro de la app o en pantalla completa, con la imagen que dibuja la GPU, tu teclado, mouse y mandos, unos 11 ms detrás de jugar en el equipo a 120 FPS o más. Los avisos de administrador de Windows en la VM se responden desde GpuVM, sobre la imagen. Suelta archivos sobre la imagen, toma capturas y grabaciones, y guarda puntos de restauración para volver a ellos; la app muestra el uso de CPU, memoria y GPU en vivo.
 
 </Steps>
 
@@ -37,19 +37,19 @@ Una VM normal de Hyper-V solo tiene un adaptador de pantalla básico, así que l
 
 <CardGrid>
   <Card title="App de escritorio" icon="laptop">
-    Tauri 2 + React, en español e inglés, sin permisos de administrador; un servicio de Windows hace el trabajo de Hyper-V. Todas las VMs de Hyper-V agrupadas en espacios, encender y abrir en un clic, cada máquina como un holograma en un cubo de vidrio que puedes decorar, un tipo de uso por máquina (juegos, películas, trabajo), uso en vivo, opciones y una Biblioteca de perfiles, plantillas, discos compartidos e ISOs. Consulta [Uso de la app](/docs/es/using-the-app/).
+    Tauri 2 + React, en español e inglés, sin permisos de administrador; un servicio de Windows hace el trabajo de Hyper-V. Todas las VMs de Hyper-V agrupadas en espacios, encender y abrir en un clic, cada máquina como un holograma en un cubo de vidrio que puedes decorar, un tipo de uso por máquina (juegos, películas, trabajo), uso en vivo, opciones, puntos de restauración, máquinas desechables, exportar e importar, y una Biblioteca de perfiles, plantillas, discos compartidos e ISOs. Consulta [Uso de la app](/docs/es/using-the-app/).
   </Card>
   <Card title="Módulo de PowerShell y CLI" icon="seti:powershell">
     El módulo `GpuVM` (PowerShell 7) hace el trabajo; `gpuvm.ps1` lo expone como comandos cortos.
   </Card>
   <Card title="Streaming" icon="rocket">
-    Sunshine dentro de la VM, una pantalla virtual que dibuja la GPU a la frecuencia de tu monitor, el altavoz USB propio de GpuVM para el audio, mandos, y el visor propio de GpuVM en el host, basado en Moonlight.
+    El Sunshine propio de GpuVM dentro de la VM, una pantalla virtual que dibuja la GPU a la frecuencia de tu monitor, el altavoz USB propio de GpuVM para el audio, mandos, y el visor propio de GpuVM en el host, basado en Moonlight, con un panel lateral de widgets.
   </Card>
   <Card title="Agentes" icon="puzzle">
     GpuVM es un servidor MCP: Claude Code o cualquier cliente MCP trabaja en una máquina Windows desechable mientras miras y tomas el control cuando quieras. Consulta [Agentes](/docs/es/agents/).
   </Card>
-  <Card title="Perfiles y laboratorios" icon="setting">
-    Perfiles JSON con herencia, y laboratorios que comparan una configuración base con una candidata antes de adoptar un cambio.
+  <Card title="Perfiles" icon="setting">
+    Perfiles JSON con herencia que definen la VM, la parte de la GPU, el streaming y las optimizaciones de Windows. Consulta [Perfiles](/docs/es/profiles/).
   </Card>
 </CardGrid>
 

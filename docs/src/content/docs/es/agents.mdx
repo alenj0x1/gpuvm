@@ -51,6 +51,8 @@ Las solicitudes bajan desde arriba de la imagen de la máquina y también espera
 - **Volver a un punto de restauración** (`restore_point_revert`); primero se guarda cómo está la máquina ahora como un punto nuevo.
 - **Entregas que salen de la máquina.** Un agente deja archivos en la **Bandeja de salida** de la máquina y los ofrece; llegan a este equipo (Descargas\GpuVM) solo si los aceptas, copiados con tus propios permisos y marcados como venidos de internet.
 
+Cada solicitud también sale como una notificación de Windows que se queda en pantalla hasta que la abras o la cierres, y se quita cuando la solicitud se responde o vence. **Permitir en esta tarea** deja pasar las siguientes solicitudes del mismo tipo en la misma máquina sin volver a preguntar.
+
 Una solicitud sin respuesta se rechaza sola pasado el **Tiempo para responder** de **Ajustes → Agentes** (10 min por defecto, de 1 a 30 min). **Aprobar desde** en un agente conectado deja que su cliente confirme los pasos de bajo riesgo; los demás siempre se responden en GpuVM.
 
 Los avisos de UAC, la pantalla de bloqueo, las contraseñas y los pagos siempre son tuyos. El agente lo pide con `request_human` y queda en pausa hasta que presionas **Volver al agente**.

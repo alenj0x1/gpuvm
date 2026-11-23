@@ -19,7 +19,7 @@ import { adminPrompt, architecture, viewer } from '../../diagrams';
 | `src/bridge.ps1` | Bridge between the app and the module. |
 | `gpuvm.ps1` | CLI. See [CLI reference](/docs/cli/). |
 | `profiles/` | JSON [profiles](/docs/profiles/). |
-| `guest/` | Scripts that run inside the VM: first-boot setup, optimizations, streaming, audio, display resolution, capture mode, the administrator prompt watcher (`admin-prompt.ps1`) and `collect-info.ps1` for labs. |
+| `guest/` | Scripts that run inside the VM: first-boot setup, optimizations, streaming, audio, display resolution, capture mode, the administrator prompt watcher (`admin-prompt.ps1`), GpuVM's agent for [AI agents](/docs/agents/) (`agent/`) and `collect-info.ps1` for labs. |
 | `templates/` | `unattend.xml` template. |
 | `streaming/components.json` | Versions, URLs and SHA-256 of the streaming components and ViGEmBus. |
 | `viewer/` | Build of GpuVM's viewer, from the separate [`gpuvm-viewer`](https://github.com/alenj0x1/gpuvm-viewer) repository (not tracked here); the installer bundles it. |
@@ -103,7 +103,7 @@ While a picture is shown, the app tells its pages the window is covered: the hol
 - **Only scripts from Program Files:** the service runs the module, the scripts and PowerShell 7 bundled next to it in Program Files, which only an administrator can modify. PowerShell 7 is pinned by version and SHA-256 (`app/tools.json`).
 - **Data restricted to administrators:** `%ProgramData%\GpuVM` (labs, downloads) and the VMs folder (`C:\GpuVM`, which would inherit "Authenticated Users: modify" from `C:\`) are limited to Administrators, SYSTEM and Hyper-V's virtual machines.
 - **DPAPI:** the Sunshine credentials and the guest password are stored encrypted with DPAPI on the host.
-- **Pinned components:** Sunshine, the Virtual Display Driver, nefcon, usbip-win2 and ViGEmBus are pinned by SHA-256 in `streaming/components.json`. A file whose hash doesn't match isn't used. The guest downloads nothing. Only the certificate that signed the virtual display driver is trusted; usbip-win2's drivers must be signed by Microsoft.
+- **Pinned components:** Sunshine, the Virtual Display Driver, nefcon, usbip-win2 and ViGEmBus are pinned by SHA-256 in `streaming/components.json`. A file whose hash doesn't match isn't used. The guest downloads nothing. Only the certificate that signed the virtual display driver is trusted; usbip-win2's drivers must be signed by Microsoft. GpuVM's own Sunshine comes with the installer. App Installer (`winget`) for agent machines is pinned by SHA-256 and checked for Microsoft's signature on this PC and again inside the machine.
 - **Password cleanup:** `unattend.xml` holds the password in plain text and is deleted inside the VM as soon as it's no longer needed.
 - **Viewer isolated:** Low integrity, restricted token and a job object. See [The viewer](#the-viewer).
 - **No argument injection:** the Sunshine app name is validated before building the viewer's command line.
