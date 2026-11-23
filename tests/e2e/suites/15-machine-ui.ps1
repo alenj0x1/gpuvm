@@ -531,6 +531,10 @@ function Test-Suite($Ctx) {
                 $null = Invoke-MuMenu '^(Force: unsaved work is lost|Forzar: se pierde lo no guardado)$'
             }
         } catch { }
+        # When its page couldn't be used, the disposable still goes: left on, it takes memory from the next suites.
+        if ($ui -and (Get-VM -Name $ui -ErrorAction SilentlyContinue)) {
+            try { Stop-VM -Name $ui -TurnOff -Force -ErrorAction SilentlyContinue; Remove-GpuVMDisposable -Name $ui -Confirm:$false -ErrorAction SilentlyContinue 6>$null | Out-Null } catch { }
+        }
         if ($St.Created -and -not $St.Kept) {
             try { $null = Invoke-MuTool $S 'destroy' @{ machine = $St.Name; force = $true } 180 } catch { }
         } elseif ($St.Kept) {
