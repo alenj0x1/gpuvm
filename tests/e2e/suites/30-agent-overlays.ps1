@@ -18,7 +18,8 @@ function Test-Suite($Ctx) {
     $px = [int](320 * $s.Width / 640); $py = [int](200 * $s.Width / 640)
     $black = [E2E]::Black($px - 4, $py - 4, 24, 30)
     $crop = Grab ($px - 40) ($py - 40) 120 110; $crop.Save((Join-Path $Ctx.Out 'overlays-cursor.png')); $crop.Dispose()
-    Check 'only the agent''s cursor shows where it clicked (no Windows cursor behind it)' ($black -lt 6) "$black black pixels at the click"
+    # Windows' own arrow is ~380 black pixels there; the agent's cursor alone leaves a few of its outline.
+    Check 'only the agent''s cursor shows where it clicked (no Windows cursor behind it)' ($black -lt 60) "$black black pixels at the click"
     Check 'the agent''s cursor is drawn' ([bool](Get-AppWindows | Where-Object { (Get-Texts (Get-Element $_.Handle)) -match 'E2e' })) ''
     Shot 'overlays-2-agent'
     $null = Receive-Mcp $Ctx.Mcp $pending
