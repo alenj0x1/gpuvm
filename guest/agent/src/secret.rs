@@ -92,3 +92,14 @@ pub fn load() -> Result<[u8; 32], String> {
         _ => Err(format!("{FILE} must hold 32 bytes (raw or 64 hex characters), it has {}", raw.len())),
     }
 }
+
+pub const VMID_FILE: &str = r"C:\ProgramData\GpuVM\Agent\vmid";
+
+/// The machine id GpuVM wrote for machines without KVP (HCS); protected like the secret, since a forged id would
+/// only make the handshake fail, but a readable folder must not let others plant it.
+pub fn load_vm_id() -> Result<String, String> {
+    check_acl(DIR)?;
+    check_acl(VMID_FILE)?;
+    let text = std::fs::read_to_string(VMID_FILE).map_err(|e| format!("{VMID_FILE}: {e}"))?;
+    Ok(text.trim().to_string())
+}
