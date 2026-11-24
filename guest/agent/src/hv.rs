@@ -73,6 +73,13 @@ impl HvStream {
         }
     }
 
+    /// Ends the sending direction only: the peer reads end-of-stream and can still send.
+    pub fn shutdown_send(&self) {
+        unsafe {
+            shutdown(self.0, SD_SEND);
+        }
+    }
+
     /// Local address as Windows reports it (on the guest side the VmId may or may not be filled in).
     pub fn local(&self) -> Option<SockaddrHv> {
         let mut a = SockaddrHv::default();

@@ -1,6 +1,6 @@
 [package]
 name = "gpuvm-agent"
-version = "0.4.13"
+version = "0.5.0"
 edition = "2021"
 publish = false
 description = "GpuVM guest agent: a SYSTEM service that dials the host over Hyper-V sockets and a session helper that captures the screen, drives input and UI Automation for AI agents (docs/agents/protocol.md)"
@@ -63,6 +63,9 @@ windows = { version = "0.62", features = [
     "Graphics_DirectX_Direct3D11",
     "Foundation",
 ] }
+tokio = { version = "1", features = ["rt-multi-thread", "io-util", "sync", "time"] }
+ipstack = "1.0.1"
+tun = { version = "0.8", features = ["async"] }
 
 [profile.release]
 opt-level = 3
