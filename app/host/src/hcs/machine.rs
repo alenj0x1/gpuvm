@@ -51,6 +51,11 @@ impl Machine {
         let s = |k: &str| v[k].as_str().map(String::from).ok_or_else(|| format!("{RECORD}: missing {k}"));
         let name = s("name")?;
         valid_name(&name)?;
+        let services: Vec<String> = v["services"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default();
+        // A tampered record must not open other Hyper-V socket services to the guest.
+        if let Some(bad) = services.iter().find(|s| net::parse_guid(s).is_none()) {
+            return Err(format!("{RECORD}: not a service id: {bad}"));
+        }
         Ok(Machine {
             name,
             dir: dir.to_path_buf(),
@@ -58,8 +63,8 @@ impl Machine {
             cpus: v["cpus"].as_u64().ok_or(format!("{RECORD}: missing cpus"))? as u32,
             mac: s("mac")?,
             gpu: v["gpu"].as_str().map(String::from),
-            services: v["services"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default(),
-            endpoint: v["endpoint"].as_str().map(String::from),
+            services,
+            endpoint: v["endpoint"].as_str().filter(|e| net::parse_guid(e).is_some()).map(String::from),
         })
     }
 
@@ -255,7 +260,9 @@ pub fn delete(m: &Machine) -> Result<(), String> {
 }
 
 /// Writes a file into a Windows volume of a machine that is off, refusing any link along the path: the guest
-/// controls its own disk and could point a junction at a host folder.
+/// controls its own disk and could point a junction at a host folder. The check and the write are separate steps,
+/// so a host user who can reach the attached volume could swap a folder in between; before the service calls this,
+/// it must walk the path by handle (open each part with FILE_FLAG_OPEN_REPARSE_POINT, relative to its parent).
 pub fn write_offline(volume: &Path, relative: &Path, bytes: &[u8]) -> Result<(), String> {
     let mut cur = volume.to_path_buf();
     let parts: Vec<_> = relative.components().collect();
@@ -282,7 +289,16 @@ mod tests {
     use super::*;
 
     fn sample(dir: &Path) -> Machine {
-        Machine { name: "m1".into(), dir: dir.into(), memory_mb: 4096, cpus: 4, mac: "00-15-5D-01-02-03".into(), gpu: Some(r"\\?\PCI#x".into()), services: vec!["svc".into()], endpoint: Some("e1".into()) }
+        Machine { name: "m1".into(), dir: dir.into(), memory_mb: 4096, cpus: 4, mac: "00-15-5D-01-02-03".into(), gpu: Some(r"\\?\PCI#x".into()),
+            services: vec!["0651ab67-7c1e-4b0a-9a65-065065065067".into()], endpoint: Some("833a570d-b7d1-42d7-b1bf-516561468fd4".into()) }
+    }
+
+    #[test]
+    fn records_with_bad_ids_are_refused_or_dropped() {
+        let v = json!({ "name": "m1", "memoryMB": 1, "cpus": 1, "mac": "m", "services": ["not-a-guid"] });
+        assert!(Machine::from_json(Path::new("x"), &v).is_err());
+        let v = json!({ "name": "m1", "memoryMB": 1, "cpus": 1, "mac": "m", "endpoint": "x" });
+        assert_eq!(Machine::from_json(Path::new("x"), &v).unwrap().endpoint, None);
     }
 
     #[test]
