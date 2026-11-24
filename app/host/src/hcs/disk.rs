@@ -129,6 +129,8 @@ impl Attached {
     }
 
     /// The volume that holds Windows (`Windows\System32\config\SOFTWARE`), for changes made with the machine off.
+    /// A disk a guest has run is guest-controlled: its junctions and symlinks can point at host paths, so writes into
+    /// it must refuse reparse points along the way.
     pub fn windows_volume(&self, wait: Duration) -> Option<String> {
         // Small partitions (EFI, recovery) usually mount first: keep looking until Windows' own volume is there.
         let until = Instant::now() + wait;
