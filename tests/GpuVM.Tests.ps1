@@ -6,6 +6,35 @@ Import-Module (Join-Path $repo 'src\GpuVM\GpuVM.psd1') -Force
 function global:Test-Throws([scriptblock]$Block) { try { & $Block | Out-Null; $false } catch { $true } }
 
 InModuleScope GpuVM {
+    Describe 'Waiting on a machine that goes away' {
+        It 'the wait for Sunshine ends when the machine is deleted' {
+            Mock Invoke-SunshineApi { throw 'timed out' }
+            Mock Get-VM { }
+            Mock Start-Sleep { }
+            $cred = [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force))
+            $msg = try { Wait-SunshineReady -Address 10.0.0.2 -Credential $cred -Name gone1 -TimeoutSec 900; '' } catch { "$_" }
+            $msg | Should Match 'no longer exists'
+        }
+
+        It 'the wait for Sunshine ends when the machine is turned off' {
+            Mock Invoke-SunshineApi { throw 'timed out' }
+            Mock Get-VM { [pscustomobject]@{ Name = 'off1'; State = 'Off' } }
+            Mock Start-Sleep { }
+            $cred = [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force))
+            $msg = try { Wait-SunshineReady -Address 10.0.0.2 -Credential $cred -Name off1 -TimeoutSec 900; '' } catch { "$_" }
+            $msg | Should Match 'is off'
+        }
+
+        It 'the wait for Windows ends when the machine is deleted' {
+            Mock Test-GuestHeartbeat { $false }
+            Mock Get-VM { }
+            Mock Start-Sleep { }
+            $cred = [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force))
+            $msg = try { Wait-GuestReady -Name gone2 -Credential $cred -TimeoutSec 1800; '' } catch { "$_" }
+            $msg | Should Match 'no longer exists'
+        }
+    }
+
     Describe 'Profiles' {
         It 'max-performance inherits from balanced and base' {
             $p = Resolve-GpuVMProfile -Name 'max-performance'

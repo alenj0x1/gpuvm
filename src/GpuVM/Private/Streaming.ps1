@@ -208,13 +208,16 @@ function Wait-SunshineReady {
         [Parameter(Mandatory)][string]$Address,
         [Parameter(Mandatory)][pscredential]$Credential,
         [int]$TimeoutSec = 900,
-        [string]$Message = 'Waiting for Sunshine'
+        [string]$Message = 'Waiting for Sunshine',
+        # The machine Sunshine runs in: the wait ends when it is deleted or turned off.
+        [string]$Name
     )
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     $announced = $false
     while ($true) {
         try { Invoke-SunshineApi -Address $Address -Credential $Credential -Path '/api/clients/list' | Out-Null; return }
         catch {
+            if ($Name) { Assert-GuestStillOn -Name $Name }
             if ((Get-Date) -gt $deadline) { throw "Sunshine isn't answering at ${Address}:$($script:SunshineWebPort). Check C:\GpuVM\setup.log inside the VM. Last error: $_" }
             if (-not $announced) { Write-Step $Message; $announced = $true }
             Start-Sleep -Seconds 3
@@ -472,6 +475,13 @@ function Test-GuestHeartbeat {
 }
 
 # Pairing before the first boot's restart cuts it off halfway: wait for setup.done.json and that restart.
+function Assert-GuestStillOn {
+    param([Parameter(Mandatory)][string]$Name, [switch]$AllowOff)
+    $vm = Get-VM -Name $Name -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $vm) { throw "The VM '$Name' no longer exists." }
+    if (-not $AllowOff -and "$($vm.State)" -eq 'Off') { throw "The VM '$Name' is off. Open it from GpuVM to turn it on." }
+}
+
 function Wait-GuestReady {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -483,6 +493,7 @@ function Wait-GuestReady {
     $announced = $null
     while ((Get-Date) -lt $deadline) {
         if (-not (Test-GuestHeartbeat -Name $Name)) {
+            Assert-GuestStillOn -Name $Name -AllowOff
             $message = $BootMessage
             if ($announced -ne $message) { Write-Step $message; $announced = $message }
             Start-Sleep -Seconds 1

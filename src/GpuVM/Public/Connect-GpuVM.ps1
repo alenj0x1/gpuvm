@@ -200,7 +200,7 @@ function Connect-GpuVM {
         $credential = Get-SunshineCredential -State $state
         $firstBoot = -not $guest -and (Get-VM -Name $Name).Uptime.TotalMinutes -lt 15
         $waiting = if ($firstBoot) { 'Waiting for Sunshine (the first start installs Windows and streaming; it can take several minutes)' } else { 'Waiting for Sunshine' }
-        Wait-SunshineReady -Address $address -Credential $credential -Message $waiting
+        Wait-SunshineReady -Address $address -Credential $credential -Message $waiting -Name $Name
         if ($state['config']['streaming']['virtualDisplay']) {
             Set-SunshineVirtualDisplay -Address $address -Credential $credential -OnlyDisplay:([bool]$state['config']['streaming']['disableHyperVVideo'] -or [string]$state['use'] -eq 'agent') -Name $Name -GuestCredential $guest
         }
@@ -228,7 +228,7 @@ function Connect-GpuVM {
                     $audioCheck = $null
                     $installed = Install-GuestAudio -Name $Name -Credential $guest
                     if ($installed) {
-                        Wait-SunshineReady -Address $address -Credential $credential -TimeoutSec 120 -Message 'Sunshine is restarting with the new audio'
+                        Wait-SunshineReady -Address $address -Credential $credential -TimeoutSec 120 -Message 'Sunshine is restarting with the new audio' -Name $Name
                     }
                     if ($state['config']['streaming']['audio'] -ne 'usb') {
                         $state = Get-GpuVMState -Name $Name
