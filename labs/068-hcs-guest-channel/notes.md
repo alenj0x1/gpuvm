@@ -24,7 +24,17 @@ installs the agent offline (`gpuvm-host hcs install-agent`), starts it, and driv
 | `sys.power shutdown` | machine off 6.1 s later |
 | Whole run | 14.3 s |
 
+After the security hardening (secret and machine id born with their ACL under a temporary name and renamed by handle,
+registry walk with `REG_OPTION_OPEN_LINK` also when creating keys and at the hive root, machine folder protected,
+`sys.*` refused to any agent-side caller), two more runs: one with the agent answering 124.5 s after start and the
+machine off 76.3 s after `sys.power` (an outlier: the host was busy), the next back at 4.0 s and 8.1 s.
+
 ## Notes
+
+- Win32 `SetFileInformationByHandle(FileRenameInfo)` with a bare name renamed the temporary file into the process's
+  current directory (the test found `secret` in `app/host`): the rename now uses `NtSetInformationFile` with the
+  folder's handle as root. Folders are opened sharing read and write so that rename can write to them. Windows refuses
+  to replace a target someone holds open (0xC0000022); the install then fails without exposing anything.
 
 - Hive edits: a private app hive (`RegLoadAppKeyW`) refuses a hive Windows left with pending log changes ("registry
   database is corrupt", 1009), and keeping our own handle on the file while loading it gives a sharing violation.

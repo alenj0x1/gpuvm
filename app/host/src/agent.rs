@@ -2355,7 +2355,7 @@ fn invoke(args: &Map<String, Value>, ctx: &Ctx) -> Result<Value, CmdError> {
         return new_offer(name, path, params["note"].as_str().unwrap_or(""), s("Connection"), ctx).map(|v| json!({ "ok": true, "result": v }));
     }
     if SYSTEM_METHODS.contains(&method) {
-        if !ctx.admin || ctx.is_agent_pipe() || s("Connection").is_some() {
+        if !ctx.admin || ctx.is_agent_pipe() || ctx.is_agent_side() || s("Connection").is_some() {
             return err("denied", format!("{method} is only for GpuVM's administrative side."));
         }
     } else if !METHODS.contains(&method) {

@@ -51,12 +51,16 @@ pub fn load(file: &Path) -> Result<Hive, String> {
     let mount = format!("GpuVMoff{}", &crate::win::random_hex()[..8]);
     reg(&["load", &format!(r"HKLM\{mount}"), &file.to_string_lossy()]).map_err(|e| format!("load hive {}: {e}", file.display()))?;
     let mut key: HKEY = std::ptr::null_mut();
-    let opened = unsafe { RegOpenKeyExW(HKEY_LOCAL_MACHINE, wide(&mount).as_ptr(), 0, KEY_ALL_ACCESS, &mut key) };
+    let opened = unsafe { RegOpenKeyExW(HKEY_LOCAL_MACHINE, wide(&mount).as_ptr(), REG_OPTION_OPEN_LINK, KEY_ALL_ACCESS, &mut key) };
     if opened != ERROR_SUCCESS {
         let _ = reg(&["unload", &format!(r"HKLM\{mount}")]);
         return Err(format!("open the loaded hive: Windows error {opened}"));
     }
-    Ok(Hive { key, mount })
+    let hive = Hive { key, mount };
+    if is_link(hive.key) {
+        return Err("the machine's hive root is a link".into());
+    }
+    Ok(hive)
 }
 
 const REG_OPTION_OPEN_LINK: u32 = 0x8;
@@ -77,7 +81,7 @@ fn child(parent: HKEY, name: &str, create: bool) -> Result<Key, String> {
         if !create {
             return check(code, &format!("open {name}")).map(|_| Key(h));
         }
-        check(unsafe { RegCreateKeyExW(parent, wide(name).as_ptr(), 0, std::ptr::null(), REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, std::ptr::null(), &mut h, std::ptr::null_mut()) }, &format!("create {name}"))?;
+        check(unsafe { RegCreateKeyExW(parent, wide(name).as_ptr(), 0, std::ptr::null(), REG_OPTION_NON_VOLATILE | REG_OPTION_OPEN_LINK, KEY_ALL_ACCESS, std::ptr::null(), &mut h, std::ptr::null_mut()) }, &format!("create {name}"))?;
         unsafe { RegCloseKey(h) };
         h = std::ptr::null_mut();
         check(unsafe { RegOpenKeyExW(parent, wide(name).as_ptr(), REG_OPTION_OPEN_LINK, KEY_ALL_ACCESS, &mut h) }, &format!("open {name}"))?;

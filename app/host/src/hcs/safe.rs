@@ -36,9 +36,15 @@ enum Open {
     WriteFile,
     /// Only look: the part must exist (folder or file) and is opened for its attributes.
     Existing,
+    /// A brand-new file (fails if the name exists), born with the security descriptor given.
+    NewFile,
 }
 
 fn open_child(parent: &Handle, name: &str, how: Open, secure: bool) -> Result<Handle, String> {
+    open_child_sd(parent, name, how, secure, std::ptr::null())
+}
+
+fn open_child_sd(parent: &Handle, name: &str, how: Open, secure: bool, sd: *const core::ffi::c_void) -> Result<Handle, String> {
     let w: Vec<u16> = name.encode_utf16().collect();
     let us = UNICODE_STRING { Length: (w.len() * 2) as u16, MaximumLength: (w.len() * 2) as u16, Buffer: w.as_ptr() as *mut u16 };
     let oa = OBJECT_ATTRIBUTES {
@@ -46,7 +52,7 @@ fn open_child(parent: &Handle, name: &str, how: Open, secure: bool) -> Result<Ha
         RootDirectory: parent.0,
         ObjectName: &us,
         Attributes: OBJ_CASE_INSENSITIVE,
-        SecurityDescriptor: std::ptr::null(),
+        SecurityDescriptor: sd,
         SecurityQualityOfService: std::ptr::null(),
     };
     let mut io: IO_STATUS_BLOCK = unsafe { std::mem::zeroed() };
@@ -55,12 +61,18 @@ fn open_child(parent: &Handle, name: &str, how: Open, secure: bool) -> Result<Ha
         Open::Folder => (FILE_TRAVERSE | FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE, FILE_OPEN_IF, FILE_DIRECTORY_FILE),
         Open::WriteFile => (FILE_GENERIC_WRITE | FILE_READ_ATTRIBUTES | SYNCHRONIZE, FILE_OVERWRITE_IF, FILE_NON_DIRECTORY_FILE),
         Open::Existing => (FILE_TRAVERSE | FILE_READ_ATTRIBUTES | SYNCHRONIZE, FILE_OPEN, 0),
+        Open::NewFile => (FILE_GENERIC_WRITE | FILE_READ_ATTRIBUTES | DELETE | SYNCHRONIZE, FILE_CREATE, FILE_NON_DIRECTORY_FILE),
     };
     if secure {
         access |= WRITE_DAC | WRITE_OWNER | READ_CONTROL;
     }
     // A part only looked at must not block whoever opens it next (the registry loading a hive needs it alone).
-    let share = if how == Open::Existing { FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE } else { FILE_SHARE_READ };
+    // A folder must let the rename we do inside it write to it.
+    let share = match how {
+        Open::Existing => FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        Open::Folder => FILE_SHARE_READ | FILE_SHARE_WRITE,
+        Open::WriteFile | Open::NewFile => FILE_SHARE_READ,
+    };
     let status = unsafe {
         NtCreateFile(&mut h, access, &oa, &mut io, std::ptr::null(), FILE_ATTRIBUTE_NORMAL, share, disposition,
             kind | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT, std::ptr::null(), 0)
@@ -144,16 +156,93 @@ pub fn write_file_protected(root: &Path, relative: &Path, bytes: &[u8], sddl: Op
             apply_sddl(&cur, sddl.unwrap(), f)?;
         }
     }
-    let file = open_child(&cur, last, Open::WriteFile, sddl.is_some())?;
-    if let Some(s) = sddl {
-        apply_sddl(&file, s, last)?;
+    let Some(s) = sddl else {
+        let file = open_child(&cur, last, Open::WriteFile, false)?;
+        return write_all(&file, bytes, last);
+    };
+    // A protected file is born with its final ACL under a fresh name, then renamed over the target by handle: no one
+    // can have opened it beforehand, as they could a file prepared at the target's name.
+    let sd = Sddl::parse(s)?;
+    let temp = format!(".gpuvm-{}.tmp", crate::win::random_hex());
+    let file = open_child_sd(&cur, &temp, Open::NewFile, false, sd.0)?;
+    let written = write_all(&file, bytes, last).and_then(|_| rename_by_handle(&file, &cur, last));
+    if written.is_err() {
+        let _ = delete_by_handle(&file);
     }
+    written
+}
+
+struct Sddl(*mut core::ffi::c_void);
+
+impl Sddl {
+    fn parse(s: &str) -> Result<Self, String> {
+        use windows_sys::Win32::Security::Authorization::*;
+        let mut sd = std::ptr::null_mut();
+        if unsafe { ConvertStringSecurityDescriptorToSecurityDescriptorW(wide(s).as_ptr(), SDDL_REVISION_1, &mut sd, std::ptr::null_mut()) } == 0 {
+            return Err(format!("SDDL {s}: {}", std::io::Error::last_os_error()));
+        }
+        Ok(Sddl(sd))
+    }
+}
+
+impl Drop for Sddl {
+    fn drop(&mut self) {
+        unsafe { LocalFree(self.0) };
+    }
+}
+
+fn write_all(file: &Handle, bytes: &[u8], what: &str) -> Result<(), String> {
     let mut written = 0u32;
     let ok = unsafe { WriteFile(file.0, bytes.as_ptr(), bytes.len() as u32, &mut written, std::ptr::null_mut()) };
     if ok == 0 || written as usize != bytes.len() {
-        return Err(format!("write {last}: {}", std::io::Error::last_os_error()));
+        return Err(format!("write {what}: {}", std::io::Error::last_os_error()));
     }
     Ok(())
+}
+
+/// Renames an open file to `name` inside `folder`, both by handle (NT semantics: the name is relative to the folder's
+/// handle; Win32's rename would read a bare name against the process's current directory), replacing what is there.
+fn rename_by_handle(file: &Handle, folder: &Handle, name: &str) -> Result<(), String> {
+    let w: Vec<u16> = name.encode_utf16().collect();
+    let header = std::mem::size_of::<FILE_RENAME_INFORMATION>();
+    let mut buf = vec![0u64; (header + w.len() * 2).div_ceil(8)];
+    let mut io: IO_STATUS_BLOCK = unsafe { std::mem::zeroed() };
+    let status = unsafe {
+        let info = buf.as_mut_ptr() as *mut FILE_RENAME_INFORMATION;
+        (*info).Anonymous.ReplaceIfExists = 1;
+        (*info).RootDirectory = folder.0;
+        (*info).FileNameLength = (w.len() * 2) as u32;
+        std::ptr::copy_nonoverlapping(w.as_ptr(), (*info).FileName.as_mut_ptr(), w.len());
+        NtSetInformationFile(file.0, &mut io, buf.as_ptr().cast(), (header + w.len() * 2) as u32, FileRenameInformation)
+    };
+    if status < 0 {
+        return Err(format!("rename to {name}: NTSTATUS 0x{:08X}", status as u32));
+    }
+    Ok(())
+}
+
+fn delete_by_handle(file: &Handle) -> Result<(), String> {
+    let info = FILE_DISPOSITION_INFO { DeleteFile: 1 };
+    if unsafe { SetFileInformationByHandle(file.0, FileDispositionInfo, (&info as *const FILE_DISPOSITION_INFO).cast(), std::mem::size_of::<FILE_DISPOSITION_INFO>() as u32) } == 0 {
+        return Err(std::io::Error::last_os_error().to_string());
+    }
+    Ok(())
+}
+
+/// Gives an existing folder (a machine's own folder on the host) an owner and protected DACL from SDDL.
+pub fn protect_folder(path: &Path, sddl: &str) -> Result<(), String> {
+    let h = unsafe {
+        CreateFileW(wide(&path.to_string_lossy()).as_ptr(), WRITE_DAC | WRITE_OWNER | READ_CONTROL | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE,
+            std::ptr::null(), OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, std::ptr::null_mut())
+    };
+    if h == INVALID_HANDLE_VALUE {
+        return Err(format!("open {}: {}", path.display(), std::io::Error::last_os_error()));
+    }
+    let h = Handle(h);
+    if is_link(h.0)? {
+        return Err(format!("{} is a link", path.display()));
+    }
+    apply_sddl(&h, sddl, &path.to_string_lossy())
 }
 
 /// Checks by handle that every part of an existing path is a plain folder or file, never a link, and returns the
@@ -216,6 +305,25 @@ mod tests {
             assert!(!a.to_lowercase().contains("users") && !a.contains("Everyone"), "{a}");
         }
         assert_eq!(fs::read(root.join(r"ProgramData\GpuVM\Agent\secret")).unwrap(), [7u8; 32]);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_file_prepared_and_held_open_at_the_target_never_sees_the_secret() {
+        use std::io::Read;
+        let root = std::env::temp_dir().join(format!("gpuvm-safe-held-{}", std::process::id()));
+        fs::create_dir_all(root.join(r"Agent")).unwrap();
+        fs::write(root.join(r"Agent\secret"), b"planted").unwrap();
+        let mut held = fs::File::open(root.join(r"Agent\secret")).unwrap();
+        // Windows won't replace a file someone holds open: the write fails instead of exposing anything.
+        assert!(write_file_protected(&root, Path::new(r"Agent\secret"), &[9u8; 32], Some("O:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)")).is_err());
+        let mut seen = Vec::new();
+        held.read_to_end(&mut seen).unwrap();
+        assert_eq!(seen, b"planted");
+        assert_eq!(fs::read_dir(root.join("Agent")).unwrap().count(), 1, "no temporary file left");
+        drop(held);
+        write_file_protected(&root, Path::new(r"Agent\secret"), &[9u8; 32], Some("O:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)")).unwrap();
+        assert_eq!(fs::read(root.join(r"Agent\secret")).unwrap(), [9u8; 32], "replaced once nobody holds it");
         let _ = fs::remove_dir_all(&root);
     }
 }

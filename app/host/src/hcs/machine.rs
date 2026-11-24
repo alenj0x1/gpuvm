@@ -138,6 +138,8 @@ pub fn create(root: &Path, name: &str, template_layer: &Path, memory_mb: u64, cp
         return Err(format!("{} already exists", dir.display()));
     }
     fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+    // The service writes logs here as SYSTEM: nobody but SYSTEM and administrators may plant links in it.
+    super::safe::protect_folder(&dir, "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)")?;
     let m = Machine { name: name.into(), dir: dir.clone(), memory_mb, cpus, mac: net::new_mac(), gpu, services, endpoint: None, vm_id: None };
     let made = (|| {
         disk::create_differencing(&m.disk(), template_layer)?;
