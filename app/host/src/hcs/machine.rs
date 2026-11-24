@@ -189,9 +189,14 @@ pub fn start(m: &mut Machine) -> Result<Started, String> {
     if let Some(old) = m.endpoint.take() {
         let _ = net::delete_endpoint(&old);
     }
-    grant_all(m)?;
-    net::ensure_network()?;
-    let endpoint = net::create_endpoint(&m.mac)?;
+    grant_all(m).inspect_err(|_| revoke_all(m))?;
+    let endpoint = match net::ensure_network().and_then(|_| net::create_endpoint(&m.mac)) {
+        Ok(e) => e,
+        Err(e) => {
+            revoke_all(m);
+            return Err(e);
+        }
+    };
     m.endpoint = Some(endpoint.id.clone());
     m.save()?;
     let started = (|| {
@@ -208,6 +213,7 @@ pub fn start(m: &mut Machine) -> Result<Started, String> {
             let _ = net::delete_endpoint(&endpoint.id);
             m.endpoint = None;
             let _ = m.save();
+            revoke_all(m);
             return Err(e);
         }
     };
@@ -217,20 +223,32 @@ pub fn start(m: &mut Machine) -> Result<Started, String> {
 
 /// Turns the machine off at once (like pulling the plug) and frees its network port.
 pub fn power_off(m: &mut Machine) -> Result<(), String> {
+    let mut result = Ok(());
     if let Ok(sys) = ops::System::open(&m.system_id()) {
-        sys.terminate().map_err(|e| e.to_string())?;
+        if let Err(e) = sys.terminate() {
+            // A system that already stopped by itself is off: only a machine still running is a failure.
+            if matches!(sys.state(), Ok(Some(ref s)) if s == "Running" || s == "Paused") {
+                result = Err(e.to_string());
+            }
+        }
     }
     if let Some(id) = m.endpoint.take() {
         let _ = net::delete_endpoint(&id);
         m.save()?;
     }
-    Ok(())
+    result
 }
 
 /// Deletes a machine that is off: its folder, disk and the access its disks gave it.
 pub fn delete(m: &Machine) -> Result<(), String> {
     if running(m).is_some() {
         return Err(format!("{} is running; turn it off first", m.name));
+    }
+    if let Ok(stale) = ops::System::open(&m.system_id()) {
+        let _ = stale.terminate();
+    }
+    if let Some(id) = &m.endpoint {
+        let _ = net::delete_endpoint(id);
     }
     revoke_all(m);
     fs::remove_dir_all(&m.dir).map_err(|e| format!("delete {}: {e}", m.dir.display()))
