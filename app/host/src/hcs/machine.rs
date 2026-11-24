@@ -3,8 +3,7 @@
 //! (`<root>\<name>\hcs-machine.json`) and the system is created from it at every start.
 
 use std::fs;
-use std::os::windows::fs::MetadataExt;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
@@ -12,7 +11,6 @@ use super::spec::{gpu_request, HvService, MachineSpec, Nic};
 use super::{disk, net, ops};
 
 const RECORD: &str = "hcs-machine.json";
-const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Machine {
@@ -259,29 +257,10 @@ pub fn delete(m: &Machine) -> Result<(), String> {
     fs::remove_dir_all(&m.dir).map_err(|e| format!("delete {}: {e}", m.dir.display()))
 }
 
-/// Writes a file into a Windows volume of a machine that is off, refusing any link along the path: the guest
-/// controls its own disk and could point a junction at a host folder. The check and the write are separate steps,
-/// so a host user who can reach the attached volume could swap a folder in between; before the service calls this,
-/// it must walk the path by handle (open each part with FILE_FLAG_OPEN_REPARSE_POINT, relative to its parent).
+/// Writes a file into a Windows volume of a machine that is off. The guest controls its own disk and could point a
+/// junction at a host folder, so the path is walked by handle without following links (`safe::write_file`).
 pub fn write_offline(volume: &Path, relative: &Path, bytes: &[u8]) -> Result<(), String> {
-    let mut cur = volume.to_path_buf();
-    let parts: Vec<_> = relative.components().collect();
-    if parts.is_empty() || parts.iter().any(|c| !matches!(c, Component::Normal(_))) {
-        return Err(format!("not a plain relative path: {}", relative.display()));
-    }
-    for (i, part) in parts.iter().enumerate() {
-        cur.push(part);
-        match fs::symlink_metadata(&cur) {
-            Ok(meta) if meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 => {
-                return Err(format!("{} is a link; GpuVM won't write through it", cur.display()));
-            }
-            Ok(meta) if i + 1 < parts.len() && !meta.is_dir() => return Err(format!("{} is not a folder", cur.display())),
-            Ok(_) => {}
-            Err(_) if i + 1 < parts.len() => fs::create_dir(&cur).map_err(|e| format!("create {}: {e}", cur.display()))?,
-            Err(_) => {}
-        }
-    }
-    fs::write(&cur, bytes).map_err(|e| format!("write {}: {e}", cur.display()))
+    super::safe::write_file(volume, relative, bytes)
 }
 
 #[cfg(test)]
