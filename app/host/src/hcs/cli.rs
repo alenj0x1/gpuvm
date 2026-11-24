@@ -11,7 +11,64 @@ const USAGE: &str = "usage: gpuvm-host hcs create <root> <name> <template-layer>
        gpuvm-host hcs start|state|off|delete <root> <name>
        gpuvm-host hcs write <root> <name> <path-in-guest> <host-file>
        gpuvm-host hcs list <root>
+       gpuvm-host hcs install-agent <root> <name> <gpuvm-agent.exe>
+       gpuvm-host hcs ask <machine> <method> [<params-json>] [--blob <file>] [--out <file>] [--timeout <s>]
        gpuvm-host hcs gpus | network-delete";
+
+/// Sends one command to the host service's administrative pipe (SYSTEM and administrators only) and reads the reply.
+fn admin_pipe(cmd: &str, args: Value) -> Result<Value, String> {
+    use std::io::{BufRead, BufReader, Write};
+    let pipe = std::fs::OpenOptions::new().read(true).write(true).open(crate::agent_pipe::PIPE)
+        .map_err(|e| format!("GpuVM's service pipe: {e} (is the service running, and this shell elevated?)"))?;
+    let mut w = &pipe;
+    writeln!(w, "{}", json!({ "id": 1, "cmd": cmd, "args": args })).map_err(|e| e.to_string())?;
+    let mut line = String::new();
+    BufReader::new(&pipe).read_line(&mut line).map_err(|e| e.to_string())?;
+    serde_json::from_str(&line).map_err(|e| format!("reply: {e}"))
+}
+
+fn ask(args: &[String]) -> Result<Value, String> {
+    let machine = arg(args, 1)?;
+    let method = arg(args, 2)?;
+    let mut params = json!({});
+    let (mut blob, mut out, mut timeout) = (None, None, 60u64);
+    let mut i = 3;
+    if let Some(p) = args.get(3).filter(|a| !a.starts_with("--")) {
+        params = serde_json::from_str(p).map_err(|e| format!("params: {e}"))?;
+        i = 4;
+    }
+    while i < args.len() {
+        match args[i].as_str() {
+            "--blob" => { blob = Some(std::fs::read(arg(args, i + 1)?).map_err(|e| e.to_string())?); i += 2; }
+            "--out" => { out = Some(PathBuf::from(arg(args, i + 1)?)); i += 2; }
+            "--timeout" => { timeout = arg(args, i + 1)?.parse().map_err(|_| "timeout must be seconds")?; i += 2; }
+            _ => return Err(USAGE.into()),
+        }
+    }
+    let mut a = json!({ "Name": machine, "Method": method, "Params": params, "TimeoutSec": timeout });
+    if let Some(b) = blob {
+        a["Blob"] = json!(crate::wire::base64(&b));
+    }
+    let reply = admin_pipe("Invoke-GpuVMAgent", a)?;
+    if reply["ok"] != json!(true) {
+        return Err(format!("{} {}", reply["code"].as_str().unwrap_or(""), reply["error"].as_str().unwrap_or("the service refused the request")));
+    }
+    // The pipe answers {ok, data: [<the agent's reply>]}: hand back the agent's reply itself.
+    let mut inner = reply["data"][0].clone();
+    if let Some(path) = out {
+        // Small results come inline as base64; larger ones the service leaves in a file of its own.
+        let bytes = if let Some(b64) = inner["blob"].as_str() {
+            crate::wire::unbase64(b64).ok_or("the reply's blob is not base64")?
+        } else if let Some(saved) = inner["blobPath"].as_str() {
+            std::fs::read(saved).map_err(|e| format!("{saved}: {e}"))?
+        } else {
+            return Err("the reply carries no file".into());
+        };
+        std::fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+        inner["blob"] = json!(format!("saved to {}", path.display()));
+    }
+    Ok(inner)
+}
 
 fn arg(args: &[String], i: usize) -> Result<&str, String> {
     args.get(i).map(String::as_str).ok_or_else(|| USAGE.to_string())
@@ -32,6 +89,9 @@ fn run(args: &[String]) -> Result<Value, String> {
     let action = arg(args, 0)?;
     if action == "gpus" {
         return Ok(json!({ "gpus": ops::partitionable_gpus() }));
+    }
+    if action == "ask" {
+        return ask(args);
     }
     if action == "network-delete" {
         if super::net::network_exists() {
@@ -82,6 +142,12 @@ fn run(args: &[String]) -> Result<Value, String> {
             let mut m = machine::load(&root, name)?;
             machine::power_off(&mut m)?;
             Ok(json!({ "off": true }))
+        }
+        "install-agent" => {
+            let mut m = machine::load(&root, name)?;
+            let t = std::time::Instant::now();
+            let vm_id = machine::install_agent(&mut m, Path::new(arg(args, 3)?))?;
+            Ok(json!({ "vmId": vm_id, "ms": t.elapsed().as_millis() as u64 }))
         }
         "delete" => {
             let m = machine::load(&root, name)?;
