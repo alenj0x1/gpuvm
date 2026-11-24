@@ -2,6 +2,7 @@
 //! the backend for editions without Hyper-V (labs/065-hcs-backend).
 #![allow(dead_code)]
 
+pub mod disk;
 mod ops;
 pub mod spec;
 
