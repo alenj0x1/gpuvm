@@ -1,5 +1,9 @@
-//! GpuVM's own network for HCS machines (Host Compute Network): an ICS network like Hyper-V's Default Switch, with
-//! DHCP, DNS and NAT, which exists on editions without Hyper-V.
+//! GpuVM's own networks for HCS machines (Host Compute Network), which exist on editions without Hyper-V:
+//! - "GpuVM", an ICS network like Hyper-V's Default Switch (DHCP, DNS and NAT), for machines that are not isolated;
+//! - one Internal network per isolated machine, "GpuVM-<machine>" (no NAT, no forwarding): its only other member is
+//!   the host, locked by the host's filters (wfp.rs), so isolated machines reach neither the LAN nor each other.
+//!   They reach the internet only through the relay (relay.rs).
+//! Client Windows does not enforce HCN endpoint ACLs and its NAT engines skip every filter (labs 070-072).
 
 use std::net::Ipv4Addr;
 
@@ -75,7 +79,16 @@ pub fn network_document(subnet: [u8; 3]) -> Value {
 
 /// The first candidate subnet that overlaps none of the host's IPv4 networks.
 pub fn pick_subnet(host: &[(Ipv4Addr, u8)]) -> Option<[u8; 3]> {
-    CANDIDATES.into_iter().find(|c| {
+    pick_from(CANDIDATES.into_iter(), host)
+}
+
+/// /24s for isolated machines' networks, one each.
+fn isolated_candidates() -> impl Iterator<Item = [u8; 3]> {
+    (0..=255u8).map(|n| [172, 29, n]).chain((0..=255u8).map(|n| [10, 229, n]))
+}
+
+fn pick_from(mut candidates: impl Iterator<Item = [u8; 3]>, host: &[(Ipv4Addr, u8)]) -> Option<[u8; 3]> {
+    candidates.find(|c| {
         let ours = u32::from(Ipv4Addr::new(c[0], c[1], c[2], 0));
         host.iter().all(|(addr, len)| {
             let len = (*len).min(32);
@@ -157,10 +170,201 @@ pub fn delete_network() -> Result<(), String> {
     check(hr, record, "delete GpuVM's network")
 }
 
+fn open_network(id: &GUID) -> Option<*mut core::ffi::c_void> {
+    let mut net: *mut core::ffi::c_void = std::ptr::null_mut();
+    let mut record: PWSTR = std::ptr::null_mut();
+    let hr = unsafe { HcnOpenNetwork(id, &mut net, &mut record) };
+    take(record);
+    (hr >= 0 && !net.is_null()).then_some(net)
+}
+
+fn network_properties(id: &GUID, what: &str) -> Result<Value, String> {
+    let net = open_network(id).ok_or_else(|| format!("{what} doesn't exist"))?;
+    let query = wide(r#"{"SchemaVersion":{"Major":2,"Minor":0}}"#);
+    let mut props: PWSTR = std::ptr::null_mut();
+    let mut record: PWSTR = std::ptr::null_mut();
+    let hr = unsafe { HcnQueryNetworkProperties(net, query.as_ptr(), &mut props, &mut record) };
+    unsafe { HcnCloseNetwork(net) };
+    let text = take(props);
+    check(hr, record, &format!("read {what}"))?;
+    serde_json::from_str(&text).map_err(|e| format!("network properties: {e}"))
+}
+
+/// The isolated network of machine `name`: its id comes from the name, so it is found again after a crash.
+pub fn isolated_network_id(name: &str) -> GUID {
+    let h = crate::wire::sha256(format!("gpuvm-isolated-network/{name}").as_bytes());
+    let mut v = u128::from_be_bytes(h[..16].try_into().unwrap());
+    v = (v & !(0xF << 76)) | (0x5 << 76);
+    v = (v & !(0x3 << 62)) | (0x2 << 62);
+    GUID::from_u128(v)
+}
+
+/// The host's adapter on it is "vEthernet (GpuVM-<name>)".
+pub fn isolated_network_name(name: &str) -> String {
+    format!("{NETWORK_NAME}-{name}")
+}
+
+pub fn isolated_network_document(name: &str, subnet: [u8; 3]) -> Value {
+    let prefix = format!("{}.{}.{}", subnet[0], subnet[1], subnet[2]);
+    json!({
+        "SchemaVersion": { "Major": 2, "Minor": 0 },
+        "Name": isolated_network_name(name),
+        "Type": "Internal",
+        "Ipams": [{ "Type": "Static", "Subnets": [{ "IpAddressPrefix": format!("{prefix}.0/24") }] }]
+    })
+}
+
+pub fn subnet_text(s: [u8; 3]) -> String {
+    format!("{}.{}.{}", s[0], s[1], s[2])
+}
+
+pub fn parse_subnet(s: &str) -> Option<[u8; 3]> {
+    let p: Vec<u8> = s.split('.').map(|x| x.parse().ok()).collect::<Option<_>>()?;
+    (p.len() == 3).then(|| [p[0], p[1], p[2]])
+}
+
+/// The address of `n` on a /24.
+pub fn host_part(subnet: [u8; 3], n: u8) -> String {
+    Ipv4Addr::new(subnet[0], subnet[1], subnet[2], n).to_string()
+}
+
+/// A fresh isolated network for machine `name` (one left by a crash is removed first), on `preferred` if the host
+/// has no network there, and the host's filters on its adapter. Returns the subnet: the host is .1, the machine .2.
+pub fn create_isolated_network(name: &str, preferred: Option<[u8; 3]>) -> Result<[u8; 3], String> {
+    let _lock = super::wfp::HostLock::take()?;
+    let id = isolated_network_id(name);
+    if open_network(&id).map(|n| unsafe { HcnCloseNetwork(n) }).is_some() {
+        delete_isolated_network(name)?;
+    }
+    let host = host_networks();
+    let subnet = preferred
+        .filter(|p| pick_from(std::iter::once(*p), &host).is_some())
+        .or_else(|| pick_from(isolated_candidates(), &host))
+        .ok_or("every subnet GpuVM can use for isolated machines is already taken on this PC")?;
+    let doc = wide(&isolated_network_document(name, subnet).to_string());
+    let mut net: *mut core::ffi::c_void = std::ptr::null_mut();
+    let mut record: PWSTR = std::ptr::null_mut();
+    let hr = unsafe { HcnCreateNetwork(&id, doc.as_ptr(), &mut net, &mut record) };
+    if !net.is_null() {
+        unsafe { HcnCloseNetwork(net) };
+    }
+    check(hr, record, "create the machine's isolated network")?;
+    // The filters go on this network's own adapter, found by name. The lock is held until it has its address, so
+    // the next start sees the subnet taken; the address must be on no other adapter.
+    let host_ip = host_part(subnet, 1);
+    let alias = host_adapter(name);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    let locked = loop {
+        let found = super::wfp::interface_by_alias(&alias).and_then(|(luid, index)| {
+            match super::wfp::interfaces_with(&host_ip).as_slice() {
+                [only] if *only == luid => super::wfp::isolate_interface(luid, index),
+                [] => Err(format!("{alias} has no address yet")),
+                _ => Err(format!("{host_ip} is on more than one host adapter")),
+            }
+        });
+        match found {
+            Ok(()) => break Ok(()),
+            Err(e) if std::time::Instant::now() > deadline => break Err(e),
+            Err(_) => std::thread::sleep(std::time::Duration::from_millis(250)),
+        }
+    };
+    if let Err(e) = locked {
+        let _ = delete_isolated_network(name);
+        return Err(e);
+    }
+    Ok(subnet)
+}
+
+/// Removes machine `name`'s isolated network and the host's filters on it (nothing to do if it is gone).
+pub fn delete_isolated_network(name: &str) -> Result<(), String> {
+    let _lock = super::wfp::HostLock::take()?;
+    let id = isolated_network_id(name);
+    if open_network(&id).map(|n| unsafe { HcnCloseNetwork(n) }).is_none() {
+        return Ok(());
+    }
+    if let Ok((luid, _)) = super::wfp::interface_by_alias(&host_adapter(name)) {
+        let _ = super::wfp::release_interface(luid);
+    }
+    let mut record: PWSTR = std::ptr::null_mut();
+    let hr = unsafe { HcnDeleteNetwork(&id, &mut record) };
+    check(hr, record, "delete the machine's isolated network")?;
+    // Filters whose adapter was already gone (it couldn't be found by name) go now, not at the next service start.
+    let _ = super::wfp::sweep();
+    Ok(())
+}
+
+/// The host's adapter on machine `name`'s isolated network.
+pub fn host_adapter(name: &str) -> String {
+    format!("vEthernet ({})", isolated_network_name(name))
+}
+
+/// Every network GpuVM made (its ICS network and the isolated machines' ones), by id.
+fn gpuvm_networks() -> Vec<GUID> {
+    let query = wide("{}");
+    let mut list: PWSTR = std::ptr::null_mut();
+    let mut record: PWSTR = std::ptr::null_mut();
+    let hr = unsafe { HcnEnumerateNetworks(query.as_ptr(), &mut list, &mut record) };
+    take(record);
+    let text = take(list);
+    if hr < 0 {
+        return Vec::new();
+    }
+    let ids: Vec<String> = serde_json::from_str(&text).unwrap_or_default();
+    ids.iter()
+        .filter_map(|i| parse_guid(i))
+        .filter(|g| guid_string(g) == guid_string(&NETWORK_ID) || network_properties(g, "network").is_ok_and(|v| {
+            v["Name"].as_str().is_some_and(|n| n.starts_with(&format!("{NETWORK_NAME}-")) && v["Type"].as_str() == Some("Internal"))
+        }))
+        .collect()
+}
+
+/// A port on machine `name`'s isolated network, with the machine's fixed address (.2).
+pub fn create_isolated_endpoint(mac: &str, name: &str, subnet: [u8; 3]) -> Result<Endpoint, String> {
+    let id = new_guid();
+    let settings = json!({
+        "SchemaVersion": { "Major": 2, "Minor": 0 },
+        "HostComputeNetwork": guid_string(&isolated_network_id(name)),
+        "MacAddress": mac,
+        "IpConfigurations": [{ "IpAddress": host_part(subnet, 2), "PrefixLength": 24 }]
+    });
+    let doc = wide(&settings.to_string());
+    let net = open_network(&isolated_network_id(name)).ok_or("the machine's isolated network doesn't exist")?;
+    let mut ep: *mut core::ffi::c_void = std::ptr::null_mut();
+    let mut record: PWSTR = std::ptr::null_mut();
+    let hr = unsafe { HcnCreateEndpoint(net, &id, doc.as_ptr(), &mut ep, &mut record) };
+    unsafe {
+        if !ep.is_null() {
+            HcnCloseEndpoint(ep);
+        }
+        HcnCloseNetwork(net);
+    }
+    check(hr, record, "create the machine's isolated network port")?;
+    Ok(Endpoint { id: guid_string(&id), mac: mac.to_string() })
+}
+
+/// Deletes every network GpuVM made (ICS and isolated ones) with the host's filters; for tests and uninstall.
+pub fn delete_all_networks() -> Result<(), String> {
+    for id in gpuvm_networks() {
+        if guid_string(&id) == guid_string(&NETWORK_ID) {
+            delete_network()?;
+        } else if let Ok(v) = network_properties(&id, "network") {
+            let name = v["Name"].as_str().unwrap_or("").trim_start_matches(&format!("{NETWORK_NAME}-")).to_string();
+            delete_isolated_network(&name)?;
+        }
+    }
+    Ok(())
+}
+
 /// One machine's port on the network. The machine's document names it by id with the same MAC.
 pub struct Endpoint {
     pub id: String,
     pub mac: String,
+}
+
+/// The host's address on GpuVM's network (the subnet's gateway, where its DHCP and DNS answer).
+pub fn gateway() -> Result<String, String> {
+    let v = network_properties(&NETWORK_ID, "GpuVM's network")?;
+    v["Ipams"][0]["Subnets"][0]["Routes"][0]["NextHop"].as_str().map(String::from).ok_or_else(|| "GpuVM's network has no gateway".into())
 }
 
 pub fn create_endpoint(mac: &str) -> Result<Endpoint, String> {
@@ -182,6 +386,22 @@ pub fn create_endpoint(mac: &str) -> Result<Endpoint, String> {
     }
     check(hr, record, "create the machine's network port")?;
     Ok(Endpoint { id: guid_string(&id), mac: mac.to_string() })
+}
+
+pub fn endpoint_properties(id: &str) -> Result<Value, String> {
+    let g = parse_guid(id).ok_or_else(|| format!("not an endpoint id: {id}"))?;
+    let mut ep: *mut core::ffi::c_void = std::ptr::null_mut();
+    let mut record: PWSTR = std::ptr::null_mut();
+    let hr = unsafe { HcnOpenEndpoint(&g, &mut ep, &mut record) };
+    check(hr, record, "open the endpoint")?;
+    let query = wide(r#"{"SchemaVersion":{"Major":2,"Minor":0}}"#);
+    let mut props: PWSTR = std::ptr::null_mut();
+    let mut record: PWSTR = std::ptr::null_mut();
+    let hr = unsafe { HcnQueryEndpointProperties(ep, query.as_ptr(), &mut props, &mut record) };
+    unsafe { HcnCloseEndpoint(ep) };
+    let text = take(props);
+    check(hr, record, "read the endpoint")?;
+    serde_json::from_str(&text).map_err(|e| e.to_string())
 }
 
 fn endpoint_network(id: &GUID) -> Option<String> {
@@ -210,7 +430,7 @@ pub fn delete_endpoint(id: &str) -> Result<(), String> {
     let g = parse_guid(id).ok_or_else(|| format!("not an endpoint id: {id}"))?;
     match endpoint_network(&g) {
         None => return Ok(()),
-        Some(net) if net != guid_string(&NETWORK_ID) => return Err(format!("endpoint {id} is not on GpuVM's network")),
+        Some(net) if !gpuvm_networks().iter().any(|g| guid_string(g) == net) => return Err(format!("endpoint {id} is not on GpuVM's network")),
         Some(_) => {}
     }
     let mut record: PWSTR = std::ptr::null_mut();
@@ -249,6 +469,22 @@ mod tests {
         assert_eq!(pick_subnet(&[(Ipv4Addr::new(192, 168, 165, 130), 25)]), Some([192, 168, 185]));
         let all: Vec<_> = CANDIDATES.iter().map(|c| (Ipv4Addr::new(c[0], c[1], c[2], 1), 24)).collect();
         assert_eq!(pick_subnet(&all), None);
+    }
+
+    #[test]
+    fn each_isolated_machine_has_its_own_internal_network() {
+        let d = isolated_network_document("m1", [172, 29, 4]);
+        assert_eq!(d["Type"], json!("Internal"));
+        assert_eq!(d["Name"], json!("GpuVM-m1"));
+        assert!(d["Ipams"][0]["Subnets"][0]["Routes"].is_null(), "no gateway: nothing is routed");
+        assert_eq!(guid_string(&isolated_network_id("m1")), guid_string(&isolated_network_id("m1")));
+        assert_ne!(guid_string(&isolated_network_id("m1")), guid_string(&isolated_network_id("m2")));
+        assert_ne!(guid_string(&isolated_network_id("m1")), guid_string(&NETWORK_ID));
+        assert_eq!(parse_subnet(&subnet_text([172, 29, 4])), Some([172, 29, 4]));
+        assert_eq!(parse_subnet("172.29"), None);
+        assert_eq!(host_part([172, 29, 4], 2), "172.29.4.2");
+        let busy: Vec<_> = (0..=255u8).map(|n| (Ipv4Addr::new(172, 29, n, 1), 24)).collect();
+        assert_eq!(pick_from(isolated_candidates(), &busy), Some([10, 229, 0]));
     }
 
     #[test]

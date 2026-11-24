@@ -113,6 +113,11 @@ impl Sock {
     pub fn shutdown(&self) {
         unsafe { shutdown(self.0, SD_BOTH) };
     }
+
+    /// Ends the sending direction only: the peer reads end-of-stream and can still send.
+    pub fn shutdown_send(&self) {
+        unsafe { shutdown(self.0, SD_SEND) };
+    }
 }
 
 impl Read for &Sock {

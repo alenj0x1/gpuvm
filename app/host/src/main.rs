@@ -282,6 +282,7 @@ fn main() {
         #[cfg(debug_assertions)]
         Some("broker") => {
             agent::start();
+            hcs::relay::start();
             loop {
                 std::thread::sleep(Duration::from_secs(3600));
             }

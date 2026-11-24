@@ -38,7 +38,12 @@ impl Drop for Handle {
 }
 
 fn create(path: &Path, size_bytes: u64, parent: Option<&Path>) -> Result<(), String> {
+    create_from(path, size_bytes, parent, None)
+}
+
+fn create_from(path: &Path, size_bytes: u64, parent: Option<&Path>, source: Option<&Path>) -> Result<(), String> {
     let parent_w = parent.map(wide_path);
+    let source_w = source.map(wide_path);
     let mut params: CREATE_VIRTUAL_DISK_PARAMETERS = unsafe { std::mem::zeroed() };
     params.Version = CREATE_VIRTUAL_DISK_VERSION_2;
     unsafe {
@@ -47,6 +52,10 @@ fn create(path: &Path, size_bytes: u64, parent: Option<&Path>) -> Result<(), Str
         if let Some(p) = &parent_w {
             v2.ParentPath = p.as_ptr();
             v2.ParentVirtualStorageType = any_type();
+        }
+        if let Some(s) = &source_w {
+            v2.SourcePath = s.as_ptr();
+            v2.SourceVirtualStorageType = any_type();
         }
     }
     let path_w = wide_path(path);
@@ -62,6 +71,11 @@ fn create(path: &Path, size_bytes: u64, parent: Option<&Path>) -> Result<(), Str
 /// A new dynamically expanding VHDX of `size_bytes` (it only takes what is written).
 pub fn create_dynamic(path: &Path, size_bytes: u64) -> Result<(), String> {
     create(path, size_bytes, None)
+}
+
+/// A new dynamic VHDX at `dest` with everything `source` shows, its parents included: a disk that stands alone.
+pub fn flatten(source: &Path, dest: &Path) -> Result<(), String> {
+    create_from(dest, 0, None, Some(source))
 }
 
 /// A new VHDX that records only the changes on top of `parent`, which must not change afterwards.
@@ -106,6 +120,28 @@ fn absolute_entry(list: &[u16]) -> Option<PathBuf> {
     list[..end].split(|&c| c == 0).map(String::from_utf16_lossy)
         .find(|s| s.starts_with(r"\\?\") || s.as_bytes().get(1) == Some(&b':'))
         .map(PathBuf::from)
+}
+
+/// The disk's virtual size (what Windows inside sees) and the bytes its file takes now.
+pub fn size_of(path: &Path) -> Result<(u64, u64), String> {
+    let disk = open(path, VIRTUAL_DISK_ACCESS_GET_INFO, OPEN_VIRTUAL_DISK_FLAG_NO_PARENTS)?;
+    let mut info: GET_VIRTUAL_DISK_INFO = unsafe { std::mem::zeroed() };
+    info.Version = GET_VIRTUAL_DISK_INFO_SIZE;
+    let mut size = std::mem::size_of::<GET_VIRTUAL_DISK_INFO>() as u32;
+    let code = unsafe { GetVirtualDiskInformation(disk.0, &mut size, &mut info, std::ptr::null_mut()) };
+    win32(code, "read size of", path)?;
+    let s = unsafe { info.Anonymous.Size };
+    Ok((s.VirtualSize, s.PhysicalSize))
+}
+
+/// Grows a disk's virtual size (the partition inside is grown separately).
+pub fn resize(path: &Path, new_size: u64) -> Result<(), String> {
+    let disk = open(path, VIRTUAL_DISK_ACCESS_ALL, OPEN_VIRTUAL_DISK_FLAG_NONE)?;
+    let mut params: RESIZE_VIRTUAL_DISK_PARAMETERS = unsafe { std::mem::zeroed() };
+    params.Version = RESIZE_VIRTUAL_DISK_VERSION_1;
+    params.Anonymous.Version1.NewSize = new_size;
+    let code = unsafe { ResizeVirtualDisk(disk.0, RESIZE_VIRTUAL_DISK_FLAG_NONE, &params, std::ptr::null()) };
+    win32(code, "resize", path)
 }
 
 /// A disk attached to this PC without a drive letter, detached when dropped.
@@ -273,6 +309,9 @@ mod live {
             assert!(attached.volumes(Duration::from_millis(500)).is_empty(), "a blank disk has no volume");
         }
         assert!(attach(&child, false).is_ok(), "detached on drop, so it can be attached again");
+        assert_eq!(size_of(&base).unwrap().0, 64 << 20);
+        resize(&base, 128 << 20).unwrap();
+        assert_eq!(size_of(&base).unwrap().0, 128 << 20);
     }
 
     // GPUVM_TEST_LAYER = the newest layer of a GpuVM template; a throwaway child is attached, never the layer itself.

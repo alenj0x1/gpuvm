@@ -42,7 +42,7 @@ const METHODS: &[&str] = &["agent.info", "screen.capture", "screen.state", "scre
 const EVENTS: &[&str] = &["screen", "secure_desktop", "signed_in", "foreground", "error_box"];
 /// Machine-level methods (they run as SYSTEM in the guest): only the administrative pipe may call them, never the
 /// app's pipe or an agent client.
-const SYSTEM_METHODS: &[&str] = &["sys.info", "sys.exec", "sys.read", "sys.write", "sys.power"];
+const SYSTEM_METHODS: &[&str] = &["sys.info", "sys.exec", "sys.read", "sys.write", "sys.power", "sys.net", "sys.kvp"];
 
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
@@ -98,6 +98,12 @@ fn registrations() -> Vec<Reg> {
         out.push(Reg { vm_id, name: name.to_string(), folder: PathBuf::from(folder) });
     }
     out
+}
+
+fn is_hcs_registration(vm_id: &str) -> bool {
+    std::fs::read_to_string(agents_dir().join(vm_id).join("agent.json")).ok()
+        .and_then(|t| serde_json::from_str::<Value>(t.trim_start_matches('\u{feff}')).ok())
+        .is_some_and(|v| v["backend"].as_str() == Some("hcs"))
 }
 
 fn reg_by_id(vm_id: &str) -> Option<Reg> {
@@ -181,6 +187,8 @@ pub fn register_installed(vm_id: &str, name: &str, folder: &Path, secret: &[u8])
             return Err(format!("protect {}: Windows error {code}", dir.display()));
         }
     }
+    // The secret file is born owned by SYSTEM: an administrator running the CLI needs the restore privilege for that.
+    let _ = crate::win::enable_privilege("SeRestorePrivilege");
     store_secret(&vm_id, secret)?;
     let reg = json!({ "vmId": vm_id, "name": name, "folder": folder.display().to_string(), "backend": "hcs" });
     std::fs::write(agents_dir().join(&vm_id).join("agent.json"), reg.to_string()).map_err(|e| format!("agent.json: {e}"))
@@ -574,20 +582,31 @@ fn orphans(folders: &[(String, Duration)], existing: &[String]) -> Vec<String> {
 }
 
 pub fn sweep_registrations() -> Vec<String> {
-    let Some(existing) = hyperv_vm_ids() else {
-        log("agent: sweep skipped (Hyper-V's machines couldn't be listed)");
-        return Vec::new();
-    };
+    // HCS machines aren't Hyper-V's: their registrations stay while their machine record does.
+    let hcs_live: Vec<String> = registrations().into_iter()
+        .filter(|r| is_hcs_registration(&r.vm_id) && crate::hcs::machine::owner(&r.folder, &r.vm_id).is_some())
+        .map(|r| r.vm_id)
+        .collect();
+    let hyperv = hyperv_vm_ids();
+    if hyperv.is_none() {
+        log("agent: Hyper-V's machines couldn't be listed; only HCS registrations are checked");
+    }
+    let mut existing = hyperv.clone().unwrap_or_default();
+    existing.extend(hcs_live);
     let Ok(entries) = std::fs::read_dir(agents_dir()) else { return Vec::new() };
     let folders: Vec<(String, Duration)> = entries.flatten()
         .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+        // Without Hyper-V's list a Hyper-V registration can't be judged: only HCS ones are.
+        .filter(|e| hyperv.is_some() || is_hcs_registration(&e.file_name().to_string_lossy().to_lowercase()))
         .map(|e| {
             let age = e.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).unwrap_or_default();
             (e.file_name().to_string_lossy().to_string(), age)
         })
         .collect();
     let mut removed = Vec::new();
-    prune_made(&existing);
+    if hyperv.is_some() {
+        prune_made(&existing);
+    }
     for name in orphans(&folders, &existing) {
         match std::fs::remove_dir_all(agents_dir().join(&name)) {
             Ok(()) => {
@@ -768,6 +787,18 @@ fn serve_agent(sock: Sock, vm_id: String) {
         std::thread::spawn(move || {
             if let Ok((info, _)) = c.request("agent.info", &json!({}), None, Duration::from_secs(10), None) {
                 *lock(&c.info) = bounded(&info, 3);
+            }
+        });
+    }
+    // An HCS machine's network is set from the host's record each time its agent comes up (labs 070-073).
+    if let Some(params) = crate::hcs::machine::guest_network(&reg.folder, &vm_id) {
+        let (c, folder, name) = (conn.clone(), reg.folder.clone(), reg.name.clone());
+        std::thread::spawn(move || {
+            let r = c.request("sys.net", &params, None, Duration::from_secs(120), None);
+            let reg = Reg { vm_id: c.vm_id.clone(), name, folder };
+            match r {
+                Ok((v, _)) => vm_log(&reg, json!({ "event": "network", "mode": params["mode"], "result": v })),
+                Err((code, msg)) => vm_log(&reg, json!({ "event": "network", "mode": params["mode"], "error": code, "message": msg })),
             }
         });
     }
