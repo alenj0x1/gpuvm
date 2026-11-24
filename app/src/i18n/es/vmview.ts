@@ -129,7 +129,7 @@ export default {
   "Its folder and disk are renamed too. The viewer stays paired and shared disks stay connected.": "Cambian también su carpeta y su disco. El visor sigue emparejado y los discos compartidos siguen conectados.",
 
   "Delete {name}": "Eliminar {name}",
-  "The machine is removed from Hyper-V. This can't be undone.": "La máquina se quita de Hyper-V. Esto no se puede deshacer.",
+  "The machine is removed. This can't be undone.": "La máquina se quita. Esto no se puede deshacer.",
   "Keep the disk": "Conservar el disco",
   "You can use the .vhdx file again later.": "Puedes volver a usar el archivo .vhdx después.",
   "Delete the disk too": "Borrar también el disco",

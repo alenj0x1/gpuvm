@@ -1,4 +1,4 @@
-import type { AppInfo, InstalledApp, BaseInfo, CleanupLevel, HomeInfo, SharedDiskInfo, TemplateInfo, DiskInfo, DisplayMode, HostInfo, IsoFile, JobEvent, ProfileInfo, ProfileSettings, StreamSettings, VmOverview, AdminPrompt, HostMonitor, RestorePointList, ImportInfo } from "./types";
+import type { AppInfo, InstalledApp, BaseInfo, CleanupLevel, HomeInfo, SharedDiskInfo, TemplateInfo, DiskInfo, DisplayMode, HostInfo, IsoFile, JobEvent, Platform, ProfileInfo, ProfileSettings, StreamSettings, VmOverview, AdminPrompt, HostMonitor, RestorePointList, ImportInfo } from "./types";
 import * as mock from "./mock";
 import { t } from "./i18n";
 
@@ -12,6 +12,9 @@ async function ps<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T
 
 export const api = {
   overview: () => ps<VmOverview>("Get-GpuVMOverview"),
+  platform: () => ps<Platform>("Get-GpuVMPlatform").then((r) => r[0]),
+  enablePlatform: () => ps<{ enabled: boolean; restartNeeded: boolean }>("Enable-GpuVMPlatform", { Confirm: false }).then((r) => r[0]),
+  restartHost: () => ps("Restart-GpuVMHost", { Confirm: false }),
   adminPrompts: () => adminPromptsNow(),
   home: () => ps<HomeInfo>("Get-GpuVMHome").then((r) => r[0]),
   isos: () => ps<IsoFile>("Get-GpuVMIsoList"),

@@ -258,7 +258,7 @@ export function CreateDialog({ existing, host, job, error, template: initialTemp
             </nav>
 
             <div ref={bodyRef} className="create-body">
-              {section("name", t("Name and space"), t("Its name in GpuVM and Hyper-V, and the space it will live in."), (
+              {section("name", t("Name and space"), t("Its name and the space it will live in."), (
                 <div className="create-account pair">
                   <div className="field">
                     <label className="field-top" htmlFor="vm-name"><span>{t("Name")}</span></label>

@@ -139,7 +139,7 @@ export default {
   "Use letters, numbers or hyphens": "Usa letras, números o guiones",
   "Creating {name}": "Creando {name}",
   "You can close this window: progress continues in the sidebar.": "Puedes cerrar esta ventana: el avance sigue en la barra lateral.",
-  "Its name in GpuVM and Hyper-V, and the space it will live in.": "Cómo se llama en GpuVM y en Hyper-V, y el espacio donde va a estar.",
+  "Its name and the space it will live in.": "Cómo se llama y el espacio donde va a estar.",
   "A profile fills in everything below; change anything you like.": "Un perfil llena todo lo de abajo; puedes cambiar lo que quieras.",
   "Install Windows": "Instalar Windows",
   "From template": "Desde plantilla",

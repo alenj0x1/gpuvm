@@ -104,6 +104,12 @@ export async function ps(cmd: string, args: Record<string, unknown>): Promise<un
   if (scenario === "servicestopped") throw new Error("The GpuVM service is stopped.");
   if (scenario === "loading") return new Promise(() => {});
   switch (cmd) {
+    case "Get-GpuVMPlatform":
+      if (scenario === "noplatform") return [{ backend: "hcs", hyperV: false, platform: "Disabled", ready: false, restartPending: false, canEnable: true }];
+      if (scenario === "restartpending") return [{ backend: "hcs", hyperV: false, platform: "Enabled", ready: false, restartPending: true, canEnable: false }];
+      return [{ backend: "hyperv-gpup", hyperV: true, platform: "Enabled", ready: true, restartPending: false, canEnable: false }];
+    case "Enable-GpuVMPlatform":
+      return [{ enabled: true, restartNeeded: true }];
     case "Get-GpuVMOverview":
       if (scenario === "empty") return [];
       return vms.map((vm) => vm.state !== "Running" ? vm : {

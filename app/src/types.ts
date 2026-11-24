@@ -37,9 +37,21 @@ export interface AdminPrompt {
 
 export type StreamSettings = Partial<Pick<ClientSettings, "vsync" | "framePacing" | "mouse" | "codec" | "bitrateKbps">>;
 
+/** What the PC runs machines with (Get-GpuVMPlatform). */
+export interface Platform {
+  backend: "hyperv-gpup" | "hcs";
+  hyperV: boolean;
+  platform: "Enabled" | "Disabled" | "Unknown";
+  ready: boolean;
+  restartPending: boolean;
+  canEnable: boolean;
+}
+
 export interface VmOverview {
   id: string;
   name: string;
+  /** "hcs" for machines run by the Host Compute Service (no Hyper-V console). */
+  backend?: "hyperv-gpup" | "hcs" | string;
   state: VmState;
   managed: boolean;
   profile: string | null;

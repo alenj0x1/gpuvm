@@ -611,10 +611,13 @@ function Header({ vm, vms = [], busy, variant, startJob, run, onRemoved, onRenam
       : { label: t("Start and open"), icon: <IconPlayerPlay size={17} />, onClick: () => job("Connect-GpuVM", { Name: vm.name }) };
   } else {
     primary = running
-      ? { label: t("View console"), icon: <IconDeviceDesktop size={17} />, onClick: () => openConsole(vm.name) }
+      // A machine without Hyper-V has no console: its main action is shutting it down.
+      ? (vm.backend === "hcs"
+        ? { label: t("Shut down"), icon: <IconPower size={17} />, onClick: () => job("Invoke-GpuVMPower", { Name: vm.name, Action: "Shutdown" }) }
+        : { label: t("View console"), icon: <IconDeviceDesktop size={17} />, onClick: () => openConsole(vm.name) })
       : { label: t("Start"), icon: <IconPlayerPlay size={17} />, onClick: () => power("Start", t("Starting")) };
   }
-  const consoleIsPrimary = !vm.streaming && running;
+  const consoleIsPrimary = !vm.streaming && running && vm.backend !== "hcs";
   const locked = !!working;
 
   return (
@@ -663,7 +666,9 @@ function Header({ vm, vms = [], busy, variant, startJob, run, onRemoved, onRenam
             )}
             {!locked && !off && (
               <>
-                <button role="menuitem" onClick={() => job("Invoke-GpuVMPower", { Name: vm.name, Action: "Shutdown" })}><IconPower size={16} />{t("Shut down")}</button>
+                {!(vm.backend === "hcs" && !vm.streaming) && (
+                  <button role="menuitem" onClick={() => job("Invoke-GpuVMPower", { Name: vm.name, Action: "Shutdown" })}><IconPower size={16} />{t("Shut down")}</button>
+                )}
                 <button role="menuitem" className={confirmOff ? "danger" : ""}
                   onClick={() => confirmOff ? power("TurnOff", t("Forcing shutdown")) : setConfirmOff(true)}>
                   <IconPlugOff size={16} />{confirmOff ? t("Force: unsaved work is lost") : t("Force shutdown")}
@@ -680,7 +685,7 @@ function Header({ vm, vms = [], busy, variant, startJob, run, onRemoved, onRenam
                 <IconPlugOff size={16} />{confirmOff ? t("Force: unsaved work is lost") : t("Force shutdown")}
               </button>
             )}
-            {!consoleIsPrimary && (
+            {!consoleIsPrimary && vm.backend !== "hcs" && (
               <button role="menuitem" onClick={() => { setMenu(false); openConsole(vm.name); }}><IconDeviceDesktop size={16} />{t("View Hyper-V console")}</button>
             )}
             {!locked && vm.managed && vm.streaming && (
@@ -852,7 +857,7 @@ function ConfirmRemove({ vm, run, onClose, onRemoved }: { vm: VmOverview; run: P
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="dialog narrow" role="dialog" aria-modal="true" aria-label={t("Delete {name}", { name: vm.name })}>
         <div className="dialog-head"><MachineIcon name={vm.name} size={40} radius={10} /><h2>{t("Delete {name}", { name: vm.name })}</h2></div>
-        <p className="dialog-text">{t("The machine is removed from Hyper-V. This can't be undone.")}</p>
+        <p className="dialog-text">{t("The machine is removed. This can't be undone.")}</p>
         <div className="choice-list" role="radiogroup">
           <button role="radio" aria-checked={!deleteDisk} className={`choice ${!deleteDisk ? "on" : ""}`} onClick={() => setDeleteDisk(false)}>
             <span className="check">{!deleteDisk && <CheckMark />}</span>
