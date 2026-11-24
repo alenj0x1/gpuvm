@@ -5,7 +5,7 @@ description: Cómo GpuVM muestra la VM con la GPU — Sunshine, Virtual Display 
 
 import { Aside } from '@astrojs/starlight/components';
 
-La consola de Hyper-V solo muestra la pantalla básica de Hyper-V, no lo que dibuja la GPU. Para ver la VM con la GPU, GpuVM instala un servidor de streaming dentro de la VM y la muestra en su propio visor, dentro de la app.
+La consola de Hyper-V solo muestra la pantalla básica de Hyper-V, no lo que dibuja la GPU, y las máquinas sin Hyper-V no tienen consola. Para ver la VM con la GPU, GpuVM instala un servidor de streaming dentro de la VM y la muestra en su propio visor, dentro de la app.
 
 ## Componentes
 
@@ -31,7 +31,7 @@ Cada vez que haces **Encender y abrir**, GpuVM lee la lista de pantallas de Suns
 
 En GPUs NVIDIA, GpuVM además pone `nvenc_twopass` en `disabled`: NVENC codifica cada cuadro en una sola pasada, alrededor de 1 ms menos por cuadro. La latencia media de entrada baja de unos 13,4 a 11,4 ms. Las máquinas creadas antes lo reciben la próxima vez que se abren.
 
-Lo que dura dentro de la VM hasta que Windows se reinicia (modo de pantalla, captura, audio) se hace una vez por arranque y por una sola sesión de PowerShell Direct, y Windows se da por listo según el latido de Hyper-V. Abrir una VM ya encendida tarda unos 7 a 10 s hasta el primer cuadro; apagada, unos 55 s hasta la imagen, casi todo en que arranquen Windows y Sunshine (que prueba sus codificadores antes de que responda su API). **Abrir** espera la primera imagen del visor.
+Lo que dura dentro de la VM hasta que Windows se reinicia (modo de pantalla, captura, audio) se hace una vez por arranque, por una sola sesión de PowerShell Direct en Hyper-V o por el agente de GpuVM en las máquinas sin Hyper-V, y Windows se da por listo según el latido de Hyper-V o según el agente. Abrir una VM ya encendida tarda unos 7 a 10 s hasta el primer cuadro; apagada, unos 55 s hasta la imagen, casi todo en que arranquen Windows y Sunshine (que prueba sus codificadores antes de que responda su API). **Abrir** espera la primera imagen del visor.
 
 ## Captura
 
@@ -115,7 +115,7 @@ El visor reenvía los controles conectados al equipo, y Sunshine los crea dentro
 
 ## Audio
 
-Las VMs de generación 2 de Hyper-V no tienen tarjeta de sonido. GpuVM le da a la VM **su propio altavoz USB**: un pequeño servidor dentro de la VM (`GpuVMAudio.exe`) se presenta como un dispositivo de audio USB (48 kHz, estéreo), [usbip-win2](https://github.com/vadimgrn/usbip-win2) lo conecta y Windows lo maneja con su propio driver de audio USB, como si fuera hardware real. Aparece como **Altavoces (GpuVM Audio)** y Sunshine lo captura (`virtual_sink`).
+Las VMs de GpuVM, en Hyper-V (generación 2) o sin él, no tienen tarjeta de sonido. GpuVM le da a la VM **su propio altavoz USB**: un pequeño servidor dentro de la VM (`GpuVMAudio.exe`) se presenta como un dispositivo de audio USB (48 kHz, estéreo), [usbip-win2](https://github.com/vadimgrn/usbip-win2) lo conecta y Windows lo maneja con su propio driver de audio USB, como si fuera hardware real. Aparece como **Altavoces (GpuVM Audio)** y Sunshine lo captura (`virtual_sink`).
 
 - Nada sale de la VM: el servidor solo escucha en `127.0.0.1`, corre como `LOCAL SERVICE` y su programa vive en `C:\Program Files\GpuVM\Audio`, donde solo los administradores pueden escribir.
 - usbip-win2 instala solo su cliente, en silencio. Sus drivers están firmados por Microsoft: sin modo de prueba ni certificados propios. GpuVM comprueba ambas cosas y lo desinstala si alguna falla.

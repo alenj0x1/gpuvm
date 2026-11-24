@@ -1,10 +1,10 @@
 ---
 title: Architecture and extending
-description: How the app, the GpuVM service, the module, the backends, the viewer, the administrator prompt path and the security model fit together, and how to extend GpuVM.
+description: How the app, the GpuVM service, the module, the backends (Hyper-V and the Host Compute Service), the viewer, the administrator prompt path, network isolation and the security model fit together, and how to extend GpuVM.
 ---
 
 import Diagram from '../../components/Diagram.astro';
-import { adminPrompt, architecture, viewer } from '../../diagrams';
+import { adminPrompt, architecture, hcs, viewer } from '../../diagrams';
 
 ## Overview
 
@@ -14,12 +14,12 @@ import { adminPrompt, architecture, viewer } from '../../diagrams';
 
 | Path | Contents |
 |---|---|
-| `app/` | Desktop app: React UI in `app/src`, Tauri/Rust in `app/src-tauri`; the GpuVM service (`gpuvm-host.exe`) in `app/host`; the bundled PowerShell 7, pinned in `app/tools.json`. |
+| `app/` | Desktop app: React UI in `app/src`, Tauri/Rust in `app/src-tauri`; the GpuVM service (`gpuvm-host.exe`) in `app/host`, with the engine for machines without Hyper-V in `app/host/src/hcs`; the bundled PowerShell 7, pinned in `app/tools.json`. |
 | `src/GpuVM/` | The PowerShell 7 module: `Private/` (helpers), `Backends/` (one file per backend), `Public/` (one file per exported cmdlet). |
 | `src/bridge.ps1` | Bridge between the app and the module. |
 | `gpuvm.ps1` | CLI. See [CLI reference](/docs/cli/). |
 | `profiles/` | JSON [profiles](/docs/profiles/). |
-| `guest/` | Scripts that run inside the VM: first-boot setup, optimizations, streaming, audio, display resolution, capture mode, the administrator prompt watcher (`admin-prompt.ps1`), GpuVM's agent for [AI agents](/docs/agents/) (`agent/`) and `collect-info.ps1` for labs. |
+| `guest/` | Scripts that run inside the VM: first-boot setup, optimizations, streaming, audio, display resolution, capture mode, the administrator prompt watcher (`admin-prompt.ps1`), GpuVM's agent (`agent/`), for [AI agents](/docs/agents/) and for machines without Hyper-V, and `collect-info.ps1` for labs. |
 | `templates/` | `unattend.xml` template. |
 | `streaming/components.json` | Versions, URLs and SHA-256 of the streaming components and ViGEmBus. |
 | `viewer/` | Build of GpuVM's viewer, from the separate [`gpuvm-viewer`](https://github.com/alenj0x1/gpuvm-viewer) repository (not tracked here); the installer bundles it. |
@@ -45,7 +45,26 @@ A backend is how the GPU is given to the VM. Each one calls `Register-GpuVMBacke
 | `Rename` | name, new name, state | Renames a VM that is off with its files; undoes what it did if a step fails. Returns the new state. |
 | `Remove` | name, state, delete disk | Removes the VM. |
 
-Public cmdlets only talk to this interface. The current backend is `hyperv-gpup` (`Backends/HyperVGpuP.ps1`): it sets the processor, fixed memory, disables checkpoints, sets MMIO space, Secure Boot and TPM, connects the switch and adds the GPU partition adapter. GPU-P doesn't support checkpoints or saved state, so if the host shuts down the guest shuts down in order.
+Public cmdlets only talk to this interface. There are two backends:
+
+- `hyperv-gpup` (`Backends/HyperVGpuP.ps1`), where Windows has Hyper-V: it sets the processor, fixed memory, disables checkpoints, sets MMIO space, Secure Boot and TPM, connects the switch and adds the GPU partition adapter. GPU-P doesn't support checkpoints or saved state, so if the host shuts down the guest shuts down in order.
+- `hcs` (`Backends/Hcs.ps1`), on every other edition, Home included: machines run through Windows' Host Compute Service. See [Machines without Hyper-V](#machines-without-hyper-v).
+
+The profiles' default is `hyperv-gpup`; on a PC without the Hyper-V role it becomes `hcs`, so the same profile works on every edition. A profile can ask for `hcs` on a PC with Hyper-V too.
+
+### Machines without Hyper-V
+
+<Diagram {...hcs('en')} />
+
+Windows Home, and editions where Hyper-V is off, have no Hyper-V role, but once Virtual Machine Platform is on they have the Host Compute Service (HCS, `computecore.dll`), the API WSL 2 runs on. The `hcs` backend (`Backends/Hcs.ps1`) runs machines on it:
+
+- **The engine lives in the GpuVM service** (`app/host/src/hcs`). The module calls `gpuvm-host.exe hcs <command>`, and the service creates the compute system through `computecore.dll` (UEFI with Secure Boot, the profile's processors and fixed memory, the disk, a network adapter and the Hyper-V socket services), its disks through `virtdisk.dll` and its networks through the Host Compute Network API (HCN).
+- **The GPU is shared the same way (GPU-PV).** The machine gets a partition of the GPU whose vendor matches the profile's `gpu.match`, and the guest runs the host's driver, copied in as on Hyper-V. HCS on Windows 10 has no virtual TPM, so these machines have none.
+- **The same module flows.** Inside the module, `Get-VM`, `Get-VMHardDiskDrive`, `Get-VMNetworkAdapter`, `Invoke-Command` and the other Hyper-V commands it uses are shadowed: Hyper-V machines pass through untouched and HCS machines are added with the same properties, so creating, opening, templates, restore points and the rest work on both backends.
+- **GpuVM's agent instead of PowerShell Direct.** HCS machines have no PowerShell Direct, data exchange (KVP), heartbeat or shutdown integration service. GpuVM installs its agent into the machine's disk before the first boot, and the agent answers over a Hyper-V socket: the commands GpuVM runs inside Windows (as SYSTEM), knowing when Windows is ready and shutting it down cleanly go through it.
+- **No Hyper-V console.** These machines have no console, so the app hides **View Hyper-V console** for them; the picture comes from the stream, which was as smooth as on Hyper-V at the monitor's rate and at 120 FPS when measured side by side.
+- **Their own networks.** See [Network isolation](#network-isolation).
+
 
 ### Creating the disk
 
@@ -53,7 +72,7 @@ Windows is applied once per ISO and edition into a base disk (`<VM folder>\.base
 
 ## Bridge between the app and PowerShell
 
-The app runs without administrator rights. The Hyper-V work happens in the **GpuVM service** (`gpuvm-host.exe`, `app/host/`), a Windows service the installer registers. The app talks to it through the named pipe `\\.\pipe\gpuvm`; for each connection the service starts `bridge.ps1` in GpuVM's own PowerShell 7 with the elevated token of the user signed in at that session, so the module sees the same profile, saved passwords and folders as that user running it as administrator. In development the app starts `bridge.ps1` itself and needs to run as administrator.
+The app runs without administrator rights. The work on the machines (Hyper-V, or the Host Compute Service where Windows has no Hyper-V) happens in the **GpuVM service** (`gpuvm-host.exe`, `app/host/`), a Windows service the installer registers. The app talks to it through the named pipe `\\.\pipe\gpuvm`; for each connection the service starts `bridge.ps1` in GpuVM's own PowerShell 7 with the elevated token of the user signed in at that session, so the module sees the same profile, saved passwords and folders as that user running it as administrator. In development the app starts `bridge.ps1` itself and needs to run as administrator.
 
 - **Quick queries** (overview, host info, power actions, saving options) go through one **persistent** connection, one at a time. If it was lost before the request was sent, it is opened again once; once a request is sent it is never retried, because the command may already have run (shut down, delete…). A query times out after 180 s.
 - **Long jobs** (create a VM, start and open, sync the driver, apply settings) use a connection **each**, so they don't block the stats. Their progress arrives as `job` events.
@@ -93,6 +112,22 @@ The viewer parses what the machine's streaming host sends, and that host runs in
 
 While a picture is shown, the app tells its pages the window is covered: the holograms and scenes stop, and they draw at 30 FPS while GpuVM doesn't have the focus.
 
+## Network isolation
+
+Network isolation is on by default (**Machine → Network → Internet only**, `vm.network.isolation`) and always on for agent machines. An isolated machine reaches the internet, but not this PC's services, the local network or other machines; from the host, only the stream comes in. It is enforced outside the machine, so an administrator inside it can't undo it. How depends on the backend.
+
+**Hyper-V machines.** Port ACLs on the machine's virtual switch port, enforced by the host: the machine keeps internet, DHCP and DNS, the host and private networks are blocked, and stateful rules let the stream's connections through.
+
+**Machines without Hyper-V.** Client Windows doesn't enforce Hyper-V-style port ACLs for HCS machines, and its NAT translates a machine's traffic before the host's firewall filters see it, so a NAT network can't be filtered. An isolated HCS machine never goes through Windows' NAT:
+
+1. **A network of its own, with only the host.** Each isolated machine gets its own internal network (`GpuVM-<machine>`, no NAT, no forwarding) with a fixed address. Its only other member is this PC, so isolated machines see neither the local network nor each other.
+2. **Host firewall filters.** Filters in the Windows Filtering Platform (WFP) on the host's side of that network make the host accept nothing from the machine; the stream works because the host opens it.
+3. **Internet through a relay.** Inside the machine, GpuVM's agent brings up a Wintun adapter (Wintun 0.14.1 by WireGuard LLC, shipped with the agent and checked by SHA-256) that takes the default route. Each TCP or UDP flow goes over a Hyper-V socket to the GpuVM service, which refuses every destination that isn't a public internet address (private, CGNAT, loopback, link-local, multicast and the host's own addresses) and opens the connection itself. There is no IPv6 route, so nothing leaves another way.
+
+The agent keeps the setting inside the machine, so after a restart it has internet again before the host asks. Measured on a line of about 850 Mbit/s: downloads at about 100 MB/s, the same as without isolation, HTTPS handshakes as fast, and a connection to a refused address (the router, this PC's address on the local network) fails in about 2 s.
+
+A machine without isolation uses GpuVM's own NAT network, `GpuVM`, which works like Hyper-V's Default Switch (DHCP, DNS and NAT). On these machines a change of the setting applies at their next start.
+
 ## Security
 
 - **No elevated window:** the app runs as the user (`asInvoker`). Only the GpuVM service runs elevated.
@@ -106,6 +141,7 @@ While a picture is shown, the app tells its pages the window is covered: the hol
 - **Pinned components:** Sunshine, the Virtual Display Driver, nefcon, usbip-win2 and ViGEmBus are pinned by SHA-256 in `streaming/components.json`. A file whose hash doesn't match isn't used. The guest downloads nothing. Only the certificate that signed the virtual display driver is trusted; usbip-win2's drivers must be signed by Microsoft. GpuVM's own Sunshine comes with the installer. App Installer (`winget`) for agent machines is pinned by SHA-256 and checked for Microsoft's signature on this PC and again inside the machine.
 - **Password cleanup:** `unattend.xml` holds the password in plain text and is deleted inside the VM as soon as it's no longer needed.
 - **Viewer isolated:** Low integrity, restricted token and a job object. See [The viewer](#the-viewer).
+- **Machines kept off your network:** isolated machines reach only the internet, enforced outside them. See [Network isolation](#network-isolation).
 - **No argument injection:** the Sunshine app name is validated before building the viewer's command line.
 
 Two environment variables move data elsewhere: `GPUVM_DATA` (all data) and `GPUVM_LABS_ROOT` (labs).

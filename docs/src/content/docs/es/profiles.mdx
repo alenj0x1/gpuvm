@@ -46,7 +46,7 @@ Como `guest.optimizations` es una lista, reemplaza la del padre en lugar de suma
 
 | Campo | Valor en `base` | Significado |
 |---|---|---|
-| `backend` | `hyperv-gpup` | Cómo se le da la GPU a la VM. Consulta [Arquitectura](/docs/es/architecture/#backends). |
+| `backend` | `hyperv-gpup` | Cómo corre la VM y recibe la GPU: `hyperv-gpup` (Hyper-V GPU-P) o `hcs` (Host Compute Service, sin necesidad de Hyper-V). En un equipo sin Hyper-V, `hyperv-gpup` pasa a ser `hcs`. Consulta [Arquitectura](/docs/es/architecture/#backends). |
 | `vm.root` | `C:\GpuVM` | Carpeta de las VMs. |
 | `vm.cpu.count` | 6 | Hilos. Al menos 2, y al menos uno libre para el host. |
 | `vm.cpu.reservePercent` | 0 | Reserva de CPU, de 0 a 100. |
@@ -54,11 +54,11 @@ Como `guest.optimizations` es una lista, reemplaza la del padre en lugar de suma
 | `vm.cpu.hwThreadsPerCore` | `null` | Topología SMT; `0` sigue al host. Requiere configuración de VM 9.0 o superior. |
 | `vm.memoryGB` | 8 | Memoria fija. Al menos 4, dejando al menos 4 GB al host. |
 | `vm.disk.sizeGB` / `vm.disk.type` | 128 / `Dynamic` | Al menos 64 GB; `Dynamic` o `Fixed`. |
-| `vm.network.switch` | `Default Switch` | Switch de Hyper-V. |
-| `vm.network.isolation` | `true` | Solo internet: la VM no llega al equipo ni a la red local. No se aplica en un switch externo. |
-| `vm.secureBoot`, `vm.tpm` | `true` | Secure Boot y TPM. |
+| `vm.network.switch` | `Default Switch` | Switch de Hyper-V. Las máquinas sin Hyper-V usan las redes propias de GpuVM. |
+| `vm.network.isolation` | `true` | Solo internet: la VM no llega al equipo ni a la red local. No se aplica en un switch externo. Consulta [Aislamiento de red](/docs/es/architecture/#aislamiento-de-red). |
+| `vm.secureBoot`, `vm.tpm` | `true` | Secure Boot y TPM. Las máquinas sin Hyper-V tienen Secure Boot pero no TPM. |
 | `vm.mmio.lowGB` / `vm.mmio.highGB` | 1 / 32 | Espacio de E/S mapeada en memoria para la GPU. |
-| `gpu.match` | `NVIDIA` | Texto que debe contener el nombre de la GPU del host. |
+| `gpu.match` | `NVIDIA` | Texto que debe contener el nombre de la GPU del host. Las máquinas sin Hyper-V reciben una GPU de ese fabricante (NVIDIA, Intel o AMD). |
 | `gpu.allocationPercent` | 100 | Parte de la GPU para la VM, de 1 a 100. |
 | `streaming` | Sunshine, pantalla virtual, altavoz USB | Consulta [Streaming](/docs/es/streaming/#ajustes-del-perfil). |
 | `guest.edition` | `Pro` | Edición de Windows que se aplica desde el ISO. |

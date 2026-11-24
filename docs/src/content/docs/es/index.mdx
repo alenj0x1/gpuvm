@@ -1,6 +1,6 @@
 ---
 title: Introducción
-description: Máquinas virtuales Windows 10/11 que usan la GPU de tu PC con GPU partitioning de Hyper-V, transmitidas a tu escritorio con Sunshine y el visor propio de GpuVM.
+description: Máquinas virtuales Windows 10/11 que usan la GPU de tu PC con GPU partitioning, en todas las ediciones de Windows 10 y 11, transmitidas a tu escritorio con Sunshine y el visor propio de GpuVM.
 ---
 
 import Diagram from '../../../components/Diagram.astro';
@@ -15,13 +15,13 @@ GpuVM crea máquinas virtuales Windows 10 y 11 que usan la GPU de tu PC, con el 
 
 ## Por qué
 
-Una VM normal de Hyper-V solo tiene un adaptador de pantalla básico, así que los juegos y las apps que usan la GPU no funcionan bien dentro de ella. El **GPU partitioning (GPU-P)** de Hyper-V comparte la GPU del host con la VM, pero configurarlo a mano implica copiar archivos del driver, ajustar la VM y encontrar la forma de *ver* lo que dibuja la GPU, porque la consola de Hyper-V solo muestra la pantalla básica de Hyper-V. GpuVM hace todo eso por ti y lo mantiene funcionando.
+Una VM normal de Hyper-V solo tiene un adaptador de pantalla básico, así que los juegos y las apps que usan la GPU no funcionan bien dentro de ella. El **GPU partitioning (GPU-P)** de Hyper-V comparte la GPU del host con la VM, pero configurarlo a mano implica copiar archivos del driver, ajustar la VM y encontrar la forma de *ver* lo que dibuja la GPU, porque la consola de Hyper-V solo muestra la pantalla básica de Hyper-V. GpuVM hace todo eso por ti y lo mantiene funcionando, en todas las ediciones de Windows 10 y 11: donde Windows no trae Hyper-V (Windows Home, por ejemplo), ejecuta la máquina con el Host Compute Service de Windows y comparte la GPU de la misma forma.
 
 ## Cómo funciona
 
 <Steps>
 
-1. **Crear la VM.** GpuVM revisa el host, aplica la edición de Windows de tu ISO directamente a un VHDX (sin pasar por el instalador), copia el driver de la GPU del host al invitado y deja una instalación desatendida: cuenta local, sin pantallas de OOBE, Escritorio remoto habilitado e inicio de sesión automático. La VM es de generación 2 con Secure Boot y TPM, así que Windows 11 instala sin trucos, y recibe la CPU del perfil, memoria fija, espacio MMIO, sin puntos de control y la partición de GPU.
+1. **Crear la VM.** GpuVM revisa el host, aplica la edición de Windows de tu ISO directamente a un VHDX (sin pasar por el instalador), copia el driver de la GPU del host al invitado y deja una instalación desatendida: cuenta local, sin pantallas de OOBE, Escritorio remoto habilitado e inicio de sesión automático. En Hyper-V la VM es de generación 2 con Secure Boot y TPM, así que Windows 11 instala sin trucos, y recibe la CPU del perfil, memoria fija, espacio MMIO, sin puntos de control y la partición de GPU. Sin Hyper-V, el servicio de GpuVM crea la máquina con el Host Compute Service (UEFI con Secure Boot, la CPU del perfil, memoria fija y la partición de GPU) e instala el agente de GpuVM en su disco antes del primer inicio, para que GpuVM pueda llegar a Windows dentro de ella.
 
 2. **Primer inicio.** Dentro de la VM, el script de configuración del invitado aplica las optimizaciones del perfil, instala el streaming (Sunshine, una pantalla virtual y el altavoz USB propio de GpuVM para el audio) y borra `unattend.xml`, que contiene la contraseña. Después la VM se reinicia una vez sola.
 
@@ -37,7 +37,7 @@ Una VM normal de Hyper-V solo tiene un adaptador de pantalla básico, así que l
 
 <CardGrid>
   <Card title="App de escritorio" icon="laptop">
-    Tauri 2 + React, en español e inglés, sin permisos de administrador; un servicio de Windows hace el trabajo de Hyper-V. Todas las VMs de Hyper-V agrupadas en espacios, encender y abrir en un clic, cada máquina como un holograma en un cubo de vidrio que puedes decorar, un tipo de uso por máquina (juegos, películas, trabajo), uso en vivo, opciones, puntos de restauración, máquinas desechables, exportar e importar, y una Biblioteca de perfiles, plantillas, discos compartidos e ISOs. Consulta [Uso de la app](/docs/es/using-the-app/).
+    Tauri 2 + React, en español e inglés, sin permisos de administrador; un servicio de Windows maneja las máquinas. Todas las VMs del equipo agrupadas en espacios, encender y abrir en un clic, cada máquina como un holograma en un cubo de vidrio que puedes decorar, un tipo de uso por máquina (juegos, películas, trabajo), uso en vivo, opciones, puntos de restauración, máquinas desechables, exportar e importar, y una Biblioteca de perfiles, plantillas, discos compartidos e ISOs. Consulta [Uso de la app](/docs/es/using-the-app/).
   </Card>
   <Card title="Módulo de PowerShell y CLI" icon="seti:powershell">
     El módulo `GpuVM` (PowerShell 7) hace el trabajo; `gpuvm.ps1` lo expone como comandos cortos.
@@ -53,7 +53,7 @@ Una VM normal de Hyper-V solo tiene un adaptador de pantalla básico, así que l
   </Card>
 </CardGrid>
 
-El backend actual es **Hyper-V GPU-P**: la GPU se comparte entre el host y la VM, y el invitado usa el mismo driver que el host. Se pueden agregar backends nuevos; consulta [Arquitectura](/docs/es/architecture/).
+GpuVM tiene dos backends y elige uno solo: **Hyper-V GPU-P** (`hyperv-gpup`) donde Windows tiene Hyper-V, y el **Host Compute Service** (`hcs`) en todos los demás casos, Home incluido, que solo necesita la Plataforma de máquina virtual de Windows. En los dos, la GPU se comparte entre el host y la VM, y el invitado usa el mismo driver que el host. Se pueden agregar backends nuevos; consulta [Arquitectura](/docs/es/architecture/#backends).
 
 <CardGrid>
   <LinkCard title="Requisitos" href="/docs/es/requirements/" />

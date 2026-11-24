@@ -1,24 +1,24 @@
 ---
 title: Instalación
-description: Instala GpuVM desde GitHub Releases y prepara Hyper-V.
+description: Instala GpuVM desde GitHub Releases y activa Hyper-V o la Plataforma de máquina virtual.
 ---
 
 import { Aside, Steps } from '@astrojs/starlight/components';
 
 <Steps>
 
-1. **Activa Hyper-V** ([más abajo](#activar-hyper-v)) y reinicia.
+1. **Descarga el instalador** (`.exe` de NSIS) desde [GitHub Releases](https://github.com/alenj0x1/gpuvm/releases) y ejecútalo.
 
-2. **Descarga el instalador** (`.exe` de NSIS) desde [GitHub Releases](https://github.com/alenj0x1/gpuvm/releases) y ejecútalo.
+2. **Abre GpuVM.** Se abre sin permisos de administrador.
 
-3. **Abre GpuVM.** Se abre sin permisos de administrador.
+3. **Activa la Plataforma de máquina virtual si la app lo pide.** En un equipo sin Hyper-V (Windows Home, por ejemplo), si la Plataforma de máquina virtual de Windows está desactivada, la app muestra una pantalla con **Activar** y después **Reiniciar ahora**: Windows termina de activarla al reiniciar. Consulta [más abajo](#hyper-v-o-plataforma-de-máquina-virtual).
 
 </Steps>
 
 ## Qué hace el instalador
 
 - Instala GpuVM **para todo el equipo** en **Program Files**, con su propio PowerShell 7, el visor de GpuVM (que muestra las máquinas), el Sunshine propio de GpuVM (que va en cada máquina), el módulo de PowerShell, los perfiles, los scripts del invitado, la plantilla de `unattend.xml` y la lista de componentes de streaming.
-- Registra el servicio **GpuVM** (`gpuvm-host.exe`), que hace el trabajo de Hyper-V para la app. Por defecto se enciende al abrir la app y se apaga al salir (consulta [Ajustes](/docs/es/using-the-app/#ajustes)). Al desinstalar se quita.
+- Registra el servicio **GpuVM** (`gpuvm-host.exe`), que maneja las máquinas para la app. Por defecto se enciende al abrir la app y se apaga al salir (consulta [Ajustes](/docs/es/using-the-app/#ajustes)). Al desinstalar se quita.
 - Los datos que cambian (laboratorios e instaladores descargados) van a **`%ProgramData%\GpuVM`**, que también queda solo para administradores.
 - El instalador está en español. La app sigue el idioma de Windows (español si Windows está en español, inglés si no); se cambia en **Ajustes → Apariencia → Idioma**.
 
@@ -26,15 +26,30 @@ import { Aside, Steps } from '@astrojs/starlight/components';
 El servicio GpuVM ejecuta el módulo con permisos de administrador, así que solo ejecuta scripts y PowerShell de Program Files, que solo un administrador puede modificar. Consulta [Arquitectura](/docs/es/architecture/#seguridad).
 </Aside>
 
-## Activar Hyper-V
+## Hyper-V o Plataforma de máquina virtual
 
-Una vez, en PowerShell **como administrador**, y después reinicia:
+GpuVM funciona en todas las ediciones de Windows 10 y 11 y elige solo cómo ejecutar las máquinas:
+
+| Windows | Las máquinas corren en | GpuVM necesita |
+|---|---|---|
+| Pro, Enterprise, Education o Pro for Workstations, con Hyper-V activo | Hyper-V, con GPU partitioning (backend `hyperv-gpup`) | Hyper-V |
+| Home, o cualquier edición con Hyper-V desactivado | El Host Compute Service de Windows, con la GPU compartida igual (backend `hcs`) | Plataforma de máquina virtual |
+
+La Plataforma de máquina virtual es la característica opcional de Windows que también usa WSL 2. Si está desactivada, la app muestra **Activar** y después **Reiniciar ahora**; desde la CLI, como administrador:
+
+```powershell
+Get-GpuVMPlatform        # con qué ejecuta las máquinas este equipo, y si falta reiniciar
+Enable-GpuVMPlatform     # activa la Plataforma de máquina virtual
+Restart-GpuVMHost        # reinicia el equipo para terminar (solo mientras está pendiente)
+```
+
+Para usar Hyper-V en una edición que lo trae, actívalo una vez en PowerShell **como administrador** y después reinicia:
 
 ```powershell
 Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All
 ```
 
-Si la virtualización está desactivada en el BIOS/UEFI, activa primero Intel VT-x o AMD-V ahí.
+Un perfil también puede elegir el backend con `"backend"` ([Perfiles](/docs/es/profiles/#campos)). Si la virtualización está desactivada en el BIOS/UEFI, activa primero Intel VT-x o AMD-V ahí.
 
 ## Desde el repositorio
 
@@ -47,7 +62,7 @@ Sin el instalador, todo usa la carpeta del repositorio (CLI o modo desarrollo).
 # Compilar el instalador (queda en app/src-tauri/target/release/bundle/nsis/)
 npm --prefix app run tauri build
 
-# Diseñar la interfaz sin Hyper-V (datos de ejemplo; ?mock=empty, ?mock=noadmin)
+# Diseñar la interfaz con datos de ejemplo, sin el servicio (?mock=empty, ?mock=noadmin)
 npm --prefix app run dev
 
 # Pruebas (no necesitan administrador)

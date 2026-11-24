@@ -10,11 +10,11 @@ import Shot from '../../../components/Shot.astro';
 
 ## La ventana
 
-- **Barra lateral:** arriba **Inicio**, **Biblioteca** y [**Agentes**](/docs/es/agents/), luego todas las VMs de Hyper-V del equipo (creadas o no con GpuVM) bajo el [espacio](#espacios) al que pertenecen, y al final **Crear máquina**. **Ajustes** queda al pie. Cada máquina muestra su estado con un punto en su ícono y, a la derecha, lo que el punto no dice: una gráfica pequeña de su último minuto (procesador, memoria y GPU en sus colores) mientras está encendida, o el paso de un trabajo en curso.
+- **Barra lateral:** arriba **Inicio**, **Biblioteca** y [**Agentes**](/docs/es/agents/), luego todas las VMs del equipo (las de Hyper-V, creadas o no con GpuVM, y las máquinas de GpuVM sin Hyper-V) bajo el [espacio](#espacios) al que pertenecen, y al final **Crear máquina**. **Ajustes** queda al pie. Cada máquina muestra su estado con un punto en su ícono y, a la derecha, lo que el punto no dice: una gráfica pequeña de su último minuto (procesador, memoria y GPU en sus colores) mientras está encendida, o el paso de un trabajo en curso.
 - **Cambiar su ancho o contraerla:** arrastra la línea de su borde para cambiar el ancho; haz clic en la línea, o arrástrala hasta angostarla, para contraerla.
 - **Reordenar arrastrando:** arrastra una máquina a otro lugar, en su espacio o en otro. Las demás se apartan mientras pasa y se ve atenuada donde caería. Los espacios se reordenan igual, arrastrando su nombre.
 
-GpuVM se abre sin permisos de administrador; el servicio de Windows **GpuVM** hace por él el trabajo de Hyper-V. Si el servicio está detenido y en modo **Manual**, la app lo dice con **Iniciar servicio**. Si falta el servicio, lo dice con **Reparar**, que lo vuelve a registrar tras un aviso de UAC. Borrar una máquina, un disco, un disco compartido o una plantilla pide confirmarlo antes en un aviso de UAC; si dices que no, no se borra nada. Si no puede leer Hyper-V, un aviso muestra el error con **Reintentar**.
+GpuVM se abre sin permisos de administrador; el servicio de Windows **GpuVM** maneja las máquinas por él. En un equipo sin Hyper-V con la Plataforma de máquina virtual desactivada, la app muestra primero una pantalla para activarla (**Activar** y después **Reiniciar ahora**); consulta [Instalación](/docs/es/install/#hyper-v-o-plataforma-de-máquina-virtual). Si el servicio está detenido y en modo **Manual**, la app lo dice con **Iniciar servicio**. Si falta el servicio, lo dice con **Reparar**, que lo vuelve a registrar tras un aviso de UAC. Borrar una máquina, un disco, un disco compartido o una plantilla pide confirmarlo antes en un aviso de UAC; si dices que no, no se borra nada. Si no puede leer las máquinas, un aviso muestra el error con **Reintentar**.
 
 La interfaz está en español e inglés: sigue el idioma de Windows, o el elegido en [Ajustes](#ajustes).
 
@@ -191,7 +191,7 @@ La sección **Máquina**, para las máquinas creadas con GpuVM:
 - **GPU para la VM:** de 10 a 100 %, de 10 en 10.
 - **Disco:** amplía el disco (no se puede achicar). Un disco dinámico crece a medida que la máquina escribe, así que el deslizador llega hasta lo que cabe con todos los discos de las máquinas de esa unidad llenos, dejando 20 GB para Windows; la barra de abajo muestra el disco de esta máquina, lo reservado para las demás y lo que quedaría libre. Una máquina sobre una plantilla mide lo mismo que ella. El disco C: de Windows crece solo la próxima vez que se abre.
 - **Red:**
-  - **Solo internet** (la predeterminada): la máquina no llega a este equipo ni a tu red local, salvo a lo que necesita el stream. Las reglas viven en el puerto del switch virtual de la máquina, fuera de ella, así que una máquina infectada no puede quitarlas.
+  - **Solo internet** (la predeterminada): la máquina no llega a este equipo ni a tu red local, salvo a lo que necesita el stream. En Hyper-V las reglas viven en el puerto del switch virtual de la máquina; una máquina sin Hyper-V recibe una red propia solo con este equipo, y su internet pasa por el servicio de GpuVM, que solo se conecta a direcciones públicas. En los dos casos viven fuera de la máquina, así que una máquina infectada no puede quitarlas. Consulta [Aislamiento de red](/docs/es/architecture/#aislamiento-de-red).
   - **Internet y red local:** la máquina llega a este equipo y al resto de tu red. Úsala solo si la necesitas, por ejemplo para un NAS.
 - **Discos compartidos** (si tienes alguno): cada disco con para qué es, cuánto ocupa y dónde está conectado. Consulta [Discos compartidos](#discos-compartidos).
 
@@ -230,7 +230,7 @@ Cómo muestra el visor la máquina y cómo la controlas:
   - **Códec:** **Automático** (el visor elige el mejor que tu equipo puede mostrar), H.264, HEVC o AV1. Si la imagen no aparece, vuelve a **Automático**.
   - **Calidad de imagen:** la tasa de bits en Mbps, hasta 150. Más calidad usa más red; al mínimo (**Automática**), el visor la ajusta a la resolución y los FPS.
 
-Estos ajustes se guardan sin apagar la máquina: los de la imagen se aplican la próxima vez que la abras y la red en el momento.
+Estos ajustes se guardan sin apagar la máquina: los de la imagen se aplican la próxima vez que la abras y la red en el momento (en las máquinas sin Hyper-V, en su siguiente inicio).
 
 ## Windows
 
@@ -278,7 +278,7 @@ En el cubo, mientras esta sección está a la vista:
 
 ## Contraseña de Windows
 
-Si GpuVM no tiene la contraseña de Windows de la máquina (por ejemplo, después de reconstruir su estado con `repair`), la página muestra una tarjeta que la pide, para el usuario de la máquina. Se guarda cifrada con DPAPI y le permite a GpuVM corregir cosas dentro de la máquina por PowerShell Direct (sin red y sin preguntarte): esperar a que termine la configuración inicial, devolver la sesión a la pantalla de la GPU, ajustar la resolución de la pantalla, instalar el soporte de mandos y responder los avisos de administrador. Las máquinas creadas desde la app ya la tienen.
+Si GpuVM no tiene la contraseña de Windows de la máquina (por ejemplo, después de reconstruir su estado con `repair`), la página muestra una tarjeta que la pide, para el usuario de la máquina. Se guarda cifrada con DPAPI y le permite a GpuVM corregir cosas dentro de una máquina de Hyper-V por PowerShell Direct (sin red y sin preguntarte; a las máquinas sin Hyper-V llega por el agente de GpuVM): esperar a que termine la configuración inicial, devolver la sesión a la pantalla de la GPU, ajustar la resolución de la pantalla, instalar el soporte de mandos y responder los avisos de administrador. Las máquinas creadas desde la app ya la tienen.
 
 ## Aviso del driver
 
@@ -290,14 +290,14 @@ El menú **⋯** tiene:
 
 - **Encender sin abrir**.
 - **Apagar** (apagado ordenado; si Windows tiene actualizaciones pendientes, primero las instala, lo que puede tardar unos minutos, y el botón lo dice), **Forzar apagado** (haz clic dos veces para confirmar; se pierde lo no guardado), **Reiniciar**, **Pausar** / **Reanudar**.
-- **Ver consola de Hyper-V**. Solo muestra la pantalla básica de Hyper-V, no lo que dibuja la GPU.
+- **Ver consola de Hyper-V**. Solo muestra la pantalla básica de Hyper-V, no lo que dibuja la GPU. Las máquinas sin Hyper-V no la tienen.
 - **Volver a emparejar el visor**.
 - **Actualizar driver de la GPU**, o **Apagar y actualizar driver** si está encendida.
 - **Crear plantilla**, o **Apagar y crear plantilla** si está encendida: guarda el Windows de esta máquina como [plantilla](#plantillas). La máquina queda igual.
 - **Exportar a un archivo**, o **Apagar y exportar** si está encendida ([Exportar e importar](#exportar-e-importar)).
-- **Cambiar nombre** (con la máquina apagada): el nombre nuevo se revisa mientras escribes y el cubo lo graba en la etiqueta de serie de la placa. La máquina cambia de nombre en Hyper-V junto con su carpeta y su disco; su configuración, el emparejamiento del visor, los discos compartidos y su decoración se quedan con ella. Si un paso falla, se deshace lo que ya había cambiado.
+- **Cambiar nombre** (con la máquina apagada): el nombre nuevo se revisa mientras escribes y el cubo lo graba en la etiqueta de serie de la placa. La máquina cambia de nombre junto con su carpeta y su disco; su configuración, el emparejamiento del visor, los discos compartidos y su decoración se quedan con ella. Si un paso falla, se deshace lo que ya había cambiado.
 - **Otro ícono** (también haciendo clic en el ícono junto al nombre) y **Otro banner** (hay tres).
-- **Eliminar máquina**: la quita de Hyper-V, con **Conservar el disco** o **Borrar también el disco**, tras confirmarlo en un aviso de UAC. No se puede deshacer.
+- **Eliminar máquina**: la quita, con **Conservar el disco** o **Borrar también el disco**, tras confirmarlo en un aviso de UAC. No se puede deshacer.
 
 <Aside type="caution">
 No uses Escritorio remoto mientras transmites: se lleva la sesión de la consola y la quita de la pantalla de la GPU.
@@ -362,7 +362,7 @@ La copia solo va de este equipo al disco. Antes de escribir, GpuVM revisa que el
 - **Máquinas** (con más de un monitor): **Abrir las máquinas en** el monitor principal de Windows (el predeterminado) o en un monitor por su nombre. Cada máquina puede tener el suyo en sus opciones. En pantalla completa, la imagen de la máquina va a ese monitor.
 - **Agentes:** **Tomar el control**, **Tiempo para responder** y **Límite por sesión**. Consulta [Agentes](/docs/es/agents/).
 - **Capturas:** las carpetas de capturas y videos, y **Guardar los últimos 30 s** ([Capturas](#capturas)).
-- **Servicio**, el servicio de Windows que hace el trabajo de Hyper-V para la app:
+- **Servicio**, el servicio de Windows que maneja las máquinas para la app:
   - **Con GpuVM** (el predeterminado): se enciende al abrir GpuVM y se apaga al salir, cuando termina lo que estaba haciendo (apagar las máquinas, una máquina que se está creando).
   - **Con Windows:** se enciende con Windows.
   - **Manual:** solo se enciende y se apaga con los botones **Iniciar** y **Detener** de aquí.
