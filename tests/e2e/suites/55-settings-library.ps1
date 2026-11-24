@@ -454,7 +454,11 @@ function Test-SlDisconnect($Ctx) {
 # The time to answer is read when an agent connects, so a second session started after the change is the one asked.
 function Test-SlTimeToAnswer($Ctx, [string]$Tag) {
     $agentsTab = '^(Agents|Agentes)$'
-    if (-not (Open-SlSettings $agentsTab)) { Check 'Settings > Agents opens' $false ''; return }
+    # Right after the replay test the viewer can still be closing and take the first click.
+    if (-not (Open-SlSettings $agentsTab)) {
+        Start-Sleep 2
+        if (-not (Open-SlSettings $agentsTab)) { Check 'Settings > Agents opens' $false 'second try too'; return }
+    }
     $getSlider = { Find-SlOne (Get-MainElement) 'Slider' '^(Time to answer|Tiempo para responder)$' }
     $orig = Get-SlValue (& $getSlider)
     Check 'the time to answer is readable' ($orig -ge 0) "index $orig"
