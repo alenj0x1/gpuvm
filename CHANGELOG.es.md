@@ -6,7 +6,7 @@ Aquí se documentan los cambios importantes de GpuVM. El formato sigue [Keep a C
 
 Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (esa sección solo existe mientras haya alguno y el sitio de documentación no la muestra); `scripts/release.py` la convierte en la versión nueva.
 
-## [Sin publicar]
+## [1.1.0] - 2026-11-24
 
 ### Agregado
 - **Todas las ediciones de Windows 10 y 11, Home incluida.** Donde Windows trae Hyper-V, GpuVM lo sigue usando; en las demás ejecuta las máquinas con el Host Compute Service de Windows, que solo necesita la característica Plataforma de máquina virtual (la que usa WSL 2). La GPU se comparte igual y el stream es tan fluido como con Hyper-V. Las máquinas se controlan con el agente de GpuVM, que se instala en el disco de la máquina antes de su primer arranque.
@@ -325,6 +325,7 @@ Primera versión.
 - Los instaladores de terceros están fijados por SHA-256 y se vuelven a verificar justo antes de copiarlos a la VM.
 - Las credenciales de streaming y del invitado se cifran con DPAPI.
 
+[1.1.0]: https://github.com/alenj0x1/gpuvm/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/alenj0x1/gpuvm/compare/v0.9.0...v1.0.0
 [0.9.0]: https://github.com/alenj0x1/gpuvm/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/alenj0x1/gpuvm/compare/v0.7.0...v0.8.0

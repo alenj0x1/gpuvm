@@ -8,7 +8,7 @@ $script:IsElevated = ([Security.Principal.WindowsPrincipal][Security.Principal.W
 $script:DataRoot = if ($env:GPUVM_DATA -and -not $script:IsElevated) { $env:GPUVM_DATA }
     elseif ($script:RepoRoot.StartsWith([Environment]::GetFolderPath('ProgramFiles'), [StringComparison]::OrdinalIgnoreCase)) { Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'GpuVM' }
     else { $script:RepoRoot }
-$script:ToolVersion = '1.0.0'
+$script:ToolVersion = '1.1.0'
 $script:Backends    = @{}
 $script:GpuEngineCategory = $null
 $script:GpuEnginePrevious = $null
