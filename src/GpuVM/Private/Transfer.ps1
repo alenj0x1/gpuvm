@@ -333,6 +333,8 @@ function Write-TransferProgress {
 
 function Open-TransferSession {
     param([Parameter(Mandatory)][string]$Name)
+    # Sending files keeps state between commands in one PowerShell Direct session, which machines without Hyper-V lack.
+    Assert-HyperVMachine -Name $Name -What 'Sending files to the machine'
     $state = Get-GpuVMState -Name $Name
     $guest = Get-GpuVMGuestCredential -State $state
     if (-not $guest) { throw "Save the Windows password of '$Name' to send files to it." }

@@ -2662,6 +2662,21 @@ InModuleScope GpuVM {
             $nic.MacAddress | Should Be '00155D010203'
         }
 
+        It 'a session to a machine without Hyper-V copies files in pieces through the agent' {
+            $file = Join-Path $TestDrive 'big.bin'
+            [IO.File]::WriteAllBytes($file, [byte[]]::new(20MB + 5))
+            $global:HcsWrites = [Collections.Generic.List[object]]::new()
+            Mock Invoke-HcsGuest { $true }
+            Mock Invoke-GpuVMHcsAgent { $global:HcsWrites.Add(@{ path = $Params['path']; offset = $Params['offset']; size = $Blob.Length }) }
+            $session = New-PSSession -VMName home1
+            Test-HcsSession $session | Should Be $true
+            Copy-Item -LiteralPath $file -Destination 'C:\GpuVM-x' -ToSession $session -Force
+            ($global:HcsWrites | ForEach-Object { "$($_.offset):$($_.size)" }) -join ',' | Should Be "0:$(8MB),$(8MB):$(8MB),$(16MB):$(4MB + 5)"
+            $global:HcsWrites[0].path | Should Be 'C:\GpuVM-x\big.bin'
+            Invoke-Command -Session $session -ScriptBlock { 1 } | Should Be $true
+            Remove-PSSession $session
+        }
+
         It 'the heartbeat is the agent answering' {
             Mock Get-GpuVMHcsInfo { @{ uptimeSec = 5 } }
             (Get-VMIntegrationService -VMName home1).PrimaryOperationalStatus | Should Be 'Ok'
@@ -2678,7 +2693,7 @@ InModuleScope GpuVM {
             Mock Stop-HcsMachine { "stopped $TurnOff" }
             Start-VM -Name home1 | Should Be 'started'
             Stop-VM -Name home1 -TurnOff | Should Be 'stopped True'
-            Test-Throws { New-PSSession -VMName home1 -Credential $cred } | Should Be $true
+            (New-PSSession -VMName home1 -Credential $cred).VMName | Should Be 'home1'
         }
 
         It 'machines GpuVM did not make with HCS still go to Hyper-V' {

@@ -108,7 +108,10 @@ function Invoke-HcsGuest {
     $dir = 'C:\GpuVM\hcs-run'
     $temp = Join-Path ([IO.Path]::GetTempPath()) "gpuvm-hcs-$id.xml"
     try {
-        [pscustomobject]@{ Script = $ScriptBlock.ToString(); Args = @($ArgumentList) } | Export-Clixml -LiteralPath $temp -Depth 6
+        # As PowerShell Direct sends them: shallow, and strings without the notes Get-Content adds (their PSDrive and
+        # provider made one call's CliXml 182 MB).
+        $plain = @(foreach ($a in $ArgumentList) { if ($a -is [string]) { [string]::new($a.ToCharArray()) } else { $a } })
+        [pscustomobject]@{ Script = $ScriptBlock.ToString(); Args = $plain } | Export-Clixml -LiteralPath $temp -Depth 2
         $null = Invoke-GpuVMHcsAgent -Name $Name -Method 'sys.write' -Params @{ path = "$dir\$id.in.xml" } -Blob ([IO.File]::ReadAllBytes($temp))
         $runner = @'
 param([string]$Id)
@@ -345,27 +348,115 @@ function Invoke-Command {
         [switch]$AsJob,
         [string]$FilePath
     )
-    if ($PSCmdlet.ParameterSetName -eq 'VM' -and $VMName.Count -eq 1 -and (Test-GpuVMHcsMachine -Name $VMName[0])) {
+    $hcsName = if ($PSCmdlet.ParameterSetName -eq 'Session' -and (Test-HcsSession $Session)) { $Session.VMName }
+        elseif ($PSCmdlet.ParameterSetName -eq 'VM' -and $VMName.Count -eq 1 -and (Test-GpuVMHcsMachine -Name $VMName[0])) { $VMName[0] }
+    if ($hcsName) {
         if ($AsJob) {
             # The job needs the module's own functions: it loads the module and runs the block there.
             $manifest = Join-Path $script:RepoRoot 'src\GpuVM\GpuVM.psd1'
-            return Start-ThreadJob -ArgumentList $manifest, $VMName[0], $ScriptBlock.ToString(), @($ArgumentList) -ScriptBlock {
+            return Start-ThreadJob -ArgumentList $manifest, $hcsName, $ScriptBlock.ToString(), @($ArgumentList) -ScriptBlock {
                 param($m, $n, $s, $a)
                 $mod = Import-Module $m -PassThru -DisableNameChecking
                 & $mod { param($n, $s, $a) Invoke-HcsGuest -Name $n -ScriptBlock ([scriptblock]::Create($s)) -ArgumentList $a } $n $s $a
             }
         }
-        return Invoke-HcsGuest -Name $VMName[0] -ScriptBlock $ScriptBlock -ArgumentList @($ArgumentList)
+        return Invoke-HcsGuest -Name $hcsName -ScriptBlock $ScriptBlock -ArgumentList @($ArgumentList)
     }
     Microsoft.PowerShell.Core\Invoke-Command @PSBoundParameters
 }
 
+# A machine without Hyper-V has no PowerShell Direct: its "session" names the machine, and Invoke-Command and
+# Copy-Item reach it through the agent. Each command runs on its own, so nothing is kept between commands.
 function New-PSSession {
     [CmdletBinding()]
     param([string[]]$VMName, [pscredential]$Credential, [string]$Name)
     if ($VMName -and (Test-GpuVMHcsMachine -Name $VMName[0])) {
-        throw "'$($VMName[0])' runs without Hyper-V: it has no PowerShell Direct session (GpuVM reaches it through its agent)."
+        return [pscustomobject]@{ PSTypeName = 'GpuVM.HcsSession'; VMName = $VMName[0]; ComputerName = $VMName[0]; State = 'Opened'; Availability = 'Available' }
     }
     Microsoft.PowerShell.Core\New-PSSession @PSBoundParameters
+}
+
+function Test-HcsSession { param($Session) $Session -and $Session.PSObject.TypeNames -contains 'GpuVM.HcsSession' }
+
+function Remove-PSSession {
+    [CmdletBinding()]
+    param([Parameter(Position = 0, ValueFromPipeline)]$Session)
+    process {
+        $real = @($Session | Where-Object { -not (Test-HcsSession $_) })
+        if ($real) { Microsoft.PowerShell.Core\Remove-PSSession -Session $real -ErrorAction $ErrorActionPreference }
+    }
+}
+
+# Files go in pieces of 8 MiB (the agent takes 16 MiB per call), each written at its place.
+$script:HcsCopyPiece = 8MB
+
+function Copy-Item {
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)][string[]]$Path,
+        [string[]]$LiteralPath,
+        [Parameter(Position = 1)][string]$Destination,
+        $ToSession,
+        $FromSession,
+        [switch]$Recurse,
+        [switch]$Force,
+        [switch]$Container,
+        [switch]$PassThru
+    )
+    if (Test-HcsSession $ToSession) {
+        $sources = @(if ($LiteralPath) { Get-Item -LiteralPath $LiteralPath -ErrorAction Stop } else { Get-Item -Path $Path -ErrorAction Stop })
+        $name = $ToSession.VMName
+        $intoFolder = [bool](Invoke-HcsGuest -Name $name -ArgumentList $Destination -ScriptBlock { param($d) Test-Path -LiteralPath $d -PathType Container })
+        foreach ($src in $sources) {
+            $base = if ($intoFolder) { Join-Path $Destination $src.Name } else { $Destination }
+            $files = if ($src.PSIsContainer) {
+                if (-not $Recurse) { continue }
+                @(Get-ChildItem -LiteralPath $src.FullName -Recurse -File | ForEach-Object { @{ From = $_.FullName; To = Join-Path $base $_.FullName.Substring($src.FullName.Length).TrimStart('\') } })
+            } else { @(@{ From = $src.FullName; To = $base }) }
+            foreach ($f in $files) { Send-HcsGuestFile -Name $name -Path $f.From -Destination $f.To }
+        }
+        return
+    }
+    if (Test-HcsSession $FromSession) {
+        $name = $FromSession.VMName
+        $source = if ($LiteralPath) { $LiteralPath[0] } else { $Path[0] }
+        $target = if (Test-Path -LiteralPath $Destination -PathType Container) { Join-Path $Destination (Split-Path $source -Leaf) } else { $Destination }
+        Receive-HcsGuestFile -Name $name -Path $source -Destination $target
+        return
+    }
+    Microsoft.PowerShell.Management\Copy-Item @PSBoundParameters
+}
+
+function Send-HcsGuestFile {
+    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Destination)
+    $stream = [IO.File]::OpenRead($Path)
+    try {
+        $buffer = [byte[]]::new([math]::Min($script:HcsCopyPiece, [math]::Max(1, $stream.Length)))
+        $offset = [int64]0
+        do {
+            $n = $stream.Read($buffer, 0, $buffer.Length)
+            $piece = if ($n -eq $buffer.Length) { $buffer } else { $buffer[0..($n - 1)] }
+            if ($n -eq 0) { $piece = [byte[]]::new(0) }
+            $null = Invoke-GpuVMHcsAgent -Name $Name -Method 'sys.write' -Params @{ path = $Destination; offset = $offset } -Blob $piece -TimeoutSec 120
+            $offset += $n
+        } while ($n -gt 0 -and $offset -lt $stream.Length)
+    }
+    finally { $stream.Dispose() }
+}
+
+function Receive-HcsGuestFile {
+    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Destination)
+    $out = [IO.File]::Create($Destination)
+    try {
+        $offset = [int64]0
+        do {
+            $r = Invoke-GpuVMHcsAgent -Name $Name -Method 'sys.read' -Params @{ path = $Path; offset = $offset; length = $script:HcsCopyPiece } -TimeoutSec 120
+            $bytes = if ($r.Blob) { $r.Blob } else { [byte[]]::new(0) }
+            $out.Write($bytes, 0, $bytes.Length)
+            $offset += $bytes.Length
+            $size = [int64]$r.Result['size']
+        } while ($bytes.Length -gt 0 -and $offset -lt $size)
+    }
+    finally { $out.Dispose() }
 }
 
