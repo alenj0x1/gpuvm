@@ -13,8 +13,9 @@ function Test-GpuVMHost {
     $checks = [System.Collections.Generic.List[object]]::new()
 
     $os = Get-CimInstance Win32_OperatingSystem
-    $isClientPro = $os.Caption -match 'Pro|Enterprise|Education|Server'
-    $checks.Add((New-CheckResult 'Windows' ($isClientPro ? 'Ok' : 'Fail') "$($os.Caption) (build $($os.BuildNumber))"))
+    # Every edition works: Hyper-V where Windows has it, the Host Compute Service elsewhere (Home).
+    $backendName = Resolve-GpuVMBackendName -Requested ''
+    $checks.Add((New-CheckResult 'Windows' Ok "$($os.Caption) (build $($os.BuildNumber)); machines run with $(if ($backendName -eq 'hcs') { 'the Host Compute Service' } else { 'Hyper-V' })"))
     $checks.Add((New-CheckResult 'Administrator' ((Test-IsAdmin) ? 'Ok' : 'Warn') ((Test-IsAdmin) ? '' : 'Creating and changing VMs needs PowerShell as administrator.')))
 
     $cs = Get-CimInstance Win32_ComputerSystem

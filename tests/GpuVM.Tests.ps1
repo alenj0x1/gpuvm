@@ -2615,3 +2615,68 @@ InModuleScope GpuVM {
         }
     }
 }
+
+InModuleScope GpuVM {
+    Describe 'Machines run by HCS (no Hyper-V)' {
+        BeforeEach {
+            Mock Get-GpuVMHcsRoot { 'C:\GpuVM' }
+            Mock Get-GpuVMHcsMachines { @(@{ name = 'home1'; memoryMB = 4096; cpus = 4; running = $true; vmId = 'c4db4891-b8bd-52a3-8e0f-c1831f1a6050'; gpu = 'gpu0' }) }
+            Mock Test-GpuVMHcsMachine { $Name -eq 'home1' }
+        }
+
+        It 'Get-VM lists them next to Hyper-V machines, with the properties the module reads' {
+            $script:HyperVAvailable = $false
+            try {
+                $vm = Get-VM -Name home1
+                $vm.Name | Should Be 'home1'
+                $vm.State | Should Be 'Running'
+                $vm.Path | Should Be 'C:\GpuVM'
+                $vm.MemoryStartup | Should Be (4096 * 1MB)
+                $vm.Id.Guid | Should Be 'c4db4891-b8bd-52a3-8e0f-c1831f1a6050'
+                Test-HcsVMObject $vm | Should Be $true
+                @(Get-VM).Count | Should Be 1
+            }
+            finally { $script:HyperVAvailable = [bool](Get-Module -ListAvailable -Name Hyper-V) }
+        }
+
+        It 'a missing name is an error, as with Hyper-V' {
+            $script:HyperVAvailable = $false
+            try { Test-Throws { Get-VM -Name nope -ErrorAction Stop } | Should Be $true }
+            finally { $script:HyperVAvailable = [bool](Get-Module -ListAvailable -Name Hyper-V) }
+        }
+
+        It 'the disk, GPU and network adapter come from the machine record and its agent' {
+            Mock Get-GpuVMHcsInfo { @{ ipv4 = @('192.168.165.20') } }
+            (Get-VMHardDiskDrive -VMName home1).Path | Should Be 'C:\GpuVM\home1\disk.vhdx'
+            (Get-VMGpuPartitionAdapter -VMName home1).InstancePath | Should Be 'gpu0'
+            $nic = Get-VMNetworkAdapter -VMName home1
+            $nic.SwitchName | Should Be 'GpuVM'
+            ($nic.IPAddresses -join ',') | Should Be '192.168.165.20'
+        }
+
+        It 'the heartbeat is the agent answering' {
+            Mock Get-GpuVMHcsInfo { @{ uptimeSec = 5 } }
+            (Get-VMIntegrationService -VMName home1).PrimaryOperationalStatus | Should Be 'Ok'
+            Mock Get-GpuVMHcsInfo { $null }
+            (Get-VMIntegrationService -VMName home1).PrimaryOperationalStatus | Should Be 'NoContact'
+        }
+
+        It 'guest commands and power go through the agent and the engine' {
+            Mock Invoke-HcsGuest { "ran $($ArgumentList -join ',')" }
+            $cred = [pscredential]::new('u', (ConvertTo-SecureString 'p' -AsPlainText -Force))
+            Invoke-Guest -Name home1 -Credential $cred -ScriptBlock { param($a) $a } -ArgumentList 7 | Should Be 'ran 7'
+            Invoke-Command -VMName home1 -Credential $cred -ScriptBlock { 1 } -ArgumentList 3 | Should Be 'ran 3'
+            Mock Start-HcsMachine { 'started' }
+            Mock Stop-HcsMachine { "stopped $TurnOff" }
+            Start-VM -Name home1 | Should Be 'started'
+            Stop-VM -Name home1 -TurnOff | Should Be 'stopped True'
+            Test-Throws { New-PSSession -VMName home1 -Credential $cred } | Should Be $true
+        }
+
+        It 'machines GpuVM did not make with HCS still go to Hyper-V' {
+            Mock Invoke-HcsGuest { 'hcs' }
+            Mock Microsoft.PowerShell.Core\Invoke-Command { 'core' }
+            Invoke-Command -ScriptBlock { 1 } | Should Be 'core'
+        }
+    }
+}

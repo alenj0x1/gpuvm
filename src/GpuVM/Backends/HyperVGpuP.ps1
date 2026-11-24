@@ -1,4 +1,4 @@
-# Partition values are relative: 1e9 is the maximum for VRAM, decode and compute; UInt64.MaxValue for encode.
+﻿# Partition values are relative: 1e9 is the maximum for VRAM, decode and compute; UInt64.MaxValue for encode.
 function Get-GpuPartitionSettings {
     param([ValidateRange(1, 100)][int]$Percent = 100)
     $scale = [decimal]$Percent / 100
@@ -298,9 +298,10 @@ function Rename-HyperVGpuPVM {
                 $target = Get-RenamedVMPath -Path $drive.Path @paths
                 if (-not $target) { continue }
                 # Its restore points first: Hyper-V looks for a parent next to the moved disk (by its relative path).
-                $parent = (Get-VHD -Path $drive.Path -ErrorAction SilentlyContinue).ParentPath
+                # A disk Hyper-V can't read has no parent to move (and $null.ParentPath fails under StrictMode).
+                $parent = Get-VHD -Path $drive.Path -ErrorAction SilentlyContinue | ForEach-Object ParentPath | Select-Object -First 1
                 while ($parent -and $parent.StartsWith("$oldDir\", [StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath $parent)) {
-                    $next = (Get-VHD -Path $parent -ErrorAction SilentlyContinue).ParentPath
+                    $next = Get-VHD -Path $parent -ErrorAction SilentlyContinue | ForEach-Object ParentPath | Select-Object -First 1
                     $to = Get-RenamedVMPath -Path $parent @paths
                     if ($to -and -not (Test-Path -LiteralPath $to)) {
                         Move-GpuVMItem -Path $parent -Destination $to
@@ -345,6 +346,43 @@ function Rename-HyperVGpuPVM {
     $renamed
 }
 
+# What every new machine's Windows gets before its first boot (unattended install, GpuVM's guest scripts and the
+# GPU driver); shared by the Hyper-V and HCS backends.
+function Initialize-NewGuestWindows {
+    param([Parameter(Mandatory)][string]$Root, [Parameter(Mandatory)]$Context, [Parameter(Mandatory)]$FileSet)
+    Write-Step 'Preparing the unattended install and the guest scripts'
+    $panther = Join-Path $root 'Windows\Panther'
+    New-Item -ItemType Directory -Path $panther -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $panther 'unattend.xml') -Value $Context.UnattendXml -Encoding utf8
+
+    $guestDir = Join-Path $root 'GpuVM'
+    New-Item -ItemType Directory -Path $guestDir -Force | Out-Null
+    # C:\GpuVM would inherit "Authenticated Users: Modify" from C:\ and its contents run as the guest's administrator.
+    & icacls.exe $guestDir /setowner '*S-1-5-32-544' /Q | Out-Null
+    & icacls.exe $guestDir /inheritance:r /grant:r '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-545:(OI)(CI)RX' /Q | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Couldn't restrict the permissions of the guest's C:\GpuVM." }
+    Copy-Item -Path (Join-Path (Get-RepoPath 'guest') '*') -Destination $guestDir -Recurse -Force
+    Write-JsonFile -Path (Join-Path $guestDir 'guest-config.json') -Data $config['guest']
+    foreach ($file in @($Context.GuestFiles)) {
+        if (-not $file) { continue }
+        if ($file.Sha256 -and (Get-FileSha256 $file.Source) -ne $file.Sha256) {
+            throw "The file $($file.Source) changed since it was verified; it won't be copied to the VM."
+        }
+        $target = Join-Path $guestDir $file.Destination
+        New-Item -ItemType Directory -Path $target -Force | Out-Null
+        Copy-Item -LiteralPath $file.Source -Destination $target -Force
+    }
+    if ($Context.GuestJson) {
+        foreach ($relative in $Context.GuestJson.Keys) {
+            Write-JsonFile -Path (Join-Path $guestDir $relative) -Data $Context.GuestJson[$relative]
+        }
+    }
+
+    Write-Step 'Copying the GPU driver to the guest'
+    $result = Copy-GpuDriverToWindows -FileSet $fileSet -WindowsRoot $root
+    Write-Step "Driver copied: $($result.Folders) DriverStore folders and $($result.Files) files"
+}
+
 Register-GpuVMBackend -Name 'hyperv-gpup'-Description 'Hyper-V with GPU Partitioning; the GPU is shared with the host.' -Operations @{
     Test       = { param($Config) Get-HyperVGpuPChecks -Config $Config }
 
@@ -369,37 +407,7 @@ Register-GpuVMBackend -Name 'hyperv-gpup'-Description 'Hyper-V with GPU Partitio
         New-WindowsVhdx -Path $vhdPath -SizeGB $config['vm']['disk']['sizeGB'] -Type $config['vm']['disk']['type'] `
             -ImageFile $Context.ImageFile -ImageIndex $Context.ImageIndex -Edition $Context.Edition -Language $Context.Language -Customize {
             param($root)
-            Write-Step 'Preparing the unattended install and the guest scripts'
-            $panther = Join-Path $root 'Windows\Panther'
-            New-Item -ItemType Directory -Path $panther -Force | Out-Null
-            Set-Content -LiteralPath (Join-Path $panther 'unattend.xml') -Value $Context.UnattendXml -Encoding utf8
-
-            $guestDir = Join-Path $root 'GpuVM'
-            New-Item -ItemType Directory -Path $guestDir -Force | Out-Null
-            # C:\GpuVM would inherit "Authenticated Users: Modify" from C:\ and its contents run as the guest's administrator.
-            & icacls.exe $guestDir /setowner '*S-1-5-32-544' /Q | Out-Null
-            & icacls.exe $guestDir /inheritance:r /grant:r '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-545:(OI)(CI)RX' /Q | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw "Couldn't restrict the permissions of the guest's C:\GpuVM." }
-            Copy-Item -Path (Join-Path (Get-RepoPath 'guest') '*') -Destination $guestDir -Recurse -Force
-            Write-JsonFile -Path (Join-Path $guestDir 'guest-config.json') -Data $config['guest']
-            foreach ($file in @($Context.GuestFiles)) {
-                if (-not $file) { continue }
-                if ($file.Sha256 -and (Get-FileSha256 $file.Source) -ne $file.Sha256) {
-                    throw "The file $($file.Source) changed since it was verified; it won't be copied to the VM."
-                }
-                $target = Join-Path $guestDir $file.Destination
-                New-Item -ItemType Directory -Path $target -Force | Out-Null
-                Copy-Item -LiteralPath $file.Source -Destination $target -Force
-            }
-            if ($Context.GuestJson) {
-                foreach ($relative in $Context.GuestJson.Keys) {
-                    Write-JsonFile -Path (Join-Path $guestDir $relative) -Data $Context.GuestJson[$relative]
-                }
-            }
-
-            Write-Step 'Copying the GPU driver to the guest'
-            $result = Copy-GpuDriverToWindows -FileSet $fileSet -WindowsRoot $root
-            Write-Step "Driver copied: $($result.Folders) DriverStore folders and $($result.Files) files"
+            Initialize-NewGuestWindows -Root $root -Context $Context -FileSet $fileSet
         }
 
         Write-Step "Registering the VM '$name' in Hyper-V"

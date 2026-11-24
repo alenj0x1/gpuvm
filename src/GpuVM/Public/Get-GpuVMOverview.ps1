@@ -1,4 +1,4 @@
-function Get-GpuVMOverview {
+﻿function Get-GpuVMOverview {
     <#
     .SYNOPSIS
     All Hyper-V VMs with their state and live usage (CPU, memory, GPU), whether created with GpuVM or not.
@@ -38,6 +38,7 @@ function Get-GpuVMOverview {
             name           = $vm.Name
             state          = $vm.State.ToString()
             managed        = [bool]$state
+            backend        = if (Test-HcsVMObject $vm) { 'hcs' } elseif ($state) { $state['backend'] } else { 'hyperv-gpup' }
             profile        = if ($state) { $state['profile'] } else { $null }
             edition        = if ($state) { $state['edition'] } else { $null }
             generation     = $vm.Generation

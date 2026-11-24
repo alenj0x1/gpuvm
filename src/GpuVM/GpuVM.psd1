@@ -1,4 +1,4 @@
-@{
+﻿@{
     RootModule        = 'GpuVM.psm1'
     ModuleVersion     = '1.0.0'
     GUID              = '6f3c2a71-4b8e-4d2a-9c61-2f7e0b5d9a14'
@@ -14,6 +14,8 @@
         'Rename-GpuVM'
         'Repair-GpuVMState'
         'Get-GpuVMOverview'
+        'Get-GpuVMPlatform'
+        'Enable-GpuVMPlatform'
         'Invoke-GpuVMPower'
         'Set-GpuVMGuestCredential'
         'Get-GpuVMIsoList'
