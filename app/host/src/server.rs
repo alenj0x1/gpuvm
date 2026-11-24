@@ -250,22 +250,38 @@ fn spawn_bridge(token: &Handle) -> Result<Bridge, String> {
     }
 }
 
-pub struct Busy(bool);
+// The jobs running now, named in the log when a stop has to wait for them.
+static JOBS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+pub fn running_jobs() -> String {
+    JOBS.lock().map(|j| j.join(", ")).unwrap_or_default()
+}
+
+pub struct Busy(bool, Option<String>);
 impl Busy {
     pub fn start() -> Self {
         BUSY.fetch_add(1, Ordering::SeqCst);
-        Busy(true)
+        Busy(true, None)
     }
     pub fn quick() -> Self {
         QUICK.fetch_add(1, Ordering::SeqCst);
-        Busy(false)
+        Busy(false, None)
     }
     pub fn for_command(cmd: &str) -> Self {
-        if cmd.starts_with("Get-") || cmd.starts_with("Test-") { Busy::quick() } else { Busy::start() }
+        if cmd.starts_with("Get-") || cmd.starts_with("Test-") { return Busy::quick(); }
+        let mut b = Busy::start();
+        if let Ok(mut j) = JOBS.lock() { j.push(cmd.to_string()); }
+        b.1 = Some(cmd.to_string());
+        b
     }
 }
 impl Drop for Busy {
     fn drop(&mut self) {
+        if let Some(name) = &self.1 {
+            if let Ok(mut j) = JOBS.lock() {
+                if let Some(i) = j.iter().position(|x| x == name) { j.remove(i); }
+            }
+        }
         if self.0 { BUSY.fetch_sub(1, Ordering::SeqCst) } else { QUICK.fetch_sub(1, Ordering::SeqCst) };
     }
 }

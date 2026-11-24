@@ -53,6 +53,10 @@ unsafe extern "system" fn control(code: u32, _: u32, _: *mut c_void, _: *mut c_v
         let long = 600;
         std::thread::spawn(move || {
             let start = std::time::Instant::now();
+            let jobs = server::running_jobs();
+            if !jobs.is_empty() {
+                server::log(&format!("stopping: waiting for {jobs}"));
+            }
             let mut checkpoint = 1;
             let mut wait = |counter: &std::sync::atomic::AtomicUsize, limit: u64| {
                 let since = std::time::Instant::now();
@@ -66,7 +70,7 @@ unsafe extern "system" fn control(code: u32, _: u32, _: *mut c_void, _: *mut c_v
             wait(&server::QUICK, 5);
             let (busy, quick) = (server::BUSY.load(Ordering::SeqCst), server::QUICK.load(Ordering::SeqCst));
             if busy + quick > 0 {
-                server::log(&format!("stopping after {:.1} s with {busy} job(s) and {quick} request(s) still running: ended", start.elapsed().as_secs_f64()));
+                server::log(&format!("stopping after {:.1} s with {busy} job(s) ({}) and {quick} request(s) still running: ended", start.elapsed().as_secs_f64(), server::running_jobs()));
             }
             stop_now();
         });
