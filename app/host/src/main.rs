@@ -272,6 +272,7 @@ fn main() {
         Some("stop") => stop(),
         Some("startup") => startup(std::env::args().nth(2).as_deref()),
         Some("uninstall") => uninstall(),
+        Some("hcs") => hcs::cli::main(&std::env::args().skip(2).collect::<Vec<_>>()),
         Some("sweep-agents") => {
             for vm in agent::sweep_registrations() {
                 server::log(&format!("sweep-agents: {vm}"));
