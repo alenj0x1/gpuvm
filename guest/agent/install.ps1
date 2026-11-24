@@ -365,10 +365,23 @@ function Remove-SecretFile {
     }
 }
 
+# The service's helpers in the sign-in sessions run from the same exe and can outlive it for a moment.
+function Stop-Agent {
+    $s = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    if ($s -and $s.Status -ne 'Stopped') { Stop-Service -Name $ServiceName -Force }
+    $deadline = (Get-Date).AddSeconds(15)
+    while ($true) {
+        $left = @(Get-CimInstance Win32_Process -Filter "Name = 'gpuvm-agent.exe'" | Where-Object { $_.ExecutablePath -and $_.ExecutablePath -ieq $Exe })
+        if (-not $left.Count) { return }
+        if ((Get-Date) -gt $deadline) { $left | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Start-Sleep -Milliseconds 500; return }
+        Start-Sleep -Milliseconds 250
+    }
+}
+
 if ($Uninstall) {
     $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     if ($svc) {
-        if ($svc.Status -ne 'Stopped') { Stop-Service -Name $ServiceName -Force }
+        Stop-Agent
         & sc.exe delete $ServiceName | Out-Null
     }
     if (Test-Path $AppDir) { Remove-Item -LiteralPath $AppDir -Recurse -Force }
@@ -401,7 +414,7 @@ function Remove-Staging {
 
 if ($PrepareTemplate) {
     $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-    if ($svc -and $svc.Status -ne 'Stopped') { Stop-Service -Name $ServiceName -Force }
+    if ($svc) { Stop-Agent }
     Remove-SecretFile
     Remove-Item -LiteralPath (Join-Path $DataDir 'logs') -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Staging
@@ -428,7 +441,7 @@ $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 $user = Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue
 $oldVersion = if (Test-Path $Exe) { (& $Exe version 2>$null | Out-String).Trim() } else { '' }
 if (-not $Full -and $svc -and $user -and $SignInAs -eq 'agent' -and $oldVersion -and $oldVersion -eq $newVersion) {
-    if ($svc.Status -ne 'Stopped') { Stop-Service -Name $ServiceName -Force }
+    Stop-Agent
     Initialize-DataDir
     if ($Secret) { [IO.File]::WriteAllBytes((Join-Path $DataDir 'secret'), $Secret) }
     Set-ProtectedAcl $DataDir $false
@@ -456,7 +469,7 @@ if ($Secret) {
     Set-ProtectedAcl $DataDir $false
 }
 
-if ($svc -and $svc.Status -ne 'Stopped') { Stop-Service -Name $ServiceName -Force }
+if ($svc) { Stop-Agent }
 if (-not (Test-Path $AppDir)) { New-Item -ItemType Directory -Path $AppDir -Force | Out-Null }
 Copy-Item -LiteralPath $srcExe -Destination $Exe -Force
 Set-ProtectedAcl $AppDir $true
