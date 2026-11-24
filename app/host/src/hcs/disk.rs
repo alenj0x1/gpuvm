@@ -23,7 +23,10 @@ fn any_type() -> VIRTUAL_STORAGE_TYPE {
 }
 
 fn win32(code: u32, what: &str, path: &Path) -> Result<(), String> {
-    if code == ERROR_SUCCESS { Ok(()) } else { Err(format!("{what} {}: Windows error {code}", path.display())) }
+    if code == ERROR_SUCCESS {
+        return Ok(());
+    }
+    Err(format!("{what} {}: {} (Windows error {code})", path.display(), std::io::Error::from_raw_os_error(code as i32)))
 }
 
 struct Handle(HANDLE);
@@ -93,10 +96,16 @@ pub fn parent_of(path: &Path) -> Result<Option<PathBuf>, String> {
         let loc = &(*info).Anonymous.ParentLocation;
         let start = loc.ParentLocationBuffer.as_ptr();
         let max = (size as usize).saturating_sub(start as usize - info as usize) / 2;
-        let len = (0..max).take_while(|&i| *start.add(i) != 0).count();
-        let first = String::from_utf16_lossy(std::slice::from_raw_parts(start, len));
-        Ok((!first.is_empty()).then(|| PathBuf::from(first)))
+        Ok(absolute_entry(std::slice::from_raw_parts(start, max)))
     }
+}
+
+// The location list holds the stored relative and absolute paths, null-separated, in no promised order.
+fn absolute_entry(list: &[u16]) -> Option<PathBuf> {
+    let end = list.windows(2).position(|w| w == [0, 0]).map_or(list.len(), |i| i + 1);
+    list[..end].split(|&c| c == 0).map(String::from_utf16_lossy)
+        .find(|s| s.starts_with(r"\\?\") || s.as_bytes().get(1) == Some(&b':'))
+        .map(PathBuf::from)
 }
 
 /// A disk attached to this PC without a drive letter, detached when dropped.
@@ -121,7 +130,15 @@ impl Attached {
 
     /// The volume that holds Windows (`Windows\System32\config\SOFTWARE`), for changes made with the machine off.
     pub fn windows_volume(&self, wait: Duration) -> Option<String> {
-        self.volumes(wait).into_iter().find(|v| Path::new(v).join(r"Windows\System32\config\SOFTWARE").is_file())
+        // Small partitions (EFI, recovery) usually mount first: keep looking until Windows' own volume is there.
+        let until = Instant::now() + wait;
+        loop {
+            let found = volumes_on_disk(self.number).into_iter().find(|v| Path::new(v).join(r"Windows\System32\config\SOFTWARE").is_file());
+            if found.is_some() || Instant::now() >= until {
+                return found;
+            }
+            std::thread::sleep(Duration::from_millis(250));
+        }
     }
 }
 
@@ -206,6 +223,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn parent_location_prefers_an_absolute_path() {
+        let list: Vec<u16> = ".\\base.vhdx\0C:\\GpuVM\\base.vhdx\0\0".encode_utf16().collect();
+        assert_eq!(absolute_entry(&list), Some(PathBuf::from(r"C:\GpuVM\base.vhdx")));
+        let unc: Vec<u16> = "\\\\?\\Volume{1}\\base.vhdx\0\0".encode_utf16().collect();
+        assert_eq!(absolute_entry(&unc), Some(PathBuf::from(r"\\?\Volume{1}\base.vhdx")));
+        let none: Vec<u16> = ".\\base.vhdx\0\0".encode_utf16().collect();
+        assert_eq!(absolute_entry(&none), None);
+    }
+
+    #[test]
     fn disk_number_ignores_case() {
         assert_eq!(disk_number(r"\\.\PhysicalDrive3"), Some(3));
         assert_eq!(disk_number(r"\\.\PHYSICALDRIVE12"), Some(12));
@@ -217,18 +244,20 @@ mod tests {
 mod live {
     use super::*;
 
+    struct Gone(PathBuf);
+
+    impl Drop for Gone {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
     // Needs an elevated shell; run with `cargo test -- --ignored hcs`.
     #[test]
     #[ignore]
     fn hcs_disks_create_chain_and_attach() {
         let dir = std::env::temp_dir().join(format!("gpuvm-disk-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        struct Gone(PathBuf);
-        impl Drop for Gone {
-            fn drop(&mut self) {
-                let _ = std::fs::remove_dir_all(&self.0);
-            }
-        }
         let _gone = Gone(dir.clone());
         let (base, child) = (dir.join("base.vhdx"), dir.join("child.vhdx"));
         create_dynamic(&base, 64 << 20).unwrap();
@@ -251,13 +280,13 @@ mod live {
         let Ok(layer) = std::env::var("GPUVM_TEST_LAYER") else { panic!("set GPUVM_TEST_LAYER") };
         let dir = std::env::temp_dir().join(format!("gpuvm-disk-test-win-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
+        let _gone = Gone(dir.clone());
         let child = dir.join("copy.vhdx");
         create_differencing(&child, Path::new(&layer)).unwrap();
         let found = {
             let attached = attach(&child, true).unwrap();
             attached.windows_volume(Duration::from_secs(10))
         };
-        let _ = std::fs::remove_dir_all(&dir);
         let volume = found.expect("a Windows volume");
         assert!(volume.starts_with(r"\\?\Volume{"), "{volume}");
     }
