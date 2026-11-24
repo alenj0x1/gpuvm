@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { IconAlertTriangle, IconHome, IconLoader2, IconPlugConnected, IconPlus, IconRefresh, IconRobot, IconSettings, IconShieldLock, IconStack2 } from "@tabler/icons-react";
+import { IconAlertTriangle, IconHome, IconLoader2, IconPlugConnected, IconPlus, IconPower, IconRefresh, IconRobot, IconSettings, IconShieldLock, IconStack2, IconToggleRight } from "@tabler/icons-react";
 import { Preferences } from "./Preferences";
 import { Library, type LibraryTab } from "./Library";
 import { EmptyHome, Home, HomeSkeleton } from "./Home";
 import { Logo } from "./Logo";
 import { TripleSpark } from "./Chart";
-import type { HostInfo, JobEvent, Sample, VmOverview } from "./types";
+import type { HostInfo, JobEvent, Platform, Sample, VmOverview } from "./types";
 import { readPrefs } from "./prefs";
 import { api, inTauri, onJob, relaunchAsAdmin, repairService, service, startJob as runJob } from "./api";
 import { MachineIcon, renamePatternVariant } from "./machineIcon";
@@ -65,6 +65,17 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
   const [host, setHost] = useState<HostInfo | null>(null);
   const [blocked, setBlocked] = useState<"stopped" | "missing" | "admin" | null>(null);
   const [repair, setRepair] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
+  const [platform, setPlatform] = useState<Platform | null>(null);
+  const [platformStep, setPlatformStep] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
+  // Read again once the service answers (it may be stopped or missing when the app opens).
+  useEffect(() => { if (!blocked) api.platform().then(setPlatform).catch(() => {}); }, [blocked]);
+  // "Restart now" takes the place of "Turn on": it waits a moment, so a second click meant for "Turn on" can't restart.
+  const [restartReady, setRestartReady] = useState(false);
+  useEffect(() => {
+    if (!platform?.restartPending) { setRestartReady(false); return; }
+    const timer = setTimeout(() => setRestartReady(true), 2000);
+    return () => clearTimeout(timer);
+  }, [platform?.restartPending]);
   const [readError, setReadError] = useState<string | null>(null);
   const [selected, setSelected] = useState(() => embedded ? HOME : decodeURIComponent(location.hash.slice(1)));
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem("gpuvm.collapsed") === "1"; } catch { return false; } });
@@ -403,11 +414,51 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
         <div className="empty">
           <Logo className="empty-logo" size={96} />
           <h2>{stopped ? t("The GpuVM service is stopped") : t("The GpuVM service is missing")}</h2>
-          <p>{stopped ? t("It's the part of GpuVM that controls Hyper-V. It's set to manual in Settings.") : t("It's the part of GpuVM that controls Hyper-V. Repairing it asks for administrator permission once.")}</p>
+          <p>{stopped ? t("It's the part of GpuVM that runs the machines. It's set to manual in Settings.") : t("It's the part of GpuVM that runs the machines. Repairing it asks for administrator permission once.")}</p>
           <button className="primary" onClick={fix} disabled={repair.busy}>
             {stopped ? <><IconPlugConnected size={17} />{repair.busy ? t("Starting…") : t("Start service")}</> : <><IconShieldLock size={17} />{repair.busy ? t("Repairing…") : t("Repair")}</>}
           </button>
           {repair.error && <span className="error-text">{repair.error}</span>}
+        </div>
+      </div>
+    );
+  }
+
+  // Without Hyper-V, machines run on Windows' Virtual Machine Platform: turned on here, finished by a restart.
+  if (!blocked && platform && !platform.ready) {
+    const restart = platform.restartPending;
+    const act = async () => {
+      setPlatformStep({ busy: true, error: null });
+      try {
+        if (restart) {
+          await api.restartHost();
+          // Windows restarts in a few seconds; if that was cancelled, the button comes back.
+          setTimeout(() => setPlatformStep({ busy: false, error: null }), 20000);
+          return;
+        }
+        const done = await api.enablePlatform();
+        setPlatform((p) => p && { ...p, restartPending: done.restartNeeded, canEnable: false, ready: !done.restartNeeded && p.ready });
+        api.platform().then(setPlatform).catch(() => {});
+        setPlatformStep({ busy: false, error: null });
+      } catch (e) { setPlatformStep({ busy: false, error: humanError(e) }); }
+    };
+    return (
+      <div className="app single">
+        <TitleBar />
+        <div className="empty">
+          <Logo className="empty-logo" size={96} />
+          <h2>{restart ? t("Restart to finish") : platform.canEnable ? t("Turn on Virtual Machine Platform") : t("Virtual Machine Platform isn't available")}</h2>
+          <p>{restart
+            ? t("Windows turns on Virtual Machine Platform when the PC starts again. Save your work first.")
+            : platform.canEnable
+              ? t("This edition of Windows has no Hyper-V. GpuVM runs machines on Windows' Virtual Machine Platform, which finishes turning on when the PC restarts.")
+              : t("This version of Windows can't run virtual machines. GpuVM needs Windows 10 or 11 with virtualization on in the BIOS.")}</p>
+          {(restart || platform.canEnable) && (
+            <button className="primary" onClick={act} disabled={platformStep.busy || (restart && !restartReady)}>
+              {restart ? <><IconPower size={17} />{platformStep.busy ? t("Restarting…") : t("Restart now")}</> : <><IconToggleRight size={17} />{platformStep.busy ? t("Turning on…") : t("Turn on")}</>}
+            </button>
+          )}
+          {platformStep.error && <span className="error-text">{platformStep.error}</span>}
         </div>
       </div>
     );
@@ -420,7 +471,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
         <div className="empty">
           <Logo className="empty-logo" size={96} />
           <h2>{t("GpuVM needs administrator permission")}</h2>
-          <p>{t("Hyper-V only lets an administrator create and control machines.")}</p>
+          <p>{t("Windows only lets an administrator create and control virtual machines.")}</p>
           <button className="primary" onClick={relaunchAsAdmin}><IconShieldLock size={17} />{t("Open as administrator")}</button>
         </div>
       </div>
@@ -585,7 +636,7 @@ export function App({ embedded = false }: { embedded?: boolean } = {}) {
         {readError && (
           <div className="notice error-notice">
             <IconAlertTriangle size={20} />
-            <div className="grow">{t("Couldn't read Hyper-V: {error}", { error: readError })}</div>
+            <div className="grow">{t("Couldn't read the machines: {error}", { error: readError })}</div>
             <button className="btn" onClick={refresh}><IconRefresh size={16} />{t("Retry")}</button>
           </div>
         )}

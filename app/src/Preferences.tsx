@@ -85,7 +85,7 @@ function ServicePrefs() {
       <div className="pref-row">
         <div className="pref-text">
           <strong>{t("Status")}</strong>
-          {error ? <span className="error-text">{error}</span> : <span>{t("The service does the Hyper-V work for GpuVM.")}</span>}
+          {error ? <span className="error-text">{error}</span> : <span>{t("The service runs the machines for GpuVM.")}</span>}
         </div>
         <div className="pref-side">
           {status && <span className="pref-state"><span className={`dot ${DOT[status.state]}`} />{stateText()[status.state]}</span>}
