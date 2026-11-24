@@ -59,17 +59,53 @@ pub fn load(file: &Path) -> Result<Hive, String> {
     Ok(Hive { key, mount })
 }
 
+const REG_OPTION_OPEN_LINK: u32 = 0x8;
+
+/// A key that is a registry symbolic link carries this value; the guest controls its hive and could point one at the
+/// host's own registry.
+fn is_link(key: HKEY) -> bool {
+    let mut kind = 0u32;
+    let code = unsafe { RegQueryValueExW(key, wide("SymbolicLinkValue").as_ptr(), std::ptr::null(), &mut kind, std::ptr::null_mut(), std::ptr::null_mut()) };
+    code == ERROR_SUCCESS && kind == REG_LINK
+}
+
+/// Opens (or with `create`, creates) one subkey under `parent` without following links, and refuses a link.
+fn child(parent: HKEY, name: &str, create: bool) -> Result<Key, String> {
+    let mut h: HKEY = std::ptr::null_mut();
+    let code = unsafe { RegOpenKeyExW(parent, wide(name).as_ptr(), REG_OPTION_OPEN_LINK, KEY_ALL_ACCESS, &mut h) };
+    if code != ERROR_SUCCESS {
+        if !create {
+            return check(code, &format!("open {name}")).map(|_| Key(h));
+        }
+        check(unsafe { RegCreateKeyExW(parent, wide(name).as_ptr(), 0, std::ptr::null(), REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, std::ptr::null(), &mut h, std::ptr::null_mut()) }, &format!("create {name}"))?;
+        unsafe { RegCloseKey(h) };
+        h = std::ptr::null_mut();
+        check(unsafe { RegOpenKeyExW(parent, wide(name).as_ptr(), REG_OPTION_OPEN_LINK, KEY_ALL_ACCESS, &mut h) }, &format!("open {name}"))?;
+    }
+    let key = Key(h);
+    if is_link(key.0) {
+        return Err(format!("{name} in the machine's registry is a link; GpuVM won't write through it"));
+    }
+    Ok(key)
+}
+
 impl Hive {
+    /// Walks `path` one key at a time, never through a link, creating what is missing.
     pub fn create(&self, path: &str) -> Result<Key, String> {
-        let mut h: HKEY = std::ptr::null_mut();
-        check(unsafe { RegCreateKeyExW(self.key, wide(path).as_ptr(), 0, std::ptr::null(), 0, KEY_ALL_ACCESS, std::ptr::null(), &mut h, std::ptr::null_mut()) }, &format!("create {path}"))?;
-        Ok(Key(h))
+        let mut parts = path.split('\\').filter(|p| !p.is_empty());
+        let first = parts.next().ok_or("empty key path")?;
+        let mut cur = child(self.key, first, true)?;
+        for p in parts {
+            cur = child(cur.0, p, true)?;
+        }
+        Ok(cur)
     }
 
     pub fn dword(&self, path: &str, name: &str) -> Option<u32> {
+        let key = child(self.key, path, false).ok()?;
         let mut data = 0u32;
         let mut size = 4u32;
-        let code = unsafe { RegGetValueW(self.key, wide(path).as_ptr(), wide(name).as_ptr(), RRF_RT_REG_DWORD, std::ptr::null_mut(), (&mut data as *mut u32).cast(), &mut size) };
+        let code = unsafe { RegGetValueW(key.0, std::ptr::null(), wide(name).as_ptr(), RRF_RT_REG_DWORD, std::ptr::null_mut(), (&mut data as *mut u32).cast(), &mut size) };
         (code == ERROR_SUCCESS).then_some(data)
     }
 }
@@ -127,6 +163,32 @@ pub fn add_service(system_hive: &Path, name: &str, display: &str, image_path: &s
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn registry_links_are_refused() {
+        const REG_OPTION_CREATE_LINK: u32 = 0x2;
+        let base = format!(r"Software\GpuVMLinkTest{}", std::process::id());
+        let mut root: HKEY = std::ptr::null_mut();
+        unsafe { RegCreateKeyExW(HKEY_CURRENT_USER, wide(&base).as_ptr(), 0, std::ptr::null(), 0, KEY_ALL_ACCESS, std::ptr::null(), &mut root, std::ptr::null_mut()) };
+        let root = Key(root);
+        let mut link: HKEY = std::ptr::null_mut();
+        let made = unsafe { RegCreateKeyExW(root.0, wide("Planted").as_ptr(), 0, std::ptr::null(), REG_OPTION_CREATE_LINK | REG_OPTION_VOLATILE, KEY_ALL_ACCESS | KEY_CREATE_LINK, std::ptr::null(), &mut link, std::ptr::null_mut()) };
+        assert_eq!(made, ERROR_SUCCESS);
+        let target: Vec<u8> = r"\REGISTRY\MACHINE\SOFTWARE\Microsoft".encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
+        unsafe { RegSetValueExW(link, wide("SymbolicLinkValue").as_ptr(), 0, REG_LINK, target.as_ptr(), target.len() as u32) };
+        unsafe { RegCloseKey(link) };
+        assert!(child(root.0, "Planted", true).is_err(), "a link must be refused");
+        assert!(child(root.0, "Plain", true).is_ok());
+        unsafe {
+            RegDeleteKeyExW(root.0, wide("Plain").as_ptr(), 0, 0);
+            let mut l: HKEY = std::ptr::null_mut();
+            RegOpenKeyExW(root.0, wide("Planted").as_ptr(), REG_OPTION_OPEN_LINK, KEY_ALL_ACCESS, &mut l);
+            windows_sys::Wdk::System::Registry::NtDeleteKey(l as _);
+            RegCloseKey(l);
+        }
+        drop(root);
+        unsafe { RegDeleteKeyExW(HKEY_CURRENT_USER, wide(&base).as_ptr(), 0, 0) };
+    }
 
     #[test]
     fn failure_actions_layout() {
