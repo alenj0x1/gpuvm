@@ -12,6 +12,17 @@ mod live {
     use super::*;
     use serde_json::json;
 
+    struct Cleanup { id: String, dir: std::path::PathBuf, files: Vec<std::path::PathBuf> }
+
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            for f in &self.files {
+                let _ = revoke_access(&self.id, f);
+            }
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
     // Needs an elevated shell and the lab lock; run with `cargo test -- --ignored hcs`.
     #[test]
     #[ignore]
@@ -20,6 +31,7 @@ mod live {
         std::fs::create_dir_all(&dir).unwrap();
         let (vmgs, vmrs) = (dir.join("vm.vmgs"), dir.join("vm.vmrs"));
         let id = format!("gpuvm-test-{}", std::process::id());
+        let _cleanup = Cleanup { id: id.clone(), dir: dir.clone(), files: vec![vmgs.clone(), vmrs.clone()] };
         create_guest_state_file(&vmgs).unwrap();
         create_runtime_state_file(&vmrs).unwrap();
         grant_access(&id, &vmgs).unwrap();
@@ -38,13 +50,11 @@ mod live {
         });
         let system = System::create(&id, &doc).expect("create");
         system.start().expect("start");
-        assert_eq!(system.state().as_deref(), Some("Running"));
+        assert_eq!(system.state().unwrap().as_deref(), Some("Running"));
         assert!(enumerate().unwrap().iter().any(|s| s["Id"].as_str() == Some(id.as_str())));
         system.terminate().expect("terminate");
         drop(system);
-        let _ = revoke_access(&id, &vmgs);
-        let _ = revoke_access(&id, &vmrs);
-        let _ = std::fs::remove_dir_all(&dir);
+        assert!(System::open(&id).is_err(), "the system should be gone after terminate");
     }
 
     #[test]

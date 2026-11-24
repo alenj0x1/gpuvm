@@ -4,7 +4,7 @@ use std::path::Path;
 use serde_json::Value;
 use windows_sys::core::{GUID, PWSTR};
 use windows_sys::Win32::Devices::DeviceAndDriverInstallation::*;
-use windows_sys::Win32::Foundation::LocalFree;
+use windows_sys::Win32::Foundation::{LocalFree, HCS_E_OPERATION_TIMEOUT, HCS_E_SYSTEM_NOT_FOUND};
 use windows_sys::Win32::System::HostComputeSystem::*;
 
 use crate::win::{wide, wide_path};
@@ -59,14 +59,21 @@ impl Operation {
         if op.is_null() { Err(HcsError { hr: -2147024882, detail: "HcsCreateOperation".into() }) } else { Ok(Self(op)) }
     }
 
-    fn run(call: impl FnOnce(HCS_OPERATION) -> i32, timeout_ms: u32) -> Result<String> {
+    fn run(what: &str, call: impl FnOnce(HCS_OPERATION) -> i32, timeout_ms: u32) -> Result<String> {
         let op = Self::new()?;
         let hr = call(op.0);
         let mut doc: PWSTR = std::ptr::null_mut();
         let waited = if hr >= 0 { unsafe { HcsWaitForOperationResult(op.0, timeout_ms, &mut doc) } } else { hr };
         let text = take(doc);
         if waited < 0 {
-            return Err(HcsError { hr: waited, detail: error_message(&text) });
+            let detail = if waited == HCS_E_OPERATION_TIMEOUT {
+                format!("{what}: no answer in {} s", timeout_ms / 1000)
+            } else if text.is_empty() {
+                what.to_string()
+            } else {
+                format!("{what}: {}", error_message(&text))
+            };
+            return Err(HcsError { hr: waited, detail });
         }
         Ok(text)
     }
@@ -87,11 +94,21 @@ const GENERIC_ALL: u32 = 0x1000_0000;
 
 impl System {
     pub fn create(id: &str, document: &Value) -> Result<Self> {
-        let id = wide(id);
+        let wid = wide(id);
         let doc = wide(&document.to_string());
         let mut handle: HCS_SYSTEM = std::ptr::null_mut();
-        Operation::run(|op| unsafe { HcsCreateComputeSystem(id.as_ptr(), doc.as_ptr(), op, std::ptr::null(), &mut handle) }, 60_000)?;
-        Ok(Self(handle))
+        let result = Operation::run("create", |op| unsafe { HcsCreateComputeSystem(wid.as_ptr(), doc.as_ptr(), op, std::ptr::null(), &mut handle) }, 60_000);
+        // A handle can come back even when the operation fails: close it and end the half-made system so the id is free again.
+        let system = (!handle.is_null()).then(|| Self(handle));
+        match result {
+            Ok(_) => system.ok_or(HcsError { hr: -2147467259, detail: "create: no handle".into() }),
+            Err(e) => {
+                if let Some(s) = system {
+                    let _ = s.terminate();
+                }
+                Err(e)
+            }
+        }
     }
 
     pub fn open(id: &str) -> Result<Self> {
@@ -102,30 +119,34 @@ impl System {
     }
 
     pub fn start(&self) -> Result<()> {
-        Operation::run(|op| unsafe { HcsStartComputeSystem(self.0, op, std::ptr::null()) }, 120_000).map(drop)
+        Operation::run("start", |op| unsafe { HcsStartComputeSystem(self.0, op, std::ptr::null()) }, 120_000).map(drop)
     }
 
     pub fn shut_down(&self, timeout_ms: u32) -> Result<()> {
-        Operation::run(|op| unsafe { HcsShutDownComputeSystem(self.0, op, std::ptr::null()) }, timeout_ms).map(drop)
+        Operation::run("shut down", |op| unsafe { HcsShutDownComputeSystem(self.0, op, std::ptr::null()) }, timeout_ms).map(drop)
     }
 
     pub fn terminate(&self) -> Result<()> {
-        Operation::run(|op| unsafe { HcsTerminateComputeSystem(self.0, op, std::ptr::null()) }, 60_000).map(drop)
+        Operation::run("terminate", |op| unsafe { HcsTerminateComputeSystem(self.0, op, std::ptr::null()) }, 60_000).map(drop)
     }
 
     pub fn modify(&self, request: &Value) -> Result<()> {
         let doc = wide(&request.to_string());
-        Operation::run(|op| unsafe { HcsModifyComputeSystem(self.0, op, doc.as_ptr(), std::ptr::null_mut()) }, 60_000).map(drop)
+        Operation::run("modify", |op| unsafe { HcsModifyComputeSystem(self.0, op, doc.as_ptr(), std::ptr::null_mut()) }, 60_000).map(drop)
     }
 
     pub fn properties(&self) -> Result<Value> {
-        let text = Operation::run(|op| unsafe { HcsGetComputeSystemProperties(self.0, op, std::ptr::null()) }, 10_000)?;
+        let text = Operation::run("properties", |op| unsafe { HcsGetComputeSystemProperties(self.0, op, std::ptr::null()) }, 10_000)?;
         Ok(serde_json::from_str(&text).unwrap_or(Value::Null))
     }
 
-    /// "Running", "Paused", "Stopped"..., or None once the system is gone.
-    pub fn state(&self) -> Option<String> {
-        self.properties().ok().and_then(|v| v["State"].as_str().map(String::from))
+    /// Some("Running" / "Paused" / ...), None once the system no longer exists, or the error when HCS didn't answer.
+    pub fn state(&self) -> Result<Option<String>> {
+        match self.properties() {
+            Ok(v) => Ok(v["State"].as_str().map(String::from)),
+            Err(e) if e.hr == HCS_E_SYSTEM_NOT_FOUND => Ok(None),
+            Err(e) => Err(e),
+        }
     }
 }
 
@@ -136,7 +157,7 @@ impl Drop for System {
 }
 
 pub fn enumerate() -> Result<Vec<Value>> {
-    let text = Operation::run(|op| unsafe { HcsEnumerateComputeSystems(std::ptr::null(), op) }, 10_000)?;
+    let text = Operation::run("enumerate", |op| unsafe { HcsEnumerateComputeSystems(std::ptr::null(), op) }, 10_000)?;
     Ok(serde_json::from_str::<Value>(&text).ok().and_then(|v| v.as_array().cloned()).unwrap_or_default())
 }
 
@@ -161,17 +182,22 @@ const GPU_PARTITION_ADAPTER: GUID = GUID::from_u128(0x064092b3_625e_43bf_9eb5_dc
 
 /// Interface paths of the GPUs the host can share (the ids a GPU assignment names).
 pub fn partitionable_gpus() -> Vec<String> {
-    unsafe {
-        let mut len = 0u32;
-        if CM_Get_Device_Interface_List_SizeW(&mut len, &GPU_PARTITION_ADAPTER, std::ptr::null(), CM_GET_DEVICE_INTERFACE_LIST_PRESENT) != CR_SUCCESS || len < 2 {
-            return Vec::new();
+    // The list can grow between the size and the read (a GPU re-enumerating): try again a few times.
+    for _ in 0..3 {
+        unsafe {
+            let mut len = 0u32;
+            if CM_Get_Device_Interface_List_SizeW(&mut len, &GPU_PARTITION_ADAPTER, std::ptr::null(), CM_GET_DEVICE_INTERFACE_LIST_PRESENT) != CR_SUCCESS || len < 2 {
+                return Vec::new();
+            }
+            let mut buf = vec![0u16; len as usize];
+            match CM_Get_Device_Interface_ListW(&GPU_PARTITION_ADAPTER, std::ptr::null(), buf.as_mut_ptr(), len, CM_GET_DEVICE_INTERFACE_LIST_PRESENT) {
+                CR_SUCCESS => return buf.split(|&c| c == 0).filter(|s| !s.is_empty()).map(String::from_utf16_lossy).collect(),
+                CR_BUFFER_SMALL => continue,
+                _ => return Vec::new(),
+            }
         }
-        let mut buf = vec![0u16; len as usize];
-        if CM_Get_Device_Interface_ListW(&GPU_PARTITION_ADAPTER, std::ptr::null(), buf.as_mut_ptr(), len, CM_GET_DEVICE_INTERFACE_LIST_PRESENT) != CR_SUCCESS {
-            return Vec::new();
-        }
-        buf.split(|&c| c == 0).filter(|s| !s.is_empty()).map(String::from_utf16_lossy).collect()
     }
+    Vec::new()
 }
 
 #[cfg(test)]
