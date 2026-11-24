@@ -6,6 +6,21 @@ All notable changes to GpuVM are documented here. The format follows [Keep a Cha
 
 Changes waiting for the next version sit under **Unreleased** at the top (this section only exists while there are some, and the docs site doesn't show it); `scripts/release.py` turns it into the new version.
 
+## [Unreleased]
+
+### Added
+- **Every edition of Windows 10 and 11, Home included.** Where Windows has Hyper-V, GpuVM keeps using it; elsewhere it runs machines through Windows' Host Compute Service, which only needs the optional feature Virtual Machine Platform (the one WSL 2 uses). The GPU is shared the same way and the stream is as smooth as on Hyper-V. Machines are controlled through GpuVM's own agent, installed into the machine's disk before its first boot.
+- **Turn on Virtual Machine Platform from the app.** On a PC without Hyper-V where it is off, GpuVM shows a screen with **Turn on**, then **Restart now**, since Windows finishes it at the next start. New module commands: `Get-GpuVMPlatform`, `Enable-GpuVMPlatform`, `Restart-GpuVMHost`.
+- **Network isolation without Hyper-V.** An isolated machine (the default, always for agent machines) gets its own network whose only other member is your PC, locked by filters on your PC, and reaches the internet only through GpuVM's relay, which opens connections to public addresses only. It can't reach your local network, your PC's services or your other machines, even as administrator inside it, and its internet runs at the speed of the normal network, TCP and UDP.
+- **Administrator prompts on machines without Hyper-V.** The UAC prompt shows over the picture and is answered there, as on Hyper-V.
+
+### Changed
+- GpuVM's agent 0.5.0: it sets up the isolated network and its relay (with Wintun 0.14.1 by WireGuard LLC, shipped with it) and reads and writes the items the UAC prompt uses.
+- Texts no longer assume Hyper-V, and the **View Hyper-V console** menu item only shows for machines that run on Hyper-V.
+
+### Fixed
+- Renaming a machine whose disk Hyper-V can't read no longer stops with an error about `ParentPath`.
+
 ## [1.0.0] - 2026-11-23
 
 ### Added

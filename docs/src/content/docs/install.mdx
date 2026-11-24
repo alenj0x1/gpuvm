@@ -1,24 +1,24 @@
 ---
 title: Install
-description: Install GpuVM from GitHub Releases and prepare Hyper-V.
+description: Install GpuVM from GitHub Releases and turn on Hyper-V or Virtual Machine Platform.
 ---
 
 import { Aside, Steps } from '@astrojs/starlight/components';
 
 <Steps>
 
-1. **Enable Hyper-V** ([see below](#enable-hyper-v)) and restart.
+1. **Download the installer** (NSIS `.exe`) from [GitHub Releases](https://github.com/alenj0x1/gpuvm/releases) and run it.
 
-2. **Download the installer** (NSIS `.exe`) from [GitHub Releases](https://github.com/alenj0x1/gpuvm/releases) and run it.
+2. **Open GpuVM.** It opens without administrator rights.
 
-3. **Open GpuVM.** It opens without administrator rights.
+3. **Turn on Virtual Machine Platform if the app asks for it.** On a PC without Hyper-V (Windows Home, for example), if Windows' Virtual Machine Platform is off, the app shows a screen with **Turn on**, then **Restart now**: Windows finishes turning it on at the next restart. See [below](#hyper-v-or-virtual-machine-platform).
 
 </Steps>
 
 ## What the installer does
 
 - Installs GpuVM **for the whole machine** in **Program Files**, with its own PowerShell 7, GpuVM's viewer (which shows the machines), GpuVM's own Sunshine (which goes into each machine), the PowerShell module, the profiles, the guest scripts, the `unattend.xml` template and the streaming component list inside.
-- Registers the **GpuVM** service (`gpuvm-host.exe`), which does the Hyper-V work for the app. By default it starts when the app opens and stops when it quits (see [Settings](/docs/using-the-app/#settings)). Uninstalling removes it.
+- Registers the **GpuVM** service (`gpuvm-host.exe`), which runs the machines for the app. By default it starts when the app opens and stops when it quits (see [Settings](/docs/using-the-app/#settings)). Uninstalling removes it.
 - The data that changes (labs and downloaded installers) goes to **`%ProgramData%\GpuVM`**, which is also restricted to administrators.
 - The installer is in Spanish. The app follows Windows' display language (Spanish when Windows is in Spanish, English otherwise); change it in **Settings → Appearance → Language**.
 
@@ -26,15 +26,30 @@ import { Aside, Steps } from '@astrojs/starlight/components';
 The GpuVM service runs the module with administrator rights, so it only runs scripts and PowerShell from Program Files, which only an administrator can modify. See [Architecture](/docs/architecture/#security).
 </Aside>
 
-## Enable Hyper-V
+## Hyper-V or Virtual Machine Platform
 
-Once, in PowerShell **as administrator**, then restart:
+GpuVM works on every edition of Windows 10 and 11 and picks how it runs machines on its own:
+
+| Windows | Machines run on | GpuVM needs |
+|---|---|---|
+| Pro, Enterprise, Education or Pro for Workstations, with Hyper-V on | Hyper-V, with GPU partitioning (backend `hyperv-gpup`) | Hyper-V |
+| Home, or any edition with Hyper-V off | Windows' Host Compute Service, with the same GPU sharing (backend `hcs`) | Virtual Machine Platform |
+
+Virtual Machine Platform is the optional Windows feature WSL 2 also uses. If it is off, the app shows **Turn on** and then **Restart now**; from the CLI, as administrator:
+
+```powershell
+Get-GpuVMPlatform        # what this PC runs machines with, and whether a restart is pending
+Enable-GpuVMPlatform     # turns on Virtual Machine Platform
+Restart-GpuVMHost        # restarts the PC to finish it (only while that is pending)
+```
+
+To use Hyper-V on an edition that has it, turn it on once in PowerShell **as administrator**, then restart:
 
 ```powershell
 Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All
 ```
 
-If virtualization is off in the BIOS/UEFI, turn on Intel VT-x or AMD-V there first.
+A profile can also choose the backend with `"backend"` ([Profiles](/docs/profiles/#fields)). If virtualization is off in the BIOS/UEFI, turn on Intel VT-x or AMD-V there first.
 
 ## From the repository
 
@@ -47,7 +62,7 @@ Without the installer, everything uses the repository folder (CLI or development
 # Build the installer (it ends up in app/src-tauri/target/release/bundle/nsis/)
 npm --prefix app run tauri build
 
-# Design the UI without Hyper-V (sample data; ?mock=empty, ?mock=noadmin)
+# Design the UI with sample data, without the service (?mock=empty, ?mock=noadmin)
 npm --prefix app run dev
 
 # Tests (no administrator needed)

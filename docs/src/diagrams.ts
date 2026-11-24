@@ -3,16 +3,16 @@
 type Lang = 'en' | 'es';
 const t = (lang: Lang, en: string, es: string) => (lang === 'es' ? es : en);
 
-// Host and VM: the GPU goes down to the VM through GPU-P, image and sound come back to GpuVM's viewer.
+// Host and VM: the GPU goes down to the VM through GPU-P (Hyper-V or HCS), image and sound come back to GpuVM's viewer.
 export const overview = (lang: Lang) => ({
   width: 440,
   height: 520,
   label: t(lang,
-    'The host shares its GPU with the VM through GPU-P; GpuVM configures the VM; inside it, Sunshine captures the virtual display and sends image and audio back to the GpuVM viewer.',
-    'El equipo comparte su GPU con la VM mediante GPU-P; GpuVM configura la VM; dentro, Sunshine captura la pantalla virtual y devuelve imagen y audio al visor de GpuVM.'),
+    'The host shares its GPU with the VM through GPU-P, on Hyper-V or on the Host Compute Service; GpuVM configures the VM; inside it, Sunshine captures the virtual display and sends image and audio back to the GpuVM viewer.',
+    'El equipo comparte su GPU con la VM mediante GPU-P, en Hyper-V o en el Host Compute Service; GpuVM configura la VM; dentro, Sunshine captura la pantalla virtual y devuelve imagen y audio al visor de GpuVM.'),
   groups: [
     { x: 10, y: 20, w: 420, h: 170, title: t(lang, 'Your PC · Windows 10/11', 'Tu PC · Windows 10/11'), icon: 'device-desktop-analytics' },
-    { x: 10, y: 330, w: 420, h: 170, title: 'VM · Hyper-V', icon: 'brand-windows', titleAt: 'bottom' as const },
+    { x: 10, y: 330, w: 420, h: 170, title: t(lang, 'VM · Hyper-V or HCS', 'VM · Hyper-V o HCS'), icon: 'brand-windows', titleAt: 'bottom' as const },
   ],
   nodes: [
     { id: 'gpu', x: 80, y: 115, icon: 'gpu', label: 'RTX 4060' },
@@ -30,14 +30,14 @@ export const overview = (lang: Lang) => ({
   ],
 });
 
-// How the app reaches Hyper-V: UI → Rust → (named pipe) GpuVM service → bridge.ps1 → module → Hyper-V, with the CLI
-// on the same module. The app runs as the user; only the service is elevated.
+// How the app reaches the machines: UI → Rust → (named pipe) GpuVM service → bridge.ps1 → module → Hyper-V or HCS,
+// with the CLI on the same module. The app runs as the user; only the service is elevated.
 export const architecture = (lang: Lang) => ({
   width: 400,
   height: 1110,
   label: t(lang,
-    'The React UI calls the Rust side, which runs as the user and talks through a named pipe to the GpuVM service; the service starts bridge.ps1 in PowerShell 7 with the elevated token of the user, the bridge runs cmdlets of the GpuVM module, which the CLI also imports, and the module drives Hyper-V through its backend.',
-    'La interfaz en React llama a la parte en Rust, que corre como el usuario y habla por un pipe con nombre con el servicio GpuVM; el servicio inicia bridge.ps1 en PowerShell 7 con el token elevado del usuario, el puente ejecuta cmdlets del módulo GpuVM, que también importa la CLI, y el módulo controla Hyper-V mediante su backend.'),
+    'The React UI calls the Rust side, which runs as the user and talks through a named pipe to the GpuVM service; the service starts bridge.ps1 in PowerShell 7 with the elevated token of the user, the bridge runs cmdlets of the GpuVM module, which the CLI also imports, and the module drives Hyper-V or the Host Compute Service through its backend.',
+    'La interfaz en React llama a la parte en Rust, que corre como el usuario y habla por un pipe con nombre con el servicio GpuVM; el servicio inicia bridge.ps1 en PowerShell 7 con el token elevado del usuario, el puente ejecuta cmdlets del módulo GpuVM, que también importa la CLI, y el módulo controla Hyper-V o el Host Compute Service mediante su backend.'),
   groups: [
     { x: 10, y: 20, w: 250, h: 320, title: t(lang, 'GpuVM app · as the user', 'App GpuVM · como el usuario'), icon: 'app-window' },
     { x: 10, y: 400, w: 250, h: 160, title: t(lang, 'Windows service · elevated', 'Servicio de Windows · elevado'), icon: 'shield-lock' },
@@ -50,7 +50,7 @@ export const architecture = (lang: Lang) => ({
     { id: 'bridge', x: 135, y: 705, icon: 'code', label: 'bridge.ps1' },
     { id: 'module', x: 135, y: 865, icon: 'packages', label: t(lang, 'GpuVM module', 'Módulo GpuVM') },
     { id: 'cli', x: 315, y: 865, icon: 'terminal', label: 'gpuvm.ps1' },
-    { id: 'hyperv', x: 135, y: 1050, icon: 'server', label: 'Hyper-V' },
+    { id: 'hyperv', x: 135, y: 1050, icon: 'server', label: 'Hyper-V · HCS' },
   ],
   edges: [
     { from: 'ui', to: 'rust', label: 'invoke' },
@@ -59,6 +59,34 @@ export const architecture = (lang: Lang) => ({
     { from: 'bridge', to: 'module', label: 'cmdlet' },
     { from: 'cli', to: 'module', label: t(lang, 'imports', 'importa'), dashed: true },
     { from: 'module', to: 'hyperv', label: 'backend' },
+  ],
+});
+
+// Machines without Hyper-V: the service creates them through HCS (computecore, virtdisk, HCN); the agent in the guest
+// talks to it over a Hyper-V socket, and an isolated machine's traffic leaves through Wintun and the relay.
+export const hcs = (lang: Lang) => ({
+  width: 560,
+  height: 670,
+  label: t(lang,
+    'On the host, the GpuVM service creates the machine through computecore.dll, its disks through virtdisk and its network through HCN. Inside the machine, GpuVM\'s agent talks to the service over a Hyper-V socket. On an isolated machine a Wintun adapter takes the traffic, each TCP or UDP flow goes over a Hyper-V socket to the service\'s relay, and the relay connects only to public internet addresses.',
+    'En el equipo, el servicio GpuVM crea la máquina con computecore.dll, sus discos con virtdisk y su red con HCN. Dentro de la máquina, el agente de GpuVM habla con el servicio por un socket de Hyper-V. En una máquina aislada un adaptador Wintun toma el tráfico, cada flujo TCP o UDP va por un socket de Hyper-V al retransmisor del servicio, y el retransmisor solo se conecta a direcciones públicas de internet.'),
+  groups: [
+    { x: 10, y: 20, w: 540, h: 330, title: t(lang, 'Your PC · GpuVM service', 'Tu PC · servicio GpuVM'), icon: 'device-desktop-analytics' },
+    { x: 10, y: 480, w: 540, h: 170, title: 'VM · HCS', icon: 'brand-windows', titleAt: 'bottom' as const },
+  ],
+  nodes: [
+    { id: 'svc', x: 95, y: 105, icon: 'server-2', label: 'gpuvm-host.exe' },
+    { id: 'api', x: 280, y: 105, icon: 'stack-2', label: 'computecore\nvirtdisk · HCN' },
+    { id: 'relay', x: 280, y: 265, icon: 'route', label: t(lang, 'Relay\npublic only', 'Retransmisor\nsolo públicas') },
+    { id: 'net', x: 465, y: 265, icon: 'world', label: 'Internet' },
+    { id: 'agent', x: 95, y: 565, icon: 'robot', label: t(lang, 'GpuVM agent', 'Agente GpuVM') },
+    { id: 'tun', x: 280, y: 565, icon: 'network', label: t(lang, 'Wintun\nadapter', 'Adaptador\nWintun') },
+  ],
+  edges: [
+    { from: 'svc', to: 'api', label: t(lang, 'creates', 'crea') },
+    { from: 'agent', to: 'svc', label: t(lang, 'Hyper-V socket', 'socket Hyper-V') },
+    { from: 'tun', to: 'relay', label: t(lang, 'Hyper-V socket', 'socket Hyper-V') },
+    { from: 'relay', to: 'net', label: 'TCP / UDP' },
   ],
 });
 

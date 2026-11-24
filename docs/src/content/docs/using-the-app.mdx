@@ -10,11 +10,11 @@ import Shot from '../../components/Shot.astro';
 
 ## The window
 
-- **Sidebar:** **Home**, **Library** and [**Agents**](/docs/agents/) at the top, then every Hyper-V VM on the PC (created with GpuVM or not) under the [space](#spaces) it belongs to, and **Create machine** at the end. **Settings** sits at the foot. Each machine shows its state as a dot on its icon and, on the right, what the dot doesn't say: a tiny chart of its last minute (processor, memory and GPU in their colors) while it runs, or the step of a job in progress.
+- **Sidebar:** **Home**, **Library** and [**Agents**](/docs/agents/) at the top, then every VM on the PC (Hyper-V VMs, created with GpuVM or not, and GpuVM's machines without Hyper-V) under the [space](#spaces) it belongs to, and **Create machine** at the end. **Settings** sits at the foot. Each machine shows its state as a dot on its icon and, on the right, what the dot doesn't say: a tiny chart of its last minute (processor, memory and GPU in their colors) while it runs, or the step of a job in progress.
 - **Resize or fold it:** drag the line on its edge to change its width; click the line, or drag it narrow, to fold it.
 - **Reorder by dragging:** drag a machine to another place, in its space or in another one. The others make room as it passes and it shows faded where it would land. Spaces are reordered the same way, by dragging their name.
 
-GpuVM opens without administrator rights; the **GpuVM** Windows service does the Hyper-V work for it. If the service is stopped and set to **Manual**, the app says so with **Start service**. If the service is missing, it says so with **Repair**, which registers it again after a UAC prompt. Deleting a machine, a disk, a shared disk or a template asks for a UAC confirmation first; if you say no, nothing is deleted. If Hyper-V can't be read, a notice shows the error with **Retry**.
+GpuVM opens without administrator rights; the **GpuVM** Windows service runs the machines for it. On a PC without Hyper-V where Virtual Machine Platform is off, the app first shows a screen to turn it on (**Turn on**, then **Restart now**); see [Install](/docs/install/#hyper-v-or-virtual-machine-platform). If the service is stopped and set to **Manual**, the app says so with **Start service**. If the service is missing, it says so with **Repair**, which registers it again after a UAC prompt. Deleting a machine, a disk, a shared disk or a template asks for a UAC confirmation first; if you say no, nothing is deleted. If the machines can't be read, a notice shows the error with **Retry**.
 
 The interface is in English and Spanish: it follows Windows' display language, or the one chosen in [Settings](#settings).
 
@@ -191,7 +191,7 @@ The **Machine** section, for machines created with GpuVM:
 - **GPU for the VM:** 10–100 %, in steps of 10.
 - **Disk:** grows the disk (it can't shrink). A dynamic disk grows as the machine writes, so the slider stops at what fits once every machine's disk on that drive is full, keeping 20 GB for Windows; the bar below shows this machine's disk, the room reserved for the others and what would be left. A machine built on a template has the template's size. Windows' C: drive grows on its own the next time it opens.
 - **Network:**
-  - **Internet only** (the default): the machine reaches neither this PC nor your local network, except for what the stream needs. The rules live on the machine's virtual switch port, outside it, so an infected machine can't remove them.
+  - **Internet only** (the default): the machine reaches neither this PC nor your local network, except for what the stream needs. On Hyper-V the rules live on the machine's virtual switch port; a machine without Hyper-V gets a network of its own with only this PC, and its internet goes through GpuVM's service, which only connects to public addresses. Either way they live outside the machine, so an infected machine can't remove them. See [Network isolation](/docs/architecture/#network-isolation).
   - **Internet and local network**: the machine reaches this PC and the rest of your network. Use it only when you need it, for example for a NAS.
 - **Shared disks** (when you have one): each disk with what it is for, how full it is and where it is connected. See [Shared disks](#shared-disks).
 
@@ -230,7 +230,7 @@ How the viewer shows the machine and how you control it:
   - **Codec:** **Automatic** (the viewer picks the best one this PC can show), H.264, HEVC or AV1. If the picture doesn't show, go back to **Automatic**.
   - **Picture quality:** the bitrate in Mbps, up to 150. Higher uses more network; at the minimum (**Automatic**), the viewer picks it from the resolution and frame rate.
 
-These are saved without stopping the machine: the picture settings apply the next time you open it, and the network right away.
+These are saved without stopping the machine: the picture settings apply the next time you open it, and the network right away (on machines without Hyper-V, at their next start).
 
 ## Windows
 
@@ -278,7 +278,7 @@ On the cube, while this section is in view:
 
 ## Windows password
 
-If GpuVM doesn't have the machine's Windows password (for example, after rebuilding its state with `repair`), the page shows a card asking for it, for the machine's user. It is saved encrypted with DPAPI and lets GpuVM fix things inside the machine through PowerShell Direct (without network and without asking you): waiting for setup to finish, moving the session back to the GPU display, setting the display resolution, installing gamepad support and answering administrator prompts. Machines created from the app already have it.
+If GpuVM doesn't have the machine's Windows password (for example, after rebuilding its state with `repair`), the page shows a card asking for it, for the machine's user. It is saved encrypted with DPAPI and lets GpuVM fix things inside a Hyper-V machine through PowerShell Direct (without network and without asking you; machines without Hyper-V are reached through GpuVM's agent): waiting for setup to finish, moving the session back to the GPU display, setting the display resolution, installing gamepad support and answering administrator prompts. Machines created from the app already have it.
 
 ## Driver notice
 
@@ -290,14 +290,14 @@ The **⋯** menu has:
 
 - **Start without opening**.
 - **Shut down** (orderly; when Windows has updates waiting it installs them first, which can take a few minutes, and the button says so), **Force shutdown** (click twice to confirm; unsaved work is lost), **Restart**, **Pause** / **Resume**.
-- **View Hyper-V console**. It only shows the basic Hyper-V display, not what the GPU draws.
+- **View Hyper-V console**. It only shows the basic Hyper-V display, not what the GPU draws. Machines without Hyper-V don't have it.
 - **Pair the viewer again**.
 - **Update GPU driver**, or **Shut down and update driver** if it's running.
 - **Create template**, or **Shut down and create template** if it's running: saves this machine's Windows as a [template](#templates). The machine stays as it is.
 - **Export to a file**, or **Shut down and export** if it's running ([Export and import](#export-and-import)).
-- **Rename** (when it's off): the new name is checked as you type while the cube engraves it on the board's serial plate. The machine is renamed in Hyper-V with its folder and disk; its settings, the viewer's pairing, shared disks and decoration stay with it. If a step fails, what was already renamed is undone.
+- **Rename** (when it's off): the new name is checked as you type while the cube engraves it on the board's serial plate. The machine is renamed with its folder and disk; its settings, the viewer's pairing, shared disks and decoration stay with it. If a step fails, what was already renamed is undone.
 - **Another icon** (also by clicking the icon next to the name) and **Another banner** (three to switch between).
-- **Delete machine**: removes it from Hyper-V, with **Keep the disk** or **Delete the disk too**, after a UAC confirmation. It can't be undone.
+- **Delete machine**: removes it, with **Keep the disk** or **Delete the disk too**, after a UAC confirmation. It can't be undone.
 
 <Aside type="caution">
 Don't use Remote Desktop while streaming: it takes the console session away from the GPU display.
@@ -362,7 +362,7 @@ The copy only goes from this PC to the disk. Before writing, GpuVM checks that t
 - **Machines** (with more than one monitor): **Open machines on** Windows' main monitor (the default) or a monitor by its name. Each machine can have its own in its options. In full screen, the machine's picture goes to that monitor.
 - **Agents:** **Take control**, **Time to answer** and **Session limit**. See [Agents](/docs/agents/).
 - **Captures:** the screenshots and videos folders and **Save the last 30 s** ([Captures](#captures)).
-- **Service**, the Windows service that does the Hyper-V work for the app:
+- **Service**, the Windows service that runs the machines for the app:
   - **With GpuVM** (the default): it starts when GpuVM opens and stops when it quits, once what it was doing is finished (shutting the machines down, a machine being created).
   - **With Windows**: it starts with Windows.
   - **Manual**: it only starts and stops with the **Start** and **Stop** buttons here.

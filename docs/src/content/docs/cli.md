@@ -24,7 +24,7 @@ description: The gpuvm.ps1 commands and the GpuVM PowerShell module cmdlets.
 | `list` | `Get-GpuVM` | Lists the VMs created with GpuVM and whether their GPU driver matches the host's. |
 | `sync-driver` | `Sync-GpuVMDriver` | Copies the host's GPU driver into the guest. |
 | `components-update` | `Update-GpuVMComponent` | Looks for new versions of the streaming components. |
-| `remove` | `Remove-GpuVM` | Removes the VM from Hyper-V. |
+| `remove` | `Remove-GpuVM` | Removes the VM. |
 | `rename` | `Rename-GpuVM` | Renames the VM with its folder and disk. |
 | `repair` | `Repair-GpuVMState` | Rebuilds the state file of a VM created with GpuVM. |
 | `profiles` | `Get-GpuVMProfile` | Lists profiles, or shows one resolved. |
@@ -42,7 +42,7 @@ description: The gpuvm.ps1 commands and the GpuVM PowerShell module cmdlets.
 | `-Profile` | `balanced` | Profile to check against. |
 | `-Override` | | Hashtable merged over the profile. |
 
-Checks Windows edition, administrator rights, virtualization, Hyper-V, partitionable GPUs, GPU selection on Windows 10, network switch, the profile against your hardware, free memory, the GPU, disk space and the streaming components.
+Checks Windows edition, administrator rights, virtualization, Hyper-V (or, without it, Virtual Machine Platform and the Host Compute Service), partitionable GPUs, GPU selection on Windows 10, network switch, the profile against your hardware, free memory, the GPU, disk space and the streaming components.
 
 ### new
 
@@ -78,7 +78,7 @@ Checks Windows edition, administrator rights, virtualization, Hyper-V, partition
 
 ### rename
 
-`-Name` and `-NewName` (required). The VM must be off. Renames it in Hyper-V, its folder and disk, and keeps its settings, the viewer's pairing and shared disks. The new name follows the same rules as `new`; if a step fails, what was already renamed is undone.
+`-Name` and `-NewName` (required). The VM must be off. Renames it, its folder and disk, and keeps its settings, the viewer's pairing and shared disks. The new name follows the same rules as `new`; if a step fails, what was already renamed is undone.
 
 ### repair
 
@@ -134,11 +134,14 @@ Besides the cmdlets above, the module exports these, used mainly by the app:
 
 | Cmdlet | What it does |
 |---|---|
-| `Get-GpuVMOverview` | Every Hyper-V VM with its state and live usage (CPU, memory, GPU), created with GpuVM or not. For GpuVM machines, `options.diskBudget` says how far its disk can grow, counting the room promised to the other machines on that drive. |
+| `Get-GpuVMOverview` | Every VM with its state and live usage (CPU, memory, GPU): Hyper-V VMs, created with GpuVM or not, and GpuVM's machines without Hyper-V (`backend` `hcs`). For GpuVM machines, `options.diskBudget` says how far its disk can grow, counting the room promised to the other machines on that drive. |
 | `Get-GpuVMHostInfo` | Host threads, memory and GPU name, and as `disk` the room a new machine's disk has on GpuVM's drive once every machine's disk there is full, keeping 20 GB for Windows. |
+| `Get-GpuVMPlatform` | What this PC runs machines with: `backend` (`hyperv-gpup` or `hcs`), `hyperV`, `platform` (Virtual Machine Platform: `Enabled`, `Disabled` or `Unknown`), `ready`, `restartPending` (turned on, waiting for a restart) and `canEnable`. |
+| `Enable-GpuVMPlatform` | Turns on Windows' Virtual Machine Platform, which machines without Hyper-V run on. Returns `enabled` and `restartNeeded`: Windows finishes it at the next restart. Needs administrator; supports `-WhatIf`. |
+| `Restart-GpuVMHost` | Restarts this PC in 5 seconds to finish turning on Virtual Machine Platform. Only while that is pending; supports `-WhatIf`. |
 | `Get-GpuVMIsoList` | Windows ISOs in Downloads and Desktop. |
 | `Invoke-GpuVMPower` | `-Action` `Start`, `Shutdown`, `TurnOff`, `Restart`, `Pause` or `Resume` on any VM. |
-| `Set-GpuVMGuestCredential` | Saves the guest account (DPAPI) so GpuVM can fix things inside the VM through PowerShell Direct. |
+| `Set-GpuVMGuestCredential` | Saves the guest account (DPAPI) so GpuVM can fix things inside a Hyper-V VM through PowerShell Direct. Machines without Hyper-V are reached through GpuVM's agent. |
 | `Set-GpuVMStreamingClient` | Changes how the VM's picture opens. Doesn't need the VM off. See [below](#set-gpuvmstreamingclient). |
 | `Connect-GpuVM` | `-Name`, `-Pair`, `-Monitor`, `-MemoryGB`. Gets a machine ready for GpuVM's viewer (driver, start, Windows, session, display, pairing) and returns the stream arguments (`viewerLaunch`); the app opens the viewer itself. See [Streaming](/docs/streaming/#from-powershell). |
 | `Get-GpuVMAdminPrompt` | The Windows administrator prompts open in running GpuVM machines: `name`, `id`, `app`, `publisher`. Reads Hyper-V's data exchange only (about 100 ms, no PowerShell Direct); the app polls it every second. |
@@ -147,7 +150,7 @@ Besides the cmdlets above, the module exports these, used mainly by the app:
 | `Get-GpuVMHome` | What the app's Home shows: the last machine opened, which machines fit in memory and what needs attention. |
 | `Stop-GpuVMAll` | Shuts down every running GpuVM machine cleanly, all at once. |
 | `Send-GpuVMClipboard` | Puts text into the VM's clipboard (only from the PC to the VM). |
-| `Set-GpuVMNetworkIsolation` | Turns the VM's network isolation on (the default) or off. |
+| `Set-GpuVMNetworkIsolation` | Turns the VM's network isolation on (the default) or off. On machines without Hyper-V it applies at the next start. See [Network isolation](/docs/architecture/#network-isolation). |
 | `Get-GpuVMCleanup` / `Set-GpuVMCleanup` | The Windows cleanup levels / applies one to a VM. |
 | `Get-GpuVMMonitor` | This PC's monitors, left to right (`id`, name, size, refresh rate, which one is primary), to choose where a VM opens. |
 | `Get-GpuVMApp` / `Install-GpuVMApp` | The app catalog / installs apps in a VM (starts it if needed). Apps already installed are left as they are; `-Reinstall` uninstalls them first and installs them again. |

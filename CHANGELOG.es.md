@@ -6,6 +6,21 @@ Aquí se documentan los cambios importantes de GpuVM. El formato sigue [Keep a C
 
 Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (esa sección solo existe mientras haya alguno y el sitio de documentación no la muestra); `scripts/release.py` la convierte en la versión nueva.
 
+## [Sin publicar]
+
+### Agregado
+- **Todas las ediciones de Windows 10 y 11, Home incluida.** Donde Windows trae Hyper-V, GpuVM lo sigue usando; en las demás ejecuta las máquinas con el Host Compute Service de Windows, que solo necesita la característica Plataforma de máquina virtual (la que usa WSL 2). La GPU se comparte igual y el stream es tan fluido como con Hyper-V. Las máquinas se controlan con el agente de GpuVM, que se instala en el disco de la máquina antes de su primer arranque.
+- **Activar la Plataforma de máquina virtual desde la app.** En un equipo sin Hyper-V donde está apagada, GpuVM muestra una pantalla con **Activar** y luego **Reiniciar ahora**, porque Windows la termina de activar al volver a iniciar. Comandos nuevos del módulo: `Get-GpuVMPlatform`, `Enable-GpuVMPlatform`, `Restart-GpuVMHost`.
+- **Aislamiento de red sin Hyper-V.** Una máquina aislada (la opción por defecto, siempre en las máquinas de agente) recibe su propia red, donde el único otro integrante es tu equipo, cerrada con filtros en tu equipo, y llega a internet solo a través del relé de GpuVM, que abre conexiones únicamente a direcciones públicas. No alcanza tu red local, los servicios de tu equipo ni tus otras máquinas, ni siquiera como administrador dentro de ella, y su internet va a la velocidad de la red normal, TCP y UDP.
+- **Avisos de administrador en máquinas sin Hyper-V.** El aviso de UAC aparece sobre la imagen y se responde ahí, igual que con Hyper-V.
+
+### Cambiado
+- Agente de GpuVM 0.5.0: arma la red aislada y su relé (con Wintun 0.14.1 de WireGuard LLC, que viaja con él) y lee y escribe los datos que usa el aviso de UAC.
+- Los textos ya no dan por hecho Hyper-V, y la opción **Ver consola de Hyper-V** solo aparece en las máquinas que corren en Hyper-V.
+
+### Corregido
+- Cambiarle el nombre a una máquina cuyo disco Hyper-V no puede leer ya no se detiene con un error sobre `ParentPath`.
+
 ## [1.0.0] - 2026-11-23
 
 ### Agregado

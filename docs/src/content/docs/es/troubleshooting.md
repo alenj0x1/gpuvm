@@ -1,6 +1,6 @@
 ---
 title: Problemas y límites conocidos
-description: Pantalla negra, imagen que se traba, avisos de administrador, mandos, sincronización del driver, anti-cheat, selección de GPU en Windows 10 y otros límites conocidos de GPU-P.
+description: Pantalla negra, imagen que se traba, avisos de administrador, mandos, sincronización del driver, Plataforma de máquina virtual, anti-cheat, selección de GPU en Windows 10 y otros límites conocidos de GPU-P.
 ---
 
 ## Pantalla negra
@@ -11,7 +11,7 @@ Las causas habituales, en orden:
 2. **El driver de la VM no coincide con el del host** (después de actualizar el driver de NVIDIA). Al abrirla desde la app se sincroniza solo si la VM está apagada; o ejecuta `./gpuvm.ps1 sync-driver -Name <vm>` con la VM apagada.
 3. **Escritorio remoto se llevó la sesión** de la pantalla de la GPU. Cierra Escritorio remoto y vuelve a usar **Encender y abrir**: con la contraseña del invitado guardada, GpuVM devuelve la sesión a la consola.
 
-Para ver la pantalla de la VM sin la GPU, abre la consola de Hyper-V (**Ver consola de Hyper-V** en el menú **⋯** de la máquina, o `vmconnect.exe localhost <vm>`). Mientras la pantalla virtual funciona, la de Hyper-V está desactivada; Escritorio remoto sigue disponible como respaldo.
+Para ver la pantalla de la VM sin la GPU, abre la consola de Hyper-V (**Ver consola de Hyper-V** en el menú **⋯** de la máquina, o `vmconnect.exe localhost <vm>`). Mientras la pantalla virtual funciona, la de Hyper-V está desactivada; Escritorio remoto sigue disponible como respaldo. Las máquinas sin Hyper-V no tienen consola de Hyper-V.
 
 Problema abierto: Sunshine puede decir "Display device configuration API is temporarily unavailable" y no cambiar la resolución.
 
@@ -54,11 +54,24 @@ El invitado tiene que usar **la misma versión de driver que el host**. Después
 
 ## El primer inicio tarda
 
-El primer inicio instala Windows y el streaming, y después reinicia una vez. **Encender y abrir** espera a Windows y a Sunshine, y lo indica en el botón. Si Sunshine nunca responde, el error remite a `C:\GpuVM\setup.log` dentro de la VM. Si la VM nunca obtiene una dirección IP, mira su pantalla con la consola de Hyper-V y confirma que exista el `Default Switch`. Si la VM está apagada, guardada o en pausa, abrirla lo dice al instante en vez de esperar una dirección.
+El primer inicio instala Windows y el streaming, y después reinicia una vez. **Encender y abrir** espera a Windows y a Sunshine, y lo indica en el botón. Si Sunshine nunca responde, el error remite a `C:\GpuVM\setup.log` dentro de la VM. Si la VM nunca obtiene una dirección IP, mira su pantalla con la consola de Hyper-V y confirma que exista el `Default Switch` (máquinas de Hyper-V). Si la VM está apagada, guardada o en pausa, abrirla lo dice al instante en vez de esperar una dirección.
+
+## Una segunda máquina tarda dos minutos en encender (sin Hyper-V)
+
+En un equipo sin Hyper-V, mientras una máquina con la GPU está encendida, encender una segunda a veces espera unos dos minutos antes de que arranque Windows: el uso compartido de la GPU de Windows reintenta el dispositivo de la GPU. Después la máquina funciona con normalidad. La primera máquina y las máquinas sin GPU no se ven afectadas.
+
+## La Plataforma de máquina virtual está desactivada
+
+En un equipo sin Hyper-V (Windows Home, o una edición con Hyper-V desactivado), GpuVM ejecuta las máquinas en la Plataforma de máquina virtual de Windows. Si está desactivada, la app muestra **Activa la Plataforma de máquina virtual**:
+
+1. Presiona **Activar**.
+2. Presiona **Reiniciar ahora** (guarda tu trabajo antes): Windows termina de activarla cuando el equipo vuelve a iniciar. También sirve reiniciar más tarde como siempre.
+
+Desde la CLI, como administrador: `Enable-GpuVMPlatform` y después `Restart-GpuVMHost`. `Get-GpuVMPlatform` muestra el estado; `restartPending` significa que está activada y esperando el reinicio. Si la app dice que la Plataforma de máquina virtual no está disponible, este Windows no puede ejecutar máquinas virtuales: confirma que sea Windows 10 u 11 de 64 bits y que la virtualización esté activada en el BIOS/UEFI.
 
 ## La app dice que el servicio de GpuVM está detenido o falta
 
-La app corre sin permisos de administrador y le pide al servicio **GpuVM** el trabajo de Hyper-V. Con el servicio en **Manual**, inícialo con **Iniciar servicio**, o cámbialo a **Con GpuVM** en **Ajustes → Servicio** ([Ajustes](/docs/es/using-the-app/#ajustes)). Si falta (por ejemplo, tras una actualización fallida), **Reparar** lo vuelve a registrar después de un aviso de UAC; reinstalar GpuVM hace lo mismo.
+La app corre sin permisos de administrador y le pide al servicio **GpuVM** que maneje las máquinas. Con el servicio en **Manual**, inícialo con **Iniciar servicio**, o cámbialo a **Con GpuVM** en **Ajustes → Servicio** ([Ajustes](/docs/es/using-the-app/#ajustes)). Si falta (por ejemplo, tras una actualización fallida), **Reparar** lo vuelve a registrar después de un aviso de UAC; reinstalar GpuVM hace lo mismo.
 
 ## No hay audio
 
@@ -70,7 +83,7 @@ Usa **Volver a emparejar el visor** en el menú **⋯**. Si falta el visor, la a
 
 ## La VM no enciende por falta de memoria
 
-La memoria fija de Hyper-V tiene que estar libre al encender la VM. Cierra programas o baja la memoria de la VM en su sección **Máquina**, o ábrela con **Abrir con N GB** cuando la app lo ofrece (o con `-Override @{ vm = @{ memoryGB = 6 } }`).
+La memoria fija de una VM tiene que estar libre al encenderla. Cierra programas o baja la memoria de la VM en su sección **Máquina**, o ábrela con **Abrir con N GB** cuando la app lo ofrece (o con `-Override @{ vm = @{ memoryGB = 6 } }`).
 
 ## Reportar un problema
 
@@ -78,9 +91,9 @@ La memoria fija de Hyper-V tiene que estar libre al encender la VM. Cierra progr
 
 ## Límites conocidos de GPU-P
 
-- **Pantalla:** la consola de Hyper-V no muestra la GPU; se ve con el streaming.
+- **Pantalla:** la consola de Hyper-V no muestra la GPU, y las máquinas sin Hyper-V no tienen consola; se ve con el streaming.
 - **Audio:** la VM no tiene tarjeta de sonido; el altavoz USB propio de GpuVM se la da.
 - **Driver:** el invitado tiene que usar la misma versión que el host (ver arriba).
-- **Selección de GPU en Windows 10:** a Windows 10 no se le puede indicar qué GPU recibe una VM: le da cada VM que enciende a la GPU particionable con menos VMs encendidas. Con dos GPU particionables (la integrada y la tarjeta gráfica), GpuVM enciende por un momento VMs vacías mientras arranca la máquina, así que siempre recibe la GPU que indica su perfil (`gpu.match`). `check` lo advierte siempre que hay más de una; con más de dos, desactiva en el Administrador de dispositivos las que no quieras antes de encender la VM.
+- **Selección de GPU en Windows 10 (Hyper-V):** a Windows 10 no se le puede indicar qué GPU recibe una VM de Hyper-V: le da cada VM que enciende a la GPU particionable con menos VMs encendidas. Con dos GPU particionables (la integrada y la tarjeta gráfica), GpuVM enciende por un momento VMs vacías mientras arranca la máquina, así que siempre recibe la GPU que indica su perfil (`gpu.match`). `check` lo advierte siempre que hay más de una; con más de dos, desactiva en el Administrador de dispositivos las que no quieras antes de encender la VM. Las máquinas sin Hyper-V reciben directamente una GPU del fabricante del perfil.
 - **Sin puntos de control ni estado guardado:** la VM se apaga directamente. GpuVM tiene sus propios [puntos de restauración](/docs/es/using-the-app/#puntos-de-restauración).
 - **Anti-cheat:** algunos sistemas anti-cheat bloquean las máquinas virtuales.

@@ -32,7 +32,7 @@
 - **Espacios con su propio mundo.** Agrupa las máquinas según para qué son; cada espacio es un mundo propio (un estudio, una placa base o un mundo de bloques de día, de tarde o de noche) e Inicio muestra un espacio a la vez. Arrastra las máquinas entre espacios y al orden que quieras.
 - **Juegos mientras esperas.** Cuatro juegos pequeños se juegan en el espacio de las máquinas (*Overclock*, *Bit a bit*, *Stack* y *Cache*), con tus máquinas como naves, solo o en equipo.
 - **Español e inglés.** Toda la app, la bandeja y lo que informa el módulo siguen el idioma de Windows o el que elijas en Ajustes.
-- **Tu GPU dentro de la VM.** El GPU partitioning de Hyper-V (GPU-P) comparte la GPU del equipo con la VM, que usa el mismo driver que el host. Sin passthrough ni segunda GPU.
+- **Tu GPU dentro de la VM, en cualquier edición de Windows.** El GPU partitioning (GPU-P) comparte la GPU del equipo con la VM, que usa el mismo driver que el host. Sin passthrough ni segunda GPU. Donde Windows tiene Hyper-V usa Hyper-V; en Windows Home y otras ediciones sin él, ejecuta las máquinas con el Host Compute Service de Windows, que solo necesita la Plataforma de máquina virtual (GpuVM la activa).
 - **Se abre en un clic.** «Encender y abrir» enciende la VM, espera a Windows, corrige la sesión y la pantalla, empareja el visor y abre la imagen dibujada y codificada por la GPU (Sunshine + NVENC), con sonido. Una VM ya encendida muestra su imagen en unos 7-10 s.
 - **Agentes de IA que usan tus máquinas.** GpuVM es un servidor MCP: Claude Code, conectado en un clic, o cualquier cliente MCP trabaja en una máquina Windows desechable como usuario estándar mientras ves su cursor, sus clics y sus teclas sobre la imagen. Un clic te da el control; los permisos de administrador, la red y los archivos se aprueban en GpuVM, nunca en el chat, y cada sesión se graba.
 - **El visor propio de GpuVM.** Basado en Moonlight, muestra la máquina dentro de la app o en pantalla completa. **Inicio** (o Ctrl+Alt+Shift+H) deja la máquina conectada, así al abrirla de nuevo vuelves directo a su imagen. Las animaciones de la app se detienen mientras se muestra una imagen y dejan la GPU a las máquinas.
@@ -50,7 +50,7 @@
 - **Avisos de administrador en GpuVM.** Los avisos de administrador de Windows en la VM bajan desde arriba de su imagen con Permitir y Rechazar, y solo se responden desde tu equipo. La imagen aparece unos segundos después de conectar, también la de los juegos en pantalla completa exclusiva.
 - **Archivos, portapapeles y capturas.** Suelta archivos sobre la imagen para copiarlos a la VM, ten tus últimas 8 copias listas para pegar, y toma capturas, graba o guarda los últimos 30 segundos con un atajo.
 - **Puntos de restauración, máquinas desechables, exportar.** Vuelve a un punto de restauración en cerca de un segundo, abre una copia desechable de una plantilla que se borra al apagarse y lleva una máquina a otro equipo como un solo archivo `.gpuvm`.
-- **Mantiene aparte al equipo.** La app corre sin permisos de administrador, y el visor corre aislado, con integridad baja y un token restringido; un servicio de Windows que solo la app de GpuVM puede usar hace el trabajo de Hyper-V, y borrar pide un aviso de administrador de Windows. El portapapeles solo va del PC a la VM, nunca al revés.
+- **Mantiene aparte al equipo.** La app corre sin permisos de administrador, y el visor corre aislado, con integridad baja y un token restringido; un servicio de Windows que solo la app de GpuVM puede usar maneja las máquinas, y borrar pide un aviso de administrador de Windows. Las máquinas aisladas llegan a internet pero no a tu equipo ni a tu red local, y eso se aplica fuera de la máquina. El portapapeles solo va del PC a la VM, nunca al revés.
 - **Informe de diagnóstico.** **Ajustes → Servicio → Guardar informe** junta los registros de la app y del servicio en un archivo de texto, para adjuntarlo al reportar un problema.
 
 <p align="center">
@@ -74,20 +74,16 @@
 
 ## Requisitos
 
-- Windows 10/11 Pro, Enterprise, Education o Pro for Workstations, con Hyper-V activo.
-- Una GPU que permita particionarse (probado con una NVIDIA GeForce RTX 4060).
+- Windows 10 u 11 de 64 bits, cualquier edición (Home, Pro, Enterprise, Education, Pro for Workstations).
+- La virtualización activada en el BIOS/UEFI.
+- Hyper-V, o la Plataforma de máquina virtual de Windows: en un equipo sin Hyper-V, GpuVM ofrece activarla y después pide reiniciar.
+- Una GPU con driver WDDM 2.5 o posterior que permita particionarse (probado con una NVIDIA GeForce RTX 4060).
 - Una cuenta de administrador del equipo.
 - Un ISO oficial de Windows 10 u 11.
 
-Activa Hyper-V una vez, como administrador, y reinicia:
-
-```powershell
-Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All
-```
-
 ## Instalación
 
-Descarga `GpuVM_x.y.z_x64-setup.exe` desde [Releases](https://github.com/alenj0x1/gpuvm/releases) y ejecútalo. GpuVM se instala para todos los usuarios en Program Files, con su propio PowerShell 7 y el servicio **GpuVM**, que hace el trabajo de Hyper-V. La app se abre sin permisos de administrador; borrar una máquina o un disco pide confirmarlo en un aviso de administrador de Windows. Los datos que cambian (componentes descargados, datos de los agentes) van a `%ProgramData%\GpuVM`.
+Descarga `GpuVM_x.y.z_x64-setup.exe` desde [Releases](https://github.com/alenj0x1/gpuvm/releases) y ejecútalo. GpuVM se instala para todos los usuarios en Program Files, con su propio PowerShell 7 y el servicio **GpuVM**, que maneja las máquinas. La app se abre sin permisos de administrador; borrar una máquina o un disco pide confirmarlo en un aviso de administrador de Windows. Los datos que cambian (componentes descargados, datos de los agentes) van a `%ProgramData%\GpuVM`.
 
 ## Primeros pasos
 
@@ -106,8 +102,8 @@ Guía completa, referencia de la CLI, arquitectura y solución de problemas: **[
 
 | Parte | Qué hace |
 |---|---|
-| `app/` | App de escritorio (Tauri 2 + React), sin elevar. `app/host` es el servicio GpuVM (`gpuvm-host.exe`): ejecuta `src/bridge.ps1` para la app detrás de una tubería con nombre. |
-| `src/GpuVM/` | Módulo de PowerShell 7: creación, perfiles, sincronización del driver, streaming, máquinas de agentes. Backends intercambiables (`Backends/`). |
+| `app/` | App de escritorio (Tauri 2 + React), sin elevar. `app/host` es el servicio GpuVM (`gpuvm-host.exe`): ejecuta `src/bridge.ps1` para la app detrás de una tubería con nombre, y ejecuta las máquinas sin Hyper-V (`app/host/src/hcs`). |
+| `src/GpuVM/` | Módulo de PowerShell 7: creación, perfiles, sincronización del driver, streaming, máquinas de agentes. Backends intercambiables (`Backends/`): `hyperv-gpup` (Hyper-V) y `hcs` (Host Compute Service, para las ediciones sin Hyper-V). |
 | `guest/` | Scripts que corren dentro de la VM: primer inicio, optimizaciones, streaming, resolución de la pantalla, avisos de administrador, el agente de GpuVM. |
 | `profiles/` | Perfiles JSON con herencia (`balanced`, `max-performance`). |
 | `streaming/components.json` | Componentes de terceros fijados por versión y SHA-256. |
@@ -145,6 +141,8 @@ GpuVM descarga e instala dentro de la VM, verificados por SHA-256:
 - [nefcon](https://github.com/nefarius/nefcon): instalador de drivers.
 - [usbip-win2](https://github.com/vadimgrn/usbip-win2) (BSD-2-Clause): cliente USB/IP con drivers firmados por Microsoft; conecta el altavoz USB propio de GpuVM dentro de la VM.
 - [ViGEmBus](https://github.com/nefarius/ViGEmBus) (BSD-3-Clause): bus de mandos virtuales, para los controles que reenvía el visor.
+
+El agente de GpuVM incluye [Wintun](https://www.wintun.net/) 0.14.1 (WireGuard LLC, sin modificar, bajo su licencia de binarios precompilados), que les da internet a las máquinas aisladas sin Hyper-V a través del retransmisor de GpuVM.
 
 En el equipo, el visor de GpuVM está basado en [Moonlight](https://github.com/moonlight-stream/moonlight-qt) (moonlight-qt, GPL-3.0). El fork vive en el repositorio aparte [gpuvm-viewer](https://github.com/alenj0x1/gpuvm-viewer) (rama `gpuvm`), con licencia GPL-3.0, y el instalador lo incluye.
 

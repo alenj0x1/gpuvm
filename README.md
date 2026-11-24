@@ -32,7 +32,7 @@ English | [Español](README.es.md)
 - **Spaces with their own world.** Group machines by what they are for; each space is a world of its own (a studio, a motherboard or a world of blocks by day, evening or night), with Home showing one space at a time. Drag machines between spaces and into the order you like.
 - **Games while you wait.** Four small games play in the space of machines (*Overclock*, *Bit by bit*, *Stack* and *Cache*), with your machines as the ships, solo or as a team.
 - **English and Spanish.** The whole app, the tray and what the module reports follow Windows' language or the one you pick in Settings.
-- **Your GPU inside the VM.** Hyper-V GPU partitioning (GPU-P) shares the host GPU with the VM, which runs the same driver as the host. No passthrough, no second GPU.
+- **Your GPU inside the VM, on any Windows edition.** GPU partitioning (GPU-P) shares the host GPU with the VM, which runs the same driver as the host. No passthrough, no second GPU. Where Windows has Hyper-V it uses Hyper-V; on Windows Home and other editions without it, it runs machines through Windows' Host Compute Service, which only needs Virtual Machine Platform (GpuVM turns it on).
 - **Open it in one click.** "Start and open" starts the VM, waits for Windows, fixes the session and the display, pairs the viewer and opens the stream, drawn and encoded by the GPU (Sunshine + NVENC), with sound. A VM that is already on shows its picture in about 7–10 s.
 - **AI agents use your machines.** GpuVM is an MCP server: Claude Code, connected in one click, or any MCP client works in a disposable Windows machine as a standard user while you watch its cursor, clicks and keys over the picture. A click takes control; administrator rights, network and files are approved in GpuVM, never in the chat, and every session is recorded.
 - **GpuVM's own viewer.** Built on Moonlight, it shows the machine inside the app or full screen. **Home** (or Ctrl+Alt+Shift+H) keeps the machine connected, so opening it again goes straight back to its picture. The app's animations stop while a picture is shown, leaving the GPU to the machines.
@@ -50,7 +50,7 @@ English | [Español](README.es.md)
 - **Administrator prompts in GpuVM.** Windows' administrator prompts in the VM drop from the top of its picture with Allow and Deny, answerable only from your PC. The picture shows a few seconds after connecting, games in exclusive fullscreen too.
 - **Files, clipboard and captures.** Drop files on the picture to copy them into the VM, keep your last 8 copies ready to paste, and take screenshots, record or save the last 30 seconds with a shortcut.
 - **Restore points, disposable machines, export.** Go back to a restore point in about a second, open a disposable copy of a template that is deleted when it shuts down, and move a machine to another PC as a single `.gpuvm` file.
-- **Keeps the host apart.** The app runs without administrator rights, and the viewer runs isolated at Low integrity with a restricted token; a Windows service that only GpuVM's own app can use does the Hyper-V work, and deleting asks for a Windows administrator prompt. The clipboard only goes from the PC to the VM, never back.
+- **Keeps the host apart.** The app runs without administrator rights, and the viewer runs isolated at Low integrity with a restricted token; a Windows service that only GpuVM's own app can use runs the machines, and deleting asks for a Windows administrator prompt. Isolated machines reach the internet but not your PC or your local network, enforced outside the machine. The clipboard only goes from the PC to the VM, never back.
 - **Diagnostics report.** **Settings → Service → Save report** puts the app's and the service's logs in one text file, to attach when reporting a problem.
 
 <p align="center">
@@ -74,20 +74,16 @@ English | [Español](README.es.md)
 
 ## Requirements
 
-- Windows 10/11 Pro, Enterprise, Education or Pro for Workstations, with Hyper-V enabled.
-- A GPU that supports partitioning (tested with an NVIDIA GeForce RTX 4060).
+- Windows 10 or 11, 64-bit, any edition (Home, Pro, Enterprise, Education, Pro for Workstations).
+- Virtualization turned on in the BIOS/UEFI.
+- Hyper-V, or Windows' Virtual Machine Platform: on a PC without Hyper-V, GpuVM offers to turn it on, then asks for a restart.
+- A GPU with a WDDM 2.5 or later driver that supports partitioning (tested with an NVIDIA GeForce RTX 4060).
 - An administrator account on the PC.
 - An official Windows 10 or 11 ISO.
 
-Enable Hyper-V once, as administrator, then restart:
-
-```powershell
-Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All
-```
-
 ## Install
 
-Download `GpuVM_x.y.z_x64-setup.exe` from [Releases](https://github.com/alenj0x1/gpuvm/releases) and run it. GpuVM installs for every user in Program Files, with its own PowerShell 7 and the **GpuVM** service, which does the Hyper-V work. The app opens without administrator rights; deleting a machine or a disk asks for confirmation in a Windows administrator prompt. Data that changes (downloaded components, agent data) lives in `%ProgramData%\GpuVM`.
+Download `GpuVM_x.y.z_x64-setup.exe` from [Releases](https://github.com/alenj0x1/gpuvm/releases) and run it. GpuVM installs for every user in Program Files, with its own PowerShell 7 and the **GpuVM** service, which runs the machines. The app opens without administrator rights; deleting a machine or a disk asks for confirmation in a Windows administrator prompt. Data that changes (downloaded components, agent data) lives in `%ProgramData%\GpuVM`.
 
 ## Quick start
 
@@ -106,8 +102,8 @@ Full guide, CLI reference, architecture and troubleshooting: **[gpuvm.alenj.dev/
 
 | Piece | Role |
 |---|---|
-| `app/` | Desktop app (Tauri 2 + React), unelevated. `app/host` is the GpuVM service (`gpuvm-host.exe`): it runs `src/bridge.ps1` for the app behind a named pipe. |
-| `src/GpuVM/` | PowerShell 7 module: creation, profiles, driver sync, streaming, agent machines. Backends are swappable (`Backends/`). |
+| `app/` | Desktop app (Tauri 2 + React), unelevated. `app/host` is the GpuVM service (`gpuvm-host.exe`): it runs `src/bridge.ps1` for the app behind a named pipe, and runs machines without Hyper-V (`app/host/src/hcs`). |
+| `src/GpuVM/` | PowerShell 7 module: creation, profiles, driver sync, streaming, agent machines. Backends are swappable (`Backends/`): `hyperv-gpup` (Hyper-V) and `hcs` (Host Compute Service, for editions without Hyper-V). |
 | `guest/` | Scripts that run inside the VM: first boot, optimizations, streaming, display resolution, administrator prompts, GpuVM's agent. |
 | `profiles/` | JSON profiles with inheritance (`balanced`, `max-performance`). |
 | `streaming/components.json` | Third-party components pinned by version and SHA-256. |
@@ -145,6 +141,8 @@ GpuVM downloads and installs these inside the VM, verified by SHA-256:
 - [nefcon](https://github.com/nefarius/nefcon) — driver installer.
 - [usbip-win2](https://github.com/vadimgrn/usbip-win2) (BSD-2-Clause) — USB/IP client with Microsoft-signed drivers; it plugs in GpuVM's own USB speaker inside the VM.
 - [ViGEmBus](https://github.com/nefarius/ViGEmBus) (BSD-3-Clause) — virtual gamepad bus driver, for the controllers the viewer forwards.
+
+GpuVM's agent ships [Wintun](https://www.wintun.net/) 0.14.1 (WireGuard LLC, unmodified, under its prebuilt binaries license), which gives isolated machines without Hyper-V their internet through GpuVM's relay.
 
 On the host, GpuVM's viewer is built on [Moonlight](https://github.com/moonlight-stream/moonlight-qt) (moonlight-qt, GPL-3.0). The fork is kept in the separate [gpuvm-viewer](https://github.com/alenj0x1/gpuvm-viewer) repository (branch `gpuvm`), under GPL-3.0, and the installer bundles it.
 

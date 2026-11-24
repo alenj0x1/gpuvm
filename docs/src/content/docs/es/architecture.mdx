@@ -1,10 +1,10 @@
 ---
 title: Arquitectura y extensión
-description: Cómo encajan la app, el servicio GpuVM, el módulo, los backends, el visor, el camino de los avisos de administrador y el modelo de seguridad, y cómo extender GpuVM.
+description: Cómo encajan la app, el servicio GpuVM, el módulo, los backends (Hyper-V y el Host Compute Service), el visor, el camino de los avisos de administrador, el aislamiento de red y el modelo de seguridad, y cómo extender GpuVM.
 ---
 
 import Diagram from '../../../components/Diagram.astro';
-import { adminPrompt, architecture, viewer } from '../../../diagrams';
+import { adminPrompt, architecture, hcs, viewer } from '../../../diagrams';
 
 ## Visión general
 
@@ -14,12 +14,12 @@ import { adminPrompt, architecture, viewer } from '../../../diagrams';
 
 | Ruta | Contenido |
 |---|---|
-| `app/` | App de escritorio: interfaz React en `app/src`, Tauri/Rust en `app/src-tauri`; el servicio GpuVM (`gpuvm-host.exe`) en `app/host`; el PowerShell 7 que trae, fijado en `app/tools.json`. |
+| `app/` | App de escritorio: interfaz React en `app/src`, Tauri/Rust en `app/src-tauri`; el servicio GpuVM (`gpuvm-host.exe`) en `app/host`, con el motor de las máquinas sin Hyper-V en `app/host/src/hcs`; el PowerShell 7 que trae, fijado en `app/tools.json`. |
 | `src/GpuVM/` | El módulo de PowerShell 7: `Private/` (utilidades), `Backends/` (un archivo por backend), `Public/` (un archivo por cmdlet exportado). |
 | `src/bridge.ps1` | Puente entre la app y el módulo. |
 | `gpuvm.ps1` | CLI. Consulta la [referencia de la CLI](/docs/es/cli/). |
 | `profiles/` | [Perfiles](/docs/es/profiles/) en JSON. |
-| `guest/` | Scripts que corren dentro de la VM: configuración del primer inicio, optimizaciones, streaming, audio, resolución de pantalla, modo de captura, el vigilante de avisos de administrador (`admin-prompt.ps1`), el agente de GpuVM para los [agentes de IA](/docs/es/agents/) (`agent/`) y `collect-info.ps1` para los laboratorios. |
+| `guest/` | Scripts que corren dentro de la VM: configuración del primer inicio, optimizaciones, streaming, audio, resolución de pantalla, modo de captura, el vigilante de avisos de administrador (`admin-prompt.ps1`), el agente de GpuVM (`agent/`), para los [agentes de IA](/docs/es/agents/) y para las máquinas sin Hyper-V, y `collect-info.ps1` para los laboratorios. |
 | `templates/` | Plantilla de `unattend.xml`. |
 | `streaming/components.json` | Versiones, URLs y SHA-256 de los componentes de streaming y de ViGEmBus. |
 | `viewer/` | Compilación del visor de GpuVM, del repositorio aparte [`gpuvm-viewer`](https://github.com/alenj0x1/gpuvm-viewer) (no se versiona aquí); el instalador la incluye. |
@@ -45,7 +45,26 @@ Un backend es la forma de darle la GPU a la VM. Cada uno llama a `Register-GpuVM
 | `Rename` | nombre, nombre nuevo, estado | Cambia el nombre de una VM apagada con sus archivos; deshace lo hecho si un paso falla. Devuelve el estado nuevo. |
 | `Remove` | nombre, estado, borrar disco | Elimina la VM. |
 
-Los cmdlets públicos solo hablan con esta interfaz. El backend actual es `hyperv-gpup` (`Backends/HyperVGpuP.ps1`): ajusta el procesador y la memoria fija, desactiva los puntos de control, define el espacio MMIO, Secure Boot y TPM, conecta el switch y agrega el adaptador de partición de GPU. GPU-P no admite puntos de control ni guardar estado, así que si el host se apaga, el invitado se apaga en orden.
+Los cmdlets públicos solo hablan con esta interfaz. Hay dos backends:
+
+- `hyperv-gpup` (`Backends/HyperVGpuP.ps1`), donde Windows tiene Hyper-V: ajusta el procesador y la memoria fija, desactiva los puntos de control, define el espacio MMIO, Secure Boot y TPM, conecta el switch y agrega el adaptador de partición de GPU. GPU-P no admite puntos de control ni guardar estado, así que si el host se apaga, el invitado se apaga en orden.
+- `hcs` (`Backends/Hcs.ps1`), en todas las demás ediciones, Home incluida: las máquinas corren con el Host Compute Service de Windows. Consulta [Máquinas sin Hyper-V](#máquinas-sin-hyper-v).
+
+El valor predeterminado de los perfiles es `hyperv-gpup`; en un equipo sin el rol de Hyper-V pasa a ser `hcs`, así el mismo perfil funciona en todas las ediciones. Un perfil también puede pedir `hcs` en un equipo con Hyper-V.
+
+### Máquinas sin Hyper-V
+
+<Diagram {...hcs('es')} />
+
+Windows Home, y las ediciones con Hyper-V desactivado, no tienen el rol de Hyper-V, pero con la Plataforma de máquina virtual activa tienen el Host Compute Service (HCS, `computecore.dll`), la API sobre la que corre WSL 2. El backend `hcs` (`Backends/Hcs.ps1`) ejecuta las máquinas con ella:
+
+- **El motor vive en el servicio GpuVM** (`app/host/src/hcs`). El módulo llama a `gpuvm-host.exe hcs <comando>`, y el servicio crea el sistema de cómputo con `computecore.dll` (UEFI con Secure Boot, los procesadores y la memoria fija del perfil, el disco, un adaptador de red y los servicios de socket de Hyper-V), sus discos con `virtdisk.dll` y sus redes con la API de Host Compute Network (HCN).
+- **La GPU se comparte igual (GPU-PV).** La máquina recibe una partición de la GPU cuyo fabricante coincide con el `gpu.match` del perfil, y el invitado usa el driver del host, copiado igual que en Hyper-V. HCS en Windows 10 no tiene TPM virtual, así que estas máquinas no tienen TPM.
+- **Los mismos flujos del módulo.** Dentro del módulo, `Get-VM`, `Get-VMHardDiskDrive`, `Get-VMNetworkAdapter`, `Invoke-Command` y los demás comandos de Hyper-V que usa están reemplazados: las máquinas de Hyper-V pasan sin cambios y las de HCS se agregan con las mismas propiedades, así crear, abrir, las plantillas, los puntos de restauración y lo demás funcionan con los dos backends.
+- **El agente de GpuVM en lugar de PowerShell Direct.** Las máquinas de HCS no tienen PowerShell Direct, intercambio de datos (KVP), latido (heartbeat) ni el servicio de integración de apagado. GpuVM instala su agente en el disco de la máquina antes del primer inicio, y el agente responde por un socket de Hyper-V: los comandos que GpuVM ejecuta dentro de Windows (como SYSTEM), saber cuándo Windows está listo y apagarlo en orden pasan por él.
+- **Sin consola de Hyper-V.** Estas máquinas no tienen consola, así que la app les oculta **Ver consola de Hyper-V**; la imagen llega por el streaming, que se midió igual de fluido que en Hyper-V a la frecuencia del monitor y a 120 FPS, lado a lado.
+- **Sus propias redes.** Consulta [Aislamiento de red](#aislamiento-de-red).
+
 
 ### Creación del disco
 
@@ -53,7 +72,7 @@ Windows se aplica una vez por ISO y edición en un disco base (`<carpeta de VMs>
 
 ## Puente entre la app y PowerShell
 
-La app corre sin permisos de administrador. El trabajo de Hyper-V lo hace el **servicio GpuVM** (`gpuvm-host.exe`, `app/host/`), un servicio de Windows que registra el instalador. La app habla con él por el pipe con nombre `\\.\pipe\gpuvm`; por cada conexión el servicio inicia `bridge.ps1` en el PowerShell 7 propio de GpuVM con el token elevado del usuario que inició sesión en esa sesión, así el módulo ve el mismo perfil, contraseñas guardadas y carpetas que ese usuario ejecutándolo como administrador. En desarrollo la app inicia `bridge.ps1` por sí misma y necesita correr como administrador.
+La app corre sin permisos de administrador. El trabajo con las máquinas (Hyper-V, o el Host Compute Service donde Windows no trae Hyper-V) lo hace el **servicio GpuVM** (`gpuvm-host.exe`, `app/host/`), un servicio de Windows que registra el instalador. La app habla con él por el pipe con nombre `\\.\pipe\gpuvm`; por cada conexión el servicio inicia `bridge.ps1` en el PowerShell 7 propio de GpuVM con el token elevado del usuario que inició sesión en esa sesión, así el módulo ve el mismo perfil, contraseñas guardadas y carpetas que ese usuario ejecutándolo como administrador. En desarrollo la app inicia `bridge.ps1` por sí misma y necesita correr como administrador.
 
 - **Las consultas rápidas** (resumen, datos del host, acciones de energía, guardar opciones) pasan por una conexión **persistente**, una a la vez. Si se perdió antes de enviar la petición, se abre de nuevo una vez; una vez enviada, la petición nunca se reintenta, porque el comando pudo haberse aplicado (apagar, borrar…). Una consulta vence a los 180 s.
 - **Los trabajos largos** (crear una VM, encender y abrir, sincronizar el driver, aplicar ajustes) usan una conexión **cada uno**, para no bloquear las estadísticas. Su avance llega como eventos `job`.
@@ -93,6 +112,22 @@ El visor interpreta lo que envía el servidor de streaming de la máquina, y ese
 
 Mientras se muestra una imagen, la app avisa a sus páginas que la ventana está tapada: los hologramas y escenas se detienen, y se dibujan a 30 FPS mientras GpuVM no tiene el foco.
 
+## Aislamiento de red
+
+El aislamiento de red viene activado (**Máquina → Red → Solo internet**, `vm.network.isolation`) y siempre está activo en las máquinas de agentes. Una máquina aislada llega a internet, pero no a los servicios de este equipo, a la red local ni a otras máquinas; desde el equipo solo entra el streaming. Se aplica fuera de la máquina, así que un administrador dentro de ella no puede deshacerlo. Cómo se aplica depende del backend.
+
+**Máquinas de Hyper-V.** ACLs de puerto en el puerto del switch virtual de la máquina, que aplica el equipo: la máquina conserva internet, DHCP y DNS, el equipo y las redes privadas quedan bloqueados, y las reglas con estado dejan pasar las conexiones del streaming.
+
+**Máquinas sin Hyper-V.** Windows de escritorio no aplica ACLs de puerto como las de Hyper-V a las máquinas de HCS, y su NAT traduce el tráfico de la máquina antes de que los filtros del firewall del equipo lo vean, así que una red con NAT no se puede filtrar. Una máquina de HCS aislada nunca pasa por el NAT de Windows:
+
+1. **Una red propia, solo con el equipo.** Cada máquina aislada recibe su propia red interna (`GpuVM-<máquina>`, sin NAT ni reenvío) con una dirección fija. Su único otro miembro es este equipo, así que las máquinas aisladas no ven la red local ni a las demás.
+2. **Filtros del firewall del equipo.** Filtros de Windows Filtering Platform (WFP) del lado del equipo en esa red hacen que el equipo no acepte nada de la máquina; el streaming funciona porque lo abre el equipo.
+3. **Internet a través de un retransmisor.** Dentro de la máquina, el agente de GpuVM levanta un adaptador Wintun (Wintun 0.14.1 de WireGuard LLC, incluido con el agente y comprobado por SHA-256) que toma la ruta predeterminada. Cada flujo TCP o UDP va por un socket de Hyper-V al servicio GpuVM, que rechaza todo destino que no sea una dirección pública de internet (privadas, CGNAT, loopback, link-local, multicast y las del propio equipo) y abre la conexión él mismo. No hay ruta IPv6, así que nada sale por otro camino.
+
+El agente guarda el ajuste dentro de la máquina, así que después de reiniciar vuelve a tener internet antes de que el equipo se lo pida. Medido en una línea de unos 850 Mbit/s: descargas a unos 100 MB/s, igual que sin aislamiento, negociaciones HTTPS igual de rápidas, y una conexión a una dirección rechazada (el router, la dirección de este equipo en la red local) falla en unos 2 s.
+
+Una máquina sin aislamiento usa la red con NAT propia de GpuVM, `GpuVM`, que funciona como el Default Switch de Hyper-V (DHCP, DNS y NAT). En estas máquinas un cambio del ajuste se aplica en su siguiente inicio.
+
 ## Seguridad
 
 - **Sin ventana elevada:** la app corre como el usuario (`asInvoker`). Solo el servicio GpuVM corre elevado.
@@ -106,6 +141,7 @@ Mientras se muestra una imagen, la app avisa a sus páginas que la ventana está
 - **Componentes fijados:** Sunshine, Virtual Display Driver, nefcon, usbip-win2 y ViGEmBus están fijados por SHA-256 en `streaming/components.json`. Un archivo cuyo hash no coincide no se usa. El invitado no descarga nada. Solo se confía en el certificado que firmó el driver de la pantalla virtual; los drivers de usbip-win2 deben estar firmados por Microsoft. El Sunshine propio de GpuVM viene con el instalador. App Installer (`winget`) para las máquinas de agentes está fijado por SHA-256 y se comprueba su firma de Microsoft en este equipo y otra vez dentro de la máquina.
 - **Limpieza de la contraseña:** `unattend.xml` guarda la contraseña en texto plano y se borra dentro de la VM en cuanto ya no hace falta.
 - **Visor aislado:** integridad baja, token restringido y un job object. Consulta [El visor](#el-visor).
+- **Máquinas fuera de tu red:** las máquinas aisladas solo llegan a internet, y eso se aplica fuera de ellas. Consulta [Aislamiento de red](#aislamiento-de-red).
 - **Sin inyección de argumentos:** el nombre de la app de Sunshine se valida antes de armar la línea de comandos del visor.
 
 Dos variables de entorno llevan los datos a otro lugar: `GPUVM_DATA` (todos los datos) y `GPUVM_LABS_ROOT` (laboratorios).
