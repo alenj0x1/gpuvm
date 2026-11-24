@@ -105,10 +105,14 @@ fn err_res(id: u64, code: &str, msg: &str) -> Value {
     json!({"t": "res", "id": id, "ok": false, "error": {"code": code, "message": msg}})
 }
 
-/// getsockname's local VmId is NOT the one the host sees: only a fallback when KVP is off.
+/// The id the host sees for this machine: KVP under Hyper-V; under HCS (no KVP) the `vmid` file GpuVM writes next to
+/// the secret when it installs the agent. getsockname's local VmId is NOT the one the host sees: only a last resort.
 fn vm_id(s: &HvStream) -> Option<(String, &'static str)> {
     if let Some(g) = reg_hklm(r"SOFTWARE\Microsoft\Virtual Machine\Guest\Parameters", "VirtualMachineId").and_then(|r| parse_guid(&r)) {
         return Some((fmt_guid(&g), "kvp"));
+    }
+    if let Some(g) = crate::secret::load_vm_id().ok().and_then(|t| parse_guid(&t)) {
+        return Some((fmt_guid(&g), "file"));
     }
     let a = s.local()?;
     let v = guid_u128(&a.vm_id);
@@ -271,7 +275,7 @@ impl Agent {
         }
     }
 
-    fn read_loop(&self, stream: &HvStream, mut opener: Opener) -> String {
+    fn read_loop(self: &Arc<Self>, stream: &HvStream, mut opener: Opener) -> String {
         let mut announced: Option<Value> = None;
         loop {
             let mut r = stream;
@@ -319,10 +323,23 @@ impl Agent {
         }
     }
 
-    fn handle_req(&self, v: Value, blob: Option<Vec<u8>>) -> Result<(), String> {
+    fn handle_req(self: &Arc<Self>, v: Value, blob: Option<Vec<u8>>) -> Result<(), String> {
         let id = v["id"].as_u64().ok_or("request without a numeric id")?;
         let method = v["method"].as_str().unwrap_or("");
         let params = v.get("params").cloned().unwrap_or(json!({}));
+        if crate::sys::METHODS.contains(&method) && params.is_object() {
+            // Machine-level work runs here, as SYSTEM, on its own thread so pings keep flowing.
+            let me = self.clone();
+            let method = method.to_string();
+            std::thread::spawn(move || {
+                let reply = match crate::sys::handle(&method, &params, blob) {
+                    Ok((result, out)) => (json!({"t": "res", "id": id, "ok": true, "result": result}), out),
+                    Err((code, msg)) => (err_res(id, &code, &msg), None),
+                };
+                me.send_host(reply.0, reply.1.as_deref());
+            });
+            return Ok(());
+        }
         if !METHODS.contains(&method) {
             self.send_host(err_res(id, "bad_request", "unknown method"), None);
             return Ok(());
