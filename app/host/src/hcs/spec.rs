@@ -4,14 +4,15 @@ use serde_json::{json, Map, Value};
 
 /// Microsoft's Windows UEFI certificate template (the one Hyper-V names "MicrosoftWindows").
 const SECURE_BOOT_WINDOWS: &str = "1734c6e8-3154-4dda-ba5f-a874cc483422";
+const HOST_ADMINS: &str = "D:P(A;;FA;;;SY)(A;;FA;;;BA)";
 
 pub struct Nic {
     pub endpoint: String,
     pub mac: String,
 }
 
-/// A Hyper-V socket service the guest may use: anyone in the guest may connect; only SYSTEM and administrators on
-/// the host may listen.
+/// A Hyper-V socket service between host and guest. Both descriptors judge host processes: only SYSTEM and
+/// administrators may listen for the guest or connect to it.
 pub struct HvService {
     pub id: String,
 }
@@ -43,8 +44,8 @@ impl MachineSpec {
 
         let services: Map<String, Value> = self.services.iter().map(|s| {
             (s.id.clone(), json!({
-                "BindSecurityDescriptor": "D:P(A;;FA;;;SY)(A;;FA;;;BA)",
-                "ConnectSecurityDescriptor": "D:P(A;;FA;;;WD)",
+                "BindSecurityDescriptor": HOST_ADMINS,
+                "ConnectSecurityDescriptor": HOST_ADMINS,
                 "AllowWildcardBinds": true
             }))
         }).collect();
@@ -146,6 +147,7 @@ mod tests {
         assert_eq!(vm["Devices"]["NetworkAdapters"]["Default"]["MacAddress"], json!("00-15-5D-01-02-03"));
         let svc = &vm["Devices"]["HvSocket"]["HvSocketConfig"]["ServiceTable"]["0651ab65-7c1e-4b0a-9a65-065065065065"];
         assert_eq!(svc["BindSecurityDescriptor"], json!("D:P(A;;FA;;;SY)(A;;FA;;;BA)"));
+        assert_eq!(svc["ConnectSecurityDescriptor"], json!("D:P(A;;FA;;;SY)(A;;FA;;;BA)"));
     }
 
     #[test]
