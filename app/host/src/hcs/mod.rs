@@ -6,6 +6,7 @@ pub mod cli;
 pub mod disk;
 pub mod machine;
 pub mod net;
+pub mod offline;
 pub mod ops;
 pub mod safe;
 pub mod spec;

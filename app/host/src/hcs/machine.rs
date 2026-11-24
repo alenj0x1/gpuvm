@@ -24,6 +24,8 @@ pub struct Machine {
     pub services: Vec<String>,
     /// The network port while the machine runs (kept so a later power-off frees it).
     pub endpoint: Option<String>,
+    /// The id the host sees for the machine (its compute system's RuntimeId), once GpuVM's agent is installed.
+    pub vm_id: Option<String>,
 }
 
 impl Machine {
@@ -42,7 +44,7 @@ impl Machine {
     }
 
     pub fn to_json(&self) -> Value {
-        json!({ "name": self.name, "memoryMB": self.memory_mb, "cpus": self.cpus, "mac": self.mac, "gpu": self.gpu, "services": self.services, "endpoint": self.endpoint })
+        json!({ "name": self.name, "memoryMB": self.memory_mb, "cpus": self.cpus, "mac": self.mac, "gpu": self.gpu, "services": self.services, "endpoint": self.endpoint, "vmId": self.vm_id })
     }
 
     pub fn from_json(dir: &Path, v: &Value) -> Result<Self, String> {
@@ -63,6 +65,7 @@ impl Machine {
             gpu: v["gpu"].as_str().map(String::from),
             services,
             endpoint: v["endpoint"].as_str().filter(|e| net::parse_guid(e).is_some()).map(String::from),
+            vm_id: v["vmId"].as_str().filter(|e| net::parse_guid(e).is_some()).map(String::from),
         })
     }
 
@@ -135,7 +138,7 @@ pub fn create(root: &Path, name: &str, template_layer: &Path, memory_mb: u64, cp
         return Err(format!("{} already exists", dir.display()));
     }
     fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
-    let m = Machine { name: name.into(), dir: dir.clone(), memory_mb, cpus, mac: net::new_mac(), gpu, services, endpoint: None };
+    let m = Machine { name: name.into(), dir: dir.clone(), memory_mb, cpus, mac: net::new_mac(), gpu, services, endpoint: None, vm_id: None };
     let made = (|| {
         disk::create_differencing(&m.disk(), template_layer)?;
         ops::create_guest_state_file(&m.guest_state()).map_err(|e| e.to_string())?;
@@ -253,6 +256,9 @@ pub fn delete(m: &Machine) -> Result<(), String> {
     if let Some(id) = &m.endpoint {
         let _ = net::delete_endpoint(id);
     }
+    if let Some(id) = &m.vm_id {
+        let _ = crate::agent::unregister(id);
+    }
     revoke_all(m);
     fs::remove_dir_all(&m.dir).map_err(|e| format!("delete {}: {e}", m.dir.display()))
 }
@@ -263,13 +269,66 @@ pub fn write_offline(volume: &Path, relative: &Path, bytes: &[u8]) -> Result<(),
     super::safe::write_file(volume, relative, bytes)
 }
 
+/// The Hyper-V socket service GpuVM's agent uses (the same id as under Hyper-V).
+pub const AGENT_SERVICE: &str = "94aca5ef-a5b6-45a9-8c15-c7724a63f3da";
+const AGENT_EXE: &str = r"Program Files\GpuVM Agent\gpuvm-agent.exe";
+const AGENT_IMAGE: &str = r#""C:\Program Files\GpuVM Agent\gpuvm-agent.exe" service"#;
+/// The agent refuses its secret unless SYSTEM or Administrators own it and nobody else is in its ACL.
+const AGENT_DATA_SDDL: &str = "O:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)";
+
+/// The RuntimeId HCS gives this machine's compute system: it depends only on the system's id, so a system created
+/// for a moment (never started) tells it.
+pub fn learn_vm_id(m: &Machine) -> Result<String, String> {
+    if let Ok(existing) = ops::System::open(&m.system_id()) {
+        if let Ok(p) = existing.properties() {
+            if let Some(id) = p["RuntimeId"].as_str() {
+                return Ok(id.to_ascii_lowercase());
+            }
+        }
+    }
+    grant_all(m)?;
+    let sys = ops::System::create(&m.system_id(), &m.spec(None).document()).map_err(|e| e.to_string())?;
+    let id = sys.properties().ok().and_then(|p| p["RuntimeId"].as_str().map(str::to_ascii_lowercase));
+    let _ = sys.terminate();
+    id.ok_or_else(|| "HCS reported no RuntimeId".into())
+}
+
+/// Installs GpuVM's agent into a stopped machine's disk: the program, its secret and machine id (SYSTEM and
+/// Administrators only) and its service in the offline SYSTEM hive; then registers it with the host's broker.
+pub fn install_agent(m: &mut Machine, agent_exe: &Path) -> Result<String, String> {
+    if running(m).is_some() {
+        return Err(format!("{} is running; the agent is installed with it off", m.name));
+    }
+    let exe = fs::read(agent_exe).map_err(|e| format!("read {}: {e}", agent_exe.display()))?;
+    let secret: [u8; 32] = crate::wire::random();
+    let vm_id = learn_vm_id(m)?;
+    {
+        let attached = disk::attach(&m.disk(), false)?;
+        let volume = attached.windows_volume(std::time::Duration::from_secs(15)).ok_or("no Windows volume on the machine's disk")?;
+        let vol = Path::new(&volume);
+        super::safe::write_file(vol, Path::new(AGENT_EXE), &exe)?;
+        super::safe::write_file_protected(vol, Path::new(r"ProgramData\GpuVM\Agent\secret"), &secret, Some(AGENT_DATA_SDDL))?;
+        super::safe::write_file_protected(vol, Path::new(r"ProgramData\GpuVM\Agent\vmid"), vm_id.as_bytes(), Some(AGENT_DATA_SDDL))?;
+        let hive = Path::new(r"Windows\System32\config\SYSTEM");
+        drop(super::safe::existing_plain(vol, hive)?);
+        super::offline::add_service(&vol.join(hive), "GpuVMAgent", "GpuVM Agent", AGENT_IMAGE)?;
+    }
+    crate::agent::register_installed(&vm_id, &m.name, &m.dir, &secret)?;
+    if !m.services.iter().any(|s| s.eq_ignore_ascii_case(AGENT_SERVICE)) {
+        m.services.push(AGENT_SERVICE.into());
+    }
+    m.vm_id = Some(vm_id.clone());
+    m.save()?;
+    Ok(vm_id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn sample(dir: &Path) -> Machine {
         Machine { name: "m1".into(), dir: dir.into(), memory_mb: 4096, cpus: 4, mac: "00-15-5D-01-02-03".into(), gpu: Some(r"\\?\PCI#x".into()),
-            services: vec!["0651ab67-7c1e-4b0a-9a65-065065065067".into()], endpoint: Some("833a570d-b7d1-42d7-b1bf-516561468fd4".into()) }
+            services: vec!["0651ab67-7c1e-4b0a-9a65-065065065067".into()], endpoint: Some("833a570d-b7d1-42d7-b1bf-516561468fd4".into()), vm_id: Some("c4db4891-b8bd-52a3-8e0f-c1831f1a6050".into()) }
     }
 
     #[test]

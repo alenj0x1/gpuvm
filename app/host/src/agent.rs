@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{sync_channel, RecvTimeoutError, SyncSender};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -40,6 +40,9 @@ const DEFAULT_HOME: &str = r"C:\Users\agent";
 const METHODS: &[&str] = &["agent.info", "screen.capture", "screen.state", "screen.refresh", "input.act", "ui.tree", "ui.invoke", "exec.run",
     "files.list", "files.read", "files.write"];
 const EVENTS: &[&str] = &["screen", "secure_desktop", "signed_in", "foreground", "error_box"];
+/// Machine-level methods (they run as SYSTEM in the guest): only the administrative pipe may call them, never the
+/// app's pipe or an agent client.
+const SYSTEM_METHODS: &[&str] = &["sys.info", "sys.exec", "sys.read", "sys.write", "sys.power"];
 
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
@@ -149,6 +152,42 @@ fn store_secret(vm_id: &str, secret: &[u8]) -> Result<(), String> {
         let _ = std::fs::remove_file(&temp);
         e.to_string()
     })
+}
+
+/// Registers an agent the host itself installed (HCS machines get theirs written into their disk): the folder
+/// `agents\<vmid>` with a protected SYSTEM + Administrators ACL, the DPAPI-protected secret and `agent.json`.
+pub fn register_installed(vm_id: &str, name: &str, folder: &Path, secret: &[u8]) -> Result<(), String> {
+    use windows_sys::Win32::Security::Authorization::*;
+    if crate::hcs::net::parse_guid(vm_id).is_none() {
+        return Err(format!("not a machine id: {vm_id}"));
+    }
+    let vm_id = vm_id.to_ascii_lowercase();
+    for dir in [agents_dir(), agents_dir().join(&vm_id)] {
+        std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        let mut sd = std::ptr::null_mut();
+        if unsafe { ConvertStringSecurityDescriptorToSecurityDescriptorW(wide("O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)").as_ptr(), SDDL_REVISION_1, &mut sd, std::ptr::null_mut()) } == 0 {
+            return Err(crate::win::last_error("SDDL"));
+        }
+        let (mut present, mut defaulted) = (0, 0);
+        let mut dacl = std::ptr::null_mut();
+        unsafe { windows_sys::Win32::Security::GetSecurityDescriptorDacl(sd, &mut present, &mut dacl, &mut defaulted) };
+        let code = unsafe {
+            SetNamedSecurityInfoW(crate::win::wide_path(&dir).as_ptr() as *mut u16, SE_FILE_OBJECT,
+                windows_sys::Win32::Security::DACL_SECURITY_INFORMATION | windows_sys::Win32::Security::PROTECTED_DACL_SECURITY_INFORMATION,
+                std::ptr::null_mut(), std::ptr::null_mut(), dacl, std::ptr::null())
+        };
+        unsafe { LocalFree(sd) };
+        if code != 0 {
+            return Err(format!("protect {}: Windows error {code}", dir.display()));
+        }
+    }
+    store_secret(&vm_id, secret)?;
+    let reg = json!({ "vmId": vm_id, "name": name, "folder": folder.display().to_string(), "backend": "hcs" });
+    std::fs::write(agents_dir().join(&vm_id).join("agent.json"), reg.to_string()).map_err(|e| format!("agent.json: {e}"))
+}
+
+pub fn unregister(vm_id: &str) -> Result<bool, String> {
+    remove_registration(&vm_id.to_ascii_lowercase())
 }
 
 fn load_secret(vm_id: &str) -> Result<[u8; 32], String> {
@@ -2315,7 +2354,11 @@ fn invoke(args: &Map<String, Value>, ctx: &Ctx) -> Result<Value, CmdError> {
         let path = params["path"].as_str().unwrap_or("");
         return new_offer(name, path, params["note"].as_str().unwrap_or(""), s("Connection"), ctx).map(|v| json!({ "ok": true, "result": v }));
     }
-    if !METHODS.contains(&method) {
+    if SYSTEM_METHODS.contains(&method) {
+        if !ctx.admin || ctx.is_agent_pipe() || s("Connection").is_some() {
+            return err("denied", format!("{method} is only for GpuVM's administrative side."));
+        }
+    } else if !METHODS.contains(&method) {
         return err("bad_request", format!("Unknown method {method}"));
     }
     if params.to_string().len() > wire::MAX_JSON - 1024 {
