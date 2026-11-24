@@ -38,6 +38,8 @@ enum Open {
     Existing,
     /// A brand-new file (fails if the name exists), born with the security descriptor given.
     NewFile,
+    /// An existing folder kept open so nobody can rename or replace it (no delete sharing) while it is used.
+    Hold,
 }
 
 fn open_child(parent: &Handle, name: &str, how: Open, secure: bool) -> Result<Handle, String> {
@@ -62,6 +64,7 @@ fn open_child_sd(parent: &Handle, name: &str, how: Open, secure: bool, sd: *cons
         Open::WriteFile => (FILE_GENERIC_WRITE | FILE_READ_ATTRIBUTES | SYNCHRONIZE, FILE_OVERWRITE_IF, FILE_NON_DIRECTORY_FILE),
         Open::Existing => (FILE_TRAVERSE | FILE_READ_ATTRIBUTES | SYNCHRONIZE, FILE_OPEN, 0),
         Open::NewFile => (FILE_GENERIC_WRITE | FILE_READ_ATTRIBUTES | DELETE | SYNCHRONIZE, FILE_CREATE, FILE_NON_DIRECTORY_FILE),
+        Open::Hold => (FILE_TRAVERSE | FILE_READ_ATTRIBUTES | SYNCHRONIZE, FILE_OPEN, FILE_DIRECTORY_FILE),
     };
     if secure {
         access |= WRITE_DAC | WRITE_OWNER | READ_CONTROL;
@@ -70,7 +73,7 @@ fn open_child_sd(parent: &Handle, name: &str, how: Open, secure: bool, sd: *cons
     // A folder must let the rename we do inside it write to it.
     let share = match how {
         Open::Existing => FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-        Open::Folder => FILE_SHARE_READ | FILE_SHARE_WRITE,
+        Open::Folder | Open::Hold => FILE_SHARE_READ | FILE_SHARE_WRITE,
         Open::WriteFile | Open::NewFile => FILE_SHARE_READ,
     };
     let status = unsafe {
@@ -247,14 +250,23 @@ pub fn protect_folder(path: &Path, sddl: &str) -> Result<(), String> {
 
 /// Checks by handle that every part of an existing path is a plain folder or file, never a link, and returns the
 /// handle of the last part (kept open while the caller uses the path, so the object can't be swapped away).
-pub fn existing_plain(root: &Path, relative: &Path) -> Result<impl Drop, String> {
+pub fn existing_plain(root: &Path, relative: &Path) -> Result<Held, String> {
     let parts = plain_parts(relative)?;
-    let mut cur = open_root(root)?;
-    for p in &parts {
-        cur = open_child(&cur, p, Open::Existing, false)?;
+    let mut held = vec![open_root(root)?];
+    for (i, p) in parts.iter().enumerate() {
+        // Folders stay open without delete sharing, so none can be swapped for a link while the caller works with the
+        // path by name; the last part only needs to be checked and left for whoever opens it next.
+        let how = if i + 1 < parts.len() { Open::Hold } else { Open::Existing };
+        let next = open_child(held.last().unwrap(), p, how, false)?;
+        held.push(next);
     }
-    Ok(cur)
+    // The file itself is only checked: whoever opens it next (the registry loading a hive) needs it alone.
+    drop(held.pop());
+    Ok(Held(held))
 }
+
+/// The handles that keep a checked path as it was; drop it once done with the path.
+pub struct Held(Vec<Handle>);
 
 #[cfg(test)]
 mod tests {

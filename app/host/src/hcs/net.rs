@@ -282,12 +282,14 @@ pub fn delete_isolated_network(name: &str) -> Result<(), String> {
     if open_network(&id).map(|n| unsafe { HcnCloseNetwork(n) }).is_none() {
         return Ok(());
     }
-    if let Ok((luid, _)) = super::wfp::interface_by_alias(&host_adapter(name)) {
-        let _ = super::wfp::release_interface(luid);
-    }
+    let adapter = super::wfp::interface_by_alias(&host_adapter(name)).ok();
     let mut record: PWSTR = std::ptr::null_mut();
     let hr = unsafe { HcnDeleteNetwork(&id, &mut record) };
+    // The filters go only once the network is gone: if it can't be deleted (a machine still on it), they stay.
     check(hr, record, "delete the machine's isolated network")?;
+    if let Some((luid, _)) = adapter {
+        let _ = super::wfp::release_interface(luid);
+    }
     // Filters whose adapter was already gone (it couldn't be found by name) go now, not at the next service start.
     let _ = super::wfp::sweep();
     Ok(())

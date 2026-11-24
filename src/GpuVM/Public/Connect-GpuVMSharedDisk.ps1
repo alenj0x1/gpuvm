@@ -12,6 +12,7 @@ function Connect-GpuVMSharedDisk {
         [Parameter(Mandatory)][string]$VMName
     )
     Assert-Admin
+    Assert-HyperVMachine -Name $VMName -What 'Shared disks'
     $disk = Read-SharedDisk -Name $Name
     $state = Get-GpuVMState -Name $VMName
     $attachment = Get-SharedDiskAttachment -Path $disk['path']

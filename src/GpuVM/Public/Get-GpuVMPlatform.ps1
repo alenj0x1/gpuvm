@@ -9,7 +9,8 @@ function Get-GpuVMPlatform {
     $hyperV = Test-HyperVRole
     $vmp = Get-VirtualMachinePlatformState
     $hcs = [bool](Get-Service vmcompute -ErrorAction SilentlyContinue)
-    $ready = $hyperV -or ($vmp -eq 'Enabled' -and $hcs)
+    # A state CIM couldn't read doesn't lock out a PC whose Host Compute Service is there.
+    $ready = $hyperV -or ($hcs -and $vmp -ne 'Disabled')
     [ordered]@{
         backend        = if ($hyperV) { 'hyperv-gpup' } else { 'hcs' }
         hyperV         = $hyperV

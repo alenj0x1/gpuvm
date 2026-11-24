@@ -15,6 +15,7 @@ function Restore-GpuVMRestorePoint {
         [switch]$ShutdownIfRunning
     )
     Assert-Admin
+    Assert-HyperVMachine -Name $Name -What 'Restore points'
     $state = Get-GpuVMState -Name $Name
     Assert-GpuVMNotDisposable -State $state -Action 'go back to a restore point'
     if (-not $PSCmdlet.ShouldProcess($Name, "Go back to the point $Id")) { return }

@@ -124,6 +124,8 @@ Register-GpuVMBackend -Name 'hcs' -Description 'Host Compute Service with GPU-PV
         $root = Get-GpuVMHcsRoot
         $null = Invoke-GpuVMHcs @('set', $root, $Name, '--memory-mb', [string]([int64]$Config['vm']['memoryGB'] * 1024), '--cpus', [string]$Config['vm']['cpu']['count'], '--gpu', (Get-HcsGpuChoice -Config $Config))
         Clear-GpuVMHcsCache
+        $disk = Join-Path (Join-Path $root $Name) 'disk.vhdx'
+        if ($Config['vm']['disk']['sizeGB']) { Expand-HyperVGpuPDisk -Path $disk -SizeGB $Config['vm']['disk']['sizeGB'] }
     }
 
     SyncDriver = { param($Name, $State) Sync-HyperVGpuPDriver -Name $Name -State $State }
@@ -133,7 +135,12 @@ Register-GpuVMBackend -Name 'hcs' -Description 'Host Compute Service with GPU-PV
     Remove     = {
         param($Name, $State, $DeleteDisk)
         $root = Get-GpuVMHcsRoot
-        if (-not (Test-GpuVMHcsMachine -Name $Name)) { return }
+        if (-not (Test-GpuVMHcsMachine -Name $Name)) {
+            # Removed earlier keeping its disk: deleting the disk now takes the folder that is left.
+            $dir = Join-Path $root $Name
+            if ($DeleteDisk -and $Name -match '^[\w-]{1,40}$' -and (Test-Path -LiteralPath (Join-Path $dir 'disk.vhdx'))) { Remove-Item -LiteralPath $dir -Recurse -Force }
+            return
+        }
         try { $null = Invoke-GpuVMHcs @('off', $root, $Name) } catch { }
         if ($DeleteDisk) { $null = Invoke-GpuVMHcs @('delete', $root, $Name) }
         else {

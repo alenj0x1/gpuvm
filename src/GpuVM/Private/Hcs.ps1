@@ -27,6 +27,12 @@ function Invoke-GpuVMHcs {
 
 function Get-GpuVMHcsRoot { Get-GpuVMDefaultRoot }
 
+# What machines without Hyper-V can't do yet, said plainly instead of failing inside a Hyper-V command.
+function Assert-HyperVMachine {
+    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$What)
+    if (Test-GpuVMHcsMachine -Name $Name) { throw "$What isn't available yet for machines that run without Hyper-V." }
+}
+
 function Test-GpuVMHcsMachine {
     param([Parameter(Mandatory)][string]$Name)
     if ($Name -notmatch '^[\w-]{1,40}$') { return $false }
@@ -96,7 +102,7 @@ function Invoke-HcsGuest {
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][scriptblock]$ScriptBlock,
         [object[]]$ArgumentList = @(),
-        [int]$TimeoutSec = 600
+        [ValidateRange(1, 585)][int]$TimeoutSec = 585
     )
     $id = [guid]::NewGuid().ToString('n')
     $dir = 'C:\GpuVM\hcs-run'
@@ -225,7 +231,7 @@ function Get-VMNetworkAdapter {
             $info = if ($m -and $m['running']) { Get-GpuVMHcsInfo -Name $target } else { $null }
             $ips = if ($info -and $info.Contains('ipv4')) { @($info['ipv4'] | Where-Object { $_ }) } else { @() }
             # The host's adapter on the machine's network is "vEthernet (<network>)" (net.rs).
-            $switch = if ($m -and $m['isolated']) { 'GpuVM-Isolated' } else { 'GpuVM' }
+            $switch = if ($m -and $m['isolated']) { "GpuVM-$target" } else { 'GpuVM' }
             $mac = if ($m) { ([string]$m['mac']) -replace '-', '' } else { '' }
             return [pscustomobject]@{ VMName = $target; Name = 'Network Adapter'; SwitchName = $switch; IPAddresses = $ips; MacAddress = $mac }
         }
@@ -240,7 +246,7 @@ function Get-VMGpuPartitionAdapter {
         $target = if ($VMName) { $VMName } else { $VM.Name }
         if ($target -and (Test-GpuVMHcsMachine -Name $target)) {
             $m = Get-GpuVMHcsMachines | Where-Object { $_['name'] -eq $target } | Select-Object -First 1
-            if ($m -and $null -ne $m['gpu']) { return [pscustomobject]@{ VMName = $target; InstancePath = [string]$m['gpu'] } }
+            if ($m -and [string]$m['gpu'] -ne 'none') { return [pscustomobject]@{ VMName = $target; InstancePath = [string]$m['gpu'] } }
             return
         }
         if ($script:HyperVAvailable) { Hyper-V\Get-VMGpuPartitionAdapter @PSBoundParameters }
@@ -284,8 +290,10 @@ function Sync-HcsIsolation {
 function Start-HcsMachine {
     param([Parameter(Mandatory)][string]$Name)
     Sync-HcsIsolation -Name $Name
-    $null = Invoke-GpuVMHcs @('start', (Get-GpuVMHcsRoot), $Name)
+    $started = Invoke-GpuVMHcs @('start', (Get-GpuVMHcsRoot), $Name)
     Clear-GpuVMHcsCache
+    $gpu = [string]$started['gpu']
+    if ($gpu -and $gpu -ne 'shared' -and $gpu -notlike 'no GPU*') { Write-Warning "The machine '$Name' started without the GPU: $gpu" }
 }
 
 function Stop-HcsMachine {

@@ -319,9 +319,11 @@ pub fn power_off(m: &mut Machine) -> Result<(), String> {
             }
         }
         drop(sys);
-        if result.is_ok() {
-            wait_gone(&m.system_id());
+        if result.is_err() {
+            // Still running: its port, network and filters stay; tearing them down would leave it unisolated.
+            return result;
         }
+        wait_gone(&m.system_id());
     }
     if let Some(id) = m.endpoint.take() {
         let _ = net::delete_endpoint(&id);
@@ -441,8 +443,10 @@ pub fn install_agent(m: &mut Machine, agent_exe: &Path) -> Result<String, String
         super::safe::write_file_protected(vol, Path::new(r"ProgramData\GpuVM\Agent\secret"), &secret, Some(AGENT_DATA_SDDL))?;
         super::safe::write_file_protected(vol, Path::new(r"ProgramData\GpuVM\Agent\vmid"), vm_id.as_bytes(), Some(AGENT_DATA_SDDL))?;
         let hive = Path::new(r"Windows\System32\config\SYSTEM");
-        drop(super::safe::existing_plain(vol, hive)?);
+        // Every folder on the way stays open until the hive is back: the path can't be swapped for a link meanwhile.
+        let held = super::safe::existing_plain(vol, hive)?;
         super::offline::add_service(&vol.join(hive), "GpuVMAgent", "GpuVM Agent", AGENT_IMAGE)?;
+        drop(held);
     }
     crate::agent::register_installed(&vm_id, &m.name, &m.dir, &secret)?;
     if !m.services.iter().any(|s| s.eq_ignore_ascii_case(AGENT_SERVICE)) {

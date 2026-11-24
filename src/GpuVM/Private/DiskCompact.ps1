@@ -3,6 +3,8 @@
 function Compress-GpuVMDiskCopy {
     param([Parameter(Mandatory)][string]$Path)
     $before = (Get-Item -LiteralPath $Path).Length
+    # Without Hyper-V there is no Optimize-VHD: the copy keeps its size.
+    if (-not $script:HyperVAvailable) { return [int64]0 }
     Write-Step 'Giving back the space Windows no longer uses'
     Mount-VHD -Path $Path -ReadOnly -NoDriveLetter
     try { Optimize-VHD -Path $Path -Mode Retrim }

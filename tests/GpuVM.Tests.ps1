@@ -2654,6 +2654,14 @@ InModuleScope GpuVM {
             ($nic.IPAddresses -join ',') | Should Be '192.168.165.20'
         }
 
+        It 'an isolated machine is on its own network, so the host adapter checked for its address is that one' {
+            Mock Get-GpuVMHcsMachines { @(@{ name = 'home1'; running = $true; isolated = $true; mac = '00-15-5D-01-02-03' }) }
+            Mock Get-GpuVMHcsInfo { @{ ipv4 = @('172.29.0.2') } }
+            $nic = Get-VMNetworkAdapter -VMName home1
+            $nic.SwitchName | Should Be 'GpuVM-home1'
+            $nic.MacAddress | Should Be '00155D010203'
+        }
+
         It 'the heartbeat is the agent answering' {
             Mock Get-GpuVMHcsInfo { @{ uptimeSec = 5 } }
             (Get-VMIntegrationService -VMName home1).PrimaryOperationalStatus | Should Be 'Ok'
