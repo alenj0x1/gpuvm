@@ -184,8 +184,35 @@ pub fn create_endpoint(mac: &str) -> Result<Endpoint, String> {
     Ok(Endpoint { id: guid_string(&id), mac: mac.to_string() })
 }
 
+fn endpoint_network(id: &GUID) -> Option<String> {
+    let mut ep: *mut core::ffi::c_void = std::ptr::null_mut();
+    let mut record: PWSTR = std::ptr::null_mut();
+    let hr = unsafe { HcnOpenEndpoint(id, &mut ep, &mut record) };
+    take(record);
+    if hr < 0 || ep.is_null() {
+        return None;
+    }
+    let query = wide(r#"{"SchemaVersion":{"Major":2,"Minor":0}}"#);
+    let mut props: PWSTR = std::ptr::null_mut();
+    let mut record: PWSTR = std::ptr::null_mut();
+    let hr = unsafe { HcnQueryEndpointProperties(ep, query.as_ptr(), &mut props, &mut record) };
+    unsafe { HcnCloseEndpoint(ep) };
+    take(record);
+    let text = take(props);
+    if hr < 0 {
+        return None;
+    }
+    serde_json::from_str::<Value>(&text).ok()?["HostComputeNetwork"].as_str().map(|s| s.to_ascii_lowercase())
+}
+
+/// Deletes a port of GpuVM's network; a port of any other network (WSL, Docker...) is left alone.
 pub fn delete_endpoint(id: &str) -> Result<(), String> {
     let g = parse_guid(id).ok_or_else(|| format!("not an endpoint id: {id}"))?;
+    match endpoint_network(&g) {
+        None => return Ok(()),
+        Some(net) if net != guid_string(&NETWORK_ID) => return Err(format!("endpoint {id} is not on GpuVM's network")),
+        Some(_) => {}
+    }
     let mut record: PWSTR = std::ptr::null_mut();
     let hr = unsafe { HcnDeleteEndpoint(&g, &mut record) };
     check(hr, record, "delete the machine's network port")
@@ -253,6 +280,9 @@ mod live {
         assert!(network_exists());
         ensure_network().unwrap();
         let ep = create_endpoint(&new_mac()).unwrap();
+        assert_eq!(endpoint_network(&parse_guid(&ep.id).unwrap()), Some(guid_string(&NETWORK_ID)));
+        delete_endpoint(&ep.id).unwrap();
+        assert_eq!(endpoint_network(&parse_guid(&ep.id).unwrap()), None);
         delete_endpoint(&ep.id).unwrap();
         if !existed {
             delete_network().unwrap();
