@@ -7,6 +7,7 @@ pub mod disk;
 pub mod machine;
 pub mod net;
 pub mod ops;
+pub mod safe;
 pub mod spec;
 
 #[cfg(test)]
