@@ -13,6 +13,10 @@ const USAGE: &str = "usage: gpuvm-host hcs create <root> <name> <template-layer>
        gpuvm-host hcs list <root>
        gpuvm-host hcs install-agent <root> <name> <gpuvm-agent.exe>
        gpuvm-host hcs ask <machine> <method> [<params-json>] [--blob <file>] [--out <file>] [--timeout <s>]
+       gpuvm-host hcs set <root> <name> [--memory-mb <n>] [--cpus <n>] [--gpu nvidia|intel|default] [--isolated true|false]
+       gpuvm-host hcs vhd-new <path> --size-gb <n> | --parent <path>
+       gpuvm-host hcs vhd-resize <path> <bytes> | vhd-info <path>
+       gpuvm-host hcs vhd-convert <source.vhdx> <dest.vhdx>
        gpuvm-host hcs gpus | network-delete";
 
 /// Sends one command to the host service's administrative pipe (SYSTEM and administrators only) and reads the reply.
@@ -74,9 +78,13 @@ fn arg(args: &[String], i: usize) -> Result<&str, String> {
     args.get(i).map(String::as_str).ok_or_else(|| USAGE.to_string())
 }
 
+pub const NO_GPU: &str = "none";
+
 pub fn gpu_choice(choice: &str, gpus: &[String]) -> Result<Option<String>, String> {
     let vendor = match choice {
-        "default" | "none" => return Ok(None),
+        "default" => return Ok(None),
+        // A machine without a GPU (a host with none to share, or tests).
+        "none" => return Ok(Some(NO_GPU.into())),
         "nvidia" => "VEN_10DE",
         "intel" => "VEN_8086",
         "amd" => "VEN_1002",
@@ -93,10 +101,35 @@ fn run(args: &[String]) -> Result<Value, String> {
     if action == "ask" {
         return ask(args);
     }
-    if action == "network-delete" {
-        if super::net::network_exists() {
-            super::net::delete_network()?;
+    if action == "vhd-new" {
+        let path = PathBuf::from(arg(args, 1)?);
+        match arg(args, 2)? {
+            "--size-gb" => disk::create_dynamic(&path, arg(args, 3)?.parse::<u64>().map_err(|_| "size must be GB")? << 30)?,
+            "--parent" => disk::create_differencing(&path, Path::new(arg(args, 3)?))?,
+            _ => return Err(USAGE.into()),
         }
+        return Ok(json!({ "created": path }));
+    }
+    if action == "vhd-convert" {
+        let (source, dest) = (PathBuf::from(arg(args, 1)?), PathBuf::from(arg(args, 2)?));
+        disk::flatten(&source, &dest)?;
+        return Ok(json!({ "created": dest }));
+    }
+    if action == "endpoint-info" {
+        return super::net::endpoint_properties(arg(args, 1)?);
+    }
+    if action == "vhd-resize" {
+        let path = PathBuf::from(arg(args, 1)?);
+        disk::resize(&path, arg(args, 2)?.parse().map_err(|_| "size must be bytes")?)?;
+        return Ok(json!({ "resized": path }));
+    }
+    if action == "vhd-info" {
+        let path = PathBuf::from(arg(args, 1)?);
+        let (size, file) = disk::size_of(&path)?;
+        return Ok(json!({ "path": path, "size": size, "fileSize": file, "parentPath": disk::parent_of(&path)? }));
+    }
+    if action == "network-delete" {
+        super::net::delete_all_networks()?;
         return Ok(json!({ "network": "deleted" }));
     }
     let root = PathBuf::from(arg(args, 1)?);
@@ -113,16 +146,44 @@ fn run(args: &[String]) -> Result<Value, String> {
             let layer = PathBuf::from(arg(args, 3)?);
             let memory: u64 = arg(args, 4)?.parse().map_err(|_| "memoryMB must be a number")?;
             let cpus: u32 = arg(args, 5)?.parse().map_err(|_| "cpus must be a number")?;
-            let (mut gpu, mut services) = (None, Vec::new());
+            let (mut gpu, mut services, mut own) = (None, Vec::new(), false);
             let mut i = 6;
             while i < args.len() {
                 match args[i].as_str() {
                     "--gpu" => { gpu = gpu_choice(arg(args, i + 1)?, &ops::partitionable_gpus())?; i += 2; }
                     "--service" => { services.push(arg(args, i + 1)?.to_string()); i += 2; }
+                    "--own-disk" => { own = true; i += 1; }
                     _ => return Err(USAGE.into()),
                 }
             }
-            let m = machine::create(&root, name, &layer, memory, cpus, gpu, services)?;
+            let source = if own { machine::DiskSource::Own(&layer) } else { machine::DiskSource::Template(&layer) };
+            let m = machine::create_from(&root, name, source, memory, cpus, gpu, services)?;
+            Ok(m.to_json())
+        }
+        "set" => {
+            let mut m = machine::load(&root, name)?;
+            if machine::running(&m).is_some() {
+                return Err(format!("{} is running; its settings change with it off", m.name));
+            }
+            let (mut memory, mut cpus, mut gpu, mut isolated) = (None, None, None, None);
+            let mut i = 3;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--memory-mb" => { memory = Some(arg(args, i + 1)?.parse().map_err(|_| "memory must be MB")?); i += 2; }
+                    "--cpus" => { cpus = Some(arg(args, i + 1)?.parse().map_err(|_| "cpus must be a number")?); i += 2; }
+                    "--gpu" => { gpu = Some(gpu_choice(arg(args, i + 1)?, &ops::partitionable_gpus())?); i += 2; }
+                    "--isolated" => {
+                        isolated = Some(match arg(args, i + 1)? {
+                            "true" => true,
+                            "false" => false,
+                            other => return Err(format!("--isolated is true or false, not {other}")),
+                        });
+                        i += 2;
+                    }
+                    _ => return Err(USAGE.into()),
+                }
+            }
+            machine::set(&mut m, memory, cpus, gpu, isolated)?;
             Ok(m.to_json())
         }
         "start" => {
@@ -131,7 +192,7 @@ fn run(args: &[String]) -> Result<Value, String> {
             let started = machine::start(&mut m)?;
             let props = started.system.properties().unwrap_or(Value::Null);
             Ok(json!({ "started": true, "ms": t.elapsed().as_millis() as u64, "gpu": started.gpu.err().unwrap_or_else(|| "shared".into()),
-                "runtimeId": props["RuntimeId"], "endpoint": started.endpoint.id }))
+                "runtimeId": props["RuntimeId"], "endpoint": started.endpoint.id, "isolated": m.isolated, "ip": m.ip }))
         }
         "state" => {
             let m = machine::load(&root, name)?;
@@ -189,6 +250,7 @@ mod tests {
         assert_eq!(gpu_choice("nvidia", &gpus).unwrap().unwrap(), gpus[0]);
         assert_eq!(gpu_choice("intel", &gpus).unwrap().unwrap(), gpus[1]);
         assert_eq!(gpu_choice("default", &gpus).unwrap(), None);
+        assert_eq!(gpu_choice("none", &gpus).unwrap().as_deref(), Some(NO_GPU));
         assert!(gpu_choice("amd", &gpus).is_err());
         assert!(gpu_choice("x", &gpus).is_err());
     }

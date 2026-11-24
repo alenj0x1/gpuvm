@@ -114,6 +114,28 @@ pub fn elevated_user_token(session: u32, expected_sid: &str) -> Result<Handle, S
     Ok(Handle(primary))
 }
 
+/// Turns on a privilege the process token holds but has off (administrators hold SeRestorePrivilege, which lets a
+/// file be created with SYSTEM as its owner).
+pub fn enable_privilege(name: &str) -> Result<(), String> {
+    unsafe {
+        let mut token: HANDLE = std::ptr::null_mut();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &mut token) == 0 {
+            return Err(last_error("OpenProcessToken"));
+        }
+        let token = Handle(token);
+        let mut luid = LUID { LowPart: 0, HighPart: 0 };
+        if LookupPrivilegeValueW(std::ptr::null(), wide(name).as_ptr(), &mut luid) == 0 {
+            return Err(last_error(name));
+        }
+        let tp = TOKEN_PRIVILEGES { PrivilegeCount: 1, Privileges: [LUID_AND_ATTRIBUTES { Luid: luid, Attributes: SE_PRIVILEGE_ENABLED }] };
+        AdjustTokenPrivileges(token.0, 0, &tp, 0, std::ptr::null_mut(), std::ptr::null_mut());
+        if GetLastError() != 0 {
+            return Err(format!("{name} is not held by this process"));
+        }
+        Ok(())
+    }
+}
+
 pub fn random_hex() -> String {
     let mut bytes = [0u8; 16];
     unsafe { BCryptGenRandom(std::ptr::null_mut(), bytes.as_mut_ptr(), bytes.len() as u32, BCRYPT_USE_SYSTEM_PREFERRED_RNG) };

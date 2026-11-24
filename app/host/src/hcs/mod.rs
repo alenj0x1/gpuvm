@@ -8,8 +8,10 @@ pub mod machine;
 pub mod net;
 pub mod offline;
 pub mod ops;
+pub mod relay;
 pub mod safe;
 pub mod spec;
+pub mod wfp;
 
 #[cfg(test)]
 mod live {

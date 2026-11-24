@@ -428,6 +428,7 @@ fn handle(pipe: HANDLE) {
 
 pub fn serve() {
     crate::agent::start();
+    crate::hcs::relay::start();
     // SYSTEM and Administrators: full access. Users signed in at this PC: read and write only. Network: denied.
     let sddl = format!("D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x{CLIENT_ACCESS:08x};;;IU)(D;;GA;;;NU)");
     let mut sd = std::ptr::null_mut();

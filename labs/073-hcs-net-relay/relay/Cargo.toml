@@ -1,0 +1,13 @@
+[package]
+name = "netrelay"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+ipstack = "1.0.1"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "io-util", "sync", "time"] }
+tun = { version = "0.8.15", features = ["async"] }
+windows-sys = { version = "0.59", features = ["Win32_Networking_WinSock", "Win32_Foundation"] }
