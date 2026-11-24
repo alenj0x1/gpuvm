@@ -2,16 +2,16 @@
 //! the backend for editions without Hyper-V (labs/065-hcs-backend).
 #![allow(dead_code)]
 
+pub mod cli;
 pub mod disk;
+pub mod machine;
 pub mod net;
-mod ops;
+pub mod ops;
 pub mod spec;
-
-pub use ops::*;
 
 #[cfg(test)]
 mod live {
-    use super::*;
+    use super::ops::*;
     use serde_json::json;
 
     struct Cleanup { id: String, dir: std::path::PathBuf, files: Vec<std::path::PathBuf> }
