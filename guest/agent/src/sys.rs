@@ -50,21 +50,38 @@ pub fn handle(method: &str, params: &Value, blob: Option<Vec<u8>>) -> Reply {
         "sys.info" => Ok((info(), None)),
         "sys.exec" => exec(params),
         "sys.read" => {
+            // Whole files up to 16 MiB, or a piece of a bigger one with "offset" (and "length", at most 16 MiB).
+            use std::io::{Seek, SeekFrom};
             let path = checked_path(params["path"].as_str().ok_or_else(|| bad("path is required"))?)?;
-            let len = std::fs::metadata(&path).map_err(|e| failed(format!("{}: {e}", path.display())))?.len();
-            if len as usize > MAX_FILE {
-                return Err(bad(format!("{} is over 16 MiB", path.display())));
-            }
-            let bytes = std::fs::read(&path).map_err(|e| failed(format!("{}: {e}", path.display())))?;
-            Ok((json!({ "bytes": bytes.len() }), Some(bytes)))
+            let size = std::fs::metadata(&path).map_err(|e| failed(format!("{}: {e}", path.display())))?.len();
+            let offset = params["offset"].as_u64();
+            let length = match offset {
+                None if size as usize > MAX_FILE => return Err(bad(format!("{} is over 16 MiB; read it in pieces with offset", path.display()))),
+                None => size,
+                Some(o) => params["length"].as_u64().unwrap_or(MAX_FILE as u64).min(MAX_FILE as u64).min(size.saturating_sub(o)),
+            };
+            let mut f = std::fs::File::open(&path).map_err(|e| failed(format!("{}: {e}", path.display())))?;
+            f.seek(SeekFrom::Start(offset.unwrap_or(0))).map_err(|e| failed(format!("{}: {e}", path.display())))?;
+            let mut bytes = Vec::with_capacity(length as usize);
+            f.take(length).read_to_end(&mut bytes).map_err(|e| failed(format!("{}: {e}", path.display())))?;
+            Ok((json!({ "bytes": bytes.len(), "size": size }), Some(bytes)))
         }
         "sys.write" => {
+            // A whole file, or with "offset" a piece of one written in order (offset 0 starts it anew).
+            use std::io::{Seek, SeekFrom, Write};
             let path = checked_path(params["path"].as_str().ok_or_else(|| bad("path is required"))?)?;
             let bytes = blob.ok_or_else(|| bad("the file comes as the request's blob"))?;
             if let Some(dir) = path.parent() {
                 std::fs::create_dir_all(dir).map_err(|e| failed(format!("{}: {e}", dir.display())))?;
             }
-            std::fs::write(&path, &bytes).map_err(|e| failed(format!("{}: {e}", path.display())))?;
+            match params["offset"].as_u64() {
+                None => std::fs::write(&path, &bytes).map_err(|e| failed(format!("{}: {e}", path.display())))?,
+                Some(o) => {
+                    let mut f = std::fs::OpenOptions::new().write(true).create(true).truncate(o == 0).open(&path)
+                        .map_err(|e| failed(format!("{}: {e}", path.display())))?;
+                    f.seek(SeekFrom::Start(o)).and_then(|_| f.write_all(&bytes)).map_err(|e| failed(format!("{}: {e}", path.display())))?;
+                }
+            }
             Ok((json!({ "bytes": bytes.len() }), None))
         }
         "sys.power" => {
@@ -262,6 +279,19 @@ mod tests {
         let (r, _) = handle("sys.exec", &json!({ "file": "cmd.exe", "args": ["/c", "ping", "-n", "5", "127.0.0.1"], "timeoutMs": 300 }), None).unwrap();
         assert_eq!(r["timedOut"], json!(true));
         assert!(handle("sys.exec", &json!({ "file": "cmd.exe", "args": [1] }), None).is_err());
+    }
+
+    #[test]
+    fn pieces_write_and_read_back() {
+        let p = std::env::temp_dir().join(format!("gpuvm-sys-pieces-{}.bin", std::process::id()));
+        let p = p.to_string_lossy().to_string();
+        handle("sys.write", &json!({ "path": p, "offset": 0 }), Some(b"abc".to_vec())).unwrap();
+        handle("sys.write", &json!({ "path": p, "offset": 3 }), Some(b"def".to_vec())).unwrap();
+        let (v, b) = handle("sys.read", &json!({ "path": p, "offset": 2, "length": 3 }), None).unwrap();
+        assert_eq!((b.unwrap(), v["size"].as_u64()), (b"cde".to_vec(), Some(6)));
+        handle("sys.write", &json!({ "path": p, "offset": 0 }), Some(b"x".to_vec())).unwrap();
+        assert_eq!(std::fs::read(&p).unwrap(), b"x".to_vec(), "offset 0 starts the file anew");
+        let _ = std::fs::remove_file(&p);
     }
 
     #[test]

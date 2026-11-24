@@ -23,8 +23,8 @@ function Invoke-GpuVMPower {
         'TurnOff' { Stop-VM -Name $Name -TurnOff -Force }
         # Reboot asks Windows to restart cleanly; Reset (the default) is like pulling the plug.
         'Restart' { Restart-VM -Name $Name -Type Reboot -Force }
-        'Pause' { Suspend-VM -Name $Name }
-        'Resume' { Resume-VM -Name $Name }
+        'Pause' { Assert-HyperVMachine -Name $Name -What 'Pausing'; Suspend-VM -Name $Name }
+        'Resume' { Assert-HyperVMachine -Name $Name -What 'Pausing'; Resume-VM -Name $Name }
     }
     [ordered]@{ name = $Name; state = (Get-VM -Name $Name).State.ToString() }
 }

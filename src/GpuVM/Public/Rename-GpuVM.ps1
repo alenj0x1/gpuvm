@@ -12,6 +12,7 @@ function Rename-GpuVM {
         [Parameter(Mandatory)][ValidatePattern('^[\w-]{1,40}$')][string]$NewName
     )
     Assert-Admin
+    Assert-HyperVMachine -Name $Name -What 'Renaming'
     $state = Get-GpuVMState -Name $Name
     if ($NewName -ceq $Name) { return Get-GpuVM -Name $Name }
     $vm = Get-VM -Name $Name -ErrorAction Stop

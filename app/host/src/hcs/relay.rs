@@ -40,9 +40,22 @@ const UDP_IDLE: Duration = Duration::from_secs(120);
 const KEEPALIVE_IDLE_S: u32 = 60;
 const KEEPALIVE_INTERVAL_S: u32 = 10;
 
+/// The host's own networks: each address with its on-link prefix length, and its default gateways (/32). A LAN with
+/// public addresses (some campuses and offices) is still the LAN.
+pub type HostNets = Vec<(Ipv4Addr, u8)>;
+
+fn on_host_network(ip: Ipv4Addr, nets: &[(Ipv4Addr, u8)]) -> bool {
+    nets.iter().any(|(a, len)| {
+        let len = (*len).min(32) as u32;
+        let mask = if len == 0 { 0 } else { u32::MAX << (32 - len) };
+        // A /0 would be everything: only networks of at least /8 count, plus exact addresses.
+        len >= 8 && (u32::from(ip) & mask) == (u32::from(*a) & mask)
+    })
+}
+
 /// Only addresses on the public internet: never private, shared (CGNAT), loopback, link-local, multicast,
-/// broadcast, documentation, benchmarking or reserved ranges, and never one of the host's own addresses.
-pub fn is_public(ip: Ipv4Addr, host_addrs: &[Ipv4Addr]) -> bool {
+/// broadcast, documentation, benchmarking or reserved ranges, and never one of the host's own networks or gateways.
+pub fn is_public(ip: Ipv4Addr, host_nets: &[(Ipv4Addr, u8)]) -> bool {
     let o = ip.octets();
     !(ip.is_private()
         || ip.is_loopback()
@@ -56,32 +69,44 @@ pub fn is_public(ip: Ipv4Addr, host_addrs: &[Ipv4Addr]) -> bool {
         || (o[0] == 192 && o[1] == 0 && o[2] == 0)
         || (o[0] == 198 && (o[1] & 0xFE) == 18)
         || o[0] >= 240
-        || host_addrs.contains(&ip))
+        || on_host_network(ip, host_nets))
 }
 
-fn host_addresses() -> Vec<Ipv4Addr> {
+fn host_networks() -> HostNets {
+    let mut out = HostNets::new();
     let mut table: *mut MIB_UNICASTIPADDRESS_TABLE = std::ptr::null_mut();
-    if unsafe { GetUnicastIpAddressTable(AF_INET, &mut table) } != 0 {
-        return Vec::new();
+    if unsafe { GetUnicastIpAddressTable(AF_INET, &mut table) } == 0 {
+        unsafe {
+            for r in std::slice::from_raw_parts((*table).Table.as_ptr(), (*table).NumEntries as usize) {
+                out.push((Ipv4Addr::from(u32::from_be(r.Address.Ipv4.sin_addr.S_un.S_addr)), r.OnLinkPrefixLength.max(8)));
+                out.push((Ipv4Addr::from(u32::from_be(r.Address.Ipv4.sin_addr.S_un.S_addr)), 32));
+            }
+            FreeMibTable(table.cast());
+        }
     }
-    let out = unsafe {
-        std::slice::from_raw_parts((*table).Table.as_ptr(), (*table).NumEntries as usize)
-            .iter()
-            .map(|r| Ipv4Addr::from(u32::from_be(r.Address.Ipv4.sin_addr.S_un.S_addr)))
-            .collect()
-    };
-    unsafe { FreeMibTable(table.cast()) };
+    let mut routes: *mut MIB_IPFORWARD_TABLE2 = std::ptr::null_mut();
+    if unsafe { GetIpForwardTable2(AF_INET, &mut routes) } == 0 {
+        unsafe {
+            for r in std::slice::from_raw_parts((*routes).Table.as_ptr(), (*routes).NumEntries as usize) {
+                let hop = Ipv4Addr::from(u32::from_be(r.NextHop.Ipv4.sin_addr.S_un.S_addr));
+                if r.DestinationPrefix.PrefixLength == 0 && !hop.is_unspecified() {
+                    out.push((hop, 32));
+                }
+            }
+            FreeMibTable(routes.cast());
+        }
+    }
     out
 }
 
 /// The host's addresses, read again at most every 30 s (an address a host gets later is refused within that time;
 /// it is public only when the host itself sits on the internet).
-fn current_host_addresses() -> Vec<Ipv4Addr> {
-    static CACHE: OnceLock<Mutex<(Instant, Vec<Ipv4Addr>)>> = OnceLock::new();
-    let c = CACHE.get_or_init(|| Mutex::new((Instant::now(), host_addresses())));
+fn current_host_networks() -> HostNets {
+    static CACHE: OnceLock<Mutex<(Instant, HostNets)>> = OnceLock::new();
+    let c = CACHE.get_or_init(|| Mutex::new((Instant::now(), host_networks())));
     let mut g = c.lock().unwrap_or_else(|e| e.into_inner());
     if g.0.elapsed() > Duration::from_secs(30) {
-        *g = (Instant::now(), host_addresses());
+        *g = (Instant::now(), host_networks());
     }
     g.1.clone()
 }
@@ -163,7 +188,7 @@ fn flow(hv: Arc<Sock>, vm: u128) {
     }
     let ip = Ipv4Addr::new(h[1], h[2], h[3], h[4]);
     let port = u16::from_be_bytes([h[5], h[6]]);
-    if !(h[0] == TCP || h[0] == UDP) || port == 0 || !is_public(ip, &current_host_addresses()) {
+    if !(h[0] == TCP || h[0] == UDP) || port == 0 || !is_public(ip, &current_host_networks()) {
         let _ = (&*hv).write_all(&[REFUSED]);
         return;
     }
@@ -267,10 +292,11 @@ mod tests {
 
     #[test]
     fn only_public_addresses_pass() {
-        let host = [Ipv4Addr::new(203, 0, 114, 7)];
+        let host = [(Ipv4Addr::new(203, 0, 114, 7), 32), (Ipv4Addr::new(130, 50, 0, 20), 16)];
         for bad in ["10.0.0.1", "172.16.5.4", "172.31.255.255", "192.168.100.1", "127.0.0.1", "169.254.1.1", "100.64.0.1",
                     "100.127.255.255", "224.0.0.251", "239.255.255.250", "255.255.255.255", "0.1.2.3", "192.0.0.8",
-                    "192.0.2.1", "198.18.0.1", "198.19.255.1", "198.51.100.1", "203.0.113.5", "240.0.0.1", "203.0.114.7"] {
+                    "192.0.2.1", "198.18.0.1", "198.19.255.1", "198.51.100.1", "203.0.113.5", "240.0.0.1", "203.0.114.7",
+                    "130.50.9.9"] {
             assert!(!is_public(bad.parse().unwrap(), &host), "{bad}");
         }
         for good in ["1.1.1.1", "8.8.8.8", "142.250.80.46", "172.32.0.1", "100.128.0.1", "198.20.0.1", "11.0.0.1"] {

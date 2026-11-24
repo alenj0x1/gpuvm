@@ -206,8 +206,9 @@ export function VmView({ vm, vms = [], host, samples, busy, startJob, run, onRem
       {tabs.includes("machine") && (
         <section className="vm-section" ref={(el) => { sectionRefs.current.machine = el; }}>
           <Options part="machine" vm={vm} host={host} busy={busy} startJob={startJob} run={run} onPreview={(r) => setPreview((p) => ({ ...p, ...r }))} />
-          <SharedDisks vm={vm} busy={busy} startJob={startJob} />
-          <RestorePoints vm={vm} busy={busy} startJob={startJob} run={run} />
+          {/* Machines without Hyper-V don't have shared disks or restore points yet. */}
+          {vm.backend !== "hcs" && <SharedDisks vm={vm} busy={busy} startJob={startJob} />}
+          {vm.backend !== "hcs" && <RestorePoints vm={vm} busy={busy} startJob={startJob} run={run} />}
         </section>
       )}
       {tabs.includes("agent") && (
@@ -674,7 +675,7 @@ function Header({ vm, vms = [], busy, variant, startJob, run, onRemoved, onRenam
                   <IconPlugOff size={16} />{confirmOff ? t("Force: unsaved work is lost") : t("Force shutdown")}
                 </button>
                 <button role="menuitem" onClick={() => power("Restart", t("Restarting"))}><IconRefresh size={16} />{t("Restart")}</button>
-                {paused
+                {vm.backend === "hcs" ? null : paused
                   ? <button role="menuitem" onClick={() => power("Resume", t("Resuming"))}><IconPlayerPlay size={16} />{t("Resume")}</button>
                   : <button role="menuitem" onClick={() => power("Pause", t("Pausing"))}><IconPlayerPause size={16} />{t("Pause")}</button>}
               </>
@@ -711,7 +712,7 @@ function Header({ vm, vms = [], busy, variant, startJob, run, onRemoved, onRenam
                 <IconFileExport size={16} />{off ? t("Export to a file") : t("Shut down and export")}
               </button>
             )}
-            {!locked && vm.managed && off && (
+            {!locked && vm.managed && off && vm.backend !== "hcs" && (
               <button role="menuitem" onClick={() => { setMenu(false); setRenaming(true); onRenameDraft(vm.name); }}><IconPencil size={16} />{t("Rename")}</button>
             )}
             <button role="menuitem" onClick={() => { setMenu(false); onPattern(); }}><IconPalette size={16} />{t("Another icon")}</button>

@@ -12,6 +12,7 @@ function Remove-GpuVMRestorePoint {
         [switch]$ShutdownIfRunning
     )
     Assert-Admin
+    Assert-HyperVMachine -Name $Name -What 'Restore points'
     $state = Get-GpuVMState -Name $Name
     Assert-GpuVMNotDisposable -State $state -Action 'change its restore points'
     if (-not $PSCmdlet.ShouldProcess($Name, "Delete the point $Id")) { return }
