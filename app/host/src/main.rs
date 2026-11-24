@@ -3,6 +3,7 @@
 mod agent;
 mod agent_log;
 mod agent_pipe;
+mod hcs;
 mod hv;
 mod offer;
 mod server;
