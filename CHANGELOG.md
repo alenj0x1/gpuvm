@@ -20,6 +20,8 @@ Changes waiting for the next version sit under **Unreleased** at the top (this s
 
 ### Fixed
 - Renaming a machine whose disk Hyper-V can't read no longer stops with an error about `ParentPath`.
+- Opening a machine that is deleted or turned off meanwhile stops at once instead of waiting up to 15 minutes, which also kept the service from stopping.
+- Updating an agent template no longer fails with the agent's file in use.
 
 ## [1.0.0] - 2026-11-23
 

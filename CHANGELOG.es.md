@@ -20,6 +20,8 @@ Los cambios que esperan la próxima versión van en **Sin publicar**, arriba (es
 
 ### Corregido
 - Cambiarle el nombre a una máquina cuyo disco Hyper-V no puede leer ya no se detiene con un error sobre `ParentPath`.
+- Abrir una máquina que se borra o se apaga mientras tanto se detiene al instante en vez de esperar hasta 15 minutos, lo que además impedía detener el servicio.
+- Actualizar una plantilla de agente ya no falla porque el archivo del agente está en uso.
 
 ## [1.0.0] - 2026-11-23
 
