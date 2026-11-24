@@ -47,7 +47,7 @@ Machines from before GpuVM's Sunshine ran it in the user's session from a logon 
 
 Windows' administrator prompts (UAC) can't be streamed, and the Hyper-V console can't show them either: it doesn't see the GPU display. GpuVM brings them to the host instead:
 
-1. **Watcher in the VM.** On the first open, GpuVM installs `guest/admin-prompt.ps1` in `C:\Program Files\GpuVM\AdminPrompt` (only administrators can change it) as the `GpuVM-AdminPrompt` task, which runs as SYSTEM from boot. When a prompt opens, it reads the program and publisher and publishes them through Hyper-V's data exchange (KVP); when it closes, it publishes that too.
+1. **Watcher in the VM.** On the first open, GpuVM installs `guest/admin-prompt.ps1` in `C:\Program Files\GpuVM\AdminPrompt` (only administrators can change it) as the `GpuVM-AdminPrompt` task, which runs as SYSTEM from boot. When a prompt opens, it reads the program and publisher and publishes them through Hyper-V's data exchange (KVP); when it closes, it publishes that too. Machines without Hyper-V have no KVP: GpuVM's agent reads and writes the same items for the host.
 2. **On the host.** The app reads that data every second (`Get-GpuVMAdminPrompt`, about 100 ms, no PowerShell Direct). While the machine's picture is shown, the prompt drops from the top of the picture as a window of the app, which the viewer can't click or type into; otherwise an always-on-top card shows it. Both have the program, the publisher, **Allow** and **Deny**.
 3. **Answer.** `Resolve-GpuVMAdminPrompt` goes through PowerShell Direct with the guest password; the script starts a one-time helper as SYSTEM on the secure desktop of the console session, which presses Yes or No with UI Automation, only if the prompt open is still the one shown. 
 

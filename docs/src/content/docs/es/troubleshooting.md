@@ -56,6 +56,10 @@ El invitado tiene que usar **la misma versión de driver que el host**. Después
 
 El primer inicio instala Windows y el streaming, y después reinicia una vez. **Encender y abrir** espera a Windows y a Sunshine, y lo indica en el botón. Si Sunshine nunca responde, el error remite a `C:\GpuVM\setup.log` dentro de la VM. Si la VM nunca obtiene una dirección IP, mira su pantalla con la consola de Hyper-V y confirma que exista el `Default Switch` (máquinas de Hyper-V). Si la VM está apagada, guardada o en pausa, abrirla lo dice al instante en vez de esperar una dirección.
 
+## Una segunda máquina tarda dos minutos en encender (sin Hyper-V)
+
+En un equipo sin Hyper-V, mientras una máquina con la GPU está encendida, encender una segunda a veces espera unos dos minutos antes de que arranque Windows: el uso compartido de la GPU de Windows reintenta el dispositivo de la GPU. Después la máquina funciona con normalidad. La primera máquina y las máquinas sin GPU no se ven afectadas.
+
 ## La Plataforma de máquina virtual está desactivada
 
 En un equipo sin Hyper-V (Windows Home, o una edición con Hyper-V desactivado), GpuVM ejecuta las máquinas en la Plataforma de máquina virtual de Windows. Si está desactivada, la app muestra **Activa la Plataforma de máquina virtual**:

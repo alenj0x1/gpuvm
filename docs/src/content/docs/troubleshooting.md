@@ -56,6 +56,10 @@ The guest has to use **the same driver version as the host**. After updating the
 
 The first boot installs Windows and the streaming components, then restarts once. **Start and open** waits for Windows and for Sunshine, and says so on the button. If Sunshine never responds, the error points to `C:\GpuVM\setup.log` inside the VM. If the VM never gets an IP address, check its screen with the Hyper-V console and that the `Default Switch` exists (Hyper-V machines). If the VM is off, saved or paused, opening it says so at once instead of waiting for an address.
 
+## A second machine takes two minutes to start (without Hyper-V)
+
+On a PC without Hyper-V, while one machine with the GPU is running, starting a second one sometimes waits about two minutes before Windows boots: Windows' GPU sharing retries the GPU's device. The machine then works normally. The first machine and machines without a GPU aren't affected.
+
 ## Virtual Machine Platform is off
 
 On a PC without Hyper-V (Windows Home, or an edition with Hyper-V off), GpuVM runs machines on Windows' Virtual Machine Platform. If it is off, the app shows **Turn on Virtual Machine Platform**:
