@@ -3,6 +3,7 @@
 #![allow(dead_code)]
 
 pub mod disk;
+pub mod net;
 mod ops;
 pub mod spec;
 
