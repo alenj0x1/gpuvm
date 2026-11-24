@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
-pub const METHODS: &[&str] = &["sys.info", "sys.exec", "sys.read", "sys.write", "sys.power"];
+pub const METHODS: &[&str] = &["sys.info", "sys.exec", "sys.read", "sys.write", "sys.power", "sys.net", "sys.kvp"];
 const MAX_FILE: usize = 16 << 20;
 const OUTPUT_CAP: usize = 1 << 20;
 
@@ -78,7 +78,48 @@ pub fn handle(method: &str, params: &Value, blob: Option<Vec<u8>>) -> Reply {
                 .map_err(|e| failed(format!("shutdown: {e}")))?;
             Ok((json!({ "action": params["action"] }), None))
         }
+        "sys.net" => crate::net::configure(params).map(|v| (v, None)).map_err(failed),
+        "sys.kvp" => kvp(params),
         _ => Err(bad("unknown method")),
+    }
+}
+
+/// Hyper-V's data exchange without Hyper-V: the guest's items (HKLM\...\Virtual Machine\Guest, where guest programs
+/// publish) are read, and the host's items (HKLM\...\Virtual Machine\External, writable only by SYSTEM and
+/// administrators) are written, as the KVP service does on Hyper-V machines.
+const KVP_GUEST: &str = r"SOFTWARE\Microsoft\Virtual Machine\Guest";
+const KVP_HOST: &str = r"SOFTWARE\Microsoft\Virtual Machine\External";
+const KVP_MAX: usize = 2048;
+
+fn kvp(params: &Value) -> Reply {
+    use windows::core::PCWSTR;
+    use windows::Win32::System::Registry::*;
+    let key = params["key"].as_str().filter(|k| !k.is_empty() && k.len() <= 64 && k.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c)))
+        .ok_or_else(|| bad("key is 1-64 letters, digits, dot, dash or underscore"))?;
+    let name = crate::util::wide(key);
+    match params["op"].as_str() {
+        Some("get") => {
+            let sub = crate::util::wide(KVP_GUEST);
+            let mut buf = vec![0u16; KVP_MAX + 1];
+            let mut len = (buf.len() * 2) as u32;
+            let r = unsafe { RegGetValueW(HKEY_LOCAL_MACHINE, PCWSTR(sub.as_ptr()), PCWSTR(name.as_ptr()), RRF_RT_REG_SZ, None, Some(buf.as_mut_ptr() as *mut _), Some(&mut len)) };
+            let value = if r.is_ok() { Some(crate::util::wstr(&buf)) } else { None };
+            Ok((json!({ "value": value }), None))
+        }
+        Some("set") => {
+            let value = params["value"].as_str().filter(|v| v.len() <= KVP_MAX).ok_or_else(|| bad("value is text of at most 2048 characters"))?;
+            let sub = crate::util::wide(KVP_HOST);
+            let data = crate::util::wide(value);
+            let r = unsafe { RegSetKeyValueW(HKEY_LOCAL_MACHINE, PCWSTR(sub.as_ptr()), PCWSTR(name.as_ptr()), REG_SZ.0, Some(data.as_ptr() as *const _), (data.len() * 2) as u32) };
+            r.ok().map_err(|e| failed(format!("set {key}: {e}")))?;
+            Ok((json!({ "set": key }), None))
+        }
+        Some("remove") => {
+            let sub = crate::util::wide(KVP_HOST);
+            let _ = unsafe { RegDeleteKeyValueW(HKEY_LOCAL_MACHINE, PCWSTR(sub.as_ptr()), PCWSTR(name.as_ptr())) };
+            Ok((json!({ "removed": key }), None))
+        }
+        _ => Err(bad("op is get, set or remove")),
     }
 }
 
@@ -151,6 +192,11 @@ fn ipv4() -> Vec<String> {
         unsafe {
             let mut a = first;
             while !a.is_null() {
+                // The relay's adapter (net.rs) only exists inside the guest: the host can't reach its address.
+                if (*a).FriendlyName.to_string().is_ok_and(|n| n == crate::net::TUN_NAME) {
+                    a = (*a).Next;
+                    continue;
+                }
                 let mut u = (*a).FirstUnicastAddress;
                 while !u.is_null() {
                     let sa = (*u).Address.lpSockaddr as *const SOCKADDR_IN;

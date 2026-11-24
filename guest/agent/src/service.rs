@@ -610,6 +610,7 @@ pub fn run() {
         log_to(&logs.join("agent.log"));
     }
     logf!("GpuVM agent {VERSION} starting (pid {})", std::process::id());
+    std::thread::spawn(crate::net::resume);
     let a = Agent::new();
     let (h1, h2) = (a.clone(), a.clone());
     let t1 = std::thread::spawn(move || h1.host_loop());
