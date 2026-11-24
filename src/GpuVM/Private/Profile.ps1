@@ -24,8 +24,25 @@ function Resolve-GpuVMProfile {
     $resolved.Remove('extends')
     $resolved['name'] = if (Test-Path -LiteralPath $Name -PathType Leaf) { [IO.Path]::GetFileNameWithoutExtension($Name) } else { $Name }
     $resolved['chain'] = @($chain)
+    $resolved['backend'] = Resolve-GpuVMBackendName -Requested ([string]$resolved['backend'])
     $resolved
 }
+
+# Hyper-V where Windows has it; otherwise (Windows Home, or Hyper-V turned off) the Host Compute Service.
+function Resolve-GpuVMBackendName {
+    param([string]$Requested)
+    if ($Requested -eq 'auto' -or ($Requested -eq 'hyperv-gpup' -and -not (Test-HyperVRole))) { return 'hcs' }
+    if (-not $Requested) { return $(if (Test-HyperVRole) { 'hyperv-gpup' } else { 'hcs' }) }
+    $Requested
+}
+
+# Windows' "Virtual Machine Platform": Enabled, Disabled or Unknown (from CIM: reliable in PowerShell 7 too).
+function Get-VirtualMachinePlatformState {
+    $f = Get-CimInstance Win32_OptionalFeature -Filter "Name='VirtualMachinePlatform'" -ErrorAction SilentlyContinue
+    switch ([int]$(if ($f) { $f.InstallState } else { 4 })) { 1 { 'Enabled' } 2 { 'Disabled' } 3 { 'Disabled' } default { 'Unknown' } }
+}
+
+function Test-HyperVRole { $script:HyperVAvailable -and [bool](Get-Service vmms -ErrorAction SilentlyContinue) }
 
 function Resolve-ProfileChain {
     param(

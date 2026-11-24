@@ -1,4 +1,4 @@
-# One GPU-P machine changes power at a time: overlapping transitions on one GPU hung a guest into a 0x9F blue screen.
+﻿# One GPU-P machine changes power at a time: overlapping transitions on one GPU hung a guest into a 0x9F blue screen.
 # Start-VM, Stop-VM and Restart-VM below shadow Hyper-V's own inside this module, so every caller takes the mutex.
 
 $script:GpuPowerMutexName = 'Global\GpuVM.GpuPower'
@@ -55,7 +55,7 @@ function Invoke-GpuPowerTransition {
         & $Do
         if ($UntilUp) {
             $deadline = (Get-Date).AddSeconds($script:GpuPowerUpSec)
-            while ((Get-Date) -lt $deadline -and (Hyper-V\Get-VM -Name $Name).State -eq 'Running' -and -not (Test-GuestHeartbeat -Name $Name)) { Start-Sleep -Seconds 1 }
+            while ((Get-Date) -lt $deadline -and (Get-VM -Name $Name).State -eq 'Running' -and -not (Test-GuestHeartbeat -Name $Name)) { Start-Sleep -Seconds 1 }
         }
     }
     finally {
@@ -67,6 +67,8 @@ function Invoke-GpuPowerTransition {
 function Start-VM {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Name)
+    # HCS machines share the GPU the same way: their power changes wait their turn too.
+    if (Test-GpuVMHcsMachine -Name $Name) { return Invoke-GpuPowerTransition -Name $Name -UntilUp -Do { Start-HcsMachine -Name $Name } }
     # An agent machine never starts with an adapter on a switch where it isn't isolated (Network.ps1).
     Assert-AgentMachineSwitch -Name $Name
     Invoke-GpuPowerTransition -Name $Name -UntilUp -Do { Invoke-WithGpuChoice -Name $Name -Do { Hyper-V\Start-VM -Name $Name } }
@@ -75,6 +77,7 @@ function Start-VM {
 function Stop-VM {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Name, [switch]$Force, [switch]$TurnOff, [switch]$AsJob)
+    if (Test-GpuVMHcsMachine -Name $Name) { return Invoke-GpuPowerTransition -Name $Name -Do { Stop-HcsMachine -Name $Name -TurnOff:$TurnOff } }
     $splat = @{ Name = $Name; Force = $Force; TurnOff = $TurnOff }
     # A job goes on after this returns: its caller holds the mutex around it when it matters (Stop-GpuVMBounded).
     if ($AsJob) { return Hyper-V\Stop-VM @splat -AsJob }
@@ -84,6 +87,7 @@ function Stop-VM {
 function Restart-VM {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Name, [string]$Type, [switch]$Force, [switch]$Wait, [string]$For, [int]$Timeout)
+    if (Test-GpuVMHcsMachine -Name $Name) { return Invoke-GpuPowerTransition -Name $Name -UntilUp -Do { Restart-HcsMachine -Name $Name -Wait:$Wait } }
     $splat = @{ Name = $Name; Force = $Force }
     if ($Type) { $splat['Type'] = $Type }
     if ($Wait) { $splat['Wait'] = $true; $splat['For'] = $For; $splat['Timeout'] = $Timeout }

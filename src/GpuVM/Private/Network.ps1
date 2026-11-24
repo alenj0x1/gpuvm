@@ -57,6 +57,8 @@ function Update-GpuVMNetworkIsolation {
         [System.Collections.IDictionary]$State
     )
     if (-not $State) { $State = Get-GpuVMState -Name $Name }
+    # HCS machines: isolation is GpuVM's isolated network and the host relay, chosen when the machine starts (Hcs.ps1).
+    if (Test-GpuVMHcsMachine -Name $Name) { return Sync-HcsIsolation -Name $Name -State $State }
     # Every adapter of an agent machine: one on an external or private switch would put the guest on the LAN.
     if ([string]$State['use'] -eq 'agent') { Assert-AgentSwitch -Name $Name }
     $current = @(Get-GpuVMIsolationAcl -Name $Name)
@@ -114,6 +116,8 @@ function Assert-AgentMachineSwitch {
 # An external or private switch would put the untrusted guest on the LAN or leave it unisolated.
 function Assert-AgentSwitch {
     param([Parameter(Mandatory)][string]$Name)
+    # An HCS agent machine has no switch to choose: Sync-HcsIsolation keeps it on the isolated network.
+    if (Test-GpuVMHcsMachine -Name $Name) { return }
     foreach ($adapter in @(Get-VMNetworkAdapter -VMName $Name)) {
         if (-not $adapter.SwitchName) { continue }
         $switch = Get-VMSwitch -Name $adapter.SwitchName -ErrorAction SilentlyContinue

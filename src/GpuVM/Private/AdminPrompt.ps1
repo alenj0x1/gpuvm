@@ -34,6 +34,12 @@ function Install-GuestAdminPrompt {
 # Guest-controlled: callers rebuild what they use from short, checked strings.
 function Get-GuestKvpJson {
     param([Parameter(Mandatory)]$VM, [Parameter(Mandatory)][string]$Key)
+    # Machines without Hyper-V have no data exchange: their agent reads the same registry items.
+    if (Test-HcsVMObject $VM) {
+        $text = try { [string](Invoke-GpuVMHcsAgent -Name $VM.Name -Method 'sys.kvp' -Params @{ op = 'get'; key = $Key } -TimeoutSec 5).Result['value'] } catch { '' }
+        if (-not $text -or $text.Length -gt 2048) { return $null }
+        return $(try { $text | ConvertFrom-Json } catch { $null })
+    }
     $kvp = Get-CimInstance -Namespace root\virtualization\v2 -ClassName Msvm_KvpExchangeComponent -Filter "SystemName='$($VM.Id.Guid.ToUpper())'" -ErrorAction SilentlyContinue
     foreach ($item in @($kvp.GuestExchangeItems)) {
         if (-not $item) { continue }
@@ -84,6 +90,11 @@ function ConvertTo-KvpItemText {
 function Invoke-HostKvpMethod {
     param([Parameter(Mandatory)]$VM, [Parameter(Mandatory)][ValidateSet('AddKvpItems', 'ModifyKvpItems', 'RemoveKvpItems')][string]$Method,
         [Parameter(Mandatory)][string]$Key, [AllowEmptyString()][string]$Value = '')
+    if (Test-HcsVMObject $VM) {
+        $op = if ($Method -eq 'RemoveKvpItems') { 'remove' } else { 'set' }
+        $null = Invoke-GpuVMHcsAgent -Name $VM.Name -Method 'sys.kvp' -Params @{ op = $op; key = $Key; value = $Value } -TimeoutSec 10
+        return
+    }
     $svc = Get-CimInstance -Namespace root\virtualization\v2 -ClassName Msvm_VirtualSystemManagementService
     $system = Get-CimInstance -Namespace root\virtualization\v2 -ClassName Msvm_ComputerSystem -Filter "Name='$($VM.Id.Guid.ToUpper())'"
     $r = Invoke-CimMethod -InputObject $svc -MethodName $Method -Arguments @{ TargetSystem = $system; DataItems = @(ConvertTo-KvpItemText $Key $Value) }

@@ -1,4 +1,4 @@
-$script:SunshineWebPort = 47990
+﻿$script:SunshineWebPort = 47990
 
 function New-RandomPassword {
     param([int]$Length = 24)
@@ -434,6 +434,7 @@ function Invoke-Guest {
         [Parameter(Mandatory)][scriptblock]$ScriptBlock,
         [object[]]$ArgumentList = @()
     )
+    if (Test-GpuVMHcsMachine -Name $Name) { return Invoke-HcsGuest -Name $Name -ScriptBlock $ScriptBlock -ArgumentList $ArgumentList }
     $session = $script:GuestSessions[$Name]
     if ($session -and $session.State -eq 'Opened' -and $session.Availability -eq 'Available') {
         return Invoke-Command -Session $session -ErrorAction Stop -ScriptBlock $ScriptBlock -ArgumentList $ArgumentList
@@ -444,6 +445,7 @@ function Invoke-Guest {
 function Open-GuestSession {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][pscredential]$Credential)
     Close-GuestSession -Name $Name
+    if (Test-GpuVMHcsMachine -Name $Name) { return }
     try { $script:GuestSessions[$Name] = New-PSSession -VMName $Name -Credential $Credential -ErrorAction Stop } catch { }
 }
 
